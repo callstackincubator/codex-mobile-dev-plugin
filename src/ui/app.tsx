@@ -67,7 +67,6 @@ function hostContext() {
   if (host?.theme) applyDocumentTheme(host.theme);
   if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
   document.documentElement.style.setProperty("--font-sans", '"Inter Variable", sans-serif');
-  document.documentElement.style.setProperty("--host-safe-bottom", `${Math.max(0, host?.safeAreaInsets?.bottom ?? 0)}px`);
   panelContext.hostChanged();
   for (const panel of panels) { panel.fitScreen(); panel.controls(); }
 }

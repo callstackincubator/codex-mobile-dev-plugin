@@ -10,7 +10,6 @@ body { font-size: 12px; }
 [data-element="device-frame"][data-bezel="true"] { isolation: isolate; position: relative; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
 [data-element="device-frame"][data-bezel="true"] [data-element="screen"] { z-index: 2; position: absolute; }
 /* Split sizes come from Resizable rather than fixed grid tracks. */
-html[data-view="workspace"] [data-element="stage"] { padding-bottom: calc(24px + max(64px, var(--host-safe-bottom, 0px), env(safe-area-inset-bottom, 0px))); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }
 
 /* Severity colors match compact console rows while keeping timestamps neutral. */
