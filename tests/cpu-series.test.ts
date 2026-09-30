@@ -6,10 +6,10 @@ import type { ThreadHistory } from "../src/ui/performance/types.ts";
 
 test("weights the CPU average by measured time and excludes unknown readings", () => {
   const samples: CpuSample[] = [
-    { time: 0, interval: 0, cpuPercent: null, threads: [] },
-    { time: 0.25, interval: 0.25, cpuPercent: 100, threads: [] },
-    { time: 1, interval: 0.75, cpuPercent: 20, threads: [] },
-    { time: 1.25, interval: 0.25, cpuPercent: null, threads: [] },
+    { time: 0, interval: 0, cpuPercent: null, memoryBytes: 104857600, threads: [] },
+    { time: 0.25, interval: 0.25, cpuPercent: 100, memoryBytes: 104857600, threads: [] },
+    { time: 1, interval: 0.75, cpuPercent: 20, memoryBytes: 104857600, threads: [] },
+    { time: 1.25, interval: 0.25, cpuPercent: null, memoryBytes: 104857600, threads: [] },
   ];
   const series = createCpuSeries(samples);
   assert.equal(series.average, 40);
@@ -19,14 +19,14 @@ test("weights the CPU average by measured time and excludes unknown readings", (
 
 test("activity order uses current CPU, remembers prior activity and keeps equal readings stable", () => {
   const samples: CpuSample[] = [
-    { time: 1, interval: 1, cpuPercent: 70, threads: [
+    { time: 1, interval: 1, cpuPercent: 70, memoryBytes: 104857600, threads: [
       { id: "never", name: "", cpuPercent: 0 },
       { id: "earlier", name: "", cpuPercent: 50 },
       { id: "busy", name: "", cpuPercent: 20 },
       { id: "tie", name: "", cpuPercent: 0 },
       { id: "unknown", name: "", cpuPercent: null },
     ] },
-    { time: 2, interval: 1, cpuPercent: 80, threads: [
+    { time: 2, interval: 1, cpuPercent: 80, memoryBytes: 104857600, threads: [
       { id: "unknown", name: "", cpuPercent: null },
       { id: "tie", name: "", cpuPercent: 40 },
       { id: "never", name: "", cpuPercent: 0 },
@@ -47,7 +47,7 @@ test("activity order uses current CPU, remembers prior activity and keeps equal 
   const originalIds = series.threads.map(thread => thread.id);
   assert.deepEqual(originalIds, ["never", "earlier", "busy", "tie", "unknown"]);
 
-  samples.push({ time: 3, interval: 1, cpuPercent: 80, threads: [
+  samples.push({ time: 3, interval: 1, cpuPercent: 80, memoryBytes: 104857600, threads: [
     { id: "tie", name: "", cpuPercent: 60 },
     { id: "busy", name: "", cpuPercent: 20 },
     { id: "never", name: "", cpuPercent: 0 },
@@ -60,7 +60,7 @@ test("activity order uses current CPU, remembers prior activity and keeps equal 
 });
 
 test("first-seen order follows stable recording numbers when retained samples enumerate differently", () => {
-  const samples: CpuSample[] = [{ time: 200, interval: 1, cpuPercent: 70, threads: [
+  const samples: CpuSample[] = [{ time: 200, interval: 1, cpuPercent: 70, memoryBytes: 104857600, threads: [
     { id: "newest", name: "", cpuPercent: 70 },
     { id: "middle", name: "", cpuPercent: 0 },
     { id: "first", name: "", cpuPercent: null },
@@ -78,15 +78,15 @@ test("first-seen order follows stable recording numbers when retained samples en
 
 test("keeps distinct thread IDs and gaps when a thread leaves the sample", () => {
   const samples: CpuSample[] = [
-    { time: 0, interval: 0, cpuPercent: null, threads: [
+    { time: 0, interval: 0, cpuPercent: null, memoryBytes: 104857600, threads: [
       { id: "1", name: "worker", cpuPercent: null },
       { id: "2", name: "worker", cpuPercent: null },
     ] },
-    { time: 0.25, interval: 0.25, cpuPercent: 70, threads: [
+    { time: 0.25, interval: 0.25, cpuPercent: 70, memoryBytes: 104857600, threads: [
       { id: "1", name: "worker", cpuPercent: 50 },
       { id: "2", name: "worker", cpuPercent: 20 },
     ] },
-    { time: 0.5, interval: 0.25, cpuPercent: 10, threads: [
+    { time: 0.5, interval: 0.25, cpuPercent: 10, memoryBytes: 104857600, threads: [
       { id: "2", name: "renamed worker", cpuPercent: 10 },
     ] },
   ];

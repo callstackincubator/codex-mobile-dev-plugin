@@ -6,6 +6,7 @@ import { CPU_HISTORY_SECONDS } from "../../shared/cpu.ts";
 import { MIN_VIEW_DURATION, SIDEBAR_WIDTH, TIMELINE_HEIGHT } from "../performance/constants";
 import { useCursorTracking } from "../performance/useCursorTracking";
 import { CpuTrack } from "./performance/CpuTrack";
+import { MemoryTrack } from "./performance/MemoryTrack";
 import { TimelineRuler } from "./performance/TimelineRuler";
 import { Button } from "./ui/button";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
@@ -38,8 +39,8 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
         <div className="truncate text-[10px] text-muted-foreground">{state.selectedLabel}</div>
       </div>
       <span id="performance-status" role="status" className="shrink-0 text-[11px] text-muted-foreground capitalize">{state.phase === "recording" ? "Live" : state.phase}</span>
-      {state.monitoring ? <Button variant="ghost" size="icon-sm" title="Stop CPU monitoring" aria-label="Stop CPU monitoring" onClick={() => void panel.disconnect()}><SquareIcon /></Button>
-        : <Button variant="ghost" size="icon-sm" title="Start CPU monitoring" aria-label="Start CPU monitoring" disabled={state.available === false || selectedRunning === false} onClick={() => panel.show()}><ActivityIcon /></Button>}
+      {state.monitoring ? <Button variant="ghost" size="icon-sm" title="Stop performance monitoring" aria-label="Stop performance monitoring" onClick={() => void panel.disconnect()}><SquareIcon /></Button>
+        : <Button variant="ghost" size="icon-sm" title="Start performance monitoring" aria-label="Start performance monitoring" disabled={state.available === false || selectedRunning === false} onClick={() => panel.show()}><ActivityIcon /></Button>}
       <Popover>
         <PopoverTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Performance settings" title="Performance settings"><SlidersHorizontalIcon /></Button></PopoverTrigger>
         <PopoverContent align="end" className="w-[min(340px,calc(100vw-24px))] p-3">
@@ -51,7 +52,7 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
               {state.apps.map(app => <NativeSelectOption key={app.bundleId} value={app.bundleId}>{app.bundleId} · {app.pid}</NativeSelectOption>)}
             </NativeSelect>
             <FieldDescription className="text-[11px]">{state.platform === "android"
-              ? "Open an app on this Android device. CPU monitoring works with release builds too."
+              ? "Open an app on this Android device. CPU and memory monitoring work with release builds too."
               : "Open a development build in the iOS simulator. Detach Xcode or LLDB before connecting."}</FieldDescription>
           </Field>
           {state.sourceError && <p role="alert" className="mt-2 text-xs text-destructive">{state.sourceError}</p>}
@@ -60,10 +61,10 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
     </header>
     <div className="min-h-0 flex-1 overflow-y-auto">
       {state.sourceError && <Alert variant="destructive" className="rounded-none border-x-0 border-t-0"><AlertDescription>{state.sourceError}</AlertDescription></Alert>}
-      <div ref={container} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} aria-label="Live app and thread CPU usage">
+      <div ref={container} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} aria-label="Live app CPU and memory usage">
         <div className="flex border-b" style={{ height: TIMELINE_HEIGHT }}>
           <div className="flex shrink-0 items-center gap-2 border-r px-2 text-[10px] text-muted-foreground" style={{ width: SIDEBAR_WIDTH }}>
-            <span>Live CPU</span>
+            <span>Live performance</span>
             {state.phase === "failed" && <button type="button" className="text-blue-500" onClick={() => panel.retry()}>Retry</button>}
             {following === false && <button type="button" className="text-blue-500" onClick={reset}>Follow live</button>}
           </div>
@@ -73,6 +74,8 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
           threadOrder={state.threadOrder} onThreadOrderChange={order => panel.setThreadOrder(order)}
           phase={state.phase} error={state.error || null} cursorX={cursorX}
           viewDuration={end} zoomState={zoom} onZoomChange={change} onZoomOut={reset} />
+        <MemoryTrack samples={state.samples} platform={state.platform} phase={state.phase} error={state.error || null}
+          cursorX={cursorX} viewDuration={end} zoomState={zoom} onZoomChange={change} onZoomOut={reset} />
       </div>
       {state.bundleId === "" && <p className="p-4 text-xs text-muted-foreground">Open an app on the selected device. A single running app is selected automatically; choose one in performance settings when several are running.</p>}
     </div>

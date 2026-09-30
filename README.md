@@ -14,7 +14,7 @@ The first version supports:
 - Automatic reconnect after a stream or backend failure.
 - A resizable log panel with search, repeat counts, log attachments, source settings in a popover, and a compact level filter.
 - iOS unified logs, Android logcat from connected devices, and JS console messages and exceptions from a selected Metro app.
-- A Performance tab with live iOS and Android CPU usage, expandable thread charts, and a rolling 150-second timeline.
+- A Performance tab with live iOS and Android CPU and memory usage, expandable thread charts, and a rolling 150-second timeline.
 - MCP tools for device lists, boot and shutdown, input, screenshots, and accessibility reads.
 - agent-device's 55 official MCP tools, including app launch, snapshot refs, element presses, text entry, scrolling, waits, and debugging.
 - A bundled agent-device skill and a workflow guide from the pinned CLI version.
@@ -38,7 +38,7 @@ codex plugin add mobile-dev@mobile-dev-local
 
 Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile_open_workspace` for the fullscreen view. Call `mobile_open_simulator` for the panel beside a chat. iOS opens by default. Enable Android from the toolbar to show both panels side by side. Each panel has a device dropdown, Home, App Switcher, and Screenshot. Pick a device in each panel. Use the iOS and Android toggles to show either, both, or neither simulator. Selecting a device boots it if needed, then connects its screen. A selected running device connects automatically. The panel uses Apple’s device bezel and screen mask from the installed DeviceKit assets, with a simple frame as a fallback when assets are unavailable. Use the settings button at the bottom right for appearance, text size, location, and the device frame. iOS also offers contrast; Android offers rotation. The menu shows only settings supported by the bundled backend. Click the screen to type or drag. Closing the panel closes its stream.
 
-The local ZIP at `release/mobile-dev-0.1.42-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+The local ZIP at `release/mobile-dev-0.1.43-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 Ask the agent to inspect or control the app on the selected device. The panel shares both visible device IDs and platforms with the chat. Click a device panel to make it the active device for logs. Hiding a simulator keeps the current log source and buffered logs. The agent uses the bundled agent-device tools with the chosen device ID, opens a named session, reads accessibility refs, then presses elements or fills fields. Baguette streams iOS and serve-emu streams Android in the panel. The tools take the same session name on later calls so refs and app state stay together.
 
@@ -78,19 +78,19 @@ iOS reads `xcrun simctl spawn <UDID> log stream --style ndjson --level debug`, t
 
 ## Performance
 
-Open Performance beside Logs. When one app is running, CPU monitoring starts
+Open Performance beside Logs. When one app is running, CPU and memory monitoring start
 automatically. When several apps are running, choose one in Performance settings.
 Performance follows the device the user clicks or focuses, and switches to the
 remaining device when the iOS/Android visibility toggles hide the active one.
 The tab shows the device's name and remembers each device's chosen app. Switching
 between iOS and Android stops the previous monitor and starts collection on
 the active device. Hiding both device panels
-keeps the current source. CPU collection continues while viewing Logs. Closing
+keeps the current source. CPU and memory collection continue while viewing Logs. Closing
 the tools panel, pressing Stop, selecting another device, or ending the MCP
 session stops the monitor and leaves the app running.
 An app restart starts a fresh history when its new process appears.
 
-The tab ports DevSuite's iOS process and thread CPU collector and chart UI.
+The tab ports DevSuite's iOS process and thread CPU collector and chart UI, including its orange memory track.
 It samples once per second and retains 150 seconds. Expand CPU for individual
 thread charts, drag a chart to select a range, and use Follow live to resume the
 rolling viewport. Missing readings remain gaps. 100% means one occupied device
@@ -111,7 +111,7 @@ persists when switching tabs or devices, and sorting only affects the UI.
 
 On iOS, collection uses debugserver from the selected full Xcode installation. The app
 needs a development signature with `get-task-allow`, with Xcode/LLDB detached.
-On Android, a bundled CPU-only C helper reads kernel process and thread counters
+On Android, a bundled CPU and memory C helper reads kernel process and thread counters
 over one persistent ADB connection. It adapts BAM's MIT-licensed
 [Flashlight collector](https://github.com/bamlab/flashlight/tree/5ef203ae184547a3b2984fa4f9b76d672895f861/packages/platforms/android/cpp-profiler).
 There are no app hooks, debugger attachment, atrace sessions or root requirements.
@@ -128,24 +128,24 @@ after each deployment. The app-side collector and sampling rate are unchanged.
 `node scripts/smoke-cpu-cache.mjs` checks packaged CPU reconnection after deleting
 a temporary copy of the plugin cache, using fake ADB without touching a device.
 
-On an arm64 Android emulator with 29 app threads, 20 samples over 19.1 seconds
-used 0.071% of one core in the helper (0.715 ms of CPU per sample). This measures
+On an arm64 Android emulator with 23 app threads, 20 CPU and memory samples over 19.0 seconds
+used 0.046% of one core in the helper (0.460 ms of CPU per sample). This measures
 the collector itself, excluding ADB and video streaming; overhead varies with
 thread count and device. Reproduce with
 `node scripts/smoke-android-cpu.mjs DEVICE_SERIAL RUNNING_PID`.
 
-JavaScript profiling is deferred; DevSuite's demo memory/network tracks and an
-FPS collector are not included.
+The Memory track shows the main process's current usage, sampled average, maximum and minimum in MiB. Android reads RSS from `/proc/<pid>/statm` using the device's runtime page size; shared resident pages are counted in full. iOS requests `phys_footprint` in the same debugserver profiling stream, including compressed memory. These are different platform metrics, identified in the track tooltip; their values are not directly comparable across platforms. Memory is available from the first sample, shares CPU's timeline and session, and resets with the app's PID.
 
-Text agents can monitor CPU without opening the panel. Call
+JavaScript profiling, detailed allocation debugging, DevSuite's network track and an FPS collector are deferred.
+
+Text agents can monitor CPU and memory without opening the panel. Call
 `mobile_performance_sources` with `platform` and `deviceId`, then
 `mobile_cpu_session` with a target containing those fields and the chosen
 `bundleId`. The result includes `sessionId` and `cpuUri` in both JSON text and
 `structuredContent`. Call `mobile_read_cpu` with that `sessionId`; subsequent
 reads should pass the last `cursor` as `after` to receive only new samples.
 Wait for a full one-second interval before interpreting the initial null
-baseline. Each reading includes connection status, total CPU and individual
-thread usage. Finish with `mobile_cpu_close`. The panel uses the same session
+baseline. Each reading includes connection status, total CPU, individual thread usage and `memoryBytes`. The batch’s `memoryMetric` is `rss` on Android or `physical-footprint` on iOS. Finish with `mobile_cpu_close`. The panel uses the same session
 result and collector.
 
 ## Develop and package
@@ -228,9 +228,9 @@ Performance findings and historical measurements are documented in [the profilin
 | `mobile_logs_keep_alive` | Keep background collection alive without sending logs (app only) |
 | `mobile_logs_close` | Stop a session's log readers |
 | `mobile_performance_sources` | List running user apps in a booted iOS simulator |
-| `mobile_cpu_session` | Connect a native process and thread CPU monitor |
-| `mobile_read_cpu` | Read live CPU samples and connection status |
-| `mobile_cpu_close` | Stop one CPU monitor while leaving its app running |
+| `mobile_cpu_session` | Connect a native process and thread CPU plus memory monitor |
+| `mobile_read_cpu` | Read live CPU and memory samples and connection status |
+| `mobile_cpu_close` | Stop one CPU and memory monitor while leaving its app running |
 
 The `agent-device` MCP server exposes the pinned runtime's official tools directly, including `open`, `snapshot`, `press`, `fill`, `type`, `scroll`, `wait`, `find`, `get`, `is`, `close`, and debugging tools. Their input schemas describe each command. The bundled [control skill](skills/agent-device/SKILL.md) explains session ordering and links to the version-matched guide.
 

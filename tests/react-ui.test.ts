@@ -182,18 +182,25 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(logSubscribers, 0, "The inactive log view releases its reactive list subscription.");
   assert.ok(emitCpu);
   await act(async () => {
-    emitCpu!({ cursor: 2, phase: "recording", samples: [
-      { time: 1, interval: 1, cpuPercent: 10, threads: [
+    emitCpu!({ cursor: 2, phase: "recording", memoryMetric: "physical-footprint", samples: [
+      { time: 1, interval: 1, cpuPercent: 10, memoryBytes: 104857600, threads: [
         { id: "c963a4", name: "", cpuPercent: 0 },
         { id: "c963bb", name: "hades", cpuPercent: 10 },
         { id: "c963dd", name: "com.apple.NSURLConnectionLoader", cpuPercent: 0 },
       ] },
-      { time: 2, interval: 1, cpuPercent: 0, threads: [
+      { time: 2, interval: 1, cpuPercent: 0, memoryBytes: 125829120, threads: [
         { id: "c963a4", name: "", cpuPercent: 0 },
         { id: "c963dd", name: "com.apple.NSURLConnectionLoader", cpuPercent: 0 },
       ] },
     ] });
   });
+  const memoryTrack = dom.window.document.querySelector('[aria-label="Memory usage"]');
+  assert.ok(memoryTrack);
+  assert.match(memoryTrack.textContent ?? "", /Current120.0 MiB/);
+  assert.match(memoryTrack.textContent ?? "", /Avg \/ Max110.0 \/ 120.0 MiB/);
+  assert.match(memoryTrack.textContent ?? "", /Min100.0 MiB/);
+  assert.ok(memoryTrack.querySelector('[title*="physical footprint"]'));
+  assert.equal(memoryTrack.querySelector('[aria-label="Expand Memory"]'), null);
   const expandCpu = dom.window.document.querySelector('[aria-label="Expand CPU"]') as HTMLButtonElement;
   await act(async () => { expandCpu.click(); });
   assert.equal(expandCpu.getAttribute("aria-expanded"), "true");
@@ -235,7 +242,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const reorderedGc = dom.window.document.querySelector('[title*="ID: 0xc963bb"]');
   assert.equal(reorderedGc?.parentElement, gcRow, "Reordering preserves the same thread row and chart.");
   await act(async () => {
-    emitCpu!({ cursor: 3, phase: "recording", samples: [{ time: 3, interval: 1, cpuPercent: 90, threads: [
+    emitCpu!({ cursor: 3, phase: "recording", memoryMetric: "physical-footprint", samples: [{ time: 3, interval: 1, cpuPercent: 90, memoryBytes: 104857600, threads: [
       { id: "c963dd", name: "com.apple.NSURLConnectionLoader", cpuPercent: 90 },
       { id: "c963a4", name: "", cpuPercent: 0 },
     ] }] });

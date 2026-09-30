@@ -54,11 +54,12 @@ try {
   }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.42/simulator.html");
+  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.43/simulator.html");
   assert.ok(resource.contents[0].text.includes('workspace-toolbar'));
   assert.ok(resource.contents[0].text.includes('workspace-panels'));
   assert.ok(resource.contents[0].text.includes('tool-logs'));
-  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.42/workspace.html");
+  assert.ok(resource.contents[0].text.includes('Memory usage'), 'The packaged Performance view must include the live memory track.');
+  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.43/workspace.html");
   assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, []);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
   runtimeTransport = new StdioClientTransport({ command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe" });

@@ -23,8 +23,8 @@ try {
   const uploads = join(directory, 'uploads.txt');
   const header = { type: 'ready', pid: 123, collectorPid: 999, clockTicks: 100, processStart: '42' };
   const samples = [
-    { type: 'sample', timestampUs: '1000000', processTicks: '100', processStart: '42', collectorCpuUs: '10', threads: [{ tid: 123, start: '50', ticks: '100', name: 'main' }] },
-    { type: 'sample', timestampUs: '2000000', processTicks: '150', processStart: '42', collectorCpuUs: '20', threads: [{ tid: 123, start: '50', ticks: '150', name: 'main' }] },
+    { type: 'sample', timestampUs: '1000000', processTicks: '100', processStart: '42', collectorCpuUs: '10', memoryBytes: 104857600, threads: [{ tid: 123, start: '50', ticks: '100', name: 'main' }] },
+    { type: 'sample', timestampUs: '2000000', processTicks: '150', processStart: '42', collectorCpuUs: '20', memoryBytes: 104857600, threads: [{ tid: 123, start: '50', ticks: '150', name: 'main' }] },
   ];
   const records = [header, ...samples];
   const payload = records.map(record => JSON.stringify(record));
@@ -62,8 +62,12 @@ else if (args[3] === '-T') {
       const batch = result.structuredContent;
       assert.ok(batch);
       assert.notEqual(batch.phase, 'failed', batch.error);
+      assert.equal(batch.memoryMetric, 'rss');
       const measured = batch.samples.find(sample => sample.cpuPercent !== null);
-      if (measured) return measured.cpuPercent;
+      if (measured) {
+        assert.equal(measured.memoryBytes, 104857600);
+        return measured.cpuPercent;
+      }
       after = batch.cursor;
       await delay(50);
     }

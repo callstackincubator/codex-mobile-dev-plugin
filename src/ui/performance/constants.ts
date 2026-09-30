@@ -8,3 +8,4 @@ export const COLORS = {
   selectionOverlay: "#3b82f6", cursorIndicator: "#3b82f6", timeLabel: "var(--muted-foreground)",
 };
 export const THREAD_COLORS = { areaChartStroke: "#6b7280", areaChartFillStart: "#6b7280", areaChartFillEnd: "#6b7280" };
+export const MEMORY_COLORS = { stroke: "#f97316", fillStart: "#f97316", fillEnd: "#f97316" };

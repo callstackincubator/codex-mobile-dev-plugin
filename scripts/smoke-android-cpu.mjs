@@ -46,6 +46,7 @@ try {
   assert.equal(code, 0, diagnostics);
   assert.equal(samples.length, count, diagnostics);
   assert.ok(samples.at(-1).reading.cpuPercent !== null);
+  for (const sample of samples) assert.ok(sample.reading.memoryBytes > 0);
   const first = samples[0].profile;
   const last = samples.at(-1).profile;
   const collectorCpuUs = BigInt(last.collectorCpuUs) - BigInt(first.collectorCpuUs);
@@ -57,7 +58,8 @@ try {
   assert.ok(new RegExp(`^\\s*${pid}\\s`, "m").test(check.stdout), "The monitored app must remain running.");
   console.log(JSON.stringify({ deviceId, pid, samples: samples.length, threads: last.threads.length,
     elapsedSeconds: Number(elapsedUs) / 1000000, collectorCpuPercentOfOneCore: overhead,
-    meanCollectorCpuUsPerSample: Number(collectorCpuUs) / (samples.length - 1), lastCpuPercent: samples.at(-1).reading.cpuPercent }, null, 2));
+    meanCollectorCpuUsPerSample: Number(collectorCpuUs) / (samples.length - 1), lastCpuPercent: samples.at(-1).reading.cpuPercent,
+    lastMemoryBytes: samples.at(-1).reading.memoryBytes, memoryMetric: "rss" }, null, 2));
   // Exercise the production monitor, then disconnect its transport unexpectedly.
   let transport;
   const readings = [];
@@ -68,6 +70,7 @@ try {
   await new Promise(resolve => setTimeout(resolve, 2200));
   assert.ok(readings.length >= 2);
   assert.ok(readings.at(-1).cpuPercent !== null);
+  for (const reading of readings) assert.ok(reading.memoryBytes > 0);
   transport.kill("SIGKILL");
   const error = await monitor.closed;
   assert.ok(error instanceof Error);

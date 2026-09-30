@@ -1,5 +1,5 @@
 import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES } from "../../shared/cpu.ts";
-import type { CpuBatch, CpuPhase, CpuSample } from "../../shared/cpu.ts";
+import type { CpuBatch, CpuPhase, CpuSample, MemoryMetric } from "../../shared/cpu.ts";
 
 export class CpuBuffer {
   private samples: Array<{ revision: number; sample: CpuSample }> = [];
@@ -8,6 +8,9 @@ export class CpuBuffer {
   private error?: string;
   private closed = false;
   private waiters = new Set<() => void>();
+  private readonly memoryMetric: MemoryMetric;
+
+  constructor(memoryMetric: MemoryMetric) { this.memoryMetric = memoryMetric; }
 
   push(sample: CpuSample) {
     if (this.closed) return;
@@ -40,6 +43,6 @@ export class CpuBuffer {
       });
     }
     const samples = this.samples.filter(entry => entry.revision > after);
-    return { cursor: this.revision, phase: this.phase, samples: samples.map(entry => entry.sample), error: this.error };
+    return { cursor: this.revision, phase: this.phase, samples: samples.map(entry => entry.sample), memoryMetric: this.memoryMetric, error: this.error };
   }
 }

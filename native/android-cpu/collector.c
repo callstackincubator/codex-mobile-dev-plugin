@@ -1,6 +1,7 @@
-/* CPU-only adaptation of BAM's MIT-licensed Flashlight /proc collector.
+/* CPU and memory adaptation of BAM's MIT-licensed Flashlight /proc collector.
  * See LICENSE and README.md in this directory for provenance. */
 #define _POSIX_C_SOURCE 200809L
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <inttypes.h>
@@ -59,16 +60,47 @@ static int parse_stat(char *text, Counter *counter) {
     return 0;
 }
 
-static int read_counter(const char *path, Counter *counter) {
+static int read_text(const char *path, char *data, size_t capacity) {
     FILE *file = fopen(path, "r");
     if (file == NULL) return -1;
-    char data[4096];
-    size_t length = fread(data, 1, sizeof(data) - 1, file);
-    int failed = ferror(file) || length == sizeof(data) - 1;
+    size_t length = fread(data, 1, capacity - 1, file);
+    int failed = ferror(file) || length == capacity - 1;
     fclose(file);
     if (failed) { errno = EIO; return -1; }
     data[length] = '\0';
+    return 0;
+}
+
+static int read_counter(const char *path, Counter *counter) {
+    char data[4096];
+    if (read_text(path, data, sizeof(data)) != 0) return -1;
     if (parse_stat(data, counter) != 0) { errno = EINVAL; return -1; }
+    return 0;
+}
+
+static int parse_memory(const char *text, uint64_t page_size, uint64_t *bytes) {
+    const char *cursor = text;
+    uint64_t resident = 0;
+    for (int field = 0; field < 2; field++) {
+        while (isspace((unsigned char)*cursor)) cursor++;
+        if (*cursor < '0' || *cursor > '9') return -1;
+        errno = 0;
+        char *end;
+        unsigned long long value = strtoull(cursor, &end, 10);
+        if (errno != 0) return -1;
+        if (*end != '\0' && isspace((unsigned char)*end) == 0) return -1;
+        if (field == 1) resident = value;
+        cursor = end;
+    }
+    if (page_size == 0 || resident > UINT64_MAX / page_size) return -1;
+    *bytes = resident * page_size;
+    return 0;
+}
+
+static int read_memory(const char *path, uint64_t page_size, uint64_t *bytes) {
+    char data[256];
+    if (read_text(path, data, sizeof(data)) != 0) return -1;
+    if (parse_memory(data, page_size, bytes) != 0) { errno = EINVAL; return -1; }
     return 0;
 }
 
@@ -100,20 +132,25 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_DFL);
     char output_buffer[65536];
     setvbuf(stdout, output_buffer, _IOFBF, sizeof(output_buffer));
-    char process_path[128], task_path[128];
+    char process_path[128], task_path[128], memory_path[128];
     snprintf(process_path, sizeof(process_path), "/proc/%ld/stat", pid);
     snprintf(task_path, sizeof(task_path), "/proc/%ld/task", pid);
+    snprintf(memory_path, sizeof(memory_path), "/proc/%ld/statm", pid);
     Counter process = {0};
     if (read_counter(process_path, &process) != 0) return failure("read process");
     uint64_t birth = process.start;
     long ticks = sysconf(_SC_CLK_TCK);
     if (ticks <= 0) { fprintf(stderr, "Invalid kernel clock rate\n"); return 1; }
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (page_size <= 0) { fprintf(stderr, "Invalid kernel page size\n"); return 1; }
     printf("{\"type\":\"ready\",\"pid\":%ld,\"collectorPid\":%d,\"clockTicks\":%ld,\"processStart\":\"%" PRIu64 "\"}\n", pid, getpid(), ticks, birth);
     fflush(stdout);
     while (stopped == 0) {
         uint64_t started = micros(CLOCK_MONOTONIC);
         if (read_counter(process_path, &process) != 0) return failure("read process");
         if (process.start != birth) { fprintf(stderr, "The target process restarted.\n"); return 1; }
+        uint64_t memory_bytes;
+        if (read_memory(memory_path, (uint64_t)page_size, &memory_bytes) != 0) return failure("read memory");
         DIR *directory = opendir(task_path);
         if (directory == NULL) return failure("read threads");
         size_t count = 0;
@@ -145,7 +182,7 @@ int main(int argc, char **argv) {
         }
         uint64_t timestamp = started;
         uint64_t collector_cpu = micros(CLOCK_PROCESS_CPUTIME_ID);
-        printf("{\"type\":\"sample\",\"timestampUs\":\"%" PRIu64 "\",\"processStart\":\"%" PRIu64 "\",\"processTicks\":\"%" PRIu64 "\",\"collectorCpuUs\":\"%" PRIu64 "\",\"threads\":[", timestamp, birth, process.ticks, collector_cpu);
+        printf("{\"type\":\"sample\",\"timestampUs\":\"%" PRIu64 "\",\"processStart\":\"%" PRIu64 "\",\"processTicks\":\"%" PRIu64 "\",\"collectorCpuUs\":\"%" PRIu64 "\",\"memoryBytes\":%" PRIu64 ",\"threads\":[", timestamp, birth, process.ticks, collector_cpu, memory_bytes);
         for (size_t index = 0; index < count; index++) {
             Counter *thread = &threads[index];
             if (index != 0) putchar(',');

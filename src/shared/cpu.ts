@@ -5,13 +5,16 @@ export type CpuSample = {
   time: number;
   interval: number;
   cpuPercent: number | null;
+  memoryBytes: number | null;
   threads: Array<{ id: string; name: string; cpuPercent: number | null }>;
 };
 export type CpuPhase = "idle" | "connecting" | "recording" | "stopping" | "stopped" | "failed";
+export type MemoryMetric = "rss" | "physical-footprint";
 export type CpuBatch = {
   cursor: number;
   phase: CpuPhase;
   samples: CpuSample[];
+  memoryMetric: MemoryMetric;
   error?: string;
 };
 

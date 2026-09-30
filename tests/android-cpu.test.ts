@@ -16,7 +16,7 @@ import type { CpuTarget } from "../src/shared/cpu.ts";
 
 const sample = (timestampUs = "1000000", processTicks = "100", threads = [
   { tid: 123, start: "50", ticks: "60", name: "main" }, { tid: 124, start: "51", ticks: "40", name: "worker" },
-]) => ({ type: "sample" as const, timestampUs, processTicks, processStart: "42", collectorCpuUs: "100", threads });
+]) => ({ type: "sample" as const, timestampUs, processTicks, processStart: "42", collectorCpuUs: "100", memoryBytes: 104857600, threads });
 
 test("Android CPU uses kernel clock rate, supports multiple cores, and keeps exited-thread CPU in process totals", () => {
   const sampler = new AndroidCpuSampler(100, "42");
@@ -39,6 +39,20 @@ test("Android CPU distinguishes reused thread IDs, clock gaps and counter resets
   assert.equal(sampler.sample(sample("21000000", "10")).cpuPercent, null);
   assert.throws(() => sampler.sample({ ...sample(), processStart: "43" }), /restarted/);
   assert.throws(() => androidSampleSchema.parse({ ...sample(), processTicks: "-1" }));
+});
+
+test("Android memory is available immediately and rejects missing or invalid byte values", () => {
+  const sampler = new AndroidCpuSampler(100, "42");
+  const baseline = sampler.sample(sample());
+  assert.equal(baseline.cpuPercent, null);
+  assert.equal(baseline.memoryBytes, 104857600);
+  const next = { ...sample("2000000", "150"), memoryBytes: 52428800 };
+  const reading = sampler.sample(next);
+  assert.equal(reading.memoryBytes, 52428800);
+  for (const memoryBytes of [undefined, -1, 1.5, 9007199254740992, "104857600"]) {
+    const malformed = { ...sample(), memoryBytes };
+    assert.throws(() => androidSampleSchema.parse(malformed));
+  }
 });
 
 test("Android app discovery selects installed user app main processes", () => {
@@ -244,4 +258,39 @@ test("native /proc parser handles spaces, closing parentheses and newlines in th
   execFileSync("cc", ["-std=c11", file, "-o", binary]);
   const output = execFileSync(binary, [], { encoding: "utf8" });
   assert.equal(JSON.parse(output), name);
+});
+
+test("native memory parser uses the device page size and rejects malformed or overflowing RSS", async t => {
+  const temporaryBase = tmpdir();
+  const prefix = join(temporaryBase, "mobile-memory-parser-");
+  const temporary = await mkdtemp(prefix);
+  t.after(() => rm(temporary, { recursive: true, force: true }));
+  const sourcePath = resolve("native/android-cpu/collector.c");
+  const include = JSON.stringify(sourcePath);
+  const harness = `#define COLLECTOR_TEST
+#include ${include}
+#include <assert.h>
+int main(void) {
+    uint64_t bytes = 0;
+    int result = parse_memory("1000 25 5 0 0 0 0\\n", 4096, &bytes);
+    assert(result == 0 && bytes == 102400);
+    result = parse_memory("1000\\t25 5 0 0 0 0\\n", 16384, &bytes);
+    assert(result == 0 && bytes == 409600);
+    result = parse_memory("1000 0\\n", 4096, &bytes);
+    assert(result == 0 && bytes == 0);
+    const char *invalid[] = {"1000", "1000 -1", "1000 1.5", "1000 garbage", "1000 18446744073709551615", "18446744073709551616 1"};
+    for (size_t index = 0; index < sizeof(invalid) / sizeof(invalid[0]); index++) {
+        result = parse_memory(invalid[index], 4096, &bytes);
+        assert(result == -1);
+    }
+    result = parse_memory("1000 25", 0, &bytes);
+    assert(result == -1);
+    return 0;
+}
+`;
+  const file = join(temporary, "test.c");
+  const binary = join(temporary, "test");
+  await writeFile(file, harness);
+  execFileSync("cc", ["-std=c11", file, "-o", binary]);
+  execFileSync(binary);
 });

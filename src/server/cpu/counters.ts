@@ -2,12 +2,14 @@ export type ThreadCounter = { id: string; name: string; cpuTimeUs: bigint };
 export type CpuCounters = {
   timestampUs: bigint;
   retiredCpuTimeUs: bigint;
+  memoryBytes: number;
   threads: ThreadCounter[];
 };
 export type CpuReading = {
   timestampUs: bigint;
   intervalUs: number;
   cpuPercent: number | null;
+  memoryBytes: number;
   threads: Array<{ id: string; name: string; cpuPercent: number | null }>;
 };
 
@@ -19,6 +21,7 @@ function counter(value: string): bigint {
 export function parseCpuCounters(profile: string): CpuCounters {
   let timestampUs: bigint | undefined;
   let retiredCpuTimeUs: bigint | undefined;
+  let memoryBytes: number | undefined;
   const threads: ThreadCounter[] = [];
   const ids = new Set<string>();
   let thread: Partial<ThreadCounter> | null = null;
@@ -38,6 +41,12 @@ export function parseCpuCounters(profile: string): CpuCounters {
     switch (key) {
       case "elapsed_usec": timestampUs = counter(value); break;
       case "task_used_usec": retiredCpuTimeUs = counter(value); break;
+      case "phys_footprint": {
+        if (!/^\d+$/.test(value)) throw new Error("Invalid memory footprint from debugserver.");
+        memoryBytes = Number(value);
+        if (Number.isSafeInteger(memoryBytes) === false) throw new Error("Memory footprint exceeds the supported byte range.");
+        break;
+      }
       case "thread_used_id": {
         finishThread();
         if (!/^[\da-f]+$/i.test(value)) throw new Error("Invalid CPU thread ID.");
@@ -62,7 +71,8 @@ export function parseCpuCounters(profile: string): CpuCounters {
   if (timestampUs === undefined || retiredCpuTimeUs === undefined || threads.length === 0) {
     throw new Error("Debugserver did not return process and per-thread CPU counters.");
   }
-  return { timestampUs, retiredCpuTimeUs, threads };
+  if (memoryBytes === undefined) throw new Error("Debugserver did not return the app's physical memory footprint.");
+  return { timestampUs, retiredCpuTimeUs, memoryBytes, threads };
 }
 
 function processTime(profile: CpuCounters): bigint {
@@ -105,6 +115,6 @@ export class CpuCounterSampler {
       const usage = earlier ? percentage(thread.cpuTimeUs, earlier.cpuTimeUs, intervalUs) : null;
       return { id: thread.id, name: thread.name, cpuPercent: usage };
     });
-    return { timestampUs: profile.timestampUs, intervalUs, cpuPercent, threads };
+    return { timestampUs: profile.timestampUs, intervalUs, cpuPercent, memoryBytes: profile.memoryBytes, threads };
   }
 }

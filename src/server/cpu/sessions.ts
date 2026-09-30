@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { z } from "zod";
-import type { CpuBatch, CpuTarget } from "../../shared/cpu.ts";
+import type { CpuBatch, CpuTarget, MemoryMetric } from "../../shared/cpu.ts";
 import { cpuTargetSchema } from "../../shared/cpu.ts";
 import { errorMessage } from "../../shared/protocol.ts";
 import { runningCpuApps } from "./apps.ts";
@@ -54,7 +54,8 @@ export class CpuSessions {
     if (this.sessions.size >= 8) throw new Error("Too many CPU sessions. Close a performance panel and retry.");
     const key = this.key(target);
     if (this.targets.has(key)) throw new Error("This app already has an active CPU monitor. Stop it in the other performance panel first.");
-    const session: Session = { target, buffer: new CpuBuffer(), abort: new AbortController(), expires: Date.now() + 300000 };
+    const memoryMetric: MemoryMetric = target.platform === "android" ? "rss" : "physical-footprint";
+    const session: Session = { target, buffer: new CpuBuffer(memoryMetric), abort: new AbortController(), expires: Date.now() + 300000 };
     const bytes = randomBytes(32);
     const id = bytes.toString("hex");
     this.sessions.set(id, session);
@@ -75,7 +76,7 @@ export class CpuSessions {
         if (signal.aborted || session.stopping) return;
         const now = performance.now();
         session.buffer.push({ time: (now - startedAt) / 1000, interval: reading.intervalUs / 1000000,
-          cpuPercent: reading.cpuPercent, threads: reading.threads });
+          cpuPercent: reading.cpuPercent, memoryBytes: reading.memoryBytes, threads: reading.threads });
       } });
       if (signal.aborted || session.stopping) return;
       session.buffer.status("recording");

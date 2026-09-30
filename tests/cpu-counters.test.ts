@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { CpuCounterSampler, parseCpuCounters } from "../src/server/cpu/counters.ts";
 
 const profile = (time: number, retired: number, threads: string) =>
-  `elapsed_usec:${time};task_used_usec:${retired};${threads}`;
+  `elapsed_usec:${time};task_used_usec:${retired};phys_footprint:104857600;${threads}`;
 
 describe("debugserver CPU counters", () => {
   test("keeps 64-bit thread IDs and decodes names", () => {
@@ -21,6 +21,7 @@ describe("debugserver CPU counters", () => {
     const baseline = sampler.sample(firstCounters);
     const reading = sampler.sample(secondCounters);
     assert.equal(baseline.cpuPercent, null);
+    assert.equal(baseline.memoryBytes, 104857600);
     assert.equal(reading.cpuPercent, 150);
     assert.deepEqual(reading.threads.map((thread) => thread.cpuPercent), [100, 50]);
   });
@@ -54,4 +55,27 @@ describe("debugserver CPU counters", () => {
       assert.equal(reading.threads[0].cpuPercent, null);
     }
   });
+});
+
+test("memory footprint is an absolute byte reading, including the CPU baseline and decreases", () => {
+  const sampler = new CpuCounterSampler();
+  const first = profile(1000000, 0, "thread_used_id:1;thread_used_usec:0;");
+  const retimed = first.replace("elapsed_usec:1000000", "elapsed_usec:2000000");
+  const second = retimed.replace("phys_footprint:104857600", "phys_footprint:52428800");
+  const baselineCounters = parseCpuCounters(first);
+  const nextCounters = parseCpuCounters(second);
+  const baseline = sampler.sample(baselineCounters);
+  const next = sampler.sample(nextCounters);
+  assert.equal(baseline.memoryBytes, 104857600);
+  assert.equal(next.memoryBytes, 52428800);
+});
+
+test("missing, malformed and unsafe memory footprints are rejected", () => {
+  const valid = profile(1000000, 0, "thread_used_id:1;thread_used_usec:0;");
+  const missing = valid.replace("phys_footprint:104857600;", "");
+  assert.throws(() => parseCpuCounters(missing), /physical memory footprint/);
+  for (const value of ["-1", "1.5", "unknown", "9007199254740992"]) {
+    const malformed = valid.replace("phys_footprint:104857600", `phys_footprint:${value}`);
+    assert.throws(() => parseCpuCounters(malformed), /memory|Memory/);
+  }
 });

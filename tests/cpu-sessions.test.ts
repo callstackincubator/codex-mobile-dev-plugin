@@ -17,8 +17,8 @@ test("running app discovery excludes system services, exited apps, and malformed
 });
 
 test("CPU batches retain 150 seconds, report only new samples, and release waiting reads on close", async () => {
-  const buffer = new CpuBuffer();
-  for (let time = 0; time <= 200; time++) buffer.push({ time, interval: 1, cpuPercent: time, threads: [] });
+  const buffer = new CpuBuffer("physical-footprint");
+  for (let time = 0; time <= 200; time++) buffer.push({ time, interval: 1, cpuPercent: time, memoryBytes: 104857600, threads: [] });
   const batch = await buffer.read(0, 0);
   assert.equal(batch.samples.length, 151);
   assert.equal(batch.samples[0].time, 50);
@@ -39,11 +39,13 @@ test("CPU sessions stream real readings, reserve their target, and detach once",
   t.after(() => cpu.close());
   const id = cpu.open(target);
   await setImmediate();
-  emit({ timestampUs: 1000000n, intervalUs: 1000000, cpuPercent: 125, threads: [{ id: "1", name: "main", cpuPercent: 100 }] });
+  emit({ timestampUs: 1000000n, intervalUs: 1000000, cpuPercent: 125, memoryBytes: 104857600, threads: [{ id: "1", name: "main", cpuPercent: 100 }] });
   const batch = await cpu.read(id, 0, 0);
   assert.equal(batch.phase, "recording");
   assert.equal(batch.samples[0].cpuPercent, 125);
   assert.equal(batch.samples[0].threads[0].name, "main");
+  assert.equal(batch.samples[0].memoryBytes, 104857600);
+  assert.equal(batch.memoryMetric, "physical-footprint");
   assert.throws(() => cpu.open(target), /already has an active CPU monitor/);
   await Promise.all([cpu.closeSession(id), cpu.closeSession(id)]);
   assert.equal(stops, 1);

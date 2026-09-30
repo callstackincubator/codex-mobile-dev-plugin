@@ -30,7 +30,7 @@ async function server(options: { attach?: string; interruptStops?: string[]; bef
     const elapsed = 1000000 + sampleNumber * 250000;
     const used = 100000 + sampleNumber * 125000;
     sampleNumber++;
-    send(`Aelapsed_usec:${elapsed};task_used_usec:0;thread_used_id:1;thread_used_usec:${used};--end--;`);
+    send(`Aelapsed_usec:${elapsed};task_used_usec:0;thread_used_id:1;thread_used_usec:${used};phys_footprint:104857600;--end--;`);
   };
   const listener = createServer((socket) => {
     sockets.add(socket);
@@ -90,10 +90,11 @@ test("attaches once, streams counters while running, interrupts only for detach"
     }, endpoint.openTransport);
     await monitor.stop();
     assert.equal(samples.at(-1)?.cpuPercent, 50);
+    assert.equal(samples.at(-1)?.memoryBytes, 104857600);
     assert.deepEqual(endpoint.commands, [
       "QStartNoAckMode", "QSetDetachOnError:1", "vAttach;7b",
-      "QSetEnableAsyncProfiling;enable:1;interval_usec:1000000;scan_type:0xe;", "c", "interrupt",
-      "QSetEnableAsyncProfiling;enable:0;interval_usec:1000000;scan_type:0xe;", "D",
+      "QSetEnableAsyncProfiling;enable:1;interval_usec:1000000;scan_type:0x4e;", "c", "interrupt",
+      "QSetEnableAsyncProfiling;enable:0;interval_usec:1000000;scan_type:0x4e;", "D",
     ]);
     await monitor.stop();
     assert.equal(endpoint.commands.filter((command) => command === "D").length, 1);
@@ -180,7 +181,7 @@ test("delivers sampling signals that race detach before interrupting again", asy
     const cleanup = endpoint.commands.slice(-8);
     assert.deepEqual(cleanup, [
       "c", "interrupt", "vCont;C1b:1234;c", "interrupt", "vCont;C1b:5678;c", "interrupt",
-      "QSetEnableAsyncProfiling;enable:0;interval_usec:1000000;scan_type:0xe;", "D",
+      "QSetEnableAsyncProfiling;enable:0;interval_usec:1000000;scan_type:0x4e;", "D",
     ]);
   } finally { await endpoint.close(); }
 });
@@ -194,9 +195,9 @@ test("an asynchronous sampling signal cannot consume a configuration reply durin
     await monitor.stop();
     const cleanup = endpoint.commands.slice(-6);
     assert.deepEqual(cleanup, [
-      "interrupt", "QSetEnableAsyncProfiling;enable:0;interval_usec:1000000;scan_type:0xe;",
+      "interrupt", "QSetEnableAsyncProfiling;enable:0;interval_usec:1000000;scan_type:0x4e;",
       "vCont;C1b:abc;c", "interrupt",
-      "QSetEnableAsyncProfiling;enable:0;interval_usec:1000000;scan_type:0xe;", "D",
+      "QSetEnableAsyncProfiling;enable:0;interval_usec:1000000;scan_type:0x4e;", "D",
     ]);
   } finally { await endpoint.close(); }
 });

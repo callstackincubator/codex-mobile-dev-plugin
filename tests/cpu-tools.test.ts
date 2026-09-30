@@ -21,7 +21,7 @@ test("iOS text agents discover, start, read and stop CPU monitoring using only t
   const apps = async () => [{ bundleId: "com.example.app", pid: 123 }];
   let detached = false;
   const cpu = new CpuSessions({ apps, monitor: async options => {
-    options.onSample({ timestampUs: 1000000n, intervalUs: 1000000, cpuPercent: 37, threads: [] });
+    options.onSample({ timestampUs: 1000000n, intervalUs: 1000000, cpuPercent: 37, memoryBytes: 104857600, threads: [] });
     return { closed: new Promise(() => {}), async stop() { detached = true; } };
   } });
   const baguette = new Baguette(fake.url);
@@ -64,6 +64,8 @@ test("iOS text agents discover, start, read and stop CPU monitoring using only t
   assert.deepEqual(JSON.parse(content.text), batch);
   assert.equal(batch.phase, "recording");
   assert.equal(batch.samples[0].cpuPercent, 37);
+  assert.equal(batch.samples[0].memoryBytes, 104857600);
+  assert.equal(batch.memoryMetric, "physical-footprint");
   const unchanged = await client.callTool({ name: "mobile_read_cpu", arguments: { sessionId: id, after: batch.cursor } });
   assert.deepEqual(textData(unchanged).samples, []);
   const unauthorized = await client.callTool({ name: "mobile_read_cpu", arguments: { sessionId: "0".repeat(64) } });
@@ -89,7 +91,7 @@ test("Android text agents discover, start, read and stop CPU monitoring without 
   const cpu = new CpuSessions({ apps, monitor: async options => {
     assert.equal(options.target.platform, "android");
     assert.equal(options.target.deviceId, "emulator-5554");
-    options.onSample({ timestampUs: 1000000n, intervalUs: 1000000, cpuPercent: 80, threads: [{ id: "456-42", name: "main", cpuPercent: 75 }] });
+    options.onSample({ timestampUs: 1000000n, intervalUs: 1000000, cpuPercent: 80, memoryBytes: 104857600, threads: [{ id: "456-42", name: "main", cpuPercent: 75 }] });
     return { closed: new Promise(() => {}), async stop() {} };
   } });
   const baguette = new Baguette(fake.url);
@@ -114,6 +116,8 @@ test("Android text agents discover, start, read and stop CPU monitoring without 
   const batch = textData(reading);
   assert.equal(batch.phase, "recording");
   assert.equal(batch.samples[0].cpuPercent, 80);
+  assert.equal(batch.samples[0].memoryBytes, 104857600);
+  assert.equal(batch.memoryMetric, "rss");
   assert.deepEqual(batch.samples[0].threads, [{ id: "456-42", name: "main", cpuPercent: 75 }]);
   const next = await client.callTool({ name: "mobile_read_cpu", arguments: { sessionId: handle.sessionId, after: batch.cursor } });
   assert.deepEqual(textData(next).samples, []);

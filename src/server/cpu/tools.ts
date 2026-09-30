@@ -34,7 +34,7 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: 
     }
   }
   server.registerResource("cpu-batch", new ResourceTemplate("cpu://mobile-dev/{sessionId}/batch?after={sequence}", { list: undefined }), {
-    mimeType: "application/json", description: "Read live process and thread CPU samples from an authorized Mobile Dev performance session.",
+    mimeType: "application/json", description: "Read live process and thread CPU plus main-process memory samples from an authorized Mobile Dev performance session.",
   }, async (uri, variables) => {
     const id = sessionId.parse(variables.sessionId);
     const after = sequence.parse(variables.sequence);
@@ -44,7 +44,7 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: 
   });
 
   registerAppTool(server, "mobile_performance_sources", {
-    title: "Find running apps for CPU monitoring", description: "List running user apps on a booted iOS simulator or connected Android device. Does not launch apps or attach a debugger.",
+    title: "Find running apps for CPU and memory monitoring", description: "List running user apps on a booted iOS simulator or connected Android device. Does not launch apps or attach a debugger.",
     inputSchema: cpuDeviceSchema, annotations: read, _meta: metadata,
   }, safe(async (device: z.infer<typeof cpuDeviceSchema>) => {
     await validateDevice(device);
@@ -55,7 +55,7 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: 
   }));
 
   registerAppTool(server, "mobile_cpu_session", {
-    title: "Monitor native app CPU", description: "Monitor process and per-thread CPU once per second without an app SDK. Returns sessionId and cpuUri in the tool result. Poll mobile_read_cpu with sessionId and the previous cursor as after; close with mobile_cpu_close when finished. Android uses a small external native /proc collector over ADB, without root or debugger attachment; the device must permit ADB shell to read app counters. iOS uses Xcode debugserver and requires a development-signed build with get-task-allow and no existing Xcode/LLDB attachment. 100% is one occupied device CPU core. Idle sessions expire after five minutes.",
+    title: "Monitor native app CPU and memory", description: "Monitor process and per-thread CPU plus main-process memory once per second without an app SDK. Returns sessionId and cpuUri in the tool result. Poll mobile_read_cpu with sessionId and the previous cursor as after; close with mobile_cpu_close when finished. Android uses a small external native /proc collector over ADB, without root or debugger attachment; the device must permit ADB shell to read app counters. iOS uses Xcode debugserver and requires a development-signed build with get-task-allow and no existing Xcode/LLDB attachment. 100% is one occupied device CPU core. Memory is RSS on Android and physical footprint on iOS, reported in bytes. Idle sessions expire after five minutes.",
     inputSchema: { target: cpuTargetSchema }, annotations: write, _meta: metadata,
   }, safe(async ({ target }: { target: CpuTarget }) => {
     await validateDevice(target);
@@ -66,7 +66,7 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: 
   }));
 
   registerAppTool(server, "mobile_read_cpu", {
-    title: "Read native CPU usage", description: "Read buffered CPU samples and connection status using sessionId returned by mobile_cpu_session. Pass the previous result's cursor as after to read only new samples. Each sample includes process CPU and per-thread CPU; 100% is one core. Startup can return connecting or an initial null baseline before a full sampling interval has elapsed.",
+    title: "Read native CPU and memory usage", description: "Read buffered CPU and memory samples and connection status using sessionId returned by mobile_cpu_session. Pass the previous result's cursor as after to read only new samples. Each sample includes process CPU, per-thread CPU and memoryBytes for the main process. The batch memoryMetric is rss on Android or physical-footprint on iOS; 100% CPU is one core. Startup can return connecting or an initial null CPU baseline before a full sampling interval has elapsed. Memory is an absolute byte reading available from the first sample.",
     inputSchema: { sessionId, after: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0) }, annotations: read, _meta: metadata,
   }, safe(async ({ sessionId: id, after }: { sessionId: string; after: number }) => {
     const batch = await cpu.read(id, after, 0);
@@ -75,10 +75,10 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: 
   }));
 
   registerAppTool(server, "mobile_cpu_close", {
-    title: "Stop native CPU monitor", description: "Stop the external CPU collector or detach the iOS CPU debugger, leaving the app running.",
+    title: "Stop native CPU and memory monitor", description: "Stop the external CPU collector or detach the iOS CPU debugger, leaving the app running.",
     inputSchema: { sessionId }, annotations: write, _meta: metadata,
   }, safe(async ({ sessionId: id }: { sessionId: string }) => {
     await cpu.closeSession(id);
-    return { content: [{ type: "text", text: "CPU monitor stopped." }], structuredContent: {} };
+    return { content: [{ type: "text", text: "CPU and memory monitor stopped." }], structuredContent: {} };
   }));
 }

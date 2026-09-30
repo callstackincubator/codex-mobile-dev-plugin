@@ -9,7 +9,7 @@ const PROFILE_INTERVAL_US = 1_000_000;
 
 function profilingCommand(enabled: boolean): string {
   const value = enabled ? 1 : 0;
-  return `QSetEnableAsyncProfiling;enable:${value};interval_usec:${PROFILE_INTERVAL_US};scan_type:0xe;`;
+  return `QSetEnableAsyncProfiling;enable:${value};interval_usec:${PROFILE_INTERVAL_US};scan_type:0x4e;`;
 }
 
 function profilingSignalResume(packet: string): string | null {

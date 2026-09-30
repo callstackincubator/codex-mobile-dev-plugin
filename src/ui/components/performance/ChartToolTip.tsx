@@ -14,7 +14,7 @@ export const ChartToolTip: React.FC<ChartToolTipProps> = ({
 }) => {
   const isVisible = active && payload && payload.length > 0;
   const value = payload?.[0]?.value;
-  const displayValue = typeof value === "number" && postfix === "%" ? value.toFixed(1) : value;
+  const displayValue = typeof value === "number" ? value.toFixed(1) : value;
 
   return (
     <div

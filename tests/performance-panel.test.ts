@@ -56,7 +56,7 @@ test("CPU collection defaults to the sole app, persists across tabs, and resets 
   await tick();
   assert.equal(panel.getSnapshot().bundleId, "com.example.app");
   assert.equal(fake.events.length, 1);
-  fake.emit({ cursor: 1, phase: "recording", samples: [{ time: 1, interval: 1, cpuPercent: 60, threads: [] }] });
+  fake.emit({ cursor: 1, phase: "recording", memoryMetric: "physical-footprint", samples: [{ time: 1, interval: 1, cpuPercent: 60, memoryBytes: 104857600, threads: [] }] });
   await tick();
   assert.equal(panel.getSnapshot().samples[0].cpuPercent, 60);
   panel.hide();
@@ -82,7 +82,7 @@ test("thread identity and recorded activity survive history expiry; sort choice 
   panel.show();
   await tick();
   const send = async (time: number, threads: CpuSample["threads"]) => {
-    fake.emit({ cursor: time, phase: "recording", samples: [{ time, interval: 1, cpuPercent: 10, threads }] });
+    fake.emit({ cursor: time, phase: "recording", memoryMetric: "physical-footprint", samples: [{ time, interval: 1, cpuPercent: 10, memoryBytes: 104857600, threads }] });
     await tick();
   };
   await send(1, [
@@ -164,7 +164,7 @@ test("switching between iOS and Android closes the previous monitor and selects 
   panel.setAvailable(true);
   panel.show();
   await tick();
-  fake.emit({ cursor: 1, phase: "recording", samples: [{ time: 1, interval: 1, cpuPercent: 60, threads: [] }] });
+  fake.emit({ cursor: 1, phase: "recording", memoryMetric: "physical-footprint", samples: [{ time: 1, interval: 1, cpuPercent: 60, memoryBytes: 104857600, threads: [] }] });
   await tick();
   panel.setThreadOrder("first-seen");
   panel.selectSimulator({ ...device, udid: "emulator-5554", name: "Pixel", platform: "android" });
