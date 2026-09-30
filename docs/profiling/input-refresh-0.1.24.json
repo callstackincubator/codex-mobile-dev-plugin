@@ -1,0 +1,256 @@
+{
+  "version": "0.1.24",
+  "date": "2026-09-30",
+  "device": "iPhone 18 Pro / iOS 27",
+  "udid": "6EE3FA59-ADA3-44AC-AE51-4789DF967D5F",
+  "scenario": "Maps: four seconds idle, eight seconds continuous pointer drag, four seconds settle",
+  "scope": "Native simulator and independent stdio MCP client; excludes Codex host/browser dispatch, rendered paint rate and app response latency",
+  "baseline": {
+    "dragInputCount": 389,
+    "dragInputMaxMs": 186.14,
+    "inputRequestsOver100Ms": 8,
+    "note": "Previous instrumented probe: all eight slow requests awaited Device Hub status checks.",
+    "phase": "Before background status refresh"
+  },
+  "runs": {
+    "production": {
+      "summaries": [
+        {
+          "phase": "idle",
+          "seconds": 4.000247042,
+          "frames": 76,
+          "fps": 18.998826622968352,
+          "skipped": 0,
+          "megabytesPerSecond": 2.145616485653038,
+          "read": {
+            "count": 76,
+            "averageMs": 52.22960584210523,
+            "p95Ms": 53.63008300000001,
+            "maxMs": 239.9208329999999
+          },
+          "wait": {
+            "count": 76,
+            "averageMs": 51.12636847368418,
+            "p95Ms": 52.80541699999958,
+            "maxMs": 237.6377500000001
+          },
+          "transfer": {
+            "count": 76,
+            "averageMs": 1.1032373684210512,
+            "p95Ms": 1.885707999999795,
+            "maxMs": 2.4615410000001248
+          },
+          "input": {
+            "count": 0,
+            "averageMs": null
+          }
+        },
+        {
+          "phase": "drag",
+          "seconds": 8.006624333,
+          "frames": 528,
+          "fps": 65.94539446840312,
+          "skipped": 0,
+          "megabytesPerSecond": 7.542000784414722,
+          "read": {
+            "count": 528,
+            "averageMs": 15.209849486742451,
+            "p95Ms": 19.91791699999976,
+            "maxMs": 50.29266600000028
+          },
+          "wait": {
+            "count": 528,
+            "averageMs": 14.532394350378786,
+            "p95Ms": 18.906334000001152,
+            "maxMs": 49.5644999999995
+          },
+          "transfer": {
+            "count": 528,
+            "averageMs": 0.677455136363664,
+            "p95Ms": 0.8502080000016576,
+            "maxMs": 4.807624999999462
+          },
+          "input": {
+            "count": 475,
+            "averageMs": 0.43530481052630327,
+            "p95Ms": 0.7230410000001939,
+            "maxMs": 3.7469580000006317
+          }
+        },
+        {
+          "phase": "settle",
+          "seconds": 4.00086825,
+          "frames": 102,
+          "fps": 25.494466107450553,
+          "skipped": 0,
+          "megabytesPerSecond": 2.928882749388211,
+          "read": {
+            "count": 102,
+            "averageMs": 38.912738588235285,
+            "p95Ms": 52.257000000001426,
+            "maxMs": 56.58354200000031
+          },
+          "wait": {
+            "count": 102,
+            "averageMs": 38.11136729411768,
+            "p95Ms": 51.335707999998704,
+            "maxMs": 55.52070800000001
+          },
+          "transfer": {
+            "count": 102,
+            "averageMs": 0.8013712941176124,
+            "p95Ms": 1.1060829999987618,
+            "maxMs": 1.5470839999979944
+          },
+          "input": {
+            "count": 0,
+            "averageMs": null
+          }
+        }
+      ],
+      "inputRequestsOver100Ms": 0
+    },
+    "instrumented": {
+      "summaries": [
+        {
+          "phase": "idle",
+          "seconds": 4.0014935000000005,
+          "frames": 76,
+          "fps": 18.992908522780304,
+          "skipped": 0,
+          "megabytesPerSecond": 2.1863741625470587,
+          "read": {
+            "count": 76,
+            "averageMs": 52.0222998289474,
+            "p95Ms": 52.54120799999964,
+            "maxMs": 249.52766699999984
+          },
+          "wait": {
+            "count": 76,
+            "averageMs": 50.86018536842106,
+            "p95Ms": 51.545166999999765,
+            "maxMs": 247.3409999999999
+          },
+          "transfer": {
+            "count": 76,
+            "averageMs": 1.1621144605263471,
+            "p95Ms": 1.547458000000006,
+            "maxMs": 4.247250999999778
+          },
+          "input": {
+            "count": 0,
+            "averageMs": null
+          }
+        },
+        {
+          "phase": "drag",
+          "seconds": 8.007203583999999,
+          "frames": 543,
+          "fps": 67.81393707598781,
+          "skipped": 0,
+          "megabytesPerSecond": 7.8687767007573575,
+          "read": {
+            "count": 543,
+            "averageMs": 14.82664458195211,
+            "p95Ms": 19.760541999999987,
+            "maxMs": 52.389625000000706
+          },
+          "wait": {
+            "count": 543,
+            "averageMs": 14.195683626150979,
+            "p95Ms": 19.023290999999517,
+            "maxMs": 51.05070799999976
+          },
+          "transfer": {
+            "count": 543,
+            "averageMs": 0.6309609558011305,
+            "p95Ms": 0.8196669999997539,
+            "maxMs": 3.996541000000434
+          },
+          "input": {
+            "count": 476,
+            "averageMs": 0.39061869747895017,
+            "p95Ms": 0.6531670000003942,
+            "maxMs": 3.223750000000109
+          }
+        },
+        {
+          "phase": "settle",
+          "seconds": 4.000673333999999,
+          "frames": 101,
+          "fps": 25.245750294492808,
+          "skipped": 0,
+          "megabytesPerSecond": 2.934162832100903,
+          "read": {
+            "count": 101,
+            "averageMs": 39.61184490099011,
+            "p95Ms": 51.60008299999754,
+            "maxMs": 56.07383299999856
+          },
+          "wait": {
+            "count": 101,
+            "averageMs": 38.82358094059413,
+            "p95Ms": 50.879666000000725,
+            "maxMs": 55.4955000000009
+          },
+          "transfer": {
+            "count": 101,
+            "averageMs": 0.7882639603959785,
+            "p95Ms": 1.0462920000009035,
+            "maxMs": 1.4258760000011534
+          },
+          "input": {
+            "count": 0,
+            "averageMs": null
+          }
+        }
+      ],
+      "inputRequestsOver100Ms": 0
+    }
+  },
+  "instrumentedStatusChecks": {
+    "count": 9,
+    "averageMs": 157.5542915555555,
+    "p95Ms": 170.22720800000025,
+    "maxMs": 170.22720800000025,
+    "checks": [
+      {
+        "startedMs": 1254.803083,
+        "durationMs": 162.81825000000003
+      },
+      {
+        "startedMs": 5468.561667,
+        "durationMs": 170.22720800000025
+      },
+      {
+        "startedMs": 6475.071125,
+        "durationMs": 152.8377499999997
+      },
+      {
+        "startedMs": 7485.73425,
+        "durationMs": 153.47504199999912
+      },
+      {
+        "startedMs": 8494.190417,
+        "durationMs": 151.47766600000068
+      },
+      {
+        "startedMs": 9494.847958,
+        "durationMs": 155.67124999999942
+      },
+      {
+        "startedMs": 10507.864333,
+        "durationMs": 157.17691700000069
+      },
+      {
+        "startedMs": 11516.989917,
+        "durationMs": 156.3639579999999
+      },
+      {
+        "startedMs": 12526.655,
+        "durationMs": 157.9405829999996
+      }
+    ]
+  },
+  "temporaryRawReportDirectory": "/tmp/mobile-dev-input-0.1.24.k3hfv24q"
+}

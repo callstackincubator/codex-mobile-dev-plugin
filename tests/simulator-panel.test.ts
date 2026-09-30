@@ -52,6 +52,7 @@ function fixture(t: TestContext) {
   let blockedIos = false;
   let stopped = false;
   const stoppedPlatforms = new Set<string>();
+  let failedInputPlatform: "ios" | "android" | undefined;
   const document = Object.assign(new EventTarget(), { visibilityState: "visible", createElement: () => new Element() });
   class Decoder {
     state = "configured";
@@ -68,6 +69,8 @@ function fixture(t: TestContext) {
     getComputedStyle: () => ({ paddingLeft: "16", paddingRight: "16", paddingTop: "16", paddingBottom: "16" }),
     Option: class extends Element { constructor(text: string, value = "") { super(); this.textContent = text; this.value = value; } },
     VideoDecoder: Decoder, EncodedVideoChunk: class {},
+    requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
+    cancelAnimationFrame: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
     createImageBitmap: async () => ({ width: 390, height: 844, close() {} }),
   };
   const restore: (() => void)[] = [];
@@ -79,11 +82,16 @@ function fixture(t: TestContext) {
   const app = {
     async callServerTool(call: { name: string; arguments: Record<string, unknown> }) {
       calls.push(call);
+      const inputTool = failedInputPlatform === "android" ? "mobile_android_stream_input" : "mobile_stream_input";
+      if (failedInputPlatform && call.name === inputTool) {
+        failedInputPlatform = undefined;
+        return { isError: true, content: [{ type: "text", text: "Input disconnected" }], _meta: { streamDisconnected: true } };
+      }
       if (call.name.endsWith("_stream_session")) {
         const android = call.name.includes("android");
         const id = `${android ? "android" : "ios"}-${++sessionNumber}`;
         await delayedOpen;
-        return { content: [], _meta: { sessionId: id, frameUri: `stream://mobile-dev/${id}/frame` }, structuredContent: {
+        return { content: [], _meta: { sessionId: id, frameUri: android ? `stream://mobile-dev/${id}/frame` : `mobile-frame://${id}/latest` }, structuredContent: {
           definition: { screen: { rect: { width: 390, height: 844 } } },
           inputStatus: { state: !android && blockedIos ? "blocked" : "ready" },
         } };
@@ -100,12 +108,17 @@ function fixture(t: TestContext) {
       return { content: [] };
     },
     async readServerResource({ uri }: { uri: string }, { signal }: { signal: AbortSignal }) {
-      const id = new URL(uri).pathname.split("/")[1];
+      const address = new URL(uri);
+      const id = address.protocol === "mobile-frame:" ? address.hostname : address.pathname.split("/")[1];
       if (!reads.has(id)) {
         reads.add(id);
-        return { contents: id.startsWith("ios")
-          ? [{ mimeType: "image/jpeg", blob: "AA==", _meta: { sequence: 1 } }]
-          : [{ mimeType: "application/json", text: JSON.stringify({ sequence: 1, generation: 1, packets: [{ sequence: 1, data: Buffer.from([0, 0, 0, 1, 0x67, 0x64, 0, 0x28, 0, 0, 0, 1, 0x65, 1]).toString("base64") }] }) }] };
+        const serverPreparedAt = performance.timeOrigin + performance.now();
+        const result = { contents: id.startsWith("ios")
+          ? [{ uri, mimeType: "image/jpeg", blob: "AA==", _meta: { sequence: 1, receivedAt: Date.now(), bytes: 1, serverWaitMs: 0, serverStartedAt: serverPreparedAt, serverPreparedAt } }]
+          : [{ uri, mimeType: "application/json", text: JSON.stringify({ sequence: 1, generation: 1, packets: [{ sequence: 1, data: Buffer.from([0, 0, 0, 1, 0x67, 0x64, 0, 0x28, 0, 0, 0, 1, 0x65, 1]).toString("base64") }] }) }] };
+        const message = Object.assign(new Event("message"), { data: { jsonrpc: "2.0", result }, source: undefined });
+        window.dispatchEvent(message);
+        return result;
       }
       return new Promise((_, reject) => {
         const abort = () => reject(new Error("Aborted"));
@@ -123,7 +136,7 @@ function fixture(t: TestContext) {
     return { panel, root, element: (name: string) => root.elements.get(name)! };
   });
   t.after(async () => { await Promise.all(panels.map(({ panel }) => panel.dispose())); for (const reset of restore) reset(); });
-  return { calls, closed, selections, ios: panels[0], android: panels[1], delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; } };
+  return { calls, closed, selections, ios: panels[0], android: panels[1], failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; } };
 }
 
 async function waitFor(predicate: () => boolean) {
@@ -203,6 +216,23 @@ test("changing one device leaves the other stream and controls active", async t 
   assert.equal(f.android.root.buttons[0].disabled, false);
   dispatch(f.android.root, "pointerdown");
   assert.deepEqual(f.selections.at(-1), { platform: "android", active: true });
+});
+
+for (const platform of ["ios", "android"] as const) test(`${platform} input failure reconnects its panel without replaying gestures`, async t => {
+  const f = fixture(t);
+  const panel = f[platform];
+  const other = platform === "ios" ? f.android : f.ios;
+  const sessionTool = platform === "ios" ? "mobile_stream_session" : "mobile_android_stream_session";
+  const inputTool = platform === "ios" ? "mobile_stream_input" : "mobile_android_stream_input";
+  await Promise.all([panel.panel.load(), other.panel.load()]);
+  await waitFor(() => panel.element("screen").draws > 0 && other.element("screen").draws > 0);
+  f.failInput(platform);
+  dispatch(panel.root.buttons[0], "click");
+  await waitFor(() => f.calls.filter(call => call.name === sessionTool).length === 2 && panel.root.buttons[0].disabled === false);
+  assert.equal(f.calls.filter(call => call.name === inputTool).length, 1);
+  assert.equal(other.root.buttons[0].disabled, false);
+  dispatch(panel.root.buttons[0], "click");
+  await waitFor(() => f.calls.filter(call => call.name === inputTool).length === 2);
 });
 
 test("blocked iOS input leaves Android controls working", async t => {

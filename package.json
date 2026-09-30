@@ -20,7 +20,8 @@
     "package": "node scripts/package.mjs",
     "vendor:serve-emu": "node scripts/vendor-serve-emu.mjs",
     "dev": "node scripts/dev-ui.mjs",
-    "dev:off": "node scripts/dev-ui.mjs --off"
+    "dev:off": "node scripts/dev-ui.mjs --off",
+    "test:stream": "node scripts/smoke-stream.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

@@ -25,12 +25,14 @@ export const WORKSPACE_URI = "ui://mobile-dev/0.1.34/workspace.html";
 const legacyAppUris = [
   "ui://mobile-dev/0.1.33/simulator.html",
   "ui://mobile-dev/0.1.32/simulator.html",
+  "ui://mobile-dev/0.1.24/mcp-stream/simulator.html",
   "ui://mobile-dev/0.1.31/simulator.html",
   "ui://mobile-dev/0.1.30/simulator.html",
   "ui://mobile-dev/0.1.29/simulator.html", "ui://mobile-dev/0.1.28/simulator.html", "ui://mobile-dev/0.1.27/simulator.html", "ui://mobile-dev/0.1.26/simulator.html", "ui://mobile-dev/0.1.25/simulator.html", "ui://mobile-dev/0.1.24/simulator.html", "ui://mobile-dev/0.1.23/simulator.html", "ui://mobile-dev/0.1.22/simulator.html", "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/0.1.19/simulator.html", "ui://mobile-dev/0.1.18/simulator.html", "ui://mobile-dev/0.1.17/simulator.html", "ui://mobile-dev/0.1.16/simulator.html", "ui://mobile-dev/0.1.15/simulator.html", "ui://mobile-dev/0.1.14/simulator.html", "ui://mobile-dev/0.1.13/simulator.html", "ui://mobile-dev/0.1.12/simulator.html", "ui://mobile-dev/0.1.11/simulator.html", "ui://mobile-dev/simulator.html", ...Array.from({ length: 6 }, (_, index) => `ui://mobile-dev/v${index + 1}/simulator.html`)];
 const legacyWorkspaceUris = [
   "ui://mobile-dev/0.1.33/workspace.html",
   "ui://mobile-dev/0.1.32/workspace.html",
+  "ui://mobile-dev/0.1.24/mcp-stream/workspace.html",
   "ui://mobile-dev/0.1.31/workspace.html",
   "ui://mobile-dev/0.1.30/workspace.html",
   "ui://mobile-dev/0.1.29/workspace.html", "ui://mobile-dev/0.1.28/workspace.html", "ui://mobile-dev/0.1.27/workspace.html", "ui://mobile-dev/0.1.26/workspace.html", "ui://mobile-dev/0.1.25/workspace.html", "ui://mobile-dev/0.1.24/workspace.html", "ui://mobile-dev/0.1.23/workspace.html", "ui://mobile-dev/0.1.22/workspace.html", "ui://mobile-dev/0.1.21/workspace.html", "ui://mobile-dev/0.1.20/workspace.html", "ui://mobile-dev/0.1.19/workspace.html", "ui://mobile-dev/0.1.18/workspace.html", "ui://mobile-dev/0.1.17/workspace.html", "ui://mobile-dev/0.1.16/workspace.html", "ui://mobile-dev/0.1.15/workspace.html", "ui://mobile-dev/0.1.14/workspace.html", "ui://mobile-dev/0.1.13/workspace.html", "ui://mobile-dev/0.1.12/workspace.html", "ui://mobile-dev/0.1.11/workspace.html", "ui://mobile-dev/workspace.html"];
@@ -67,7 +69,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<{ inputStatus: InputStatus; inputRepairMessage: string }> }>();
   async function panelInputStatus(udid: string) {
-    const inputStatus = await simulatorInput.status(udid);
+    const inputStatus = await simulatorInput.status(udid, { fresh: true });
     if (inputStatus.state !== "blocked") return { inputStatus };
     const previous = automaticRepairs.get(udid);
     if (previous && Date.now() - previous.attemptedAt < 60000) {
@@ -132,17 +134,24 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     registerAppResource(server, `mobile-dev-simulator-v${index + 1}`, uri, {}, readApp);
   }
 
-  server.registerResource("simulator-frame", new ResourceTemplate("stream://mobile-dev/{sessionId}/frame?after={sequence}", { list: undefined }), {
-    mimeType: "image/jpeg",
-    description: "Read the next frame of an authorized panel stream. The session expires when the panel stops reading.",
-  }, async (uri, variables) => {
-    const id = sessionIdSchema.parse(variables.sessionId);
-    const after = z.coerce.number().int().nonnegative().parse(variables.sequence);
-    const frame = await streams.frame(id, after);
-    return { contents: frame
-      ? [{ uri: uri.href, mimeType: "image/jpeg", blob: frame.data, _meta: { sequence: frame.sequence } }]
-      : [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify({ idle: true, state: streams.connectionState(id) }) }],
-    };
+  const frameTemplate = new ResourceTemplate("mobile-frame://{sessionId}/latest{?after}", { list: undefined });
+  server.registerResource("simulator-latest-frame", frameTemplate, { mimeType: "image/jpeg" }, async (uri, variables, extra) => {
+    const sessionId = sessionIdSchema.parse(variables.sessionId);
+    const cursor = uri.searchParams.get("after") ?? "0";
+    const after = z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).parse(cursor);
+    try {
+      const read = await streams.frame(sessionId, after, extra.signal);
+      const timings = { serverWaitMs: read.serverWaitMs, serverStartedAt: read.serverStartedAt, serverPreparedAt: read.serverPreparedAt };
+      if (read.frame) {
+        const { data, ...metadata } = read.frame;
+        return { contents: [{ uri: uri.href, mimeType: "image/jpeg", blob: data, _meta: { ...metadata, ...timings } }] };
+      }
+      const text = JSON.stringify({ state: "waiting", connectionState: streams.connectionState(sessionId), ...timings });
+      return { contents: [{ uri: uri.href, mimeType: "application/json", text, _meta: timings }] };
+    } catch (error) {
+      const text = JSON.stringify({ state: "failed", error: errorMessage(error), retryable: !(error instanceof SimulatorUnavailableError) });
+      return { contents: [{ uri: uri.href, mimeType: "application/json", text }] };
+    }
   });
 
   const openPanel = guarded(async () => {
@@ -275,7 +284,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   registerAppTool(server, "mobile_stream_session", {
     title: "Connect simulator stream", description: "Open the bundled Baguette's MJPEG capture for the panel. Frames and input use the host's MCP bridge; no browser network access is needed.",
-    inputSchema: { ...deviceInput, fps: z.number().int().min(1).max(60).default(30) },
+    inputSchema: { ...deviceInput, fps: z.number().int().min(1).max(60).default(60) },
     annotations: write,
     _meta: { ui: { resourceUri: APP_URI, visibility: ["app"] } },
   }, guarded(async ({ udid, fps }: { udid: string; fps: number }) => {
@@ -285,7 +294,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     const sessionId = await streams.open(udid, fps);
     return {
       ...result({ udid, definition, fps, inputStatus, ...(inputRepairMessage ? { inputRepairMessage } : {}) }, `Stream ready for ${definition.identity.name}.`),
-      _meta: { ...(bezel ? { bezel } : {}), sessionId, frameUri: `stream://mobile-dev/${sessionId}/frame?after=0` },
+      _meta: { ...(bezel ? { bezel } : {}), sessionId, frameUri: `mobile-frame://${sessionId}/latest?after=0` },
     };
   }));
 
@@ -303,7 +312,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
       streams.closeDevice(udid);
       return { isError: true, content: [{ type: "text", text: "Repairing simulator input and reconnecting…" }], _meta: { streamDisconnected: true } };
     }
-    return result({ accepted: streams.input(sessionId, messages) }, "Input sent to the simulator.");
+    const accepted = await streams.input(sessionId, messages);
+    return result({ accepted }, "Input sent to the simulator.");
   }));
 
   registerAppTool(server, "mobile_stream_close", {

@@ -1,3 +1,5 @@
+import { setImmediate } from "node:timers/promises";
+import { SimulatorInputService } from "../src/server/simulator-input.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -35,7 +37,7 @@ test("cached side tabs load the current UI through old resource addresses", asyn
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
   assert.equal(APP_URI, "ui://mobile-dev/0.1.34/simulator.html");
-  for (const uri of [APP_URI, "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/simulator.html", ...[1, 2, 3, 4, 5, 6].map(version => `ui://mobile-dev/v${version}/simulator.html`)]) {
+  for (const uri of [APP_URI, "ui://mobile-dev/0.1.33/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html", "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/simulator.html", ...[1, 2, 3, 4, 5, 6].map(version => `ui://mobile-dev/v${version}/simulator.html`)]) {
     const { contents } = await client.readResource({ uri });
     assert.equal(contents[0].uri, uri);
     assert.equal(contents[0].mimeType, "text/html;profile=mcp-app");
@@ -64,7 +66,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const workspaceResource = await client.readResource({ uri: WORKSPACE_URI });
   assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);
   assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.34/workspace.html");
-  for (const uri of ["ui://mobile-dev/0.1.21/workspace.html", "ui://mobile-dev/0.1.20/workspace.html", "ui://mobile-dev/workspace.html"]) {
+  for (const uri of ["ui://mobile-dev/0.1.33/workspace.html", "ui://mobile-dev/0.1.24/mcp-stream/workspace.html", "ui://mobile-dev/0.1.21/workspace.html", "ui://mobile-dev/0.1.20/workspace.html", "ui://mobile-dev/workspace.html"]) {
     const oldWorkspace = await client.readResource({ uri });
     assert.equal(oldWorkspace.contents[0].text, workspaceResource.contents[0].text);
   }
@@ -87,14 +89,14 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.equal(status.structuredContent?.connected, true);
   assert.equal((status.structuredContent?.devices as unknown[]).length, 2);
   const session = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
-  assert.equal(session.structuredContent?.fps, 30);
+  assert.equal(session.structuredContent?.fps, 60);
   assert.match(session._meta?.sessionId as string, /^[a-f0-9]{64}$/);
   assert.equal(session._meta?.streamUrl, undefined);
   const frame = await client.readResource({ uri: session._meta?.frameUri as string });
   assert.equal(frame.contents[0].mimeType, "image/jpeg");
   assert.deepEqual(Buffer.from((frame.contents[0] as { blob: string }).blob, "base64"), PNG);
   assert.equal(frame.contents[0]._meta?.sequence, 1);
-  await assert.rejects(client.readResource({ uri: `stream://mobile-dev/${"0".repeat(64)}/frame?after=0` }), /expired or closed/);
+  await assertClosed(client, `mobile-frame://${"0".repeat(64)}/latest?after=0`);
   const panelInput = { type: "button", button: "home" };
   const panelAccepted = await client.callTool({ name: "mobile_stream_input", arguments: { sessionId: session._meta?.sessionId, messages: [panelInput] } });
   assert.equal(panelAccepted.structuredContent?.accepted, 1);
@@ -115,7 +117,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.equal(recovered?._meta?.sequence, 2);
   const closedPanel = await client.callTool({ name: "mobile_stream_close", arguments: { sessionId: session._meta?.sessionId } });
   assert.equal(closedPanel.isError, undefined);
-  await assert.rejects(client.readResource({ uri: session._meta?.frameUri as string }), /expired or closed/);
+  await assertClosed(client, session._meta?.frameUri as string);
   const readUI = await client.callTool({ name: "mobile_describe_ui", arguments: { udid: UDID } });
   assert.ok(JSON.stringify(readUI.structuredContent).includes("Continue"));
   const screenshot = await client.callTool({ name: "mobile_screenshot", arguments: { udid: UDID } });
@@ -131,7 +133,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const active = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
   const stopped = await client.callTool({ name: "mobile_shutdown_simulator", arguments: { udid: UDID } });
   assert.equal((stopped.structuredContent?.devices as { state: string; udid: string }[]).find(item => item.udid === UDID)?.state, "Shutdown");
-  await assert.rejects(client.readResource({ uri: active._meta?.frameUri as string }), /expired or closed/);
+  await assertClosed(client, active._meta?.frameUri as string);
   const noStream = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
   assert.equal(noStream.isError, true);
   assert.equal(noStream._meta?.retryable, false);
@@ -214,8 +216,8 @@ test("Device Hub blockage repairs automatically, limits repeated repairs, and pe
   const repaired = await client.callTool({ name: "mobile_repair_input", arguments: { udid: UDID } });
   assert.equal(repaired.isError, undefined);
   assert.deepEqual(input.repairs, [UDID, UDID]);
-  await assert.rejects(client.readResource({ uri: session._meta?.frameUri as string }), /expired or closed/);
-  await assert.rejects(client.readResource({ uri: shadowed._meta?.frameUri as string }), /expired or closed/);
+  await assertClosed(client, session._meta?.frameUri as string);
+  await assertClosed(client, shadowed._meta?.frameUri as string);
   const reconnected = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
   assert.deepEqual(reconnected.structuredContent?.inputStatus, { state: "ready" });
   await client.readResource({ uri: reconnected._meta?.frameUri as string });
@@ -242,3 +244,56 @@ test("a reused backend survives disposal of the adapter", async t => {
   baguette.dispose();
   assert.equal((await fetch(`${fake.url}/simulators.json`)).status, 200);
 });
+
+test("panel input reaches the native socket during a pending refresh and blocks after it reports Device Hub", { timeout: 2000 }, async t => {
+  let now = 0;
+  t.mock.method(Date, "now", () => now);
+  let resolveRefresh!: (value: string) => void;
+  const refresh = new Promise<string>(resolve => { resolveRefresh = resolve; });
+  let checks = 0;
+  const input = new SimulatorInputService(async () => {}, () => {
+    checks++;
+    return checks === 1 ? Promise.resolve("state 0") : refresh;
+  });
+  const fake = await fakeBaguette();
+  const buttonReceived = new Promise<void>(resolve => {
+    fake.websocket.once("connection", socket => {
+      socket.on("message", data => {
+        const text = data.toString();
+        const message = JSON.parse(text);
+        if (message.type === "button") resolve();
+      });
+    });
+  });
+  const plugin = await createPlugin("<head></head>", new Baguette(fake.url), input);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "background-input-test", version: "1" });
+  t.after(async () => { resolveRefresh("state 0"); await client.close(); await plugin.close(); await fake.close(); });
+  await plugin.server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const session = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
+  await client.readResource({ uri: session._meta?.frameUri as string });
+  now = 1000;
+  const arguments_ = { sessionId: session._meta?.sessionId, messages: [{ type: "button", button: "home" }] };
+  const sent = await client.callTool({ name: "mobile_stream_input", arguments: arguments_ });
+  assert.equal(sent.isError, undefined);
+  assert.equal(sent.structuredContent?.accepted, 1);
+  assert.equal(checks, 2);
+  await buttonReceived;
+  const buttons = fake.inputs.filter(message => message != null && typeof message === "object" && "type" in message && message.type === "button");
+  assert.equal(buttons.length, 1, "The gesture reached the socket before the query completed.");
+  resolveRefresh("state 1");
+  await setImmediate();
+  const blocked = await client.callTool({ name: "mobile_stream_input", arguments: arguments_ });
+  assert.equal(blocked._meta?.streamDisconnected, true);
+});
+
+
+async function assertClosed(client: Client, uri: string) {
+  const result = await client.readResource({ uri });
+  const status = result.contents.find(item => "text" in item);
+  assert.ok(status && "text" in status);
+  const message = JSON.parse(status.text);
+  assert.equal(message.state, "failed");
+  assert.match(message.error, /expired or closed/);
+}

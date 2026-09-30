@@ -9,23 +9,23 @@ test("panel sessions carry frames and validated input without a browser socket",
   const streams = new StreamSessions(new Baguette(fake.url));
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
-  const first = await streams.frame(id, 0);
+  const first = await frame(streams, id, 0);
   assert.equal(first?.sequence, 1);
   assert.deepEqual(Buffer.from(first!.data, "base64"), PNG);
   assert.equal(fake.requests.find(request => request.path.includes("/stream"))?.origin, undefined);
   const input = { type: "touch1-down", x: 120, y: 300, ...SCREEN };
-  assert.equal(streams.input(id, [input]), 1);
+  assert.equal(await streams.input(id, [input]), 1);
   await waitFor(() => fake.inputs.some(message => (message as { type: string }).type === "touch1-down"));
   assert.deepEqual(fake.inputs.at(-1), input);
   const before = fake.inputs.length;
   assert.throws(() => streams.input(id, [input, { type: "run_shell", command: "whoami" }]));
   assert.equal(fake.inputs.length, before);
-  const next = streams.frame(id, first!.sequence);
+  const next = frame(streams, id, first!.sequence);
   for (const socket of fake.websocket.clients) socket.send(PNG);
   assert.equal((await next)?.sequence, 2);
   streams.closeSession(id);
   await waitFor(() => fake.websocket.clients.size === 0);
-  await assert.rejects(streams.frame(id, 0), /expired or closed/);
+  await assert.rejects(frame(streams, id, 0), /expired or closed/);
 });
 
 test("unknown panel sessions cannot read frames or send input", async t => {
@@ -33,7 +33,7 @@ test("unknown panel sessions cannot read frames or send input", async t => {
   const streams = new StreamSessions(new Baguette(fake.url));
   t.after(async () => { streams.close(); await fake.close(); });
   const unknown = "0".repeat(64);
-  await assert.rejects(streams.frame(unknown, 0), /expired or closed/);
+  await assert.rejects(frame(streams, unknown, 0), /expired or closed/);
   assert.throws(() => streams.input(unknown, [{ type: "button", button: "home" }]), /expired or closed/);
   assert.equal(fake.websocket.clients.size, 0);
 });
@@ -43,8 +43,8 @@ test("closing a panel releases a pending frame read and stops upstream capture",
   const streams = new StreamSessions(new Baguette(fake.url));
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
-  const first = await streams.frame(id, 0);
-  const pending = streams.frame(id, first!.sequence);
+  const first = await frame(streams, id, 0);
+  const pending = frame(streams, id, first!.sequence);
   streams.closeSession(id);
   await assert.rejects(pending, /stream closed/);
   await waitFor(() => fake.websocket.clients.size === 0);
@@ -55,15 +55,15 @@ test("a dropped socket recovers the same session without replaying input or rese
   const streams = new StreamSessions(new Baguette(fake.url), [0]);
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
-  const first = await streams.frame(id, 0);
-  streams.input(id, [{ type: "button", button: "home" }]);
+  const first = await frame(streams, id, 0);
+  await streams.input(id, [{ type: "button", button: "home" }]);
   await waitFor(() => fake.inputs.some(message => (message as { type: string }).type === "button"));
   for (const socket of fake.websocket.clients) socket.terminate();
   await waitFor(() => streams.connectionState(id) === "reconnecting");
   assert.throws(() => streams.input(id, [{ type: "button", button: "home" }]), /reconnecting/);
   let recovered;
   const deadline = Date.now() + 2000;
-  while (!recovered && Date.now() < deadline) recovered = await streams.frame(id, first!.sequence);
+  while (!recovered && Date.now() < deadline) recovered = await frame(streams, id, first!.sequence);
   assert.equal(recovered?.sequence, first!.sequence + 1);
   assert.equal(streams.connectionState(id), "connected");
   assert.equal(fake.inputs.filter(message => (message as { type: string }).type === "button").length, 1);
@@ -86,13 +86,13 @@ test("pausing during reconnect prevents a late device check from reopening captu
   const streams = new StreamSessions(baguette, [0]);
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
-  const first = await streams.frame(id, 0);
+  const first = await frame(streams, id, 0);
   let release!: () => void;
   baguette.gate = new Promise<void>(resolve => { release = resolve; });
   baguette.resumed = false;
   for (const socket of fake.websocket.clients) socket.terminate();
   await waitFor(() => streams.connectionState(id) === "reconnecting");
-  const pending = streams.frame(id, first!.sequence);
+  const pending = frame(streams, id, first!.sequence);
   streams.closeSession(id);
   await assert.rejects(pending, /stream closed/);
   release();
@@ -106,11 +106,11 @@ test("reconnect reports a stopped device without booting it", async t => {
   const streams = new StreamSessions(new Baguette(fake.url), [0]);
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
-  const first = await streams.frame(id, 0);
+  const first = await frame(streams, id, 0);
   fake.setState("Shutdown");
   for (const socket of fake.websocket.clients) socket.terminate();
   await waitFor(() => streams.connectionState(id) === "reconnecting");
-  await assert.rejects(streams.frame(id, first!.sequence), /simulator is stopped/);
+  await assert.rejects(frame(streams, id, first!.sequence), /simulator is stopped/);
   assert.equal(fake.requests.some(request => request.path.endsWith("/boot")), false);
 });
 
@@ -119,15 +119,15 @@ test("a panel can resume after more than thirty seconds without losing its sessi
   const streams = new StreamSessions(new Baguette(fake.url));
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
-  const first = await streams.frame(id, 0);
+  const first = await frame(streams, id, 0);
   const now = Date.now();
   t.mock.timers.enable({ apis: ["Date"], now });
   t.mock.timers.setTime(now + 45000);
-  assert.equal((await streams.frame(id, 0))?.sequence, first!.sequence);
+  assert.equal((await frame(streams, id, 0))?.sequence, first!.sequence);
   assert.equal(streams.connectionState(id), "connected");
   assert.equal(fake.requests.filter(request => request.path.includes("/stream")).length, 1);
   t.mock.timers.setTime(now + 45000 + 5 * 60 * 1000 + 1);
-  await assert.rejects(streams.frame(id, 0), /expired or closed/);
+  await assert.rejects(frame(streams, id, 0), /expired or closed/);
   t.mock.timers.reset();
 });
 
@@ -137,17 +137,17 @@ test("capture reset keeps its session and sequence and leaves other panels alone
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
   const other = await streams.open(UDID, 30);
-  const first = await streams.frame(id, 0);
-  const untouched = await streams.frame(other, 0);
+  const first = await frame(streams, id, 0);
+  const untouched = await frame(streams, other, 0);
   assert.throws(() => streams.reset("0".repeat(64)), /expired or closed/);
   streams.reset(id);
   streams.reset(id);
   assert.equal(streams.connectionState(id), "reconnecting");
   assert.throws(() => streams.input(id, [{ type: "button", button: "home" }]), /reconnecting/);
   let recovered;
-  for (let attempt = 0; attempt < 5 && !recovered; attempt++) recovered = await streams.frame(id, first!.sequence);
+  for (let attempt = 0; attempt < 5 && !recovered; attempt++) recovered = await frame(streams, id, first!.sequence);
   assert.equal(recovered?.sequence, first!.sequence + 1);
-  assert.equal((await streams.frame(other, 0))?.sequence, untouched!.sequence);
+  assert.equal((await frame(streams, other, 0))?.sequence, untouched!.sequence);
   assert.equal(fake.requests.filter(request => request.path.includes("/stream")).length, 3);
   assert.equal(fake.inputs.some(message => (message as { type: string }).type === "button"), false);
 });
@@ -157,15 +157,15 @@ test("a reconnected socket cannot serve an old frame or enable input before fres
   const streams = new StreamSessions(new Baguette(fake.url), [0]);
   t.after(async () => { streams.close(); await fake.close(); });
   const id = await streams.open(UDID, 30);
-  const first = await streams.frame(id, 0);
+  const first = await frame(streams, id, 0);
   fake.setFrames(false);
   streams.reset(id);
-  assert.equal(await streams.frame(id, 0), undefined);
+  assert.equal(await frame(streams, id, 0), undefined);
   await waitFor(() => fake.requests.filter(request => request.path.includes("/stream")).length === 2);
   assert.equal(streams.connectionState(id), "reconnecting");
   assert.throws(() => streams.input(id, [{ type: "button", button: "home" }]), /reconnecting/);
   for (const socket of fake.websocket.clients) socket.send(PNG, { binary: true });
-  const recovered = await streams.frame(id, first!.sequence);
+  const recovered = await frame(streams, id, first!.sequence);
   assert.equal(recovered?.sequence, first!.sequence + 1);
   assert.equal(streams.connectionState(id), "connected");
 });
@@ -181,7 +181,7 @@ test("an open socket with no initial frame retries capture even when it answers 
   await new Promise(resolve => setTimeout(resolve, 50));
   fake.setFrames(true);
   let first;
-  for (let attempt = 0; attempt < 5 && !first; attempt++) first = await streams.frame(id, 0);
+  for (let attempt = 0; attempt < 5 && !first; attempt++) first = await frame(streams, id, 0);
   assert.equal(first?.sequence, 1);
   assert.equal(fake.requests.filter(request => request.path.includes("/stream")).length, 2);
   assert.equal(fake.requests.some(request => request.path.endsWith("/boot")), false);
@@ -193,4 +193,9 @@ async function waitFor(condition: () => boolean) {
     if (Date.now() > deadline) throw new Error("Timed out waiting for stream behavior.");
     await new Promise(resolve => setTimeout(resolve, 10));
   }
+}
+
+async function frame(streams: StreamSessions, id: string, after: number) {
+  const result = await streams.frame(id, after);
+  return result.frame;
 }

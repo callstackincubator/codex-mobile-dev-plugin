@@ -49,7 +49,9 @@ try {
   assert.equal(restarted.structuredContent.connected, true);
   assert.notEqual(restarted.structuredContent.baseUrl, baseUrl);
   await client.callTool({ name: "mobile_stream_close", arguments: { sessionId } });
-  await assert.rejects(client.readResource({ uri: uri.href }), /expired or closed/);
+  const closed = await client.readResource({ uri: uri.href });
+  assert.equal(JSON.parse(closed.contents[0].text).state, "failed");
+  assert.match(JSON.parse(closed.contents[0].text).error, /expired or closed/);
   console.log("The copied plugin restarted its own stopped Baguette and recovered JPEG capture with the same session and increasing frame sequence.");
   console.log("Closing the recovered session stopped its capture. No simulator was booted, repaired, or sent input.");
 } catch (error) { process.stderr.write(diagnostics); throw error; }

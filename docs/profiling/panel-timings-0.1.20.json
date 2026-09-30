@@ -1,0 +1,666 @@
+{
+  "date": "2026-09-30",
+  "pluginVersion": "0.1.20",
+  "source": "User-provided panel console capture; no sample timestamps were included.",
+  "summary": {
+    "activeSamples": [
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "selection": "reads >= 30 and nonzero input timing; excludes idle and transition windows",
+    "reads": 233,
+    "skippedBeforeRead": 42,
+    "skippedBeforeDecode": 0,
+    "skippedBeforePaint": 16,
+    "readWeightedAverageMs": {
+      "read": 21.457939914367742,
+      "serverWait": 9.081623931330464,
+      "bridge": 12.376315983037276
+    }
+  },
+  "samples": [
+    {
+      "sample": 1,
+      "report": {
+        "fps": 0.9992006394765074,
+        "sourceFps": 0.9992006394765074,
+        "reads": 1,
+        "bytes": 50225,
+        "skippedBeforeRead": 0,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 0,
+        "read": {
+          "average": 274.2999999523163,
+          "p95": 274.2999999523163
+        },
+        "serverWait": {
+          "average": 268.08220800000004,
+          "p95": 268.08220800000004
+        },
+        "bridge": {
+          "average": 6.217791952316247,
+          "p95": 6.217791952316247
+        },
+        "decode": {
+          "average": 3.400000035762787,
+          "p95": 3.400000035762787
+        },
+        "paint": {
+          "average": 1.300000011920929,
+          "p95": 1.300000011920929
+        },
+        "receivedToPaint": {
+          "average": 9,
+          "p95": 9
+        },
+        "input": {
+          "average": 0,
+          "p95": 0
+        }
+      }
+    },
+    {
+      "sample": 2,
+      "report": {
+        "fps": 0,
+        "sourceFps": 0,
+        "reads": 1,
+        "bytes": 0,
+        "skippedBeforeRead": 0,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 0,
+        "read": {
+          "average": 1007.5,
+          "p95": 1007.5
+        },
+        "serverWait": {
+          "average": 1000.900875,
+          "p95": 1000.900875
+        },
+        "bridge": {
+          "average": 6.599124999999958,
+          "p95": 6.599124999999958
+        },
+        "decode": {
+          "average": 0,
+          "p95": 0
+        },
+        "paint": {
+          "average": 0,
+          "p95": 0
+        },
+        "receivedToPaint": {
+          "average": 0,
+          "p95": 0
+        },
+        "input": {
+          "average": 0,
+          "p95": 0
+        }
+      }
+    },
+    {
+      "sample": 3,
+      "report": {
+        "fps": 0,
+        "sourceFps": 0,
+        "reads": 1,
+        "bytes": 0,
+        "skippedBeforeRead": 0,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 0,
+        "read": {
+          "average": 1005.4000000357628,
+          "p95": 1005.4000000357628
+        },
+        "serverWait": {
+          "average": 1000.8050830000002,
+          "p95": 1000.8050830000002
+        },
+        "bridge": {
+          "average": 4.594917035762592,
+          "p95": 4.594917035762592
+        },
+        "decode": {
+          "average": 0,
+          "p95": 0
+        },
+        "paint": {
+          "average": 0,
+          "p95": 0
+        },
+        "receivedToPaint": {
+          "average": 0,
+          "p95": 0
+        },
+        "input": {
+          "average": 0,
+          "p95": 0
+        }
+      }
+    },
+    {
+      "sample": 4,
+      "report": {
+        "fps": 0,
+        "sourceFps": 0,
+        "reads": 1,
+        "bytes": 0,
+        "skippedBeforeRead": 0,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 0,
+        "read": {
+          "average": 1030.699999988079,
+          "p95": 1030.699999988079
+        },
+        "serverWait": {
+          "average": 1001.7176249999998,
+          "p95": 1001.7176249999998
+        },
+        "bridge": {
+          "average": 28.9823749880793,
+          "p95": 28.9823749880793
+        },
+        "decode": {
+          "average": 0,
+          "p95": 0
+        },
+        "paint": {
+          "average": 0,
+          "p95": 0
+        },
+        "receivedToPaint": {
+          "average": 0,
+          "p95": 0
+        },
+        "input": {
+          "average": 0,
+          "p95": 0
+        }
+      }
+    },
+    {
+      "sample": 5,
+      "report": {
+        "fps": 0,
+        "sourceFps": 0,
+        "reads": 1,
+        "bytes": 0,
+        "skippedBeforeRead": 0,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 0,
+        "read": {
+          "average": 1003.8999999761581,
+          "p95": 1003.8999999761581
+        },
+        "serverWait": {
+          "average": 999.5672500000001,
+          "p95": 999.5672500000001
+        },
+        "bridge": {
+          "average": 4.332749976158084,
+          "p95": 4.332749976158084
+        },
+        "decode": {
+          "average": 0,
+          "p95": 0
+        },
+        "paint": {
+          "average": 0,
+          "p95": 0
+        },
+        "receivedToPaint": {
+          "average": 0,
+          "p95": 0
+        },
+        "input": {
+          "average": 0,
+          "p95": 0
+        }
+      }
+    },
+    {
+      "sample": 6,
+      "report": {
+        "fps": 4.854840275867316,
+        "sourceFps": 5.825808331040779,
+        "reads": 6,
+        "bytes": 313240,
+        "skippedBeforeRead": 1,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 0,
+        "read": {
+          "average": 276.54999999205273,
+          "p95": 1008.3999999761581
+        },
+        "serverWait": {
+          "average": 263.59006249999993,
+          "p95": 1001.7407089999997
+        },
+        "bridge": {
+          "average": 12.959937492052783,
+          "p95": 28.694333988079052
+        },
+        "decode": {
+          "average": 2.8200000047683718,
+          "p95": 3.100000023841858
+        },
+        "paint": {
+          "average": 0.06000000238418579,
+          "p95": 0.10000002384185791
+        },
+        "receivedToPaint": {
+          "average": 11.8,
+          "p95": 18
+        },
+        "input": {
+          "average": 27.72941176330342,
+          "p95": 297.5999999642372
+        }
+      }
+    },
+    {
+      "sample": 7,
+      "report": {
+        "fps": 26.784794478540537,
+        "sourceFps": 37.086638508748436,
+        "reads": 31,
+        "bytes": 2110908,
+        "skippedBeforeRead": 5,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 5,
+        "read": {
+          "average": 26.85483871160015,
+          "p95": 68.89999997615814
+        },
+        "serverWait": {
+          "average": 9.89511564516121,
+          "p95": 20.336083000000144
+        },
+        "bridge": {
+          "average": 16.95972306643894,
+          "p95": 65.99383300000045
+        },
+        "decode": {
+          "average": 3.8290322519117788,
+          "p95": 3.399999976158142
+        },
+        "paint": {
+          "average": 0.026923074172093317,
+          "p95": 0.10000002384185791
+        },
+        "receivedToPaint": {
+          "average": 26.423076923076923,
+          "p95": 61
+        },
+        "input": {
+          "average": 14.606666661633385,
+          "p95": 41.19999998807907
+        }
+      }
+    },
+    {
+      "sample": 8,
+      "report": {
+        "fps": 33.945686900150434,
+        "sourceFps": 46.924920126678536,
+        "reads": 34,
+        "bytes": 3647953,
+        "skippedBeforeRead": 13,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 0,
+        "read": {
+          "average": 34.05588235399302,
+          "p95": 73.79999995231628
+        },
+        "serverWait": {
+          "average": 18.560479147059006,
+          "p95": 27.281999999999243
+        },
+        "bridge": {
+          "average": 15.495403206934016,
+          "p95": 49.99458400000003
+        },
+        "decode": {
+          "average": 5.779411762952805,
+          "p95": 43.10000002384186
+        },
+        "paint": {
+          "average": 0.041176471640081966,
+          "p95": 0.10000002384185791
+        },
+        "receivedToPaint": {
+          "average": 24.11764705882353,
+          "p95": 70
+        },
+        "input": {
+          "average": 11.4340425539524,
+          "p95": 39.5
+        }
+      }
+    },
+    {
+      "sample": 9,
+      "report": {
+        "fps": 44.09259444939498,
+        "sourceFps": 61.12836957757031,
+        "reads": 49,
+        "bytes": 4931519,
+        "skippedBeforeRead": 12,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 5,
+        "read": {
+          "average": 20.681632651358235,
+          "p95": 46.30000001192093
+        },
+        "serverWait": {
+          "average": 7.061589306122335,
+          "p95": 28.570749999998952
+        },
+        "bridge": {
+          "average": 13.6200433452359,
+          "p95": 39.33491601192145
+        },
+        "decode": {
+          "average": 5.387755100824395,
+          "p95": 26.099999964237213
+        },
+        "paint": {
+          "average": 0.03181818127632141,
+          "p95": 0.10000002384185791
+        },
+        "receivedToPaint": {
+          "average": 17.863636363636363,
+          "p95": 52
+        },
+        "input": {
+          "average": 14.712903226575543,
+          "p95": 56
+        }
+      }
+    },
+    {
+      "sample": 10,
+      "report": {
+        "fps": 49.925112331502746,
+        "sourceFps": 53.91912131802297,
+        "reads": 52,
+        "bytes": 3086122,
+        "skippedBeforeRead": 2,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 2,
+        "read": {
+          "average": 18.805769231456978,
+          "p95": 51.30000001192093
+        },
+        "serverWait": {
+          "average": 9.372059326922995,
+          "p95": 46.98124999999891
+        },
+        "bridge": {
+          "average": 9.43370990453398,
+          "p95": 29.21566701192023
+        },
+        "decode": {
+          "average": 3.071153849363327,
+          "p95": 5
+        },
+        "paint": {
+          "average": 0.03199999451637268,
+          "p95": 0.10000002384185791
+        },
+        "receivedToPaint": {
+          "average": 13.22,
+          "p95": 30
+        },
+        "input": {
+          "average": 9.596551723521332,
+          "p95": 24
+        }
+      }
+    },
+    {
+      "sample": 11,
+      "report": {
+        "fps": 63.07569082824197,
+        "sourceFps": 77.09251101229574,
+        "reads": 67,
+        "bytes": 5046371,
+        "skippedBeforeRead": 10,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 4,
+        "read": {
+          "average": 15.194029850746269,
+          "p95": 29.700000047683716
+        },
+        "serverWait": {
+          "average": 5.146993119403048,
+          "p95": 13.214415999998891
+        },
+        "bridge": {
+          "average": 10.047036731343221,
+          "p95": 25.295208011921204
+        },
+        "decode": {
+          "average": 4.250746268834641,
+          "p95": 10.900000035762787
+        },
+        "paint": {
+          "average": 0.04603174470719837,
+          "p95": 0.10000002384185791
+        },
+        "receivedToPaint": {
+          "average": 14.777777777777779,
+          "p95": 31
+        },
+        "input": {
+          "average": 10.266666663415505,
+          "p95": 26.80000001192093
+        }
+      }
+    },
+    {
+      "sample": 12,
+      "report": {
+        "fps": 2.000400079992152,
+        "sourceFps": 2.000400079992152,
+        "reads": 2,
+        "bytes": 103232,
+        "skippedBeforeRead": 0,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 0,
+        "read": {
+          "average": 41.5,
+          "p95": 59.19999998807907
+        },
+        "serverWait": {
+          "average": 32.515542000000096,
+          "p95": 48.507292000000234
+        },
+        "bridge": {
+          "average": 8.984457999999904,
+          "p95": 10.692707988078837
+        },
+        "decode": {
+          "average": 2.5000000298023224,
+          "p95": 2.700000047683716
+        },
+        "paint": {
+          "average": 0,
+          "p95": 0
+        },
+        "receivedToPaint": {
+          "average": 13,
+          "p95": 14
+        },
+        "input": {
+          "average": 0,
+          "p95": 0
+        }
+      }
+    },
+    {
+      "sample": 13,
+      "report": {
+        "fps": 0,
+        "sourceFps": 0,
+        "reads": 1,
+        "bytes": 0,
+        "skippedBeforeRead": 0,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 0,
+        "read": {
+          "average": 1003.8999999761581,
+          "p95": 1003.8999999761581
+        },
+        "serverWait": {
+          "average": 1000.3194590000003,
+          "p95": 1000.3194590000003
+        },
+        "bridge": {
+          "average": 3.580540976157863,
+          "p95": 3.580540976157863
+        },
+        "decode": {
+          "average": 0,
+          "p95": 0
+        },
+        "paint": {
+          "average": 0,
+          "p95": 0
+        },
+        "receivedToPaint": {
+          "average": 0,
+          "p95": 0
+        },
+        "input": {
+          "average": 0,
+          "p95": 0
+        }
+      }
+    },
+    {
+      "sample": 14,
+      "report": {
+        "fps": 0,
+        "sourceFps": 0,
+        "reads": 1,
+        "bytes": 0,
+        "skippedBeforeRead": 0,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 0,
+        "read": {
+          "average": 1007.9000000357628,
+          "p95": 1007.9000000357628
+        },
+        "serverWait": {
+          "average": 1000.3866249999992,
+          "p95": 1000.3866249999992
+        },
+        "bridge": {
+          "average": 7.513375035763602,
+          "p95": 7.513375035763602
+        },
+        "decode": {
+          "average": 0,
+          "p95": 0
+        },
+        "paint": {
+          "average": 0,
+          "p95": 0
+        },
+        "receivedToPaint": {
+          "average": 0,
+          "p95": 0
+        },
+        "input": {
+          "average": 0,
+          "p95": 0
+        }
+      }
+    },
+    {
+      "sample": 15,
+      "report": {
+        "fps": 0,
+        "sourceFps": 0,
+        "reads": 1,
+        "bytes": 0,
+        "skippedBeforeRead": 0,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 0,
+        "read": {
+          "average": 1006.0999999642372,
+          "p95": 1006.0999999642372
+        },
+        "serverWait": {
+          "average": 1000.4193340000002,
+          "p95": 1000.4193340000002
+        },
+        "bridge": {
+          "average": 5.6806659642370505,
+          "p95": 5.6806659642370505
+        },
+        "decode": {
+          "average": 0,
+          "p95": 0
+        },
+        "paint": {
+          "average": 0,
+          "p95": 0
+        },
+        "receivedToPaint": {
+          "average": 0,
+          "p95": 0
+        },
+        "input": {
+          "average": 0,
+          "p95": 0
+        }
+      }
+    },
+    {
+      "sample": 16,
+      "report": {
+        "fps": 0,
+        "sourceFps": 0,
+        "reads": 1,
+        "bytes": 0,
+        "skippedBeforeRead": 0,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 0,
+        "read": {
+          "average": 1004.7000000476837,
+          "p95": 1004.7000000476837
+        },
+        "serverWait": {
+          "average": 1000.0264999999999,
+          "p95": 1000.0264999999999
+        },
+        "bridge": {
+          "average": 4.673500047683774,
+          "p95": 4.673500047683774
+        },
+        "decode": {
+          "average": 0,
+          "p95": 0
+        },
+        "paint": {
+          "average": 0,
+          "p95": 0
+        },
+        "receivedToPaint": {
+          "average": 0,
+          "p95": 0
+        },
+        "input": {
+          "average": 0,
+          "p95": 0
+        }
+      }
+    }
+  ]
+}

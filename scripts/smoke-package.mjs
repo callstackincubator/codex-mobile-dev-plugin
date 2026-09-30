@@ -9,6 +9,7 @@ const source = resolve(process.argv[2] ?? "release/marketplace/plugins/mobile-de
 const temporary = await mkdtemp(join(tmpdir(), "mobile-dev-package-test-"));
 const plugin = join(temporary, "mobile-dev");
 let transport;
+let runtimeTransport;
 try {
   await cp(source, plugin, { recursive: true, verbatimSymlinks: true });
   await access(join(plugin, "dist/baguette/Baguette"));
@@ -50,11 +51,20 @@ try {
   }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.32/simulator.html");
+  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.34/simulator.html");
   assert.ok(resource.contents[0].text.includes('workspace-toolbar'));
   assert.ok(resource.contents[0].text.includes('workspace-panels'));
   assert.ok(resource.contents[0].text.includes('tool-logs'));
-  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.32/workspace.html");
+  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.34/workspace.html");
+  assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, []);
+  assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
+  runtimeTransport = new StdioClientTransport({ command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe" });
+  const runtime = new Client({ name: "mobile-dev-package-runtime", version: "1" });
+  await runtime.connect(runtimeTransport);
+  const runtimeResource = await runtime.readResource({ uri: entrypoint._meta.ui.resourceUri });
+  assert.deepEqual(runtimeResource.contents[0], resource.contents[0]);
+  await runtime.close();
+  console.log("Discovery/runtime processes agree on UI addresses, HTML, and CSP without browser network access.");
   assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
   const oldWorkspace = await client.readResource({ uri: "ui://mobile-dev/workspace.html" });
   assert.equal(oldWorkspace.contents[0].text, workspaceResource.contents[0].text);
@@ -79,6 +89,7 @@ try {
   assert.equal(stopped, true, "The bundled backend should stop when MCP closes.");
   console.log("MCP shutdown stopped the bundled backend. No simulator was booted or changed.");
 } finally {
+  await runtimeTransport?.close();
   await transport?.close();
   await rm(temporary, { recursive: true, force: true });
 }

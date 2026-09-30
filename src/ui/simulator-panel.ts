@@ -9,6 +9,12 @@ import type { SimulatorDevice, Status } from "../shared/protocol.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
 import type { PanelContext } from "./model-context.ts";
 import { AndroidVideo } from "./android-video.ts";
+import { FrameStream } from "./frame-stream.ts";
+import { FrameArrivals } from "./frame-arrivals.ts";
+import { readFrame } from "./read-frame.ts";
+import { BrowserProfile } from "./browser-profile.ts";
+import { StreamInput } from "./stream-input.ts";
+import type { StreamMessage } from "./stream-input.ts";
 import { IosVideo } from "./ios-video.ts";
 import type { AndroidVideoBatch } from "./android-video.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
@@ -38,7 +44,7 @@ export function createSimulatorPanel(
   const screenshotButton = element<HTMLButtonElement>("screenshot");
   let status: Status | undefined;
   let selected: SimulatorDevice | undefined;
-  type PanelStream = { id: string; frameUri: string; epoch: number; platform: "ios" | "android"; inputs: object[]; sending?: Promise<void>; closing?: Promise<void> };
+  type PanelStream = { id: string; frameUri: string; epoch: number; platform: "ios" | "android"; controller: AbortController; input?: StreamInput; reader?: FrameStream<ImageBitmap>; closing?: Promise<void> };
   const reconnect = new ReconnectLoop();
   let stream: PanelStream | undefined;
   let ready = false;
@@ -72,34 +78,33 @@ export function createSimulatorPanel(
     root.querySelectorAll<HTMLButtonElement>("[data-button]").forEach(button => { button.disabled = !active; });
   }
 
-  function send(message: object) {
+  function send(message: StreamMessage) {
     if (!ready || !stream || inputBlocked) return;
-    const previous = stream.inputs.at(-1) as { type?: string } | undefined;
-    if ((message as { type?: string }).type === "touch1-move" && previous?.type === "touch1-move") stream.inputs.pop();
-    stream.inputs.push(message);
-    void flushInput(stream);
+    stream.input?.send(message);
   }
 
   function flushInput(session: PanelStream): Promise<void> {
-    if (session.sending) return session.sending;
-    if (!session.inputs.length) return Promise.resolve();
-    session.sending = (async () => {
+    return session.input?.flush() ?? Promise.resolve();
+  }
+
+  function createInput(session: PanelStream) {
+    return new StreamInput(async messages => {
+      const started = performance.now();
       try {
-        while (session.inputs.length) {
-          await call(session.platform === "android" ? "mobile_android_stream_input" : "mobile_stream_input", { sessionId: session.id, messages: session.inputs.splice(0, 64) }, { timeout: 5000 });
-        }
-      } catch (error) {
-        session.inputs.length = 0;
-        if (session.epoch === epoch) {
-          const failure = error as Error & { inputBlocked?: boolean; streamDisconnected?: boolean };
-          if (failure.inputBlocked) inputBlocked = true;
-          if (failure.streamDisconnected) { ready = false; cancelPointer(); }
-          notice(failure.streamDisconnected ? "Reconnecting…" : failure.message ?? "Simulator input failed.");
-          controls();
-        }
-      } finally { session.sending = undefined; }
-    })();
-    return session.sending;
+        const tool = session.platform === "android" ? "mobile_android_stream_input" : "mobile_stream_input";
+        await call(tool, { sessionId: session.id, messages }, { timeout: 5000 });
+      } finally { session.reader?.inputTiming(performance.now() - started); }
+    }, error => {
+      if (session.epoch !== epoch) return;
+      const failure = error as Error & { inputBlocked?: boolean; streamDisconnected?: boolean };
+      if (failure.inputBlocked) inputBlocked = true;
+      ready = false;
+      cancelPointer();
+      notice(failure.streamDisconnected ? "Reconnecting…" : failure.message ?? "Simulator input failed.");
+      controls();
+      session.reader?.fail(error);
+      session.controller.abort(error);
+    });
   }
 
   function releasePointer() {
@@ -120,7 +125,7 @@ export function createSimulatorPanel(
     if (session.closing) return session.closing;
     session.closing = (async () => {
       if (graceful) await flushInput(session);
-      else session.inputs.length = 0;
+      session.input?.close();
       if (stream === session) { cancelPointer(); stream = undefined; ready = false; controls(); }
       try { await call(session.platform === "android" ? "mobile_android_stream_close" : "mobile_stream_close", { sessionId: session.id }, { timeout: 3000 }); }
       catch { /* Idle streams also expire on the server. */ }
@@ -317,7 +322,7 @@ export function createSimulatorPanel(
   async function openAndReceive(udid: string, sessionEpoch: number, signal: AbortSignal) {
     const streamPlatform = platform;
     const closeTool = streamPlatform === "android" ? "mobile_android_stream_close" : "mobile_stream_close";
-    const result = await call(streamPlatform === "android" ? "mobile_android_stream_session" : "mobile_stream_session", streamPlatform === "android" ? { deviceId: udid } : { udid, fps: 30 }, { timeout: 45000 });
+    const result = await call(streamPlatform === "android" ? "mobile_android_stream_session" : "mobile_stream_session", streamPlatform === "android" ? { deviceId: udid } : { udid, fps: 60 }, { timeout: 45000 });
     const id = result._meta?.sessionId;
     const frameUri = result._meta?.frameUri;
     if (typeof id !== "string" || typeof frameUri !== "string") throw new StopReconnectError("The plugin did not return a stream session.");
@@ -332,50 +337,84 @@ export function createSimulatorPanel(
     inputRepairMessage = data.inputRepairMessage ?? "";
     notice();
     points = { width: data.definition.screen.rect.width, height: data.definition.screen.rect.height };
-    stream = { id, frameUri, epoch: sessionEpoch, platform: streamPlatform, inputs: [] };
+    stream = { id, frameUri, epoch: sessionEpoch, platform: streamPlatform, controller: new AbortController() };
     ready = false;
     seenFrames = 0;
     controls();
     const session = stream;
-    try { if (session.platform === "android") await receiveAndroidFrames(session, signal); else await receiveFrames(session, signal); }
+    session.input = createInput(session);
+    const receiveSignal = AbortSignal.any([signal, session.controller.signal]);
+    try {
+      if (session.platform === "android") await receiveAndroidFrames(session, receiveSignal);
+      else await receiveFrames(session, receiveSignal);
+      if (session.controller.signal.aborted) throw session.controller.signal.reason;
+    }
     finally { await closePanel(session); }
   }
 
+  const arrivals = new FrameArrivals();
+  function observeFrame(event: MessageEvent) {
+    if (event.source !== window.parent) return;
+    const arrivedAt = performance.timeOrigin + performance.now();
+    arrivals.record(event.data, arrivedAt);
+  }
+  if (platform === "ios") window.addEventListener("message", observeFrame);
+
   async function receiveFrames(session: PanelStream, signal: AbortSignal) {
     const uri = new URL(session.frameUri);
-    let after = 0;
-    const decoder = new IosVideo(bitmap => {
+    const browserProfile = new BrowserProfile();
+    browserProfile.start();
+    const decoder = new IosVideo(async () => {
       if (signal.aborted || session.epoch !== epoch) return;
-      drawFrame(bitmap, bitmap.width, bitmap.height);
-    }, async () => {
-      if (signal.aborted || session.epoch !== epoch) return;
-      session.inputs.length = 0;
+      session.input?.clear();
+      session.reader?.clearFrames();
       releasePointer(); ready = false;
       notice("Recovering iOS video…"); controls();
       await flushInput(session);
       if (signal.aborted || session.epoch !== epoch) return;
       await call("mobile_stream_reset", { sessionId: session.id }, { signal, timeout: 5000 });
-    }, signal);
-    try {
-      while (!signal.aborted && session.epoch === epoch) {
+    }, signal, (phase, elapsed, startedAt) => {
+      session.reader?.decodeTiming(phase, elapsed);
+      browserProfile.decode(phase, startedAt, elapsed);
+    });
+    const reader = new FrameStream<ImageBitmap>({
+      async read(after, readSignal) {
         uri.searchParams.set("after", String(after));
-        const result = await app.readServerResource({ uri: uri.href }, { signal, timeout: 15000 });
-        if (signal.aborted || session.epoch !== epoch) return;
-        const image = result.contents.find(item => item.mimeType === "image/jpeg" && "blob" in item);
-        if (!image || !("blob" in image)) {
-          const idle = result.contents.find(item => item.mimeType === "application/json" && "text" in item);
-          if (idle && "text" in idle && JSON.parse(idle.text).state === "reconnecting") {
-            ready = false; cancelPointer(); session.inputs.length = 0;
-            notice("Reconnecting…"); controls();
-          }
-          continue;
+        const resource = await app.readServerResource({ uri: uri.href }, { signal: readSignal, timeout: 15000 });
+        const result = readFrame(resource);
+        const browserArrivedAt = arrivals.take(uri.href, result.serverPreparedAt);
+        browserProfile.response(result.serverPreparedAt,
+          browserArrivedAt, result.frame?.sequence ?? null);
+        if (result.connectionState === "reconnecting") {
+          reader.clearFrames();
+          ready = false; cancelPointer(); session.input?.clear();
+          notice("Reconnecting…"); controls();
         }
-        const sequence = Number(image._meta?.sequence);
-        if (!Number.isSafeInteger(sequence) || sequence <= after) throw new StopReconnectError("The plugin returned an invalid frame sequence.");
-        after = sequence;
-        await decoder.accept(image.blob);
-      }
-    } finally { decoder.close(); }
+        return { ...result, browserArrivedAt };
+      },
+      decode: data => decoder.decode(data),
+      paint(bitmap) {
+        if (signal.aborted || session.epoch !== epoch) return;
+        drawFrame(bitmap, bitmap.width, bitmap.height);
+      },
+      requestPaint: callback => requestAnimationFrame(callback),
+      cancelPaint: id => cancelAnimationFrame(id),
+    });
+    session.reader = reader;
+    const stats = setInterval(() => {
+      const report = reader.stats();
+      const browser = browserProfile.stats(document.visibilityState);
+      const diagnostics = JSON.stringify({ ...report, browser, logRenderingEnabled: true });
+      console.info("[mobile-dev] Stream timings", diagnostics);
+    }, 1000);
+    try { await reader.run(signal); }
+    finally {
+      clearInterval(stats);
+      browserProfile.stop();
+      decoder.close();
+      session.reader = undefined;
+      arrivals.clear();
+    }
   }
 
   function drawFrame(image: CanvasImageSource, width: number, height: number) {
@@ -400,7 +439,7 @@ export function createSimulatorPanel(
       void call("mobile_android_stream_reset", { sessionId: session.id }, { timeout: 5000 }).catch(() => {});
     }, () => {
       if (signal.aborted || session.epoch !== epoch) return;
-      session.inputs.length = 0;
+      session.input?.clear();
       releasePointer(); ready = false;
       notice("Recovering Android video…"); controls();
     });
@@ -418,7 +457,7 @@ export function createSimulatorPanel(
         if (!content || !("text" in content)) throw new Error("The plugin returned an invalid Android video batch.");
         const batch = JSON.parse(content.text) as AndroidVideoBatch;
         after = batch.sequence;
-        if (generation !== batch.generation) { generation = batch.generation; session.inputs.length = 0; releasePointer(); ready = false; controls(); }
+        if (generation !== batch.generation) { generation = batch.generation; session.input?.clear(); releasePointer(); ready = false; controls(); }
         await decoder.accept(batch);
         if (seenFrames !== previousFrames) { lastFrame = performance.now(); previousFrames = seenFrames; }
         if (performance.now() - lastFrame > 15000) throw new Error("Android video stopped producing frames. Reconnecting.");
@@ -509,7 +548,7 @@ export function createSimulatorPanel(
   devicePickerElement.addEventListener("change", () => { void action(async () => { await disconnect(); selectDevice(); await start(); }); });
   element("start-device").addEventListener("click", () => { void action(start); });
   root.querySelectorAll<HTMLButtonElement>("[data-button]").forEach(button => {
-    button.addEventListener("click", () => { send({ type: "button", button: button.dataset.button }); });
+    button.addEventListener("click", () => { send({ type: "button", button: button.dataset.button === "home" ? "home" : "app-switcher" }); });
   });
   screenshotButton.addEventListener("click", () => { void action(async () => {
     if (!selected || selected.state !== "Booted" || !panelContext.canAttachScreenshots) return;
@@ -566,6 +605,8 @@ export function createSimulatorPanel(
       toolsAvailable = false;
       resizeObserver.disconnect();
       window.removeEventListener("blur", releasePointer);
+      window.removeEventListener("message", observeFrame);
+      arrivals.clear();
       document.removeEventListener("visibilitychange", onVisibility);
       root.removeEventListener("pointerdown", activate, { capture: true });
       root.removeEventListener("focusin", activate);
