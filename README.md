@@ -6,6 +6,7 @@ The first version supports:
 
 - A native sidebar entry and a panel beside a chat.
 - A centered simulator with one toolbar for device selection, Start/Pause, Home, App Switcher, Lock, and refresh.
+- A screenshot button that adds an iOS PNG to the chat input and copies the same image to the macOS clipboard.
 - Live MJPEG for iOS and H.264 for Android, with a target of 30 fps and a small frame counter. The host's MCP bridge sets the delivered frame rate.
 - An iOS/Android picker, Android AVD boot and shutdown, and connected Android devices.
 - Pointer taps and drags and printable US-ASCII typing directly on the focused screen.
@@ -49,6 +50,8 @@ Android H.264 packets travel through MCP resource reads. The panel decodes them 
 For tool use, call `mobile_list_android_devices`. It returns serials for connected devices and `avd:<name>` IDs for stopped AVDs. Boot a selected AVD with `mobile_boot_android_emulator` and use its returned running serial for later calls. `mobile_shutdown_android_emulator` stops an emulator. `mobile_android_screenshot`, `mobile_android_describe_ui`, and `mobile_android_send_input` inspect and control running devices. Gesture coordinates use screen pixels and matching screen width and height. For agent-device, pass `platform: "android"`, `serial`, and a named session.
 
 `vendor:serve-emu` installs the pinned npm runtime with package scripts disabled and checks the bundled scrcpy 4.0 server's SHA-256. `build` copies the full runtime and records package integrity, lockfile hash, and scrcpy hash in `dist/serve-emu/release.json`. Starting Android requires no npm install or runtime download.
+
+Click the camera button in the iOS simulator toolbar to add a fresh PNG to the chat input and copy it to the macOS clipboard. Each click adds another screenshot and keeps any attached log. Remove screenshots from the chat input to clear them. The button works while the selected iOS simulator runs, including when the stream is paused. It does not send a message.
 
 ## App logs
 

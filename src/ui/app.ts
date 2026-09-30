@@ -31,6 +31,7 @@ let bezel: Bezel | undefined;
 bezelImage.addEventListener("error", () => { setBezel(); fitScreen(); });
 const startButton = element<HTMLButtonElement>("start");
 const refreshButton = element<HTMLButtonElement>("refresh");
+const screenshotButton = element<HTMLButtonElement>("screenshot");
 const repairButton = element<HTMLButtonElement>("repair-input");
 let status: Status | undefined;
 let selected: SimulatorDevice | undefined;
@@ -62,6 +63,8 @@ function controls() {
   document.querySelector<HTMLButtonElement>('[data-button="back"]')!.hidden = platform !== "android";
   devices.disabled = busy || !toolsAvailable || !status?.connected || !status.devices.length;
   refreshButton.disabled = busy || !toolsAvailable;
+  screenshotButton.disabled = platform !== "ios" || busy || !toolsAvailable || !status?.connected || selected?.state !== "Booted" || !panelContext.canAttachScreenshots;
+  screenshotButton.title = platform !== "ios" ? "Screenshot to chat and clipboard is available for iOS" : panelContext.canAttachScreenshots ? "Screenshot to chat and clipboard" : "This host does not support screenshot attachments";
   startButton.disabled = busy || !toolsAvailable || !status || (status.connected && !selected);
   startButton.textContent = busy ? "Working…" : reconnect.active ? "Pause" : status && !status.connected ? "Retry" : "Start";
   startButton.dataset.streaming = String(reconnect.active);
@@ -443,6 +446,27 @@ refreshButton.addEventListener("click", () => { void action(async () => {
   await listDevices();
   if (!reconnect.active) await connect();
 }); });
+screenshotButton.addEventListener("click", () => { void action(async () => {
+  if (platform !== "ios" || !selected || selected.state !== "Booted" || !panelContext.canAttachScreenshots) return;
+  const simulator = selected;
+  const screenshotStatus = element("screenshot-status");
+  screenshotStatus.hidden = false;
+  screenshotStatus.textContent = "Taking screenshot…";
+  try {
+    const result = await call("mobile_capture_screenshot", { udid: simulator.udid }, { timeout: 30000 });
+    const image = result.content.find(item => item.type === "image" && item.mimeType === "image/png");
+    if (!image || image.type !== "image") throw new Error("The plugin did not return a PNG screenshot.");
+    const clipboard = result.structuredContent as { copied: boolean; clipboardError?: string };
+    const clipboardStatus = clipboard.copied ? "Copied to clipboard." : `Clipboard copy failed: ${clipboard.clipboardError ?? "Unknown error"}.`;
+    let attached = false;
+    try { attached = await panelContext.attachScreenshot({ id: crypto.randomUUID(), data: image.data, simulator }); }
+    catch (error) {
+      screenshotStatus.textContent = `${clipboardStatus} Chat attachment failed: ${error instanceof Error ? error.message : String(error)}`;
+      return;
+    }
+    screenshotStatus.textContent = `${attached ? "Screenshot attached to chat." : "Screenshot removed from chat."} ${clipboardStatus}`;
+  } catch (error) { screenshotStatus.textContent = error instanceof Error ? error.message : String(error); }
+}); });
 repairButton.addEventListener("click", () => { void action(async () => {
   if (!selected) return;
   const udid = selected.udid;
@@ -465,6 +489,7 @@ function hostContext() {
   document.documentElement.style.setProperty("--host-safe-bottom", `${Math.max(0, bottomInset)}px`);
   fitScreen();
   panelContext.hostChanged();
+  controls();
 }
 app.ontoolinput = () => { empty("Loading simulators…"); };
 app.ontoolresult = result => {

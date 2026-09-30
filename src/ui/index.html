@@ -32,9 +32,11 @@
         <button class="icon-button cursor-interaction" data-button="home" title="Home" aria-label="Home" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v11h5v-7h4v7h5V9"/></svg></button>
         <button class="icon-button cursor-interaction" data-button="power" title="Lock" aria-label="Lock" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></button>
         <button class="icon-button cursor-interaction" data-button="app-switcher" title="App Switcher" aria-label="App Switcher" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="13" height="14" rx="3"/><path d="M8 7V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3"/></svg></button>
+        <button id="screenshot" class="icon-button cursor-interaction" title="Screenshot to chat and clipboard" aria-label="Screenshot to chat and clipboard" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5 6 8H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-2l-2-3Z"/><circle cx="12" cy="14" r="4"/></svg></button>
         <button id="refresh" class="icon-button cursor-interaction" title="Refresh simulators" aria-label="Refresh simulators"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 3M18 18A8 8 0 0 1 5 15"/></svg></button>
       </div>
       <p id="notice" role="status" hidden><span id="notice-message"></span> <button id="repair-input" class="cursor-interaction" title="Restarts SpringBoard and closes running simulator apps" hidden>Repair input</button></p>
+      <p id="screenshot-status" role="status" hidden></p>
     </header>
     <section id="stage" aria-label="Live simulator screen">
       <p id="empty" role="status">Loading simulators…</p>

@@ -45,6 +45,7 @@ button:disabled, select:disabled { opacity: .4; }
 :focus-visible { outline: 2px solid var(--panel-text); outline-offset: 3px; }
 #notice { margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--panel-border); color: #d84949; font-size: 12px; overflow-wrap: anywhere; }
 #repair-input { padding: 3px 8px; border-radius: 6px; color: var(--panel-text); background: var(--toolbar-bg); }
+#screenshot-status { margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--panel-border); color: var(--panel-muted); font-size: 12px; overflow-wrap: anywhere; }
 #stage { flex: 1; min-height: 0; display: grid; place-items: center; padding: 24px; overflow: hidden; }
 #empty { max-width: 300px; margin: 0; color: var(--panel-muted); text-align: center; font-size: 13px; }
 #device-frame { --frame-radius: 48px; padding: 7px; border-radius: var(--frame-radius); background: #0c0c0d; box-shadow: 0 0 0 1px #606064, 0 0 0 3px #252527, 0 10px 30px #00000018; }
