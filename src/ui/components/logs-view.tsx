@@ -36,12 +36,14 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
     const Icon = item.level === "error" ? CircleAlertIcon : item.level === "warn" ? TriangleAlertIcon : InfoIcon;
     const prefix = item.tag || item.process;
     return <Toggle type="button" data-log-row data-level={item.level} pressed={item.sequence === selectedSequence}
-      className="log-row grid h-auto min-h-7 w-full grid-cols-[14px_8ch_1px_minmax(0,1fr)] items-start gap-x-2 rounded-none border-b px-2 py-1 text-left font-mono text-xs leading-[18px] font-normal whitespace-normal"
+      className="log-row relative grid h-auto min-h-7 w-full grid-cols-[14px_8ch_1px_minmax(0,1fr)] items-start gap-x-2 rounded-none border-b px-2 py-1 text-left font-mono text-xs leading-[18px] font-normal whitespace-normal"
+      style={item.count > 1 ? { paddingRight: Math.max(36, String(item.count).length * 6 + 24) } : undefined}
       title={`${item.source === "js" ? "JS" : "Native"} · ${item.process ?? item.origin} · ${item.timestamp}\n${item.message}`} onPressedChange={pressed => panel.list.select(pressed ? item.sequence : undefined)}>
       <Icon className="log-severity mt-0.5 size-3.5" aria-label={item.level} />
       <span className="text-muted-foreground tabular-nums">{timeFormat.format(new Date(item.lastTimestamp))}</span>
       <span className="mt-0.5 h-3.5 w-px bg-muted-foreground/70" aria-hidden="true" />
-      <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{prefix && <span>{prefix}: </span>}{item.message}{item.count > 1 && <Badge variant="outline" className="ml-2 inline-flex px-1 py-0 align-middle text-[10px] text-current" aria-label={`${item.count} occurrences`}>{item.count}×</Badge>}</span>
+      <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{prefix && <span>{prefix}: </span>}{item.message}</span>
+      {item.count > 1 && <Badge variant="outline" className="absolute top-1 right-2 h-5 min-w-5 rounded-full bg-secondary px-1 py-0 font-sans text-[10px] leading-none text-secondary-foreground tabular-nums" aria-label={`${item.count} occurrences`}>{item.count}</Badge>}
     </Toggle>;
   }, [panel, selectedSequence]);
 
