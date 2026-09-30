@@ -1,0 +1,2553 @@
+{
+  "source": "User-supplied logs.web-san on 2026-09-30",
+  "version": "0.1.22",
+  "notes": "17 consecutive console reports; no explicit interaction timestamps. Samples 1 and 2 have high source sequence rates and input activity. Sample 3 also has input activity but source rate drops to 38/s; samples 4\u201317 have zero input timings. Sequence FPS does not measure distinct visual updates. Overlap summaries cover only the three slowest intervals per report, not all frames.",
+  "reports": [
+    {
+      "fps": 46.268356468066344,
+      "sourceFps": 69.40253470209952,
+      "reads": 47,
+      "bytes": 6547807,
+      "skippedBeforeRead": 22,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 2,
+      "read": {
+        "average": 21.661702126898664,
+        "p95": 62.59999996423721
+      },
+      "serverWait": {
+        "average": 5.53854170212698,
+        "p95": 14.48333399999683
+      },
+      "bridge": {
+        "average": 16.123160424771683,
+        "p95": 55.61708396423637
+      },
+      "requestTravel": {
+        "average": 4.364704537898936,
+        "p95": 24.852294921875
+      },
+      "serverPrepare": {
+        "average": 0.06476094913631776,
+        "p95": 0.09925392187869875
+      },
+      "responseTravel": {
+        "average": 11.472422498337766,
+        "p95": 52.997314453125
+      },
+      "sdkDispatch": {
+        "average": 0.22127971243351063,
+        "p95": 0.400146484375
+      },
+      "paintWait": {
+        "average": 5.747826086438221,
+        "p95": 10.399999976158142
+      },
+      "jpegPrepare": {
+        "average": 0.5680851073975258,
+        "p95": 0.699999988079071
+      },
+      "bitmapDecode": {
+        "average": 5.325000000496705,
+        "p95": 30.700000047683716
+      },
+      "decode": {
+        "average": 5.895833333333333,
+        "p95": 31.30000001192093
+      },
+      "paint": {
+        "average": 0.03478260532669399,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 24.47826086956522,
+        "p95": 67
+      },
+      "input": {
+        "average": 14.262790693793185,
+        "p95": 51.89999997615814
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 40,
+          "average": 8.844999998807907,
+          "p95": 44.89999997615814,
+          "max": 59.90000003576279
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 49730.36474609375,
+            "duration": 70.835205078125,
+            "sequence": 1287,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 41.09995114803314
+          },
+          {
+            "startTime": 49880.71142578125,
+            "duration": 62.888671875,
+            "sequence": 1298,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 59.90000003576279
+          },
+          {
+            "startTime": 49471.802734375,
+            "duration": 52.997314453125,
+            "sequence": 1269,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 51.39999997615814
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 50149.200000047684,
+            "duration": 46.39999997615814,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 29.30000001192093
+          },
+          {
+            "startTime": 49349.10000002384,
+            "duration": 42.60000002384186,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 36.5
+          },
+          {
+            "startTime": 50114.5,
+            "duration": 30.700000047683716,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 16.5
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 43.929712459018205,
+      "sourceFps": 73.88178913562153,
+      "reads": 54,
+      "bytes": 7423324,
+      "skippedBeforeRead": 20,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 9,
+      "read": {
+        "average": 18.627777778440052,
+        "p95": 50.60000002384186
+      },
+      "serverWait": {
+        "average": 3.9117491851850192,
+        "p95": 12.21916699999565
+      },
+      "bridge": {
+        "average": 14.716028593255032,
+        "p95": 41.696083988084865
+      },
+      "requestTravel": {
+        "average": 5.694412796585648,
+        "p95": 30.283447265625
+      },
+      "serverPrepare": {
+        "average": 0.055296351562665894,
+        "p95": 0.09875293750519631
+      },
+      "responseTravel": {
+        "average": 8.742264359085649,
+        "p95": 33.859619140625
+      },
+      "sdkDispatch": {
+        "average": 0.2240577980324074,
+        "p95": 0.300048828125
+      },
+      "paintWait": {
+        "average": 5.659090921282768,
+        "p95": 13.200000047683716
+      },
+      "jpegPrepare": {
+        "average": 0.5481481507972434,
+        "p95": 0.699999988079071
+      },
+      "bitmapDecode": {
+        "average": 7.911111107578984,
+        "p95": 35.69999998807907
+      },
+      "decode": {
+        "average": 8.461111109565806,
+        "p95": 36.10000002384186
+      },
+      "paint": {
+        "average": 0.025000001896511425,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 24.363636363636363,
+        "p95": 50
+      },
+      "input": {
+        "average": 16.218181816014376,
+        "p95": 52.5
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 43,
+          "average": 7.2906976758047595,
+          "p95": 27.600000023841858,
+          "max": 42.89999997615814
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 50397.054443359375,
+            "duration": 37.6455078125,
+            "sequence": 1330,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 34.80000001192093
+          },
+          {
+            "startTime": 50521.60595703125,
+            "duration": 37.593994140625,
+            "sequence": 1340,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 37.39404296875
+          },
+          {
+            "startTime": 50934.540283203125,
+            "duration": 33.859619140625,
+            "sequence": 1369,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 20.100000023841858
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 50509.5,
+            "duration": 49.200000047683716,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 42.60000002384186
+          },
+          {
+            "startTime": 50756,
+            "duration": 36.10000002384186,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 18.299999952316284
+          },
+          {
+            "startTime": 50931.40000003576,
+            "duration": 35.69999998807907,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 19.69999998807907
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 35.129980929018586,
+      "sourceFps": 38.1411221515059,
+      "reads": 36,
+      "bytes": 4984253,
+      "skippedBeforeRead": 2,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 2,
+      "read": {
+        "average": 27.75555555522442,
+        "p95": 69.10000002384186
+      },
+      "serverWait": {
+        "average": 17.93020369444376,
+        "p95": 46.44033300000592
+      },
+      "bridge": {
+        "average": 9.825351860780655,
+        "p95": 24.896167035767576
+      },
+      "requestTravel": {
+        "average": 2.9318915473090277,
+        "p95": 12.162109375
+      },
+      "serverPrepare": {
+        "average": 0.058477674913875594,
+        "p95": 0.10808299999916926
+      },
+      "responseTravel": {
+        "average": 6.593315972222222,
+        "p95": 20.212158203125
+      },
+      "sdkDispatch": {
+        "average": 0.2416720920138889,
+        "p95": 0.39990234375
+      },
+      "paintWait": {
+        "average": 3.4028571469443185,
+        "p95": 13.600000023841858
+      },
+      "jpegPrepare": {
+        "average": 0.5083333353201548,
+        "p95": 0.6000000238418579
+      },
+      "bitmapDecode": {
+        "average": 5.361111111111111,
+        "p95": 19.5
+      },
+      "decode": {
+        "average": 5.869444446431266,
+        "p95": 20.100000023841858
+      },
+      "paint": {
+        "average": 0.025714285033089774,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 17.82857142857143,
+        "p95": 35
+      },
+      "input": {
+        "average": 185,
+        "p95": 185
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 50,
+          "average": 3.767999999523163,
+          "p95": 16.30000001192093,
+          "max": 24.399999976158142
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 52218.507568359375,
+            "duration": 24.392333984375,
+            "sequence": 1434,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 24.29243165254593
+          },
+          {
+            "startTime": 51411.887939453125,
+            "duration": 20.212158203125,
+            "sequence": 1405,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 1.7000000476837158
+          },
+          {
+            "startTime": 52321.107666015625,
+            "duration": 19.492431640625,
+            "sequence": 1438,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 14.699999988079071
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 51433,
+            "duration": 23.80000001192093,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 15.699999988079071
+          },
+          {
+            "startTime": 52016.90000003576,
+            "duration": 19.5,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 12.699999988079071
+          },
+          {
+            "startTime": 51921.700000047684,
+            "duration": 18.19999998807907,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 10.900000035762787
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 18.99810019066036,
+      "sourceFps": 19.998000200695113,
+      "reads": 20,
+      "bytes": 2771403,
+      "skippedBeforeRead": 0,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 0,
+      "read": {
+        "average": 50.19499999880791,
+        "p95": 78.40000003576279
+      },
+      "serverWait": {
+        "average": 37.47019169999985,
+        "p95": 55.61320799999521
+      },
+      "bridge": {
+        "average": 12.724808298808057,
+        "p95": 26.963250011918717
+      },
+      "requestTravel": {
+        "average": 3.29007568359375,
+        "p95": 6.4833984375
+      },
+      "serverPrepare": {
+        "average": 0.12036005781264976,
+        "p95": 0.13311134375544498
+      },
+      "responseTravel": {
+        "average": 9.06937255859375,
+        "p95": 24.538818359375
+      },
+      "sdkDispatch": {
+        "average": 0.24500732421875,
+        "p95": 0.300048828125
+      },
+      "paintWait": {
+        "average": 2.536842101498654,
+        "p95": 9.899999976158142
+      },
+      "jpegPrepare": {
+        "average": 0.5600000053644181,
+        "p95": 0.7000000476837158
+      },
+      "bitmapDecode": {
+        "average": 3.8699999898672104,
+        "p95": 6.299999952316284
+      },
+      "decode": {
+        "average": 4.444999995827675,
+        "p95": 6.799999952316284
+      },
+      "paint": {
+        "average": 0.02631579261077078,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 17.105263157894736,
+        "p95": 39
+      },
+      "input": {
+        "average": 0,
+        "p95": 0
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 51,
+          "average": 3.6254901967796624,
+          "p95": 15.899999976158142,
+          "max": 19.399999976158142
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 52419.23779296875,
+            "duration": 24.8623046875,
+            "sequence": 1440,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 3.800097644329071
+          },
+          {
+            "startTime": 52641.861083984375,
+            "duration": 24.538818359375,
+            "sequence": 1444,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 16.59990233182907
+          },
+          {
+            "startTime": 52530.3486328125,
+            "duration": 19.6513671875,
+            "sequence": 1442,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 19.399999976158142
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 52600.700000047684,
+            "duration": 14.699999988079071,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0.09999996423721313
+          },
+          {
+            "startTime": 52771.700000047684,
+            "duration": 6.299999952316284,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          },
+          {
+            "startTime": 52445,
+            "duration": 5.400000035762787,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 2.800000011920929
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 20.98950524737631,
+      "sourceFps": 19.99000499750125,
+      "reads": 20,
+      "bytes": 2771376,
+      "skippedBeforeRead": 0,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 0,
+      "read": {
+        "average": 49.61500000059605,
+        "p95": 59.19999998807907
+      },
+      "serverWait": {
+        "average": 37.236872950000176,
+        "p95": 45.73295800000051
+      },
+      "bridge": {
+        "average": 12.378127050595868,
+        "p95": 27.25274999999965
+      },
+      "requestTravel": {
+        "average": 4.3635986328125,
+        "p95": 17.3623046875
+      },
+      "serverPrepare": {
+        "average": 0.05503378828107088,
+        "p95": 0.06699706250219606
+      },
+      "responseTravel": {
+        "average": 7.73948974609375,
+        "p95": 16.515380859375
+      },
+      "sdkDispatch": {
+        "average": 0.22000732421875,
+        "p95": 0.300048828125
+      },
+      "paintWait": {
+        "average": 2.2476190527280173,
+        "p95": 7.400000035762787
+      },
+      "jpegPrepare": {
+        "average": 0.5199999988079071,
+        "p95": 0.6000000238418579
+      },
+      "bitmapDecode": {
+        "average": 3.850000002980232,
+        "p95": 2.800000011920929
+      },
+      "decode": {
+        "average": 4.3800000011920925,
+        "p95": 3.400000035762787
+      },
+      "paint": {
+        "average": 0.023809526647840227,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 14.904761904761905,
+        "p95": 39
+      },
+      "input": {
+        "average": 0,
+        "p95": 0
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 49,
+          "average": 4.55714285616972,
+          "p95": 22,
+          "max": 32.5
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 53669.3251953125,
+            "duration": 28.77490234375,
+            "sequence": 1465,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 28.774804711341858
+          },
+          {
+            "startTime": 54315.384521484375,
+            "duration": 16.515380859375,
+            "sequence": 1478,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 16.41547852754593
+          },
+          {
+            "startTime": 54266.943603515625,
+            "duration": 13.656494140625,
+            "sequence": 1477,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0.6000000238418579
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 53880.40000003576,
+            "duration": 27.099999964237213,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 22
+          },
+          {
+            "startTime": 53479.80000001192,
+            "duration": 2.800000011920929,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          },
+          {
+            "startTime": 53821.60000002384,
+            "duration": 2.800000011920929,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 16.901968582022782,
+      "sourceFps": 17.89620202802412,
+      "reads": 18,
+      "bytes": 2494234,
+      "skippedBeforeRead": 0,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 1,
+      "read": {
+        "average": 52,
+        "p95": 106.69999998807907
+      },
+      "serverWait": {
+        "average": 32.609483611111905,
+        "p95": 98.35466699999961
+      },
+      "bridge": {
+        "average": 19.390516388888095,
+        "p95": 57.15079196423176
+      },
+      "requestTravel": {
+        "average": 3.114651150173611,
+        "p95": 16.761474609375
+      },
+      "serverPrepare": {
+        "average": 0.06062815104087349,
+        "p95": 0.12026171874458669
+      },
+      "responseTravel": {
+        "average": 15.98190646701389,
+        "p95": 51.098388671875
+      },
+      "sdkDispatch": {
+        "average": 0.2333306206597222,
+        "p95": 0.30029296875
+      },
+      "paintWait": {
+        "average": 1.3823529446826262,
+        "p95": 5.900000035762787
+      },
+      "jpegPrepare": {
+        "average": 0.5166666607062022,
+        "p95": 0.6000000238418579
+      },
+      "bitmapDecode": {
+        "average": 4.172222220235401,
+        "p95": 30.80000001192093
+      },
+      "decode": {
+        "average": 4.688888880941603,
+        "p95": 31.400000035762787
+      },
+      "paint": {
+        "average": 0.023529413868399227,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 24.941176470588236,
+        "p95": 77
+      },
+      "input": {
+        "average": 0,
+        "p95": 0
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 47,
+          "average": 5.393617018740228,
+          "p95": 29.30000001192093,
+          "max": 34.09999996423721
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 54585.901611328125,
+            "duration": 51.098388671875,
+            "sequence": 1483,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 12.898388683795929
+          },
+          {
+            "startTime": 54519.440673828125,
+            "duration": 44.959228515625,
+            "sequence": 1482,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 2.600000023841858
+          },
+          {
+            "startTime": 55267.520263671875,
+            "duration": 36.579833984375,
+            "sequence": 1497,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 34.09999996423721
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 54565.40000003576,
+            "duration": 30.80000001192093,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 29.30000001192093
+          },
+          {
+            "startTime": 54845.200000047684,
+            "duration": 2.899999976158142,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          },
+          {
+            "startTime": 54978.60000002384,
+            "duration": 2.899999976158142,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 21.04630186384958,
+      "sourceFps": 22.04850671450908,
+      "reads": 21,
+      "bytes": 2909940,
+      "skippedBeforeRead": 1,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 0,
+      "read": {
+        "average": 50.73809523809524,
+        "p95": 97.90000003576279
+      },
+      "serverWait": {
+        "average": 32.809357047619066,
+        "p95": 49.905666999999085
+      },
+      "bridge": {
+        "average": 17.92873819047617,
+        "p95": 47.77625002384593
+      },
+      "requestTravel": {
+        "average": 8.514962332589286,
+        "p95": 25.46630859375
+      },
+      "serverPrepare": {
+        "average": 0.06021372991069386,
+        "p95": 0.06838378124666633
+      },
+      "responseTravel": {
+        "average": 9.086890811011905,
+        "p95": 28.6201171875
+      },
+      "sdkDispatch": {
+        "average": 0.26663643973214285,
+        "p95": 0.39990234375
+      },
+      "paintWait": {
+        "average": 3.21428572563898,
+        "p95": 9
+      },
+      "jpegPrepare": {
+        "average": 0.4904761938821702,
+        "p95": 0.6000000238418579
+      },
+      "bitmapDecode": {
+        "average": 5.457142849763234,
+        "p95": 6.399999976158142
+      },
+      "decode": {
+        "average": 5.957142852601551,
+        "p95": 7
+      },
+      "paint": {
+        "average": 0.023809520971207393,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 19.333333333333332,
+        "p95": 53
+      },
+      "input": {
+        "average": 0,
+        "p95": 0
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 48,
+          "average": 4.78125,
+          "p95": 20.399999976158142,
+          "max": 35.69999998807907
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 55464.8154296875,
+            "duration": 43.58447265625,
+            "sequence": 1501,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 20.399999976158142
+          },
+          {
+            "startTime": 55373.3798828125,
+            "duration": 28.6201171875,
+            "sequence": 1499,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 1.199999988079071
+          },
+          {
+            "startTime": 55721.0107421875,
+            "duration": 19.4892578125,
+            "sequence": 1506,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 18.899999976158142
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 55821.200000047684,
+            "duration": 46,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 35.69999998807907
+          },
+          {
+            "startTime": 56335.200000047684,
+            "duration": 6.399999976158142,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          },
+          {
+            "startTime": 55919.700000047684,
+            "duration": 5.799999952316284,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 20.084354287769205,
+      "sourceFps": 20.084354287769205,
+      "reads": 20,
+      "bytes": 2771403,
+      "skippedBeforeRead": 0,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 0,
+      "read": {
+        "average": 49.96999999880791,
+        "p95": 72.5
+      },
+      "serverWait": {
+        "average": 35.77811459999866,
+        "p95": 46.03754199999821
+      },
+      "bridge": {
+        "average": 14.191885398809244,
+        "p95": 41.74449998808268
+      },
+      "requestTravel": {
+        "average": 4.5710693359375,
+        "p95": 18.3916015625
+      },
+      "serverPrepare": {
+        "average": 0.05810366172008798,
+        "p95": 0.08201854687649757
+      },
+      "responseTravel": {
+        "average": 9.31268310546875,
+        "p95": 25.88330078125
+      },
+      "sdkDispatch": {
+        "average": 0.25,
+        "p95": 0.300048828125
+      },
+      "paintWait": {
+        "average": 2.2150000005960466,
+        "p95": 6.900000035762787
+      },
+      "jpegPrepare": {
+        "average": 0.5700000047683715,
+        "p95": 0.6000000238418579
+      },
+      "bitmapDecode": {
+        "average": 2.7699999898672103,
+        "p95": 3
+      },
+      "decode": {
+        "average": 3.339999994635582,
+        "p95": 3.600000023841858
+      },
+      "paint": {
+        "average": 0.03500000238418579,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 15.8,
+        "p95": 33
+      },
+      "input": {
+        "average": 0,
+        "p95": 0
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 46,
+          "average": 5.536956522775733,
+          "p95": 24.80000001192093,
+          "max": 38.59999996423721
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 56416.832275390625,
+            "duration": 40.567626953125,
+            "sequence": 1520,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 38.59999996423721
+          },
+          {
+            "startTime": 57216.5166015625,
+            "duration": 25.88330078125,
+            "sequence": 1536,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 24.799902319908142
+          },
+          {
+            "startTime": 56867.800537109375,
+            "duration": 22.8994140625,
+            "sequence": 1529,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 19.999951124191284
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 56458.40000003576,
+            "duration": 3.099999964237213,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          },
+          {
+            "startTime": 56787.40000003576,
+            "duration": 3,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          },
+          {
+            "startTime": 56972.700000047684,
+            "duration": 3,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0.5999999642372131
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 19.009504752376188,
+      "sourceFps": 19.009504752376188,
+      "reads": 19,
+      "bytes": 2632806,
+      "skippedBeforeRead": 0,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 0,
+      "read": {
+        "average": 50,
+        "p95": 77.40000003576279
+      },
+      "serverWait": {
+        "average": 37.39795842105148,
+        "p95": 47.16391699999804
+      },
+      "bridge": {
+        "average": 12.602041578948525,
+        "p95": 37.6946669880781
+      },
+      "requestTravel": {
+        "average": 4.706697162828948,
+        "p95": 34.27392578125
+      },
+      "serverPrepare": {
+        "average": 0.056001796876156924,
+        "p95": 0.07138476562249707
+      },
+      "responseTravel": {
+        "average": 7.560418379934211,
+        "p95": 30.181396484375
+      },
+      "sdkDispatch": {
+        "average": 0.2789113898026316,
+        "p95": 0.39990234375
+      },
+      "paintWait": {
+        "average": 2.8999999949806616,
+        "p95": 9.899999976158142
+      },
+      "jpegPrepare": {
+        "average": 0.5157894711745413,
+        "p95": 0.6000000238418579
+      },
+      "bitmapDecode": {
+        "average": 3.889473689229865,
+        "p95": 25.69999998807907
+      },
+      "decode": {
+        "average": 4.415789472429376,
+        "p95": 26.19999998807907
+      },
+      "paint": {
+        "average": 0.04210527005948519,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 16.42105263157895,
+        "p95": 42
+      },
+      "input": {
+        "average": 0,
+        "p95": 0
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 46,
+          "average": 5.830434782349545,
+          "p95": 28,
+          "max": 34.19999998807907
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 57767.0185546875,
+            "duration": 30.181396484375,
+            "sequence": 1547,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 30.181396484375
+          },
+          {
+            "startTime": 58016.837890625,
+            "duration": 29.06201171875,
+            "sequence": 1552,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 1.300000011920929
+          },
+          {
+            "startTime": 58167.90380859375,
+            "duration": 15.796142578125,
+            "sequence": 1555,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 3.199951171875
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 58121.40000003576,
+            "duration": 25.69999998807907,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 11.600000023841858
+          },
+          {
+            "startTime": 58184.700000047684,
+            "duration": 3,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          },
+          {
+            "startTime": 57922.80000001192,
+            "duration": 2.900000035762787,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0.5
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 20.761245674740483,
+      "sourceFps": 20.761245674740483,
+      "reads": 21,
+      "bytes": 2909925,
+      "skippedBeforeRead": 0,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 0,
+      "read": {
+        "average": 50.0571428565752,
+        "p95": 81.80000001192093
+      },
+      "serverWait": {
+        "average": 32.58503376190389,
+        "p95": 45.29841700000543
+      },
+      "bridge": {
+        "average": 17.47210909467131,
+        "p95": 36.52000001192209
+      },
+      "requestTravel": {
+        "average": 4.342959449404762,
+        "p95": 20.49755859375
+      },
+      "serverPrepare": {
+        "average": 0.059241721727067626,
+        "p95": 0.08145604687888408
+      },
+      "responseTravel": {
+        "average": 12.827067057291666,
+        "p95": 33.864990234375
+      },
+      "sdkDispatch": {
+        "average": 0.2428036644345238,
+        "p95": 0.300048828125
+      },
+      "paintWait": {
+        "average": 2.685714284578959,
+        "p95": 6.200000047683716
+      },
+      "jpegPrepare": {
+        "average": 0.4714285731315613,
+        "p95": 0.6000000238418579
+      },
+      "bitmapDecode": {
+        "average": 4.600000003973643,
+        "p95": 6.700000047683716
+      },
+      "decode": {
+        "average": 5.095238100914728,
+        "p95": 7.200000047683716
+      },
+      "paint": {
+        "average": 0.047619053295680454,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 21.523809523809526,
+        "p95": 41
+      },
+      "input": {
+        "average": 0,
+        "p95": 0
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 44,
+          "average": 6.990909091450951,
+          "p95": 30.30000001192093,
+          "max": 47.30000001192093
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 58567.455810546875,
+            "duration": 43.044189453125,
+            "sequence": 1563,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 20.69999998807907
+          },
+          {
+            "startTime": 59168.43505859375,
+            "duration": 33.864990234375,
+            "sequence": 1575,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 33.86494141817093
+          },
+          {
+            "startTime": 58817.295166015625,
+            "duration": 28.204833984375,
+            "sequence": 1568,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 24.099999964237213
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 58922,
+            "duration": 33.700000047683716,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 26.100000023841858
+          },
+          {
+            "startTime": 58611.5,
+            "duration": 6.700000047683716,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 4
+          },
+          {
+            "startTime": 58425.80000001192,
+            "duration": 5.800000011920929,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 1.5
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 18.346852067068497,
+      "sourceFps": 19.3124758600721,
+      "reads": 19,
+      "bytes": 2632802,
+      "skippedBeforeRead": 1,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 0,
+      "read": {
+        "average": 52.54736842293488,
+        "p95": 152.89999997615814
+      },
+      "serverWait": {
+        "average": 31.62390573684082,
+        "p95": 124.04841699999815
+      },
+      "bridge": {
+        "average": 20.923462686094066,
+        "p95": 43.691499988082796
+      },
+      "requestTravel": {
+        "average": 7.825696443256579,
+        "p95": 37.8232421875
+      },
+      "serverPrepare": {
+        "average": 0.07761307483681441,
+        "p95": 0.2731162031268468
+      },
+      "responseTravel": {
+        "average": 12.767475328947368,
+        "p95": 31.4970703125
+      },
+      "sdkDispatch": {
+        "average": 0.2526726973684211,
+        "p95": 0.400146484375
+      },
+      "paintWait": {
+        "average": 2.1210526322063648,
+        "p95": 8.100000023841858
+      },
+      "jpegPrepare": {
+        "average": 0.5210526334611993,
+        "p95": 0.6000000238418579
+      },
+      "bitmapDecode": {
+        "average": 9.742105264412729,
+        "p95": 60.59999996423721
+      },
+      "decode": {
+        "average": 10.268421053886414,
+        "p95": 61.09999996423721
+      },
+      "paint": {
+        "average": 0.057894731822766755,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 27.526315789473685,
+        "p95": 94
+      },
+      "input": {
+        "average": 0,
+        "p95": 0
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 43,
+          "average": 8.083720929400865,
+          "p95": 33.60000002384186,
+          "max": 46.39999997615814
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 59717.802978515625,
+            "duration": 31.4970703125,
+            "sequence": 1586,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 1
+          },
+          {
+            "startTime": 60016.531982421875,
+            "duration": 27.968017578125,
+            "sequence": 1592,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 20.30000001192093
+          },
+          {
+            "startTime": 59780.005859375,
+            "duration": 27.89404296875,
+            "sequence": 1587,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 27.494140625
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 59750.40000003576,
+            "duration": 60.59999996423721,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 41.09999996423721
+          },
+          {
+            "startTime": 60259.10000002384,
+            "duration": 42.5,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 24.400000035762787
+          },
+          {
+            "startTime": 59632.30000001192,
+            "duration": 36.60000002384186,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 27.899999976158142
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 19.640272895697343,
+      "sourceFps": 19.640272895697343,
+      "reads": 19,
+      "bytes": 2632823,
+      "skippedBeforeRead": 0,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 0,
+      "read": {
+        "average": 50.06315789410942,
+        "p95": 82
+      },
+      "serverWait": {
+        "average": 33.27837273684188,
+        "p95": 46.78870800000004
+      },
+      "bridge": {
+        "average": 16.784785157267546,
+        "p95": 63.04966599999898
+      },
+      "requestTravel": {
+        "average": 5.4404039884868425,
+        "p95": 39.02685546875
+      },
+      "serverPrepare": {
+        "average": 0.059646383223911185,
+        "p95": 0.0958085781239788
+      },
+      "responseTravel": {
+        "average": 11.026842619243421,
+        "p95": 35.6171875
+      },
+      "sdkDispatch": {
+        "average": 0.2579152960526316,
+        "p95": 0.400146484375
+      },
+      "paintWait": {
+        "average": 1.9105263132798045,
+        "p95": 5.800000011920929
+      },
+      "jpegPrepare": {
+        "average": 0.5,
+        "p95": 0.6000000238418579
+      },
+      "bitmapDecode": {
+        "average": 4.863157890344921,
+        "p95": 43.90000003576279
+      },
+      "decode": {
+        "average": 5.378947364656549,
+        "p95": 44.40000003576279
+      },
+      "paint": {
+        "average": 0.04210527005948519,
+        "p95": 0.20000004768371582
+      },
+      "receivedToPaint": {
+        "average": 19.157894736842106,
+        "p95": 60
+      },
+      "input": {
+        "average": 0,
+        "p95": 0
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 42,
+          "average": 7.023809523809524,
+          "p95": 30.80000001192093,
+          "max": 47
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 61018.48291015625,
+            "duration": 35.6171875,
+            "sequence": 1612,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 35.61708986759186
+          },
+          {
+            "startTime": 60767.390625,
+            "duration": 27.70947265625,
+            "sequence": 1607,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 19.600000023841858
+          },
+          {
+            "startTime": 60517.4833984375,
+            "duration": 26.11669921875,
+            "sequence": 1602,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 26.116601586341858
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 60635.5,
+            "duration": 43.90000003576279,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 24.900000035762787
+          },
+          {
+            "startTime": 60796,
+            "duration": 2.900000035762787,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          },
+          {
+            "startTime": 60973.200000047684,
+            "duration": 2.899999976158142,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0.09999996423721313
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 21.300334720060697,
+      "sourceFps": 21.300334720060697,
+      "reads": 21,
+      "bytes": 2909956,
+      "skippedBeforeRead": 0,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 0,
+      "read": {
+        "average": 50.01904761791229,
+        "p95": 75.80000001192093
+      },
+      "serverWait": {
+        "average": 32.67431566666554,
+        "p95": 45.98291700000118
+      },
+      "bridge": {
+        "average": 17.344731951246754,
+        "p95": 41.74466599999869
+      },
+      "requestTravel": {
+        "average": 7.422421409970238,
+        "p95": 34.46337890625
+      },
+      "serverPrepare": {
+        "average": 0.05901301637017501,
+        "p95": 0.06936620312626474
+      },
+      "responseTravel": {
+        "average": 9.587100074404763,
+        "p95": 28.294921875
+      },
+      "sdkDispatch": {
+        "average": 0.2761811755952381,
+        "p95": 0.400146484375
+      },
+      "paintWait": {
+        "average": 2.290476191611517,
+        "p95": 7.199999988079071
+      },
+      "jpegPrepare": {
+        "average": 0.5142857148533776,
+        "p95": 0.6000000238418579
+      },
+      "bitmapDecode": {
+        "average": 6.6666666723432995,
+        "p95": 39.19999998807907
+      },
+      "decode": {
+        "average": 7.190476196152823,
+        "p95": 39.69999998807907
+      },
+      "paint": {
+        "average": 0.03333333560398647,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 19.904761904761905,
+        "p95": 50
+      },
+      "input": {
+        "average": 0,
+        "p95": 0
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 41,
+          "average": 8.0146341454692,
+          "p95": 33,
+          "max": 46.39999997615814
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 62217.64013671875,
+            "duration": 33.9599609375,
+            "sequence": 1636,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 33.85986328125
+          },
+          {
+            "startTime": 61618.80517578125,
+            "duration": 28.294921875,
+            "sequence": 1624,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 28.294824242591858
+          },
+          {
+            "startTime": 61369.3349609375,
+            "duration": 26.6650390625,
+            "sequence": 1619,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 26.365039110183716
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 62077.30000001192,
+            "duration": 41.10000002384186,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 33
+          },
+          {
+            "startTime": 61479.10000002384,
+            "duration": 39.19999998807907,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 31.400000035762787
+          },
+          {
+            "startTime": 62126.90000003576,
+            "duration": 6,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 4
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 19.956096587744856,
+      "sourceFps": 19.956096587744856,
+      "reads": 20,
+      "bytes": 2771355,
+      "skippedBeforeRead": 0,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 0,
+      "read": {
+        "average": 50.02000000178814,
+        "p95": 72.10000002384186
+      },
+      "serverWait": {
+        "average": 36.3818895999997,
+        "p95": 45.94041699999798
+      },
+      "bridge": {
+        "average": 13.638110401788435,
+        "p95": 37.78758302384085
+      },
+      "requestTravel": {
+        "average": 3.8622802734375,
+        "p95": 2.613037109375
+      },
+      "serverPrepare": {
+        "average": 0.05761235312529607,
+        "p95": 0.06965820313052973
+      },
+      "responseTravel": {
+        "average": 9.45322265625,
+        "p95": 25.372802734375
+      },
+      "sdkDispatch": {
+        "average": 0.264990234375,
+        "p95": 0.30029296875
+      },
+      "paintWait": {
+        "average": 1.6700000017881393,
+        "p95": 5.300000011920929
+      },
+      "jpegPrepare": {
+        "average": 0.4799999952316284,
+        "p95": 0.5999999642372131
+      },
+      "bitmapDecode": {
+        "average": 7.114999994635582,
+        "p95": 36.19999998807907
+      },
+      "decode": {
+        "average": 7.604999992251396,
+        "p95": 36.69999998807907
+      },
+      "paint": {
+        "average": 0.04000000059604645,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 19.65,
+        "p95": 47
+      },
+      "input": {
+        "average": 0,
+        "p95": 0
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 44,
+          "average": 6.797727274623784,
+          "p95": 30.5,
+          "max": 46
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 62918.3310546875,
+            "duration": 36.76904296875,
+            "sequence": 1650,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 29.19999998807907
+          },
+          {
+            "startTime": 63168.027099609375,
+            "duration": 25.372802734375,
+            "sequence": 1655,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 25.372802734375
+          },
+          {
+            "startTime": 62817.124755859375,
+            "duration": 24.375244140625,
+            "sequence": 1648,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 24.275244176387787
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 62676,
+            "duration": 38,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 30.899999976158142
+          },
+          {
+            "startTime": 63278.200000047684,
+            "duration": 36.19999998807907,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 30.5
+          },
+          {
+            "startTime": 63022.40000003576,
+            "duration": 21.599999964237213,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 4.799999952316284
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 8.960573476383457,
+      "sourceFps": 9.956192751537175,
+      "reads": 10,
+      "bytes": 1385713,
+      "skippedBeforeRead": 0,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 0,
+      "read": {
+        "average": 101.52999999523163,
+        "p95": 565.3999999761581
+      },
+      "serverWait": {
+        "average": 38.41021669999973,
+        "p95": 48.94024999999965
+      },
+      "bridge": {
+        "average": 63.1197832952319,
+        "p95": 516.4597499761585
+      },
+      "requestTravel": {
+        "average": 2.122998046875,
+        "p95": 2.40771484375
+      },
+      "serverPrepare": {
+        "average": 0.05684872968777199,
+        "p95": 0.07902735937386751
+      },
+      "responseTravel": {
+        "average": 60.679931640625,
+        "p95": 514.0625
+      },
+      "sdkDispatch": {
+        "average": 0.2599853515625,
+        "p95": 0.39990234375
+      },
+      "paintWait": {
+        "average": 1.433333330684238,
+        "p95": 6.300000011920929
+      },
+      "jpegPrepare": {
+        "average": 0.5,
+        "p95": 0.5999999642372131
+      },
+      "bitmapDecode": {
+        "average": 8.5666666759385,
+        "p95": 36.10000002384186
+      },
+      "decode": {
+        "average": 9.0666666759385,
+        "p95": 36.60000002384186
+      },
+      "paint": {
+        "average": 0.04444444179534912,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 21.444444444444443,
+        "p95": 41
+      },
+      "input": {
+        "average": 0,
+        "p95": 0
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 51,
+          "average": 3.6882352934164158,
+          "p95": 28.399999976158142,
+          "max": 45.299999952316284
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 63872.137451171875,
+            "duration": 514.0625,
+            "sequence": 1669,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 29.19999998807907
+          },
+          {
+            "startTime": 63416.58203125,
+            "duration": 28.41796875,
+            "sequence": 1660,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 28.41796875
+          },
+          {
+            "startTime": 63769.607421875,
+            "duration": 27.49267578125,
+            "sequence": 1667,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 27.492578148841858
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 63522.30000001192,
+            "duration": 36.10000002384186,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 30.100000023841858
+          },
+          {
+            "startTime": 63624.30000001192,
+            "duration": 22.100000023841858,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 4.900000035762787
+          },
+          {
+            "startTime": 63445.90000003576,
+            "duration": 2.899999976158142,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 19.737491365776332,
+      "sourceFps": 28.61936248037568,
+      "reads": 20,
+      "bytes": 2771399,
+      "skippedBeforeRead": 9,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 1,
+      "read": {
+        "average": 46.775,
+        "p95": 84.19999998807907
+      },
+      "serverWait": {
+        "average": 31.316754249999214,
+        "p95": 45.93674999999348
+      },
+      "bridge": {
+        "average": 15.458245750000788,
+        "p95": 44.306541988080426
+      },
+      "requestTravel": {
+        "average": 3.47884521484375,
+        "p95": 3.300048828125
+      },
+      "serverPrepare": {
+        "average": 0.053936667969537666,
+        "p95": 0.059322265624359716
+      },
+      "responseTravel": {
+        "average": 11.695458984375,
+        "p95": 36.14013671875
+      },
+      "sdkDispatch": {
+        "average": 0.22999267578125,
+        "p95": 0.300048828125
+      },
+      "paintWait": {
+        "average": 2.560000005364418,
+        "p95": 7.899999976158142
+      },
+      "jpegPrepare": {
+        "average": 0.5199999988079071,
+        "p95": 0.6000000238418579
+      },
+      "bitmapDecode": {
+        "average": 6.195238093535106,
+        "p95": 34.10000002384186
+      },
+      "decode": {
+        "average": 6.723809517565227,
+        "p95": 34.69999998807907
+      },
+      "paint": {
+        "average": 0.034999999403953555,
+        "p95": 0.10000002384185791
+      },
+      "receivedToPaint": {
+        "average": 48.45,
+        "p95": 72
+      },
+      "input": {
+        "average": 0,
+        "p95": 0
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 42,
+          "average": 8.116666666099004,
+          "p95": 36,
+          "max": 47
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 64515.947998046875,
+            "duration": 41.35205078125,
+            "sequence": 1682,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 41.252002000808716
+          },
+          {
+            "startTime": 64389.9599609375,
+            "duration": 36.14013671875,
+            "sequence": 1679,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 21.899999976158142
+          },
+          {
+            "startTime": 65018.108154296875,
+            "duration": 27.791748046875,
+            "sequence": 1692,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 27.791748046875
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 64387.5,
+            "duration": 41.5,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 22.600000023841858
+          },
+          {
+            "startTime": 65122.5,
+            "duration": 34.10000002384186,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 25.899999976158142
+          },
+          {
+            "startTime": 64436.90000003576,
+            "duration": 3.5,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    },
+    {
+      "fps": 21.43732135513362,
+      "sourceFps": 21.43732135513362,
+      "reads": 21,
+      "bytes": 2909956,
+      "skippedBeforeRead": 0,
+      "skippedBeforeDecode": 0,
+      "skippedBeforePaint": 0,
+      "read": {
+        "average": 49.97142857029324,
+        "p95": 80.10000002384186
+      },
+      "serverWait": {
+        "average": 34.498712190475395,
+        "p95": 45.81274999999732
+      },
+      "bridge": {
+        "average": 15.472716379817852,
+        "p95": 37.51570902383537
+      },
+      "requestTravel": {
+        "average": 3.2133556547619047,
+        "p95": 2.5439453125
+      },
+      "serverPrepare": {
+        "average": 0.057533159226988484,
+        "p95": 0.06732325001212303
+      },
+      "responseTravel": {
+        "average": 11.944684709821429,
+        "p95": 34.783203125
+      },
+      "sdkDispatch": {
+        "average": 0.2571498325892857,
+        "p95": 0.30029296875
+      },
+      "paintWait": {
+        "average": 1.271428576537541,
+        "p95": 5
+      },
+      "jpegPrepare": {
+        "average": 0.5142857120150611,
+        "p95": 0.6000000238418579
+      },
+      "bitmapDecode": {
+        "average": 4.057142848060245,
+        "p95": 2.899999976158142
+      },
+      "decode": {
+        "average": 4.571428560075306,
+        "p95": 3.5
+      },
+      "paint": {
+        "average": 0.014285709176744734,
+        "p95": 0.09999996423721313
+      },
+      "receivedToPaint": {
+        "average": 19.238095238095237,
+        "p95": 43
+      },
+      "input": {
+        "average": 0,
+        "p95": 0
+      },
+      "browser": {
+        "visibility": "visible",
+        "longTaskSupported": true,
+        "longAnimationFrameSupported": true,
+        "observerError": null,
+        "hiddenTimerSamples": 0,
+        "overflowedResponses": 0,
+        "overflowedDecodes": 0,
+        "timerLag": {
+          "count": 41,
+          "average": 7.712195123114237,
+          "p95": 31.30000001192093,
+          "max": 49.90000003576279
+        },
+        "longTasks": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "longAnimationFrames": {
+          "count": 0,
+          "average": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "slowestResponses": [
+          {
+            "startTime": 66169.13720703125,
+            "duration": 53.7626953125,
+            "sequence": 1715,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 49.89990234375
+          },
+          {
+            "startTime": 65367.11669921875,
+            "duration": 34.783203125,
+            "sequence": 1699,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 34.38330078125
+          },
+          {
+            "startTime": 65719.54125976562,
+            "duration": 27.058837890625,
+            "sequence": 1706,
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 27.058740258216858
+          }
+        ],
+        "slowestDecodes": [
+          {
+            "startTime": 65826.70000004768,
+            "duration": 31.399999976158142,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 26.30000001192093
+          },
+          {
+            "startTime": 65872.90000003576,
+            "duration": 2.899999976158142,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          },
+          {
+            "startTime": 65921.60000002384,
+            "duration": 2.899999976158142,
+            "phase": "bitmapDecode",
+            "longTaskOverlapMs": 0,
+            "longAnimationFrameOverlapMs": 0,
+            "timerLateOverlapMs": 0
+          }
+        ],
+        "longestTasks": [],
+        "longestAnimations": []
+      }
+    }
+  ],
+  "aggregate": {
+    "samples1And2": {
+      "reads": 101,
+      "weightedPhaseAveragesMs": {
+        "read": 20.03960396039604,
+        "serverWait": 4.66877144554415,
+        "bridge": 15.37083251485189,
+        "requestTravel": 5.075637666305693,
+        "serverPrepare": 0.05970066924545439,
+        "responseTravel": 10.012733988242575,
+        "sdkDispatch": 0.2227650255259901
+      },
+      "skips": {
+        "skippedBeforeRead": 42,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 11
+      },
+      "selectedIntervalOverlaps": {
+        "slowestResponses": {
+          "count": 6,
+          "totalDurationMs": 295.8203125,
+          "timerLateOverlapMs": 244.69399416446686,
+          "overlapFraction": 0.8271710353374292
+        },
+        "slowestDecodes": {
+          "count": 6,
+          "totalDurationMs": 240.70000010728836,
+          "timerLateOverlapMs": 162.89999997615814,
+          "overlapFraction": 0.6767760693957123
+        }
+      }
+    },
+    "samples1Through3": {
+      "reads": 137,
+      "weightedPhaseAveragesMs": {
+        "read": 22.067153284584517,
+        "serverWait": 8.153527364963026,
+        "bridge": 13.913625919621493,
+        "requestTravel": 4.512317518248175,
+        "serverPrepare": 0.05937929847219281,
+        "responseTravel": 9.114200786952555,
+        "sdkDispatch": 0.2277333057709854
+      },
+      "skips": {
+        "skippedBeforeRead": 44,
+        "skippedBeforeDecode": 0,
+        "skippedBeforePaint": 13
+      },
+      "selectedIntervalOverlaps": {
+        "slowestResponses": {
+          "count": 9,
+          "totalDurationMs": 359.917236328125,
+          "timerLateOverlapMs": 285.3864258527756,
+          "overlapFraction": 0.7929223639420201
+        },
+        "slowestDecodes": {
+          "count": 9,
+          "totalDurationMs": 302.20000010728836,
+          "timerLateOverlapMs": 202.19999998807907,
+          "overlapFraction": 0.6690933154079852
+        }
+      }
+    }
+  }
+}

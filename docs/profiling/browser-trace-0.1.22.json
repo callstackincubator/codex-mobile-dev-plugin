@@ -1,0 +1,129 @@
+{
+  "source": "Trace-20260930T212153.json.gz",
+  "sourceSHA256": "9cce624b18cd265e9fbf18f3e335b2ccc75d1de9de088cdd18345d6eaaaadaa0",
+  "version": "0.1.22",
+  "traceStartTime": "2026-09-30T19:21:53.407Z",
+  "durationMs": 6494.603,
+  "eventCount": 226997,
+  "rendererMainThread": {
+    "pid": 70105,
+    "tid": 13026218
+  },
+  "logUpdateTasks": {
+    "count": 49,
+    "totalMs": 1645.3369999999998,
+    "averageMs": 33.57830612244898,
+    "p95Ms": 40.861,
+    "maxMs": 45.213
+  },
+  "forcedLogLayouts": {
+    "count": 49,
+    "totalMs": 446.7210000000001,
+    "averageMs": 9.116755102040816,
+    "p95Ms": 12.273,
+    "maxMs": 12.958
+  },
+  "mainThreadTasks": {
+    "count": 11289,
+    "totalMs": 3561.951999999999,
+    "averageMs": 0.3155241385419435,
+    "p95Ms": 0.595,
+    "maxMs": 45.213
+  },
+  "logUpdateWallTimeFraction": 0.25333911864974656,
+  "logUpdateTaskTimeFraction": 0.46192003710325125,
+  "logUpdatesExceeding16_67Ms": 49,
+  "allTasksExceeding16_67Ms": 75,
+  "forcedLayoutDirtyObjectRange": [
+    2412,
+    4725
+  ],
+  "localRequestMessageQueue": {
+    "frame": {
+      "count": 244,
+      "totalMs": 307.205,
+      "averageMs": 1.2590368852459017,
+      "p95Ms": 1.434,
+      "maxMs": 46.002
+    },
+    "logs": {
+      "count": 49,
+      "totalMs": 511.7940000000001,
+      "averageMs": 10.444775510204082,
+      "p95Ms": 29.103,
+      "maxMs": 30.274
+    },
+    "input": {
+      "count": 143,
+      "totalMs": 402.686,
+      "averageMs": 2.8159860139860142,
+      "p95Ms": 24.403,
+      "maxMs": 45.526
+    }
+  },
+  "slowestLocalRequests": [
+    {
+      "kind": "frame",
+      "scheduledAtMs": 1958.768,
+      "delayMs": 46.002,
+      "logUpdateOverlapMs": 39.293
+    },
+    {
+      "kind": "input",
+      "scheduledAtMs": 1959.717,
+      "delayMs": 45.526,
+      "logUpdateOverlapMs": 39.293
+    },
+    {
+      "kind": "input",
+      "scheduledAtMs": 2376.061,
+      "delayMs": 41.917,
+      "logUpdateOverlapMs": 36.918
+    },
+    {
+      "kind": "frame",
+      "scheduledAtMs": 1081.264,
+      "delayMs": 38.767,
+      "logUpdateOverlapMs": 33.643
+    },
+    {
+      "kind": "frame",
+      "scheduledAtMs": 207.998,
+      "delayMs": 30.599,
+      "logUpdateOverlapMs": 30.014
+    },
+    {
+      "kind": "logs",
+      "scheduledAtMs": 3375.411,
+      "delayMs": 30.274,
+      "logUpdateOverlapMs": 0.579
+    },
+    {
+      "kind": "logs",
+      "scheduledAtMs": 2916.411,
+      "delayMs": 29.559,
+      "logUpdateOverlapMs": 0.382
+    },
+    {
+      "kind": "logs",
+      "scheduledAtMs": 3816.94,
+      "delayMs": 29.103,
+      "logUpdateOverlapMs": 0.352
+    }
+  ],
+  "jpegWorkerDecode": {
+    "count": 245,
+    "totalMs": 586.3300000000003,
+    "averageMs": 2.393183673469388,
+    "p95Ms": 3.191,
+    "maxMs": 7.037
+  },
+  "notes": [
+    "Log update tasks are renderer RunTask intervals containing Layout with stack render -> append -> receive in plugin script 12. Forced layout duration is included in task duration; do not add them.",
+    "The embedded script source was inspected to map script 12 render and scrollHeight positions to src/ui/log-list.ts. No downloaded script was executed.",
+    "SchedulePostMessage to HandlePostMessage pairs measure local plugin-to-sandbox request delivery, not full MCP round trip or worker-to-browser response travel. Message type is classified from sender stack.",
+    "Tracing and CPU profiling have overhead. The initial task includes approximately 32 ms CPU-profiler startup. Totals describe this capture, not an uninstrumented benchmark.",
+    "The earlier 514 ms response outlier is not isolated by this capture. The trace identifies a confirmed recurring source of browser stalls, not every possible transport delay.",
+    "Raw trace contains screenshots and script sources and stays in user Downloads. Only aggregate evidence is saved here."
+  ]
+}

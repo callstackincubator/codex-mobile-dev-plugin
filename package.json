@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.18",
+  "version": "0.1.24",
   "private": true,
   "type": "module",
   "engines": { "node": ">=22.18" },
@@ -13,6 +13,7 @@
     "test": "node --test tests/*.test.ts",
     "test:package": "node scripts/smoke-package.mjs",
     "test:agent-device": "node scripts/smoke-agent-device.mjs",
+    "test:stream": "node scripts/smoke-stream.mjs",
     "test:reconnect": "node scripts/smoke-reconnect.mjs",
     "test:logs": "node scripts/smoke-logs.mjs",
     "package": "node scripts/package.mjs"

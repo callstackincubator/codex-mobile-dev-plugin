@@ -1,0 +1,663 @@
+{
+  "date": "2026-09-30",
+  "pluginVersion": "0.1.19",
+  "baguetteCommit": "db17446e25059247879dba7941e4de641c2f31e2",
+  "device": "iPhone 18 Pro / iOS 27",
+  "scene": "Maps",
+  "nativeIdle": [
+    {
+      "scale": 2,
+      "seconds": 10.000789584,
+      "frames": 199,
+      "fps": 19.898428851895343,
+      "distinctJPEGs": 16,
+      "bytesPerFrame": 106083.88442211055,
+      "gapP50Ms": 50.10441600000013,
+      "gapP95Ms": 53.00508300000001,
+      "windowSeconds": 8.998846458,
+      "stages": {
+        "capture.delivered": {
+          "count": 225,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 25.003204694083248
+        },
+        "capture.framebuffer": {
+          "count": 225,
+          "maxMs": 66.37675,
+          "averageMs": 1.6659870088888888,
+          "perSecond": 25.003204694083248
+        },
+        "capture.queueWait": {
+          "count": 226,
+          "maxMs": 0.153,
+          "averageMs": 0.008281889380530972,
+          "perSecond": 25.114330048279175
+        },
+        "mjpeg.accepted": {
+          "count": 179,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 19.891438401070673
+        },
+        "mjpeg.jpegEncode": {
+          "count": 179,
+          "maxMs": 7.42125,
+          "averageMs": 3.8504029162011175,
+          "perSecond": 19.891438401070673
+        },
+        "mjpeg.queueWait": {
+          "count": 179,
+          "maxMs": 0.164834,
+          "averageMs": 0.01572349720670391,
+          "perSecond": 19.891438401070673
+        },
+        "mjpeg.scale": {
+          "count": 179,
+          "maxMs": 2.179833,
+          "averageMs": 1.2732213631284917,
+          "perSecond": 19.891438401070673
+        },
+        "mjpeg.seedFilter": {
+          "count": 225,
+          "maxMs": 0.029833,
+          "averageMs": 0.005966444444444444,
+          "perSecond": 25.003204694083248
+        },
+        "mjpeg.sink": {
+          "count": 179,
+          "maxMs": 3.7,
+          "averageMs": 1.8164520726256983,
+          "perSecond": 19.891438401070673
+        },
+        "mjpeg.totalEncode": {
+          "count": 179,
+          "maxMs": 12.454875,
+          "averageMs": 6.940076351955307,
+          "perSecond": 19.891438401070673
+        },
+        "mjpeg.unchanged": {
+          "count": 46,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 5.111766293012575
+        },
+        "socket.write": {
+          "count": 179,
+          "maxMs": 0.226125,
+          "averageMs": 0.02705915642458101,
+          "perSecond": 19.891438401070673
+        },
+        "source.frameCallback": {
+          "count": 180,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 20.0025637552666
+        },
+        "source.idleTick": {
+          "count": 45,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 5.00064093881665
+        }
+      }
+    },
+    {
+      "scale": 4,
+      "seconds": 10.001151250000003,
+      "frames": 200,
+      "fps": 19.997697765044794,
+      "distinctJPEGs": 16,
+      "bytesPerFrame": 34211.825,
+      "gapP50Ms": 50.03129199999967,
+      "gapP95Ms": 52.24850000000151,
+      "windowSeconds": 9.000656833999999,
+      "stages": {
+        "capture.delivered": {
+          "count": 225,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 24.998175594259084
+        },
+        "capture.framebuffer": {
+          "count": 225,
+          "maxMs": 3.931292,
+          "averageMs": 1.6834939422222224,
+          "perSecond": 24.998175594259084
+        },
+        "capture.queueWait": {
+          "count": 225,
+          "maxMs": 0.453458,
+          "averageMs": 0.012553715555555556,
+          "perSecond": 24.998175594259084
+        },
+        "mjpeg.accepted": {
+          "count": 180,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 19.998540475407268
+        },
+        "mjpeg.jpegEncode": {
+          "count": 180,
+          "maxMs": 2.965125,
+          "averageMs": 1.5700316944444441,
+          "perSecond": 19.998540475407268
+        },
+        "mjpeg.queueWait": {
+          "count": 180,
+          "maxMs": 0.092125,
+          "averageMs": 0.01882573333333333,
+          "perSecond": 19.998540475407268
+        },
+        "mjpeg.scale": {
+          "count": 180,
+          "maxMs": 4.095875,
+          "averageMs": 1.9226923499999997,
+          "perSecond": 19.998540475407268
+        },
+        "mjpeg.seedFilter": {
+          "count": 225,
+          "maxMs": 0.032583,
+          "averageMs": 0.008417977777777776,
+          "perSecond": 24.998175594259084
+        },
+        "mjpeg.sink": {
+          "count": 180,
+          "maxMs": 1.45075,
+          "averageMs": 0.7598189888888889,
+          "perSecond": 19.998540475407268
+        },
+        "mjpeg.totalEncode": {
+          "count": 180,
+          "maxMs": 8.238542,
+          "averageMs": 4.252543033333334,
+          "perSecond": 19.998540475407268
+        },
+        "mjpeg.unchanged": {
+          "count": 45,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 4.999635118851817
+        },
+        "socket.write": {
+          "count": 180,
+          "maxMs": 0.112291,
+          "averageMs": 0.03204741111111111,
+          "perSecond": 19.998540475407268
+        },
+        "source.frameCallback": {
+          "count": 180,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 19.998540475407268
+        },
+        "source.idleTick": {
+          "count": 45,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 4.999635118851817
+        }
+      }
+    }
+  ],
+  "nativePans": [
+    {
+      "motion": true,
+      "scale": 2,
+      "seconds": 11.94142525,
+      "frames": 484,
+      "fps": 40.53117528830991,
+      "distinctJPEGs": 249,
+      "bytesPerFrame": 106509.46074380165,
+      "gapP50Ms": 16.83679200000006,
+      "gapP95Ms": 52.167999999999665,
+      "windowSeconds": 10.997357500000001,
+      "inputTimes": [
+        1192.9859589999996,
+        1567.3941249999998,
+        1249.3327080000008,
+        1233.9029999999984,
+        1255.9967079999988,
+        1233.6901660000003
+      ],
+      "stages": {
+        "capture.delivered": {
+          "count": 529,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 48.102464614794954
+        },
+        "capture.framebuffer": {
+          "count": 529,
+          "maxMs": 92.378333,
+          "averageMs": 2.6621768128544425,
+          "perSecond": 48.102464614794954
+        },
+        "capture.queueWait": {
+          "count": 528,
+          "maxMs": 0.374125,
+          "averageMs": 0.008814770833333334,
+          "perSecond": 48.01153367979534
+        },
+        "mjpeg.accepted": {
+          "count": 466,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 42.373815709819375
+        },
+        "mjpeg.jpegEncode": {
+          "count": 466,
+          "maxMs": 36.546916,
+          "averageMs": 4.375733491416309,
+          "perSecond": 42.373815709819375
+        },
+        "mjpeg.queueWait": {
+          "count": 466,
+          "maxMs": 22.336292,
+          "averageMs": 0.5451005,
+          "perSecond": 42.373815709819375
+        },
+        "mjpeg.scale": {
+          "count": 466,
+          "maxMs": 61.365084,
+          "averageMs": 1.8501317896995706,
+          "perSecond": 42.373815709819375
+        },
+        "mjpeg.seedFilter": {
+          "count": 529,
+          "maxMs": 2.625917,
+          "averageMs": 0.021527875236294892,
+          "perSecond": 48.102464614794954
+        },
+        "mjpeg.sink": {
+          "count": 466,
+          "maxMs": 148.922375,
+          "averageMs": 2.2417063326180258,
+          "perSecond": 42.373815709819375
+        },
+        "mjpeg.totalEncode": {
+          "count": 466,
+          "maxMs": 155.510667,
+          "averageMs": 8.467571613733908,
+          "perSecond": 42.373815709819375
+        },
+        "mjpeg.unchanged": {
+          "count": 63,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 5.72864890497558
+        },
+        "socket.write": {
+          "count": 466,
+          "maxMs": 2.854833,
+          "averageMs": 0.04396746995708155,
+          "perSecond": 42.373815709819375
+        },
+        "source.coalesced": {
+          "count": 10,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 0.9093093499961239
+        },
+        "source.frameCallback": {
+          "count": 484,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 44.0105725398124
+        },
+        "source.idleTick": {
+          "count": 55,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 5.001201424978682
+        }
+      }
+    },
+    {
+      "motion": true,
+      "scale": 4,
+      "seconds": 11.410561084000001,
+      "frames": 529,
+      "fps": 46.36055984501664,
+      "distinctJPEGs": 272,
+      "bytesPerFrame": 34461.30812854442,
+      "gapP50Ms": 16.28625000000102,
+      "gapP95Ms": 50.45137500000055,
+      "windowSeconds": 10.9991525,
+      "inputTimes": [
+        1251.255957999998,
+        1227.0120839999981,
+        1192.046374999998,
+        1180.2015420000025,
+        1158.8352909999994,
+        1196.5645839999997
+      ],
+      "stages": {
+        "capture.delivered": {
+          "count": 582,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 52.91316762814226
+        },
+        "capture.framebuffer": {
+          "count": 582,
+          "maxMs": 19.490208,
+          "averageMs": 1.0903351443298968,
+          "perSecond": 52.91316762814226
+        },
+        "capture.queueWait": {
+          "count": 582,
+          "maxMs": 0.111666,
+          "averageMs": 0.007090056701030927,
+          "perSecond": 52.91316762814226
+        },
+        "mjpeg.accepted": {
+          "count": 521,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 47.367285797701236
+        },
+        "mjpeg.jpegEncode": {
+          "count": 521,
+          "maxMs": 5.22025,
+          "averageMs": 1.2803518234165068,
+          "perSecond": 47.367285797701236
+        },
+        "mjpeg.queueWait": {
+          "count": 521,
+          "maxMs": 3.78825,
+          "averageMs": 0.03593314587332053,
+          "perSecond": 47.367285797701236
+        },
+        "mjpeg.scale": {
+          "count": 521,
+          "maxMs": 8.376417,
+          "averageMs": 1.4928138944337812,
+          "perSecond": 47.367285797701236
+        },
+        "mjpeg.seedFilter": {
+          "count": 582,
+          "maxMs": 2.386209,
+          "averageMs": 0.017430415807560135,
+          "perSecond": 52.91316762814226
+        },
+        "mjpeg.sink": {
+          "count": 521,
+          "maxMs": 5.083875,
+          "averageMs": 0.6202125796545106,
+          "perSecond": 47.367285797701236
+        },
+        "mjpeg.totalEncode": {
+          "count": 521,
+          "maxMs": 11.735209,
+          "averageMs": 3.3933782975047984,
+          "perSecond": 47.367285797701236
+        },
+        "mjpeg.unchanged": {
+          "count": 61,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 5.545881830441028
+        },
+        "socket.write": {
+          "count": 521,
+          "maxMs": 0.741042,
+          "averageMs": 0.0247622226487524,
+          "perSecond": 47.367285797701236
+        },
+        "source.coalesced": {
+          "count": 1,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 0.09091609558100046
+        },
+        "source.frameCallback": {
+          "count": 528,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 48.00369846676824
+        },
+        "source.idleTick": {
+          "count": 55,
+          "maxMs": 0,
+          "averageMs": 0,
+          "perSecond": 5.000385256955025
+        }
+      }
+    }
+  ],
+  "stdioPointerDrag": [
+    {
+      "phase": "idle",
+      "seconds": 4.0009390830000005,
+      "frames": 77,
+      "fps": 19.245481723821584,
+      "skipped": 0,
+      "megabytesPerSecond": 2.1802138995476428,
+      "read": {
+        "count": 77,
+        "averageMs": 51.76730406493504,
+        "p95Ms": 53.24824999999964,
+        "maxMs": 237.61366599999997
+      },
+      "wait": {
+        "count": 77,
+        "averageMs": 50.53431274025981,
+        "p95Ms": 51.3261250000005,
+        "maxMs": 235.49370900000008
+      },
+      "transfer": {
+        "count": 77,
+        "averageMs": 1.2329913246752318,
+        "p95Ms": 1.5273760000000038,
+        "maxMs": 3.7216669999997976
+      },
+      "input": {
+        "count": 0,
+        "averageMs": null
+      }
+    },
+    {
+      "phase": "drag",
+      "seconds": 8.009628290999999,
+      "frames": 519,
+      "fps": 64.79701443613473,
+      "skipped": 0,
+      "megabytesPerSecond": 7.5424552557429045,
+      "read": {
+        "count": 519,
+        "averageMs": 15.444487483622362,
+        "p95Ms": 20.62800000000061,
+        "maxMs": 85.53633399999853
+      },
+      "wait": {
+        "count": 519,
+        "averageMs": 14.721277146435467,
+        "p95Ms": 19.87225000000035,
+        "maxMs": 84.47262500000033
+      },
+      "transfer": {
+        "count": 519,
+        "averageMs": 0.723210337186896,
+        "p95Ms": 1.1405410000006668,
+        "maxMs": 10.62000099999932
+      },
+      "input": {
+        "count": 384,
+        "averageMs": 4.295067510416615,
+        "p95Ms": 1.6468750000003638,
+        "maxMs": 209.45575000000008
+      }
+    },
+    {
+      "phase": "settle",
+      "seconds": 4.001847625,
+      "frames": 88,
+      "fps": 21.98984275419532,
+      "skipped": 0,
+      "megabytesPerSecond": 2.5829016915655303,
+      "read": {
+        "count": 88,
+        "averageMs": 45.2197035681822,
+        "p95Ms": 54.26866599999994,
+        "maxMs": 98.59433399999762
+      },
+      "wait": {
+        "count": 88,
+        "averageMs": 44.23233519318185,
+        "p95Ms": 53.42820799999754,
+        "maxMs": 97.82291700000133
+      },
+      "transfer": {
+        "count": 88,
+        "averageMs": 0.9873683750003527,
+        "p95Ms": 1.6096660000002885,
+        "maxMs": 5.61933400000089
+      },
+      "input": {
+        "count": 0,
+        "averageMs": null
+      }
+    }
+  ],
+  "instrumentedStdioPointerDrag": [
+    {
+      "phase": "idle",
+      "seconds": 4.001460874999999,
+      "frames": 76,
+      "fps": 18.993063377134735,
+      "skipped": 0,
+      "megabytesPerSecond": 2.2292203469314193,
+      "read": {
+        "count": 76,
+        "averageMs": 52.05952460526317,
+        "p95Ms": 52.78879199999983,
+        "maxMs": 225.32116599999995
+      },
+      "wait": {
+        "count": 76,
+        "averageMs": 50.85652359210524,
+        "p95Ms": 51.54433300000028,
+        "maxMs": 223.20679199999995
+      },
+      "transfer": {
+        "count": 76,
+        "averageMs": 1.203001013157928,
+        "p95Ms": 1.7315829999997732,
+        "maxMs": 3.651582999999846
+      },
+      "input": {
+        "count": 0,
+        "averageMs": null
+      }
+    },
+    {
+      "phase": "drag",
+      "seconds": 8.007206959,
+      "frames": 535,
+      "fps": 66.81480855177182,
+      "skipped": 0,
+      "megabytesPerSecond": 7.950271340051672,
+      "read": {
+        "count": 535,
+        "averageMs": 15.040380377570104,
+        "p95Ms": 20.705957999998645,
+        "maxMs": 71.86924999999974
+      },
+      "wait": {
+        "count": 535,
+        "averageMs": 14.243600512149504,
+        "p95Ms": 19.894250000001193,
+        "maxMs": 57.44429200000013
+      },
+      "transfer": {
+        "count": 535,
+        "averageMs": 0.7967798654205998,
+        "p95Ms": 1.092916999999943,
+        "maxMs": 26.23791600000004
+      },
+      "input": {
+        "count": 389,
+        "averageMs": 3.9941412647814643,
+        "p95Ms": 1.1824580000011338,
+        "maxMs": 186.13508300000012
+      }
+    },
+    {
+      "phase": "settle",
+      "seconds": 4.0004853749999985,
+      "frames": 100,
+      "fps": 24.996966774312988,
+      "skipped": 0,
+      "megabytesPerSecond": 2.9479027904207764,
+      "read": {
+        "count": 100,
+        "averageMs": 40.04984415000004,
+        "p95Ms": 57.62737500000003,
+        "maxMs": 119.77016600000024
+      },
+      "wait": {
+        "count": 100,
+        "averageMs": 38.869799969999896,
+        "p95Ms": 56.657916000000114,
+        "maxMs": 119.00825000000077
+      },
+      "transfer": {
+        "count": 100,
+        "averageMs": 1.18004418000015,
+        "p95Ms": 3.453583999998955,
+        "maxMs": 12.903583999999682
+      },
+      "input": {
+        "count": 0,
+        "averageMs": null
+      }
+    }
+  ],
+  "permissionCheckCorrelation": {
+    "inputCount": 389,
+    "slowInputCount": 8,
+    "slowRequests": [
+      {
+        "inputMs": 186.13508300000012,
+        "statusMs": 183.32874999999967,
+        "remainingMs": 2.80633300000045
+      },
+      {
+        "inputMs": 157.72279200000048,
+        "statusMs": 157.11504200000036,
+        "remainingMs": 0.6077500000001237
+      },
+      {
+        "inputMs": 176.9981659999994,
+        "statusMs": 176.30324999999993,
+        "remainingMs": 0.6949159999994663
+      },
+      {
+        "inputMs": 155.9018329999999,
+        "statusMs": 155.4433339999996,
+        "remainingMs": 0.45849900000030175
+      },
+      {
+        "inputMs": 154.7842499999988,
+        "statusMs": 154.42845900000066,
+        "remainingMs": 0.3557909999981348
+      },
+      {
+        "inputMs": 158.77224999999999,
+        "statusMs": 158.16470900000058,
+        "remainingMs": 0.6075409999994008
+      },
+      {
+        "inputMs": 165.77770799999962,
+        "statusMs": 165.25491599999987,
+        "remainingMs": 0.5227919999997539
+      },
+      {
+        "inputMs": 157.3796250000014,
+        "statusMs": 156.80233299999963,
+        "remainingMs": 0.5772920000017621
+      }
+    ]
+  }
+}

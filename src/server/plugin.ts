@@ -1,20 +1,16 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { z } from "zod";
 import { readBezel } from "./bezel.ts";
 import { Baguette } from "./baguette.ts";
 import { StreamSessions } from "./stream-sessions.ts";
-import { SharedStreamService } from "./shared-stream-service.ts";
-import type { SharedStreaming } from "./shared-stream-service.ts";
-import { MacLocalCertificate } from "./local-certificate.ts";
-import type { LocalCertificate } from "./local-certificate.ts";
 import { LogSessions } from "./log-sessions.ts";
 import { registerLogTools } from "./log-tools.ts";
 import { SimulatorInputService } from "./simulator-input.ts";
 import type { SimulatorInput } from "./simulator-input.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
-import { errorMessage, inputSchema, udidSchema } from "../shared/protocol.ts";
+import { errorMessage, inputSchema, udidSchema, streamMessageSchema } from "../shared/protocol.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -38,17 +34,11 @@ function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
   };
 }
 
-export async function createPlugin(html: string, baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), certificate: LocalCertificate = new MacLocalCertificate(), shared: SharedStreaming = new SharedStreamService()) {
-  const marker = "<!-- STREAM_CONFIG -->";
-  if (html.includes(marker) === false) throw new Error("The panel bundle is missing its streaming configuration placeholder. Rebuild the plugin.");
-  const streams = new StreamSessions(baguette, simulatorInput);
-  await streams.start();
-  const streamOrigin = shared.origin;
-  const appUri = "ui://mobile-dev/0.1.18/shared-stream/simulator.html";
-  const workspaceUri = "ui://mobile-dev/0.1.18/shared-stream/workspace.html";
-  const config = `<meta id="stream-origin" content="${streamOrigin}">`;
-  const resourceHtml = html.replace(marker, config);
-  const server = new McpServer({ name: "mobile-dev", version: "0.1.18" }, {
+export async function createPlugin(html: string, baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions()) {
+  const streams = new StreamSessions(baguette);
+  const appUri = "ui://mobile-dev/0.1.24/mcp-stream/simulator.html";
+  const workspaceUri = "ui://mobile-dev/0.1.24/mcp-stream/workspace.html";
+  const server = new McpServer({ name: "mobile-dev", version: "0.1.24" }, {
     instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. Opening the panel does not boot a device.",
   });
   new OpenAIExtensions(server);
@@ -66,10 +56,10 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
   const readApp = async (uri: URL) => ({
     contents: [{
       uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: uri.href === workspaceUri
-        ? resourceHtml.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
-        : resourceHtml,
+        ? html.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
+        : html,
       _meta: {
-        ui: { csp: { connectDomains: [streamOrigin], resourceDomains: [] } },
+        ui: { csp: { connectDomains: [], resourceDomains: [] } },
         "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] },
       },
     }],
@@ -183,46 +173,53 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     return { content: [{ type: "image", mimeType: "image/png", data: bytes.toString("base64") }, { type: "text", text: `Screen of ${udid}.` }], structuredContent: { udid } };
   }));
 
-  registerAppTool(server, "mobile_certificate_status", {
-    title: "Check local streaming setup", description: "Read local certificate status without creating certificates or changing Keychain trust.",
-    inputSchema: {}, annotations: read, _meta: { ui: { visibility: ["app"] } },
-  }, guarded(async () => {
-    return result(await certificate.status(), "Local streaming certificate status.");
-  }));
-
-  registerAppTool(server, "mobile_setup_certificate", {
-    title: "Set up local streaming", description: "Create a unique local certificate and request macOS Keychain trust for SSL to 127.0.0.1. Invoke only from the panel's setup button after the user reads the explanation.",
-    inputSchema: {}, annotations: write, _meta: { ui: { visibility: ["app"] } },
-  }, guarded(async () => {
-    const status = await certificate.setup();
-    const material = await certificate.material();
-    if (material == null) throw new Error("The local streaming certificate is not trusted yet.");
-    await shared.configureTls(material);
-    return result(status, "Local streaming is ready.");
-  }));
-
   registerAppTool(server, "mobile_stream_session", {
-    title: "Connect simulator stream", description: "Authorize a local H.264 WebSocket stream for the panel. Video and gestures use the local TLS endpoint.",
+    title: "Connect simulator stream", description: "Start continuous MJPEG capture for the panel. Read the latest frame through the MCP host bridge.",
     inputSchema: { ...deviceInput, fps: z.number().int().min(1).max(60).default(60) },
     annotations: write,
     _meta: { ui: { resourceUri: appUri, visibility: ["app"] } },
   }, guarded(async ({ udid, fps }: { udid: string; fps: number }) => {
-    const certificateStatus = await certificate.status();
-    if (certificateStatus.state !== "ready") return { isError: true, content: [{ type: "text", text: "Set up the local streaming certificate in the panel." }], _meta: { tlsRequired: true, retryable: false } };
-    const material = await certificate.material();
-    if (material == null) throw new Error("The local streaming certificate is unavailable.");
-    await shared.configureTls(material);
     const definition = await baguette.definition(udid);
     const bezel = await readBezel(baguette, udid, definition.screen);
-    const inputStatus = await simulatorInput.status(udid);
-    const session = await streams.open(udid, fps);
-    let streamUrl: string;
-    try { streamUrl = await shared.publish(session.id, session.url); }
-    catch (error) { streams.closeSession(session.id); throw error; }
+    const inputStatus = await simulatorInput.status(udid, { fresh: true });
+    const sessionId = await streams.open(udid, fps);
+    const frameUri = `mobile-frame://${sessionId}/latest`;
     return {
       ...result({ udid, definition, fps, inputStatus }, `Stream ready for ${definition.identity.name}.`),
-      _meta: { ...(bezel ? { bezel } : {}), sessionId: session.id, streamUrl },
+      _meta: { ...(bezel ? { bezel } : {}), sessionId, frameUri },
     };
+  }));
+
+  const frameTemplate = new ResourceTemplate("mobile-frame://{sessionId}/latest{?after}", { list: undefined });
+  server.registerResource("simulator-latest-frame", frameTemplate, { mimeType: "image/jpeg" }, async (uri, variables, extra) => {
+    const sessionId = sessionIdSchema.parse(variables.sessionId);
+    const cursor = uri.searchParams.get("after") ?? "0";
+    const after = z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).parse(cursor);
+    try {
+      const read = await streams.frame(sessionId, after, extra.signal);
+      const timings = { serverWaitMs: read.serverWaitMs, serverStartedAt: read.serverStartedAt, serverPreparedAt: read.serverPreparedAt };
+      if (read.frame) {
+        const { data, ...metadata } = read.frame;
+        return { contents: [{ uri: uri.href, mimeType: "image/jpeg", blob: data, _meta: { ...metadata, ...timings } }] };
+      }
+      const text = JSON.stringify({ state: "waiting", ...timings });
+      return { contents: [{ uri: uri.href, mimeType: "application/json", text, _meta: timings }] };
+    } catch (error) {
+      const text = JSON.stringify({ state: "failed", error: errorMessage(error), retryable: !(error instanceof SimulatorUnavailableError) });
+      return { contents: [{ uri: uri.href, mimeType: "application/json", text }] };
+    }
+  });
+
+  registerAppTool(server, "mobile_stream_input", {
+    title: "Send panel gestures", description: "Send an ordered batch of validated gestures to the panel's active capture. Never replay gestures after reconnecting.",
+    inputSchema: { sessionId: sessionIdSchema, messages: z.array(streamMessageSchema).min(1).max(64) },
+    annotations: write, _meta: { ui: { visibility: ["app"] } },
+  }, guarded(async ({ sessionId, messages }: { sessionId: string; messages: z.infer<typeof streamMessageSchema>[] }) => {
+    const udid = streams.deviceId(sessionId);
+    const blocked = await blockedInput(udid);
+    if (blocked) return blocked;
+    const count = await streams.input(sessionId, messages);
+    return result({ count }, "Panel gestures sent.");
   }));
 
   registerAppTool(server, "mobile_stream_close", {
@@ -230,13 +227,12 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     inputSchema: { sessionId: sessionIdSchema },
     annotations: write, _meta: { ui: { visibility: ["app"] } },
   }, guarded(async ({ sessionId }: { sessionId: string }) => {
-    await shared.closeSession(sessionId);
     streams.closeSession(sessionId);
     return result({}, "Simulator stream closed.");
   }));
 
   return {
     server, appUri, workspaceUri,
-    async close() { await shared.close(); await streams.close(); await logs.close(); baguette.dispose(); await server.close(); },
+    async close() { streams.close(); await logs.close(); baguette.dispose(); await server.close(); },
   };
 }

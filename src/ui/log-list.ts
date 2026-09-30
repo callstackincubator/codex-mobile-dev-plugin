@@ -2,6 +2,9 @@ import type { LogEntry, StackedLog } from "../shared/logs.ts";
 import { logKey, stackLogs } from "../shared/logs.ts";
 import type { PanelContext } from "./model-context.ts";
 
+// Temporary profiling experiment: keep log reads and buffering, skip row rendering.
+export const LOG_RENDERING_ENABLED = false;
+
 function element<T extends HTMLElement = HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 
 export class LogList {
@@ -20,6 +23,10 @@ export class LogList {
 
   constructor(context: PanelContext) {
     this.context = context;
+    if (LOG_RENDERING_ENABLED === false) {
+      this.list.textContent = "Log display paused for performance test.";
+      element("logs-footer").textContent = "Logs are still being collected.";
+    }
     document.querySelectorAll<HTMLButtonElement>("[data-log-source], [data-log-level]").forEach(button => {
       button.addEventListener("click", () => {
         const set = button.dataset.logSource ? this.sources : this.levels;
@@ -57,6 +64,7 @@ export class LogList {
   clear() { this.entries = []; this.selectedSequence = undefined; this.dropped = 0; this.sequence = 0; this.render(); }
 
   render() {
+    if (LOG_RENDERING_ENABLED === false) return;
     const scrollTop = this.list.scrollTop;
     const focused = document.activeElement instanceof HTMLElement && this.list.contains(document.activeElement)
       ? document.activeElement.dataset.sequence : undefined;

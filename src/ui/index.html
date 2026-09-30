@@ -1,7 +1,6 @@
 <!doctype html>
 <html lang="en" data-view="panel" data-layout="stacked">
 <head>
-  <!-- STREAM_CONFIG -->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Mobile Dev</title>
@@ -24,7 +23,7 @@
           <svg class="chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg>
         </div>
         <span id="frame-stats" aria-hidden="true">0 fps</span>
-        <span class="format" aria-hidden="true">H.264</span>
+        <span class="format" aria-hidden="true">MJPEG</span>
         <button id="start" class="start-button cursor-interaction" disabled>Start</button>
         <span class="divider" aria-hidden="true"></span>
         <button class="icon-button cursor-interaction" data-button="home" title="Home" aria-label="Home" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v11h5v-7h4v7h5V9"/></svg></button>
@@ -33,19 +32,10 @@
         <button id="refresh" class="icon-button cursor-interaction" title="Refresh simulators" aria-label="Refresh simulators"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 3M18 18A8 8 0 0 1 5 15"/></svg></button>
       </div>
       <p id="notice" role="status" hidden><span id="notice-message"></span> <button id="repair-input" class="cursor-interaction" title="Restarts SpringBoard and closes running simulator apps" hidden>Repair input</button></p>
+      <p id="stream-timings" aria-live="off"></p>
     </header>
     <section id="stage" aria-label="Live simulator screen">
       <p id="empty" role="status">Loading simulators…</p>
-      <section id="stream-setup" aria-labelledby="stream-setup-title" hidden>
-        <h2 id="stream-setup-title">Enable smooth simulator streaming</h2>
-        <p>Video and gestures connect directly to a service on your Mac for faster interaction.</p>
-        <p>We’ll create a certificate unique to this Mac and ask macOS to trust it for SSL. The certificate is valid only for <strong>127.0.0.1</strong> and cannot issue other certificates. The certificate is stored in your login Keychain. Video stays on this Mac.</p>
-        <p>You may need to approve a Keychain request. Setup lasts one year and is reused across plugin updates.</p>
-        <button id="setup-certificate" class="start-button cursor-interaction">Create certificate &amp; enable streaming</button>
-        <p id="stream-setup-status" role="status"></p>
-        <button id="check-certificate" class="log-action cursor-interaction">Check setup again</button>
-        <details><summary>How to remove it</summary><p>Open Keychain Access, find “Mobile Dev local streaming” in your login Keychain, and delete the certificate. This disables streaming until you set it up again.</p></details>
-      </section>
       <div id="device-frame" hidden>
         <img id="device-bezel" alt="" draggable="false" hidden>
         <canvas id="screen" tabindex="0" aria-label="Simulator screen. Click or drag to interact. Focus to type."></canvas>

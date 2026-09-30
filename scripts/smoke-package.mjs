@@ -23,7 +23,7 @@ try {
   const client = new Client({ name: "mobile-dev-package-smoke", version: "1" });
   await client.connect(transport);
   const tools = await client.listTools();
-  assert.equal(tools.tools.length, 18);
+  assert.equal(tools.tools.length, 17);
   const workspace = tools.tools.find(tool => tool.name === "mobile_open_workspace");
   assert.deepEqual(workspace._meta["openai/ui"].entrypoints, [{ type: "global" }]);
   const workspaceResource = await client.readResource({ uri: workspace._meta.ui.resourceUri });
@@ -42,23 +42,22 @@ try {
   const resource = await client.readResource({ uri: entrypoint._meta.ui.resourceUri });
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.ok(resource.contents[0].text.includes("<canvas"));
-  assert.ok(resource.contents[0].text.includes('id="setup-certificate"'));
+  assert.ok(resource.contents[0].text.includes('id="stream-timings"'));
+  assert.ok(resource.contents[0].text.includes('id="setup-certificate"') === false);
+  assert.ok(tools.tools.some(tool => tool.name.includes("certificate")) === false);
   assert.ok(resource.contents[0].text.includes('id="logs-drawer"'));
   assert.ok(resource.contents[0].text.includes('id="log-attach"'));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.match(entrypoint._meta.ui.resourceUri, /^ui:\/\/mobile-dev\/0\.1\.18\/shared-stream\/simulator\.html$/);
+  assert.match(entrypoint._meta.ui.resourceUri, /^ui:\/\/mobile-dev\/0\.1\.24\/mcp-stream\/simulator\.html$/);
   assert.ok(resource.contents[0].text.includes('class="workspace-toolbar"'));
   assert.ok(resource.contents[0].text.includes('id="workspace-panels"'));
   assert.ok(resource.contents[0].text.includes('id="tool-logs"'));
   assert.match(workspace._meta.ui.resourceUri, /\/workspace\.html$/);
   assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
-  const cspOrigin = resource.contents[0]._meta.ui.csp.connectDomains[0];
-  assert.equal(cspOrigin, "wss://127.0.0.1:49321");
-  assert.ok(resource.contents[0].text.includes(`id="stream-origin" content="${cspOrigin}"`));
-  assert.ok(!resource.contents[0].text.includes('id="stream-viewer-id"'));
-  assert.ok(!resource.contents[0].text.includes("<!-- STREAM_CONFIG -->"));
-  await assert.rejects(client.readResource({ uri: "ui://mobile-dev/0.1.18/wss/simulator.html" }), /not found/);
+  assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, []);
+  assert.ok(resource.contents[0].text.includes('id="stream-origin"') === false);
+  await assert.rejects(client.readResource({ uri: "ui://mobile-dev/0.1.18/shared-stream/simulator.html" }), /not found/);
   runtimeTransport = new StdioClientTransport({
     command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe",
   });
@@ -68,7 +67,7 @@ try {
   assert.deepEqual(runtimeResource.contents[0], resource.contents[0]);
   await runtimeClient.close();
   console.log("Separate MCP discovery and runtime processes agree on UI addresses, HTML, and CSP.");
-  console.log("UI identity, embedded endpoint, and CSP match the running service.");
+  console.log("The panel requires no direct browser network connection or certificate setup.");
   const listed = await client.callTool({ name: "mobile_list_simulators", arguments: {} });
   assert.equal(listed.structuredContent?.baseUrl, baseUrl);
   console.log(`Copied package started its bundled Baguette and returned ${panel.structuredContent.devices.length} simulators.`);

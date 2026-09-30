@@ -2,7 +2,11 @@
 
 Recorded on 2026-09-30. This branch preserves the H.264 streaming experiment, certificate setup, shared streaming service, tests, and plugin version 0.1.18.
 
-## Current result
+## Historical checkpoint
+
+This document describes commit `9313bbb` (plugin 0.1.18), which preserves the direct H.264/WSS experiment. The current 0.1.24 implementation replaces it with latest-frame MJPEG reads through the MCP host bridge. The shared WSS service, certificate tools, and direct browser transport are removed; the prior investigation remains here as historical evidence. See [MCP frame polling measurements](mcp-frame-polling.md) for the replacement and its validation.
+
+## Result at the WSS checkpoint
 
 **Embedded video remains blocked in Codex Desktop 26.928.21956, build 12404.** The panel loads, its CSP matches the stream endpoint, and the local server delivers H.264 to a Node WebSocket client with certificate validation enabled. The actual panel fails with:
 
