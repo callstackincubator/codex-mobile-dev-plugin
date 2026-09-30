@@ -6,6 +6,8 @@ import type { App } from "@modelcontextprotocol/ext-apps";
 import type { PanelContext } from "../src/ui/model-context.ts";
 import { createSimulatorPanel } from "../src/ui/simulator-panel.ts";
 
+import { getDeviceSettings } from "../src/ui/device-settings.ts";
+
 class Element extends EventTarget {
   hidden = false;
   disabled = false;
@@ -92,6 +94,7 @@ function fixture(t: TestContext) {
         const android = call.name.includes("android");
         return { content: [], structuredContent: { connected: true, devices: [{ udid: android ? "emulator-5554" : "iphone-1", name: android ? "Pixel" : "iPhone", state: stopped ? "Shutdown" : "Booted", runtime: "", platform: android ? "android" : "ios" }] } };
       }
+      if (call.name === "mobile_device_settings" || call.name === "mobile_update_device_setting") return { content: [], structuredContent: { settings: { appearance: "dark", locationSupported: true } } };
       return { content: [] };
     },
     async readServerResource({ uri }: { uri: string }, { signal }: { signal: AbortSignal }) {
@@ -110,7 +113,7 @@ function fixture(t: TestContext) {
   } as unknown as App;
   const panels = (["ios", "android"] as const).map(platform => {
     const root = new Element();
-    for (const name of ["devices", "screen", "device-frame", "stage", "device-bezel", "screenshot", "notice", "notice-message", "empty", "screenshot-status"]) root.elements.set(name, new Element());
+    for (const name of ["devices", "settings", "screen", "device-frame", "stage", "device-bezel", "screenshot", "notice", "notice-message", "empty", "screenshot-status"]) root.elements.set(name, new Element());
     root.elements.get("device-frame")!.hidden = true;
     for (const button of ["home", "app-switcher"]) { const element = new Element(); element.dataset.button = button; root.buttons.push(element); }
     const panel = createSimulatorPanel(app, root as unknown as HTMLElement, platform, { canAttachScreenshots: true } as PanelContext, (_device, active) => selections.push({ platform, active }));
@@ -128,6 +131,23 @@ async function waitFor(predicate: () => boolean) {
     await new Promise(resolve => setTimeout(resolve, 5));
   }
 }
+
+test("device settings target each selected simulator and leave both streams open", async t => {
+  const f = fixture(t);
+  await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
+  await waitFor(() => f.ios.element("screen").draws > 0 && f.android.element("screen").draws > 0);
+  const ios = getDeviceSettings(f.ios.element("settings") as unknown as HTMLElement);
+  const android = getDeviceSettings(f.android.element("settings") as unknown as HTMLElement);
+  await ios.load();
+  await android.change({ setting: "appearance", value: "dark" });
+  assert.deepEqual(f.calls.find(call => call.name === "mobile_device_settings")?.arguments, { target: { platform: "ios", id: "iphone-1" } });
+  assert.deepEqual(f.calls.find(call => call.name === "mobile_update_device_setting")?.arguments, { target: { platform: "android", id: "emulator-5554" }, change: { setting: "appearance", value: "dark" } });
+  ios.toggleFrame(false);
+  assert.equal(f.ios.element("screen").style.borderRadius, "0");
+  ios.toggleFrame(true);
+  assert.equal(f.closed.length, 0);
+  assert.equal(f.calls.filter(call => call.name.endsWith("stream_session")).length, 2);
+});
 
 function dispatch(target: Element, name: string, properties: object = {}) { target.dispatchEvent(Object.assign(new Event(name), properties)); }
 

@@ -4,6 +4,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { z } from "zod";
+import { registerDeviceSettingsTools } from "./device-settings.ts";
 import { readBezel } from "./bezel.ts";
 import { ServeEmu } from "./serve-emu.ts";
 import { registerAndroidTools } from "./android-tools.ts";
@@ -58,6 +59,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   new OpenAIExtensions(server);
   registerLogTools(server, logs, baguette);
   const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot);
+  registerDeviceSettingsTools(server, baguette, android);
 
   const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<{ inputStatus: InputStatus; inputRepairMessage: string }> }>();
   async function panelInputStatus(udid: string) {

@@ -71,6 +71,13 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.equal(open._meta?.ui && (open._meta.ui as { resourceUri: string }).resourceUri, APP_URI);
   const appTool = tools.tools.find(tool => tool.name === "mobile_stream_session")!;
   assert.deepEqual((appTool._meta?.ui as { visibility: string[] }).visibility, ["app"]);
+  assert.deepEqual((tools.tools.find(tool => tool.name === "mobile_device_settings")!._meta?.ui as { visibility: string[] }).visibility, ["app"]);
+  const deviceSettings = await client.callTool({ name: "mobile_device_settings", arguments: { target: { platform: "ios", id: UDID } } });
+  assert.equal((deviceSettings.structuredContent?.settings as { appearance: string }).appearance, "light");
+  const updatedSettings = await client.callTool({ name: "mobile_update_device_setting", arguments: { target: { platform: "ios", id: UDID }, change: { setting: "appearance", value: "dark" } } });
+  assert.equal((updatedSettings.structuredContent?.settings as { appearance: string }).appearance, "dark");
+  const badSetting = await client.callTool({ name: "mobile_update_device_setting", arguments: { target: { platform: "ios", id: UDID }, change: { setting: "fontScale", value: 3 } } });
+  assert.equal(badSetting.isError, true);
   const resource = await client.readResource({ uri: APP_URI });
   OpenAIUiResourceMetadataSchema.parse(resource.contents[0]._meta?.["openai/ui"]);
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");

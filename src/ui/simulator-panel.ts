@@ -1,6 +1,8 @@
 import { androidNinePatchSkin } from "./android-nine-patch.ts";
 import { androidFrameGeometry, androidChromeScale } from "./android-frame-geometry.ts";
 import { getDevicePicker } from "./device-picker.ts";
+import { getDeviceSettings } from "./device-settings.ts";
+import type { DeviceSettings } from "../shared/device-settings.ts";
 import { bezelGeometrySchema } from "../shared/bezel.ts";
 import type { Bezel } from "../shared/bezel.ts";
 import type { SimulatorDevice, Status } from "../shared/protocol.ts";
@@ -21,12 +23,15 @@ export function createSimulatorPanel(
   function element<T extends HTMLElement = HTMLElement>(id: string): T { return root.querySelector(`[data-element="${id}"]`) as T; }
   const devicePickerElement = element("devices");
   const devices = getDevicePicker(devicePickerElement);
+  const settings = getDeviceSettings(element("settings"));
   const canvas = element<HTMLCanvasElement>("screen");
   const context = canvas.getContext("2d")!;
   const frame = element("device-frame");
   const stage = element("stage");
   const bezelImage = element<HTMLImageElement>("device-bezel");
   let bezel: Bezel | undefined;
+  let sourceBezel: Bezel | undefined;
+  let showFrame = true;
   let useAndroidNinePatch = false;
   bezelImage.addEventListener("error", () => { setBezel(); fitScreen(); });
   const screenshotButton = element<HTMLButtonElement>("screenshot");
@@ -57,6 +62,8 @@ export function createSimulatorPanel(
 
   function controls() {
     const active = ready && stream != null && !inputBlocked && !busy && toolsAvailable;
+    settings.configure(selected?.udid ?? "", busy || !toolsAvailable || selected?.state !== "Booted" || disposed);
+    settings.prefetch();
     devices.disabled = busy || !toolsAvailable || !status?.connected || !status.devices.length;
     screenshotButton.disabled = busy || !toolsAvailable || !status?.connected || selected?.state !== "Booted" || !panelContext.canAttachScreenshots;
     screenshotButton.title = panelContext.canAttachScreenshots ? "Screenshot to chat and clipboard" : "This host does not support screenshot attachments";
@@ -143,6 +150,15 @@ export function createSimulatorPanel(
     return result;
   }
 
+  settings.request = async change => {
+    if (!selected || selected.state !== "Booted" || disposed) throw new Error("Select a running device first.");
+    const result = await call(change ? "mobile_update_device_setting" : "mobile_device_settings", {
+      target: { platform, id: selected.udid }, ...(change ? { change } : {}),
+    }, { timeout: 30000 });
+    return (result.structuredContent as { settings: Partial<DeviceSettings> }).settings;
+  };
+  settings.setFrame = visible => { showFrame = visible; setBezel(sourceBezel); fitScreen(); };
+
   async function action(callback: () => Promise<void>) {
     if (busy || disposed) return;
     busy = true; controls(); notice();
@@ -157,11 +173,13 @@ export function createSimulatorPanel(
   }
 
   function setBezel(value?: Bezel) {
-    useAndroidNinePatch = platform === "android" && !value;
+    sourceBezel = value;
+    if (!showFrame) value = undefined;
+    useAndroidNinePatch = showFrame && platform === "android" && !value;
     const decoration = element("device-nine-patch");
     if (decoration) decoration.hidden = !useAndroidNinePatch;
     bezel = value;
-    frame.dataset.bezel = String(!!value || useAndroidNinePatch);
+    frame.dataset.bezel = String(!!value || useAndroidNinePatch || !showFrame);
     bezelImage.hidden = !value;
     canvas.removeAttribute("style");
     if (!value) { bezelImage.removeAttribute("src"); return; }
@@ -185,6 +203,13 @@ export function createSimulatorPanel(
     const style = getComputedStyle(stage);
     const width = stage.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
     const height = stage.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+    if (!showFrame) {
+      const scale = Math.max(0, Math.min(width / canvas.width, height / canvas.height));
+      frame.style.width = `${canvas.width * scale}px`;
+      frame.style.height = `${canvas.height * scale}px`;
+      Object.assign(canvas.style, { left: "0", top: "0", width: "100%", height: "100%", borderRadius: "0" });
+      return;
+    }
     if (useAndroidNinePatch) {
       const skin = androidNinePatchSkin;
       const geometry = androidFrameGeometry(canvas.width, canvas.height, width, height);
@@ -503,6 +528,7 @@ export function createSimulatorPanel(
     dispose() {
       if (disposing) return disposing;
       disposed = true;
+      settings.dispose();
       toolsAvailable = false;
       resizeObserver.disconnect();
       window.removeEventListener("blur", releasePointer);

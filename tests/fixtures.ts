@@ -26,6 +26,7 @@ export async function fakeBaguette() {
   let lifecycleState: string | undefined;
   let lifecycleFails = false;
   const inputs: unknown[] = [];
+  const settings = { appearance: "light", contentSize: "large", increaseContrast: "disabled" };
   const requests: { path: string; origin?: string }[] = [];
   const http = createServer(async (request, response) => {
     requests.push({ path: request.url!, origin: request.headers.origin });
@@ -36,6 +37,9 @@ export async function fakeBaguette() {
         running: state === "Booted" ? [{ udid: UDID, name: "iPhone 17", state, runtime: "iOS 26.0" }] : [],
         available: [{ udid: UDID, name: "iPhone 17", state, runtime: "iOS 26.0" }, { udid: OTHER_UDID, name: "iPad", state: "Shutdown", runtime: "iOS 26.0" }],
       }));
+    } else if (path.endsWith("/interface.json") || path.endsWith("/interface")) {
+      if (request.method === "POST") { let body = ""; for await (const chunk of request) body += chunk; Object.assign(settings, JSON.parse(body)); }
+      response.end(JSON.stringify(settings));
     } else if (path.endsWith("/definition.json")) {
       response.end(JSON.stringify({ identity: { udid: UDID, name: "iPhone 17", model: "iPhone 17" }, screen: { rect: SCREEN } }));
     } else if (path.endsWith("/boot")) {

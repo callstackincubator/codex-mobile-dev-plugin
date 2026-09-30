@@ -3,6 +3,7 @@ import { memo } from "react";
 import { Button } from "./ui/button";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty";
 import { DevicePicker } from "./device-picker";
+import { DeviceSettings } from "./device-settings";
 
 const deviceButtons: { action: string; icon: LucideIcon; label: string }[] = [
   { action: "home", icon: HouseIcon, label: "Home" },
@@ -30,9 +31,10 @@ export const SimulatorView = memo(function SimulatorView({ platform }: { platfor
         <canvas data-element="screen" className="block size-full touch-none bg-black focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-ring" tabIndex={0} aria-label={`${label} screen. Click or drag to interact. Focus to type.`} />
       </div>
     </section>
-    <footer className="flex h-11 shrink-0 items-center gap-x-3 border-t px-3 text-[10px] text-muted-foreground" role="status" aria-live="polite" aria-atomic="true">
+    <footer className="flex h-11 shrink-0 items-center gap-x-3 border-t px-2 text-[10px] text-muted-foreground">
       <span data-element="notice" className="sr-only" hidden><span data-element="notice-message" /></span>
       <span data-element="screenshot-status" className="sr-only" hidden />
+      <DeviceSettings platform={platform} />
     </footer>
   </section>;
 });
