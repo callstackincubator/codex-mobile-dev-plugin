@@ -17,15 +17,18 @@
     <section id="simulator-panel" aria-label="Simulator">
     <header class="simulator-heading">
       <div class="toolbar" aria-label="Simulator controls">
+        <label class="sr-only" for="platform">Platform</label>
+        <select id="platform" class="cursor-interaction" aria-label="Platform"><option value="ios">iOS</option><option value="android">Android</option></select>
         <div class="device-picker">
           <label class="sr-only" for="devices">Simulator</label>
           <select id="devices" class="cursor-interaction" disabled><option>Loading simulators…</option></select>
           <svg class="chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg>
         </div>
         <span id="frame-stats" aria-hidden="true">0 fps</span>
-        <span class="format" aria-hidden="true">MJPEG</span>
+        <span id="stream-format" class="format" aria-hidden="true">MJPEG</span>
         <button id="start" class="start-button cursor-interaction" disabled>Start</button>
         <span class="divider" aria-hidden="true"></span>
+        <button class="icon-button cursor-interaction" data-button="back" title="Back" aria-label="Back" hidden disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg></button>
         <button class="icon-button cursor-interaction" data-button="home" title="Home" aria-label="Home" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v11h5v-7h4v7h5V9"/></svg></button>
         <button class="icon-button cursor-interaction" data-button="power" title="Lock" aria-label="Lock" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></button>
         <button class="icon-button cursor-interaction" data-button="app-switcher" title="App Switcher" aria-label="App Switcher" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="13" height="14" rx="3"/><path d="M8 7V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3"/></svg></button>

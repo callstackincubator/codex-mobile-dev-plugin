@@ -58,7 +58,7 @@ export class LogsPanel {
   selectSimulator(simulator?: SimulatorDevice) {
     const changed = simulator?.udid !== this.simulator?.udid || simulator?.state !== this.simulator?.state;
     this.simulator = simulator;
-    this.native.options[0].textContent = simulator ? `iOS · ${simulator.name}` : "Selected simulator";
+    this.native.options[0].textContent = simulator ? `${simulator.platform === "android" ? "Android" : "iOS"} · ${simulator.name}` : "Selected simulator";
     if (changed && this.open && this.native.value === "ios") this.restart();
   }
 
@@ -73,7 +73,7 @@ export class LogsPanel {
     element("logs-pause").textContent = this.paused ? "Resume" : "Pause";
     element<HTMLButtonElement>("logs-apply").disabled = !this.available;
     element<HTMLButtonElement>("logs-discover").disabled = !this.available;
-    element<HTMLInputElement>("logs-process").placeholder = this.native.value.startsWith("android:") ? "com.example.app · empty for all" : "Executable name · empty for all";
+    element<HTMLInputElement>("logs-process").placeholder = (this.native.value.startsWith("android:") || (this.native.value === "ios" && this.simulator?.platform === "android")) ? "com.example.app · empty for all" : "Executable name · empty for all";
     if (!this.open) element("logs-status").textContent = "Closed";
     else if (this.paused) element("logs-status").textContent = "Paused";
   }
@@ -84,7 +84,9 @@ export class LogsPanel {
     const options: LogOptions = {};
     const process = element<HTMLInputElement>("logs-process").value.trim();
     if (this.native.value === "ios" && this.simulator?.state === "Booted") {
-      options.native = { platform: "ios", deviceId: this.simulator.udid, ...(process ? { process } : {}) };
+      options.native = this.simulator.platform === "android"
+        ? { platform: "android", deviceId: this.simulator.udid, ...(process ? { packageName: process } : {}) }
+        : { platform: "ios", deviceId: this.simulator.udid, ...(process ? { process } : {}) };
     } else if (this.native.value.startsWith("android:")) {
       options.native = { platform: "android", deviceId: this.native.value.slice(8), ...(process ? { packageName: process } : {}) };
     }

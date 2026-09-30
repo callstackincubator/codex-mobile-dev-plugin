@@ -22,7 +22,10 @@ try {
   const client = new Client({ name: "mobile-dev-package-smoke", version: "1" });
   await client.connect(transport);
   const tools = await client.listTools();
-  assert.equal(tools.tools.length, 17);
+  assert.equal(tools.tools.length, 27);
+  for (const name of ["mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_android_screenshot"]) assert.ok(tools.tools.some(tool => tool.name === name));
+  await access(join(plugin, "dist/serve-emu/node_modules/serve-emu/src/cli.ts"));
+  await access(join(plugin, "dist/serve-emu/node_modules/serve-emu/vendor/scrcpy-server-v4.0"));
   const workspace = tools.tools.find(tool => tool.name === "mobile_open_workspace");
   assert.deepEqual(workspace._meta["openai/ui"].entrypoints, [{ type: "global" }]);
   const workspaceResource = await client.readResource({ uri: workspace._meta.ui.resourceUri });
@@ -41,6 +44,7 @@ try {
   const resource = await client.readResource({ uri: entrypoint._meta.ui.resourceUri });
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.ok(resource.contents[0].text.includes("<canvas"));
+  assert.ok(resource.contents[0].text.includes('id="platform"'));
   assert.ok(resource.contents[0].text.includes('id="logs-drawer"'));
   assert.ok(resource.contents[0].text.includes('id="log-attach"'));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));

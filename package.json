@@ -3,7 +3,9 @@
   "version": "0.1.16",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.18" },
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
     "vendor:baguette": "node scripts/vendor-baguette.mjs",
@@ -15,7 +17,8 @@
     "test:agent-device": "node scripts/smoke-agent-device.mjs",
     "test:reconnect": "node scripts/smoke-reconnect.mjs",
     "test:logs": "node scripts/smoke-logs.mjs",
-    "package": "node scripts/package.mjs"
+    "package": "node scripts/package.mjs",
+    "vendor:serve-emu": "node scripts/vendor-serve-emu.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.5",

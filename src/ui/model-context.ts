@@ -54,7 +54,7 @@ export class PanelContext {
       const selected = this.simulator;
       const log = this.attached;
       const content = [{ type: "text" as const, annotations: { audience: ["assistant" as const] }, text: selected
-        ? `Mobile Dev selected simulator: ${selected.name}. UDID: ${selected.udid}. State: ${selected.state}. Use this UDID with the plugin's agent-device tools and platform ios when controlling this simulator.`
+        ? `Mobile Dev selected simulator: ${selected.name}. Device ID: ${selected.udid}. State: ${selected.state}. Use this ${selected.platform === "android" ? "serial" : "UDID"} with the plugin's agent-device tools and platform ${selected.platform ?? "ios"} when controlling this device.`
         : "Mobile Dev has no selected simulator." },
       ...(log ? [{ type: "text" as const, text: formatLogContext(log), _meta: { "openai/title": `${log.level}: ${log.message.slice(0, 70)}` } }] : [])];
       const params = { content, structuredContent: { selectedSimulator: selected ?? null, selectedLog: log ?? null, selectedLogKey: log ? logKey(log) : null } };

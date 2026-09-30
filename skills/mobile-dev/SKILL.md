@@ -1,11 +1,11 @@
 ---
 name: mobile-dev
-description: Open and control a local iOS simulator through the Mobile Dev native panel, bundled Baguette backend, and agent-device MCP tools. Use for streaming, app control, text entry, screenshots, and accessibility reads.
+description: Open and control a local iOS simulator or Android device through the Mobile Dev native panel, bundled Baguette and serve-emu backends, and agent-device MCP tools. Use for streaming, app control, text entry, screenshots, and accessibility reads.
 ---
 
 # Mobile Dev
 
-Use the Mobile Dev MCP tools for local iOS simulator work. The plugin includes Baguette and starts it when you open the panel or list devices. Do not ask the user to install Baguette or run a separate server.
+Use the Mobile Dev MCP tools for local iOS and Android work. The plugin includes Baguette and starts it when you open the panel or list devices. Do not ask the user to install Baguette or run a separate server.
 
 1. Call `mobile_open_simulator` to open the panel beside a chat, `mobile_open_workspace` for the fullscreen view with logs on the left and the simulator on the right, or `mobile_list_simulators` for a tool-only workflow.
 2. Read the returned devices and choose a UDID from that list. Keep an existing running device when it fits the task. Ask the user to choose only when several devices fit and the task gives no clue.
@@ -17,7 +17,7 @@ The panel centers the simulator below one toolbar. It uses a 30 fps capture targ
 
 On Xcode 27, Device Hub can block taps, buttons, and keys. The panel detects that state and shows Repair input. `mobile_repair_input` runs the bundled Baguette repair and closes old capture sessions. Use it when the user asks to fix blocked interaction or clicks Repair input. Then reconnect the stream and reopen the app if needed. The repair restarts backboardd and SpringBoard and closes running simulator apps. Baguette's boot route also repairs input after boot. Do not run the repair just to diagnose a video connection. Read the error and distinguish capture failures from input failures.
 
-The Logs drawer below the simulator streams iOS unified logs and has JS/Native and level filters, search, and repeat counts. Sources lets the user scope the native stream to an executable name, choose a connected Android device and package, or connect an existing local Metro inspector target. Closing the drawer stops its log readers. The panel supports Android logs while its screen stays on iOS.
+The Logs drawer below the simulator streams iOS unified logs and has JS/Native and level filters, search, and repeat counts. Sources lets the user scope the native stream to an executable name, choose a connected Android device and package, or connect an existing local Metro inspector target. Closing the drawer stops its log readers. The panel follows the selected iOS or Android device for native logs.
 
 For tool-only log reads, use `mobile_log_sources` to find Android devices and targets at the app's Metro URL. Use `mobile_logs_session` with a native device and app filter, a selected Metro target, or both. Its `_meta` returns `sessionId` and `logsUri`. Use `mobile_read_logs` with that session ID and advance `after` to the returned cursor. Read source statuses when no logs arrive. Close the session with `mobile_logs_close` when done. Do not start another Metro server to read logs. A Metro app restart may change its target ID; discover targets again before reconnecting. Android logs require an installed SDK's `adb`.
 
@@ -25,4 +25,12 @@ Selecting a log and clicking Attach to chat puts its message, stack, source, lev
 
 The host needs an Apple Silicon Mac, Node.js 22.18 or later, and Xcode 26 or later with an iOS simulator runtime. If the backend fails, read its error before retrying `mobile_start_baguette`. Keep logs on stderr because stdout carries MCP messages.
 
-Build and launch the user's app with that app project's own tools. These tools do not build apps, manage Android emulators, or install Xcode runtimes. Do not run type checks, lint, visual checks, or React Doctor unless the user asks. Before starting an app dev server, check for an existing server from that project.
+Build and launch the user's app with that app project's own tools. These tools do not build apps or install Xcode runtimes. Do not run type checks, lint, visual checks, or React Doctor unless the user asks. Before starting an app dev server, check for an existing server from that project.
+
+## Android
+
+Choose Android in the panel or call `mobile_list_android_devices`. Listing does not boot a device or start serve-emu. Use a returned serial for a running device, or `avd:<name>` for a stopped AVD. Boot only the AVD the user chose with `mobile_boot_android_emulator`. Read the returned list and use that AVD's running serial for later calls. `mobile_shutdown_android_emulator` stops an emulator; it cannot shut down a physical device.
+
+The panel starts bundled serve-emu 0.0.6 and streams H.264 through MCP. Bun 1.3.13 or later and an installed Android SDK are required. No separate serve-emu install or server command is needed. Pause and panel close leave the Android device running. Video errors and backlog recover from a fresh keyframe on the same stream. AVDs start without a separate window, and an early emulator exit ends the boot wait with its error. Input supports Home, Back, Recents, Lock, pointer gestures, and printable US-ASCII text. The host needs WebCodecs H.264 decoding.
+
+For agent control, pass `platform: "android"`, `serial` set to the panel's running device ID, and a named session to agent-device. Do not pass Android serials as iOS UDIDs. Read `mobile_android_describe_ui` or `mobile_android_screenshot` before direct input through `mobile_android_send_input`. Android gesture coordinates use screen pixels with matching width and height. Native logs follow the selected Android serial and optional package filter.

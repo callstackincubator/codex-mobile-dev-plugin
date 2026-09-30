@@ -61,3 +61,11 @@ test("a host clear during an attachment write queues a removal without deadlock"
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(context.attachedKey, undefined); assert.equal(updates.at(-1)?.structuredContent?.selectedLog, null);
 });
+
+test("Android selection shares its serial and platform for agent-device control", async () => {
+  const { context, updates } = fixture();
+  context.selectSimulator({ udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" });
+  await context.attach(undefined);
+  assert.match(JSON.stringify(updates.at(-1)?.content), /emulator-5554/);
+  assert.match(JSON.stringify(updates.at(-1)?.content), /serial.*platform android/);
+});

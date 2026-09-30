@@ -131,3 +131,5 @@ html[data-view="workspace"] #stage { padding-bottom: calc(24px + max(64px, var(-
 #device-frame[data-bezel="true"] { isolation: isolate; position: relative; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
 #device-bezel { z-index: 1; position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; user-select: none; }
 #device-frame[data-bezel="true"] #screen { z-index: 2; position: absolute; }
+
+#platform { flex: none; width: 78px; padding-inline: 8px; }

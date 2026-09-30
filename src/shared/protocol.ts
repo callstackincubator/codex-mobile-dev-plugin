@@ -14,7 +14,7 @@ export const inputSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal(type), x: point, y: point, ...dimensions, edge }).strict()),
   z.object({
     type: z.literal("button"),
-    button: z.enum(["home", "power", "lock", "volume-up", "volume-down", "action", "app-switcher"]),
+    button: z.enum(["home", "back", "power", "lock", "volume-up", "volume-down", "action", "app-switcher"]),
     duration: duration.optional(),
   }).strict(),
   z.object({ type: z.literal("type"), text: z.string().max(4096).regex(/^[\x20-\x7e]*$/, "Use printable US-ASCII text.") }).strict(),
@@ -30,7 +30,7 @@ export const streamMessageSchema = z.union([
   z.object({ type: z.literal("set_scale"), scale: z.number().int().min(1).max(4) }).strict(),
 ]);
 
-export type SimulatorDevice = { udid: string; name: string; state: string; runtime: string };
+export type SimulatorDevice = { udid: string; name: string; state: string; runtime: string; platform?: "ios" | "android" };
 export type DeviceList = { running: unknown[]; available: unknown[] };
 export type Status = {
   connected: boolean;

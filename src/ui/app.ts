@@ -7,6 +7,8 @@ import type { Bezel } from "../shared/bezel.ts";
 import type { SimulatorDevice, Status } from "../shared/protocol.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
 import { PanelContext } from "./model-context.ts";
+import { AndroidVideo } from "./android-video.ts";
+import type { AndroidVideoBatch } from "./android-video.ts";
 import { LogsPanel } from "./logs-panel.ts";
 
 const app = new App({ name: "mobile-dev-ui", version: "0.1.16" }, {}, { autoResize: false });
@@ -16,6 +18,8 @@ const logsPanel = new LogsPanel(app, panelContext);
 logsPanel.setLayout(document.documentElement.dataset.view === "workspace");
 document.getElementById("tool-logs")!.addEventListener("click", () => logsPanel.show());
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
+const platformPicker = element<HTMLSelectElement>("platform");
+let platform: "ios" | "android" = "ios";
 const devices = element<HTMLSelectElement>("devices");
 const canvas = element<HTMLCanvasElement>("screen");
 const context = canvas.getContext("2d")!;
@@ -29,7 +33,7 @@ const refreshButton = element<HTMLButtonElement>("refresh");
 const repairButton = element<HTMLButtonElement>("repair-input");
 let status: Status | undefined;
 let selected: SimulatorDevice | undefined;
-type PanelStream = { id: string; frameUri: string; epoch: number; inputs: object[]; sending?: Promise<void>; closing?: Promise<void> };
+type PanelStream = { id: string; frameUri: string; epoch: number; platform: "ios" | "android"; inputs: object[]; sending?: Promise<void>; closing?: Promise<void> };
 const reconnect = new ReconnectLoop();
 let stream: PanelStream | undefined;
 let ready = false;
@@ -53,6 +57,8 @@ function controls() {
   const active = ready && stream != null && !inputBlocked && !busy;
   repairButton.hidden = !inputBlocked;
   repairButton.disabled = busy || !selected || !toolsAvailable;
+  platformPicker.disabled = busy || !toolsAvailable;
+  document.querySelector<HTMLButtonElement>('[data-button="back"]')!.hidden = platform !== "android";
   devices.disabled = busy || !toolsAvailable || !status?.connected || !status.devices.length;
   refreshButton.disabled = busy || !toolsAvailable;
   startButton.disabled = busy || !toolsAvailable || !status || (status.connected && !selected);
@@ -75,7 +81,7 @@ function flushInput(session: PanelStream): Promise<void> {
   session.sending = (async () => {
     try {
       while (session.inputs.length) {
-        await call("mobile_stream_input", { sessionId: session.id, messages: session.inputs.splice(0, 64) }, { timeout: 5000 });
+        await call(session.platform === "android" ? "mobile_android_stream_input" : "mobile_stream_input", { sessionId: session.id, messages: session.inputs.splice(0, 64) }, { timeout: 5000 });
       }
     } catch (error) {
       session.inputs.length = 0;
@@ -111,7 +117,7 @@ function closePanel(session: PanelStream, graceful = false): Promise<void> {
     if (graceful) await flushInput(session);
     else session.inputs.length = 0;
     if (stream === session) { cancelPointer(); stream = undefined; ready = false; controls(); }
-    try { await call("mobile_stream_close", { sessionId: session.id }, { timeout: 3000 }); }
+    try { await call(session.platform === "android" ? "mobile_android_stream_close" : "mobile_stream_close", { sessionId: session.id }, { timeout: 3000 }); }
     catch { /* Idle streams also expire on the server. */ }
   })();
   return session.closing;
@@ -202,12 +208,13 @@ function selectDevice() {
   selected = status?.devices.find(device => device.udid === devices.value);
   panelContext.selectSimulator(selected);
   logsPanel.selectSimulator(selected);
-  if (!reconnect.active) empty(selected ? "Press Start to open this simulator." : "No simulators. Add an iOS runtime in Xcode.");
+  if (!reconnect.active) empty(selected ? "Press Start to open this simulator." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No simulators. Add an iOS runtime in Xcode."));
   controls();
 }
 
 function renderStatus(next: Status) {
   status = next;
+  element("stream-format").textContent = platform === "android" ? "H.264" : "MJPEG";
   const previous = selected?.udid;
   const oldDevice = next.devices.find(device => device.udid === previous);
   if (reconnect.active && (!next.connected || oldDevice?.state !== "Booted")) void disconnect();
@@ -247,11 +254,13 @@ async function connect() {
 }
 
 async function openAndReceive(udid: string, sessionEpoch: number, signal: AbortSignal) {
-  const result = await call("mobile_stream_session", { udid, fps: 30 }, { timeout: 30000 });
+  const streamPlatform = platform;
+  const closeTool = streamPlatform === "android" ? "mobile_android_stream_close" : "mobile_stream_close";
+  const result = await call(streamPlatform === "android" ? "mobile_android_stream_session" : "mobile_stream_session", streamPlatform === "android" ? { deviceId: udid } : { udid, fps: 30 }, { timeout: 45000 });
   const id = result._meta?.sessionId;
   const frameUri = result._meta?.frameUri;
   if (typeof id !== "string" || typeof frameUri !== "string") throw new StopReconnectError("The plugin did not return a stream session.");
-  if (signal.aborted || sessionEpoch !== epoch) { await call("mobile_stream_close", { sessionId: id }, { timeout: 3000 }).catch(() => {}); return; }
+  if (signal.aborted || sessionEpoch !== epoch) { await call(closeTool, { sessionId: id }, { timeout: 3000 }).catch(() => {}); return; }
   const data = result.structuredContent as { definition: { screen: { rect: { width: number; height: number } } }; inputStatus?: { state: string } };
   const candidate = result._meta?.bezel as Bezel | undefined;
   const geometry = bezelGeometrySchema.safeParse(candidate);
@@ -261,12 +270,12 @@ async function openAndReceive(udid: string, sessionEpoch: number, signal: AbortS
   inputBlocked = data.inputStatus?.state === "blocked";
   notice();
   points = { width: data.definition.screen.rect.width, height: data.definition.screen.rect.height };
-  stream = { id, frameUri, epoch: sessionEpoch, inputs: [] };
+  stream = { id, frameUri, epoch: sessionEpoch, platform: streamPlatform, inputs: [] };
   ready = false;
   frames = 0; seenFrames = 0; frameWindow = performance.now();
   controls();
   const session = stream;
-  try { await receiveFrames(session, signal); }
+  try { if (session.platform === "android") await receiveAndroidFrames(session, signal); else await receiveFrames(session, signal); }
   finally { await closePanel(session); }
 }
 
@@ -294,30 +303,80 @@ async function receiveFrames(session: PanelStream, signal: AbortSignal) {
     const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }));
     try {
       if (signal.aborted || session.epoch !== epoch) return;
-      const resized = canvas.width !== bitmap.width || canvas.height !== bitmap.height;
-      if (resized) { canvas.width = bitmap.width; canvas.height = bitmap.height; }
-      context.drawImage(bitmap, 0, 0);
-      frame.hidden = false; element("empty").hidden = true;
-      if (!ready) { ready = true; reconnect.connected(); notice(); controls(); }
-      if (!seenFrames || resized) fitScreen();
-      seenFrames++; frames++;
-      const elapsed = performance.now() - frameWindow;
-      if (elapsed >= 1000) {
-        element("frame-stats").textContent = `${Math.round(frames * 1000 / elapsed)} fps`;
-        frames = 0; frameWindow = performance.now();
-      }
+      drawFrame(bitmap, bitmap.width, bitmap.height);
     } finally { bitmap.close(); }
   }
 }
 
+function drawFrame(image: CanvasImageSource, width: number, height: number) {
+  const resized = canvas.width !== width || canvas.height !== height;
+  if (resized) { canvas.width = width; canvas.height = height; }
+  context.drawImage(image, 0, 0);
+  frame.hidden = false; element("empty").hidden = true;
+  if (!ready) { ready = true; reconnect.connected(); notice(); controls(); }
+  if (!seenFrames || resized) fitScreen();
+  seenFrames++; frames++;
+  const elapsed = performance.now() - frameWindow;
+  if (elapsed >= 1000) {
+    element("frame-stats").textContent = `${Math.round(frames * 1000 / elapsed)} fps`;
+    frames = 0; frameWindow = performance.now();
+  }
+}
+
+async function receiveAndroidFrames(session: PanelStream, signal: AbortSignal) {
+  const decoder = new AndroidVideo(image => {
+    if (signal.aborted || session.epoch !== epoch) return;
+    points = { width: image.displayWidth, height: image.displayHeight };
+    drawFrame(image, image.displayWidth, image.displayHeight);
+  }, () => {
+    if (signal.aborted || session.epoch !== epoch) return;
+    void call("mobile_android_stream_reset", { sessionId: session.id }, { timeout: 5000 }).catch(() => {});
+  }, () => {
+    if (signal.aborted || session.epoch !== epoch) return;
+    session.inputs.length = 0;
+    releasePointer(); ready = false;
+    notice("Recovering Android video…"); controls();
+  });
+  const uri = new URL(session.frameUri);
+  let after = 0;
+  let lastFrame = performance.now();
+  let previousFrames = seenFrames;
+  let generation = -1;
+  try {
+    while (!signal.aborted && session.epoch === epoch) {
+      uri.searchParams.set("after", String(after));
+      const resource = await app.readServerResource({ uri: uri.href }, { signal, timeout: 15000 });
+      if (signal.aborted || session.epoch !== epoch) return;
+      const content = resource.contents.find(item => item.mimeType === "application/json" && "text" in item);
+      if (!content || !("text" in content)) throw new Error("The plugin returned an invalid Android video batch.");
+      const batch = JSON.parse(content.text) as AndroidVideoBatch;
+      after = batch.sequence;
+      if (generation !== batch.generation) { generation = batch.generation; session.inputs.length = 0; releasePointer(); ready = false; controls(); }
+      await decoder.accept(batch);
+      if (seenFrames !== previousFrames) { lastFrame = performance.now(); previousFrames = seenFrames; }
+      if (performance.now() - lastFrame > 15000) throw new Error("Android video stopped producing frames. Reconnecting.");
+    }
+  } finally { decoder.close(); }
+}
+
+async function listDevices() {
+  const result = await call(platform === "android" ? "mobile_list_android_devices" : "mobile_list_simulators");
+  renderStatus(result.structuredContent as Status);
+}
+
 async function start() {
-  const listed = await call("mobile_list_simulators");
-  renderStatus(listed.structuredContent as Status);
+  await listDevices();
   if (!selected) return;
   if (selected.state !== "Booted") {
     empty("Starting simulator…");
-    const result = await call("mobile_boot_simulator", { udid: selected.udid });
+    const before = selected;
+    const result = await call(platform === "android" ? "mobile_boot_android_emulator" : "mobile_boot_simulator",
+      platform === "android" ? { deviceId: before.udid } : { udid: before.udid }, { timeout: 150000 });
     renderStatus(result.structuredContent as Status);
+    if (platform === "android") {
+      const booted = status?.devices.find(device => device.name === before.name && device.state === "Booted");
+      if (booted) { devices.value = booted.udid; selectDevice(); }
+    }
   }
   await connect();
 }
@@ -355,6 +414,13 @@ canvas.addEventListener("keydown", event => {
     event.preventDefault(); send({ type: "key", code: event.code, modifiers: event.shiftKey ? ["shift"] : [] });
   }
 });
+platformPicker.addEventListener("change", () => { void action(async () => {
+  await disconnect();
+  platform = platformPicker.value === "android" ? "android" : "ios";
+  selected = undefined; status = { connected: false, managed: false, baseUrl: "", devices: [] }; devices.replaceChildren(); setBezel();
+  panelContext.selectSimulator(); logsPanel.selectSimulator();
+  empty("Loading devices…"); await listDevices(); await connect();
+}); });
 devices.addEventListener("change", () => { void action(async () => { await disconnect(); selectDevice(); await connect(); }); });
 startButton.addEventListener("click", () => {
   if (reconnect.active) { void action(async () => { await disconnect(); notice(); if (frame.hidden) empty("Stream paused."); }); }
@@ -364,7 +430,7 @@ document.querySelectorAll<HTMLButtonElement>("[data-button]").forEach(button => 
   button.addEventListener("click", () => { send({ type: "button", button: button.dataset.button }); });
 });
 refreshButton.addEventListener("click", () => { void action(async () => {
-  const result = await call("mobile_list_simulators"); renderStatus(result.structuredContent as Status);
+  await listDevices();
   if (!reconnect.active) await connect();
 }); });
 repairButton.addEventListener("click", () => { void action(async () => {
@@ -393,7 +459,7 @@ function hostContext() {
 app.ontoolinput = () => { empty("Loading simulators…"); };
 app.ontoolresult = result => {
   if (result.isError) { notice(result.content.filter(item => item.type === "text").map(item => item.text).join("\n")); return; }
-  if (result.structuredContent && "devices" in result.structuredContent) {
+  if (platform === "ios" && result.structuredContent && "devices" in result.structuredContent) {
     renderStatus(result.structuredContent as Status);
     void action(connect);
   }

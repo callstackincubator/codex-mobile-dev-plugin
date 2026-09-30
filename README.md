@@ -1,12 +1,13 @@
 # Mobile Dev for Codex
 
-An iOS simulator panel for Codex desktop. The plugin includes Baguette 0.2.1 for streaming and agent-device 0.20.9 for agent control. Both runtimes ship in the plugin and start on demand. No separate install or server command is needed.
+An iOS and Android simulator panel for Codex desktop. The plugin includes Baguette 0.2.1 for streaming and agent-device 0.20.9 for agent control. serve-emu 0.0.6 and scrcpy 4.0 provide Android streaming. All three runtimes ship in the plugin and start on demand. Android needs Bun 1.3.13 or later and an installed Android SDK.
 
 The first version supports:
 
 - A native sidebar entry and a panel beside a chat.
 - A centered simulator with one toolbar for device selection, Start/Pause, Home, App Switcher, Lock, and refresh.
-- Live MJPEG with a target of 30 fps and a small frame counter. The host's MCP bridge sets the delivered frame rate.
+- Live MJPEG for iOS and H.264 for Android, with a target of 30 fps and a small frame counter. The host's MCP bridge sets the delivered frame rate.
+- An iOS/Android picker, Android AVD boot and shutdown, and connected Android devices.
 - Pointer taps and drags and printable US-ASCII typing directly on the focused screen.
 - A Repair input button when Xcode 27 Device Hub blocks interaction.
 - Automatic reconnect after a stream or backend failure, with Pause to stop retries.
@@ -18,9 +19,9 @@ The first version supports:
 
 ## Requirements
 
-Use an Apple Silicon Mac with Xcode 26 or later, an installed iOS simulator runtime, and Node.js 22.18 or later. Baguette uses Apple's simulator frameworks. agent-device builds its bundled XCTest runner with Xcode on its first interaction and caches it under `~/.agent-device/apple-runner`. The plugin carries both runtimes, all npm dependencies, and the Apple runner source. It does not download code at runtime.
+The plugin needs Node.js 22.18 or later. iOS needs an Apple Silicon Mac with Xcode 26 or later and an installed simulator runtime. Baguette uses Apple's simulator frameworks. agent-device builds its bundled XCTest runner with Xcode on its first interaction and caches it under `~/.agent-device/apple-runner`. The plugin carries all three runtimes, their npm dependencies, and the Apple runner source. It does not download code at runtime.
 
-The native panel targets Codex desktop and iOS simulators. Both MCP servers also work through stdio in a local MCP client. agent-device includes commands for other platforms, but this plugin defaults to iOS and requires the same UDID as the panel. This version does not build the user's app or stream an Android screen. Codex's permission and confirmation rules still apply to tool calls.
+The native panel targets Codex desktop, iOS simulators, and Android emulators or attached devices. Both MCP servers also work through stdio in a local MCP client. agent-device defaults to iOS. Set `platform: "android"` and `serial` to the selected Android device ID for Android control. This plugin does not build the user's app. Codex's permission and confirmation rules still apply to tool calls.
 
 Android logs need `adb` from an installed Android SDK. The reader checks `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk`, then PATH. Metro logs need an existing local Metro server and an app with an inspector target. The log tools connect to that server without starting it.
 
@@ -33,17 +34,27 @@ codex plugin marketplace add ./release/marketplace
 codex plugin add mobile-dev@mobile-dev-local
 ```
 
-Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile_open_workspace` for the fullscreen view. Call `mobile_open_simulator` for the panel beside a chat. Choose a simulator from its panel dropdown and press Start. Start boots the device if needed, then connects its screen. A selected running device connects automatically. The panel uses Apple’s device bezel and screen mask from the installed DeviceKit assets, with a simple frame as a fallback when assets are unavailable. Click the screen to type or drag. Pause closes the stream and keeps the last frame.
+Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile_open_workspace` for the fullscreen view. Call `mobile_open_simulator` for the panel beside a chat. Choose iOS or Android, pick a device from the panel dropdown, and press Start. Start boots the device if needed, then connects its screen. A selected running device connects automatically. The panel uses Apple’s device bezel and screen mask from the installed DeviceKit assets, with a simple frame as a fallback when assets are unavailable. Click the screen to type or drag. Pause closes the stream and keeps the last frame.
 
 The local ZIP at `release/mobile-dev-0.1.16-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
-Ask the agent to inspect or control the app on the selected simulator. The panel shares the selected UDID with the chat's model context. The agent uses the bundled agent-device tools with that UDID, opens a named session, reads accessibility refs, then presses elements or fills fields. Baguette keeps the live stream in the panel. The tools take the same session name on later calls so refs and app state stay together.
+Ask the agent to inspect or control the app on the selected device. The panel shares its ID and platform with the chat. The agent uses the bundled agent-device tools with that ID, opens a named session, reads accessibility refs, then presses elements or fills fields. Baguette streams iOS and serve-emu streams Android in the panel. The tools take the same session name on later calls so refs and app state stay together.
+
+## Android
+
+Install Bun 1.3.13 or later and Android SDK platform-tools and emulator. Create an AVD in Android Studio or connect an Android device and authorize adb access. Choose Android in the panel to list devices without booting one. Start boots the selected AVD if needed, then starts the bundled serve-emu CLI on a private loopback port. Home, Back, Recents, Lock, pointer gestures, and typing use scrcpy's control socket. Pause closes the panel stream and leaves the emulator running. AVDs start without a separate emulator window. A failed emulator process reports its exit right away instead of waiting for the boot timeout.
+
+Android H.264 packets travel through MCP resource reads. The panel decodes them with WebCodecs, so the host must support H.264 `VideoDecoder`. Each device gets its own backend and each panel gets its own stream session. Decoder errors and video backlog request a fresh keyframe on the same connection. The panel drops delta frames until it can decode that keyframe. Requests have a cooldown, and stale decoder callbacks cannot repaint a closed stream. The plugin reuses a matching serve-emu server at port 3300. Set `SERVE_EMU_URL` to reuse another loopback HTTP server; it must already stream the selected serial. Closing MCP stops only backends the plugin started.
+
+For tool use, call `mobile_list_android_devices`. It returns serials for connected devices and `avd:<name>` IDs for stopped AVDs. Boot a selected AVD with `mobile_boot_android_emulator` and use its returned running serial for later calls. `mobile_shutdown_android_emulator` stops an emulator. `mobile_android_screenshot`, `mobile_android_describe_ui`, and `mobile_android_send_input` inspect and control running devices. Gesture coordinates use screen pixels and matching screen width and height. For agent-device, pass `platform: "android"`, `serial`, and a named session.
+
+`vendor:serve-emu` installs the pinned npm runtime with package scripts disabled and checks the bundled scrcpy 4.0 server's SHA-256. `build` copies the full runtime and records package integrity, lockfile hash, and scrcpy hash in `dist/serve-emu/release.json`. Starting Android requires no npm install or runtime download.
 
 ## App logs
 
 The fullscreen plugin view has a full-width tool bar above both panels. Each panel has its own controls. Logs sit on the left and the simulator on the right above 800px; smaller views place the simulator above logs. The Logs tab reopens the logs panel. Click Logs to collapse the left panel to a tab, then click it again to reopen. The panel beside a chat keeps the collapsible drawer below the simulator. Each view has its own UI resource, so the layout does not depend on the host's display-mode flag. A booted simulator streams its unified logs. Click Sources to enter the app's executable name and press Connect to filter the native stream. Leave the app filter empty to include all device processes.
 
-For Metro, enter its local URL and click Find sources. Select the app and device in Metro app. For Android, choose a connected device in Native source and enter its package name to follow the app across restarts. The simulator screen stays on iOS when you choose Android logs. You can read native and Metro logs together.
+For Metro, enter its local URL and click Find sources. Select the app and device in Metro app. For Android, choose a connected device in Native source and enter its package name to follow the app across restarts. Native source follows the device selected in the panel. You can also choose another connected Android device for logs. You can read native and Metro logs together.
 
 JS and Native toggle each source. Info, Warn, Error, and Debug toggle each level. Search matches log text, stack traces, and process details. Stack groups exact repeats by source, level, device, and process and shows the count on the right. Follow keeps the latest rows in view. Pause stops log readers; Resume opens a new session. Closing the drawer also stops its readers. Clear removes the buffered rows while the stream runs.
 
@@ -59,6 +70,7 @@ iOS reads `xcrun simctl spawn <UDID> log stream --style ndjson --level debug`, t
 npm ci
 npm run vendor:baguette
 npm run vendor:agent-device
+npm run vendor:serve-emu
 npm run build
 npm test
 npm run package

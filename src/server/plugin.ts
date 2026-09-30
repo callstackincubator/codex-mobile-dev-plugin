@@ -3,6 +3,8 @@ import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@model
 import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { z } from "zod";
 import { readBezel } from "./bezel.ts";
+import { ServeEmu } from "./serve-emu.ts";
+import { registerAndroidTools } from "./android-tools.ts";
 import { Baguette } from "./baguette.ts";
 import { StreamSessions } from "./stream-sessions.ts";
 import { LogSessions } from "./log-sessions.ts";
@@ -39,13 +41,14 @@ function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
   };
 }
 
-export async function createPlugin(html: string, baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions()) {
+export async function createPlugin(html: string, baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), android = new ServeEmu()) {
   const streams = new StreamSessions(baguette);
   const server = new McpServer({ name: "mobile-dev", version: "0.1.16" }, {
-    instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. Opening the panel does not boot a device.",
+    instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. For Android use mobile_list_android_devices and the mobile_android tools. Use the selected serial with agent-device and platform android. serve-emu handles Android video and panel input. Opening the panel does not boot a device.",
   });
   new OpenAIExtensions(server);
   registerLogTools(server, logs, baguette);
+  const closeAndroid = registerAndroidTools(server, android, APP_URI);
 
   async function blockedInput(udid: string): Promise<CallToolResult | undefined> {
     if ((await simulatorInput.status(udid)).state !== "blocked") return;
@@ -98,7 +101,7 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
 
   registerAppTool(server, "mobile_open_workspace", {
     title: "Mobile Dev",
-    description: "Open the fullscreen Mobile Dev workspace with logs on the left and the iOS simulator on the right. Starts the bundled backend without booting a device.",
+    description: "Open the fullscreen Mobile Dev workspace with logs on the left and an iOS or Android device on the right. Starts the bundled backend without booting a device.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
       ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
@@ -107,8 +110,8 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
   }, openPanel);
 
   registerAppTool(server, "mobile_open_simulator", {
-    title: "iOS Simulator",
-    description: "Open the Mobile Dev simulator panel in Codex and start the plugin's bundled Baguette backend. Shows devices without booting any.",
+    title: "Mobile simulator",
+    description: "Open the Mobile Dev simulator panel in Codex and start the plugin's bundled Baguette backend. Choose iOS or Android in the panel. Shows devices without booting any.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
       ui: { resourceUri: APP_URI, visibility: ["app", "model"] },
@@ -233,8 +236,9 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     return result({}, "Simulator stream closed.");
   }));
 
+
   return {
     server,
-    async close() { streams.close(); await logs.close(); baguette.dispose(); await server.close(); },
+    async close() { closeAndroid(); streams.close(); await logs.close(); baguette.dispose(); await server.close(); },
   };
 }
