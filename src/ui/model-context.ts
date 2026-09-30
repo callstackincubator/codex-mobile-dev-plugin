@@ -21,8 +21,18 @@ export class PanelContext {
 
   constructor(app: App, extensions: OpenAIExtensions) { this.app = app; this.extensions = extensions; }
   get canAttach() { return !!this.extensions.modelContext; }
+  get canSendMessage() { return !!this.app.getHostCapabilities()?.message?.text; }
   get canAttachScreenshots() { return this.canAttach && !!this.app.getHostCapabilities()?.updateModelContext?.image; }
   get attachedKey() { return this.attached ? logKey(this.attached) : undefined; }
+
+  async sendLogToChat(log: StackedLog) {
+    if (!this.canSendMessage) throw new Error("This host does not support chat messages.");
+    const prompt = log.level === "error" || log.level === "warn"
+      ? "Help me fix this log's underlying issue."
+      : "Explain this log and whether I need to take any action.";
+    const result = await this.app.sendMessage({ role: "user", content: [{ type: "text", text: `${prompt}\n\n${formatLogContext(log)}` }] });
+    if (result.isError) throw new Error("Could not send this log to chat.");
+  }
 
   selectSimulator(simulator?: SimulatorDevice) {
     this.selectSimulators(simulator ? [simulator] : [], simulator);

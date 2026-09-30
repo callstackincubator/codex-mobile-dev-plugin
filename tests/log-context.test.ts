@@ -9,6 +9,32 @@ import { UDID, PNG } from "./fixtures.ts";
 const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS 26" };
 const log = stackLogs([{ timestamp: "2026-09-30T12:00:00Z", message: "Request failed", level: "error", source: "js", origin: "metro", stack: "at load (App.tsx:9:3)", sequence: 1 }])[0];
 
+test("chat actions include the clicked log and use the prompt for its severity", async () => {
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ message: { text: {} } }),
+    async sendMessage(params: Parameters<App["sendMessage"]>[0]) { messages.push(params); return {}; },
+  } as App, {} as OpenAIExtensions);
+  for (const level of ["error", "warn", "info", "debug"] as const) {
+    await context.sendLogToChat({ ...log, level });
+    const message = messages.at(-1)!;
+    assert.equal(message.role, "user");
+    assert.match(JSON.stringify(message.content), level === "error" || level === "warn" ? /Help me fix/ : /Explain this log/);
+    assert.match(JSON.stringify(message.content), /Request failed/);
+    assert.match(JSON.stringify(message.content), /App.tsx:9:3/);
+  }
+});
+
+test("chat actions report host rejection and unsupported hosts", async () => {
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ message: { text: {} } }),
+    async sendMessage() { return { isError: true }; },
+  } as unknown as App, {} as OpenAIExtensions);
+  await assert.rejects(context.sendLogToChat(log), /Could not send/);
+  const unsupported = new PanelContext({ getHostCapabilities: () => ({}) } as App, {} as OpenAIExtensions);
+  await assert.rejects(unsupported.sendLogToChat(log), /does not support chat/);
+});
+
 function fixture() {
   let current: OpenAIModelContextHostState | undefined;
   const updates: Parameters<App["updateModelContext"]>[0][] = [];

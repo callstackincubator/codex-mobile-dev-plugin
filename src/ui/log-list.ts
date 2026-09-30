@@ -14,6 +14,8 @@ export class LogList {
   private stacked = true;
   private follow = true;
   private attaching = false;
+  private sending = false;
+  private chatError = "";
   private attachmentStatus = "";
   private snapshot: ReturnType<LogList["makeSnapshot"]>;
 
@@ -37,6 +39,7 @@ export class LogList {
     return { filtered, selected, buffered: this.entries.length, dropped: this.dropped, sources: this.sources, levels: this.levels,
       query: this.query, stacked: this.stacked, follow: this.follow, attaching: this.attaching, attachmentStatus: this.attachmentStatus,
       attachedKey: this.context.attachedKey, canAttach: this.context.canAttach,
+      sending: this.sending, chatError: this.chatError, canSendMessage: this.context.canSendMessage,
       selectedAttached: !!selected && this.context.attachedKey === logKey(selected) };
   }
 
@@ -80,5 +83,13 @@ export class LogList {
       this.attachmentStatus = remove || !this.context.attachedKey ? "Attachment removed." : "Attached to your next chat message.";
     } catch (error) { this.attachmentStatus = error instanceof Error ? error.message : String(error); }
     finally { this.attaching = false; this.publish(); }
+  }
+
+  async sendToChat(log: StackedLog) {
+    if (this.sending || !this.context.canSendMessage) return;
+    this.sending = true; this.chatError = ""; this.publish();
+    try { await this.context.sendLogToChat(log); }
+    catch (error) { this.chatError = error instanceof Error ? error.message : String(error); }
+    finally { this.sending = false; this.publish(); }
   }
 }

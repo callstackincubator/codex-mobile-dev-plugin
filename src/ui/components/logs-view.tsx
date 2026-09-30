@@ -1,8 +1,9 @@
-import { ArrowDownToLineIcon, CircleAlertIcon, InfoIcon, TriangleAlertIcon, CheckIcon, LayersIcon, ListXIcon, PaperclipIcon, PauseIcon, PlayIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, TerminalIcon, UnlinkIcon, XIcon } from "lucide-react";
-import { memo, useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { CopyIcon, MessageCircleIcon, ArrowDownToLineIcon, CircleAlertIcon, InfoIcon, TriangleAlertIcon, CheckIcon, LayersIcon, ListXIcon, PaperclipIcon, PauseIcon, PlayIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, TerminalIcon, UnlinkIcon, XIcon } from "lucide-react";
+import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { LegendList, type LegendListRef, type LegendListRenderItemProps } from "@legendapp/list/react";
 import type { StackedLog } from "../../shared/logs.ts";
 import type { LogsPanel } from "../logs-panel.ts";
+import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem } from "./ui/context-menu";
 import { LogDetails } from "./log-details";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Badge } from "./ui/badge";
@@ -32,10 +33,17 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
   const detailVertical = narrow || (wide && document.documentElement.dataset.view === "workspace");
   const listRef = useRef<LegendListRef>(null);
   const selectedSequence = logs.selected?.sequence;
+  const [copyStatus, setCopyStatus] = useState("");
+  const copyLog = useCallback(async (log: StackedLog) => {
+    const prefix = log.tag || log.process;
+    const text = `${prefix ? `${prefix}: ` : ""}${log.message}${log.stack ? `\n${log.stack}` : ""}`;
+    try { await navigator.clipboard.writeText(text); setCopyStatus("Log copied"); }
+    catch { setCopyStatus("Could not copy log"); }
+  }, []);
   const renderItem = useCallback(({ item }: LegendListRenderItemProps<StackedLog>) => {
     const Icon = item.level === "error" ? CircleAlertIcon : item.level === "warn" ? TriangleAlertIcon : InfoIcon;
     const prefix = item.tag || item.process;
-    return <Toggle type="button" data-log-row data-level={item.level} pressed={item.sequence === selectedSequence}
+    return <ContextMenu><ContextMenuTrigger asChild><Toggle type="button" data-log-row data-level={item.level} pressed={item.sequence === selectedSequence}
       className="log-row relative grid h-auto min-h-7 w-full grid-cols-[14px_8ch_1px_minmax(0,1fr)] items-start gap-x-2 rounded-none border-b px-2 py-1 text-left font-mono text-xs leading-[18px] font-normal whitespace-normal"
       style={item.count > 1 ? { paddingRight: Math.max(36, String(item.count).length * 6 + 24) } : undefined}
       title={`${item.source === "js" ? "JS" : "Native"} · ${item.process ?? item.origin} · ${item.timestamp}\n${item.message}`} onPressedChange={pressed => panel.list.select(pressed ? item.sequence : undefined)}>
@@ -44,8 +52,15 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
       <span className="mt-0.5 h-3.5 w-px bg-muted-foreground/70" aria-hidden="true" />
       <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{prefix && <span>{prefix}: </span>}{item.message}</span>
       {item.count > 1 && <Badge variant="outline" className="absolute top-1 right-2 h-5 min-w-5 rounded-full bg-secondary px-1 py-0 font-sans text-[10px] leading-none text-secondary-foreground tabular-nums" aria-label={`${item.count} occurrences`}>{item.count}</Badge>}
-    </Toggle>;
-  }, [panel, selectedSequence]);
+    </Toggle></ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={() => { setCopyStatus(""); void copyLog(item); }}><CopyIcon />Copy</ContextMenuItem>
+        <ContextMenuItem disabled={logs.sending || !logs.canSendMessage} onSelect={() => void panel.list.sendToChat(item)}>
+          <MessageCircleIcon />{item.level === "error" || item.level === "warn" ? "Fix in chat" : "Ask in chat"}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>;
+  }, [panel, selectedSequence, logs.sending, logs.canSendMessage, copyLog]);
 
   useEffect(() => {
     if (logs.follow && state.open && logs.filtered.length) void listRef.current?.scrollToEnd({ animated: false });
@@ -53,6 +68,8 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
 
   return <Collapsible open={state.open} onOpenChange={() => panel.toggle()} asChild>
     <section id="logs-drawer" data-open={state.open} className="@container flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-labelledby="tool-logs">
+      <span className="sr-only" role="status">{copyStatus}</span>
+      {copyStatus === "Could not copy log" && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription>{copyStatus}</AlertDescription></Alert>}
       {state.open && <header className="logs-toolbar flex h-[49px] shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
         <span id="logs-status" className="sr-only" role="status">{state.status} · {logs.filtered.length} shown · {logs.buffered} buffered{logs.dropped > 0 ? ` · ${logs.dropped} older logs dropped` : ""}</span>
           <InputGroup className="h-7 min-w-16 flex-1"><InputGroupInput className="text-xs" aria-label="Search logs" type="search" placeholder="Search..." maxLength={512} value={logs.query} onChange={event => panel.list.search(event.target.value)} /><InputGroupAddon className="pl-2"><SearchIcon className="size-3.5" /></InputGroupAddon></InputGroup>
@@ -90,6 +107,7 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
           {logs.attachedKey && <Button variant="ghost" size="icon-sm" className="shrink-0" title="Remove attached log" aria-label="Remove attached log" disabled={logs.attaching} onClick={() => void panel.list.attach(true)}><UnlinkIcon /></Button>}
       </header>}
       <CollapsibleContent id="logs-body" className="flex min-h-0 flex-1 flex-col">
+        {logs.chatError && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription>{logs.chatError}</AlertDescription></Alert>}
         {state.error && <Alert id="logs-error" variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription className="wrap-anywhere">{state.error}</AlertDescription></Alert>}
         <ResizablePanelGroup className="logs-content min-h-0 flex-1" orientation={detailVertical ? "vertical" : "horizontal"}>
           <ResizablePanel id="log-list-resizable" defaultSize="58%" minSize="30%">
