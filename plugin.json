@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "mobile-dev",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "description": "Stream iOS simulators and Android devices, read native and Metro logs, and control apps with bundled agent-device tools.",
   "author": {
     "name": "Laurids"
