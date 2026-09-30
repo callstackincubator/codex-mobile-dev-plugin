@@ -1,3 +1,5 @@
+import { androidNinePatchSkin } from "./android-nine-patch.ts";
+import { androidFrameGeometry, androidChromeScale } from "./android-frame-geometry.ts";
 import { getDevicePicker } from "./device-picker.ts";
 import { bezelGeometrySchema } from "../shared/bezel.ts";
 import type { Bezel } from "../shared/bezel.ts";
@@ -25,6 +27,7 @@ export function createSimulatorPanel(
   const stage = element("stage");
   const bezelImage = element<HTMLImageElement>("device-bezel");
   let bezel: Bezel | undefined;
+  let useAndroidNinePatch = false;
   bezelImage.addEventListener("error", () => { setBezel(); fitScreen(); });
   const screenshotButton = element<HTMLButtonElement>("screenshot");
   let status: Status | undefined;
@@ -154,8 +157,11 @@ export function createSimulatorPanel(
   }
 
   function setBezel(value?: Bezel) {
+    useAndroidNinePatch = platform === "android" && !value;
+    const decoration = element("device-nine-patch");
+    if (decoration) decoration.hidden = !useAndroidNinePatch;
     bezel = value;
-    frame.dataset.bezel = String(!!value);
+    frame.dataset.bezel = String(!!value || useAndroidNinePatch);
     bezelImage.hidden = !value;
     canvas.removeAttribute("style");
     if (!value) { bezelImage.removeAttribute("src"); return; }
@@ -179,7 +185,44 @@ export function createSimulatorPanel(
     const style = getComputedStyle(stage);
     const width = stage.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
     const height = stage.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+    if (useAndroidNinePatch) {
+      const skin = androidNinePatchSkin;
+      const geometry = androidFrameGeometry(canvas.width, canvas.height, width, height);
+      const { scale, screenWidth, screenHeight, frameWidth, frameHeight } = geometry;
+      frame.style.width = `${frameWidth * scale}px`;
+      frame.style.height = `${frameHeight * scale}px`;
+      canvas.style.left = `${skin.bezel.left * androidChromeScale * scale}px`;
+      canvas.style.top = `${skin.bezel.top * androidChromeScale * scale}px`;
+      canvas.style.width = `${screenWidth * scale}px`;
+      canvas.style.height = `${screenHeight * scale}px`;
+      canvas.style.borderRadius = `${skin.screenCornerRadius * androidChromeScale * scale}px`;
+      const decoration = element("device-nine-patch");
+      if (decoration) {
+        decoration.style.borderStyle = "solid";
+        decoration.style.borderWidth = `${skin.slice * androidChromeScale * scale}px`;
+        decoration.style.borderImage = `url("${skin.image}") ${skin.slice} / ${skin.slice * androidChromeScale * scale}px stretch`;
+        decoration.replaceChildren(...skin.buttons.map(button => {
+          const shape = document.createElement("span");
+          const renderedSlice = skin.slice * androidChromeScale;
+          const buttonHeight = button.height * androidChromeScale;
+          const center = renderedSlice + (button.top + button.height / 2 - skin.slice) * (frameHeight - 2 * renderedSlice) / (skin.imageHeight - 2 * skin.slice);
+          const top = Math.min(Math.max(center - buttonHeight / 2, renderedSlice), frameHeight - renderedSlice - buttonHeight);
+          Object.assign(shape.style, { position: "absolute", top: `${(top - renderedSlice) * scale}px`, height: `${buttonHeight * scale}px`, width: `${button.depth * androidChromeScale * scale}px`, [button.side]: `${-(skin.slice + button.depth) * androidChromeScale * scale}px`, background: "#2b2b2b", borderRadius: "2px" });
+          return shape;
+        }));
+      }
+      return;
+    }
     if (bezel) {
+      const { rect, viewport } = bezel;
+      const inset = 0;
+      const videoScale = Math.min((rect.width - inset * 2) / canvas.width, (rect.height - inset * 2) / canvas.height);
+      const videoWidth = canvas.width * videoScale;
+      const videoHeight = canvas.height * videoScale;
+      canvas.style.left = `${(rect.x + (rect.width - videoWidth) / 2) / viewport.width * 100}%`;
+      canvas.style.top = `${(rect.y + (rect.height - videoHeight) / 2) / viewport.height * 100}%`;
+      canvas.style.width = `${videoWidth / viewport.width * 100}%`;
+      canvas.style.height = `${videoHeight / viewport.height * 100}%`;
       const scale = Math.max(0, Math.min(width / bezel.viewport.width, height / bezel.viewport.height));
       frame.style.width = `${bezel.viewport.width * scale}px`;
       frame.style.height = `${bezel.viewport.height * scale}px`;

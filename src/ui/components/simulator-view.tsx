@@ -26,6 +26,7 @@ export const SimulatorView = memo(function SimulatorView({ platform }: { platfor
       <Empty className="absolute inset-0 group-has-[[data-element=empty][hidden]]/stage:hidden"><EmptyHeader><EmptyMedia variant="icon"><SmartphoneIcon /></EmptyMedia><EmptyTitle data-element="empty" role="status">Loading devices...</EmptyTitle></EmptyHeader></Empty>
       <div data-element="device-frame" hidden>
         <img data-element="device-bezel" className="pointer-events-none absolute inset-0 z-1 size-full select-none" alt="" draggable={false} hidden />
+        <div data-element="device-nine-patch" className="pointer-events-none absolute inset-0 z-3" hidden />
         <canvas data-element="screen" className="block size-full touch-none bg-black focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-ring" tabIndex={0} aria-label={`${label} screen. Click or drag to interact. Focus to type.`} />
       </div>
     </section>
