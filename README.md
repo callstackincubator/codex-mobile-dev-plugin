@@ -5,14 +5,14 @@ An iOS and Android simulator panel for Codex desktop. The plugin includes Baguet
 The first version supports:
 
 - A native sidebar entry and a panel beside a chat.
-- A centered simulator with one toolbar for device selection, Start/Pause, Home, App Switcher, Lock, and refresh.
-- A screenshot button that adds an iOS PNG to the chat input and copies the same image to the macOS clipboard.
-- Live MJPEG for iOS and H.264 for Android, with a target of 30 fps and a small frame counter. The host's MCP bridge sets the delivered frame rate.
+- A centered simulator with one toolbar for device selection, Home, App Switcher, and Screenshot.
+- A screenshot button that adds an iOS or Android PNG to the chat input and copies the same image to the macOS clipboard.
+- Live MJPEG for iOS and H.264 for Android, with a target of 30 fps capture. The host's MCP bridge sets the delivered frame rate.
 - An iOS/Android picker, Android AVD boot and shutdown, and connected Android devices.
 - Pointer taps and drags and printable US-ASCII typing directly on the focused screen.
-- A Repair input button when Xcode 27 Device Hub blocks interaction.
-- Automatic reconnect after a stream or backend failure, with Pause to stop retries.
-- A collapsible log drawer below the simulator with JS/Native and level filters, search, repeat counts, and log attachments for the agent.
+- A notice when Xcode 27 Device Hub blocks interaction. Repair remains available through the `mobile_repair_input` tool.
+- Automatic reconnect after a stream or backend failure.
+- A resizable log panel with search, repeat counts, log attachments, source settings in a popover, and a compact level filter.
 - iOS unified logs, Android logcat from connected devices, and JS console messages and exceptions from a selected Metro app.
 - MCP tools for device lists, boot and shutdown, input, screenshots, and accessibility reads.
 - agent-device's 55 official MCP tools, including app launch, snapshot refs, element presses, text entry, scrolling, waits, and debugging.
@@ -35,15 +35,15 @@ codex plugin marketplace add ./release/marketplace
 codex plugin add mobile-dev@mobile-dev-local
 ```
 
-Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile_open_workspace` for the fullscreen view. Call `mobile_open_simulator` for the panel beside a chat. iOS and Android appear side by side, each with a device dropdown and Start button. Pick a device and press Start in each panel. Use the platform menu to show one platform on its own. Start boots the device if needed, then connects its screen. A selected running device connects automatically. The panel uses Apple’s device bezel and screen mask from the installed DeviceKit assets, with a simple frame as a fallback when assets are unavailable. Click the screen to type or drag. Pause closes the stream and keeps the last frame.
+Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile_open_workspace` for the fullscreen view. Call `mobile_open_simulator` for the panel beside a chat. iOS and Android appear side by side, each with a device dropdown, Home, App Switcher, and Screenshot. Pick a device in each panel. Use the iOS and Android toggles to show either, both, or neither simulator. Selecting a device boots it if needed, then connects its screen. A selected running device connects automatically. The panel uses Apple’s device bezel and screen mask from the installed DeviceKit assets, with a simple frame as a fallback when assets are unavailable. Click the screen to type or drag. Closing the panel closes its stream.
 
-The local ZIP at `release/mobile-dev-0.1.22-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+The local ZIP at `release/mobile-dev-0.1.32-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
-Ask the agent to inspect or control the app on the selected device. The panel shares both visible device IDs and platforms with the chat. Click a device panel to make it the active device for logs. The agent uses the bundled agent-device tools with the chosen device ID, opens a named session, reads accessibility refs, then presses elements or fills fields. Baguette streams iOS and serve-emu streams Android in the panel. The tools take the same session name on later calls so refs and app state stay together.
+Ask the agent to inspect or control the app on the selected device. The panel shares both visible device IDs and platforms with the chat. Click a device panel to make it the active device for logs. Hiding a simulator keeps the current log source and buffered logs. The agent uses the bundled agent-device tools with the chosen device ID, opens a named session, reads accessibility refs, then presses elements or fills fields. Baguette streams iOS and serve-emu streams Android in the panel. The tools take the same session name on later calls so refs and app state stay together.
 
 ## Android
 
-Install Bun 1.3.13 or later and Android SDK platform-tools and emulator. Create an AVD in Android Studio or connect an Android device and authorize adb access. The Android panel lists devices without booting one. Start boots the selected AVD if needed, then starts the bundled serve-emu CLI on a private loopback port. Home, Back, Recents, Lock, pointer gestures, and typing use scrcpy's control socket. Pause closes the panel stream and leaves the emulator running. AVDs start without a separate emulator window. A failed emulator process reports its exit right away instead of waiting for the boot timeout.
+Install Bun 1.3.13 or later and Android SDK platform-tools and emulator. Create an AVD in Android Studio or connect an Android device and authorize adb access. The Android panel lists devices without booting one. Selecting an AVD boots it if needed, then starts the bundled serve-emu CLI on a private loopback port. Home, Back, Recents, Lock, pointer gestures, and typing use scrcpy's control socket. Closing the panel leaves the emulator running. AVDs start without a separate emulator window. A failed emulator process reports its exit right away instead of waiting for the boot timeout.
 
 Android H.264 packets travel through MCP resource reads. The panel decodes them with WebCodecs, so the host must support H.264 `VideoDecoder`. Each device gets its own backend and each panel gets its own stream session. Decoder errors and video backlog request a fresh keyframe on the same connection. The panel drops delta frames until it can decode that keyframe. Requests have a cooldown, and stale decoder callbacks cannot repaint a closed stream. The plugin reuses a matching serve-emu server at port 3300. Set `SERVE_EMU_URL` to reuse another loopback HTTP server; it must already stream the selected serial. Closing MCP stops only backends the plugin started.
 
@@ -51,7 +51,7 @@ For tool use, call `mobile_list_android_devices`. It returns serials for connect
 
 `vendor:serve-emu` installs the pinned npm runtime with package scripts disabled and checks the bundled scrcpy 4.0 server's SHA-256. `build` copies the full runtime and records package integrity, lockfile hash, and scrcpy hash in `dist/serve-emu/release.json`. Starting Android requires no npm install or runtime download.
 
-Click the camera button in the iOS simulator toolbar to add a fresh PNG to the chat input and copy it to the macOS clipboard. Each click adds another screenshot and keeps any attached log. Remove screenshots from the chat input to clear them. The button works while the selected iOS simulator runs, including when the stream is paused. It does not send a message.
+Click the camera button in either simulator toolbar to add a fresh PNG to the chat input and copy it to the macOS clipboard. Each click adds another screenshot and keeps any attached log. Remove screenshots from the chat input to clear them. The button works while the selected simulator runs, including when the stream is paused. It does not send a message.
 
 ## App logs
 
@@ -111,13 +111,13 @@ The app gets a random stream session through an app-only MCP tool. The MCP serve
 
 The UI resource's CSP has empty connection and resource allowlists. Codex desktop 0.159.0 filters plain HTTP and WebSocket origins out of widget CSP, including loopback addresses. The MCP transport avoids those browser connections. A session expires after five minutes without reads or input. Closing or pausing a viewer closes its upstream capture. Ending the MCP process stops its Baguette child and streams. Simulator devices remain under CoreSimulator's control.
 
-When a socket drops, the server reopens it for the same device and preserves the frame sequence. It clears the old frame and waits for fresh capture before allowing input. If Baguette exits, the next read starts a new bundled process. Heartbeats detect sockets that stop responding. If an open socket produces no first frame within ten seconds, capture retries with a delay. Baguette's MJPEG capture sends only changed pixels, so a quiet screen after the first frame stays connected. Failed attempts wait between 0.5 and 10 seconds. The panel also reconnects after MCP errors or an expired session. It keeps the last frame, shows Reconnecting, and discards input from the failed connection. Pause, closing the panel, or selecting another device cancels retries. Reconnect never boots a stopped simulator or runs an input repair.
+When a socket drops, the server reopens it for the same device and preserves the frame sequence. It clears the old frame and waits for fresh capture before allowing input. If Baguette exits, the next read starts a new bundled process. Heartbeats detect sockets that stop responding. If an open socket produces no first frame within ten seconds, capture retries with a delay. Baguette's MJPEG capture sends only changed pixels, so a quiet screen after the first frame stays connected. Failed attempts wait between 0.5 and 10 seconds. The panel also reconnects after MCP errors or an expired session. It keeps the last frame, shows Reconnecting, and discards input from the failed connection. Closing the panel or selecting another device cancels retries. Reconnect never boots a stopped simulator or runs an input repair.
 
 An iOS JPEG decode error restarts capture through `mobile_stream_reset` with the same panel session. Reset requests have a one-second cooldown. Three failed frames in a row reopen the panel stream with a delay. Late decode results release their bitmap and cannot draw on a closed panel.
 
 iOS boot and shutdown calls run in order for each device and wait up to two minutes for the reported state. Boot skips the backend route if the device already runs or is booting. This avoids a second boot and Baguette's input repair on a running device. Shutdown closes that device's panel streams after the device stops.
 
-On macOS 27 with Xcode 27, the bundled Baguette can list simulators and capture frames. Device Hub can stop taps, buttons, and keys from reaching an iOS 27 device. The panel checks this state when connecting and sending input. When blocked, it shows Repair input and explains that the repair closes running apps. The button runs the bundled Baguette's `heal` command, then reconnects capture with new input handles. It restarts backboardd and SpringBoard without rebooting the device. Relaunching Device Hub can block input again. The panel never repairs a running device without the user clicking Repair input or asking to fix input. Baguette's boot route also repairs input after boot. Do not run the repair to diagnose video. See [Baguette's Device Hub notes](https://github.com/tddworks/baguette/blob/main/docs/features/device-hub/README.md).
+On macOS 27 with Xcode 27, the bundled Baguette can list simulators and capture frames. Device Hub can stop taps, buttons, and keys from reaching an iOS 27 device. The panel checks this state when connecting and sending input. When blocked, it shows a notice. Ask Codex to repair input with `mobile_repair_input`. The tool runs the bundled Baguette's `heal` command. Reconnect capture afterward to use new input handles. It restarts backboardd and SpringBoard without rebooting the device. Relaunching Device Hub can block input again. The panel automatically repairs a confirmed Device Hub block when connecting and reconnects if input becomes blocked later. Repair closes running apps. It limits automatic attempts to once per device per minute; a repeated block or failed repair remains visible in the bottom bar. Model input alone does not trigger automatic repair. Baguette's boot route also repairs input after boot. Do not run the repair to diagnose video. See [Baguette's Device Hub notes](https://github.com/tddworks/baguette/blob/main/docs/features/device-hub/README.md).
 
 UI resource addresses include the release version so Codex can load new HTML after an update. The original simulator and workspace addresses and the old v1 through v6 simulator addresses still return the current UI. After updating, restart Codex once if it still uses an older MCP process.
 
@@ -149,3 +149,23 @@ The `agent-device` MCP server exposes the pinned runtime's official tools direct
 ## Sources
 
 The implementation follows [Baguette's HTTP and WebSocket routes](https://github.com/tddworks/baguette/blob/v0.2.1/docs/serve.md) and [gesture protocol](https://github.com/tddworks/baguette/blob/v0.2.1/docs/wire.md). The bundled automation server follows [agent-device's official MCP setup](https://github.com/callstack/agent-device#add-mcp-tools-to-your-agent). Native panel metadata follows [OpenAI's plugin extensions](https://developers.openai.com/plugins/build/extensions). The package uses the [portable plugin format](https://developers.openai.com/plugins/build/plugins).
+
+Panels, toolbars, settings areas, and footers use transparent backgrounds so they blend with the host. Add a panel background only when the user asks to highlight that area.
+
+### Live React UI development
+
+Run `npm run dev` after installing the plugin. It watches the UI sources and
+rebuilds a self-contained HTML bundle. Open panels read updates through MCP,
+then reload and reconnect their streams. Edits reset UI state.
+
+Codex denies browser access to localhost, including trusted HTTPS. Live reload
+uses the existing MCP connection and needs no dev server or certificates.
+`npm run dev` reuses a watcher already running from this repo.
+
+Restart Codex after installing a new plugin version, then reopen Mobile Dev.
+UI and CSS edits reload without another restart. MCP server changes still need
+a rebuild and a server restart.
+
+Run `npm run dev:off` and reopen the panel to use the release bundle. A stopped
+watcher also makes newly opened panels use that bundle. Build errors keep the
+last working UI. Set `MOBILE_DEV_PLUGIN_ROOT` for a nonstandard plugin install.
