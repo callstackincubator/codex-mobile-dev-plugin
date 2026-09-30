@@ -1,4 +1,6 @@
 import { build } from "esbuild";
+import { compile } from "@tailwindcss/node";
+import { Scanner } from "@tailwindcss/oxide";
 import { access, copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -43,7 +45,16 @@ await writeFile("dist/serve-emu/release.json", JSON.stringify({
   lockfileSHA256: createHash("sha256").update(androidLock).digest("hex"), scrcpyVersion: "4.0", scrcpySHA256,
 }, null, 2) + "\n");
 const app = await build({
-  entryPoints: ["src/ui/app.ts"], bundle: true, write: false, format: "iife", platform: "browser",
+  entryPoints: ["src/ui/app.tsx"], jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
+  loader: { ".svg": "text", ".woff2": "dataurl", ".woff": "dataurl" },
+  plugins: [{ name: "shadcn-theme", setup(build) {
+    build.onLoad({ filter: /theme\.css$/ }, async ({ path }) => {
+      const compiler = await compile(await readFile(path, "utf8"), { base: dirname(path), onDependency() {} });
+      const scanner = new Scanner({ sources: [{ base: resolve("src/ui"), pattern: "**/*.{ts,tsx}", negated: false }] });
+      return { contents: compiler.build(scanner.scan()), loader: "css", resolveDir: dirname(path) };
+    });
+  } }],
+  bundle: true, write: false, format: "iife", platform: "browser",
   outfile: "app.js",
   target: "chrome120", minify: true, legalComments: "eof", metafile: true,
 });
@@ -58,7 +69,8 @@ const server = await build({
   format: "esm", platform: "node", target: "node22", minify: false, legalComments: "eof", metafile: true,
   banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
 });
-const packageRoots = new Set();
+// Tailwind compiles these styles before esbuild records its input files.
+const packageRoots = new Set(["shadcn", "tailwindcss", "tw-animate-css"].map(name => resolve("node_modules", name)));
 for (const path of [...Object.keys(app.metafile.inputs), ...Object.keys(server.metafile.inputs)]) {
   if (!path.includes("node_modules/")) continue;
   let directory = dirname(resolve(path));

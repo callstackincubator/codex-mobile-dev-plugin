@@ -63,11 +63,13 @@ JS and Native toggle each source. Info, Warn, Error, and Debug toggle each level
 
 Click a row to read its full text and stack trace. Attach to chat adds that log, its source, and its repeat count to the agent's next prompt, along with the selected simulator. Ask the agent to fix the error in your next message. Remove attachment clears the log. Each new attachment replaces the prior log. Removing the attachment in Codex also clears the panel's attachment state.
 
-iOS reads `xcrun simctl spawn <UDID> log stream --style ndjson --level debug`, the simulator's unified logs used for native debugging. It cannot recover past output that an Xcode debugger captured only through stdout or stderr. Metro reads console events and exceptions through the inspector. Each log reader retries dropped connections. Metro keeps the chosen target ID; refresh its targets if an app restart assigns a new ID. Buffers hold at most 2,000 records and cap their byte size. The drawer shows the latest 500 matching rows or groups.
+iOS reads `xcrun simctl spawn <UDID> log stream --style ndjson --level debug`, the simulator's unified logs used for native debugging. It cannot recover past output that an Xcode debugger captured only through stdout or stderr. Metro reads console events and exceptions through the inspector. Each log reader retries dropped connections. Metro keeps the chosen target ID; refresh its targets if an app restart assigns a new ID. Buffers hold at most 2,000 records and cap their byte size. Legend List renders the visible rows and lets you scroll through all buffered matches.
 
 `npm run test:logs` reads logs from an already booted simulator through the built MCP server. It prints counts, closes the log reader, and leaves the device and app running.
 
 ## Develop and package
+
+The panel uses React and shadcn/ui with preset `b1D0f1JA`, Mira controls, neutral colors, and Inter. Google Material Symbols replace the preset's icons. The build bundles the SVGs and font files into the HTML; the panel needs no external asset requests. Use the preset components in `src/ui/components/ui` for controls, forms, notices, and empty states. Compose the views with Tailwind utilities. `src/ui/style.css` only covers device frames, Codex layout, and base rules; preset tokens live in `src/ui/theme.css`. The log list uses the [Legend List React DOM entrypoint](https://www.legendapp.com/open-source/list/v3/react/getting-started/).
 
 ```sh
 npm ci

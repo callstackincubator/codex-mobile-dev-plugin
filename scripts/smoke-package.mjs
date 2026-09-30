@@ -22,7 +22,7 @@ try {
   const client = new Client({ name: "mobile-dev-package-smoke", version: "1" });
   await client.connect(transport);
   const tools = await client.listTools();
-  assert.equal(tools.tools.length, 28);
+  assert.equal(tools.tools.length, 29);
   for (const name of ["mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_android_screenshot"]) assert.ok(tools.tools.some(tool => tool.name === name));
   await access(join(plugin, "dist/serve-emu/node_modules/serve-emu/src/cli.ts"));
   await access(join(plugin, "dist/serve-emu/node_modules/serve-emu/vendor/scrcpy-server-v4.0"));
@@ -43,16 +43,17 @@ try {
   const entrypoint = tools.tools.find(tool => tool.name === "mobile_open_simulator");
   const resource = await client.readResource({ uri: entrypoint._meta.ui.resourceUri });
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
-  assert.ok(resource.contents[0].text.includes("<canvas"));
-  assert.ok(resource.contents[0].text.includes('id="platform"'));
-  assert.ok(resource.contents[0].text.includes('id="logs-drawer"'));
-  assert.ok(resource.contents[0].text.includes('id="log-attach"'));
+  assert.ok(resource.contents[0].text.includes('id="root"'));
+  // React creates these controls from the bundled script after the app mounts.
+  for (const control of ["canvas", "logs-drawer", "log-attach", "device-layout", "simulator-panels"]) {
+    assert.ok(resource.contents[0].text.includes(control), `Missing bundled UI control: ${control}`);
+  }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
   assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.20/simulator.html");
-  assert.ok(resource.contents[0].text.includes('class="workspace-toolbar"'));
-  assert.ok(resource.contents[0].text.includes('id="workspace-panels"'));
-  assert.ok(resource.contents[0].text.includes('id="tool-logs"'));
+  assert.ok(resource.contents[0].text.includes('workspace-toolbar'));
+  assert.ok(resource.contents[0].text.includes('workspace-panels'));
+  assert.ok(resource.contents[0].text.includes('tool-logs'));
   assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.20/workspace.html");
   assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
   const oldWorkspace = await client.readResource({ uri: "ui://mobile-dev/workspace.html" });
