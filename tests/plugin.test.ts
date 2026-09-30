@@ -116,6 +116,42 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.equal(invalid.isError, true);
 });
 
+test("the toolbar capture copies the returned PNG and still returns it when clipboard copying fails", async t => {
+  const fake = await fakeBaguette();
+  const copies: Buffer[] = [];
+  let copyFails = false;
+  const plugin = await createPlugin("<title>Mobile Dev</title>", new Baguette(fake.url), fakeSimulatorInput(), undefined, undefined, async bytes => {
+    if (copyFails) throw new Error("Clipboard unavailable");
+    copies.push(bytes);
+  });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "screenshot-test", version: "1" });
+  t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
+  await plugin.server.connect(serverTransport); await client.connect(clientTransport);
+  const tools = await client.listTools();
+  const capture = tools.tools.find(tool => tool.name === "mobile_capture_screenshot")!;
+  assert.deepEqual((capture._meta?.ui as { visibility: string[] }).visibility, ["app"]);
+  assert.equal(capture.annotations?.readOnlyHint, false);
+  const first = await client.callTool({ name: "mobile_capture_screenshot", arguments: { udid: UDID } });
+  const image = (first.content as { type: string; data: string }[]).find(item => item.type === "image")!;
+  assert.deepEqual(Buffer.from(image.data, "base64"), copies[0]);
+  assert.deepEqual(copies[0], PNG);
+  assert.equal(first.structuredContent?.copied, true);
+  await client.callTool({ name: "mobile_screenshot", arguments: { udid: UDID } });
+  assert.equal(copies.length, 1);
+  copyFails = true;
+  const failed = await client.callTool({ name: "mobile_capture_screenshot", arguments: { udid: UDID } });
+  assert.equal(failed.isError, undefined);
+  assert.equal(failed.structuredContent?.copied, false);
+  assert.equal(failed.structuredContent?.clipboardError, "Clipboard unavailable");
+  assert.equal((failed.content as { type: string }[])[0].type, "image");
+  fake.setState("Shutdown");
+  const stopped = await client.callTool({ name: "mobile_capture_screenshot", arguments: { udid: UDID } });
+  assert.equal(stopped.isError, true);
+  assert.equal(copies.length, 1);
+  assert.equal(fake.requests.some(request => request.path.endsWith("/boot")), false);
+});
+
 test("Device Hub blockage stays visible until an explicit repair reconnects input", async t => {
   const fake = await fakeBaguette();
   const input = fakeSimulatorInput();

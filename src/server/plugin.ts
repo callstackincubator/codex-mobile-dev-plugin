@@ -12,6 +12,7 @@ import { registerLogTools } from "./log-tools.ts";
 import { SimulatorInputService } from "./simulator-input.ts";
 import type { SimulatorInput } from "./simulator-input.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { copyPNGToClipboard } from "./clipboard.ts";
 import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../shared/protocol.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
@@ -41,7 +42,7 @@ function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
   };
 }
 
-export async function createPlugin(html: string, baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), android = new ServeEmu()) {
+export async function createPlugin(html: string, baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), android = new ServeEmu(), copyScreenshot = copyPNGToClipboard) {
   const streams = new StreamSessions(baguette);
   const server = new McpServer({ name: "mobile-dev", version: "0.1.20" }, {
     instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. For Android use mobile_list_android_devices and the mobile_android tools. Use the selected serial with agent-device and platform android. serve-emu handles Android video and panel input. Opening the panel does not boot a device.",
@@ -182,10 +183,7 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     return result({ udid, inputStatus }, "Simulator input is ready. Reconnect the stream and reopen the app if needed.");
   }));
 
-  server.registerTool("mobile_screenshot", {
-    title: "Capture simulator screen", description: "Return a PNG screenshot of the selected booted simulator for the model to inspect.",
-    inputSchema: deviceInput, annotations: read,
-  }, guarded(async ({ udid }: { udid: string }) => {
+  async function captureScreenshot(udid: string) {
     await baguette.device(udid, true);
     const response = await fetch(new URL(`/simulators/${udid}/screenshot.png`, baguette.baseUrl), {
       redirect: "error", signal: AbortSignal.timeout(10000),
@@ -195,7 +193,32 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     if (bytes.length > 16 * 1024 * 1024 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
       throw new Error("Baguette returned an invalid or oversized PNG screenshot.");
     }
+    return bytes;
+  }
+
+  server.registerTool("mobile_screenshot", {
+    title: "Capture simulator screen", description: "Return a PNG screenshot of the selected booted simulator for the model to inspect.",
+    inputSchema: deviceInput, annotations: read,
+  }, guarded(async ({ udid }: { udid: string }) => {
+    const bytes = await captureScreenshot(udid);
     return { content: [{ type: "image", mimeType: "image/png", data: bytes.toString("base64") }, { type: "text", text: `Screen of ${udid}.` }], structuredContent: { udid } };
+  }));
+
+  registerAppTool(server, "mobile_capture_screenshot", {
+    title: "Screenshot to chat and clipboard",
+    description: "Capture the selected booted simulator as a PNG and copy it to the macOS clipboard. Returns the same image for the panel to attach to the chat input.",
+    inputSchema: deviceInput, annotations: write,
+    _meta: { ui: { resourceUri: APP_URI, visibility: ["app"] } },
+  }, guarded(async ({ udid }: { udid: string }) => {
+    const bytes = await captureScreenshot(udid);
+    let copied = false;
+    let clipboardError: string | undefined;
+    try { await copyScreenshot(bytes); copied = true; }
+    catch (error) { clipboardError = errorMessage(error); }
+    return {
+      content: [{ type: "image", mimeType: "image/png", data: bytes.toString("base64") }],
+      structuredContent: { udid, copied, ...(clipboardError ? { clipboardError } : {}) },
+    };
   }));
 
   registerAppTool(server, "mobile_stream_session", {
