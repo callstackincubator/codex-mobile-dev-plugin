@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useRef, useSyncExternalStore } from "reac
 import { LegendList, type LegendListRef, type LegendListRenderItemProps } from "@legendapp/list/react";
 import type { StackedLog } from "../../shared/logs.ts";
 import type { LogsPanel } from "../logs-panel.ts";
+import { LogDetails } from "./log-details";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -95,11 +96,9 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
               maintainScrollAtEnd={logs.follow} maintainScrollAtEndThreshold={1} maintainVisibleContentPosition={{ data: !logs.follow, size: true }} style={{ height: "100%" }} /> : <Empty><EmptyHeader><EmptyMedia variant="icon">{logs.query ? <SearchIcon /> : <TerminalIcon />}</EmptyMedia><EmptyTitle>{logs.buffered ? "No logs match these filters." : "Waiting for logs"}</EmptyTitle>{!logs.buffered && <EmptyDescription>Start an app or choose a source.</EmptyDescription>}</EmptyHeader></Empty>}
           </div>
           </ResizablePanel>
-          {logs.selected && <><ResizableHandle aria-label="Resize log list and details" /><ResizablePanel id="log-detail-resizable" defaultSize="42%" minSize="25%" maxSize="70%"><aside id="log-detail" className="h-full min-w-0 overflow-y-auto p-3" aria-label="Selected log">
-            <div className="flex items-center gap-2 text-[10px] text-muted-foreground"><Badge variant="outline">{logs.selected.level}</Badge><span>{logs.selected.origin} · {logs.selected.count}×</span><Button variant="ghost" size="icon-sm" className="ml-auto" onClick={() => panel.list.select()} aria-label="Close log details"><XIcon /></Button></div>
-            <pre className="my-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap wrap-anywhere select-text">{[logs.selected.message, logs.selected.stack].filter(Boolean).join("\n\n")}</pre>
+          {logs.selected && <><ResizableHandle aria-label="Resize log list and details" /><ResizablePanel id="log-detail-resizable" defaultSize="42%" minSize="25%" maxSize="70%"><LogDetails key={logs.selected.sequence} log={logs.selected} onClose={() => panel.list.select()}>
             <Button id="log-attach" variant="outline" disabled={logs.attaching || logs.selectedAttached || !logs.canAttach} onClick={() => void panel.list.attach()} title={logs.canAttach ? "Include this log and stack trace with your next message" : "This host does not support log attachments"}>{logs.selectedAttached ? <CheckIcon /> : <PaperclipIcon />}{logs.selectedAttached ? "Attached to chat" : "Attach to chat"}</Button>
-          </aside></ResizablePanel></>}
+          </LogDetails></ResizablePanel></>}
         </ResizablePanelGroup>
         {logs.attachmentStatus && <Alert role="status" className="shrink-0 rounded-none border-x-0 border-b-0"><AlertDescription>{logs.attachmentStatus}</AlertDescription></Alert>}
       </CollapsibleContent>
