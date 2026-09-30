@@ -1,3 +1,4 @@
+import { getDevicePicker } from "../src/ui/device-picker.ts";
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
@@ -23,6 +24,7 @@ class Element extends EventTarget {
   captures = new Set<number>();
   draws = 0;
   append(child: Element) { this.children.push(child); if (this.children.length === 1) this.value = child.value; }
+  prepend(child: Element) { this.children.unshift(child); }
   replaceChildren() { this.children = []; this.value = ""; }
   removeAttribute() {}
   getContext() { return { drawImage: () => { this.draws++; } }; }
@@ -47,6 +49,7 @@ function fixture(t: TestContext) {
   let sessionNumber = 0;
   let delayedOpen: Promise<void> | undefined;
   let blockedIos = false;
+  let stopped = false;
   const document = Object.assign(new EventTarget(), { visibilityState: "visible", createElement: () => new Element() });
   class Decoder {
     state = "configured";
@@ -61,7 +64,7 @@ function fixture(t: TestContext) {
     document, window: new EventTarget(),
     ResizeObserver: class { observe() {} disconnect() {} },
     getComputedStyle: () => ({ paddingLeft: "16", paddingRight: "16", paddingTop: "16", paddingBottom: "16" }),
-    Option: class extends Element { constructor(text: string) { super(); this.textContent = text; } },
+    Option: class extends Element { constructor(text: string, value = "") { super(); this.textContent = text; this.value = value; } },
     VideoDecoder: Decoder, EncodedVideoChunk: class {},
     createImageBitmap: async () => ({ width: 390, height: 844, close() {} }),
   };
@@ -84,9 +87,10 @@ function fixture(t: TestContext) {
         } };
       }
       if (call.name.endsWith("_stream_close")) closed.push(call.arguments.sessionId as string);
-      if (call.name.startsWith("mobile_list")) {
+      if (call.name.startsWith("mobile_boot")) stopped = false;
+      if (call.name.startsWith("mobile_list") || call.name.startsWith("mobile_boot")) {
         const android = call.name.includes("android");
-        return { content: [], structuredContent: { connected: true, devices: [{ udid: android ? "emulator-5554" : "iphone-1", name: android ? "Pixel" : "iPhone", state: "Booted", runtime: "", platform: android ? "android" : "ios" }] } };
+        return { content: [], structuredContent: { connected: true, devices: [{ udid: android ? "emulator-5554" : "iphone-1", name: android ? "Pixel" : "iPhone", state: stopped ? "Shutdown" : "Booted", runtime: "", platform: android ? "android" : "ios" }] } };
       }
       return { content: [] };
     },
@@ -106,15 +110,15 @@ function fixture(t: TestContext) {
   } as unknown as App;
   const panels = (["ios", "android"] as const).map(platform => {
     const root = new Element();
-    for (const name of ["devices", "screen", "device-frame", "stage", "device-bezel", "start", "refresh", "screenshot", "repair-input", "notice", "notice-message", "frame-stats", "stream-format", "empty", "screenshot-status"]) root.elements.set(name, new Element());
+    for (const name of ["devices", "screen", "device-frame", "stage", "device-bezel", "screenshot", "notice", "notice-message", "empty", "screenshot-status"]) root.elements.set(name, new Element());
     root.elements.get("device-frame")!.hidden = true;
-    for (const button of ["back", "home", "power", "app-switcher"]) { const element = new Element(); element.dataset.button = button; root.buttons.push(element); }
+    for (const button of ["home", "app-switcher"]) { const element = new Element(); element.dataset.button = button; root.buttons.push(element); }
     const panel = createSimulatorPanel(app, root as unknown as HTMLElement, platform, { canAttachScreenshots: true } as PanelContext, (_device, active) => selections.push({ platform, active }));
     panel.setAvailable(true);
     return { panel, root, element: (name: string) => root.elements.get(name)! };
   });
   t.after(async () => { await Promise.all(panels.map(({ panel }) => panel.dispose())); for (const reset of restore) reset(); });
-  return { calls, closed, selections, ios: panels[0], android: panels[1], delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; } };
+  return { calls, closed, selections, ios: panels[0], android: panels[1], delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; } };
 }
 
 async function waitFor(predicate: () => boolean) {
@@ -131,9 +135,7 @@ test("both platforms stream at once and each routes input to its own session", a
   const f = fixture(t);
   await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
   await waitFor(() => f.ios.element("screen").draws > 0 && f.android.element("screen").draws > 0);
-  assert.equal(f.ios.element("start").textContent, "Pause");
-  assert.equal(f.android.element("start").textContent, "Pause");
-  dispatch(f.ios.root.buttons[1], "click");
+  dispatch(f.ios.root.buttons[0], "click");
   dispatch(f.android.root.buttons[0], "click");
   await waitFor(() => f.calls.filter(call => call.name.endsWith("_stream_input")).length === 2);
   const input = f.calls.filter(call => call.name.endsWith("_stream_input"));
@@ -144,19 +146,16 @@ test("both platforms stream at once and each routes input to its own session", a
   assert.equal(f.closed.length, 0);
 });
 
-test("pausing or changing one device leaves the other stream and controls active", async t => {
+test("changing one device leaves the other stream and controls active", async t => {
   const f = fixture(t);
   await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
   await waitFor(() => f.android.element("screen").draws > 0);
-  dispatch(f.ios.element("start"), "click");
-  await waitFor(() => f.ios.element("start").textContent === "Start");
-  assert.ok(f.closed.some(id => id.startsWith("ios-")));
-  assert.equal(f.closed.some(id => id.startsWith("android-")), false);
-  assert.equal(f.android.element("start").textContent, "Pause");
-  assert.equal(f.android.root.buttons[1].disabled, false);
   dispatch(f.ios.element("devices"), "change");
   await waitFor(() => f.calls.filter(call => call.name === "mobile_stream_session").length === 2);
   assert.equal(f.calls.filter(call => call.name === "mobile_android_stream_session").length, 1);
+  assert.ok(f.closed.some(id => id.startsWith("ios-")));
+  assert.equal(f.closed.some(id => id.startsWith("android-")), false);
+  assert.equal(f.android.root.buttons[0].disabled, false);
   dispatch(f.android.root, "pointerdown");
   assert.deepEqual(f.selections.at(-1), { platform: "android", active: true });
 });
@@ -166,9 +165,9 @@ test("blocked iOS input leaves Android controls working", async t => {
   await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
   await waitFor(() => f.ios.element("screen").draws > 0 && f.android.element("screen").draws > 0);
   assert.equal(f.ios.root.buttons[1].disabled, true);
-  assert.equal(f.ios.element("repair-input").hidden, false);
+  assert.match(f.ios.element("notice-message").textContent, /input is blocked/);
   assert.equal(f.android.root.buttons[1].disabled, false);
-  assert.equal(f.android.element("repair-input").hidden, true);
+  assert.equal(f.android.element("notice").hidden, true);
 });
 
 test("teardown closes both streams and closes sessions that finish opening late", async t => {
@@ -184,4 +183,17 @@ test("teardown closes both streams and closes sessions that finish opening late"
   assert.ok(f.closed.some(id => id.startsWith("android-")));
   assert.equal(f.ios.element("screen").draws, 0);
   assert.equal(f.android.element("screen").draws, 0);
+});
+
+for (const platform of ["ios", "android"] as const) test(`selecting a stopped ${platform} device boots and streams it without Start`, async t => {
+  const f = fixture(t); f.stopDevices();
+  const panel = f[platform];
+  await panel.panel.load();
+  assert.equal(getDevicePicker(panel.element("devices") as unknown as HTMLElement).value, "");
+  assert.equal(f.calls.some(call => call.name.startsWith("mobile_boot")), false);
+  getDevicePicker(panel.element("devices") as unknown as HTMLElement).value = platform === "ios" ? "iphone-1" : "emulator-5554";
+  dispatch(panel.element("devices"), "change");
+  await waitFor(() => panel.element("screen").draws > 0);
+  assert.equal(f.calls.filter(call => call.name === (platform === "ios" ? "mobile_boot_simulator" : "mobile_boot_android_emulator")).length, 1);
+  assert.equal(panel.root.buttons[0].disabled, false);
 });

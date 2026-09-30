@@ -1,3 +1,4 @@
+import { getDevicePicker } from "./device-picker.ts";
 import { bezelGeometrySchema } from "../shared/bezel.ts";
 import type { Bezel } from "../shared/bezel.ts";
 import type { SimulatorDevice, Status } from "../shared/protocol.ts";
@@ -16,7 +17,8 @@ export function createSimulatorPanel(
   selectionChanged: (device?: SimulatorDevice, active?: boolean) => void,
 ) {
   function element<T extends HTMLElement = HTMLElement>(id: string): T { return root.querySelector(`[data-element="${id}"]`) as T; }
-  const devices = element<HTMLSelectElement>("devices");
+  const devicePickerElement = element("devices");
+  const devices = getDevicePicker(devicePickerElement);
   const canvas = element<HTMLCanvasElement>("screen");
   const context = canvas.getContext("2d")!;
   const frame = element("device-frame");
@@ -24,10 +26,7 @@ export function createSimulatorPanel(
   const bezelImage = element<HTMLImageElement>("device-bezel");
   let bezel: Bezel | undefined;
   bezelImage.addEventListener("error", () => { setBezel(); fitScreen(); });
-  const startButton = element<HTMLButtonElement>("start");
-  const refreshButton = element<HTMLButtonElement>("refresh");
   const screenshotButton = element<HTMLButtonElement>("screenshot");
-  const repairButton = element<HTMLButtonElement>("repair-input");
   let status: Status | undefined;
   let selected: SimulatorDevice | undefined;
   type PanelStream = { id: string; frameUri: string; epoch: number; platform: "ios" | "android"; inputs: object[]; sending?: Promise<void>; closing?: Promise<void> };
@@ -35,36 +34,29 @@ export function createSimulatorPanel(
   let stream: PanelStream | undefined;
   let ready = false;
   let inputBlocked = false;
+  let inputRepairMessage = "";
   let epoch = 0;
   let points = { width: 0, height: 0 };
   let pointer: { id: number; x: number; y: number; edge?: string } | undefined;
   let seenFrames = 0;
-  let frames = 0;
-  let frameWindow = performance.now();
   let busy = false;
   let toolsAvailable = false;
   let disposed = false;
   let disposing: Promise<void> | undefined;
 
   function notice(message = "") {
-    if (!message && inputBlocked) message = "Device Hub blocks input. Repairing it closes running simulator apps.";
+    if (!message) message = inputRepairMessage || (inputBlocked ? "Simulator input is blocked. Ask Codex to repair it." : "");
     element("notice-message").textContent = message;
+    element("notice").title = message;
+    element("notice").classList?.toggle("text-destructive", inputBlocked);
     element("notice").hidden = !message;
   }
 
   function controls() {
     const active = ready && stream != null && !inputBlocked && !busy && toolsAvailable;
-    repairButton.hidden = !inputBlocked;
-    repairButton.disabled = busy || !selected || !toolsAvailable;
-    root.querySelector<HTMLButtonElement>('[data-button="back"]')!.hidden = platform !== "android";
     devices.disabled = busy || !toolsAvailable || !status?.connected || !status.devices.length;
-    refreshButton.disabled = busy || !toolsAvailable;
-    screenshotButton.hidden = platform !== "ios";
-    screenshotButton.disabled = platform !== "ios" || busy || !toolsAvailable || !status?.connected || selected?.state !== "Booted" || !panelContext.canAttachScreenshots;
-    screenshotButton.title = platform !== "ios" ? "Screenshot to chat and clipboard is available for iOS" : panelContext.canAttachScreenshots ? "Screenshot to chat and clipboard" : "This host does not support screenshot attachments";
-    startButton.disabled = busy || !toolsAvailable || !status || (status.connected && !selected);
-    startButton.textContent = busy ? "Working…" : reconnect.active ? "Pause" : status && !status.connected ? "Retry" : "Start";
-    startButton.dataset.streaming = String(reconnect.active);
+    screenshotButton.disabled = busy || !toolsAvailable || !status?.connected || selected?.state !== "Booted" || !panelContext.canAttachScreenshots;
+    screenshotButton.title = panelContext.canAttachScreenshots ? "Screenshot to chat and clipboard" : "This host does not support screenshot attachments";
     root.querySelectorAll<HTMLButtonElement>("[data-button]").forEach(button => { button.disabled = !active; });
   }
 
@@ -132,8 +124,8 @@ export function createSimulatorPanel(
     epoch++;
     stream = undefined;
     ready = false;
+    inputRepairMessage = "";
     if (inputBlocked) { inputBlocked = false; notice(); }
-    element("frame-stats").textContent = "0 fps";
     controls();
     await closing;
   }
@@ -209,25 +201,21 @@ export function createSimulatorPanel(
   function selectDevice() {
     selected = status?.devices.find(device => device.udid === devices.value);
     selectionChanged(selected);
-    if (!reconnect.active) empty(selected ? "Press Start to open this simulator." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No simulators. Add an iOS runtime in Xcode."));
+    if (!reconnect.active) empty(selected ? "Select a device to open its screen." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No simulators. Add an iOS runtime in Xcode."));
     controls();
   }
 
   function renderStatus(next: Status) {
     status = next;
-    element("stream-format").textContent = platform === "android" ? "H.264" : "MJPEG";
     const previous = selected?.udid;
     const oldDevice = next.devices.find(device => device.udid === previous);
     if (reconnect.active && (!next.connected || oldDevice?.state !== "Booted")) void disconnect();
-    devices.replaceChildren();
-    for (const device of next.devices) {
-      const option = document.createElement("option");
-      option.value = device.udid;
-      option.textContent = `${device.name}${device.runtime ? ` · ${runtimeLabel(device.runtime)}` : ""}${device.state === "Booted" ? " · Running" : ""}`;
-      devices.append(option);
-    }
-    if (previous && oldDevice) devices.value = previous;
-    if (!next.devices.length) devices.append(new Option(next.connected ? "No simulators" : "Simulator unavailable"));
+    const running = next.devices.find(device => device.state === "Booted");
+    devices.update({
+      items: next.devices.map(device => ({ value: device.udid, label: `${device.name}${device.runtime ? ` · ${runtimeLabel(device.runtime)}` : ""}` })),
+      value: previous && oldDevice ? previous : running?.udid ?? "",
+      placeholder: next.devices.length ? "Select a device" : next.connected ? "No simulators" : "Simulator unavailable",
+    });
     selectDevice();
     if (!next.connected) {
       empty("Could not start the simulator backend.");
@@ -243,7 +231,6 @@ export function createSimulatorPanel(
     const udid = selected.udid;
     reconnect.start(signal => openAndReceive(udid, sessionEpoch, signal), () => {
       ready = false;
-      element("frame-stats").textContent = "Reconnecting…";
       notice("Reconnecting…");
       controls();
     }, error => {
@@ -262,18 +249,19 @@ export function createSimulatorPanel(
     const frameUri = result._meta?.frameUri;
     if (typeof id !== "string" || typeof frameUri !== "string") throw new StopReconnectError("The plugin did not return a stream session.");
     if (signal.aborted || sessionEpoch !== epoch) { await call(closeTool, { sessionId: id }, { timeout: 3000 }).catch(() => {}); return; }
-    const data = result.structuredContent as { definition: { screen: { rect: { width: number; height: number } } }; inputStatus?: { state: string } };
+    const data = result.structuredContent as { definition: { screen: { rect: { width: number; height: number } } }; inputStatus?: { state: string }; inputRepairMessage?: string };
     const candidate = result._meta?.bezel as Bezel | undefined;
     const geometry = bezelGeometrySchema.safeParse(candidate);
     const validImage = (value: unknown): value is string => typeof value === "string" && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(value);
     setBezel(geometry.success && validImage(candidate?.image)
       ? { ...geometry.data, image: candidate.image, ...(validImage(candidate.mask) ? { mask: candidate.mask } : {}) } : undefined);
     inputBlocked = data.inputStatus?.state === "blocked";
+    inputRepairMessage = data.inputRepairMessage ?? "";
     notice();
     points = { width: data.definition.screen.rect.width, height: data.definition.screen.rect.height };
     stream = { id, frameUri, epoch: sessionEpoch, platform: streamPlatform, inputs: [] };
     ready = false;
-    frames = 0; seenFrames = 0; frameWindow = performance.now();
+    seenFrames = 0;
     controls();
     const session = stream;
     try { if (session.platform === "android") await receiveAndroidFrames(session, signal); else await receiveFrames(session, signal); }
@@ -305,7 +293,6 @@ export function createSimulatorPanel(
           const idle = result.contents.find(item => item.mimeType === "application/json" && "text" in item);
           if (idle && "text" in idle && JSON.parse(idle.text).state === "reconnecting") {
             ready = false; cancelPointer(); session.inputs.length = 0;
-            element("frame-stats").textContent = "Reconnecting…";
             notice("Reconnecting…"); controls();
           }
           continue;
@@ -325,12 +312,7 @@ export function createSimulatorPanel(
     frame.hidden = false; element("empty").hidden = true;
     if (!ready) { ready = true; reconnect.connected(); notice(); controls(); }
     if (!seenFrames || resized) fitScreen();
-    seenFrames++; frames++;
-    const elapsed = performance.now() - frameWindow;
-    if (elapsed >= 1000) {
-      element("frame-stats").textContent = `${Math.round(frames * 1000 / elapsed)} fps`;
-      frames = 0; frameWindow = performance.now();
-    }
+    seenFrames++;
   }
 
   async function receiveAndroidFrames(session: PanelStream, signal: AbortSignal) {
@@ -424,26 +406,22 @@ export function createSimulatorPanel(
       event.preventDefault(); send({ type: "key", code: event.code, modifiers: event.shiftKey ? ["shift"] : [] });
     }
   });
-  devices.addEventListener("change", () => { void action(async () => { await disconnect(); selectDevice(); await connect(); }); });
-  startButton.addEventListener("click", () => {
-    if (reconnect.active) { void action(async () => { await disconnect(); notice(); if (frame.hidden) empty("Stream paused."); }); }
-    else void action(start);
-  });
+  devicePickerElement.addEventListener("change", () => { void action(async () => { await disconnect(); selectDevice(); await start(); }); });
   root.querySelectorAll<HTMLButtonElement>("[data-button]").forEach(button => {
     button.addEventListener("click", () => { send({ type: "button", button: button.dataset.button }); });
   });
-  refreshButton.addEventListener("click", () => { void action(async () => {
-    await listDevices();
-    if (!reconnect.active) await connect();
-  }); });
   screenshotButton.addEventListener("click", () => { void action(async () => {
-    if (platform !== "ios" || !selected || selected.state !== "Booted" || !panelContext.canAttachScreenshots) return;
+    if (!selected || selected.state !== "Booted" || !panelContext.canAttachScreenshots) return;
     const simulator = selected;
     const screenshotStatus = element("screenshot-status");
     screenshotStatus.hidden = false;
-    screenshotStatus.textContent = "Taking screenshot…";
+    function screenshotMessage(message: string) {
+      screenshotStatus.textContent = message;
+      screenshotStatus.title = message;
+    }
+    screenshotMessage("Taking screenshot…");
     try {
-      const result = await call("mobile_capture_screenshot", { udid: simulator.udid }, { timeout: 30000 });
+      const result = await call(platform === "android" ? "mobile_android_capture_screenshot" : "mobile_capture_screenshot", platform === "android" ? { deviceId: simulator.udid } : { udid: simulator.udid }, { timeout: 30000 });
       const image = result.content.find(item => item.type === "image" && item.mimeType === "image/png");
       if (!image || image.type !== "image") throw new Error("The plugin did not return a PNG screenshot.");
       const clipboard = result.structuredContent as { copied: boolean; clipboardError?: string };
@@ -451,19 +429,11 @@ export function createSimulatorPanel(
       let attached = false;
       try { attached = await panelContext.attachScreenshot({ id: crypto.randomUUID(), data: image.data, simulator }); }
       catch (error) {
-        screenshotStatus.textContent = `${clipboardStatus} Chat attachment failed: ${error instanceof Error ? error.message : String(error)}`;
+        screenshotMessage(`${clipboardStatus} Chat attachment failed: ${error instanceof Error ? error.message : String(error)}`);
         return;
       }
-      screenshotStatus.textContent = `${attached ? "Screenshot attached to chat." : "Screenshot removed from chat."} ${clipboardStatus}`;
-    } catch (error) { screenshotStatus.textContent = error instanceof Error ? error.message : String(error); }
-  }); });
-  repairButton.addEventListener("click", () => { void action(async () => {
-    if (!selected) return;
-    const udid = selected.udid;
-    await disconnect();
-    empty("Repairing simulator input…");
-    await call("mobile_repair_input", { udid });
-    await connect();
+      screenshotMessage(`${attached ? "Screenshot attached to chat." : "Screenshot removed from chat."} ${clipboardStatus}`);
+    } catch (error) { screenshotMessage(error instanceof Error ? error.message : String(error)); }
   }); });
   root.addEventListener("pointerdown", activate, { capture: true });
   root.addEventListener("focusin", activate);
