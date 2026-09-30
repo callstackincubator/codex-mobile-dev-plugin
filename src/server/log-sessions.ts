@@ -39,10 +39,17 @@ export class LogSessions {
     return id;
   }
 
-  async read(id: string, after: number, waitMs = 1000): Promise<LogBatch> {
+  private touch(id: string): Session {
     const session = this.sessions.get(id);
     if (!session) throw new Error("This log session expired or closed. Reopen the log panel.");
     session.expires = Date.now() + 5 * 60 * 1000;
+    return session;
+  }
+
+  keepAlive(id: string) { this.touch(id); }
+
+  async read(id: string, after: number, waitMs = 1000): Promise<LogBatch> {
+    const session = this.touch(id);
     return session.buffer.read(after, waitMs);
   }
 

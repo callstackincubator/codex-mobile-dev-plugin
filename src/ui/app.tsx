@@ -11,15 +11,17 @@ import type { DeviceLayout } from "./components/workspace";
 import type { Status } from "../shared/protocol.ts";
 import { PanelContext } from "./model-context.ts";
 import { LogsPanel } from "./logs-panel.ts";
+import { PerformancePanel } from "./performance-panel.ts";
 import { createSimulatorPanel } from "./simulator-panel.ts";
 import { startLiveReload } from "./live-reload.ts";
 
 const app = new App({ name: "mobile-dev-ui", version: "0.1.42" }, {}, { autoResize: false });
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
+const performancePanel = new PerformancePanel(app);
 const logsPanel = new LogsPanel(app, panelContext);
 const reactRoot = createRoot(document.getElementById("root")!);
-flushSync(() => reactRoot.render(<Workspace logs={logsPanel} onLayout={changeLayout} />));
+flushSync(() => reactRoot.render(<Workspace performance={performancePanel} logs={logsPanel} onLayout={changeLayout} />));
 
 let activePlatform: "ios" | "android" = "ios";
 const panels = (["ios", "android"] as const).map(platform => {
@@ -32,16 +34,22 @@ const panels = (["ios", "android"] as const).map(platform => {
 const [ios, android] = panels;
 logsPanel.setLayout(document.documentElement.dataset.view === "workspace");
 
-function updateSelection(updateLogSource = true) {
+function updateSelection(updateToolSource = true) {
   const visible = panels.filter(panel => !panel.root.hidden);
   const active = visible.find(panel => panel.platform === activePlatform) ?? visible[0];
   const selected = active?.selected;
   panelContext.selectSimulators(visible.flatMap(panel => panel.selected ? [panel.selected] : []), selected);
-  if (updateLogSource) logsPanel.selectSimulator(selected);
+  if (updateToolSource) {
+    logsPanel.selectSimulator(selected);
+    performancePanel.selectSimulator(selected);
+  } else if (active) {
+    performancePanel.selectSimulator(selected);
+  }
   for (const panel of panels) panel.root.dataset.active = String(panel === active);
 }
 
 function changeLayout(layout: DeviceLayout) {
+  if (layout === "ios" || layout === "android") activePlatform = layout;
   for (const panel of panels) {
     panel.root.hidden = layout !== "both" && layout !== panel.platform;
   }
@@ -57,7 +65,7 @@ function disposeUI() {
     window.removeEventListener("focus", resumeContext);
     window.removeEventListener("pageshow", resumeContext);
     document.removeEventListener("visibilitychange", resumeContext);
-    await Promise.allSettled([...panels.map(panel => panel.dispose()), logsPanel.dispose()]);
+    await Promise.allSettled([...panels.map(panel => panel.dispose()), logsPanel.dispose(), performancePanel.dispose()]);
     reactRoot.unmount();
   })();
 }
@@ -96,6 +104,7 @@ void (async () => {
     const capabilities = app.getHostCapabilities();
     const available = !!capabilities?.serverTools && !!capabilities?.serverResources;
     logsPanel.setAvailable(available);
+    performancePanel.setAvailable(available);
     for (const panel of panels) {
       panel.setAvailable(available);
       if (!available) panel.notice("This host cannot call the plugin's simulator tools.");

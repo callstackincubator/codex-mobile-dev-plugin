@@ -10,12 +10,11 @@ import { LogBuffer } from "../src/server/log-buffer.ts";
 import { LogSessions } from "../src/server/log-sessions.ts";
 import { metroTargets, startMetroLogs } from "../src/server/metro-logs.ts";
 import { runLogProcess } from "../src/server/native-logs.ts";
-import { createPlugin } from "../src/server/plugin.ts";
 import { Baguette } from "../src/server/baguette.ts";
 import { stackLogs, formatLogContext, logOptionsSchema } from "../src/shared/logs.ts";
 import type { LogEntry, LogRecord } from "../src/shared/logs.ts";
 import type { LogSink } from "../src/server/native-logs.ts";
-import { fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID } from "./fixtures.ts";
+import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID } from "./fixtures.ts";
 
 const record: LogRecord = { timestamp: "2026-09-30T12:00:00.000Z", level: "warn", source: "js", origin: "ios", process: "Example", message: "Request failed" };
 
@@ -79,6 +78,22 @@ test("log sessions keep panels isolated and release both sources on close", asyn
   assert.equal(logOptionsSchema.safeParse({}).success, false);
 });
 
+test("keep-alives retain an unread buffered log session without disabling idle expiry", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: 0 });
+  let sink: LogSink | undefined;
+  const logs = new LogSessions({ native: (_target, next) => { sink = next; return async () => {}; }, metro: () => async () => {} });
+  t.after(() => logs.close());
+  const id = logs.open({ native: { platform: "ios", deviceId: UDID } });
+  sink!.log(record);
+  t.mock.timers.tick(240000);
+  logs.keepAlive(id);
+  t.mock.timers.tick(240000);
+  const batch = await logs.read(id, 0, 0);
+  assert.equal(batch.entries[0].message, record.message);
+  t.mock.timers.tick(310000);
+  assert.throws(() => logs.keepAlive(id), /expired or closed/);
+});
+
 test("Metro connects only the chosen target, enables Runtime, and cleans up its socket", async t => {
   const http = createServer((request, response) => {
     response.setHeader("Content-Type", "application/json");
@@ -117,7 +132,7 @@ test("Metro connects only the chosen target, enables Runtime, and cleans up its 
 test("MCP log sessions validate devices and expose batches without browser network access", async t => {
   const fake = await fakeBaguette(); let sink: LogSink | undefined; let stopped = false;
   const logs = new LogSessions({ native: (_target, next) => { sink = next; return async () => { stopped = true; }; }, metro: () => async () => {} });
-  const plugin = await createPlugin("<head></head><title>Logs</title>", new Baguette(fake.url), fakeSimulatorInput(), logs);
+  const plugin = await createTestPlugin("<head></head><title>Logs</title>", new Baguette(fake.url), fakeSimulatorInput(), logs);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair(); const client = new Client({ name: "logs-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
   await plugin.server.connect(serverTransport); await client.connect(clientTransport);
@@ -129,6 +144,12 @@ test("MCP log sessions validate devices and expose batches without browser netwo
   assert.equal(JSON.parse(batch.contents[0].text as string).entries[0].message, record.message);
   const next = await client.callTool({ name: "mobile_read_logs", arguments: { sessionId: opened._meta?.sessionId, after: 1 } });
   assert.deepEqual(next.structuredContent?.entries, []);
+  const keepAlive = await client.callTool({ name: "mobile_logs_keep_alive", arguments: { sessionId: opened._meta?.sessionId } });
+  assert.equal(keepAlive.isError, undefined);
+  assert.deepEqual(keepAlive.content, []);
+  assert.deepEqual(keepAlive.structuredContent, {});
+  const unauthorized = await client.callTool({ name: "mobile_logs_keep_alive", arguments: { sessionId: "0".repeat(64) } });
+  assert.equal(unauthorized.isError, true);
   await client.callTool({ name: "mobile_logs_close", arguments: { sessionId: opened._meta?.sessionId } });
   assert.equal(stopped, true); await assert.rejects(client.readResource({ uri: opened._meta?.logsUri as string }), /expired or closed/);
 });

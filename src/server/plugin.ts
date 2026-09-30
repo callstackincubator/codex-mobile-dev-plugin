@@ -12,6 +12,8 @@ import { Baguette } from "./baguette.ts";
 import { StreamSessions } from "./stream-sessions.ts";
 import { LogSessions } from "./log-sessions.ts";
 import { registerLogTools } from "./log-tools.ts";
+import { CpuSessions, createCpuSessions } from "./cpu/sessions.ts";
+import { registerCpuTools } from "./cpu/tools.ts";
 import { SimulatorInputService } from "./simulator-input.ts";
 import type { InputStatus, SimulatorInput } from "./simulator-input.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
@@ -73,14 +75,18 @@ function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
   };
 }
 
-export async function createPlugin(html: string | (() => Promise<UIResource>), baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), android = new ServeEmu(), copyScreenshot = copyPNGToClipboard) {
+export async function createPlugin(html: string | (() => Promise<UIResource>), baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), android = new ServeEmu(), copyScreenshot = copyPNGToClipboard, providedCpu?: CpuSessions) {
   const streams = new StreamSessions(baguette);
+  let selectedCpu = providedCpu;
+  if (selectedCpu === undefined) selectedCpu = await createCpuSessions();
+  const cpu = selectedCpu;
   const server = new McpServer({ name: "mobile-dev", version: "0.1.42" }, {
     instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. For Android use mobile_list_android_devices and the mobile_android tools. Use the selected serial with agent-device and platform android. serve-emu handles Android video and panel input. Opening the panel does not boot a device.",
   });
   new OpenAIExtensions(server);
   registerLogTools(server, logs, baguette);
-  const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot);
+  registerCpuTools(server, cpu, baguette);
+  const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot, deviceId => cpu.closeDevice(deviceId));
   registerDeviceSettingsTools(server, baguette, android);
 
   const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<{ inputStatus: InputStatus; inputRepairMessage: string }> }>();
@@ -179,7 +185,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   registerAppTool(server, "mobile_open_workspace", {
     title: "Mobile Dev",
-    description: "Open the fullscreen Mobile Dev workspace with logs on the left and iOS and Android devices side by side on the right. Starts the bundled backend without booting a device.",
+    description: "Open the fullscreen Mobile Dev workspace with logs and performance tools on the left and iOS and Android devices side by side on the right. Starts the bundled backend without booting a device.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
       ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
@@ -220,6 +226,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
       inputSchema: deviceInput, outputSchema: statusOutput,
       annotations: { ...write, destructiveHint: action === "shutdown" },
     }, guarded(async ({ udid }: { udid: string }) => {
+      if (action === "shutdown") await cpu.closeDevice(udid);
       const status = await baguette.changeDeviceState(udid, action);
       if (action === "shutdown") streams.closeDevice(udid);
       return result(status, `${action === "boot" ? "Booted" : "Shut down"} ${udid}.`);
@@ -352,6 +359,10 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   return {
     server,
-    async close() { closeAndroid(); streams.close(); await logs.close(); baguette.dispose(); await server.close(); },
+    async close() {
+      closeAndroid(); streams.close();
+      try { await Promise.all([logs.close(), cpu.close()]); }
+      finally { baguette.dispose(); await server.close(); }
+    },
   };
 }

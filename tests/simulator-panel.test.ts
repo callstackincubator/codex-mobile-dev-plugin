@@ -303,6 +303,8 @@ test("changing one device leaves the other stream and controls active", async t 
   assert.equal(f.android.root.buttons[0].disabled, false);
   dispatch(f.android.root, "pointerdown");
   assert.deepEqual(f.selections.at(-1), { platform: "android", active: true });
+  dispatch(f.ios.root, "focusin");
+  assert.deepEqual(f.selections.at(-1), { platform: "ios", active: true });
 });
 
 for (const platform of ["ios", "android"] as const) test(`${platform} input failure reconnects its panel without replaying gestures`, async t => {

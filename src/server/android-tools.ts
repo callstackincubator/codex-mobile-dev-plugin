@@ -20,7 +20,7 @@ function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
   };
 }
 
-export function registerAndroidTools(server: McpServer, android: ServeEmu, appUri: string, copyScreenshot: (bytes: Buffer) => Promise<void>) {
+export function registerAndroidTools(server: McpServer, android: ServeEmu, appUri: string, copyScreenshot: (bytes: Buffer) => Promise<void>, closeCpu: (deviceId: string) => Promise<void>) {
   const streams = new AndroidStreams(android);
   server.registerTool("mobile_list_android_devices", {
     title: "List Android devices", description: "List connected Android devices and installed AVDs without booting or streaming a device.", inputSchema: {}, annotations: read,
@@ -30,7 +30,7 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
     description: `${action === "boot" ? "Boot" : "Shut down"} the selected Android emulator from the device list.`,
     inputSchema: deviceInput, annotations: { ...write, destructiveHint: action === "shutdown" },
   }, guarded(async ({ deviceId }: { deviceId: string }) => {
-    if (action === "shutdown") streams.closeDevice(deviceId);
+    if (action === "shutdown") { await closeCpu(deviceId); streams.closeDevice(deviceId); }
     const status = await android[action](deviceId);
     return result(status, `${action === "boot" ? "Booted" : "Shut down"} ${deviceId}.`);
   }));

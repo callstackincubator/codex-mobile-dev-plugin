@@ -113,6 +113,7 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
           <ResizablePanel id="log-list-resizable" defaultSize="58%" minSize="30%">
           <div id="logs-list" className="h-full min-h-0 min-w-0 overflow-hidden" aria-label="Log entries">
             {logs.filtered.length ? <LegendList ref={listRef} data={logs.filtered} keyExtractor={rowKey} renderItem={renderItem} extraData={selectedSequence} estimatedItemSize={28} recycleItems
+              initialScrollAtEnd={logs.follow} initialScrollOffset={panel.list.scrollOffset} onScroll={event => { panel.list.scrollOffset = event.nativeEvent.contentOffset.y; }}
               maintainScrollAtEnd={logs.follow} maintainScrollAtEndThreshold={1} maintainVisibleContentPosition={{ data: !logs.follow, size: true }} style={{ height: "100%" }} /> : <Empty><EmptyHeader><EmptyMedia variant="icon">{logs.query ? <SearchIcon /> : <TerminalIcon />}</EmptyMedia><EmptyTitle>{logs.buffered ? "No logs match these filters." : "Waiting for logs"}</EmptyTitle>{!logs.buffered && <EmptyDescription>Start an app or choose a source.</EmptyDescription>}</EmptyHeader></Empty>}
           </div>
           </ResizablePanel>

@@ -2,6 +2,14 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import { WebSocketServer } from "ws";
 import type { InputStatus } from "../src/server/simulator-input.ts";
+import { createPlugin } from "../src/server/plugin.ts";
+import { createCpuSessions } from "../src/server/cpu/sessions.ts";
+
+export async function createTestPlugin(...parameters: Parameters<typeof createPlugin>) {
+  const root = new URL("../vendor/android-cpu/", import.meta.url);
+  parameters[6] = await createCpuSessions(root);
+  return createPlugin(...parameters);
+}
 
 export const UDID = "B5C969F6-58A4-4C31-AB12-FB9E56D681DE";
 export const OTHER_UDID = "A17F4F36-7E21-4CA0-8ACD-BBB530887763";

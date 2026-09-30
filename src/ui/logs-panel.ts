@@ -10,6 +10,9 @@ type Call = App["callServerTool"];
 export class LogsPanel {
   private simulator?: SimulatorDevice;
   private open = false;
+  private visible = true;
+  private reading?: AbortController;
+  private readonly visibilityWaiters = new Set<() => void>();
   private paused = false;
   private openedForSplitLayout = false;
   private available = false;
@@ -42,7 +45,13 @@ export class LogsPanel {
     this.controls();
     if (this.open) this.restart(); else void this.stop();
   }
-  show() { if (!this.open) this.toggle(); }
+  show() {
+    this.visible = true;
+    for (const resolve of this.visibilityWaiters) resolve();
+    if (this.open === false) this.toggle();
+    else if (this.paused === false && this.loop.active === false) this.restart();
+  }
+  hide() { this.visible = false; this.reading?.abort(); }
   toggleSettings() { this.update({ settings: !this.snapshot.settings }); }
   togglePause() { this.paused = !this.paused; this.controls(); if (this.paused) void this.stop(); else this.restart(); }
   configure(value: Partial<Pick<typeof this.snapshot, "native" | "process" | "metroUrl" | "target">>) {
@@ -107,6 +116,26 @@ export class LogsPanel {
     return result;
   }
 
+  private async waitUntilVisible(id: string, signal: AbortSignal) {
+    while (this.visible === false && signal.aborted === false) {
+      await new Promise<void>(resolve => {
+        const done = () => {
+          clearTimeout(timer);
+          signal.removeEventListener("abort", done);
+          this.visibilityWaiters.delete(done);
+          resolve();
+        };
+        const timer = setTimeout(done, 60000);
+        this.visibilityWaiters.add(done);
+        signal.addEventListener("abort", done, { once: true });
+        if (signal.aborted) done();
+      });
+      if (this.visible === false && signal.aborted === false) {
+        await this.call({ name: "mobile_logs_keep_alive", arguments: { sessionId: id } }, { signal, timeout: 5000 });
+      }
+    }
+  }
+
   private async receive(options: LogOptions, epoch: number, signal: AbortSignal) {
     const result = await this.call({ name: "mobile_logs_session", arguments: { options } }, { timeout: 15000 });
     const id = result._meta?.sessionId; const logsUri = result._meta?.logsUri;
@@ -118,9 +147,23 @@ export class LogsPanel {
     let after = 0;
     try {
       while (!signal.aborted && epoch === this.epoch) {
-        uri.searchParams.set("after", String(after));
-        const resource = await this.app.readServerResource({ uri: uri.href }, { signal, timeout: 10000 });
+        await this.waitUntilVisible(id, signal);
         if (signal.aborted || epoch !== this.epoch) return;
+        uri.searchParams.set("after", String(after));
+        const reading = new AbortController();
+        this.reading = reading;
+        const readSignal = AbortSignal.any([signal, reading.signal]);
+        let resource: Awaited<ReturnType<App["readServerResource"]>>;
+        try {
+          resource = await this.app.readServerResource({ uri: uri.href }, { signal: readSignal, timeout: 10000 });
+        } catch (error) {
+          if (signal.aborted === false && reading.signal.aborted) continue;
+          throw error;
+        } finally {
+          if (this.reading === reading) this.reading = undefined;
+        }
+        if (signal.aborted || epoch !== this.epoch) return;
+        if (this.visible === false || reading.signal.aborted) continue;
         const content = resource.contents.find(item => item.mimeType === "application/json" && "text" in item);
         if (!content || !("text" in content)) throw new Error("The plugin returned an invalid log batch.");
         const batch = JSON.parse(content.text) as LogBatch;

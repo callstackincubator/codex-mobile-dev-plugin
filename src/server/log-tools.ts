@@ -60,6 +60,14 @@ export function registerLogTools(server: McpServer, logs: LogSessions, baguette:
     return { content: [{ type: "text", text: JSON.stringify(batch) }], structuredContent: { ...batch } };
   }));
 
+  registerAppTool(server, "mobile_logs_keep_alive", {
+    title: "Keep buffered app logs alive", description: "Keep an existing log session collecting in the plugin while its UI is hidden, without transferring log entries.",
+    inputSchema: { sessionId }, annotations, _meta: { ui: { visibility: ["app"] } },
+  }, safe(async ({ sessionId: id }: { sessionId: string }) => {
+    logs.keepAlive(id);
+    return { content: [], structuredContent: {} };
+  }));
+
   registerAppTool(server, "mobile_logs_close", {
     title: "Stop app logs", description: "Stop one log session's native reader and Metro connection without stopping the app, device, or Metro server.",
     inputSchema: { sessionId }, annotations, _meta: metadata,
