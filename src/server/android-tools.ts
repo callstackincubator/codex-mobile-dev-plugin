@@ -20,7 +20,7 @@ function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
   };
 }
 
-export function registerAndroidTools(server: McpServer, android: ServeEmu, appUri: string) {
+export function registerAndroidTools(server: McpServer, android: ServeEmu, appUri: string, copyScreenshot: (bytes: Buffer) => Promise<void>) {
   const streams = new AndroidStreams(android);
   server.registerTool("mobile_list_android_devices", {
     title: "List Android devices", description: "List connected Android devices and installed AVDs without booting or streaming a device.", inputSchema: {}, annotations: read,
@@ -53,15 +53,31 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
     const acknowledgement = await android.json(backend.url, path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(type === "home" || type === "back" || type === "recents" || type === "power" ? { key: type, record: false } : { ...message, record: false }) });
     return result({ deviceId, acknowledgement }, "Android accepted the input. Read the screen to confirm the result.");
   }));
-  server.registerTool("mobile_android_screenshot", {
-    title: "Capture Android screen", description: "Return a PNG screenshot of the selected running Android device.", inputSchema: deviceInput, annotations: read,
-  }, guarded(async ({ deviceId }: { deviceId: string }) => {
+  async function captureScreenshot(deviceId: string) {
     const backend = await android.start(deviceId);
     const response = await fetch(new URL("/api/screenshot", backend.url), { redirect: "error", signal: AbortSignal.timeout(10000) });
     if (!response.ok) throw new Error(`Screenshot failed with HTTP ${response.status}.`);
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.length > 16 * 1024 * 1024 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error("serve-emu returned an invalid or oversized PNG screenshot.");
+    return bytes;
+  }
+  server.registerTool("mobile_android_screenshot", {
+    title: "Capture Android screen", description: "Return a PNG screenshot of the selected running Android device.", inputSchema: deviceInput, annotations: read,
+  }, guarded(async ({ deviceId }: { deviceId: string }) => {
+    const bytes = await captureScreenshot(deviceId);
     return { content: [{ type: "image", mimeType: "image/png", data: bytes.toString("base64") }], structuredContent: { deviceId } };
+  }));
+  registerAppTool(server, "mobile_android_capture_screenshot", {
+    title: "Android screenshot to chat and clipboard",
+    description: "Capture the selected Android screen as a PNG and copy it to the clipboard. Return the image for the panel to attach to chat.",
+    inputSchema: deviceInput, annotations: write, _meta: { ui: { resourceUri: appUri, visibility: ["app"] } },
+  }, guarded(async ({ deviceId }: { deviceId: string }) => {
+    const bytes = await captureScreenshot(deviceId);
+    let copied = false;
+    let clipboardError: string | undefined;
+    try { await copyScreenshot(bytes); copied = true; }
+    catch (error) { clipboardError = errorMessage(error); }
+    return { content: [{ type: "image", mimeType: "image/png", data: bytes.toString("base64") }], structuredContent: { deviceId, copied, ...(clipboardError ? { clipboardError } : {}) } };
   }));
   server.registerResource("android-video", new ResourceTemplate("android-stream://mobile-dev/{sessionId}/video?after={sequence}", { list: undefined }), {
     mimeType: "application/json", description: "Read H.264 packets from an authorized Android panel stream.",

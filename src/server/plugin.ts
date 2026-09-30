@@ -49,7 +49,7 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
   });
   new OpenAIExtensions(server);
   registerLogTools(server, logs, baguette);
-  const closeAndroid = registerAndroidTools(server, android, APP_URI);
+  const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot);
 
   async function blockedInput(udid: string): Promise<CallToolResult | undefined> {
     if ((await simulatorInput.status(udid)).state !== "blocked") return;

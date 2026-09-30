@@ -96,7 +96,7 @@ test("Android streams relay video, validate batches, and refuse a device switch"
 
 test("Android MCP flow lists without booting, captures, streams, and closes", async t => {
   const fake = await fakeAndroid(); const ios = await fakeBaguette();
-  const plugin = await createPlugin("<canvas></canvas>", new Baguette(ios.url), fakeSimulatorInput(), undefined, fake.backend);
+  const plugin = await createPlugin("<canvas></canvas>", new Baguette(ios.url), fakeSimulatorInput(), undefined, fake.backend, async bytes => { assert.deepEqual(bytes, PNG); });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "android-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); await ios.close(); });
@@ -106,6 +106,9 @@ test("Android MCP flow lists without booting, captures, streams, and closes", as
   assert.deepEqual(fake.backend.boots, []); assert.equal(fake.sockets.clients.size, 0);
   const screenshot = await client.callTool({ name: "mobile_android_screenshot", arguments: { deviceId: ID } });
   assert.deepEqual(screenshot.content[0], { type: "image", mimeType: "image/png", data: PNG.toString("base64") });
+  const captured = await client.callTool({ name: "mobile_android_capture_screenshot", arguments: { deviceId: ID } });
+  assert.deepEqual(captured.content[0], screenshot.content[0]);
+  assert.equal(captured.structuredContent?.copied, true);
   const input = await client.callTool({ name: "mobile_android_send_input", arguments: { deviceId: ID, input: { type: "button", button: "back" } } });
   assert.equal(input.isError, undefined);
   assert.deepEqual(fake.inputs.at(-1), { path: "/api/key", body: { key: "back", record: false } });
