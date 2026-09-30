@@ -13,10 +13,11 @@ import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../shared/protocol.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-export const APP_URI = "ui://mobile-dev/simulator.html";
-export const WORKSPACE_URI = "ui://mobile-dev/workspace.html";
+export const APP_URI = "ui://mobile-dev/0.1.16/simulator.html";
+export const WORKSPACE_URI = "ui://mobile-dev/0.1.16/workspace.html";
 // Codex can retain entrypoint metadata after updating the installed plugin.
-const legacyAppUris = Array.from({ length: 6 }, (_, index) => `ui://mobile-dev/v${index + 1}/simulator.html`);
+const legacyAppUris = ["ui://mobile-dev/0.1.15/simulator.html", "ui://mobile-dev/0.1.14/simulator.html", "ui://mobile-dev/0.1.13/simulator.html", "ui://mobile-dev/0.1.12/simulator.html", "ui://mobile-dev/0.1.11/simulator.html", "ui://mobile-dev/simulator.html", ...Array.from({ length: 6 }, (_, index) => `ui://mobile-dev/v${index + 1}/simulator.html`)];
+const legacyWorkspaceUris = ["ui://mobile-dev/0.1.15/workspace.html", "ui://mobile-dev/0.1.14/workspace.html", "ui://mobile-dev/0.1.13/workspace.html", "ui://mobile-dev/0.1.12/workspace.html", "ui://mobile-dev/0.1.11/workspace.html", "ui://mobile-dev/workspace.html"];
 const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
@@ -40,7 +41,7 @@ function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
 
 export async function createPlugin(html: string, baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions()) {
   const streams = new StreamSessions(baguette);
-  const server = new McpServer({ name: "mobile-dev", version: "0.1.7" }, {
+  const server = new McpServer({ name: "mobile-dev", version: "0.1.16" }, {
     instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. Opening the panel does not boot a device.",
   });
   new OpenAIExtensions(server);
@@ -57,7 +58,7 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
 
   const readApp = async (uri: URL) => ({
     contents: [{
-      uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: uri.href === WORKSPACE_URI
+      uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: (uri.href === WORKSPACE_URI || legacyWorkspaceUris.includes(uri.href))
         ? html.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
         : html,
       _meta: {
@@ -68,6 +69,9 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
   });
   registerAppResource(server, "mobile-dev-simulator", APP_URI, {}, readApp);
   registerAppResource(server, "mobile-dev-workspace", WORKSPACE_URI, {}, readApp);
+  for (const [index, uri] of legacyWorkspaceUris.entries()) {
+    registerAppResource(server, `mobile-dev-workspace-legacy-${index}`, uri, {}, readApp);
+  }
   for (const [index, uri] of legacyAppUris.entries()) {
     registerAppResource(server, `mobile-dev-simulator-v${index + 1}`, uri, {}, readApp);
   }

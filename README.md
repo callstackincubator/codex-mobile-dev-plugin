@@ -35,7 +35,7 @@ codex plugin add mobile-dev@mobile-dev-local
 
 Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile_open_workspace` for the fullscreen view. Call `mobile_open_simulator` for the panel beside a chat. Choose a simulator from its panel dropdown and press Start. Start boots the device if needed, then connects its screen. A selected running device connects automatically. The panel uses Apple’s device bezel and screen mask from the installed DeviceKit assets, with a simple frame as a fallback when assets are unavailable. Click the screen to type or drag. Pause closes the stream and keeps the last frame.
 
-The local ZIP at `release/mobile-dev-0.1.7-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+The local ZIP at `release/mobile-dev-0.1.16-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 Ask the agent to inspect or control the app on the selected simulator. The panel shares the selected UDID with the chat's model context. The agent uses the bundled agent-device tools with that UDID, opens a named session, reads accessibility refs, then presses elements or fills fields. Baguette keeps the live stream in the panel. The tools take the same session name on later calls so refs and app state stay together.
 
@@ -98,7 +98,7 @@ When a socket drops, the server reopens it for the same device and preserves the
 
 On macOS 27 with Xcode 27, the bundled Baguette can list simulators and capture frames. Device Hub can stop taps, buttons, and keys from reaching an iOS 27 device. The panel checks this state when connecting and sending input. When blocked, it shows Repair input and explains that the repair closes running apps. The button runs the bundled Baguette's `heal` command, then reconnects capture with new input handles. It restarts backboardd and SpringBoard without rebooting the device. Relaunching Device Hub can block input again. The panel never repairs a running device without the user clicking Repair input or asking to fix input. Baguette's boot route also repairs input after boot. Do not run the repair to diagnose video. See [Baguette's Device Hub notes](https://github.com/tddworks/baguette/blob/main/docs/features/device-hub/README.md).
 
-The simulator UI uses the stable resource address `ui://mobile-dev/simulator.html`. The old v1 through v6 addresses return the current UI too, since Codex can keep an earlier entrypoint address after a plugin update. This lets cached side tabs load without a resource-not-found error. After updating, restart Codex once if it still uses an older MCP process.
+UI resource addresses include the release version so Codex can load new HTML after an update. The original simulator and workspace addresses and the old v1 through v6 simulator addresses still return the current UI. After updating, restart Codex once if it still uses an older MCP process.
 
 ## Tools
 
