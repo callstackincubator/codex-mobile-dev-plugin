@@ -4,7 +4,7 @@ import type { App } from "@modelcontextprotocol/ext-apps";
 import type { OpenAIExtensions, OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
 import { PanelContext } from "../src/ui/model-context.ts";
 import { stackLogs } from "../src/shared/logs.ts";
-import { UDID } from "./fixtures.ts";
+import { UDID, PNG } from "./fixtures.ts";
 
 const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS 26" };
 const log = stackLogs([{ timestamp: "2026-09-30T12:00:00Z", message: "Request failed", level: "error", source: "js", origin: "metro", stack: "at load (App.tsx:9:3)", sequence: 1 }])[0];
@@ -23,8 +23,8 @@ function fixture() {
       return { updateId: current.updateId };
     },
   };
-  const context = new PanelContext({} as App, { modelContext } as OpenAIExtensions);
-  return { context, updates, clear() { current = null; context.hostChanged(); }, removeContent() { if (current) current = { ...current, content: [] }; context.hostChanged(); }, fail() { failure = true; }, hold(value: Promise<void>) { gate = value; } };
+  const context = new PanelContext({ getHostCapabilities: () => ({ updateModelContext: { image: {} } }) } as App, { modelContext } as OpenAIExtensions);
+  return { context, updates, clear() { current = null; context.hostChanged(); }, removeContent() { if (current) current = { ...current, content: [] }; context.hostChanged(); }, removeScreenshot(id: string) { if (current) current = { ...current, updateId: "removed", content: current.content?.filter(item => item._meta?.["mobile-dev/screenshotId"] !== id) }; context.hostChanged(); }, fail() { failure = true; }, hold(value: Promise<void>) { gate = value; } };
 }
 
 test("attaching a log preserves simulator context and contains the full message and stack", async () => {
@@ -68,4 +68,56 @@ test("Android selection shares its serial and platform for agent-device control"
   await context.attach(undefined);
   assert.match(JSON.stringify(updates.at(-1)?.content), /emulator-5554/);
   assert.match(JSON.stringify(updates.at(-1)?.content), /serial.*platform android/);
+});
+
+const screenshot = { id: "capture-1", data: PNG.toString("base64"), simulator };
+
+test("screenshots append to chat alongside the log and retain their original simulator", async () => {
+  const { context, updates } = fixture();
+  context.selectSimulator(simulator); await context.attach(log);
+  assert.equal(await context.attachScreenshot(screenshot), true);
+  context.selectSimulator({ ...simulator, name: "Other simulator" });
+  await context.attachScreenshot({ ...screenshot, id: "capture-2" });
+  await context.attach(undefined);
+  const last = updates.at(-1)!;
+  const images = last.content!.filter(item => item.type === "image");
+  assert.equal(images.length, 2);
+  assert.equal(images[0].data, screenshot.data);
+  assert.match(images[0]._meta?.["openai/title"] as string, /iPhone/);
+  assert.equal(last.structuredContent?.selectedLog, null);
+  assert.deepEqual(last.structuredContent?.screenshotIds, ["capture-1", "capture-2"]);
+});
+
+test("removing one screenshot preserves the other screenshot and the attached log", async () => {
+  const { context, updates, removeScreenshot } = fixture();
+  await context.attach(log); await context.attachScreenshot(screenshot);
+  await context.attachScreenshot({ ...screenshot, id: "capture-2" });
+  removeScreenshot("capture-1");
+  context.selectSimulator(simulator); await context.attach(log);
+  assert.deepEqual(updates.at(-1)?.structuredContent?.screenshotIds, ["capture-2"]);
+  assert.deepEqual(updates.at(-1)?.structuredContent?.selectedLog, log);
+});
+
+test("a host clear during screenshot attachment wins over the pending write", async () => {
+  const { context, updates, clear, hold } = fixture(); let release!: () => void;
+  hold(new Promise<void>(resolve => { release = resolve; }));
+  const writing = context.attachScreenshot(screenshot); await new Promise(resolve => setTimeout(resolve, 0));
+  clear(); release(); assert.equal(await writing, false);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  context.selectSimulator(simulator); await context.attach(undefined);
+  assert.deepEqual(updates.at(-1)?.structuredContent?.screenshotIds, []);
+  assert.equal(updates.at(-1)?.content?.some(item => item.type === "image"), false);
+});
+
+test("a failed screenshot attachment restores the prior image", async () => {
+  const { context, updates, fail } = fixture(); await context.attachScreenshot(screenshot);
+  fail(); await assert.rejects(context.attachScreenshot({ ...screenshot, id: "capture-2" }), /Host refused/);
+  await assert.rejects(context.attach(log), /Host refused/);
+  assert.deepEqual(updates.at(-1)?.structuredContent?.screenshotIds, ["capture-1"]);
+});
+
+test("a host without image attachment support rejects screenshots", async () => {
+  const context = new PanelContext({ getHostCapabilities: () => ({}) } as App, { modelContext: {} } as OpenAIExtensions);
+  assert.equal(context.canAttachScreenshots, false);
+  await assert.rejects(context.attachScreenshot(screenshot), /does not support screenshot/);
 });
