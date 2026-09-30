@@ -7,7 +7,7 @@ description: Open and control a local iOS simulator through the Mobile Dev nativ
 
 Use the Mobile Dev MCP tools for local iOS simulator work. The plugin includes Baguette and starts it when you open the panel or list devices. Do not ask the user to install Baguette or run a separate server.
 
-1. Call `mobile_open_simulator` to open the native panel, or `mobile_list_simulators` for a tool-only workflow.
+1. Call `mobile_open_simulator` to open the panel beside a chat, `mobile_open_workspace` for the fullscreen view with logs on the left and the simulator on the right, or `mobile_list_simulators` for a tool-only workflow.
 2. Read the returned devices and choose a UDID from that list. Keep an existing running device when it fits the task. Ask the user to choose only when several devices fit and the task gives no clue.
 3. Boot the chosen device with `mobile_boot_simulator` if needed. The panel streams a selected booted device automatically. The user can select a device in the top dropdown and press Start to boot and stream it.
 4. For agent app control, read [the bundled agent-device skill](../agent-device/SKILL.md). Use its MCP tools with the same UDID and a named session. Prefer snapshot refs or selectors for `press`, `fill`, and `scroll`. The plugin carries the agent-device runtime; do not install a global CLI or start another server.

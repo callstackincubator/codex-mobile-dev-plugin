@@ -33,7 +33,7 @@ codex plugin marketplace add ./release/marketplace
 codex plugin add mobile-dev@mobile-dev-local
 ```
 
-Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile_open_simulator`. Choose a simulator from the top dropdown and press Start. Start boots the device if needed, then connects its screen. A selected running device connects automatically. Click the screen to type or drag. Pause closes the stream and keeps the last frame.
+Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile_open_workspace` for the fullscreen view. Call `mobile_open_simulator` for the panel beside a chat. Choose a simulator from its panel dropdown and press Start. Start boots the device if needed, then connects its screen. A selected running device connects automatically. Click the screen to type or drag. Pause closes the stream and keeps the last frame.
 
 The local ZIP at `release/mobile-dev-0.1.7-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
@@ -41,7 +41,7 @@ Ask the agent to inspect or control the app on the selected simulator. The panel
 
 ## App logs
 
-Click Logs below the simulator to open the drawer. A booted simulator streams its unified logs. Click Sources to enter the app's executable name and press Connect to filter the native stream. Leave the app filter empty to include all device processes.
+The fullscreen plugin view has a full-width tool bar above both panels. Each panel has its own controls. Logs sit on the left and the simulator on the right above 800px; smaller views place the simulator above logs. The Logs tab reopens the logs panel. Click Logs to collapse the left panel to a tab, then click it again to reopen. The panel beside a chat keeps the collapsible drawer below the simulator. Each view has its own UI resource, so the layout does not depend on the host's display-mode flag. A booted simulator streams its unified logs. Click Sources to enter the app's executable name and press Connect to filter the native stream. Leave the app filter empty to include all device processes.
 
 For Metro, enter its local URL and click Find sources. Select the app and device in Metro app. For Android, choose a connected device in Native source and enter its package name to follow the app across restarts. The simulator screen stays on iOS when you choose Android logs. You can read native and Metro logs together.
 
@@ -105,6 +105,7 @@ The simulator UI uses the stable resource address `ui://mobile-dev/simulator.htm
 | Tool | Action |
 | --- | --- |
 | `mobile_open_simulator` | Open the native panel and start the bundled backend |
+| `mobile_open_workspace` | Open fullscreen with logs on the left and the simulator on the right |
 | `mobile_list_simulators` | Start the bundled backend if needed and list devices |
 | `mobile_start_baguette` | Retry or reconnect the bundled backend |
 | `mobile_boot_simulator` | Boot one listed device |

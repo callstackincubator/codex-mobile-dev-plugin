@@ -11,6 +11,8 @@ const app = new App({ name: "mobile-dev-ui", version: "0.1.7" }, {}, { autoResiz
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
 const logsPanel = new LogsPanel(app, panelContext);
+logsPanel.setLayout(document.documentElement.dataset.view === "workspace");
+document.getElementById("tool-logs")!.addEventListener("click", () => logsPanel.show());
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 const devices = element<HTMLSelectElement>("devices");
 const canvas = element<HTMLCanvasElement>("screen");
@@ -346,6 +348,9 @@ function hostContext() {
   const host = app.getHostContext();
   if (host?.theme) applyDocumentTheme(host.theme);
   if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
+  const bottomInset = host?.safeAreaInsets?.bottom ?? 0;
+  document.documentElement.style.setProperty("--host-safe-bottom", `${Math.max(0, bottomInset)}px`);
+  fitScreen();
   panelContext.hostChanged();
 }
 app.ontoolinput = () => { empty("Loading simulators…"); };

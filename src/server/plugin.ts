@@ -13,6 +13,7 @@ import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../s
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 export const APP_URI = "ui://mobile-dev/simulator.html";
+export const WORKSPACE_URI = "ui://mobile-dev/workspace.html";
 // Codex can retain entrypoint metadata after updating the installed plugin.
 const legacyAppUris = Array.from({ length: 6 }, (_, index) => `ui://mobile-dev/v${index + 1}/simulator.html`);
 const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -55,7 +56,9 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
 
   const readApp = async (uri: URL) => ({
     contents: [{
-      uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: html,
+      uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: uri.href === WORKSPACE_URI
+        ? html.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
+        : html,
       _meta: {
         ui: { csp: { connectDomains: [], resourceDomains: [] } },
         "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] },
@@ -63,6 +66,7 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     }],
   });
   registerAppResource(server, "mobile-dev-simulator", APP_URI, {}, readApp);
+  registerAppResource(server, "mobile-dev-workspace", WORKSPACE_URI, {}, readApp);
   for (const [index, uri] of legacyAppUris.entries()) {
     registerAppResource(server, `mobile-dev-simulator-v${index + 1}`, uri, {}, readApp);
   }
@@ -80,20 +84,32 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     };
   });
 
+  const openPanel = guarded(async () => {
+    let status;
+    try { status = await baguette.start(); }
+    catch (error) { status = { ...await baguette.status(), error: errorMessage(error) }; }
+    return result(status, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
+  });
+
+  registerAppTool(server, "mobile_open_workspace", {
+    title: "Mobile Dev",
+    description: "Open the fullscreen Mobile Dev workspace with logs on the left and the iOS simulator on the right. Starts the bundled backend without booting a device.",
+    inputSchema: {}, outputSchema: statusOutput, annotations: write,
+    _meta: {
+      ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
+      "openai/ui": { entrypoints: [{ type: "global" }] },
+    },
+  }, openPanel);
+
   registerAppTool(server, "mobile_open_simulator", {
     title: "iOS Simulator",
     description: "Open the Mobile Dev simulator panel in Codex and start the plugin's bundled Baguette backend. Shows devices without booting any.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
       ui: { resourceUri: APP_URI, visibility: ["app", "model"] },
-      "openai/ui": { entrypoints: [{ type: "global" }, { type: "thread" }] },
+      "openai/ui": { entrypoints: [{ type: "thread" }] },
     },
-  }, guarded(async () => {
-    let status;
-    try { status = await baguette.start(); }
-    catch (error) { status = { ...await baguette.status(), error: errorMessage(error) }; }
-    return result(status, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
-  }));
+  }, openPanel);
 
   server.registerTool("mobile_list_simulators", {
     title: "List iOS simulators", description: "Start the plugin's bundled backend if needed and list available and booted simulators.",

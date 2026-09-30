@@ -12,6 +12,7 @@ export class LogsPanel {
   private simulator?: SimulatorDevice;
   private open = false;
   private paused = false;
+  private openedForSplitLayout = false;
   private available = false;
   private epoch = 0;
   private readonly loop = new ReconnectLoop();
@@ -38,7 +39,22 @@ export class LogsPanel {
     this.target.addEventListener("change", () => this.restart());
   }
 
+  show() {
+    if (this.open) return;
+    this.open = true;
+    this.controls();
+    this.restart();
+  }
+
   setAvailable(available: boolean) { this.available = available; this.controls(); if (this.open) this.restart(); }
+  setLayout(split: boolean) {
+    document.documentElement.dataset.layout = split ? "split" : "stacked";
+    if (split && !this.openedForSplitLayout) {
+      this.openedForSplitLayout = true;
+      this.open = true;
+      this.restart();
+    }
+  }
   selectSimulator(simulator?: SimulatorDevice) {
     const changed = simulator?.udid !== this.simulator?.udid || simulator?.state !== this.simulator?.state;
     this.simulator = simulator;

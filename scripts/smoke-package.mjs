@@ -22,7 +22,11 @@ try {
   const client = new Client({ name: "mobile-dev-package-smoke", version: "1" });
   await client.connect(transport);
   const tools = await client.listTools();
-  assert.equal(tools.tools.length, 16);
+  assert.equal(tools.tools.length, 17);
+  const workspace = tools.tools.find(tool => tool.name === "mobile_open_workspace");
+  assert.deepEqual(workspace._meta["openai/ui"].entrypoints, [{ type: "global" }]);
+  const workspaceResource = await client.readResource({ uri: workspace._meta.ui.resourceUri });
+  assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
   for (const name of ["mobile_log_sources", "mobile_logs_session", "mobile_read_logs", "mobile_logs_close"]) {
     assert.ok(tools.tools.some(tool => tool.name === name), `Missing log tool: ${name}`);
   }
@@ -42,6 +46,11 @@ try {
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
   assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/simulator.html");
+  assert.ok(resource.contents[0].text.includes('class="workspace-toolbar"'));
+  assert.ok(resource.contents[0].text.includes('id="workspace-panels"'));
+  assert.ok(resource.contents[0].text.includes('id="tool-logs"'));
+  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/workspace.html");
+  assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
   for (const version of [1, 2, 3, 4, 5, 6]) {
     const uri = `ui://mobile-dev/v${version}/simulator.html`;
     const legacy = await client.readResource({ uri });

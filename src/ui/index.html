@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-view="panel" data-layout="stacked">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -8,7 +8,14 @@
 </head>
 <body>
   <main>
-    <header>
+    <nav class="workspace-toolbar" aria-label="Developer tools">
+      <div class="tool-switcher">
+        <button id="tool-logs" class="tool-tab cursor-interaction" aria-current="page" aria-controls="logs-drawer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 8 4 4-4 4M12 16h8"/></svg>Logs</button>
+      </div>
+    </nav>
+    <div id="workspace-panels">
+    <section id="simulator-panel" aria-label="Simulator">
+    <header class="simulator-heading">
       <div class="toolbar" aria-label="Simulator controls">
         <div class="device-picker">
           <label class="sr-only" for="devices">Simulator</label>
@@ -31,6 +38,7 @@
       <div id="device-frame" hidden>
         <canvas id="screen" tabindex="0" aria-label="Simulator screen. Click or drag to interact. Focus to type."></canvas>
       </div>
+    </section>
     </section>
     <section id="logs-drawer" aria-label="App logs">
       <div class="logs-heading">
@@ -78,6 +86,7 @@
         <div id="logs-footer"></div>
       </div>
     </section>
+    </div>
   </main>
   <!-- APP_SCRIPT -->
 </body>

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { OpenAIUiToolMetadataSchema, OpenAIUiResourceMetadataSchema } from "@openai/mcp-extensions/server";
-import { createPlugin, APP_URI } from "../src/server/plugin.ts";
+import { createPlugin, APP_URI, WORKSPACE_URI } from "../src/server/plugin.ts";
 import { Baguette } from "../src/server/baguette.ts";
 import { parseBaseUrl } from "../src/shared/protocol.ts";
 import { fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "./fixtures.ts";
@@ -29,7 +29,7 @@ test("cached side tabs load the current UI through old resource addresses", asyn
 
 test("MCP tools expose native entrypoints and complete the simulator workflow", async t => {
   const fake = await fakeBaguette();
-  const plugin = await createPlugin("<!doctype html><title>Mobile Dev</title>", new Baguette(fake.url), fakeSimulatorInput());
+  const plugin = await createPlugin('<!doctype html><html data-view="panel" data-layout="stacked"><title>Mobile Dev</title></html>', new Baguette(fake.url), fakeSimulatorInput());
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
@@ -38,13 +38,21 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const tools = await client.listTools();
   const open = tools.tools.find(tool => tool.name === "mobile_open_simulator")!;
   const metadata = OpenAIUiToolMetadataSchema.parse(open._meta?.["openai/ui"]);
-  assert.deepEqual(metadata.entrypoints?.map(item => item.type), ["global", "thread"]);
+  assert.deepEqual(metadata.entrypoints?.map(item => item.type), ["thread"]);
+  const workspace = tools.tools.find(tool => tool.name === "mobile_open_workspace")!;
+  const workspaceMetadata = OpenAIUiToolMetadataSchema.parse(workspace._meta?.["openai/ui"]);
+  assert.deepEqual(workspaceMetadata.entrypoints?.map(item => item.type), ["global"]);
+  assert.equal((workspace._meta?.ui as { resourceUri: string }).resourceUri, WORKSPACE_URI);
+  const workspaceResource = await client.readResource({ uri: WORKSPACE_URI });
+  assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);
+  assert.equal(WORKSPACE_URI, "ui://mobile-dev/workspace.html");
   assert.equal(open._meta?.ui && (open._meta.ui as { resourceUri: string }).resourceUri, APP_URI);
   const appTool = tools.tools.find(tool => tool.name === "mobile_stream_session")!;
   assert.deepEqual((appTool._meta?.ui as { visibility: string[] }).visibility, ["app"]);
   const resource = await client.readResource({ uri: APP_URI });
   OpenAIUiResourceMetadataSchema.parse(resource.contents[0]._meta?.["openai/ui"]);
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
+  assert.match(resource.contents[0].text as string, /data-view="panel" data-layout="stacked"/);
   assert.deepEqual(resource.contents[0]._meta?.ui, { csp: { connectDomains: [], resourceDomains: [] } });
   const status = await client.callTool({ name: "mobile_open_simulator", arguments: {} });
   assert.equal(status.structuredContent?.connected, true);
