@@ -64,7 +64,12 @@ export class LogList {
   setFilters(kind: "sources" | "levels", values: string[]) { this[kind] = new Set(values); this.publish(); }
   setStacked(value: boolean) { this.stacked = value; this.publish(); }
   setFollow(value: boolean) { this.follow = value; this.publish(); }
-  select(sequence?: number) { this.selectedSequence = sequence; this.attachmentStatus = ""; this.publish(); }
+  select(sequence?: number) {
+    this.selectedSequence = sequence;
+    if (sequence !== undefined) this.follow = false;
+    this.attachmentStatus = "";
+    this.publish();
+  }
 
   async attach(remove = false) {
     const selected = this.snapshot.selected;
