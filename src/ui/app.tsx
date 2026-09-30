@@ -13,7 +13,7 @@ import { PanelContext } from "./model-context.ts";
 import { LogsPanel } from "./logs-panel.ts";
 import { createSimulatorPanel } from "./simulator-panel.ts";
 
-const app = new App({ name: "mobile-dev-ui", version: "0.1.20" }, {}, { autoResize: false });
+const app = new App({ name: "mobile-dev-ui", version: "0.1.21" }, {}, { autoResize: false });
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
 const logsPanel = new LogsPanel(app, panelContext);
