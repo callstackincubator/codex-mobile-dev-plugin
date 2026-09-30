@@ -71,7 +71,7 @@ function hostContext() {
   panelContext.hostChanged();
   for (const panel of panels) { panel.fitScreen(); panel.controls(); }
 }
-app.ontoolinput = () => { ios.empty("Loading simulators…"); };
+app.ontoolinput = () => { ios.empty("Loading simulators…", "Finding available iOS simulators."); };
 app.ontoolresult = result => {
   if (result.isError) { ios.notice(result.content.filter(item => item.type === "text").map(item => item.text).join("\n")); return; }
   if (result.structuredContent && "devices" in result.structuredContent) ios.acceptStatus(result.structuredContent as Status);

@@ -168,12 +168,14 @@ export function createSimulatorPanel(
     finally { busy = false; controls(); }
   }
 
-  function empty(message: string) {
+  function empty(message: string, description = "") {
     stoppedDisplay = false;
     element("stopped").hidden = true;
     frame.hidden = true;
     element("empty").hidden = false;
     element("empty").textContent = message;
+    element("empty-description").textContent = description;
+    element("empty-description").hidden = !description;
   }
 
   function setBezel(value?: Bezel) {
@@ -297,7 +299,7 @@ export function createSimulatorPanel(
   async function connect() {
     if (disposed || !toolsAvailable || !selected || selected.state !== "Booted") return;
     await disconnect();
-    if (frame.hidden) empty("Connecting…");
+    if (frame.hidden) empty("Connecting…", "Opening the device screen.");
     const sessionEpoch = epoch;
     const udid = selected.udid;
     reconnect.start(signal => openAndReceive(udid, sessionEpoch, signal), () => {
@@ -433,7 +435,7 @@ export function createSimulatorPanel(
     await listDevices();
     if (!selected) return;
     if (selected.state !== "Booted") {
-      empty("Starting simulator…");
+      empty("Starting simulator…", "The screen will appear when the device is ready.");
       const before = selected;
       const result = await call(platform === "android" ? "mobile_boot_android_emulator" : "mobile_boot_simulator",
         platform === "android" ? { deviceId: before.udid } : { udid: before.udid }, { timeout: 150000 });

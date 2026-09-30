@@ -1,7 +1,7 @@
 import { CameraIcon, HouseIcon, CopyIcon, PowerIcon, SmartphoneIcon, type LucideIcon } from "lucide-react";
 import { memo } from "react";
 import { Button } from "./ui/button";
-import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty";
 import { DevicePicker } from "./device-picker";
 import { DeviceSettings } from "./device-settings";
 
@@ -24,7 +24,7 @@ export const SimulatorView = memo(function SimulatorView({ platform }: { platfor
       </div>
     </header>
     <section data-element="stage" className="group/stage relative grid min-h-0 flex-1 place-items-center overflow-hidden p-6 @max-[280px]:p-3" aria-label="Live simulator screen">
-      <Empty className="absolute inset-0 group-has-[[data-element=empty][hidden]]/stage:hidden"><EmptyHeader><EmptyMedia variant="icon"><SmartphoneIcon /></EmptyMedia><EmptyTitle data-element="empty" role="status">Loading devices...</EmptyTitle></EmptyHeader></Empty>
+      <Empty className="absolute inset-0 group-has-[[data-element=empty][hidden]]/stage:hidden"><EmptyHeader><EmptyMedia variant="icon"><SmartphoneIcon /></EmptyMedia><EmptyTitle data-element="empty" role="status">Loading devices...</EmptyTitle><EmptyDescription data-element="empty-description">Finding available {platform === "ios" ? "iOS simulators" : "Android devices"}.</EmptyDescription></EmptyHeader></Empty>
       <div data-element="device-frame" hidden>
         <img data-element="device-bezel" className="pointer-events-none absolute inset-0 z-1 size-full select-none" alt="" draggable={false} hidden />
         <div data-element="device-nine-patch" className="pointer-events-none absolute inset-0 z-3" hidden />
