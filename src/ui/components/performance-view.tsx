@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIcon, RefreshCwIcon, SlidersHorizontalIcon, SquareIcon } from "lucide-react";
 import type { PerformancePanel } from "../performance-panel.ts";
 import type { ZoomState } from "../performance/types";
@@ -17,14 +17,15 @@ import { Alert, AlertDescription } from "./ui/alert";
 export function PerformanceView({ panel }: { panel: PerformancePanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const container = useRef<HTMLDivElement>(null);
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
   const last = state.samples.at(-1);
   const end = Math.max(last?.time ?? 0, MIN_VIEW_DURATION);
   const start = Math.max(0, end - CPU_HISTORY_SECONDS);
   const [following, setFollowing] = useState(true);
   const [selection, setSelection] = useState<ZoomState>({ left: 0, right: MIN_VIEW_DURATION, refAreaLeft: undefined, refAreaRight: undefined });
-  const live: ZoomState = { left: start, right: end, refAreaLeft: undefined, refAreaRight: undefined };
+  const live = useMemo<ZoomState>(() => ({ left: start, right: end, refAreaLeft: undefined, refAreaRight: undefined }), [start, end]);
   const zoom = following ? live : selection;
-  const { cursorX, handleMouseMove, handleMouseLeave } = useCursorTracking(container, SIDEBAR_WIDTH);
+  const { cursorLabel, handleMouseMove, handleMouseLeave } = useCursorTracking(container, SIDEBAR_WIDTH, zoom);
   const reset = useCallback(() => setFollowing(true), []);
   const change = useCallback((next: ZoomState) => { setFollowing(false); setSelection(next); }, []);
   useEffect(() => { if (state.phase === "connecting" || state.phase === "idle") setFollowing(true); }, [state.phase]);
@@ -59,7 +60,7 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
         </PopoverContent>
       </Popover>
     </header>
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div ref={setScrollElement} className="min-h-0 flex-1 overflow-y-auto" data-performance-scroll>
       {state.sourceError && <Alert variant="destructive" className="rounded-none border-x-0 border-t-0"><AlertDescription>{state.sourceError}</AlertDescription></Alert>}
       <div ref={container} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} aria-label="Live app CPU and memory usage">
         <div className="flex border-b" style={{ height: TIMELINE_HEIGHT }}>
@@ -68,14 +69,14 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
             {state.phase === "failed" && <button type="button" className="text-blue-500" onClick={() => panel.retry()}>Retry</button>}
             {following === false && <button type="button" className="text-blue-500" onClick={reset}>Follow live</button>}
           </div>
-          <div className="min-w-0 flex-1"><TimelineRuler cursorX={cursorX} viewDuration={end} zoomState={zoom} onZoomOut={reset} /></div>
+          <div className="min-w-0 flex-1"><TimelineRuler cursorLabel={cursorLabel} zoomState={zoom} onZoomOut={reset} /></div>
         </div>
         <CpuTrack samples={state.samples} threadHistory={state.threadHistory} platform={state.platform}
           threadOrder={state.threadOrder} onThreadOrderChange={order => panel.setThreadOrder(order)}
-          phase={state.phase} error={state.error || null} cursorX={cursorX}
-          viewDuration={end} zoomState={zoom} onZoomChange={change} onZoomOut={reset} />
+          phase={state.phase} error={state.error || null} scrollElement={scrollElement}
+          zoomState={zoom} onZoomChange={change} onZoomOut={reset} />
         <MemoryTrack samples={state.samples} platform={state.platform} phase={state.phase} error={state.error || null}
-          cursorX={cursorX} viewDuration={end} zoomState={zoom} onZoomChange={change} onZoomOut={reset} />
+          zoomState={zoom} onZoomChange={change} onZoomOut={reset} />
       </div>
       {state.bundleId === "" && <p className="p-4 text-xs text-muted-foreground">Open an app on the selected device. A single running app is selected automatically; choose one in performance settings when several are running.</p>}
     </div>

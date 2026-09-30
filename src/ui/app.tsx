@@ -15,7 +15,7 @@ import { PerformancePanel } from "./performance-panel.ts";
 import { createSimulatorPanel } from "./simulator-panel.ts";
 import { startLiveReload } from "./live-reload.ts";
 
-const app = new App({ name: "mobile-dev-ui", version: "0.1.43" }, {}, { autoResize: false });
+const app = new App({ name: "mobile-dev-ui", version: "0.1.44" }, {}, { autoResize: false });
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
 const performancePanel = new PerformancePanel(app);

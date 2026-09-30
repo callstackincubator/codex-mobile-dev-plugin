@@ -38,7 +38,7 @@ codex plugin add mobile-dev@mobile-dev-local
 
 Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile_open_workspace` for the fullscreen view. Call `mobile_open_simulator` for the panel beside a chat. iOS opens by default. Enable Android from the toolbar to show both panels side by side. Each panel has a device dropdown, Home, App Switcher, and Screenshot. Pick a device in each panel. Use the iOS and Android toggles to show either, both, or neither simulator. Selecting a device boots it if needed, then connects its screen. A selected running device connects automatically. The panel uses Apple’s device bezel and screen mask from the installed DeviceKit assets, with a simple frame as a fallback when assets are unavailable. Use the settings button at the bottom right for appearance, text size, location, and the device frame. iOS also offers contrast; Android offers rotation. The menu shows only settings supported by the bundled backend. Click the screen to type or drag. Closing the panel closes its stream.
 
-The local ZIP at `release/mobile-dev-0.1.43-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+The local ZIP at `release/mobile-dev-0.1.44-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 Ask the agent to inspect or control the app on the selected device. The panel shares both visible device IDs and platforms with the chat. Click a device panel to make it the active device for logs. Hiding a simulator keeps the current log source and buffered logs. The agent uses the bundled agent-device tools with the chosen device ID, opens a named session, reads accessibility refs, then presses elements or fills fields. Baguette streams iOS and serve-emu streams Android in the panel. The tools take the same session name on later calls so refs and app state stay together.
 
@@ -108,6 +108,11 @@ first, with threads that have ever shown activity during the recording above
 those with none. Equal readings keep their first-seen order. Choose First seen
 in the Sort dropdown to keep rows in their original recording order. The choice
 persists when switching tabs or devices, and sorting only affects the UI.
+
+Thread charts use LegendList with stable thread IDs and fixed row heights. Only
+rows near the viewport render, using the existing performance scrollbar.
+Cursor movement updates the shared cursor position and time label without
+rendering charts. Chart bounds update with each sample in the same render.
 
 On iOS, collection uses debugserver from the selected full Xcode installation. The app
 needs a development signature with `get-task-allow`, with Xcode/LLDB detached.

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { memo, useMemo, type ComponentProps, type RefObject } from 'react';
 import { BarChart, Bar, CartesianGrid, XAxis, ReferenceArea, ResponsiveContainer } from 'recharts';
 import type { DataPoint, ZoomState } from '../../performance/types';
 import { COLORS, TIMELINE_EXTENSION_PERCENT } from '../../performance/constants';
@@ -7,45 +7,29 @@ import { renderSelectionReferenceArea } from './SelectionReferenceArea';
 import { TimelineCursorIndicator } from './TimelineCursorIndicator';
 
 type TimelineRulerProps = {
-  cursorX: number | null;
-  viewDuration: number;
+  cursorLabel: RefObject<HTMLSpanElement | null>;
   zoomState: ZoomState;
   onZoomOut: () => void;
 };
 
-export const TimelineRuler: React.FC<TimelineRulerProps> = ({
-  cursorX,
-  viewDuration,
+const chartMargin = { top: 0, right: 0, bottom: 0, left: 0 };
+const tickStyle: ComponentProps<typeof XAxis>['tick'] = { fill: COLORS.timeLabel, fontSize: 10, fontFamily: 'monospace', dy: 0, dx: 5, textAnchor: 'start' };
+
+export const TimelineRuler = memo(function TimelineRuler({
+  cursorLabel,
   zoomState,
   onZoomOut
-}) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState<number>(0);
+}: TimelineRulerProps) {
   const { left, right, refAreaLeft, refAreaRight } = zoomState;
 
-  useEffect(() => {
-    const updateWidth = () => {
-      if (containerRef.current) {
-        setContainerWidth(containerRef.current.offsetWidth);
-      }
-    };
-    updateWidth();
-    const observer = new ResizeObserver(updateWidth);
-    if (containerRef.current) {
-      observer.observe(containerRef.current);
-    }
-    return () => observer.disconnect();
-  }, []);
-
   const extendedRight = right + (right - left) * TIMELINE_EXTENSION_PERCENT;
-  const cursorTime = cursorX !== null && containerWidth > 0
-    ? left + (cursorX / containerWidth) * (extendedRight - left)
-    : null;
-
   const currentZoomDuration = right - left;
-  const xAxisTicks = generateTicks(extendedRight, currentZoomDuration, left);
-
-  const timelineData: DataPoint[] = [{ time: left, value: 1 }, { time: extendedRight, value: 1 }];
+  const xAxisTicks = useMemo(() => {
+    const ticks = generateTicks(extendedRight, currentZoomDuration, left);
+    return ticks;
+  }, [extendedRight, currentZoomDuration, left]);
+  const xDomain = useMemo(() => [left, extendedRight], [left, extendedRight]);
+  const timelineData = useMemo<DataPoint[]>(() => [{ time: left, value: 1 }, { time: extendedRight, value: 1 }], [left, extendedRight]);
   const formatTick = (seconds: number) => {
     if (currentZoomDuration >= 0.01) return formatTime(seconds);
     const milliseconds = seconds * 1000;
@@ -55,14 +39,13 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
 
   return (
     <div
-      ref={containerRef}
       className="h-full w-full flex flex-col relative"
       onDoubleClick={onZoomOut}
     >
       <ResponsiveContainer width="100%" height="100%" >
         <BarChart
           data={timelineData}
-          margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+          margin={chartMargin}
           accessibilityLayer={false}
         >
           <CartesianGrid
@@ -75,11 +58,11 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
           <XAxis
             dataKey="time"
             type="number"
-            domain={[left, extendedRight]}
+            domain={xDomain}
             allowDataOverflow
             ticks={xAxisTicks}
             tickFormatter={formatTick}
-            tick={{ fill: COLORS.timeLabel, fontSize: 10, fontFamily: 'monospace', dy: 0, dx: 5, textAnchor: 'start' }}
+            tick={tickStyle}
             axisLine={false}
             tickLine={false}
             height={25}
@@ -105,7 +88,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
           ) : null}
         </BarChart>
       </ResponsiveContainer>
-      <TimelineCursorIndicator cursorX={cursorX} cursorTime={cursorTime} />
+      <TimelineCursorIndicator labelRef={cursorLabel} />
     </div>
   );
-};
+});

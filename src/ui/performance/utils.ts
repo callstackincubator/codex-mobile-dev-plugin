@@ -39,7 +39,7 @@ export const getAxisYDomain = (
   from: number | undefined,
   to: number | undefined,
   offset: number,
-): (number | string)[] => {
+): [number | string, number | string] => {
   if (from != null && to != null) {
     const refData = data.filter((d): d is { time: number; value: number } =>
       d.value !== null && d.time >= from && d.time <= to);

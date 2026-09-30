@@ -1,4 +1,4 @@
-import React from 'react';
+import { memo } from 'react';
 import type { ZoomState } from '../../performance/types';
 import { PerformanceAreaChart } from './PerformanceAreaChart';
 import { THREAD_COLORS } from '../../performance/constants';
@@ -15,28 +15,30 @@ type ThreadRowProps = {
   platform: 'ios' | 'android';
   data: CpuPoint[];
   running: boolean;
-  cursorX: number | null;
-  viewDuration: number;
   zoomState: ZoomState;
   onZoomChange: (state: ZoomState) => void;
   onZoomOut: () => void;
   height: number;
 };
 
-export const ThreadRow: React.FC<ThreadRowProps> = ({
+const chartColors = {
+  stroke: THREAD_COLORS.areaChartStroke,
+  fillStart: THREAD_COLORS.areaChartFillStart,
+  fillEnd: THREAD_COLORS.areaChartFillEnd,
+};
+
+export const ThreadRow = memo(function ThreadRow({
   threadName,
   threadId,
   threadNumber,
   platform,
   data,
   running,
-  cursorX,
-  viewDuration,
   zoomState,
   onZoomChange,
   onZoomOut,
   height
-}) => {
+}: ThreadRowProps) {
   const gradientId = `threadGradient-${threadId}`;
   const label = threadLabel(threadName, threadNumber, platform);
   const state = running ? 'active' : 'exited';
@@ -49,31 +51,27 @@ export const ThreadRow: React.FC<ThreadRowProps> = ({
 
   return (
     <div
+      data-cpu-thread={threadId}
       className="flex flex-row overflow-hidden"
       style={{ height: `${height}px` }}
     >
 
       <TrackLabel label={label} title={title} metrics={metrics} wrapLabel />
 
-      <div className="flex-1 h-full relative border-b border-border">
+      <div className="min-w-0 flex-1 h-full relative border-b border-border">
         <PerformanceAreaChart
           data={data}
-          viewDuration={viewDuration}
           zoomState={zoomState}
           onZoomChange={onZoomChange}
           onZoomOut={onZoomOut}
-          chartColors={{
-            stroke: THREAD_COLORS.areaChartStroke,
-            fillStart: THREAD_COLORS.areaChartFillStart,
-            fillEnd: THREAD_COLORS.areaChartFillEnd,
-          }}
+          chartColors={chartColors}
           gradientId={gradientId}
           tooltipPostfix="%"
           trackHeight={height}
         />
-        <CursorIndicator cursorX={cursorX} />
+        <CursorIndicator />
 
       </div>
     </div>
   );
-};
+});

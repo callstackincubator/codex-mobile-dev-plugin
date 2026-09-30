@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { LegendList } from '@legendapp/list/react';
 import { CpuIcon } from 'lucide-react';
 import type { ThreadHistory, ThreadOrder, ZoomState } from '../../performance/types';
 import { PerformanceAreaChart } from './PerformanceAreaChart';
@@ -7,7 +8,7 @@ import { ThreadRow } from './ThreadRow';
 import { SIDEBAR_WIDTH, TRACK_HEIGHT } from '../../performance/constants';
 import { CursorIndicator } from './CursorIndicator';
 import type { CpuPhase, CpuSample } from '../../../shared/cpu';
-import { createCpuSeries, formatCpu, orderCpuThreads } from './cpuSeries';
+import { createCpuSeries, formatCpu, orderCpuThreads, type CpuThreadSeries } from './cpuSeries';
 import { NativeSelect, NativeSelectOption } from '../ui/native-select';
 
 type CpuTrackProps = {
@@ -18,8 +19,7 @@ type CpuTrackProps = {
   platform: 'ios' | 'android';
   phase: CpuPhase;
   error: string | null;
-  cursorX: number | null;
-  viewDuration: number;
+  scrollElement: HTMLDivElement | null;
   zoomState: ZoomState;
   onZoomChange: (state: ZoomState) => void;
   onZoomOut: () => void;
@@ -33,8 +33,7 @@ export const CpuTrack: React.FC<CpuTrackProps> = ({
   platform,
   phase,
   error,
-  cursorX,
-  viewDuration,
+  scrollElement,
   zoomState,
   onZoomChange,
   onZoomOut
@@ -48,6 +47,13 @@ export const CpuTrack: React.FC<CpuTrackProps> = ({
     const sorted = orderCpuThreads(series.threads, threadHistory, threadOrder);
     return sorted;
   }, [series.threads, threadHistory, threadOrder]);
+  const renderThread = useCallback(({ item: thread }: { item: CpuThreadSeries }) => {
+    const history = threadHistory.get(thread.id);
+    if (history === undefined) throw new Error(`Missing display history for CPU thread ${thread.id}.`);
+    return <ThreadRow threadName={thread.name} threadId={thread.id} threadNumber={history.number}
+      platform={platform} data={thread.data} running={thread.running} zoomState={zoomState}
+      onZoomChange={onZoomChange} onZoomOut={onZoomOut} height={THREAD_HEIGHT} />;
+  }, [threadHistory, platform, zoomState, onZoomChange, onZoomOut]);
   const current = formatCpu(series.current);
   const average = formatCpu(series.average);
   const maximum = formatCpu(series.maximum);
@@ -76,10 +82,9 @@ export const CpuTrack: React.FC<CpuTrackProps> = ({
           isExpanded={isExpanded}
           onToggle={() => setIsExpanded(value => value === false)}
         />
-        <div className="flex-1 h-full relative border-b border-border ">
+        <div className="min-w-0 flex-1 h-full relative border-b border-border">
           <PerformanceAreaChart
             data={series.process}
-            viewDuration={viewDuration}
             zoomState={zoomState}
             onZoomChange={onZoomChange}
             onZoomOut={onZoomOut}
@@ -91,7 +96,7 @@ export const CpuTrack: React.FC<CpuTrackProps> = ({
             </div>
           )}
 
-      <CursorIndicator cursorX={cursorX} />
+          <CursorIndicator />
         </div>
       </div>
       {isExpanded && <div className="flex border-b border-border bg-muted/30">
@@ -108,25 +113,13 @@ export const CpuTrack: React.FC<CpuTrackProps> = ({
           </NativeSelect>
         </div>
       </div>}
-      {isExpanded && threads.map((thread) => {
-        const history = threadHistory.get(thread.id);
-        if (history === undefined) throw new Error(`Missing display history for CPU thread ${thread.id}.`);
-        return <ThreadRow
-          key={thread.id}
-          threadName={thread.name}
-          threadId={thread.id}
-          threadNumber={history.number}
-          platform={platform}
-          data={thread.data}
-          running={thread.running}
-          cursorX={cursorX}
-          viewDuration={viewDuration}
-          zoomState={zoomState}
-          onZoomChange={onZoomChange}
-          onZoomOut={onZoomOut}
-          height={TRACK_HEIGHT * 0.7}
-        />;
-      })}
+      {isExpanded && <LegendList data={threads} scrollElement={scrollElement} renderItem={renderThread}
+        keyExtractor={threadKey} getFixedItemSize={threadHeight} estimatedItemSize={THREAD_HEIGHT}
+        drawDistance={THREAD_HEIGHT} maintainVisibleContentPosition={false} aria-label="CPU threads" />}
     </>
   );
 };
+
+const THREAD_HEIGHT = TRACK_HEIGHT * 0.7;
+const threadKey = (thread: CpuThreadSeries) => thread.id;
+const threadHeight = () => THREAD_HEIGHT;

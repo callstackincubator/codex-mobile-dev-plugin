@@ -13,14 +13,12 @@ type MemoryTrackProps = {
   platform: "ios" | "android";
   phase: CpuPhase;
   error: string | null;
-  cursorX: number | null;
-  viewDuration: number;
   zoomState: ZoomState;
   onZoomChange: (state: ZoomState) => void;
   onZoomOut: () => void;
 };
 
-export function MemoryTrack({ samples, platform, phase, error, cursorX, viewDuration, zoomState, onZoomChange, onZoomOut }: MemoryTrackProps) {
+export function MemoryTrack({ samples, platform, phase, error, zoomState, onZoomChange, onZoomOut }: MemoryTrackProps) {
   const series = useMemo(() => createMemorySeries(samples), [samples]);
   const current = formatMemory(series.current);
   const average = series.average === null ? "—" : series.average.toFixed(1);
@@ -43,11 +41,11 @@ export function MemoryTrack({ samples, platform, phase, error, cursorX, viewDura
   return <div role="region" aria-label="Memory usage" className="group flex flex-row overflow-hidden" style={{ height: TRACK_HEIGHT }}>
     <TrackLabel label="Memory" icon={<DatabaseIcon className="size-4 text-orange-500" />} metrics={metrics} title={title} />
     <div className="min-w-0 flex-1 h-full relative border-b border-border">
-      <PerformanceAreaChart data={series.data} viewDuration={viewDuration} zoomState={zoomState}
+      <PerformanceAreaChart data={series.data} zoomState={zoomState}
         onZoomChange={onZoomChange} onZoomOut={onZoomOut} chartColors={MEMORY_COLORS}
         gradientId="memoryGradient" tooltipPostfix="MiB" />
       {showMessage && <div role={error ? "alert" : "status"} className="absolute inset-0 flex items-center justify-center px-4 text-xs text-muted-foreground bg-background/90">{message}</div>}
-      <CursorIndicator cursorX={cursorX} />
+      <CursorIndicator />
     </div>
   </div>;
 }

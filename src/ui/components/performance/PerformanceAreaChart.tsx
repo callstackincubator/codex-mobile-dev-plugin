@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useRef } from "react";
+import React, { memo, useCallback, useMemo } from "react";
 import {
   AreaChart,
   Area,
@@ -26,7 +26,6 @@ import { Button } from "../ui/button";
 
 type PerformanceAreaChartProps = {
   data: CpuPoint[];
-  viewDuration: number;
   zoomState: ZoomState;
   onZoomChange: (state: ZoomState) => void;
   onZoomOut: () => void;
@@ -40,39 +39,36 @@ type PerformanceAreaChartProps = {
   trackHeight?: number;
 };
 
-export const PerformanceAreaChart: React.FC<PerformanceAreaChartProps> = ({
+const defaultChartColors = {
+  stroke: COLORS.areaChartStroke,
+  fillStart: COLORS.areaChartFillStart,
+  fillEnd: COLORS.areaChartFillEnd,
+};
+const chartMargin = { top: 0, right: 0, bottom: 0, left: 0 };
+
+export const PerformanceAreaChart = memo(function PerformanceAreaChart({
   data,
-  viewDuration,
   zoomState,
   onZoomChange,
   onZoomOut,
-  chartColors = {
-    stroke: COLORS.areaChartStroke,
-    fillStart: COLORS.areaChartFillStart,
-    fillEnd: COLORS.areaChartFillEnd,
-  },
+  chartColors = defaultChartColors,
   gradientId = "colorValue",
   tooltipPostfix,
   trackHeight = TRACK_HEIGHT,
-}) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [localState, setLocalState] = useState<{
-    top: string | number;
-    bottom: string | number;
-  }>({
-    top: "dataMax",
-    bottom: "dataMin",
-  });
-
-  useEffect(() => {
-    const [bottom, top] = getAxisYDomain(
-      data,
-      zoomState.left,
-      zoomState.right,
-      10
-    );
-    setLocalState({ bottom, top });
-  }, [data, zoomState.left, zoomState.right]);
+}: PerformanceAreaChartProps) {
+  const { refAreaLeft, refAreaRight, left, right } = zoomState;
+  const yDomain = useMemo(() => {
+    const domain = getAxisYDomain(data, left, right, 10);
+    return domain;
+  }, [data, left, right]);
+  const extendedRight = right + (right - left) * TIMELINE_EXTENSION_PERCENT;
+  const xDomain = useMemo(() => [left, extendedRight], [left, extendedRight]);
+  const xAxisTicks = useMemo(() => {
+    const ticks = generateTicks(extendedRight, right - left, left);
+    return ticks;
+  }, [left, right, extendedRight]);
+  const tooltip = useMemo(() => <ChartToolTip postfix={tooltipPostfix} />, [tooltipPostfix]);
+  const tooltipPosition = useMemo(() => ({ y: trackHeight / 2 }), [trackHeight]);
 
   const zoom = useCallback(() => {
     const { refAreaLeft, refAreaRight } = zoomState;
@@ -96,17 +92,13 @@ export const PerformanceAreaChart: React.FC<PerformanceAreaChartProps> = ({
     if (left > right) {
       [left, right] = [right, left];
     }
-
-    const [bottom, top] = getAxisYDomain(data, left, right, 0);
-
-    setLocalState({ bottom, top });
     onZoomChange({
       left,
       right,
       refAreaLeft: undefined,
       refAreaRight: undefined,
     });
-  }, [data, zoomState, onZoomChange]);
+  }, [zoomState, onZoomChange]);
 
   const onMouseDown = useCallback(
     (e: any) => {
@@ -130,16 +122,8 @@ export const PerformanceAreaChart: React.FC<PerformanceAreaChartProps> = ({
     [zoomState, onZoomChange]
   );
 
-  const { refAreaLeft, refAreaRight, left, right } = zoomState;
-  const { top, bottom } = localState;
-
-  const currentZoomDuration = right - left;
-  const extendedRight = right + (right - left) * TIMELINE_EXTENSION_PERCENT;
-  const xAxisTicks = generateTicks(extendedRight, currentZoomDuration, left);
-
   return (
     <div
-      ref={containerRef}
       className="h-full w-full flex flex-col select-none relative group"
       style={{ userSelect: "none" }}
       onDoubleClick={onZoomOut}
@@ -162,7 +146,7 @@ export const PerformanceAreaChart: React.FC<PerformanceAreaChartProps> = ({
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={zoom}
-          margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+          margin={chartMargin}
           accessibilityLayer={false}
         >
           <defs>
@@ -189,12 +173,12 @@ export const PerformanceAreaChart: React.FC<PerformanceAreaChartProps> = ({
           <XAxis
             allowDataOverflow
             dataKey="time"
-            domain={[left, extendedRight]}
+            domain={xDomain}
             type="number"
             ticks={xAxisTicks}
             hide
           />
-          <YAxis allowDataOverflow domain={[bottom, top]} type="number" hide />
+          <YAxis allowDataOverflow domain={yDomain} type="number" hide />
           <Area
             type="step"
             dataKey="value"
@@ -207,10 +191,10 @@ export const PerformanceAreaChart: React.FC<PerformanceAreaChartProps> = ({
             isAnimationActive={false}
           />
           <Tooltip
-            content={<ChartToolTip postfix={tooltipPostfix} />}
+            content={tooltip}
             isAnimationActive={false}
             cursor={false}
-            position={{ y: trackHeight / 2 }}
+            position={tooltipPosition}
             offset={4}
           />
           {refAreaLeft !== undefined && refAreaRight !== undefined ? (
@@ -229,4 +213,4 @@ export const PerformanceAreaChart: React.FC<PerformanceAreaChartProps> = ({
       </ResponsiveContainer>
     </div>
   );
-};
+});

@@ -41,7 +41,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await build({ stdin: { contents: 'export { Workspace } from "./src/ui/components/workspace.tsx"; export { getDeviceSettings } from "./src/ui/device-settings.ts"; export { getDevicePicker } from "./src/ui/device-picker.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
     external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels"] });
   const { Workspace, getDeviceSettings, getDevicePicker } = await import(pathToFileURL(output).href);
-  const { act, createElement } = await import("react");
+  const { act, createElement, Profiler } = await import("react");
   const { createRoot } = await import("react-dom/client");
   let sentLog: StackedLog | undefined;
   const context = { canAttach: true, canSendMessage: true, attachedKey: undefined as string | undefined, onChange() {}, async attach(log?: StackedLog) { this.attachedKey = log ? logKey(log) : undefined; this.onChange(); }, async sendLogToChat(log: StackedLog) { sentLog = log; } };
@@ -79,7 +79,10 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const root = createRoot(dom.window.document.getElementById("root")!);
   cleanupView = async () => { await act(async () => { root.unmount(); await panel.dispose(); await performance.dispose(); }); };
   const layouts: string[] = [];
-  await act(async () => { root.render(createElement(Workspace, { logs: panel, performance, onLayout(layout: string) { layouts.push(layout); } })); });
+  let commits = 0;
+  const workspace = createElement(Workspace, { logs: panel, performance, onLayout(layout: string) { layouts.push(layout); } });
+  const profiled = createElement(Profiler, { id: "workspace", onRender() { commits++; } }, workspace);
+  await act(async () => { root.render(profiled); });
   const canvas = dom.window.document.querySelector('canvas');
   const picker = dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]');
   assert.ok(picker);
@@ -204,6 +207,18 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const expandCpu = dom.window.document.querySelector('[aria-label="Expand CPU"]') as HTMLButtonElement;
   await act(async () => { expandCpu.click(); });
   assert.equal(expandCpu.getAttribute("aria-expanded"), "true");
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
+  const tracks = dom.window.document.querySelector<HTMLElement>('[aria-label="Live app CPU and memory usage"]');
+  assert.ok(tracks);
+  const beforeCursor = commits;
+  await act(async () => { tracks.dispatchEvent(new dom.window.MouseEvent("mousemove", { bubbles: true, clientX: 270 })); });
+  assert.equal(commits, beforeCursor, "Cursor movement does not render the chart tree.");
+  assert.equal(tracks.style.getPropertyValue("--performance-cursor-x"), "100px");
+  assert.equal(tracks.style.getPropertyValue("--performance-cursor-opacity"), "1");
+  const cursorLabel = tracks.querySelector('[aria-hidden="true"] span');
+  assert.equal(cursorLabel?.textContent, "00:06.893");
+  await act(async () => { tracks.dispatchEvent(new dom.window.MouseEvent("mouseout", { bubbles: true, relatedTarget: dom.window.document.body })); });
+  assert.equal(tracks.style.getPropertyValue("--performance-cursor-opacity"), "0");
   const unnamedThread = dom.window.document.querySelector('[title*="ID: 0xc963a4"]');
   const gcThread = dom.window.document.querySelector('[title*="ID: 0xc963bb"]');
   const networkThread = dom.window.document.querySelector('[title*="ID: 0xc963dd"]');
@@ -223,11 +238,16 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(threadOrder.value, "activity");
   const threadIds = () => {
     const labels = dom.window.document.querySelectorAll('[title*="Native name:"]');
-    const ids = Array.from(labels, label => {
+    const positions = Array.from(labels, label => {
       const title = label.getAttribute("title") ?? "";
       const match = title.match(/ID: (\S+)/);
-      return match?.[1];
+      let container = label.parentElement;
+      while (container && container.style.position !== "absolute") container = container.parentElement;
+      const top = Number.parseFloat(container?.style.top ?? "0");
+      return { id: match?.[1], top };
     });
+    positions.sort((first, second) => first.top - second.top);
+    const ids = positions.map(position => position.id);
     return ids;
   };
   const activityIds = threadIds();
@@ -272,6 +292,22 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await act(async () => { reopenCpu.click(); });
   const restoredOrder = dom.window.document.querySelector<HTMLSelectElement>('[aria-label="Thread order"]');
   assert.equal(restoredOrder?.value, "first-seen", "The selected order survives switching away from Performance.");
+  const manyThreads = Array.from({ length: 100 }, (_, index) => ({ id: `worker-${index}`, name: `Worker ${index}`, cpuPercent: index }));
+  await act(async () => {
+    emitCpu!({ cursor: 4, phase: "recording", memoryMetric: "physical-footprint", samples: [
+      { time: 4, interval: 1, cpuPercent: 100, memoryBytes: 104857600, threads: manyThreads },
+    ] });
+    await new Promise(resolve => setTimeout(resolve, 50));
+  });
+  const mountedThreads = dom.window.document.querySelectorAll("[data-cpu-thread]");
+  assert.ok(mountedThreads.length > 0 && mountedThreads.length < 20, "Mounted thread charts are bounded by the viewport.");
+  assert.equal(dom.window.document.querySelector('[data-cpu-thread="worker-99"]'), null);
+  const latestSample = performance.getSnapshot().samples.at(-1);
+  assert.equal(latestSample?.threads.length, 100, "Virtualization retains every thread's measurements.");
+  const collapseCpu = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Collapse CPU"]');
+  assert.ok(collapseCpu);
+  await act(async () => { collapseCpu.click(); });
+  assert.equal(dom.window.document.querySelectorAll("[data-cpu-thread]").length, 0);
   await act(async () => { (dom.window.document.getElementById("tool-logs") as HTMLButtonElement).click(); });
   const iosToggle = dom.window.document.querySelector('[aria-label="Show iOS simulator"]') as HTMLButtonElement;
   const androidToggle = dom.window.document.querySelector('[aria-label="Show Android simulator"]') as HTMLButtonElement;
