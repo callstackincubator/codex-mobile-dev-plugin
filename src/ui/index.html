@@ -42,25 +42,11 @@
     </section>
     </section>
     <section id="logs-drawer" aria-label="App logs">
-      <div class="logs-heading">
-        <button id="logs-toggle" class="logs-toggle cursor-interaction" aria-expanded="false" aria-controls="logs-body"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 8 4 4-4 4M12 16h8"/></svg><span>Logs</span><span id="logs-count" class="log-count">0</span><svg class="logs-caret" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 12 4-4 4 4"/></svg></button>
+      <div class="logs-heading" aria-label="Log controls">
+        <button id="logs-toggle" class="logs-toggle cursor-interaction" title="Expand logs" aria-label="Expand logs" aria-expanded="false" aria-controls="logs-body"><svg class="logs-caret" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 12 4-4 4 4"/></svg></button>
+        <span id="logs-count" class="log-count" title="Buffered logs">0</span>
         <span id="logs-status" role="status">Closed</span>
-        <button id="logs-remove-attachment" class="log-action cursor-interaction" hidden>Remove attachment</button>
-        <button id="logs-pause" class="log-action cursor-interaction" hidden>Pause</button>
-        <button id="logs-clear" class="log-action cursor-interaction" hidden>Clear</button>
-        <button id="logs-settings-toggle" class="log-action cursor-interaction" aria-expanded="false" aria-controls="logs-settings" hidden>Sources</button>
-      </div>
-      <div id="logs-body" hidden>
-        <div id="logs-settings" hidden>
-          <label>Native source<select id="logs-native" class="cursor-interaction"><option value="ios">Selected simulator</option><option value="none">None</option></select></label>
-          <label>App filter<input id="logs-process" placeholder="Executable name or Android package" maxlength="256" title="Leave empty to read all device processes"></label>
-          <label>Metro URL<input id="logs-metro-url" type="url" value="http://127.0.0.1:8081" maxlength="2048" spellcheck="false"></label>
-          <button id="logs-discover" class="log-action cursor-interaction">Find sources</button>
-          <label>Metro app<select id="logs-metro-target" class="cursor-interaction"><option value="">None</option></select></label>
-          <button id="logs-apply" class="log-action cursor-interaction">Connect</button>
-          <p id="logs-source-notice" role="status"></p>
-        </div>
-        <div class="logs-toolbar" aria-label="Log filters">
+        <div id="logs-toolbar" class="logs-toolbar" aria-label="Log filters" hidden>
           <div class="log-filter-group" aria-label="Sources">
             <button class="log-filter cursor-interaction" data-log-source="js" aria-pressed="true"><span aria-hidden="true">&lt;/&gt;</span> JS</button>
             <button class="log-filter cursor-interaction" data-log-source="native" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg> Native</button>
@@ -74,6 +60,21 @@
           <label class="log-search"><span class="sr-only">Search logs</span><input id="logs-search" type="search" placeholder="Search logs…" maxlength="512"></label>
           <button id="logs-stack" class="log-filter cursor-interaction" aria-pressed="true" title="Group identical logs">Stack</button>
           <button id="logs-follow" class="log-filter cursor-interaction" aria-pressed="true" title="Follow new logs">Follow</button>
+        </div>
+        <button id="logs-remove-attachment" class="log-action cursor-interaction" title="Remove attached log" hidden>Detach</button>
+        <button id="logs-pause" class="log-action cursor-interaction" hidden>Pause</button>
+        <button id="logs-clear" class="log-action cursor-interaction" hidden>Clear</button>
+        <button id="logs-settings-toggle" class="log-action cursor-interaction" aria-expanded="false" aria-controls="logs-settings" hidden>Sources</button>
+      </div>
+      <div id="logs-body" hidden>
+        <div id="logs-settings" hidden>
+          <label>Native source<select id="logs-native" class="cursor-interaction"><option value="ios">Selected simulator</option><option value="none">None</option></select></label>
+          <label>App filter<input id="logs-process" placeholder="Executable name or Android package" maxlength="256" title="Leave empty to read all device processes"></label>
+          <label>Metro URL<input id="logs-metro-url" type="url" value="http://127.0.0.1:8081" maxlength="2048" spellcheck="false"></label>
+          <button id="logs-discover" class="log-action cursor-interaction">Find sources</button>
+          <label>Metro app<select id="logs-metro-target" class="cursor-interaction"><option value="">None</option></select></label>
+          <button id="logs-apply" class="log-action cursor-interaction">Connect</button>
+          <p id="logs-source-notice" role="status"></p>
         </div>
         <div id="logs-error" role="status" hidden></div>
         <div class="logs-content">

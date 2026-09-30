@@ -66,6 +66,9 @@ export class LogsPanel {
     element("logs-drawer").dataset.open = String(this.open);
     element("logs-toggle").setAttribute("aria-expanded", String(this.open));
     element("logs-body").hidden = !this.open;
+    element("logs-toolbar").hidden = !this.open;
+    element("logs-toggle").setAttribute("aria-label", this.open ? "Collapse logs" : "Expand logs");
+    element("logs-toggle").title = this.open ? "Collapse logs" : "Expand logs";
     for (const id of ["logs-pause", "logs-clear", "logs-settings-toggle"]) element(id).hidden = !this.open;
     element("logs-pause").textContent = this.paused ? "Resume" : "Pause";
     element<HTMLButtonElement>("logs-apply").disabled = !this.available;
