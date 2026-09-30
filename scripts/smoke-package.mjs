@@ -23,16 +23,19 @@ try {
   const client = new Client({ name: "mobile-dev-package-smoke", version: "1" });
   await client.connect(transport);
   const tools = await client.listTools();
-  assert.equal(tools.tools.length, 32);
+  assert.equal(tools.tools.length, 37);
   for (const name of ["mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_android_screenshot"]) assert.ok(tools.tools.some(tool => tool.name === name));
   await access(join(plugin, "dist/serve-emu/node_modules/serve-emu/src/cli.ts"));
   await access(join(plugin, "dist/serve-emu/node_modules/serve-emu/vendor/scrcpy-server-v4.0"));
+  for (const abi of ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]) await access(join(plugin, `dist/android-cpu/${abi}/mobile-dev-cpu`));
+  const cpuLicense = await readFile(join(plugin, "dist/android-cpu/LICENSE"), "utf8");
+  assert.ok(cpuLicense.includes("Copyright (c) 2022 BAM"));
   const workspace = tools.tools.find(tool => tool.name === "mobile_open_workspace");
   assert.deepEqual(workspace._meta["openai/ui"].entrypoints, [{ type: "global" }]);
   const workspaceResource = await client.readResource({ uri: workspace._meta.ui.resourceUri });
   assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
-  for (const name of ["mobile_log_sources", "mobile_logs_session", "mobile_read_logs", "mobile_logs_close"]) {
-    assert.ok(tools.tools.some(tool => tool.name === name), `Missing log tool: ${name}`);
+  for (const name of ["mobile_log_sources", "mobile_logs_session", "mobile_read_logs", "mobile_logs_keep_alive", "mobile_logs_close", "mobile_performance_sources", "mobile_cpu_session", "mobile_read_cpu", "mobile_cpu_close"]) {
+    assert.ok(tools.tools.some(tool => tool.name === name), `Missing developer tool: ${name}`);
   }
   const panel = await client.callTool({ name: "mobile_open_simulator", arguments: {} }, undefined, { timeout: 30000 });
   if (panel.isError || !panel.structuredContent?.connected) {
@@ -46,16 +49,16 @@ try {
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.ok(resource.contents[0].text.includes('id="root"'));
   // React creates these controls from the bundled script after the app mounts.
-  for (const control of ["canvas", "logs-drawer", "log-attach", "device-layout", "simulator-panels"]) {
+  for (const control of ["canvas", "logs-drawer", "log-chat", "tool-performance", "performance-drawer", "performance-app", "device-layout", "simulator-panels"]) {
     assert.ok(resource.contents[0].text.includes(control), `Missing bundled UI control: ${control}`);
   }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.38/simulator.html");
+  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.42/simulator.html");
   assert.ok(resource.contents[0].text.includes('workspace-toolbar'));
   assert.ok(resource.contents[0].text.includes('workspace-panels'));
   assert.ok(resource.contents[0].text.includes('tool-logs'));
-  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.38/workspace.html");
+  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.42/workspace.html");
   assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, []);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
   runtimeTransport = new StdioClientTransport({ command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe" });

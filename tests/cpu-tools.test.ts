@@ -1,0 +1,129 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { setImmediate } from "node:timers/promises";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { CpuSessions } from "../src/server/cpu/sessions.ts";
+import { registerCpuTools } from "../src/server/cpu/tools.ts";
+import { Baguette } from "../src/server/baguette.ts";
+import { fakeBaguette, UDID } from "./fixtures.ts";
+
+function textData(result: { content?: unknown }) {
+  assert.ok(Array.isArray(result.content));
+  const text = result.content.find(item => item.type === "text");
+  assert.ok(text);
+  return JSON.parse(text.text);
+}
+
+test("iOS text agents discover, start, read and stop CPU monitoring using only text results", async t => {
+  const fake = await fakeBaguette();
+  const apps = async () => [{ bundleId: "com.example.app", pid: 123 }];
+  let detached = false;
+  const cpu = new CpuSessions({ apps, monitor: async options => {
+    options.onSample({ timestampUs: 1000000n, intervalUs: 1000000, cpuPercent: 37, threads: [] });
+    return { closed: new Promise(() => {}), async stop() { detached = true; } };
+  } });
+  const baguette = new Baguette(fake.url);
+  const server = new McpServer({ name: "cpu-test", version: "1" });
+  registerCpuTools(server, cpu, baguette, { apps, androidDevices: async () => [] });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "cpu-test-client", version: "1" });
+  t.after(async () => { await client.close(); await cpu.close(); await server.close(); baguette.dispose(); await fake.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const tools = await client.listTools();
+  for (const name of ["mobile_performance_sources", "mobile_cpu_session", "mobile_read_cpu", "mobile_cpu_close"]) {
+    const tool = tools.tools.find(candidate => candidate.name === name);
+    const ui = tool?._meta?.ui;
+    assert.ok(ui && typeof ui === "object" && "visibility" in ui);
+    assert.deepEqual(ui.visibility, ["app", "model"]);
+  }
+  const sessionTool = tools.tools.find(tool => tool.name === "mobile_cpu_session");
+  assert.equal(sessionTool?.annotations?.readOnlyHint, false);
+  const sources = await client.callTool({ name: "mobile_performance_sources", arguments: { deviceId: UDID } });
+  const discovered = textData(sources);
+  assert.deepEqual(discovered.apps, [{ bundleId: "com.example.app", pid: 123 }]);
+  assert.deepEqual(sources.structuredContent, discovered);
+  const session = await client.callTool({ name: "mobile_cpu_session", arguments: { target: { deviceId: UDID, bundleId: "com.example.app" } } });
+  assert.equal(session.isError, undefined);
+  await setImmediate();
+  const handle = textData(session);
+  const id = handle.sessionId;
+  assert.deepEqual(session.structuredContent, handle);
+  assert.equal(session._meta?.sessionId, undefined);
+  assert.match(String(id), /^[a-f0-9]{64}$/);
+  const reading = await client.callTool({ name: "mobile_read_cpu", arguments: { sessionId: id } });
+  const batch = textData(reading);
+  assert.deepEqual(reading.structuredContent?.samples, batch.samples);
+  assert.equal(reading.structuredContent?.cursor, batch.cursor);
+  assert.equal(reading.structuredContent?.phase, batch.phase);
+  const resource = await client.readResource({ uri: handle.cpuUri });
+  const content = resource.contents[0];
+  assert.ok("text" in content);
+  assert.deepEqual(JSON.parse(content.text), batch);
+  assert.equal(batch.phase, "recording");
+  assert.equal(batch.samples[0].cpuPercent, 37);
+  const unchanged = await client.callTool({ name: "mobile_read_cpu", arguments: { sessionId: id, after: batch.cursor } });
+  assert.deepEqual(textData(unchanged).samples, []);
+  const unauthorized = await client.callTool({ name: "mobile_read_cpu", arguments: { sessionId: "0".repeat(64) } });
+  assert.equal(unauthorized.isError, true);
+  const stopped = await client.callTool({ name: "mobile_cpu_close", arguments: { sessionId: id } });
+  assert.equal(stopped.isError, undefined);
+  assert.equal(detached, true);
+  await assert.rejects(client.readResource({ uri: handle.cpuUri }), /expired or closed/);
+  fake.setState("Shutdown");
+  const offline = await client.callTool({ name: "mobile_cpu_session", arguments: { target: { deviceId: UDID, bundleId: "com.example.app" } } });
+  assert.equal(offline.isError, true);
+  assert.equal(fake.requests.some(request => request.path.endsWith("/boot")), false);
+});
+
+test("Android text agents discover, start, read and stop CPU monitoring without an iOS backend", async t => {
+  const fake = await fakeBaguette();
+  let online = true;
+  const calls: string[] = [];
+  const apps = async (deviceId: string, _signal?: AbortSignal, platform?: string) => {
+    calls.push(`${platform}:${deviceId}`);
+    return [{ bundleId: "com.example.release", pid: 456 }];
+  };
+  const cpu = new CpuSessions({ apps, monitor: async options => {
+    assert.equal(options.target.platform, "android");
+    assert.equal(options.target.deviceId, "emulator-5554");
+    options.onSample({ timestampUs: 1000000n, intervalUs: 1000000, cpuPercent: 80, threads: [{ id: "456-42", name: "main", cpuPercent: 75 }] });
+    return { closed: new Promise(() => {}), async stop() {} };
+  } });
+  const baguette = new Baguette(fake.url);
+  const server = new McpServer({ name: "android-cpu-test", version: "1" });
+  registerCpuTools(server, cpu, baguette, { apps, androidDevices: async () => online ? [{ id: "emulator-5554", name: "Pixel" }] : [] });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "android-cpu-test-client", version: "1" });
+  t.after(async () => { await client.close(); await cpu.close(); await server.close(); baguette.dispose(); await fake.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const target = { platform: "android", deviceId: "emulator-5554", bundleId: "com.example.release" };
+  const sources = await client.callTool({ name: "mobile_performance_sources", arguments: { platform: target.platform, deviceId: target.deviceId } });
+  assert.equal(sources.isError, undefined);
+  assert.deepEqual(textData(sources).apps, [{ bundleId: "com.example.release", pid: 456 }]);
+  const result = await client.callTool({ name: "mobile_cpu_session", arguments: { target } });
+  assert.equal(result.isError, undefined);
+  await setImmediate();
+  const handle = textData(result);
+  assert.equal(handle.target.platform, "android");
+  assert.equal(result._meta?.sessionId, undefined);
+  const reading = await client.callTool({ name: "mobile_read_cpu", arguments: { sessionId: handle.sessionId } });
+  const batch = textData(reading);
+  assert.equal(batch.phase, "recording");
+  assert.equal(batch.samples[0].cpuPercent, 80);
+  assert.deepEqual(batch.samples[0].threads, [{ id: "456-42", name: "main", cpuPercent: 75 }]);
+  const next = await client.callTool({ name: "mobile_read_cpu", arguments: { sessionId: handle.sessionId, after: batch.cursor } });
+  assert.deepEqual(textData(next).samples, []);
+  const stopped = await client.callTool({ name: "mobile_cpu_close", arguments: { sessionId: handle.sessionId } });
+  assert.equal(stopped.isError, undefined);
+  const expired = await client.callTool({ name: "mobile_read_cpu", arguments: { sessionId: handle.sessionId } });
+  assert.equal(expired.isError, true);
+  online = false;
+  const offline = await client.callTool({ name: "mobile_cpu_session", arguments: { target } });
+  assert.equal(offline.isError, true);
+  assert.deepEqual(calls, ["android:emulator-5554", "android:emulator-5554"]);
+  assert.deepEqual(fake.requests, []);
+});

@@ -3,6 +3,7 @@ import { logKey, stackLogs } from "../shared/logs.ts";
 import type { PanelContext } from "./model-context.ts";
 
 export class LogList {
+  scrollOffset = 0;
   private entries: LogEntry[] = [];
   private selectedSequence?: number;
   private sequence = 0;
@@ -62,7 +63,7 @@ export class LogList {
     this.publish();
   }
 
-  clear() { this.entries = []; this.selectedSequence = undefined; this.dropped = 0; this.publish(); }
+  clear() { this.entries = []; this.selectedSequence = undefined; this.dropped = 0; this.scrollOffset = 0; this.publish(); }
   search(query: string) { this.query = query; this.publish(); }
   setFilters(kind: "sources" | "levels", values: string[]) { this[kind] = new Set(values); this.publish(); }
   setStacked(value: boolean) { this.stacked = value; this.publish(); }

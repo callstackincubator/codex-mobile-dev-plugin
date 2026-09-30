@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { setImmediate } from "node:timers/promises";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { PanelContext } from "../src/ui/model-context.ts";
+import type { LogOptions, LogRecord } from "../src/shared/logs.ts";
+import type { LogSink } from "../src/server/native-logs.ts";
+import { LogSessions } from "../src/server/log-sessions.ts";
 import { LogsPanel } from "../src/ui/logs-panel.ts";
 
 const device = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const };
@@ -51,4 +55,123 @@ test("source discovery ignores results for an old Metro URL and preserves explic
   hold = false; await panel.discover();
   assert.equal(panel.getSnapshot().native, "none");
   assert.equal(panel.getSnapshot().metro[0].id, "metro-1");
+});
+
+test("hiding logs leaves collection in the server and resumes the same cursor with cached UI state", async t => {
+  let sink: LogSink | undefined;
+  let opens = 0;
+  let closes = 0;
+  const reads: number[] = [];
+  const logs = new LogSessions({ native: (_target, next) => {
+    sink = next;
+    return async () => { closes++; };
+  }, metro: () => async () => {} });
+  const app = {
+    async callServerTool(input: { name: string; arguments: { options?: LogOptions; sessionId?: string } }) {
+      if (input.name === "mobile_logs_session") {
+        assert.ok(input.arguments.options);
+        const id = logs.open(input.arguments.options);
+        opens++;
+        return { content: [], _meta: { sessionId: id, logsUri: `logs://mobile-dev/${id}/batch?after=0` } };
+      }
+      assert.ok(input.arguments.sessionId);
+      if (input.name === "mobile_logs_keep_alive") logs.keepAlive(input.arguments.sessionId);
+      else await logs.closeSession(input.arguments.sessionId);
+      return { content: [] };
+    },
+    readServerResource(input: { uri: string }, options: { signal: AbortSignal }) {
+      const uri = new URL(input.uri);
+      const id = uri.pathname.split("/")[1];
+      const after = Number(uri.searchParams.get("after"));
+      reads.push(after);
+      return new Promise((resolve, reject) => {
+        const abort = () => reject(new Error("Read cancelled"));
+        options.signal.addEventListener("abort", abort, { once: true });
+        void logs.read(id, after).then(batch => {
+          options.signal.removeEventListener("abort", abort);
+          const text = JSON.stringify(batch);
+          resolve({ contents: [{ uri: input.uri, mimeType: "application/json", text }] });
+        }, error => {
+          options.signal.removeEventListener("abort", abort);
+          reject(error);
+        });
+        if (options.signal.aborted) abort();
+      });
+    },
+  } as unknown as App;
+  const panel = new LogsPanel(app, { canAttach: true } as PanelContext);
+  t.after(async () => { await panel.dispose(); await logs.close(); });
+  panel.selectSimulator(device);
+  panel.setAvailable(true);
+  panel.show();
+  await waitFor(() => sink !== undefined);
+  const record: LogRecord = { timestamp: "2026-09-30T12:00:00Z", source: "native", origin: "android", level: "info", message: "First message" };
+  sink!.log(record);
+  await waitFor(() => panel.list.getSnapshot().buffered === 1);
+  panel.list.search("message");
+  panel.list.select(1);
+  panel.list.setFollow(false);
+  panel.list.scrollOffset = 145;
+  const cached = panel.list.getSnapshot();
+  panel.hide();
+  const hiddenReads = reads.length;
+  sink!.log({ ...record, message: "Second message" });
+  sink!.log({ ...record, message: "Third message" });
+  await new Promise(resolve => setTimeout(resolve, 110));
+  assert.equal(reads.length, hiddenReads, "The hidden UI does not poll or process log batches.");
+  assert.equal(panel.list.getSnapshot(), cached);
+  assert.equal(panel.list.scrollOffset, 145);
+  assert.equal(opens, 1);
+  assert.equal(closes, 0);
+
+  panel.show();
+  assert.equal(panel.list.getSnapshot(), cached, "Existing rows are available before catching up.");
+  await waitFor(() => panel.list.getSnapshot().buffered === 3);
+  assert.equal(opens, 1, "Returning to Logs reuses the collector.");
+  assert.equal(reads[hiddenReads], 1, "Catch-up starts after the last displayed log.");
+  assert.equal(panel.list.getSnapshot().query, "message");
+  assert.equal(panel.list.getSnapshot().selected?.sequence, 1);
+  assert.deepEqual(panel.list.getSnapshot().filtered.map(log => log.message), ["First message", "Second message", "Third message"]);
+  await panel.dispose();
+  assert.equal(closes, 1);
+});
+
+test("a hidden log panel sends only keep-alives and cancels its hidden timer on teardown", async t => {
+  const calls: string[] = [];
+  let reads = 0;
+  const app = {
+    async callServerTool(input: { name: string }) {
+      calls.push(input.name);
+      return { content: [], _meta: { sessionId: "session", logsUri: "logs://mobile-dev/session/batch?after=0" } };
+    },
+    readServerResource(_input: unknown, options: { signal: AbortSignal }) {
+      reads++;
+      return new Promise((_, reject) => {
+        options.signal.addEventListener("abort", () => reject(new Error("Read cancelled")), { once: true });
+      });
+    },
+  } as unknown as App;
+  const panel = new LogsPanel(app, { canAttach: true } as PanelContext);
+  t.after(() => panel.dispose());
+  panel.selectSimulator(device);
+  panel.setAvailable(true);
+  panel.show();
+  await setImmediate();
+  assert.equal(reads, 1);
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  panel.hide();
+  await setImmediate();
+  t.mock.timers.tick(60000);
+  await setImmediate();
+  assert.deepEqual(calls, ["mobile_logs_session", "mobile_logs_keep_alive"]);
+  assert.equal(reads, 1);
+  panel.show();
+  await setImmediate();
+  assert.equal(reads, 2);
+  panel.hide();
+  await setImmediate();
+  await panel.dispose();
+  t.mock.timers.tick(120000);
+  await setImmediate();
+  assert.deepEqual(calls, ["mobile_logs_session", "mobile_logs_keep_alive", "mobile_logs_close"]);
 });

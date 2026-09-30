@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.38",
+  "version": "0.1.42",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,9 +11,11 @@
     "vendor:baguette": "node scripts/vendor-baguette.mjs",
     "vendor:agent-device": "npm ci --prefix runtimes/agent-device --ignore-scripts --no-audit --no-fund",
     "rebuild:baguette": "node scripts/rebuild-baguette.mjs",
+    "rebuild:android-cpu": "node scripts/build-android-cpu.mjs",
     "start": "node dist/server.mjs",
     "test": "node --test tests/*.test.ts",
     "test:package": "node scripts/smoke-package.mjs",
+    "test:cpu-cache": "node scripts/smoke-cpu-cache.mjs",
     "test:agent-device": "node scripts/smoke-agent-device.mjs",
     "test:reconnect": "node scripts/smoke-reconnect.mjs",
     "test:logs": "node scripts/smoke-logs.mjs",
@@ -37,6 +39,7 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-resizable-panels": "^4.14.1",
+    "recharts": "^3.10.1",
     "tailwind-merge": "^3.7.0",
     "ws": "8.22.0",
     "zod": "^4.3.6"

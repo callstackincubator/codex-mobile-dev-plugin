@@ -10,6 +10,18 @@ await mkdir("dist", { recursive: true });
 await access("vendor/baguette/Baguette");
 await access("vendor/baguette/Baguette_Baguette.bundle");
 await cp("vendor/baguette", "dist/baguette", { recursive: true });
+const cpuRelease = JSON.parse(await readFile("vendor/android-cpu/release.json", "utf8"));
+const cpuSource = await readFile("native/android-cpu/collector.c");
+const cpuSourceHash = createHash("sha256").update(cpuSource).digest("hex");
+if (cpuSourceHash !== cpuRelease.sourceSHA256) throw new Error("Rebuild the Android CPU collector after editing its source.");
+for (const [abi, metadata] of Object.entries(cpuRelease.binaries)) {
+  const bytes = await readFile(`vendor/android-cpu/${abi}/mobile-dev-cpu`);
+  const hash = createHash("sha256").update(bytes).digest("hex");
+  if (hash !== metadata.sha256) throw new Error(`Android CPU collector integrity check failed for ${abi}.`);
+}
+await rm("dist/android-cpu", { recursive: true, force: true });
+await cp("vendor/android-cpu", "dist/android-cpu", { recursive: true });
+for (const file of ["LICENSE", "README.md", "collector.c"]) await copyFile(`native/android-cpu/${file}`, `dist/android-cpu/${file}`);
 const runtime = "runtimes/agent-device";
 const lock = await readFile(`${runtime}/package-lock.json`, "utf8");
 const pinned = JSON.parse(lock).packages["node_modules/agent-device"];

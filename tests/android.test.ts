@@ -7,9 +7,8 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ServeEmu } from "../src/server/serve-emu.ts";
 import { AndroidStreams, androidInput } from "../src/server/android-streams.ts";
 import { videoPacket } from "../src/ui/android-video.ts";
-import { createPlugin } from "../src/server/plugin.ts";
 import { Baguette } from "../src/server/baguette.ts";
-import { fakeBaguette, fakeSimulatorInput, PNG } from "./fixtures.ts";
+import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG } from "./fixtures.ts";
 
 const ID = "emulator-5554";
 const SCREEN = { width: 1080, height: 2400 };
@@ -96,7 +95,7 @@ test("Android streams relay video, validate batches, and refuse a device switch"
 
 test("Android MCP flow lists without booting, captures, streams, and closes", async t => {
   const fake = await fakeAndroid(); const ios = await fakeBaguette();
-  const plugin = await createPlugin("<canvas></canvas>", new Baguette(ios.url), fakeSimulatorInput(), undefined, fake.backend, async bytes => { assert.deepEqual(bytes, PNG); });
+  const plugin = await createTestPlugin("<canvas></canvas>", new Baguette(ios.url), fakeSimulatorInput(), undefined, fake.backend, async bytes => { assert.deepEqual(bytes, PNG); });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "android-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); await ios.close(); });

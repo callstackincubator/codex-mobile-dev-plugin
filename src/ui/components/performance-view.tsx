@@ -1,0 +1,81 @@
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { ActivityIcon, RefreshCwIcon, SlidersHorizontalIcon, SquareIcon } from "lucide-react";
+import type { PerformancePanel } from "../performance-panel.ts";
+import type { ZoomState } from "../performance/types";
+import { CPU_HISTORY_SECONDS } from "../../shared/cpu.ts";
+import { MIN_VIEW_DURATION, SIDEBAR_WIDTH, TIMELINE_HEIGHT } from "../performance/constants";
+import { useCursorTracking } from "../performance/useCursorTracking";
+import { CpuTrack } from "./performance/CpuTrack";
+import { TimelineRuler } from "./performance/TimelineRuler";
+import { Button } from "./ui/button";
+import { NativeSelect, NativeSelectOption } from "./ui/native-select";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Field, FieldLabel, FieldDescription } from "./ui/field";
+import { Alert, AlertDescription } from "./ui/alert";
+
+export function PerformanceView({ panel }: { panel: PerformancePanel }) {
+  const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const container = useRef<HTMLDivElement>(null);
+  const last = state.samples.at(-1);
+  const end = Math.max(last?.time ?? 0, MIN_VIEW_DURATION);
+  const start = Math.max(0, end - CPU_HISTORY_SECONDS);
+  const [following, setFollowing] = useState(true);
+  const [selection, setSelection] = useState<ZoomState>({ left: 0, right: MIN_VIEW_DURATION, refAreaLeft: undefined, refAreaRight: undefined });
+  const live: ZoomState = { left: start, right: end, refAreaLeft: undefined, refAreaRight: undefined };
+  const zoom = following ? live : selection;
+  const { cursorX, handleMouseMove, handleMouseLeave } = useCursorTracking(container, SIDEBAR_WIDTH);
+  const reset = useCallback(() => setFollowing(true), []);
+  const change = useCallback((next: ZoomState) => { setFollowing(false); setSelection(next); }, []);
+  useEffect(() => { if (state.phase === "connecting" || state.phase === "idle") setFollowing(true); }, [state.phase]);
+  useEffect(() => { if (selection.right < start) setFollowing(true); }, [selection.right, start]);
+  const selectedRunning = state.apps.some(app => app.bundleId === state.bundleId);
+
+  return <section id="performance-drawer" className="flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-labelledby="tool-performance">
+    <header className="flex h-[49px] shrink-0 items-center gap-2 border-b px-2">
+      <ActivityIcon className="size-4 text-blue-500" />
+      <div className="mr-auto min-w-0 text-xs">
+        <div className="truncate" title={state.bundleId}>{state.bundleId || "Performance"}</div>
+        <div className="truncate text-[10px] text-muted-foreground">{state.selectedLabel}</div>
+      </div>
+      <span id="performance-status" role="status" className="shrink-0 text-[11px] text-muted-foreground capitalize">{state.phase === "recording" ? "Live" : state.phase}</span>
+      {state.monitoring ? <Button variant="ghost" size="icon-sm" title="Stop CPU monitoring" aria-label="Stop CPU monitoring" onClick={() => void panel.disconnect()}><SquareIcon /></Button>
+        : <Button variant="ghost" size="icon-sm" title="Start CPU monitoring" aria-label="Start CPU monitoring" disabled={state.available === false || selectedRunning === false} onClick={() => panel.show()}><ActivityIcon /></Button>}
+      <Popover>
+        <PopoverTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Performance settings" title="Performance settings"><SlidersHorizontalIcon /></Button></PopoverTrigger>
+        <PopoverContent align="end" className="w-[min(340px,calc(100vw-24px))] p-3">
+          <Field className="gap-2">
+            <div className="flex items-center justify-between gap-2"><FieldLabel htmlFor="performance-app" className="text-xs">{state.selectedLabel}</FieldLabel><Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" disabled={state.available === false || state.discovering} onClick={() => void panel.discover()}><RefreshCwIcon />Refresh</Button></div>
+            <NativeSelect id="performance-app" className="w-full" value={state.bundleId} onChange={event => panel.selectApp(event.target.value)}>
+              <NativeSelectOption value="">Choose an app</NativeSelectOption>
+              {state.bundleId && selectedRunning === false && <NativeSelectOption value={state.bundleId}>{state.bundleId} · Waiting for app</NativeSelectOption>}
+              {state.apps.map(app => <NativeSelectOption key={app.bundleId} value={app.bundleId}>{app.bundleId} · {app.pid}</NativeSelectOption>)}
+            </NativeSelect>
+            <FieldDescription className="text-[11px]">{state.platform === "android"
+              ? "Open an app on this Android device. CPU monitoring works with release builds too."
+              : "Open a development build in the iOS simulator. Detach Xcode or LLDB before connecting."}</FieldDescription>
+          </Field>
+          {state.sourceError && <p role="alert" className="mt-2 text-xs text-destructive">{state.sourceError}</p>}
+        </PopoverContent>
+      </Popover>
+    </header>
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      {state.sourceError && <Alert variant="destructive" className="rounded-none border-x-0 border-t-0"><AlertDescription>{state.sourceError}</AlertDescription></Alert>}
+      <div ref={container} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} aria-label="Live app and thread CPU usage">
+        <div className="flex border-b" style={{ height: TIMELINE_HEIGHT }}>
+          <div className="flex shrink-0 items-center gap-2 border-r px-2 text-[10px] text-muted-foreground" style={{ width: SIDEBAR_WIDTH }}>
+            <span>Live CPU</span>
+            {state.phase === "failed" && <button type="button" className="text-blue-500" onClick={() => panel.retry()}>Retry</button>}
+            {following === false && <button type="button" className="text-blue-500" onClick={reset}>Follow live</button>}
+          </div>
+          <div className="min-w-0 flex-1"><TimelineRuler cursorX={cursorX} viewDuration={end} zoomState={zoom} onZoomOut={reset} /></div>
+        </div>
+        <CpuTrack samples={state.samples} threadHistory={state.threadHistory} platform={state.platform}
+          threadOrder={state.threadOrder} onThreadOrderChange={order => panel.setThreadOrder(order)}
+          phase={state.phase} error={state.error || null} cursorX={cursorX}
+          viewDuration={end} zoomState={zoom} onZoomChange={change} onZoomOut={reset} />
+      </div>
+      {state.bundleId === "" && <p className="p-4 text-xs text-muted-foreground">Open an app on the selected device. A single running app is selected automatically; choose one in performance settings when several are running.</p>}
+    </div>
+    <footer className="flex min-h-11 shrink-0 items-center border-t px-3 text-[11px] text-muted-foreground">100% = one CPU core · 1-second samples · Last 150 seconds</footer>
+  </section>;
+}

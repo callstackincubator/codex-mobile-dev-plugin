@@ -6,10 +6,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { LogsPanel } from "../src/ui/logs-panel.ts";
+import { PerformancePanel } from "../src/ui/performance-panel.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { PanelContext } from "../src/ui/model-context.ts";
 import { logKey } from "../src/shared/logs.ts";
 import type { StackedLog } from "../src/shared/logs.ts";
+import type { CpuBatch } from "../src/shared/cpu.ts";
+import { UDID } from "./fixtures.ts";
 
 test("React log controls filter virtual rows, attach full logs, and preserve simulator DOM", async t => {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
@@ -36,17 +39,47 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   t.after(async () => { await cleanupView(); dom.window.close(); for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); } await rm(directory, { recursive: true, force: true }); });
   const output = resolve(directory, "workspace.mjs");
   await build({ stdin: { contents: 'export { Workspace } from "./src/ui/components/workspace.tsx"; export { getDeviceSettings } from "./src/ui/device-settings.ts"; export { getDevicePicker } from "./src/ui/device-picker.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
-    external: ["react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels"] });
+    external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels"] });
   const { Workspace, getDeviceSettings, getDevicePicker } = await import(pathToFileURL(output).href);
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
-  let attached: StackedLog | undefined;
-  const context = { canAttach: true, attachedKey: undefined as string | undefined, onChange() {}, async attach(log?: StackedLog) { attached = log; this.attachedKey = log ? logKey(log) : undefined; this.onChange(); } };
+  let sentLog: StackedLog | undefined;
+  const context = { canAttach: true, canSendMessage: true, attachedKey: undefined as string | undefined, onChange() {}, async attach(log?: StackedLog) { this.attachedKey = log ? logKey(log) : undefined; this.onChange(); }, async sendLogToChat(log: StackedLog) { sentLog = log; } };
   const panel = new LogsPanel({} as App, context as PanelContext);
+  let logSubscribers = 0;
+  const subscribe = panel.list.subscribe;
+  panel.list.subscribe = listener => {
+    logSubscribers++;
+    const unsubscribe = subscribe(listener);
+    return () => { logSubscribers--; unsubscribe(); };
+  };
+  let emitCpu: ((batch: CpuBatch) => void) | undefined;
+  const performanceApp = {
+    async callServerTool({ name }: { name: string }) {
+      if (name === "mobile_performance_sources") return { content: [], structuredContent: { apps: [{ bundleId: "com.example.app", pid: 123 }] } };
+      if (name === "mobile_cpu_close") return { content: [] };
+      const sessionId = "1".repeat(64);
+      return { content: [], structuredContent: { sessionId, cpuUri: `cpu://mobile-dev/${sessionId}/batch?after=0` } };
+    },
+    readServerResource({ uri }: { uri: string }, { signal }: { signal: AbortSignal }) {
+      return new Promise((resolve, reject) => {
+        const cancel = () => reject(new Error("Read cancelled"));
+        signal.addEventListener("abort", cancel, { once: true });
+        emitCpu = batch => {
+          signal.removeEventListener("abort", cancel);
+          const text = JSON.stringify(batch);
+          resolve({ contents: [{ uri, mimeType: "application/json", text }] });
+        };
+      });
+    },
+  };
+  const performance = new PerformancePanel(performanceApp as unknown as App);
+  performance.selectSimulator({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
+  performance.setAvailable(true);
   const root = createRoot(dom.window.document.getElementById("root")!);
-  cleanupView = async () => { await act(async () => { root.unmount(); await panel.dispose(); }); };
+  cleanupView = async () => { await act(async () => { root.unmount(); await panel.dispose(); await performance.dispose(); }); };
   const layouts: string[] = [];
-  await act(async () => { root.render(createElement(Workspace, { logs: panel, onLayout(layout: string) { layouts.push(layout); } })); });
+  await act(async () => { root.render(createElement(Workspace, { logs: panel, performance, onLayout(layout: string) { layouts.push(layout); } })); });
   const canvas = dom.window.document.querySelector('canvas');
   const picker = dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]');
   assert.ok(picker);
@@ -95,10 +128,12 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.ok(dom.window.document.querySelector('[data-slot="popover-content"][aria-label="Device settings"]'));
   let finishAppearance!: (value: object) => void;
   iosSettings.request = async (change: unknown) => { changes.push(change); return new Promise(resolve => { finishAppearance = resolve; }); };
-  const darkAppearance = settingsPopover.querySelector('[aria-label="Dark"]') as HTMLButtonElement;
+  const appearanceTabs = settingsPopover.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+  const darkAppearance = Array.from(appearanceTabs).find(tab => tab.textContent === "Dark");
+  assert.ok(darkAppearance);
   await act(async () => { darkAppearance.click(); });
   assert.deepEqual(changes.at(-1), { setting: "appearance", value: "dark" });
-  assert.equal(darkAppearance.getAttribute("data-state"), "on");
+  assert.equal(darkAppearance.getAttribute("aria-selected"), "true");
   assert.equal((settingsPopover.querySelector('[role="combobox"]') as HTMLButtonElement).disabled, false);
   assert.equal((settingsPopover.querySelector('[role="switch"]') as HTMLButtonElement).disabled, false);
   assert.equal(settingsPopover.textContent?.includes("Loading settings"), false);
@@ -117,9 +152,9 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const errorRow = dom.window.document.querySelector('[data-log-row][data-level="error"]') as HTMLButtonElement;
   assert.equal(errorRow.querySelector("script"), null);
   await act(async () => { errorRow.click(); });
-  await act(async () => { (dom.window.document.getElementById("log-attach") as HTMLButtonElement).click(); });
-  assert.equal(attached?.stack, "at loadProfile");
-  assert.equal(dom.window.document.getElementById("log-attach")?.textContent, "Attached to chat");
+  await act(async () => { (dom.window.document.getElementById("log-chat") as HTMLButtonElement).click(); });
+  assert.equal(sentLog?.stack, "at loadProfile");
+  assert.equal(dom.window.document.getElementById("log-chat")?.textContent, "Fix in chat");
   const levelFilter = dom.window.document.querySelector('[aria-label="Filter log levels"]') as HTMLButtonElement;
   await act(async () => { levelFilter.click(); });
   const infoFilter = [...dom.window.document.querySelectorAll('[role="option"]')].find(button => button.textContent === "info") as HTMLElement;
@@ -139,6 +174,98 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.ok(dom.window.document.getElementById("logs-settings"));
   await act(async () => { (dom.window.document.querySelector('[aria-label="Log sources"]') as HTMLButtonElement).click(); });
   assert.equal(panel.getSnapshot().settings, false);
+  await act(async () => { (dom.window.document.getElementById("tool-performance") as HTMLButtonElement).click(); });
+  assert.equal(dom.window.document.getElementById("tool-performance")?.getAttribute("aria-pressed"), "true");
+  assert.ok(dom.window.document.getElementById("performance-drawer"));
+  assert.equal(dom.window.document.getElementById("logs-drawer"), null);
+  assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 0);
+  assert.equal(logSubscribers, 0, "The inactive log view releases its reactive list subscription.");
+  assert.ok(emitCpu);
+  await act(async () => {
+    emitCpu!({ cursor: 2, phase: "recording", samples: [
+      { time: 1, interval: 1, cpuPercent: 10, threads: [
+        { id: "c963a4", name: "", cpuPercent: 0 },
+        { id: "c963bb", name: "hades", cpuPercent: 10 },
+        { id: "c963dd", name: "com.apple.NSURLConnectionLoader", cpuPercent: 0 },
+      ] },
+      { time: 2, interval: 1, cpuPercent: 0, threads: [
+        { id: "c963a4", name: "", cpuPercent: 0 },
+        { id: "c963dd", name: "com.apple.NSURLConnectionLoader", cpuPercent: 0 },
+      ] },
+    ] });
+  });
+  const expandCpu = dom.window.document.querySelector('[aria-label="Expand CPU"]') as HTMLButtonElement;
+  await act(async () => { expandCpu.click(); });
+  assert.equal(expandCpu.getAttribute("aria-expanded"), "true");
+  const unnamedThread = dom.window.document.querySelector('[title*="ID: 0xc963a4"]');
+  const gcThread = dom.window.document.querySelector('[title*="ID: 0xc963bb"]');
+  const networkThread = dom.window.document.querySelector('[title*="ID: 0xc963dd"]');
+  const unnamedTitle = unnamedThread?.getAttribute("title") ?? "";
+  const gcTitle = gcThread?.getAttribute("title") ?? "";
+  const networkTitle = networkThread?.getAttribute("title") ?? "";
+  assert.match(unnamedThread?.textContent ?? "", /Unnamed thread #1/);
+  assert.match(unnamedTitle, /Native name: \(unnamed\)/);
+  assert.match(gcThread?.textContent ?? "", /Hermes GC/);
+  assert.match(gcTitle, /Native name: hades[\s\S]*State: exited/);
+  assert.match(networkThread?.textContent ?? "", /Network loader/);
+  assert.match(networkTitle, /Native name: com\.apple\.NSURLConnectionLoader/);
+  const cpuState = performance.getSnapshot();
+  assert.equal(cpuState.samples[0].threads[1].name, "hades");
+  const threadOrder = dom.window.document.querySelector<HTMLSelectElement>('[aria-label="Thread order"]');
+  assert.ok(threadOrder);
+  assert.equal(threadOrder.value, "activity");
+  const threadIds = () => {
+    const labels = dom.window.document.querySelectorAll('[title*="Native name:"]');
+    const ids = Array.from(labels, label => {
+      const title = label.getAttribute("title") ?? "";
+      const match = title.match(/ID: (\S+)/);
+      return match?.[1];
+    });
+    return ids;
+  };
+  const activityIds = threadIds();
+  assert.deepEqual(activityIds, ["0xc963bb", "0xc963a4", "0xc963dd"], "Previously active threads rank above never-active threads even after exit.");
+  const gcRow = gcThread?.parentElement;
+  await act(async () => {
+    threadOrder.value = "first-seen";
+    threadOrder.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  });
+  const firstSeenIds = threadIds();
+  assert.deepEqual(firstSeenIds, ["0xc963a4", "0xc963bb", "0xc963dd"]);
+  const reorderedGc = dom.window.document.querySelector('[title*="ID: 0xc963bb"]');
+  assert.equal(reorderedGc?.parentElement, gcRow, "Reordering preserves the same thread row and chart.");
+  await act(async () => {
+    emitCpu!({ cursor: 3, phase: "recording", samples: [{ time: 3, interval: 1, cpuPercent: 90, threads: [
+      { id: "c963dd", name: "com.apple.NSURLConnectionLoader", cpuPercent: 90 },
+      { id: "c963a4", name: "", cpuPercent: 0 },
+    ] }] });
+  });
+  const stableIds = threadIds();
+  assert.deepEqual(stableIds, firstSeenIds, "First seen does not shift when usage and native enumeration change.");
+  await act(async () => {
+    threadOrder.value = "activity";
+    threadOrder.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  });
+  const changedActivityIds = threadIds();
+  assert.deepEqual(changedActivityIds, ["0xc963dd", "0xc963bb", "0xc963a4"]);
+  await act(async () => {
+    threadOrder.value = "first-seen";
+    threadOrder.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  });
+  assert.equal(dom.window.document.querySelector("canvas"), canvas);
+  assert.equal(dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]'), picker);
+  await act(async () => { (dom.window.document.getElementById("tool-logs") as HTMLButtonElement).click(); });
+  assert.equal(dom.window.document.getElementById("tool-logs")?.getAttribute("aria-pressed"), "true");
+  assert.equal(dom.window.document.getElementById("performance-drawer"), null);
+  assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 1);
+  assert.equal(logSubscribers, 1);
+  await act(async () => { (dom.window.document.getElementById("tool-performance") as HTMLButtonElement).click(); });
+  const reopenCpu = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Expand CPU"]');
+  assert.ok(reopenCpu);
+  await act(async () => { reopenCpu.click(); });
+  const restoredOrder = dom.window.document.querySelector<HTMLSelectElement>('[aria-label="Thread order"]');
+  assert.equal(restoredOrder?.value, "first-seen", "The selected order survives switching away from Performance.");
+  await act(async () => { (dom.window.document.getElementById("tool-logs") as HTMLButtonElement).click(); });
   const iosToggle = dom.window.document.querySelector('[aria-label="Show iOS simulator"]') as HTMLButtonElement;
   const androidToggle = dom.window.document.querySelector('[aria-label="Show Android simulator"]') as HTMLButtonElement;
   assert.equal(iosToggle.getAttribute("aria-pressed"), "true");

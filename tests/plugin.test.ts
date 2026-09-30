@@ -5,14 +5,14 @@ import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { OpenAIUiToolMetadataSchema, OpenAIUiResourceMetadataSchema } from "@openai/mcp-extensions/server";
-import { createPlugin, APP_URI, WORKSPACE_URI } from "../src/server/plugin.ts";
+import { APP_URI, WORKSPACE_URI } from "../src/server/plugin.ts";
 import { Baguette } from "../src/server/baguette.ts";
 import { parseBaseUrl } from "../src/shared/protocol.ts";
-import { fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "./fixtures.ts";
+import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "./fixtures.ts";
 
 test("live UI reads return changed HTML through MCP without network permissions", async t => {
   let revision = "a".repeat(64);
-  const plugin = await createPlugin(async () => ({ html: '<html data-view="panel">jonas</html>', liveRevision: revision }));
+  const plugin = await createTestPlugin(async () => ({ html: '<html data-view="panel">jonas</html>', liveRevision: revision }));
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "dev-panel-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); });
@@ -30,13 +30,13 @@ test("live UI reads return changed HTML through MCP without network permissions"
 
 test("cached side tabs load the current UI through old resource addresses", async t => {
   const html = "<!doctype html><title>Current simulator</title><canvas></canvas>";
-  const plugin = await createPlugin(html);
+  const plugin = await createTestPlugin(html);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "cached-panel-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); });
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
-  assert.equal(APP_URI, "ui://mobile-dev/0.1.38/simulator.html");
+  assert.equal(APP_URI, "ui://mobile-dev/0.1.42/simulator.html");
   for (const uri of [APP_URI, "ui://mobile-dev/0.1.37/simulator.html", "ui://mobile-dev/0.1.36/simulator.html", "ui://mobile-dev/0.1.35/simulator.html", "ui://mobile-dev/0.1.34/simulator.html", "ui://mobile-dev/0.1.33/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html", "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/simulator.html", ...[1, 2, 3, 4, 5, 6].map(version => `ui://mobile-dev/v${version}/simulator.html`)]) {
     const { contents } = await client.readResource({ uri });
     assert.equal(contents[0].uri, uri);
@@ -49,7 +49,7 @@ test("cached side tabs load the current UI through old resource addresses", asyn
 
 test("MCP tools expose native entrypoints and complete the simulator workflow", async t => {
   const fake = await fakeBaguette();
-  const plugin = await createPlugin('<!doctype html><html data-view="panel" data-layout="stacked"><title>Mobile Dev</title></html>', new Baguette(fake.url), fakeSimulatorInput());
+  const plugin = await createTestPlugin('<!doctype html><html data-view="panel" data-layout="stacked"><title>Mobile Dev</title></html>', new Baguette(fake.url), fakeSimulatorInput());
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
@@ -65,7 +65,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.equal((workspace._meta?.ui as { resourceUri: string }).resourceUri, WORKSPACE_URI);
   const workspaceResource = await client.readResource({ uri: WORKSPACE_URI });
   assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);
-  assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.38/workspace.html");
+  assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.42/workspace.html");
   for (const uri of ["ui://mobile-dev/0.1.37/workspace.html", "ui://mobile-dev/0.1.36/workspace.html", "ui://mobile-dev/0.1.35/workspace.html", "ui://mobile-dev/0.1.34/workspace.html", "ui://mobile-dev/0.1.33/workspace.html", "ui://mobile-dev/0.1.24/mcp-stream/workspace.html", "ui://mobile-dev/0.1.21/workspace.html", "ui://mobile-dev/0.1.20/workspace.html", "ui://mobile-dev/workspace.html"]) {
     const oldWorkspace = await client.readResource({ uri });
     assert.equal(oldWorkspace.contents[0].text, workspaceResource.contents[0].text);
@@ -149,7 +149,7 @@ test("the toolbar capture copies the returned PNG and still returns it when clip
   const fake = await fakeBaguette();
   const copies: Buffer[] = [];
   let copyFails = false;
-  const plugin = await createPlugin("<title>Mobile Dev</title>", new Baguette(fake.url), fakeSimulatorInput(), undefined, undefined, async bytes => {
+  const plugin = await createTestPlugin("<title>Mobile Dev</title>", new Baguette(fake.url), fakeSimulatorInput(), undefined, undefined, async bytes => {
     if (copyFails) throw new Error("Clipboard unavailable");
     copies.push(bytes);
   });
@@ -184,7 +184,7 @@ test("the toolbar capture copies the returned PNG and still returns it when clip
 test("Device Hub blockage repairs automatically, limits repeated repairs, and permits manual recovery", async t => {
   const fake = await fakeBaguette();
   const input = fakeSimulatorInput();
-  const plugin = await createPlugin("<title>Mobile Dev</title>", new Baguette(fake.url), input);
+  const plugin = await createTestPlugin("<title>Mobile Dev</title>", new Baguette(fake.url), input);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "blocked-input-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
@@ -265,7 +265,7 @@ test("panel input reaches the native socket during a pending refresh and blocks 
       });
     });
   });
-  const plugin = await createPlugin("<head></head>", new Baguette(fake.url), input);
+  const plugin = await createTestPlugin("<head></head>", new Baguette(fake.url), input);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "background-input-test", version: "1" });
   t.after(async () => { resolveRefresh("state 0"); await client.close(); await plugin.close(); await fake.close(); });
