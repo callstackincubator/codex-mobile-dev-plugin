@@ -1,4 +1,4 @@
-import { CopyIcon, MessageCircleIcon, ArrowDownToLineIcon, CircleAlertIcon, InfoIcon, TriangleAlertIcon, CheckIcon, LayersIcon, ListXIcon, PaperclipIcon, PauseIcon, PlayIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, TerminalIcon, UnlinkIcon, XIcon } from "lucide-react";
+import { CopyIcon, MessageCircleIcon, ArrowDownToLineIcon, CircleAlertIcon, InfoIcon, TriangleAlertIcon, CheckIcon, LayersIcon, ListXIcon, PauseIcon, PlayIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, TerminalIcon, UnlinkIcon, XIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { LegendList, type LegendListRef, type LegendListRenderItemProps } from "@legendapp/list/react";
 import type { StackedLog } from "../../shared/logs.ts";
@@ -117,7 +117,7 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
           </div>
           </ResizablePanel>
           {logs.selected && <><ResizableHandle aria-label="Resize log list and details" /><ResizablePanel id="log-detail-resizable" defaultSize="42%" minSize="25%" maxSize="70%"><LogDetails key={logs.selected.sequence} log={logs.selected} onClose={() => panel.list.select()}>
-            <Button id="log-attach" variant="outline" disabled={logs.attaching || logs.selectedAttached || !logs.canAttach} onClick={() => void panel.list.attach()} title={logs.canAttach ? "Include this log and stack trace with your next message" : "This host does not support log attachments"}>{logs.selectedAttached ? <CheckIcon /> : <PaperclipIcon />}{logs.selectedAttached ? "Attached to chat" : "Attach to chat"}</Button>
+            <Button id="log-chat" variant="outline" disabled={logs.sending || !logs.canSendMessage} onClick={() => { if (logs.selected) void panel.list.sendToChat(logs.selected); }} title={logs.canSendMessage ? "Send this log and stack trace to chat" : "This host does not support chat messages"}><MessageCircleIcon />{logs.selected.level === "error" || logs.selected.level === "warn" ? "Fix in chat" : "Ask in chat"}</Button>
           </LogDetails></ResizablePanel></>}
         </ResizablePanelGroup>
       </CollapsibleContent>
