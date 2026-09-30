@@ -23,15 +23,15 @@ export function Workspace({ logs, onLayout }: { logs: LogsPanel; onLayout: (layo
   useEffect(() => { if (logState.open) logsRef.current?.expand(); else logsRef.current?.collapse(); }, [logState.open, split, layout]);
   useEffect(() => {
     if (layout !== "none") simulatorGroupRef.current?.setLayout({ "ios-resizable": layout === "android" || layout === "none" ? 0 : layout === "both" ? 50 : 100, "android-resizable": layout === "ios" || layout === "none" ? 0 : layout === "both" ? 50 : 100 });
-    workspaceGroupRef.current?.setLayout({ "tools-resizable": layout === "none" ? 100 : split ? 33 : 40, "simulators-resizable": layout === "none" ? 0 : split ? 67 : 60 });
+    workspaceGroupRef.current?.setLayout({ "tools-resizable": layout === "none" ? 100 : split ? 64 : 40, "simulators-resizable": layout === "none" ? 0 : split ? 36 : 60 });
     if (!logs.getSnapshot().open) logsRef.current?.collapse();
   }, [layout, split]);
-  const toolPanel = <ResizablePanel key="tools" id="tools-resizable" panelRef={logsRef} defaultSize={split ? "33%" : "40%"} minSize={split ? "240px" : "25%"} maxSize="100%" collapsible collapsedSize={split ? "48px" : "44px"} onResize={(size, _id, previous) => {
+  const toolPanel = <ResizablePanel key="tools" id="tools-resizable" panelRef={logsRef} defaultSize={split ? "64%" : "40%"} minSize={split ? "240px" : "25%"} maxSize="100%" collapsible collapsedSize={split ? "48px" : "44px"} onResize={(size, _id, previous) => {
     if (!previous) return;
     if (size.inPixels <= (split ? 49 : 45) && logs.getSnapshot().open) logs.toggle();
     else if (size.inPixels > 80 && !logs.getSnapshot().open) logs.show();
   }}><LogsView panel={logs} /></ResizablePanel>;
-  const simulatorPanel = <ResizablePanel key="simulators" id="simulators-resizable" minSize="0%" maxSize="100%" collapsible collapsedSize="0px" defaultSize={split ? "67%" : "60%"}>
+  const simulatorPanel = <ResizablePanel key="simulators" id="simulators-resizable" minSize="0%" maxSize="100%" collapsible collapsedSize="0px" defaultSize={split ? "36%" : "60%"}>
     <ResizablePanelGroup id="simulator-panels" groupRef={simulatorGroupRef} orientation="horizontal" aria-label="Simulators">
       <ResizablePanel id="ios-resizable" defaultSize="100%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="ios" /></ResizablePanel>
       <ResizableHandle hidden={layout !== "both"} disabled={layout !== "both"} aria-label="Resize iOS and Android simulators" />
