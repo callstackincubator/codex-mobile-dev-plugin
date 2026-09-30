@@ -43,5 +43,8 @@ export function readFrame(result: ReadResourceResult): FrameRead {
     throw new StopReconnectError("The plugin returned an invalid frame status.");
   }
   const timings = serverTimings(status._meta);
-  return { serverWaitMs: message.serverWaitMs, ...timings };
+  if (message.connectionState != null && message.connectionState !== "connected" && message.connectionState !== "reconnecting") {
+    throw new StopReconnectError("The plugin returned an invalid connection state.");
+  }
+  return { serverWaitMs: message.serverWaitMs, connectionState: message.connectionState, ...timings };
 }

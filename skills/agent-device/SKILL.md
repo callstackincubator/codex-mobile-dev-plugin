@@ -1,11 +1,11 @@
 ---
 name: agent-device
-description: Control a local iOS simulator with Mobile Dev's bundled agent-device MCP tools. Use for opening apps, accessibility snapshots, element refs, taps, text entry, scrolling, waits, and app debugging.
+description: Control a local iOS simulator or Android device with Mobile Dev's bundled agent-device MCP tools. Use for opening apps, accessibility snapshots, element refs, taps, text entry, scrolling, waits, and app debugging.
 ---
 
 # agent-device
 
-This plugin includes agent-device 0.20.9, its official MCP server, dependencies, and Apple runner source. Use the plugin's `agent-device` MCP tools. No global CLI install, npx download, or separate server is needed. Baguette keeps the simulator stream in the Mobile Dev panel.
+This plugin includes agent-device 0.20.9, its official MCP server, dependencies, and Apple runner source. Use the plugin's `agent-device` MCP tools. No global CLI install, npx download, or separate server is needed. Baguette keeps the iOS stream and serve-emu keeps the Android stream in the Mobile Dev panel.
 
 Read [the bundled workflow guide](references/workflow.md) before the first task. It comes from this runtime's `help workflow`. Its CLI command names match the MCP tool names; use each tool's input schema for JSON fields.
 
@@ -20,3 +20,5 @@ Keep `stateDir`, remote daemon fields, and runner paths unset. The plugin gives 
 The first XCTest interaction builds the bundled Apple runner with the host's Xcode and caches it under `~/.agent-device/apple-runner`. The source ships in the plugin; it needs no download. Logs and artifacts stay in the temporary state directory returned by `session` with `action: "state-dir"`.
 
 Do not run type checks, lint, Biome, visual checks, or React Doctor unless the user asks. Before starting an app dev server, check for an existing server from that project. Follow the app project's own build and launch tools. Use Mobile Dev's explicit input repair only for blocked Device Hub input, since it closes running simulator apps.
+
+For Android, use the selected running serial with `platform: "android"` and `serial`, rather than `udid`. Call `mobile_list_android_devices` to resolve a stopped AVD to its running serial after boot. Keep the same named agent-device session for later calls. Android uses the installed SDK's adb and does not need an XCTest runner. The panel's Android stream runs through the bundled serve-emu backend.

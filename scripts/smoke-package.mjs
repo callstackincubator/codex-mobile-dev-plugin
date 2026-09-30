@@ -23,7 +23,10 @@ try {
   const client = new Client({ name: "mobile-dev-package-smoke", version: "1" });
   await client.connect(transport);
   const tools = await client.listTools();
-  assert.equal(tools.tools.length, 17);
+  assert.equal(tools.tools.length, 30);
+  for (const name of ["mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_android_screenshot"]) assert.ok(tools.tools.some(tool => tool.name === name));
+  await access(join(plugin, "dist/serve-emu/node_modules/serve-emu/src/cli.ts"));
+  await access(join(plugin, "dist/serve-emu/node_modules/serve-emu/vendor/scrcpy-server-v4.0"));
   const workspace = tools.tools.find(tool => tool.name === "mobile_open_workspace");
   assert.deepEqual(workspace._meta["openai/ui"].entrypoints, [{ type: "global" }]);
   const workspaceResource = await client.readResource({ uri: workspace._meta.ui.resourceUri });
@@ -41,33 +44,37 @@ try {
   const entrypoint = tools.tools.find(tool => tool.name === "mobile_open_simulator");
   const resource = await client.readResource({ uri: entrypoint._meta.ui.resourceUri });
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
-  assert.ok(resource.contents[0].text.includes("<canvas"));
-  assert.ok(resource.contents[0].text.includes('id="stream-timings"'));
-  assert.ok(resource.contents[0].text.includes('id="setup-certificate"') === false);
-  assert.ok(tools.tools.some(tool => tool.name.includes("certificate")) === false);
-  assert.ok(resource.contents[0].text.includes('id="logs-drawer"'));
-  assert.ok(resource.contents[0].text.includes('id="log-attach"'));
+  assert.ok(resource.contents[0].text.includes('id="root"'));
+  // React creates these controls from the bundled script after the app mounts.
+  for (const control of ["canvas", "logs-drawer", "log-attach", "device-layout", "simulator-panels"]) {
+    assert.ok(resource.contents[0].text.includes(control), `Missing bundled UI control: ${control}`);
+  }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.match(entrypoint._meta.ui.resourceUri, /^ui:\/\/mobile-dev\/0\.1\.24\/mcp-stream\/simulator\.html$/);
-  assert.ok(resource.contents[0].text.includes('class="workspace-toolbar"'));
-  assert.ok(resource.contents[0].text.includes('id="workspace-panels"'));
-  assert.ok(resource.contents[0].text.includes('id="tool-logs"'));
-  assert.match(workspace._meta.ui.resourceUri, /\/workspace\.html$/);
-  assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
+  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.33/simulator.html");
+  assert.ok(resource.contents[0].text.includes('workspace-toolbar'));
+  assert.ok(resource.contents[0].text.includes('workspace-panels'));
+  assert.ok(resource.contents[0].text.includes('tool-logs'));
+  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.33/workspace.html");
   assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, []);
-  assert.ok(resource.contents[0].text.includes('id="stream-origin"') === false);
-  await assert.rejects(client.readResource({ uri: "ui://mobile-dev/0.1.18/shared-stream/simulator.html" }), /not found/);
-  runtimeTransport = new StdioClientTransport({
-    command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe",
-  });
-  const runtimeClient = new Client({ name: "mobile-dev-package-runtime", version: "1" });
-  await runtimeClient.connect(runtimeTransport);
-  const runtimeResource = await runtimeClient.readResource({ uri: entrypoint._meta.ui.resourceUri });
+  assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
+  runtimeTransport = new StdioClientTransport({ command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe" });
+  const runtime = new Client({ name: "mobile-dev-package-runtime", version: "1" });
+  await runtime.connect(runtimeTransport);
+  const runtimeResource = await runtime.readResource({ uri: entrypoint._meta.ui.resourceUri });
   assert.deepEqual(runtimeResource.contents[0], resource.contents[0]);
-  await runtimeClient.close();
-  console.log("Separate MCP discovery and runtime processes agree on UI addresses, HTML, and CSP.");
-  console.log("The panel requires no direct browser network connection or certificate setup.");
+  await runtime.close();
+  console.log("Discovery/runtime processes agree on UI addresses, HTML, and CSP without browser network access.");
+  assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
+  const oldWorkspace = await client.readResource({ uri: "ui://mobile-dev/workspace.html" });
+  assert.equal(oldWorkspace.contents[0].text, workspaceResource.contents[0].text);
+  for (const version of [1, 2, 3, 4, 5, 6]) {
+    const uri = `ui://mobile-dev/v${version}/simulator.html`;
+    const legacy = await client.readResource({ uri });
+    assert.equal(legacy.contents[0].uri, uri);
+    assert.equal(legacy.contents[0].text, resource.contents[0].text);
+  }
+  console.log("Cached side-tab UI addresses v1 through v6 return the current panel.");
   const listed = await client.callTool({ name: "mobile_list_simulators", arguments: {} });
   assert.equal(listed.structuredContent?.baseUrl, baseUrl);
   console.log(`Copied package started its bundled Baguette and returned ${panel.structuredContent.devices.length} simulators.`);

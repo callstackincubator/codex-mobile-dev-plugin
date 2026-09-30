@@ -10,6 +10,8 @@ await access("dist/app.html");
 await access("dist/baguette/Baguette");
 await access("dist/baguette/Baguette_Baguette.bundle");
 await access("dist/agent-device-server.mjs");
+await access("dist/serve-emu/node_modules/serve-emu/src/cli.ts");
+await access("dist/serve-emu/node_modules/serve-emu/vendor/scrcpy-server-v4.0");
 await access("dist/agent-device/node_modules/agent-device/dist/apple/runner/AgentDeviceRunner/AgentDeviceRunner.xcodeproj/project.pbxproj");
 await rm(plugin, { recursive: true, force: true });
 await mkdir(plugin, { recursive: true });

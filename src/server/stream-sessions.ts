@@ -1,110 +1,54 @@
 import { randomBytes } from "node:crypto";
 import { WebSocket } from "ws";
-import { streamMessageSchema } from "../shared/protocol.ts";
-import type { FrameRead } from "../shared/stream.ts";
+import { errorMessage, streamMessageSchema } from "../shared/protocol.ts";
+import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { epochNow } from "../shared/stream.ts";
+import type { FrameRead } from "../shared/stream.ts";
 import type { Baguette } from "./baguette.ts";
 
+type Frame = { sequence: number; bytes: Buffer; receivedAt: number; data?: string };
 type Session = {
   udid: string;
+  fps: number;
+  socket?: WebSocket;
+  connecting?: Promise<void>;
   expires: number;
-  socket: WebSocket;
   sequence: number;
-  latest?: { sequence: number; bytes: Buffer; receivedAt: number; data?: string };
-  error?: Error;
+  frame?: Frame;
+  error?: string;
+  closed: boolean;
+  failures: number;
+  retryAt: number;
   pingAt?: number;
+  openedAt?: number;
+  resetAt?: number;
   waiters: Set<() => void>;
   input: Promise<number>;
 };
 
 export class StreamSessions {
   private readonly sessions = new Map<string, Session>();
-  private readonly expiry: NodeJS.Timeout;
-  private disposed = false;
   private readonly baguette: Baguette;
+  private readonly expiry: NodeJS.Timeout;
+  private readonly retryDelays: readonly number[];
+  private disposed = false;
+  private readonly idleTimeout = 5 * 60 * 1000;
+  private readonly firstFrameTimeout: number;
 
-  constructor(baguette: Baguette) {
+  constructor(baguette: Baguette, retryDelays: readonly number[] = [500, 1000, 2000, 5000, 10000], firstFrameTimeout = 10000) {
     this.baguette = baguette;
+    this.retryDelays = retryDelays;
+    this.firstFrameTimeout = firstFrameTimeout;
     this.expiry = setInterval(() => {
-      const now = Date.now();
       for (const [id, session] of this.sessions) {
-        if (session.expires < now) { this.closeSession(id); continue; }
-        if (session.socket.readyState !== WebSocket.OPEN) continue;
-        if (session.pingAt == null) {
-          session.pingAt = now;
-          session.socket.ping();
-        } else if (now - session.pingAt >= 20000) {
-          session.socket.terminate();
-        }
+        if (session.expires < Date.now()) { this.closeSession(id); continue; }
+        this.checkFirstFrame(session);
+        if (session.socket?.readyState !== WebSocket.OPEN) continue;
+        if (session.pingAt && Date.now() - session.pingAt >= 20000) session.socket.terminate();
+        else if (!session.pingAt) { session.pingAt = Date.now(); session.socket.ping(); }
       }
     }, 10000);
     this.expiry.unref();
-  }
-
-  async open(udid: string, fps: number): Promise<string> {
-    this.checkCapacity();
-    await this.baguette.device(udid, true);
-    this.checkCapacity();
-    const random = randomBytes(32);
-    const id = random.toString("hex");
-    const target = new URL(`/simulators/${udid}/stream?format=mjpeg`, this.baguette.baseUrl);
-    target.protocol = "ws:";
-    const socket = new WebSocket(target, { handshakeTimeout: 5000, maxPayload: 16 * 1024 * 1024, perMessageDeflate: false });
-    const session: Session = { udid, socket, expires: Date.now() + 300000, sequence: 0, waiters: new Set(), input: Promise.resolve(0) };
-    this.sessions.set(id, session);
-    socket.on("pong", () => { session.pingAt = undefined; });
-    socket.on("message", (data, binary) => {
-      if (this.sessions.get(id) !== session) return;
-      if (binary) {
-        let bytes: Buffer;
-        if (Buffer.isBuffer(data)) bytes = data;
-        else if (Array.isArray(data)) bytes = Buffer.concat(data);
-        else bytes = Buffer.from(data);
-        session.latest = { sequence: ++session.sequence, bytes, receivedAt: Date.now() };
-      } else {
-        try {
-          const message = JSON.parse(data.toString());
-          if (message.ok === false || message.error) {
-            const error = new Error(message.error ?? "Baguette rejected the stream request.");
-            this.fail(session, error);
-          }
-        } catch {
-          const error = new Error("Baguette returned an unreadable stream message.");
-          this.fail(session, error);
-        }
-      }
-      this.notify(session);
-    });
-    socket.on("error", error => { this.fail(session, error); });
-    socket.on("close", () => {
-      const error = new Error("The simulator stream disconnected.");
-      this.fail(session, error);
-    });
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const cleanup = () => { socket.off("open", opened); socket.off("error", failed); socket.off("close", closed); };
-        const opened = () => { cleanup(); resolve(); };
-        const failed = (error: Error) => { cleanup(); reject(error); };
-        const closed = () => {
-          const error = new Error("The simulator stream closed before connecting.");
-          failed(error);
-        };
-        socket.once("open", opened);
-        socket.once("error", failed);
-        socket.once("close", closed);
-      });
-      this.session(id);
-      for (const message of [{ type: "set_fps", fps }, { type: "set_scale", scale: 2 }]) {
-        const encoded = JSON.stringify(message);
-        socket.send(encoded);
-      }
-      return id;
-    } catch (error) { this.closeSession(id); throw error; }
-  }
-
-  private checkCapacity() {
-    if (this.disposed) throw new Error("The plugin server has closed.");
-    if (this.sessions.size >= 8) throw new Error("Too many open simulator streams. Close a panel and retry.");
   }
 
   private notify(session: Session) {
@@ -112,28 +56,142 @@ export class StreamSessions {
     session.waiters.clear();
   }
 
-  private fail(session: Session, error: Error) {
-    session.error ??= error;
-    session.latest = undefined;
+  async open(udid: string, fps: number): Promise<string> {
+    if (this.disposed) throw new Error("The plugin server has closed.");
+    if (this.sessions.size >= 8) throw new Error("Too many open simulator streams. Close a panel and retry.");
+    const id = randomBytes(32).toString("hex");
+    const session: Session = {
+      udid, fps, expires: Date.now() + this.idleTimeout, sequence: 0, closed: false,
+      failures: 0, retryAt: 0, waiters: new Set(), input: Promise.resolve(0),
+    };
+    this.sessions.set(id, session);
+    try { await this.connect(session); return id; }
+    catch (error) { this.closeSession(id); throw error; }
+  }
+
+  private async connect(session: Session) {
+    await this.baguette.device(session.udid, true);
+    if (session.closed || this.disposed) return;
+    const target = new URL(`/simulators/${session.udid}/stream?format=mjpeg`, this.baguette.baseUrl);
+    target.protocol = "ws:";
+    const socket = new WebSocket(target, { handshakeTimeout: 5000, maxPayload: 16 * 1024 * 1024, perMessageDeflate: false });
+    session.socket = socket;
+    session.frame = undefined;
+    session.pingAt = undefined;
+    socket.on("pong", () => { if (session.socket === socket) session.pingAt = undefined; });
+    socket.on("message", (data, binary) => {
+      if (session.closed || session.socket !== socket) return;
+      if (binary) {
+        let bytes: Buffer;
+        if (Buffer.isBuffer(data)) bytes = data;
+        else if (Array.isArray(data)) bytes = Buffer.concat(data);
+        else bytes = Buffer.from(data);
+        session.frame = { sequence: ++session.sequence, bytes, receivedAt: Date.now() };
+        session.failures = 0;
+      } else {
+        try {
+          const message = JSON.parse(data.toString());
+          if (message.ok === false || message.error) session.error = message.error ?? "Baguette rejected the stream request.";
+        } catch { session.error = "Baguette returned an unreadable stream message."; }
+      }
+      this.notify(session);
+    });
+    socket.on("error", error => {
+      if (!session.closed && session.socket === socket) process.stderr.write(`[mobile-dev] Stream ${session.udid}: ${error.message}\n`);
+      this.notify(session);
+    });
+    socket.on("close", (code, reason) => {
+      if (session.closed || session.socket !== socket) return;
+      session.socket = undefined;
+      session.frame = undefined;
+      session.openedAt = undefined;
+      session.pingAt = undefined;
+      process.stderr.write(`[mobile-dev] Stream ${session.udid} closed: code=${code} reason=${reason.toString() || "none"}. Reconnecting on the next read.\n`);
+      this.notify(session);
+    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const opened = () => { cleanup(); resolve(); };
+        const failed = (error: Error) => { cleanup(); reject(error); };
+        const closed = () => failed(new Error("The simulator stream closed before connecting."));
+        const cleanup = () => { socket.off("open", opened); socket.off("error", failed); socket.off("close", closed); };
+        socket.once("open", opened); socket.once("error", failed); socket.once("close", closed);
+      });
+      if (session.closed || this.disposed) { socket.close(); return; }
+      session.openedAt = Date.now();
+      socket.send(JSON.stringify({ type: "set_fps", fps: session.fps }));
+      socket.send(JSON.stringify({ type: "set_scale", scale: 2 }));
+      this.notify(session);
+    } catch (error) { socket.terminate(); throw error; }
+  }
+
+  private reconnect(session: Session) {
+    if (session.closed || session.error || session.connecting || session.socket?.readyState === WebSocket.OPEN || Date.now() < session.retryAt) return;
+    this.invalidate(session);
+    session.connecting = this.connect(session).catch(error => {
+      if (session.closed) return;
+      if (error instanceof SimulatorUnavailableError) session.error = error.message;
+      else {
+        const wait = this.retryDelays[Math.min(session.failures++, this.retryDelays.length - 1)] ?? 10000;
+        session.retryAt = Date.now() + wait;
+        process.stderr.write(`[mobile-dev] Stream ${session.udid} reconnect failed: ${errorMessage(error)} Retry in ${wait}ms.\n`);
+      }
+      this.notify(session);
+    }).finally(() => { session.connecting = undefined; this.notify(session); });
+  }
+
+  private invalidate(session: Session) {
+    const socket = session.socket;
+    session.socket = undefined;
+    session.frame = undefined;
+    session.pingAt = undefined;
+    session.openedAt = undefined;
+    socket?.terminate();
     this.notify(session);
+  }
+
+  private checkFirstFrame(session: Session) {
+    // MJPEG emits only changed pixels. A quiet screen after the first frame is healthy.
+    if (session.frame || session.openedAt === undefined || Date.now() - session.openedAt < this.firstFrameTimeout) return;
+    this.invalidate(session);
+    const wait = this.retryDelays[Math.min(session.failures++, this.retryDelays.length - 1)] ?? 10000;
+    session.retryAt = Date.now() + wait;
+  }
+
+  reset(id: string) {
+    const session = this.session(id);
+    if (session.error) throw new Error(session.error);
+    if (session.socket && !session.connecting) {
+      this.invalidate(session);
+      session.retryAt = Math.max(Date.now(), (session.resetAt ?? 0) + 1000);
+      session.resetAt = session.retryAt;
+    }
+    this.reconnect(session);
   }
 
   private session(id: string): Session {
     const session = this.sessions.get(id);
-    if (session == null || session.expires < Date.now()) {
-      this.closeSession(id);
+    if (!session || session.expires < Date.now()) {
+      if (session) this.closeSession(id);
       throw new Error("The simulator stream expired or closed.");
     }
-    session.expires = Date.now() + 300000;
-    if (session.error) throw session.error;
+    session.expires = Date.now() + this.idleTimeout;
+    this.checkFirstFrame(session);
     return session;
+  }
+
+  connectionState(id: string): "connected" | "reconnecting" {
+    const session = this.session(id);
+    return session.socket?.readyState === WebSocket.OPEN && !session.connecting && session.frame ? "connected" : "reconnecting";
   }
 
   async frame(id: string, after: number, signal?: AbortSignal): Promise<FrameRead> {
     const serverStartedAt = epochNow();
     const started = performance.now();
     const session = this.session(id);
-    if (session.latest == null || session.latest.sequence <= after) {
+    if (session.error) throw new Error(session.error);
+    this.reconnect(session);
+    if (!session.error && (!session.frame || session.frame.sequence <= after)) {
       await new Promise<void>(resolve => {
         const done = () => {
           clearTimeout(timer);
@@ -148,36 +206,41 @@ export class StreamSessions {
       });
     }
     signal?.throwIfAborted();
-    this.session(id);
+    if (session.error) throw new Error(session.error);
+    if (this.sessions.get(id) !== session) throw new Error("The simulator stream closed.");
     const serverWaitMs = performance.now() - started;
-    const latest = session.latest;
-    if (latest == null || latest.sequence <= after) {
+    const latest = session.frame;
+    if (session.socket?.readyState !== WebSocket.OPEN || latest == null || latest.sequence <= after) {
       const serverPreparedAt = epochNow();
       return { serverWaitMs, serverStartedAt, serverPreparedAt };
     }
     latest.data ??= latest.bytes.toString("base64");
     const serverPreparedAt = epochNow();
-    return { serverWaitMs, serverStartedAt, serverPreparedAt, frame: { sequence: latest.sequence, data: latest.data, receivedAt: latest.receivedAt, bytes: latest.bytes.length } };
+    return { serverWaitMs, serverStartedAt, serverPreparedAt,
+      frame: { sequence: latest.sequence, data: latest.data, receivedAt: latest.receivedAt, bytes: latest.bytes.length } };
   }
-
-  deviceId(id: string): string { return this.session(id).udid; }
 
   input(id: string, messages: unknown[]): Promise<number> {
     const session = this.session(id);
+    if (session.error) throw new Error(session.error);
+    if (session.socket?.readyState !== WebSocket.OPEN || session.connecting || !session.frame) throw new Error("The simulator stream is reconnecting.");
+    const socket = session.socket;
     const validated = messages.map(message => streamMessageSchema.parse(message));
-    const send = session.input.then(() => {
+    const sent = session.input.then(() => {
       this.session(id);
-      if (session.socket.readyState !== WebSocket.OPEN) throw new Error("The simulator stream disconnected.");
-      if (session.socket.bufferedAmount > 64 * 1024) throw new Error("Simulator input is backed up.");
+      if (session.socket !== socket || socket.readyState !== WebSocket.OPEN || session.connecting || !session.frame) throw new Error("The simulator stream is reconnecting.");
+      if (socket.bufferedAmount > 64 * 1024) throw new Error("Simulator input is backed up.");
       for (const message of validated) {
         const encoded = JSON.stringify(message);
-        session.socket.send(encoded);
+        socket.send(encoded);
       }
       return validated.length;
     });
-    session.input = send.catch(() => 0);
-    return send;
+    session.input = sent.catch(() => 0);
+    return sent;
   }
+
+  deviceId(id: string): string { return this.session(id).udid; }
 
   closeDevice(udid: string) {
     for (const [id, session] of this.sessions) if (session.udid === udid) this.closeSession(id);
@@ -185,13 +248,17 @@ export class StreamSessions {
 
   closeSession(id: string) {
     const session = this.sessions.get(id);
-    if (session == null) return;
+    if (!session) return;
     this.sessions.delete(id);
+    session.closed = true;
     this.notify(session);
-    session.socket.close();
-    const timer = setTimeout(() => { session.socket.terminate(); }, 1000);
-    timer.unref();
-    session.socket.once("close", () => { clearTimeout(timer); });
+    const socket = session.socket;
+    if (!socket) return;
+    if (socket.readyState === WebSocket.CONNECTING) socket.terminate();
+    else socket.close();
+    const deadline = setTimeout(() => socket.terminate(), 1000);
+    deadline.unref();
+    socket.once("close", () => clearTimeout(deadline));
   }
 
   close() {

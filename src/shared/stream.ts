@@ -7,6 +7,7 @@ export type StreamFrame = {
 
 export type FrameRead = {
   frame?: StreamFrame;
+  connectionState?: "connected" | "reconnecting";
   serverWaitMs: number;
   serverStartedAt: number;
   serverPreparedAt: number;

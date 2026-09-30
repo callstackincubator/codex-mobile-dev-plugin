@@ -104,6 +104,36 @@ test("decode failure aborts the parallel reader and fails the stream", async () 
   assert.equal(f.paints.size, 0);
 });
 
+test("capture reset discards pending paint and late decode before accepting a fresh frame", async () => {
+  const late = deferred<TestBitmap>();
+  const closed: number[] = [];
+  function bitmap(sequence: number): TestBitmap {
+    return { sequence, width: 10, height: 20, close() { closed.push(sequence); } };
+  }
+  const f = fixture(sequence => sequence === 2 ? late.promise : Promise.resolve(bitmap(sequence)));
+  f.frame(0, 1);
+  await setImmediate();
+  f.frame(1, 2);
+  await setImmediate();
+  f.stream.clearFrames();
+  f.repaint();
+  assert.deepEqual(f.painted, []);
+  assert.deepEqual(closed, [1]);
+  f.frame(2, 3);
+  await setImmediate();
+  assert.equal(f.reads[3].after, 3, "A read started before reset advances its cursor without decoding.");
+  late.resolve(bitmap(2));
+  await setImmediate();
+  assert.deepEqual(closed, [1, 2]);
+  assert.equal(f.paints.size, 0);
+  f.frame(3, 4);
+  await setImmediate();
+  f.repaint();
+  assert.deepEqual(f.painted, [4]);
+  f.controller.abort();
+  await f.running;
+});
+
 test("an unchanged screen keeps reading without reconnecting or repainting an old frame", async () => {
   const f = fixture(async sequence => ({ sequence, width: 1, height: 1, close() {} }));
   f.frame(0, 1);
@@ -138,7 +168,7 @@ test("frame responses retain timing metadata and distinguish wait, reconnect, an
   assert.equal(result.serverStartedAt, 1000);
   assert.equal(result.serverPreparedAt, 1004);
   const waiting = { contents: [{ uri: "mobile-frame://test/latest", mimeType: "application/json", text: '{"state":"waiting","serverWaitMs":1000}', _meta: { serverStartedAt: 1000, serverPreparedAt: 2000 } }] };
-  assert.deepEqual(readFrame(waiting), { serverWaitMs: 1000, serverStartedAt: 1000, serverPreparedAt: 2000 });
+  assert.deepEqual(readFrame(waiting), { serverWaitMs: 1000, serverStartedAt: 1000, serverPreparedAt: 2000, connectionState: undefined });
   waiting.contents[0].text = '{"state":"failed","error":"Disconnected","retryable":true}';
   assert.throws(() => readFrame(waiting), /Disconnected/);
   waiting.contents[0].text = '{"state":"failed","error":"Stopped","retryable":false}';

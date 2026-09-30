@@ -5,7 +5,6 @@ import { LogList } from "./log-list.ts";
 import type { PanelContext } from "./model-context.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
 
-function element<T extends HTMLElement = HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 type Call = App["callServerTool"];
 
 export class LogsPanel {
@@ -18,76 +17,70 @@ export class LogsPanel {
   private readonly loop = new ReconnectLoop();
   private session?: { id: string; epoch: number; closing?: Promise<void> };
   private metroUrl?: string;
-  private readonly list: LogList;
-  private readonly native = element<HTMLSelectElement>("logs-native");
-  private readonly target = element<HTMLSelectElement>("logs-metro-target");
+  readonly list: LogList;
+  private readonly listeners = new Set<() => void>();
+  private disposed = false;
+  private discovery = 0;
+  private snapshot = {
+    open: false, paused: false, available: false, settings: false, discovering: false,
+    status: "Closed", statusMessage: "", error: "", sourceNotice: "", selectedLabel: "Selected simulator",
+    native: "ios", process: "", metroUrl: "http://127.0.0.1:8081", target: "",
+    android: [] as { id: string; name: string }[], metro: [] as MetroTarget[],
+  };
+
   private readonly app: App;
-
-  constructor(app: App, context: PanelContext) {
-    this.app = app;
-    this.list = new LogList(context);
-    element("logs-toggle").addEventListener("click", () => { this.open = !this.open; this.controls(); if (this.open) this.restart(); else void this.stop(); });
-    element("logs-settings-toggle").addEventListener("click", () => {
-      const settings = element("logs-settings"); settings.hidden = !settings.hidden;
-      element("logs-settings-toggle").setAttribute("aria-expanded", String(!settings.hidden));
-    });
-    element("logs-discover").addEventListener("click", () => { void this.discover(); });
-    element("logs-apply").addEventListener("click", () => this.restart());
-    element("logs-clear").addEventListener("click", () => this.list.clear());
-    element("logs-pause").addEventListener("click", () => { this.paused = !this.paused; this.controls(); if (this.paused) void this.stop(); else this.restart(); });
-    this.native.addEventListener("change", () => this.restart());
-    this.target.addEventListener("change", () => this.restart());
+  constructor(app: App, context: PanelContext) { this.app = app; this.list = new LogList(context); }
+  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+  getSnapshot = () => this.snapshot;
+  private update(value: Partial<typeof this.snapshot>) {
+    this.snapshot = { ...this.snapshot, ...value };
+    for (const listener of this.listeners) listener();
   }
 
-  show() {
-    if (this.open) return;
-    this.open = true;
+  toggle() {
+    this.open = !this.open;
     this.controls();
-    this.restart();
+    if (this.open) this.restart(); else void this.stop();
   }
-
+  show() { if (!this.open) this.toggle(); }
+  toggleSettings() { this.update({ settings: !this.snapshot.settings }); }
+  togglePause() { this.paused = !this.paused; this.controls(); if (this.paused) void this.stop(); else this.restart(); }
+  configure(value: Partial<Pick<typeof this.snapshot, "native" | "process" | "metroUrl" | "target">>) {
+    this.update(value);
+    if (value.native !== undefined || value.target !== undefined) this.restart();
+  }
+  connect() { this.restart(); }
   setAvailable(available: boolean) { this.available = available; this.controls(); if (this.open) this.restart(); }
   setLayout(split: boolean) {
     document.documentElement.dataset.layout = split ? "split" : "stacked";
-    if (split && !this.openedForSplitLayout) {
-      this.openedForSplitLayout = true;
-      this.open = true;
-      this.restart();
-    }
+    if (split && !this.openedForSplitLayout) { this.openedForSplitLayout = true; this.show(); }
   }
   selectSimulator(simulator?: SimulatorDevice) {
     const changed = simulator?.udid !== this.simulator?.udid || simulator?.state !== this.simulator?.state;
     this.simulator = simulator;
-    this.native.options[0].textContent = simulator ? `iOS · ${simulator.name}` : "Selected simulator";
-    if (changed && this.open && this.native.value === "ios") this.restart();
+    this.update({ selectedLabel: simulator ? `${simulator.platform === "android" ? "Android" : "iOS"} · ${simulator.name}` : "Selected simulator" });
+    if (changed && this.open && this.snapshot.native === "ios") this.restart();
   }
-
   private controls() {
-    element("logs-drawer").dataset.open = String(this.open);
-    element("logs-toggle").setAttribute("aria-expanded", String(this.open));
-    element("logs-body").hidden = !this.open;
-    for (const id of ["logs-pause", "logs-clear", "logs-settings-toggle"]) element(id).hidden = !this.open;
-    element("logs-pause").textContent = this.paused ? "Resume" : "Pause";
-    element<HTMLButtonElement>("logs-apply").disabled = !this.available;
-    element<HTMLButtonElement>("logs-discover").disabled = !this.available;
-    element<HTMLInputElement>("logs-process").placeholder = this.native.value.startsWith("android:") ? "com.example.app · empty for all" : "Executable name · empty for all";
-    if (!this.open) element("logs-status").textContent = "Closed";
-    else if (this.paused) element("logs-status").textContent = "Paused";
+    this.update({ open: this.open, paused: this.paused, available: this.available,
+      ...(!this.open ? { status: "Closed" } : this.paused ? { status: "Paused" } : {}) });
   }
-
-  private error(message = "") { element("logs-error").textContent = message; element("logs-error").hidden = !message; }
+  private error(message = "") { this.update({ error: message }); }
 
   private options(): LogOptions | undefined {
     const options: LogOptions = {};
-    const process = element<HTMLInputElement>("logs-process").value.trim();
-    if (this.native.value === "ios" && this.simulator?.state === "Booted") {
-      options.native = { platform: "ios", deviceId: this.simulator.udid, ...(process ? { process } : {}) };
-    } else if (this.native.value.startsWith("android:")) {
-      options.native = { platform: "android", deviceId: this.native.value.slice(8), ...(process ? { packageName: process } : {}) };
+    const { native, target, metroUrl } = this.snapshot;
+    const process = this.snapshot.process.trim();
+    if (native === "ios" && this.simulator?.state === "Booted") {
+      options.native = this.simulator.platform === "android"
+        ? { platform: "android", deviceId: this.simulator.udid, ...(process ? { packageName: process } : {}) }
+        : { platform: "ios", deviceId: this.simulator.udid, ...(process ? { process } : {}) };
+    } else if (native.startsWith("android:")) {
+      options.native = { platform: "android", deviceId: native.slice(8), ...(process ? { packageName: process } : {}) };
     }
-    if (this.target.value && this.metroUrl) {
-      if (element<HTMLInputElement>("logs-metro-url").value !== this.metroUrl) throw new Error("Find sources again after changing the Metro URL.");
-      options.metro = { url: this.metroUrl, targetId: this.target.value };
+    if (target && this.metroUrl) {
+      if (metroUrl !== this.metroUrl) throw new Error("Find sources again after changing the Metro URL.");
+      options.metro = { url: this.metroUrl, targetId: target };
     }
     return options.native || options.metro ? options : undefined;
   }
@@ -95,17 +88,17 @@ export class LogsPanel {
   private restart() {
     void this.stop();
     this.controls();
-    if (!this.open || this.paused || !this.available) return;
+    if (this.disposed || !this.open || this.paused || !this.available) return;
     this.error();
     let options: LogOptions | undefined;
     try { options = this.options(); } catch (error) { this.error(String(error)); return; }
-    if (!options) { element("logs-status").textContent = "Choose a source"; return; }
+    if (!options) { this.update({ status: "Choose a source" }); return; }
     this.list.clear();
     const epoch = this.epoch;
-    element("logs-status").textContent = "Connecting…";
+    this.update({ status: "Connecting..." });
     this.loop.start(signal => this.receive(options!, epoch, signal), error => {
-      element("logs-status").textContent = "Reconnecting…"; this.error(error instanceof Error ? error.message : String(error));
-    }, error => { element("logs-status").textContent = "Stopped"; this.error(String(error)); });
+      this.update({ status: "Reconnecting..." }); this.error(error instanceof Error ? error.message : String(error));
+    }, error => { this.update({ status: "Stopped" }); this.error(String(error)); });
   }
 
   private async call(...args: Parameters<Call>) {
@@ -134,9 +127,9 @@ export class LogsPanel {
         after = batch.cursor;
         this.loop.connected(); this.error();
         this.list.append(batch.entries, batch.dropped);
-        element("logs-status").textContent = batch.statuses.map(status => `${status.source === "native" ? "Native" : "Metro"}: ${status.state}`).join(" · ") || "Connecting…";
+        this.update({ status: batch.statuses.map(status => `${status.source === "native" ? "Native" : "Metro"}: ${status.state}`).join(" · ") || "Connecting..." });
         const message = batch.statuses.map(status => status.message).filter(Boolean).join(" · ");
-        element("logs-status").title = message;
+        this.update({ statusMessage: message });
         if (message) this.error(message);
       }
     } finally { await this.closeSession(session); }
@@ -149,25 +142,26 @@ export class LogsPanel {
   }
 
   async stop() { this.loop.stop(); this.epoch++; if (this.session) await this.closeSession(this.session); }
-  async dispose() { this.open = false; this.available = false; this.controls(); await this.stop(); }
+  async dispose() { this.disposed = true; this.discovery++; this.open = false; this.available = false; this.controls(); await this.stop(); }
 
-  private async discover() {
-    const button = element<HTMLButtonElement>("logs-discover"); button.disabled = true;
-    const url = element<HTMLInputElement>("logs-metro-url").value.trim();
+  async discover() {
+    if (!this.available || this.snapshot.discovering || this.disposed) return;
+    const discovery = ++this.discovery;
+    this.update({ discovering: true });
+    const url = this.snapshot.metroUrl.trim();
     try {
       const result = await this.call({ name: "mobile_log_sources", arguments: url ? { metroUrl: url } : {} }, { timeout: 15000 });
+      if (this.disposed || discovery !== this.discovery || url !== this.snapshot.metroUrl.trim()) return;
+      const previousNative = this.snapshot.native;
+      const previousTarget = this.snapshot.target;
       const data = result.structuredContent as { android: { id: string; name: string }[]; metro: MetroTarget[]; errors: string[] };
-      const previousNative = this.native.value; const previousTarget = this.target.value;
-      for (const option of [...this.native.options].slice(2)) option.remove();
-      for (const device of data.android) this.native.add(new Option(`Android · ${device.name}`, `android:${device.id}`));
-      this.native.value = [...this.native.options].some(option => option.value === previousNative) ? previousNative : "none";
-      this.target.replaceChildren(new Option("None", ""));
-      for (const target of data.metro) this.target.add(new Option(`${target.appId ?? target.title}${target.deviceName ? ` · ${target.deviceName}` : ""} · ${target.id}`, target.id));
-      if (this.metroUrl === url && data.metro.some(target => target.id === previousTarget)) this.target.value = previousTarget;
+      const native = previousNative === "ios" || previousNative === "none" || data.android.some(device => `android:${device.id}` === previousNative) ? previousNative : "none";
+      const target = this.metroUrl === url && data.metro.some(target => target.id === previousTarget) ? previousTarget : "";
       this.metroUrl = url;
-      element("logs-source-notice").textContent = data.errors.join(" · ") || `Found ${data.android.length} Android devices and ${data.metro.length} Metro apps.`;
+      this.update({ android: data.android, metro: data.metro, native, target, metroUrl: url,
+        sourceNotice: data.errors.join(" · ") || `Found ${data.android.length} Android devices and ${data.metro.length} Metro apps.` });
       this.restart();
-    } catch (error) { element("logs-source-notice").textContent = String(error); }
-    finally { button.disabled = false; }
+    } catch (error) { if (!this.disposed) this.update({ sourceNotice: String(error) }); }
+    finally { if (!this.disposed && discovery === this.discovery) this.update({ discovering: false }); }
   }
 }

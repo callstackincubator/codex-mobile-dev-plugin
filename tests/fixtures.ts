@@ -6,7 +6,6 @@ import type { InputStatus } from "../src/server/simulator-input.ts";
 export const UDID = "B5C969F6-58A4-4C31-AB12-FB9E56D681DE";
 export const OTHER_UDID = "A17F4F36-7E21-4CA0-8ACD-BBB530887763";
 export const SCREEN = { width: 393, height: 852 };
-export const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
 export const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
 export function fakeSimulatorInput() {
@@ -23,6 +22,9 @@ export function fakeSimulatorInput() {
 export async function fakeBaguette() {
   let state = "Booted";
   let inputFails = false;
+  let sendFrames = true;
+  let lifecycleState: string | undefined;
+  let lifecycleFails = false;
   const inputs: unknown[] = [];
   const requests: { path: string; origin?: string }[] = [];
   const http = createServer(async (request, response) => {
@@ -37,7 +39,8 @@ export async function fakeBaguette() {
     } else if (path.endsWith("/definition.json")) {
       response.end(JSON.stringify({ identity: { udid: UDID, name: "iPhone 17", model: "iPhone 17" }, screen: { rect: SCREEN } }));
     } else if (path.endsWith("/boot")) {
-      state = "Booted"; response.end('{"ok":true}');
+      if (lifecycleFails) { response.end('{"ok":false,"error":"boot failed"}'); return; }
+      state = lifecycleState ?? "Booted"; response.end('{"ok":true}');
     } else if (path.endsWith("/shutdown")) {
       state = "Shutdown"; response.end('{"ok":true}');
     } else if (path.endsWith("/input")) {
@@ -59,7 +62,7 @@ export async function fakeBaguette() {
     socket.on("message", data => {
       const message = JSON.parse(data.toString());
       inputs.push(message);
-      if (message.type === "set_fps") socket.send(JPEG, { binary: true });
+      if (message.type === "set_fps" && sendFrames) socket.send(PNG, { binary: true });
     });
   });
   http.listen(0, "127.0.0.1");
@@ -67,9 +70,11 @@ export async function fakeBaguette() {
   const address = http.address() as { port: number };
   return {
     url: `http://127.0.0.1:${address.port}`, inputs, requests, websocket,
-    frame(bytes = JPEG) { for (const socket of websocket.clients) socket.send(bytes, { binary: true }); },
     setState(next: string) { state = next; },
     setInputFailure() { inputFails = true; },
+    setFrames(enabled: boolean) { sendFrames = enabled; },
+    setLifecycleState(next?: string) { lifecycleState = next; },
+    setLifecycleFailure(enabled: boolean) { lifecycleFails = enabled; },
     async close() {
       for (const client of websocket.clients) client.terminate();
       await new Promise<void>(resolve => websocket.close(() => resolve()));

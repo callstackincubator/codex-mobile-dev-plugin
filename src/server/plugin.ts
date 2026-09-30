@@ -1,18 +1,38 @@
+import type { UIResource } from "./ui-resource.ts";
+import { LIVE_UI_URI } from "../shared/live-ui.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { z } from "zod";
 import { readBezel } from "./bezel.ts";
+import { ServeEmu } from "./serve-emu.ts";
+import { registerAndroidTools } from "./android-tools.ts";
 import { Baguette } from "./baguette.ts";
 import { StreamSessions } from "./stream-sessions.ts";
 import { LogSessions } from "./log-sessions.ts";
 import { registerLogTools } from "./log-tools.ts";
 import { SimulatorInputService } from "./simulator-input.ts";
-import type { SimulatorInput } from "./simulator-input.ts";
+import type { InputStatus, SimulatorInput } from "./simulator-input.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
-import { errorMessage, inputSchema, udidSchema, streamMessageSchema } from "../shared/protocol.ts";
+import { copyPNGToClipboard } from "./clipboard.ts";
+import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../shared/protocol.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
+export const APP_URI = "ui://mobile-dev/0.1.33/simulator.html";
+export const WORKSPACE_URI = "ui://mobile-dev/0.1.33/workspace.html";
+// Codex can retain entrypoint metadata after updating the installed plugin.
+const legacyAppUris = [
+  "ui://mobile-dev/0.1.32/simulator.html",
+  "ui://mobile-dev/0.1.24/mcp-stream/simulator.html",
+  "ui://mobile-dev/0.1.31/simulator.html",
+  "ui://mobile-dev/0.1.30/simulator.html",
+  "ui://mobile-dev/0.1.29/simulator.html", "ui://mobile-dev/0.1.28/simulator.html", "ui://mobile-dev/0.1.27/simulator.html", "ui://mobile-dev/0.1.26/simulator.html", "ui://mobile-dev/0.1.25/simulator.html", "ui://mobile-dev/0.1.24/simulator.html", "ui://mobile-dev/0.1.23/simulator.html", "ui://mobile-dev/0.1.22/simulator.html", "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/0.1.19/simulator.html", "ui://mobile-dev/0.1.18/simulator.html", "ui://mobile-dev/0.1.17/simulator.html", "ui://mobile-dev/0.1.16/simulator.html", "ui://mobile-dev/0.1.15/simulator.html", "ui://mobile-dev/0.1.14/simulator.html", "ui://mobile-dev/0.1.13/simulator.html", "ui://mobile-dev/0.1.12/simulator.html", "ui://mobile-dev/0.1.11/simulator.html", "ui://mobile-dev/simulator.html", ...Array.from({ length: 6 }, (_, index) => `ui://mobile-dev/v${index + 1}/simulator.html`)];
+const legacyWorkspaceUris = [
+  "ui://mobile-dev/0.1.32/workspace.html",
+  "ui://mobile-dev/0.1.24/mcp-stream/workspace.html",
+  "ui://mobile-dev/0.1.31/workspace.html",
+  "ui://mobile-dev/0.1.30/workspace.html",
+  "ui://mobile-dev/0.1.29/workspace.html", "ui://mobile-dev/0.1.28/workspace.html", "ui://mobile-dev/0.1.27/workspace.html", "ui://mobile-dev/0.1.26/workspace.html", "ui://mobile-dev/0.1.25/workspace.html", "ui://mobile-dev/0.1.24/workspace.html", "ui://mobile-dev/0.1.23/workspace.html", "ui://mobile-dev/0.1.22/workspace.html", "ui://mobile-dev/0.1.21/workspace.html", "ui://mobile-dev/0.1.20/workspace.html", "ui://mobile-dev/0.1.19/workspace.html", "ui://mobile-dev/0.1.18/workspace.html", "ui://mobile-dev/0.1.17/workspace.html", "ui://mobile-dev/0.1.16/workspace.html", "ui://mobile-dev/0.1.15/workspace.html", "ui://mobile-dev/0.1.14/workspace.html", "ui://mobile-dev/0.1.13/workspace.html", "ui://mobile-dev/0.1.12/workspace.html", "ui://mobile-dev/0.1.11/workspace.html", "ui://mobile-dev/workspace.html"];
 const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
@@ -34,15 +54,37 @@ function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
   };
 }
 
-export async function createPlugin(html: string, baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions()) {
+export async function createPlugin(html: string | (() => Promise<UIResource>), baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), android = new ServeEmu(), copyScreenshot = copyPNGToClipboard) {
   const streams = new StreamSessions(baguette);
-  const appUri = "ui://mobile-dev/0.1.24/mcp-stream/simulator.html";
-  const workspaceUri = "ui://mobile-dev/0.1.24/mcp-stream/workspace.html";
-  const server = new McpServer({ name: "mobile-dev", version: "0.1.24" }, {
-    instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. Opening the panel does not boot a device.",
+  const server = new McpServer({ name: "mobile-dev", version: "0.1.33" }, {
+    instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. For Android use mobile_list_android_devices and the mobile_android tools. Use the selected serial with agent-device and platform android. serve-emu handles Android video and panel input. Opening the panel does not boot a device.",
   });
   new OpenAIExtensions(server);
   registerLogTools(server, logs, baguette);
+  const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot);
+
+  const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<{ inputStatus: InputStatus; inputRepairMessage: string }> }>();
+  async function panelInputStatus(udid: string) {
+    const inputStatus = await simulatorInput.status(udid, { fresh: true });
+    if (inputStatus.state !== "blocked") return { inputStatus };
+    const previous = automaticRepairs.get(udid);
+    if (previous && Date.now() - previous.attemptedAt < 60000) {
+      const repaired = await previous.pending;
+      const current = await simulatorInput.status(udid);
+      return current.state === "ready" ? repaired : { inputStatus: current, inputRepairMessage: "Input is blocked again. Automatic repair paused to avoid repeatedly closing apps." };
+    }
+    const pending = (async () => {
+      streams.closeDevice(udid);
+      try {
+        const inputStatus = await simulatorInput.repair(udid);
+        return { inputStatus, inputRepairMessage: "Input repaired automatically. Reopen your app." };
+      } catch (error) {
+        return { inputStatus: await simulatorInput.status(udid), inputRepairMessage: `Automatic input repair failed: ${errorMessage(error)}` };
+      }
+    })();
+    automaticRepairs.set(udid, { attemptedAt: Date.now(), pending });
+    return pending;
+  }
 
   async function blockedInput(udid: string): Promise<CallToolResult | undefined> {
     if ((await simulatorInput.status(udid)).state !== "blocked") return;
@@ -53,19 +95,60 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     };
   }
 
-  const readApp = async (uri: URL) => ({
+  const readApp = async (uri: URL) => {
+    const resource = typeof html === "string" ? { html } : await html();
+    const content = resource.html;
+    return ({
     contents: [{
-      uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: uri.href === workspaceUri
-        ? html.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
-        : html,
+      uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: (uri.href === WORKSPACE_URI || legacyWorkspaceUris.includes(uri.href))
+        ? content.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
+        : content,
       _meta: {
         ui: { csp: { connectDomains: [], resourceDomains: [] } },
         "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] },
       },
     }],
   });
-  registerAppResource(server, "mobile-dev-simulator", appUri, {}, readApp);
-  registerAppResource(server, "mobile-dev-workspace", workspaceUri, {}, readApp);
+  };
+  server.registerResource("mobile-dev-live", new ResourceTemplate(`${LIVE_UI_URI}?after={revision}`, { list: undefined }), {
+    mimeType: "application/json",
+    description: "Read a changed local development UI through MCP. Unchanged reads omit the HTML.",
+  }, async uri => {
+    const resource = typeof html === "string" ? { html } : await html();
+    const revision = resource.liveRevision;
+    return { contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify({
+      revision,
+      html: revision && revision !== uri.searchParams.get("after") ? resource.html : undefined,
+    }) }] };
+  });
+  registerAppResource(server, "mobile-dev-simulator", APP_URI, {}, readApp);
+  registerAppResource(server, "mobile-dev-workspace", WORKSPACE_URI, {}, readApp);
+  for (const [index, uri] of legacyWorkspaceUris.entries()) {
+    registerAppResource(server, `mobile-dev-workspace-legacy-${index}`, uri, {}, readApp);
+  }
+  for (const [index, uri] of legacyAppUris.entries()) {
+    registerAppResource(server, `mobile-dev-simulator-v${index + 1}`, uri, {}, readApp);
+  }
+
+  const frameTemplate = new ResourceTemplate("mobile-frame://{sessionId}/latest{?after}", { list: undefined });
+  server.registerResource("simulator-latest-frame", frameTemplate, { mimeType: "image/jpeg" }, async (uri, variables, extra) => {
+    const sessionId = sessionIdSchema.parse(variables.sessionId);
+    const cursor = uri.searchParams.get("after") ?? "0";
+    const after = z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).parse(cursor);
+    try {
+      const read = await streams.frame(sessionId, after, extra.signal);
+      const timings = { serverWaitMs: read.serverWaitMs, serverStartedAt: read.serverStartedAt, serverPreparedAt: read.serverPreparedAt };
+      if (read.frame) {
+        const { data, ...metadata } = read.frame;
+        return { contents: [{ uri: uri.href, mimeType: "image/jpeg", blob: data, _meta: { ...metadata, ...timings } }] };
+      }
+      const text = JSON.stringify({ state: "waiting", connectionState: streams.connectionState(sessionId), ...timings });
+      return { contents: [{ uri: uri.href, mimeType: "application/json", text, _meta: timings }] };
+    } catch (error) {
+      const text = JSON.stringify({ state: "failed", error: errorMessage(error), retryable: !(error instanceof SimulatorUnavailableError) });
+      return { contents: [{ uri: uri.href, mimeType: "application/json", text }] };
+    }
+  });
 
   const openPanel = guarded(async () => {
     let status;
@@ -76,20 +159,20 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
 
   registerAppTool(server, "mobile_open_workspace", {
     title: "Mobile Dev",
-    description: "Open the fullscreen Mobile Dev workspace with logs on the left and the iOS simulator on the right. Starts the bundled backend without booting a device.",
+    description: "Open the fullscreen Mobile Dev workspace with logs on the left and iOS and Android devices side by side on the right. Starts the bundled backend without booting a device.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
-      ui: { resourceUri: workspaceUri, visibility: ["app", "model"] },
+      ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
       "openai/ui": { entrypoints: [{ type: "global" }] },
     },
   }, openPanel);
 
   registerAppTool(server, "mobile_open_simulator", {
-    title: "iOS Simulator",
-    description: "Open the Mobile Dev simulator panel in Codex and start the plugin's bundled Baguette backend. Shows devices without booting any.",
+    title: "Mobile simulator",
+    description: "Open the Mobile Dev simulator panel in Codex and start the plugin's bundled Baguette backend. Shows iOS and Android side by side without booting any devices.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
-      ui: { resourceUri: appUri, visibility: ["app", "model"] },
+      ui: { resourceUri: APP_URI, visibility: ["app", "model"] },
       "openai/ui": { entrypoints: [{ type: "thread" }] },
     },
   }, openPanel);
@@ -117,9 +200,9 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
       inputSchema: deviceInput, outputSchema: statusOutput,
       annotations: { ...write, destructiveHint: action === "shutdown" },
     }, guarded(async ({ udid }: { udid: string }) => {
-      await baguette.device(udid);
-      await baguette.json(`/simulators/${udid}/${action}`, { method: "POST" }, 60000);
-      return result(await baguette.status(), `${action === "boot" ? "Booted" : "Shut down"} ${udid}.`);
+      const status = await baguette.changeDeviceState(udid, action);
+      if (action === "shutdown") streams.closeDevice(udid);
+      return result(status, `${action === "boot" ? "Booted" : "Shut down"} ${udid}.`);
     }));
   }
 
@@ -147,7 +230,7 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
 
   registerAppTool(server, "mobile_repair_input", {
     title: "Repair simulator input",
-    description: "Reclaim input blocked by Xcode 27 Device Hub. Restarts backboardd and SpringBoard and closes running simulator apps. Use when the user asks to fix blocked input or clicks Repair input in the panel.",
+    description: "Reclaim input blocked by Xcode 27 Device Hub. Restarts backboardd and SpringBoard and closes running simulator apps. Use when the user asks to fix blocked input or when the panel detects blocked input.",
     inputSchema: deviceInput, annotations: { ...write, destructiveHint: true },
     _meta: { ui: { visibility: ["app", "model"] } },
   }, guarded(async ({ udid }: { udid: string }) => {
@@ -157,10 +240,7 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     return result({ udid, inputStatus }, "Simulator input is ready. Reconnect the stream and reopen the app if needed.");
   }));
 
-  server.registerTool("mobile_screenshot", {
-    title: "Capture simulator screen", description: "Return a PNG screenshot of the selected booted simulator for the model to inspect.",
-    inputSchema: deviceInput, annotations: read,
-  }, guarded(async ({ udid }: { udid: string }) => {
+  async function captureScreenshot(udid: string) {
     await baguette.device(udid, true);
     const response = await fetch(new URL(`/simulators/${udid}/screenshot.png`, baguette.baseUrl), {
       redirect: "error", signal: AbortSignal.timeout(10000),
@@ -170,56 +250,66 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     if (bytes.length > 16 * 1024 * 1024 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
       throw new Error("Baguette returned an invalid or oversized PNG screenshot.");
     }
+    return bytes;
+  }
+
+  server.registerTool("mobile_screenshot", {
+    title: "Capture simulator screen", description: "Return a PNG screenshot of the selected booted simulator for the model to inspect.",
+    inputSchema: deviceInput, annotations: read,
+  }, guarded(async ({ udid }: { udid: string }) => {
+    const bytes = await captureScreenshot(udid);
     return { content: [{ type: "image", mimeType: "image/png", data: bytes.toString("base64") }, { type: "text", text: `Screen of ${udid}.` }], structuredContent: { udid } };
   }));
 
-  registerAppTool(server, "mobile_stream_session", {
-    title: "Connect simulator stream", description: "Start continuous MJPEG capture for the panel. Read the latest frame through the MCP host bridge.",
-    inputSchema: { ...deviceInput, fps: z.number().int().min(1).max(60).default(60) },
-    annotations: write,
-    _meta: { ui: { resourceUri: appUri, visibility: ["app"] } },
-  }, guarded(async ({ udid, fps }: { udid: string; fps: number }) => {
-    const definition = await baguette.definition(udid);
-    const bezel = await readBezel(baguette, udid, definition.screen);
-    const inputStatus = await simulatorInput.status(udid, { fresh: true });
-    const sessionId = await streams.open(udid, fps);
-    const frameUri = `mobile-frame://${sessionId}/latest`;
+  registerAppTool(server, "mobile_capture_screenshot", {
+    title: "Screenshot to chat and clipboard",
+    description: "Capture the selected booted simulator as a PNG and copy it to the macOS clipboard. Returns the same image for the panel to attach to the chat input.",
+    inputSchema: deviceInput, annotations: write,
+    _meta: { ui: { resourceUri: APP_URI, visibility: ["app"] } },
+  }, guarded(async ({ udid }: { udid: string }) => {
+    const bytes = await captureScreenshot(udid);
+    let copied = false;
+    let clipboardError: string | undefined;
+    try { await copyScreenshot(bytes); copied = true; }
+    catch (error) { clipboardError = errorMessage(error); }
     return {
-      ...result({ udid, definition, fps, inputStatus }, `Stream ready for ${definition.identity.name}.`),
-      _meta: { ...(bezel ? { bezel } : {}), sessionId, frameUri },
+      content: [{ type: "image", mimeType: "image/png", data: bytes.toString("base64") }],
+      structuredContent: { udid, copied, ...(clipboardError ? { clipboardError } : {}) },
     };
   }));
 
-  const frameTemplate = new ResourceTemplate("mobile-frame://{sessionId}/latest{?after}", { list: undefined });
-  server.registerResource("simulator-latest-frame", frameTemplate, { mimeType: "image/jpeg" }, async (uri, variables, extra) => {
-    const sessionId = sessionIdSchema.parse(variables.sessionId);
-    const cursor = uri.searchParams.get("after") ?? "0";
-    const after = z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).parse(cursor);
-    try {
-      const read = await streams.frame(sessionId, after, extra.signal);
-      const timings = { serverWaitMs: read.serverWaitMs, serverStartedAt: read.serverStartedAt, serverPreparedAt: read.serverPreparedAt };
-      if (read.frame) {
-        const { data, ...metadata } = read.frame;
-        return { contents: [{ uri: uri.href, mimeType: "image/jpeg", blob: data, _meta: { ...metadata, ...timings } }] };
-      }
-      const text = JSON.stringify({ state: "waiting", ...timings });
-      return { contents: [{ uri: uri.href, mimeType: "application/json", text, _meta: timings }] };
-    } catch (error) {
-      const text = JSON.stringify({ state: "failed", error: errorMessage(error), retryable: !(error instanceof SimulatorUnavailableError) });
-      return { contents: [{ uri: uri.href, mimeType: "application/json", text }] };
-    }
-  });
+  registerAppTool(server, "mobile_stream_session", {
+    title: "Connect simulator stream", description: "Open the bundled Baguette's MJPEG capture for the panel. Frames and input use the host's MCP bridge; no browser network access is needed.",
+    inputSchema: { ...deviceInput, fps: z.number().int().min(1).max(60).default(60) },
+    annotations: write,
+    _meta: { ui: { resourceUri: APP_URI, visibility: ["app"] } },
+  }, guarded(async ({ udid, fps }: { udid: string; fps: number }) => {
+    const definition = await baguette.definition(udid);
+    const bezel = await readBezel(baguette, udid, definition.screen);
+    const { inputStatus, inputRepairMessage } = await panelInputStatus(udid);
+    const sessionId = await streams.open(udid, fps);
+    return {
+      ...result({ udid, definition, fps, inputStatus, ...(inputRepairMessage ? { inputRepairMessage } : {}) }, `Stream ready for ${definition.identity.name}.`),
+      _meta: { ...(bezel ? { bezel } : {}), sessionId, frameUri: `mobile-frame://${sessionId}/latest?after=0` },
+    };
+  }));
 
   registerAppTool(server, "mobile_stream_input", {
-    title: "Send panel gestures", description: "Send an ordered batch of validated gestures to the panel's active capture. Never replay gestures after reconnecting.",
+    title: "Send panel input", description: "Send a batch of validated gestures, keys, or buttons to an authorized panel stream.",
     inputSchema: { sessionId: sessionIdSchema, messages: z.array(streamMessageSchema).min(1).max(64) },
     annotations: write, _meta: { ui: { visibility: ["app"] } },
-  }, guarded(async ({ sessionId, messages }: { sessionId: string; messages: z.infer<typeof streamMessageSchema>[] }) => {
+  }, guarded(async ({ sessionId, messages }: { sessionId: string; messages: unknown[] }) => {
+    if (streams.connectionState(sessionId) === "reconnecting") return {
+      isError: true, content: [{ type: "text", text: "The simulator stream is reconnecting." }], _meta: { streamDisconnected: true },
+    };
     const udid = streams.deviceId(sessionId);
     const blocked = await blockedInput(udid);
-    if (blocked) return blocked;
-    const count = await streams.input(sessionId, messages);
-    return result({ count }, "Panel gestures sent.");
+    if (blocked) {
+      streams.closeDevice(udid);
+      return { isError: true, content: [{ type: "text", text: "Repairing simulator input and reconnecting…" }], _meta: { streamDisconnected: true } };
+    }
+    const accepted = await streams.input(sessionId, messages);
+    return result({ accepted }, "Input sent to the simulator.");
   }));
 
   registerAppTool(server, "mobile_stream_close", {
@@ -231,8 +321,17 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     return result({}, "Simulator stream closed.");
   }));
 
+  registerAppTool(server, "mobile_stream_reset", {
+    title: "Recover iOS panel video", description: "Restart one panel's MJPEG capture after a decode error, keeping its session and frame sequence. Does not boot a device or repair input.",
+    inputSchema: { sessionId: sessionIdSchema },
+    annotations: write, _meta: { ui: { visibility: ["app"] } },
+  }, guarded(async ({ sessionId }: { sessionId: string }) => {
+    streams.reset(sessionId);
+    return result({}, "Restarting simulator capture.");
+  }));
+
   return {
-    server, appUri, workspaceUri,
-    async close() { streams.close(); await logs.close(); baguette.dispose(); await server.close(); },
+    server,
+    async close() { closeAndroid(); streams.close(); await logs.close(); baguette.dispose(); await server.close(); },
   };
 }

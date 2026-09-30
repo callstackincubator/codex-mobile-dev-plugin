@@ -1,22 +1,31 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "mobile-dev",
-  "version": "0.1.24",
-  "description": "Stream iOS simulators, read native and Metro logs, and control apps with bundled agent-device tools.",
-  "author": { "name": "Laurids" },
+  "version": "0.1.33",
+  "description": "Stream iOS simulators and Android devices, read native and Metro logs, and control apps with bundled agent-device tools.",
+  "author": {
+    "name": "Laurids"
+  },
   "extensions": {
     "com.openai": {
       "onboardingSkill": "./skills/mobile-dev-setup/SKILL.md",
       "interface": {
         "displayName": "Mobile Dev",
-        "shortDescription": "iOS simulator and app logs",
-        "longDescription": "Open an iOS simulator beside your chat, filter native and Metro logs, attach an error to the agent, and inspect and control apps with bundled agent-device tools.",
+        "shortDescription": "iOS, Android, and app logs",
+        "longDescription": "Open an iOS simulator or Android device beside your chat, read native and Metro logs, and inspect and control apps with bundled agent-device tools.",
         "developerName": "Laurids",
         "category": "Developer Tools",
-        "capabilities": ["Read", "Write", "Interactive"],
+        "capabilities": [
+          "Read",
+          "Write",
+          "Interactive"
+        ],
         "composerIcon": "./assets/icon.svg",
         "logo": "./assets/icon.svg",
-        "defaultPrompt": ["Open my iOS simulator.", "List my available simulators."]
+        "defaultPrompt": [
+          "Open my mobile simulator.",
+          "List my iOS and Android devices."
+        ]
       }
     }
   }

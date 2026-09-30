@@ -5,6 +5,70 @@ Measured on 2026-09-30 with plugin 0.1.19, Baguette commit
 running iOS 27. The visible app was Maps. Aggregate measurements are preserved in
 [stream-timings.json](profiling/stream-timings.json).
 
+
+## Integration with upstream main in 0.1.33
+
+The user confirmed the performance of 0.1.24 and requested landing the work on
+main while incorporating the intervening upstream changes. Integration starts
+from upstream commit `8ffc5c1` (0.1.32), retaining Android streams, the React UI,
+Legend List log virtualization, screenshots/clipboard support, ordered simulator
+lifecycle calls, capture recovery, Device Hub automatic repair policy, and MCP
+live UI development.
+
+The user explicitly requested following upstream UI completely. All upstream
+React components, theme, stylesheet, HTML template, and log model are preserved.
+The temporary simulator timing widgets and rendering-disabled flag are removed;
+logs render through upstream's virtual list. The earlier full-DOM log renderer
+is not retained. Its profiling data remains historical evidence, not a
+performance claim about the new virtual list. Console diagnostics remain.
+
+The iOS controller now uses the bounded read/decode/paint pipeline, requesting
+60 FPS. Capture retains raw JPEG bytes and base64-encodes the latest frame only
+when requested. Resource reads carry arrival/timing metadata and support
+cancellation. The upstream server still recovers a dropped socket within its
+session, preserving monotonic sequences, refusing input before fresh capture,
+and retaining reset cooldowns and first-frame timeouts. Browser recovery clears
+pending paints and discards late decoding results from the previous capture.
+Decode errors keep upstream's capture reset and three-failure reconnect policy.
+Android video remains on upstream's H.264 implementation; ordered/coalesced
+input is shared by both panels.
+
+Connections use a fresh Device Hub query, while gesture checks refresh in the
+background and use the last completed result. Newly blocked input is published
+when the refresh completes; main's existing reconnect/automatic repair policy
+then applies. Explicit repair still invalidates cached checks and joins
+concurrent requests. No direct WSS or certificate transport is retained.
+The previous simulator/workspace resource addresses are aliases for the same
+current UI, including the investigation build's 0.1.24 addresses.
+
+The native/stdio improvements measured in 0.1.24 are not browser measurements
+of the integrated React UI. The integrated production stdio probe acknowledged 472 drag requests in
+0.54 ms on average, 0.97 ms p95, and 7.98 ms maximum, with zero requests over
+100 ms. It delivered 453 JPEGs over eight seconds (56.56 packets/s), with zero
+skipped sequences and 0.64 ms average transfer overhead. This workload uses the
+current Maps view, not a pixel-identical replay of the previous probe. Idle
+capture produced only one packet over four seconds; that is expected for an
+unchanged surface and does not trigger reconnect after a valid first frame.
+Results are preserved in [main-integration-0.1.33.json](profiling/main-integration-0.1.33.json).
+
+Validation: the integrated suite passes 118 tests, including upstream Android,
+React log controls and attachment behavior, simulator lifecycle calls, recovery,
+and the input/frame tests. The combined build and package complete. The copied
+package smoke confirms all 30 tools, bundled Android dependencies, independent
+MCP discovery/runtime agreement, existing UI address aliases, native backend
+startup, and shutdown without changing a simulator. Upstream components, theme,
+stylesheet, HTML template, and log model have no changes relative to `8ffc5c1`.
+The suite also passes all 118 tests in an isolated checkout of the integrated
+commit, after the shared checkout's input source had been overwritten during
+integration. The committed input source and installed server contain the
+background refresh. The native reconnect smoke terminates only its own copied
+Baguette, then confirms recovery on the same session with increasing sequence;
+it does not boot, repair, or send input. Installed 0.1.33 server, HTML, native
+binary, Android scrcpy server, skill, README, and manifest hashes match the
+validated release output.
+
+
+
 ## Confirmed findings
 
 The native and stdio MCP pipelines have no fixed 20 FPS limit. During an
@@ -538,9 +602,8 @@ presentation is not established by either stdio response counts or a single
 The user authorized background input status refresh after the root cause was
 established. Version 0.1.24 implements it and the native/stdio comparison above
 confirms the periodic awaited pause is removed. Embedded panel input timings
-are still needed to measure the remaining host/browser contribution. Log
-rendering remains disabled for the user's temporary comparison; a permanent
-log-viewer change has not been selected.
+are still needed to measure the remaining host/browser contribution. The historical rendering-disabled comparison has ended for the upstream
+integration described above; the current UI uses its virtual log list.
 The native profiling build and the temporary status-instrumented server ran
 separately from the installed plugin. The phase diagnostics are installed as
 plugin 0.1.21; the user has supplied reports containing all phase fields.

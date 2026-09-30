@@ -55,5 +55,7 @@ export class StreamInput {
     this.close();
   }
 
+  clear() { this.queued.length = 0; }
+
   close() { this.accepting = false; this.stopped = true; this.queued.length = 0; }
 }

@@ -61,7 +61,7 @@ export type FrameStats = {
 
 type Options<T extends Bitmap> = {
   read(after: number, signal: AbortSignal): Promise<ObservedRead>;
-  decode(data: string): Promise<T>;
+  decode(data: string): Promise<T | undefined>;
   paint(bitmap: T): void;
   requestPaint(callback: () => void): number;
   cancelPaint(id: number): void;
@@ -72,6 +72,7 @@ export class FrameStream<T extends Bitmap> {
   private encoded?: StreamFrame;
   private decoded?: { bitmap: T; receivedAt: number; readyAt: number };
   private decoding = false;
+  private generation = 0;
   private paintId?: number;
   private started = false;
   private stopped = false;
@@ -102,6 +103,7 @@ export class FrameStream<T extends Bitmap> {
   private async readLoop() {
     let after = 0;
     while (this.stopped === false) {
+      const generation = this.generation;
       const started = performance.now();
       const read = await this.options.read(after, this.controller.signal);
       if (this.stopped) return;
@@ -124,6 +126,7 @@ export class FrameStream<T extends Bitmap> {
       this.counters.skippedBeforeRead += frame.sequence - after - 1;
       this.counters.bytes += frame.bytes;
       after = frame.sequence;
+      if (generation !== this.generation) { this.counters.skippedBeforeDecode++; continue; }
       if (this.encoded) this.counters.skippedBeforeDecode++;
       this.encoded = frame;
       if (this.decoding === false) {
@@ -138,10 +141,13 @@ export class FrameStream<T extends Bitmap> {
       while (this.stopped === false && this.encoded) {
         const frame = this.encoded;
         this.encoded = undefined;
+        const generation = this.generation;
         const started = performance.now();
         const bitmap = await this.options.decode(frame.data);
         record(this.timings.decode, performance.now() - started);
+        if (bitmap == null) continue;
         if (this.stopped) { bitmap.close(); return; }
+        if (generation !== this.generation) { bitmap.close(); continue; }
         if (this.decoded) {
           this.decoded.bitmap.close();
           this.counters.skippedBeforePaint++;
@@ -207,14 +213,19 @@ export class FrameStream<T extends Bitmap> {
     this.resolve?.();
   }
 
-  private dispose() {
-    this.stopped = true;
-    this.controller.abort();
+  clearFrames() {
+    this.generation++;
     this.encoded = undefined;
     if (this.paintId != null) this.options.cancelPaint(this.paintId);
     this.paintId = undefined;
     this.decoded?.bitmap.close();
     this.decoded = undefined;
+  }
+
+  private dispose() {
+    this.stopped = true;
+    this.controller.abort();
+    this.clearFrames();
   }
 }
 

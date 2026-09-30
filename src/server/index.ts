@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { loadUIResource } from "./ui-resource.ts";
 import { createPlugin } from "./plugin.ts";
 
 const html = await readFile(new URL("./app.html", import.meta.url), "utf8");
-const plugin = await createPlugin(html);
+const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)));
 const transport = new StdioServerTransport();
 let closing = false;
 async function close() {

@@ -1,5 +1,10 @@
 # MCP latest-frame polling
 
+The measurements and UI descriptions below record the investigation builds.
+Version 0.1.33 integrates the frame/input changes with upstream React UI, Android
+support, and capture recovery, without temporary simulator timing widgets.
+See the [integration notes](stream-profiling.md#integration-with-upstream-main-in-0133).
+
 Recorded on 2026-09-30 for plugin 0.1.19, following the WSS checkpoint at `9313bbb`.
 
 The viewer now uses the MCP host bridge for video and input. The direct WSS service, TLS/certificate tools, browser CSP origin checks, and WebCodecs transport have been removed. The prior [WSS investigation](local-streaming-investigation.md) remains historical evidence. No transport fallback is retained. Existing Keychain certificates are neither required nor modified by this version.

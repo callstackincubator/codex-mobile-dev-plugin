@@ -17,7 +17,7 @@ try {
   const opened = await client.callTool({ name: "mobile_stream_session", arguments: { udid, fps: 60 } });
   assert.equal(opened.isError, undefined, JSON.stringify(opened.content));
   sessionId = opened._meta.sessionId;
-  const uri = opened._meta.frameUri;
+  const uri = new URL(opened._meta.frameUri);
   let after = 0;
   let frames = 0;
   let skipped = 0;
@@ -28,7 +28,8 @@ try {
   const started = performance.now();
   while (performance.now() - started < duration * 1000) {
     const before = performance.now();
-    const result = await client.readResource({ uri: `${uri}?after=${after}` });
+    uri.searchParams.set("after", String(after));
+    const result = await client.readResource({ uri: uri.href });
     const elapsed = performance.now() - before;
     const image = result.contents.find(item => item.mimeType === "image/jpeg" && "blob" in item);
     if (image == null) {

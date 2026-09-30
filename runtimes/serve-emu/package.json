@@ -1,0 +1,6 @@
+{
+  "name": "mobile-dev-serve-emu-runtime",
+  "private": true,
+  "type": "module",
+  "dependencies": { "serve-emu": "0.0.6" }
+}
