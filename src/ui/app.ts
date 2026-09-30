@@ -8,6 +8,7 @@ import type { SimulatorDevice, Status } from "../shared/protocol.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
 import { PanelContext } from "./model-context.ts";
 import { AndroidVideo } from "./android-video.ts";
+import { IosVideo } from "./ios-video.ts";
 import type { AndroidVideoBatch } from "./android-video.ts";
 import { LogsPanel } from "./logs-panel.ts";
 
@@ -282,30 +283,39 @@ async function openAndReceive(udid: string, sessionEpoch: number, signal: AbortS
 async function receiveFrames(session: PanelStream, signal: AbortSignal) {
   const uri = new URL(session.frameUri);
   let after = 0;
-  while (!signal.aborted && session.epoch === epoch) {
-    uri.searchParams.set("after", String(after));
-    const result = await app.readServerResource({ uri: uri.href }, { signal, timeout: 15000 });
+  const decoder = new IosVideo(bitmap => {
     if (signal.aborted || session.epoch !== epoch) return;
-    const image = result.contents.find(item => item.mimeType === "image/jpeg" && "blob" in item);
-    if (!image || !("blob" in image)) {
-      const idle = result.contents.find(item => item.mimeType === "application/json" && "text" in item);
-      if (idle && "text" in idle && JSON.parse(idle.text).state === "reconnecting") {
-        ready = false; cancelPointer(); session.inputs.length = 0;
-        element("frame-stats").textContent = "Reconnecting…";
-        notice("Reconnecting…"); controls();
-      }
-      continue;
-    }
-    const sequence = Number(image._meta?.sequence);
-    if (!Number.isSafeInteger(sequence) || sequence <= after) throw new StopReconnectError("The plugin returned an invalid frame sequence.");
-    after = sequence;
-    const bytes = Uint8Array.from(atob(image.blob), character => character.charCodeAt(0));
-    const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }));
-    try {
+    drawFrame(bitmap, bitmap.width, bitmap.height);
+  }, async () => {
+    if (signal.aborted || session.epoch !== epoch) return;
+    session.inputs.length = 0;
+    releasePointer(); ready = false;
+    notice("Recovering iOS video…"); controls();
+    await flushInput(session);
+    if (signal.aborted || session.epoch !== epoch) return;
+    await call("mobile_stream_reset", { sessionId: session.id }, { signal, timeout: 5000 });
+  }, signal);
+  try {
+    while (!signal.aborted && session.epoch === epoch) {
+      uri.searchParams.set("after", String(after));
+      const result = await app.readServerResource({ uri: uri.href }, { signal, timeout: 15000 });
       if (signal.aborted || session.epoch !== epoch) return;
-      drawFrame(bitmap, bitmap.width, bitmap.height);
-    } finally { bitmap.close(); }
-  }
+      const image = result.contents.find(item => item.mimeType === "image/jpeg" && "blob" in item);
+      if (!image || !("blob" in image)) {
+        const idle = result.contents.find(item => item.mimeType === "application/json" && "text" in item);
+        if (idle && "text" in idle && JSON.parse(idle.text).state === "reconnecting") {
+          ready = false; cancelPointer(); session.inputs.length = 0;
+          element("frame-stats").textContent = "Reconnecting…";
+          notice("Reconnecting…"); controls();
+        }
+        continue;
+      }
+      const sequence = Number(image._meta?.sequence);
+      if (!Number.isSafeInteger(sequence) || sequence <= after) throw new StopReconnectError("The plugin returned an invalid frame sequence.");
+      after = sequence;
+      await decoder.accept(image.blob);
+    }
+  } finally { decoder.close(); }
 }
 
 function drawFrame(image: CanvasImageSource, width: number, height: number) {

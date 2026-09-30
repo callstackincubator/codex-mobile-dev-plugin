@@ -106,7 +106,9 @@ The app gets a random stream session through an app-only MCP tool. The MCP serve
 
 The UI resource's CSP has empty connection and resource allowlists. Codex desktop 0.159.0 filters plain HTTP and WebSocket origins out of widget CSP, including loopback addresses. The MCP transport avoids those browser connections. A session expires after five minutes without reads or input. Closing or pausing a viewer closes its upstream capture. Ending the MCP process stops its Baguette child and streams. Simulator devices remain under CoreSimulator's control.
 
-When a socket drops, the server reopens it for the same device and preserves the frame sequence. If Baguette exits, the next read starts a new bundled process. Heartbeats detect sockets that stop responding. Failed attempts wait between 0.5 and 10 seconds. The panel also reconnects after MCP errors or an expired session. It keeps the last frame, shows Reconnecting, and discards input from the failed connection. Pause, closing the panel, or selecting another device cancels retries. Reconnect never boots a stopped simulator or runs an input repair.
+When a socket drops, the server reopens it for the same device and preserves the frame sequence. It clears the old frame and waits for fresh capture before allowing input. If Baguette exits, the next read starts a new bundled process. Heartbeats detect sockets that stop responding. If an open socket produces no first frame within ten seconds, capture retries with a delay. Baguette's MJPEG capture sends only changed pixels, so a quiet screen after the first frame stays connected. Failed attempts wait between 0.5 and 10 seconds. The panel also reconnects after MCP errors or an expired session. It keeps the last frame, shows Reconnecting, and discards input from the failed connection. Pause, closing the panel, or selecting another device cancels retries. Reconnect never boots a stopped simulator or runs an input repair.
+
+An iOS JPEG decode error restarts capture through `mobile_stream_reset` with the same panel session. Reset requests have a one-second cooldown. Three failed frames in a row reopen the panel stream with a delay. Late decode results release their bitmap and cannot draw on a closed panel.
 
 On macOS 27 with Xcode 27, the bundled Baguette can list simulators and capture frames. Device Hub can stop taps, buttons, and keys from reaching an iOS 27 device. The panel checks this state when connecting and sending input. When blocked, it shows Repair input and explains that the repair closes running apps. The button runs the bundled Baguette's `heal` command, then reconnects capture with new input handles. It restarts backboardd and SpringBoard without rebooting the device. Relaunching Device Hub can block input again. The panel never repairs a running device without the user clicking Repair input or asking to fix input. Baguette's boot route also repairs input after boot. Do not run the repair to diagnose video. See [Baguette's Device Hub notes](https://github.com/tddworks/baguette/blob/main/docs/features/device-hub/README.md).
 
@@ -128,6 +130,7 @@ UI resource addresses include the release version so Codex can load new HTML aft
 | `mobile_repair_input` | Reclaim input from Device Hub, closing running apps |
 | `mobile_stream_session` | Create a panel stream, app-only |
 | `mobile_stream_input` | Send a batch of panel input, app-only |
+| `mobile_stream_reset` | Recover one iOS panel's MJPEG capture, app-only |
 | `mobile_stream_close` | Close a panel stream, app-only |
 | `mobile_log_sources` | List connected Android devices and local Metro targets |
 | `mobile_logs_session` | Start native and/or Metro log readers |

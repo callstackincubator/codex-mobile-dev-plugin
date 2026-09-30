@@ -73,6 +73,19 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.equal(panelAccepted.structuredContent?.accepted, 1);
   const panelRejected = await client.callTool({ name: "mobile_stream_input", arguments: { sessionId: session._meta?.sessionId, messages: [{ type: "run_shell" }] } });
   assert.equal(panelRejected.isError, true);
+  const resetTool = tools.tools.find(tool => tool.name === "mobile_stream_reset")!;
+  assert.deepEqual((resetTool._meta?.ui as { visibility: string[] }).visibility, ["app"]);
+  const invalidReset = await client.callTool({ name: "mobile_stream_reset", arguments: { sessionId: "0".repeat(64) } });
+  assert.equal(invalidReset.isError, true);
+  const reset = await client.callTool({ name: "mobile_stream_reset", arguments: { sessionId: session._meta?.sessionId } });
+  assert.equal(reset.isError, undefined);
+  let recovered;
+  const recoveredUri = (session._meta?.frameUri as string).replace("after=0", "after=1");
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const resource = await client.readResource({ uri: recoveredUri });
+    if (resource.contents[0].mimeType === "image/jpeg") { recovered = resource.contents[0]; break; }
+  }
+  assert.equal(recovered?._meta?.sequence, 2);
   const closedPanel = await client.callTool({ name: "mobile_stream_close", arguments: { sessionId: session._meta?.sessionId } });
   assert.equal(closedPanel.isError, undefined);
   await assert.rejects(client.readResource({ uri: session._meta?.frameUri as string }), /expired or closed/);
@@ -112,6 +125,7 @@ test("Device Hub blockage stays visible until an explicit repair reconnects inpu
   await client.connect(clientTransport);
   const session = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
   assert.deepEqual(session.structuredContent?.inputStatus, { state: "ready" });
+  await client.readResource({ uri: session._meta?.frameUri as string });
   input.block();
   const blocked = await client.callTool({ name: "mobile_stream_input", arguments: { sessionId: session._meta?.sessionId, messages: [{ type: "button", button: "home" }] } });
   assert.equal(blocked.isError, true);
@@ -133,6 +147,7 @@ test("Device Hub blockage stays visible until an explicit repair reconnects inpu
   await assert.rejects(client.readResource({ uri: shadowed._meta?.frameUri as string }), /expired or closed/);
   const reconnected = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
   assert.deepEqual(reconnected.structuredContent?.inputStatus, { state: "ready" });
+  await client.readResource({ uri: reconnected._meta?.frameUri as string });
   const accepted = await client.callTool({ name: "mobile_stream_input", arguments: { sessionId: reconnected._meta?.sessionId, messages: [{ type: "button", button: "home" }] } });
   assert.equal(accepted.structuredContent?.accepted, 1);
   input.block();

@@ -22,6 +22,7 @@ export function fakeSimulatorInput() {
 export async function fakeBaguette() {
   let state = "Booted";
   let inputFails = false;
+  let sendFrames = true;
   const inputs: unknown[] = [];
   const requests: { path: string; origin?: string }[] = [];
   const http = createServer(async (request, response) => {
@@ -58,7 +59,7 @@ export async function fakeBaguette() {
     socket.on("message", data => {
       const message = JSON.parse(data.toString());
       inputs.push(message);
-      if (message.type === "set_fps") socket.send(PNG, { binary: true });
+      if (message.type === "set_fps" && sendFrames) socket.send(PNG, { binary: true });
     });
   });
   http.listen(0, "127.0.0.1");
@@ -68,6 +69,7 @@ export async function fakeBaguette() {
     url: `http://127.0.0.1:${address.port}`, inputs, requests, websocket,
     setState(next: string) { state = next; },
     setInputFailure() { inputFails = true; },
+    setFrames(enabled: boolean) { sendFrames = enabled; },
     async close() {
       for (const client of websocket.clients) client.terminate();
       await new Promise<void>(resolve => websocket.close(() => resolve()));

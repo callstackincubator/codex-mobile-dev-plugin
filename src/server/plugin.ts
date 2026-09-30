@@ -236,6 +236,14 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     return result({}, "Simulator stream closed.");
   }));
 
+  registerAppTool(server, "mobile_stream_reset", {
+    title: "Recover iOS panel video", description: "Restart one panel's MJPEG capture after a decode error, keeping its session and frame sequence. Does not boot a device or repair input.",
+    inputSchema: { sessionId: sessionIdSchema },
+    annotations: write, _meta: { ui: { visibility: ["app"] } },
+  }, guarded(async ({ sessionId }: { sessionId: string }) => {
+    streams.reset(sessionId);
+    return result({}, "Restarting simulator capture.");
+  }));
 
   return {
     server,
