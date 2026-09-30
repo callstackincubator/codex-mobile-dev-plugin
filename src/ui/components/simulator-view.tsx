@@ -15,7 +15,7 @@ const deviceButtons: { action: string; icon: LucideIcon; label: string }[] = [
 export const SimulatorView = memo(function SimulatorView({ platform }: { platform: "ios" | "android" }) {
   const label = platform === "ios" ? "iOS" : "Android";
   const id = (name: string) => `${platform}-${name}`;
-  return <section id={`${platform}-panel`} className="simulator-panel group/simulator @container flex h-full min-w-0 flex-1 flex-col" data-platform={platform} aria-label={`${label} simulator`}>
+  return <section hidden={platform === "android"} id={`${platform}-panel`} className="simulator-panel group/simulator @container flex h-full min-w-0 flex-1 flex-col" data-platform={platform} aria-label={`${label} simulator`}>
     <header className="flex h-[49px] shrink-0 items-center border-b px-2">
       <div className="flex w-full min-w-0 items-center gap-1" role="toolbar" aria-label={`${label} controls`}>
         <DevicePicker id={id("devices")} label={`${label} device`} />

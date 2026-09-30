@@ -13,7 +13,7 @@ import { useMediaQuery } from "./use-media-query";
 export type DeviceLayout = "both" | "ios" | "android" | "none";
 
 export function Workspace({ logs, onLayout }: { logs: LogsPanel; onLayout: (layout: DeviceLayout) => void }) {
-  const [layout, setLayout] = useState<DeviceLayout>("both");
+  const [layout, setLayout] = useState<DeviceLayout>("ios");
   const wide = useMediaQuery("(min-width: 900px)");
   const split = wide && document.documentElement.dataset.view === "workspace";
   const logState = useSyncExternalStore(logs.subscribe, logs.getSnapshot);
@@ -33,9 +33,9 @@ export function Workspace({ logs, onLayout }: { logs: LogsPanel; onLayout: (layo
   }}><LogsView panel={logs} /></ResizablePanel>;
   const simulatorPanel = <ResizablePanel key="simulators" id="simulators-resizable" minSize="0%" maxSize="100%" collapsible collapsedSize="0px" defaultSize={split ? "67%" : "60%"}>
     <ResizablePanelGroup id="simulator-panels" groupRef={simulatorGroupRef} orientation="horizontal" aria-label="Simulators">
-      <ResizablePanel id="ios-resizable" defaultSize="50%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="ios" /></ResizablePanel>
+      <ResizablePanel id="ios-resizable" defaultSize="100%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="ios" /></ResizablePanel>
       <ResizableHandle hidden={layout !== "both"} disabled={layout !== "both"} aria-label="Resize iOS and Android simulators" />
-      <ResizablePanel id="android-resizable" defaultSize="50%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="android" /></ResizablePanel>
+      <ResizablePanel id="android-resizable" defaultSize="0%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="android" /></ResizablePanel>
     </ResizablePanelGroup>
   </ResizablePanel>;
   const divider = <ResizableHandle key="divider" hidden={layout === "none"} disabled={layout === "none"} aria-label="Resize logs and simulators" />;
