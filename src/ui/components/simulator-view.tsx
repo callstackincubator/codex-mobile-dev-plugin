@@ -1,4 +1,4 @@
-import { CameraIcon, HouseIcon, PanelsTopLeftIcon, SmartphoneIcon, type LucideIcon } from "lucide-react";
+import { CameraIcon, HouseIcon, CopyIcon, SmartphoneIcon, type LucideIcon } from "lucide-react";
 import { memo } from "react";
 import { Button } from "./ui/button";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty";
@@ -6,7 +6,7 @@ import { DevicePicker } from "./device-picker";
 
 const deviceButtons: { action: string; icon: LucideIcon; label: string }[] = [
   { action: "home", icon: HouseIcon, label: "Home" },
-  { action: "app-switcher", icon: PanelsTopLeftIcon, label: "App switcher" },
+  { action: "app-switcher", icon: CopyIcon, label: "App switcher" },
 ];
 
 // The stream controller owns canvas pixels and device control state after mount.
