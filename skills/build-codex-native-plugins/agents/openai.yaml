@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Codex native plugins"
+  short_description: "Build plugins with native MCP extensions"
+  default_prompt: "Use $build-codex-native-plugins to create a Codex plugin with a sidebar app and file viewer."

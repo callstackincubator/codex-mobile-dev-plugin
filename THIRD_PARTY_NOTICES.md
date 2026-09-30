@@ -1,0 +1,7 @@
+# Third-party code
+
+This plugin includes [Baguette 0.2.1](https://github.com/tddworks/baguette/tree/v0.2.1) by tddworks. Baguette uses the Apache License 2.0. Its full license sits at `dist/baguette/LICENSE`, beside its binary and full official resource bundle. We rebuild the unchanged v0.2.1 source with Swift 6.4 to avoid Swift task allocation crashes on macOS 27. `vendor/baguette-release.json` records the official archive URL, SHA-256, and source commit. `dist/baguette/release.json` also records the rebuilt binary SHA-256 and compiler version. `dist/baguette/third-party-licenses.txt` holds the Swift dependencies' licenses.
+
+This plugin also includes [agent-device 0.20.9](https://github.com/callstack/agent-device/tree/v0.20.9) by Callstack under the MIT License. Its license sits at `dist/agent-device/node_modules/agent-device/LICENSE`. The package includes the official npm release, its Apple runner source, and all npm runtime dependencies with their licenses. `runtimes/agent-device/package-lock.json` pins each package and its integrity hash. `dist/agent-device/release.json` records the npm archive, integrity hash, and lockfile SHA-256. The bundled workflow guide comes from that CLI version's help.
+
+The Baguette MCP server and panel bundle the Model Context Protocol SDK, MCP Apps SDK, OpenAI MCP Extensions, Zod, ws, and their required JavaScript code. `dist/third-party-licenses.txt` contains their licenses. The build preserves bundled license comments too.

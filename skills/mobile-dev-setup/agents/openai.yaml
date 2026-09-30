@@ -1,0 +1,13 @@
+interface:
+  display_name: "Set up Mobile Dev"
+  short_description: "Check the bundled simulator backend"
+  default_prompt: "Set up Mobile Dev and open my iOS simulator."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "mobile-dev"
+      description: "Bundled Baguette simulator tools and native panel"
+    - type: "mcp"
+      value: "agent-device"
+      description: "Bundled agent-device simulator control tools"

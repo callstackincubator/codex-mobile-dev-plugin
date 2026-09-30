@@ -1,0 +1,6 @@
+node_modules/
+dist/
+vendor/baguette/
+release/
+.DS_Store
+*.log

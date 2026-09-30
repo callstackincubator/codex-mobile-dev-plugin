@@ -1,0 +1,17 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "mobile-dev": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./dist/server.mjs"],
+      "cwd": "./"
+    },
+    "agent-device": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./dist/agent-device-server.mjs"],
+      "cwd": "./"
+    }
+  }
+}

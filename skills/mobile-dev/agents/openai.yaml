@@ -1,0 +1,13 @@
+interface:
+  display_name: "Mobile Dev"
+  short_description: "Stream and control iOS simulators"
+  default_prompt: "Open my iOS simulator and inspect the current screen."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "mobile-dev"
+      description: "Bundled Baguette simulator tools and native panel"
+    - type: "mcp"
+      value: "agent-device"
+      description: "Bundled agent-device app control and snapshot refs"

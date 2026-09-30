@@ -1,0 +1,148 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { OpenAIUiToolMetadataSchema, OpenAIUiResourceMetadataSchema } from "@openai/mcp-extensions/server";
+import { createPlugin, APP_URI } from "../src/server/plugin.ts";
+import { Baguette } from "../src/server/baguette.ts";
+import { parseBaseUrl } from "../src/shared/protocol.ts";
+import { fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "./fixtures.ts";
+
+test("cached side tabs load the current UI through old resource addresses", async t => {
+  const html = "<!doctype html><title>Current simulator</title><canvas></canvas>";
+  const plugin = await createPlugin(html);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "cached-panel-test", version: "1" });
+  t.after(async () => { await client.close(); await plugin.close(); });
+  await plugin.server.connect(serverTransport);
+  await client.connect(clientTransport);
+  assert.equal(APP_URI, "ui://mobile-dev/simulator.html");
+  for (const uri of [APP_URI, ...[1, 2, 3, 4, 5, 6].map(version => `ui://mobile-dev/v${version}/simulator.html`)]) {
+    const { contents } = await client.readResource({ uri });
+    assert.equal(contents[0].uri, uri);
+    assert.equal(contents[0].mimeType, "text/html;profile=mcp-app");
+    assert.equal(contents[0].text, html);
+    OpenAIUiResourceMetadataSchema.parse(contents[0]._meta?.["openai/ui"]);
+  }
+  await assert.rejects(client.readResource({ uri: "ui://mobile-dev/v999/simulator.html" }), /not found/);
+});
+
+test("MCP tools expose native entrypoints and complete the simulator workflow", async t => {
+  const fake = await fakeBaguette();
+  const plugin = await createPlugin("<!doctype html><title>Mobile Dev</title>", new Baguette(fake.url), fakeSimulatorInput());
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "test", version: "1" });
+  t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
+  await plugin.server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const tools = await client.listTools();
+  const open = tools.tools.find(tool => tool.name === "mobile_open_simulator")!;
+  const metadata = OpenAIUiToolMetadataSchema.parse(open._meta?.["openai/ui"]);
+  assert.deepEqual(metadata.entrypoints?.map(item => item.type), ["global", "thread"]);
+  assert.equal(open._meta?.ui && (open._meta.ui as { resourceUri: string }).resourceUri, APP_URI);
+  const appTool = tools.tools.find(tool => tool.name === "mobile_stream_session")!;
+  assert.deepEqual((appTool._meta?.ui as { visibility: string[] }).visibility, ["app"]);
+  const resource = await client.readResource({ uri: APP_URI });
+  OpenAIUiResourceMetadataSchema.parse(resource.contents[0]._meta?.["openai/ui"]);
+  assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
+  assert.deepEqual(resource.contents[0]._meta?.ui, { csp: { connectDomains: [], resourceDomains: [] } });
+  const status = await client.callTool({ name: "mobile_open_simulator", arguments: {} });
+  assert.equal(status.structuredContent?.connected, true);
+  assert.equal((status.structuredContent?.devices as unknown[]).length, 2);
+  const session = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
+  assert.equal(session.structuredContent?.fps, 30);
+  assert.match(session._meta?.sessionId as string, /^[a-f0-9]{64}$/);
+  assert.equal(session._meta?.streamUrl, undefined);
+  const frame = await client.readResource({ uri: session._meta?.frameUri as string });
+  assert.equal(frame.contents[0].mimeType, "image/jpeg");
+  assert.deepEqual(Buffer.from((frame.contents[0] as { blob: string }).blob, "base64"), PNG);
+  assert.equal(frame.contents[0]._meta?.sequence, 1);
+  await assert.rejects(client.readResource({ uri: `stream://mobile-dev/${"0".repeat(64)}/frame?after=0` }), /expired or closed/);
+  const panelInput = { type: "button", button: "home" };
+  const panelAccepted = await client.callTool({ name: "mobile_stream_input", arguments: { sessionId: session._meta?.sessionId, messages: [panelInput] } });
+  assert.equal(panelAccepted.structuredContent?.accepted, 1);
+  const panelRejected = await client.callTool({ name: "mobile_stream_input", arguments: { sessionId: session._meta?.sessionId, messages: [{ type: "run_shell" }] } });
+  assert.equal(panelRejected.isError, true);
+  const closedPanel = await client.callTool({ name: "mobile_stream_close", arguments: { sessionId: session._meta?.sessionId } });
+  assert.equal(closedPanel.isError, undefined);
+  await assert.rejects(client.readResource({ uri: session._meta?.frameUri as string }), /expired or closed/);
+  const readUI = await client.callTool({ name: "mobile_describe_ui", arguments: { udid: UDID } });
+  assert.ok(JSON.stringify(readUI.structuredContent).includes("Continue"));
+  const screenshot = await client.callTool({ name: "mobile_screenshot", arguments: { udid: UDID } });
+  const image = (screenshot.content as { type: string; data: string }[]).find(item => item.type === "image")!;
+  assert.deepEqual(Buffer.from(image.data, "base64"), PNG);
+  const input = { type: "tap", x: 10, y: 20, ...SCREEN };
+  await client.callTool({ name: "mobile_send_input", arguments: { udid: UDID, input } });
+  assert.deepEqual(fake.inputs.at(-1), input);
+  fake.setInputFailure();
+  const rejected = await client.callTool({ name: "mobile_send_input", arguments: { udid: UDID, input } });
+  assert.equal(rejected.isError, true);
+  assert.match(JSON.stringify(rejected.content), /input rejected/);
+  const stopped = await client.callTool({ name: "mobile_shutdown_simulator", arguments: { udid: UDID } });
+  assert.equal((stopped.structuredContent?.devices as { state: string; udid: string }[]).find(item => item.udid === UDID)?.state, "Shutdown");
+  const noStream = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
+  assert.equal(noStream.isError, true);
+  assert.equal(noStream._meta?.retryable, false);
+  const booted = await client.callTool({ name: "mobile_boot_simulator", arguments: { udid: UDID } });
+  assert.equal((booted.structuredContent?.devices as { state: string; udid: string }[]).find(item => item.udid === UDID)?.state, "Booted");
+  const unknown = await client.callTool({ name: "mobile_boot_simulator", arguments: { udid: "810F8795-62F8-4B9D-A3D2-6AC9FDF585A2" } });
+  assert.equal(unknown.isError, true);
+  const invalid = await client.callTool({ name: "mobile_send_input", arguments: { udid: OTHER_UDID, input: { type: "tap", x: 2, y: 2 } } });
+  assert.equal(invalid.isError, true);
+});
+
+test("Device Hub blockage stays visible until an explicit repair reconnects input", async t => {
+  const fake = await fakeBaguette();
+  const input = fakeSimulatorInput();
+  const plugin = await createPlugin("<title>Mobile Dev</title>", new Baguette(fake.url), input);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "blocked-input-test", version: "1" });
+  t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
+  await plugin.server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const session = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
+  assert.deepEqual(session.structuredContent?.inputStatus, { state: "ready" });
+  input.block();
+  const blocked = await client.callTool({ name: "mobile_stream_input", arguments: { sessionId: session._meta?.sessionId, messages: [{ type: "button", button: "home" }] } });
+  assert.equal(blocked.isError, true);
+  assert.equal(blocked._meta?.inputBlocked, true);
+  const modelInput = await client.callTool({ name: "mobile_send_input", arguments: { udid: UDID, input: { type: "tap", x: 10, y: 20, ...SCREEN } } });
+  assert.equal(modelInput._meta?.inputBlocked, true);
+  const shadowed = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
+  assert.deepEqual(shadowed.structuredContent?.inputStatus, { state: "blocked" });
+  assert.equal((await client.readResource({ uri: shadowed._meta?.frameUri as string })).contents[0].mimeType, "image/jpeg");
+  assert.equal(fake.inputs.some(message => ["button", "tap"].includes((message as { type: string }).type)), false);
+  assert.deepEqual(input.repairs, []);
+  const unknown = await client.callTool({ name: "mobile_repair_input", arguments: { udid: "810F8795-62F8-4B9D-A3D2-6AC9FDF585A2" } });
+  assert.equal(unknown.isError, true);
+  assert.deepEqual(input.repairs, []);
+  const repaired = await client.callTool({ name: "mobile_repair_input", arguments: { udid: UDID } });
+  assert.equal(repaired.isError, undefined);
+  assert.deepEqual(input.repairs, [UDID]);
+  await assert.rejects(client.readResource({ uri: session._meta?.frameUri as string }), /expired or closed/);
+  await assert.rejects(client.readResource({ uri: shadowed._meta?.frameUri as string }), /expired or closed/);
+  const reconnected = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
+  assert.deepEqual(reconnected.structuredContent?.inputStatus, { state: "ready" });
+  const accepted = await client.callTool({ name: "mobile_stream_input", arguments: { sessionId: reconnected._meta?.sessionId, messages: [{ type: "button", button: "home" }] } });
+  assert.equal(accepted.structuredContent?.accepted, 1);
+  input.block();
+  const wrongSession = await client.callTool({ name: "mobile_stream_input", arguments: { sessionId: "0".repeat(64), messages: [{ type: "button", button: "home" }] } });
+  assert.equal(wrongSession.isError, true);
+  assert.equal(wrongSession._meta?.inputBlocked, undefined);
+});
+
+test("only a loopback HTTP origin can become a backend target", () => {
+  for (const value of ["https://127.0.0.1", "http://example.com", "http://user:pass@localhost", "http://localhost/path", "http://localhost?url=x"]) {
+    assert.throws(() => parseBaseUrl(value));
+  }
+  assert.equal(parseBaseUrl("http://127.0.0.1:8421").port, "8421");
+});
+
+test("a reused backend survives disposal of the adapter", async t => {
+  const fake = await fakeBaguette();
+  t.after(() => fake.close());
+  const baguette = new Baguette(fake.url);
+  assert.equal((await baguette.start()).managed, false);
+  baguette.dispose();
+  assert.equal((await fetch(`${fake.url}/simulators.json`)).status, 200);
+});
