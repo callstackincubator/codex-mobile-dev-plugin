@@ -15,11 +15,11 @@ import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../shared/protocol.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-export const APP_URI = "ui://mobile-dev/0.1.16/simulator.html";
-export const WORKSPACE_URI = "ui://mobile-dev/0.1.16/workspace.html";
+export const APP_URI = "ui://mobile-dev/0.1.20/simulator.html";
+export const WORKSPACE_URI = "ui://mobile-dev/0.1.20/workspace.html";
 // Codex can retain entrypoint metadata after updating the installed plugin.
-const legacyAppUris = ["ui://mobile-dev/0.1.15/simulator.html", "ui://mobile-dev/0.1.14/simulator.html", "ui://mobile-dev/0.1.13/simulator.html", "ui://mobile-dev/0.1.12/simulator.html", "ui://mobile-dev/0.1.11/simulator.html", "ui://mobile-dev/simulator.html", ...Array.from({ length: 6 }, (_, index) => `ui://mobile-dev/v${index + 1}/simulator.html`)];
-const legacyWorkspaceUris = ["ui://mobile-dev/0.1.15/workspace.html", "ui://mobile-dev/0.1.14/workspace.html", "ui://mobile-dev/0.1.13/workspace.html", "ui://mobile-dev/0.1.12/workspace.html", "ui://mobile-dev/0.1.11/workspace.html", "ui://mobile-dev/workspace.html"];
+const legacyAppUris = ["ui://mobile-dev/0.1.19/simulator.html", "ui://mobile-dev/0.1.18/simulator.html", "ui://mobile-dev/0.1.17/simulator.html", "ui://mobile-dev/0.1.16/simulator.html", "ui://mobile-dev/0.1.15/simulator.html", "ui://mobile-dev/0.1.14/simulator.html", "ui://mobile-dev/0.1.13/simulator.html", "ui://mobile-dev/0.1.12/simulator.html", "ui://mobile-dev/0.1.11/simulator.html", "ui://mobile-dev/simulator.html", ...Array.from({ length: 6 }, (_, index) => `ui://mobile-dev/v${index + 1}/simulator.html`)];
+const legacyWorkspaceUris = ["ui://mobile-dev/0.1.19/workspace.html", "ui://mobile-dev/0.1.18/workspace.html", "ui://mobile-dev/0.1.17/workspace.html", "ui://mobile-dev/0.1.16/workspace.html", "ui://mobile-dev/0.1.15/workspace.html", "ui://mobile-dev/0.1.14/workspace.html", "ui://mobile-dev/0.1.13/workspace.html", "ui://mobile-dev/0.1.12/workspace.html", "ui://mobile-dev/0.1.11/workspace.html", "ui://mobile-dev/workspace.html"];
 const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
@@ -43,7 +43,7 @@ function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
 
 export async function createPlugin(html: string, baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), android = new ServeEmu()) {
   const streams = new StreamSessions(baguette);
-  const server = new McpServer({ name: "mobile-dev", version: "0.1.16" }, {
+  const server = new McpServer({ name: "mobile-dev", version: "0.1.20" }, {
     instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. For Android use mobile_list_android_devices and the mobile_android tools. Use the selected serial with agent-device and platform android. serve-emu handles Android video and panel input. Opening the panel does not boot a device.",
   });
   new OpenAIExtensions(server);

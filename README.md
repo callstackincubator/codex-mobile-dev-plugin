@@ -36,7 +36,7 @@ codex plugin add mobile-dev@mobile-dev-local
 
 Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile_open_workspace` for the fullscreen view. Call `mobile_open_simulator` for the panel beside a chat. Choose iOS or Android, pick a device from the panel dropdown, and press Start. Start boots the device if needed, then connects its screen. A selected running device connects automatically. The panel uses Apple’s device bezel and screen mask from the installed DeviceKit assets, with a simple frame as a fallback when assets are unavailable. Click the screen to type or drag. Pause closes the stream and keeps the last frame.
 
-The local ZIP at `release/mobile-dev-0.1.16-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+The local ZIP at `release/mobile-dev-0.1.20-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 Ask the agent to inspect or control the app on the selected device. The panel shares its ID and platform with the chat. The agent uses the bundled agent-device tools with that ID, opens a named session, reads accessibility refs, then presses elements or fills fields. Baguette streams iOS and serve-emu streams Android in the panel. The tools take the same session name on later calls so refs and app state stay together.
 

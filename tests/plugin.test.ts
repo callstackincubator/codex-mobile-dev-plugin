@@ -16,7 +16,7 @@ test("cached side tabs load the current UI through old resource addresses", asyn
   t.after(async () => { await client.close(); await plugin.close(); });
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
-  assert.equal(APP_URI, "ui://mobile-dev/0.1.16/simulator.html");
+  assert.equal(APP_URI, "ui://mobile-dev/0.1.20/simulator.html");
   for (const uri of [APP_URI, "ui://mobile-dev/simulator.html", ...[1, 2, 3, 4, 5, 6].map(version => `ui://mobile-dev/v${version}/simulator.html`)]) {
     const { contents } = await client.readResource({ uri });
     assert.equal(contents[0].uri, uri);
@@ -45,7 +45,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.equal((workspace._meta?.ui as { resourceUri: string }).resourceUri, WORKSPACE_URI);
   const workspaceResource = await client.readResource({ uri: WORKSPACE_URI });
   assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);
-  assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.16/workspace.html");
+  assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.20/workspace.html");
   const oldWorkspace = await client.readResource({ uri: "ui://mobile-dev/workspace.html" });
   assert.equal(oldWorkspace.contents[0].text, workspaceResource.contents[0].text);
   assert.equal(open._meta?.ui && (open._meta.ui as { resourceUri: string }).resourceUri, APP_URI);

@@ -49,11 +49,11 @@ try {
   assert.ok(resource.contents[0].text.includes('id="log-attach"'));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.16/simulator.html");
+  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.20/simulator.html");
   assert.ok(resource.contents[0].text.includes('class="workspace-toolbar"'));
   assert.ok(resource.contents[0].text.includes('id="workspace-panels"'));
   assert.ok(resource.contents[0].text.includes('id="tool-logs"'));
-  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.16/workspace.html");
+  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.20/workspace.html");
   assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
   const oldWorkspace = await client.readResource({ uri: "ui://mobile-dev/workspace.html" });
   assert.equal(oldWorkspace.contents[0].text, workspaceResource.contents[0].text);
