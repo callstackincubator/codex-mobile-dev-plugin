@@ -154,7 +154,7 @@ test("the toolbar capture copies the returned PNG and still returns it when clip
   assert.equal(fake.requests.some(request => request.path.endsWith("/boot")), false);
 });
 
-test("Device Hub blockage stays visible until an explicit repair reconnects input", async t => {
+test("Device Hub blockage repairs automatically, limits repeated repairs, and permits manual recovery", async t => {
   const fake = await fakeBaguette();
   const input = fakeSimulatorInput();
   const plugin = await createPlugin("<title>Mobile Dev</title>", new Baguette(fake.url), input);
@@ -169,20 +169,26 @@ test("Device Hub blockage stays visible until an explicit repair reconnects inpu
   input.block();
   const blocked = await client.callTool({ name: "mobile_stream_input", arguments: { sessionId: session._meta?.sessionId, messages: [{ type: "button", button: "home" }] } });
   assert.equal(blocked.isError, true);
-  assert.equal(blocked._meta?.inputBlocked, true);
+  assert.equal(blocked._meta?.streamDisconnected, true);
   const modelInput = await client.callTool({ name: "mobile_send_input", arguments: { udid: UDID, input: { type: "tap", x: 10, y: 20, ...SCREEN } } });
   assert.equal(modelInput._meta?.inputBlocked, true);
   const shadowed = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
-  assert.deepEqual(shadowed.structuredContent?.inputStatus, { state: "blocked" });
+  assert.deepEqual(shadowed.structuredContent?.inputStatus, { state: "ready" });
+  assert.match(shadowed.structuredContent?.inputRepairMessage as string, /repaired automatically/);
   assert.equal((await client.readResource({ uri: shadowed._meta?.frameUri as string })).contents[0].mimeType, "image/jpeg");
   assert.equal(fake.inputs.some(message => ["button", "tap"].includes((message as { type: string }).type)), false);
-  assert.deepEqual(input.repairs, []);
+  assert.deepEqual(input.repairs, [UDID]);
+  input.block();
+  const limited = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
+  assert.deepEqual(limited.structuredContent?.inputStatus, { state: "blocked" });
+  assert.match(limited.structuredContent?.inputRepairMessage as string, /paused/);
+  assert.deepEqual(input.repairs, [UDID]);
   const unknown = await client.callTool({ name: "mobile_repair_input", arguments: { udid: "810F8795-62F8-4B9D-A3D2-6AC9FDF585A2" } });
   assert.equal(unknown.isError, true);
-  assert.deepEqual(input.repairs, []);
+  assert.deepEqual(input.repairs, [UDID]);
   const repaired = await client.callTool({ name: "mobile_repair_input", arguments: { udid: UDID } });
   assert.equal(repaired.isError, undefined);
-  assert.deepEqual(input.repairs, [UDID]);
+  assert.deepEqual(input.repairs, [UDID, UDID]);
   await assert.rejects(client.readResource({ uri: session._meta?.frameUri as string }), /expired or closed/);
   await assert.rejects(client.readResource({ uri: shadowed._meta?.frameUri as string }), /expired or closed/);
   const reconnected = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });

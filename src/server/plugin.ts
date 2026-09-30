@@ -10,7 +10,7 @@ import { StreamSessions } from "./stream-sessions.ts";
 import { LogSessions } from "./log-sessions.ts";
 import { registerLogTools } from "./log-tools.ts";
 import { SimulatorInputService } from "./simulator-input.ts";
-import type { SimulatorInput } from "./simulator-input.ts";
+import type { InputStatus, SimulatorInput } from "./simulator-input.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { copyPNGToClipboard } from "./clipboard.ts";
 import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../shared/protocol.ts";
@@ -50,6 +50,29 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
   new OpenAIExtensions(server);
   registerLogTools(server, logs, baguette);
   const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot);
+
+  const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<{ inputStatus: InputStatus; inputRepairMessage: string }> }>();
+  async function panelInputStatus(udid: string) {
+    const inputStatus = await simulatorInput.status(udid);
+    if (inputStatus.state !== "blocked") return { inputStatus };
+    const previous = automaticRepairs.get(udid);
+    if (previous && Date.now() - previous.attemptedAt < 60000) {
+      const repaired = await previous.pending;
+      const current = await simulatorInput.status(udid);
+      return current.state === "ready" ? repaired : { inputStatus: current, inputRepairMessage: "Input is blocked again. Automatic repair paused to avoid repeatedly closing apps." };
+    }
+    const pending = (async () => {
+      streams.closeDevice(udid);
+      try {
+        const inputStatus = await simulatorInput.repair(udid);
+        return { inputStatus, inputRepairMessage: "Input repaired automatically. Reopen your app." };
+      } catch (error) {
+        return { inputStatus: await simulatorInput.status(udid), inputRepairMessage: `Automatic input repair failed: ${errorMessage(error)}` };
+      }
+    })();
+    automaticRepairs.set(udid, { attemptedAt: Date.now(), pending });
+    return pending;
+  }
 
   async function blockedInput(udid: string): Promise<CallToolResult | undefined> {
     if ((await simulatorInput.status(udid)).state !== "blocked") return;
@@ -173,7 +196,7 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
 
   registerAppTool(server, "mobile_repair_input", {
     title: "Repair simulator input",
-    description: "Reclaim input blocked by Xcode 27 Device Hub. Restarts backboardd and SpringBoard and closes running simulator apps. Use when the user asks to fix blocked input or clicks Repair input in the panel.",
+    description: "Reclaim input blocked by Xcode 27 Device Hub. Restarts backboardd and SpringBoard and closes running simulator apps. Use when the user asks to fix blocked input or when the panel detects blocked input.",
     inputSchema: deviceInput, annotations: { ...write, destructiveHint: true },
     _meta: { ui: { visibility: ["app", "model"] } },
   }, guarded(async ({ udid }: { udid: string }) => {
@@ -229,10 +252,10 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
   }, guarded(async ({ udid, fps }: { udid: string; fps: number }) => {
     const definition = await baguette.definition(udid);
     const bezel = await readBezel(baguette, udid, definition.screen);
-    const inputStatus = await simulatorInput.status(udid);
+    const { inputStatus, inputRepairMessage } = await panelInputStatus(udid);
     const sessionId = await streams.open(udid, fps);
     return {
-      ...result({ udid, definition, fps, inputStatus }, `Stream ready for ${definition.identity.name}.`),
+      ...result({ udid, definition, fps, inputStatus, ...(inputRepairMessage ? { inputRepairMessage } : {}) }, `Stream ready for ${definition.identity.name}.`),
       _meta: { ...(bezel ? { bezel } : {}), sessionId, frameUri: `stream://mobile-dev/${sessionId}/frame?after=0` },
     };
   }));
@@ -245,8 +268,12 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     if (streams.connectionState(sessionId) === "reconnecting") return {
       isError: true, content: [{ type: "text", text: "The simulator stream is reconnecting." }], _meta: { streamDisconnected: true },
     };
-    const blocked = await blockedInput(streams.deviceId(sessionId));
-    if (blocked) return blocked;
+    const udid = streams.deviceId(sessionId);
+    const blocked = await blockedInput(udid);
+    if (blocked) {
+      streams.closeDevice(udid);
+      return { isError: true, content: [{ type: "text", text: "Repairing simulator input and reconnecting…" }], _meta: { streamDisconnected: true } };
+    }
     return result({ accepted: streams.input(sessionId, messages) }, "Input sent to the simulator.");
   }));
 
