@@ -12,3 +12,29 @@ body { font-size: 12px; }
 /* Split sizes come from Resizable rather than fixed grid tracks. */
 html[data-view="workspace"] [data-element="stage"] { padding-bottom: calc(24px + max(64px, var(--host-safe-bottom, 0px), env(safe-area-inset-bottom, 0px))); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }
+
+/* Severity colors match compact console rows while keeping timestamps neutral. */
+.log-row { --log-color: var(--foreground); --log-tint: transparent; color: var(--log-color); background: var(--log-tint); }
+.log-row[data-level="error"] { --log-color: #ff5d64; --log-tint: #ff5d6408; }
+.log-row[data-level="warn"] { --log-color: #e6b800; --log-tint: #e6b80008; }
+.log-row[data-level="info"] { --log-color: #419cff; --log-tint: #419cff08; }
+html[data-theme="dark"] .log-row[data-level="warn"] { --log-color: #ffd600; }
+html:not([data-theme="dark"]) .log-row[data-level="error"] { --log-color: #c62836; }
+html:not([data-theme="dark"]) .log-row[data-level="info"] { --log-color: #1769bb; }
+html:not([data-theme="dark"]) .log-row[data-level="warn"] { --log-color: #926700; }
+.log-row:hover { color: var(--log-color); background: color-mix(in srgb, var(--log-color) 9%, transparent); }
+.log-row[aria-pressed="true"] { color: var(--log-color); background: color-mix(in srgb, var(--log-color) 15%, transparent); box-shadow: inset 2px 0 var(--log-color); }
+
+
+.log-row {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-variant-ligatures: none;
+}
+
+.log-row:not([data-level="debug"]) .log-severity > :first-child {
+  fill: var(--log-color);
+  stroke: var(--log-color);
+}
+.log-row:not([data-level="debug"]) .log-severity > :not(:first-child) {
+  stroke: var(--background);
+}

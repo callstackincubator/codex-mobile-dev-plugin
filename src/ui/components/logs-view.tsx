@@ -1,4 +1,4 @@
-import { ArrowDownToLineIcon, CheckIcon, LayersIcon, ListXIcon, PaperclipIcon, PauseIcon, PlayIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, TerminalIcon, UnlinkIcon, XIcon } from "lucide-react";
+import { ArrowDownToLineIcon, CircleAlertIcon, InfoIcon, TriangleAlertIcon, CheckIcon, LayersIcon, ListXIcon, PaperclipIcon, PauseIcon, PlayIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, TerminalIcon, UnlinkIcon, XIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { LegendList, type LegendListRef, type LegendListRenderItemProps } from "@legendapp/list/react";
 import type { StackedLog } from "../../shared/logs.ts";
@@ -31,15 +31,18 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
   const detailVertical = narrow || (wide && document.documentElement.dataset.view === "workspace");
   const listRef = useRef<LegendListRef>(null);
   const selectedSequence = logs.selected?.sequence;
-  const renderItem = useCallback(({ item }: LegendListRenderItemProps<StackedLog>) => <Toggle type="button" data-log-row data-level={item.level} pressed={item.sequence === selectedSequence}
-    className="group/log-row grid h-9 w-full grid-cols-[62px_36px_40px_minmax(0,1fr)_28px] gap-2 rounded-none border-b px-3 text-left font-mono text-[11px] font-normal aria-pressed:bg-muted @max-[460px]:grid-cols-[36px_36px_minmax(0,1fr)_24px] @max-[460px]:gap-1.5"
-    title={`${item.process ?? item.origin} · ${item.timestamp}\n${item.message}`} onPressedChange={pressed => panel.list.select(pressed ? item.sequence : undefined)}>
-    <span className="text-[10px] text-muted-foreground @max-[460px]:hidden">{timeFormat.format(new Date(item.lastTimestamp))}</span>
-    <span className="text-[10px] text-muted-foreground">{item.source === "js" ? "JS" : "Native"}</span>
-    <span className="text-[10px] text-muted-foreground group-data-[level=error]/log-row:text-destructive">{item.level}</span>
-    <span className="truncate">{item.message}</span>
-    {item.count > 1 && <Badge variant="secondary" className="justify-self-end px-1" aria-label={`${item.count} occurrences`}>{item.count}</Badge>}
-  </Toggle>, [panel, selectedSequence]);
+  const renderItem = useCallback(({ item }: LegendListRenderItemProps<StackedLog>) => {
+    const Icon = item.level === "error" ? CircleAlertIcon : item.level === "warn" ? TriangleAlertIcon : InfoIcon;
+    const prefix = item.tag || item.process;
+    return <Toggle type="button" data-log-row data-level={item.level} pressed={item.sequence === selectedSequence}
+      className="log-row grid h-auto min-h-7 w-full grid-cols-[14px_8ch_1px_minmax(0,1fr)] items-start gap-x-2 rounded-none border-b px-2 py-1 text-left font-mono text-xs leading-[18px] font-normal whitespace-normal"
+      title={`${item.source === "js" ? "JS" : "Native"} · ${item.process ?? item.origin} · ${item.timestamp}\n${item.message}`} onPressedChange={pressed => panel.list.select(pressed ? item.sequence : undefined)}>
+      <Icon className="log-severity mt-0.5 size-3.5" aria-label={item.level} />
+      <span className="text-muted-foreground tabular-nums">{timeFormat.format(new Date(item.lastTimestamp))}</span>
+      <span className="mt-0.5 h-3.5 w-px bg-muted-foreground/70" aria-hidden="true" />
+      <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{prefix && <span>{prefix}: </span>}{item.message}{item.count > 1 && <Badge variant="outline" className="ml-2 inline-flex px-1 py-0 align-middle text-[10px] text-current" aria-label={`${item.count} occurrences`}>{item.count}×</Badge>}</span>
+    </Toggle>;
+  }, [panel, selectedSequence]);
 
   useEffect(() => {
     if (logs.follow && state.open && logs.filtered.length) void listRef.current?.scrollToEnd({ animated: false });
@@ -88,7 +91,7 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
         <ResizablePanelGroup className="logs-content min-h-0 flex-1" orientation={detailVertical ? "vertical" : "horizontal"}>
           <ResizablePanel id="log-list-resizable" defaultSize="58%" minSize="30%">
           <div id="logs-list" className="h-full min-h-0 min-w-0 overflow-hidden" aria-label="Log entries">
-            {logs.filtered.length ? <LegendList ref={listRef} data={logs.filtered} keyExtractor={rowKey} renderItem={renderItem} extraData={selectedSequence} estimatedItemSize={36} recycleItems
+            {logs.filtered.length ? <LegendList ref={listRef} data={logs.filtered} keyExtractor={rowKey} renderItem={renderItem} extraData={selectedSequence} estimatedItemSize={28} recycleItems
               maintainScrollAtEnd={logs.follow} maintainScrollAtEndThreshold={1} maintainVisibleContentPosition={{ data: !logs.follow, size: true }} style={{ height: "100%" }} /> : <Empty><EmptyHeader><EmptyMedia variant="icon">{logs.query ? <SearchIcon /> : <TerminalIcon />}</EmptyMedia><EmptyTitle>{logs.buffered ? "No logs match these filters." : "Waiting for logs"}</EmptyTitle>{!logs.buffered && <EmptyDescription>Start an app or choose a source.</EmptyDescription>}</EmptyHeader></Empty>}
           </div>
           </ResizablePanel>
