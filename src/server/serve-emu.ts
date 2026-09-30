@@ -21,6 +21,7 @@ const healthSchema = z.object({ serial: androidIdSchema, codec: z.string(), size
 type Backend = { url: URL; child?: ChildProcess };
 
 export class ServeEmu {
+  private readonly avdNames = new Map<string, string>();
   private readonly backends = new Map<string, Backend>();
   private readonly booting = new Map<string, Promise<Status>>();
   private readonly lifetime = new AbortController();
@@ -59,11 +60,14 @@ export class ServeEmu {
           let name = match[3].match(/model:(\S+)/)?.[1].replace(/_/g, " ") ?? match[1];
           if (/^emulator-\d+$/.test(match[1]) && match[2] === "device") {
             const response = await execute(adb, ["-s", match[1], "emu", "avd", "name"], { timeout: 3000 }).catch(() => undefined);
-            name = parseAvdName(response?.stdout) ?? name;
+            const avdName = parseAvdName(response?.stdout);
+            if (avdName) this.avdNames.set(match[1], avdName);
+            name = avdName ?? this.avdNames.get(match[1]) ?? name;
           }
           return { udid: match[1], name, state: match[2] === "device" ? "Booted" : match[2], runtime: "Android", platform: "android" };
         })()];
       }));
+      for (const serial of this.avdNames.keys()) if (!running.some(device => device.udid === serial)) this.avdNames.delete(serial);
       const stopped = avds.stdout.trim().split(/\r?\n/).filter(name => name && androidIdSchema.safeParse(`avd:${name}`).success && !running.some(device => device.name === name))
         .map(name => ({ udid: `avd:${name}`, name, state: "Shutdown", runtime: "Android", platform: "android" as const }));
       return { connected: true, managed: [...this.backends.values()].some(backend => !!backend.child), baseUrl: this.external?.origin ?? "", devices: [...running, ...stopped] };
@@ -113,12 +117,22 @@ export class ServeEmu {
   }
 
   async shutdown(id: string) {
-    await this.device(id, true);
+    androidIdSchema.parse(id);
     if (!/^emulator-\d+$/.test(id)) throw new Error("Only Android emulators can be shut down from this panel.");
+    const before = await this.list();
+    if (!before.connected) throw new Error(before.error);
+    if (!before.devices.some(device => device.udid === id)) return before;
     await execute(await adbPath(), ["-s", id, "emu", "kill"], { timeout: 5000 });
     this.backends.get(id)?.child?.kill("SIGTERM");
     this.backends.delete(id);
-    return this.list();
+    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(15000)]);
+    while (true) {
+      signal.throwIfAborted();
+      const status = await this.list();
+      if (!status.connected) throw new Error(status.error);
+      if (!status.devices.some(device => device.udid === id)) return status;
+      await delay(250, undefined, { signal });
+    }
   }
 
   async json(url: URL, path: string, options: RequestInit = {}) {

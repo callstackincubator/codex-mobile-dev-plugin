@@ -21,7 +21,7 @@ export function DevicePicker({ id, label }: { id: string; label: string }) {
   const container = useRef<HTMLDivElement | null>(null);
   const selectedButton = useRef<HTMLButtonElement | null>(null);
   return <div data-element="devices" className="min-w-0 flex-1" ref={element => { container.current = element; if (element) bindDevicePicker(element, store); }}>
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={open => { setOpen(open); if (open) void store.refresh?.().catch(error => store.update({ stopError: error instanceof Error ? error.message : String(error) })); }}>
       <PopoverTrigger asChild><Button id={id} data-slot="select-trigger" variant="outline" disabled={state.disabled} className="w-full min-w-0 justify-between gap-1.5 px-2.5 font-normal" aria-label={label}><span className="min-w-0 truncate">{selected ? <DeviceLabel item={selected} /> : state.placeholder}</span><ChevronDownIcon className="shrink-0 transition-transform" style={{ transform: open ? "rotate(180deg)" : undefined }} /></Button></PopoverTrigger>
       <PopoverContent align="start" className="max-h-(--radix-popover-content-available-height) w-max min-w-[min(var(--radix-popover-trigger-width),var(--radix-popover-content-available-width))] max-w-(--radix-popover-content-available-width) overflow-y-auto p-1" aria-label={label} onOpenAutoFocus={event => { if (selectedButton.current) { event.preventDefault(); selectedButton.current.focus(); } }}>
         {state.items.map(item => <div key={item.value} className={`flex min-w-0 items-center rounded-md ${item.value === state.value ? "bg-accent" : ""}`}>

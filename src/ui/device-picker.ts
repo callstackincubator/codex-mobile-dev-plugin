@@ -2,6 +2,7 @@ export type DeviceOption = { value: string; label: string; kind?: "phone" | "tab
 export class DevicePickerStore {
   private state = { items: [] as DeviceOption[], value: "", disabled: true, placeholder: "Loading devices...", stoppingId: "", stopError: "" };
   stop?: (id: string) => Promise<void>;
+  refresh?: () => Promise<void>;
   private listeners = new Set<() => void>();
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.state;

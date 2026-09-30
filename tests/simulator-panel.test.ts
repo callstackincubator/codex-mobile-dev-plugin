@@ -175,6 +175,8 @@ for (const platform of ["ios", "android"] as const) test(`stopping the selected 
   assert.equal(target.panel.selected?.state, "Shutdown");
   assert.equal(target.panel.selected?.udid, platform === "ios" ? "iphone-1" : "avd:Pixel");
   assert.equal(picker.getSnapshot().items[0].canStop, false);
+  await picker.stopDevice(platform === "ios" ? "iphone-1" : "emulator-5554");
+  assert.equal(f.calls.filter(call => call.name.startsWith("mobile_shutdown")).length, 1);
   assert.equal(target.root.hidden, false);
   assert.equal(target.element("device-frame").hidden, false);
   assert.equal(target.element("stopped").hidden, false);
@@ -182,6 +184,20 @@ for (const platform of ["ios", "android"] as const) test(`stopping the selected 
   dispatch(target.element("start-device"), "click");
   await waitFor(() => target.element("stopped").hidden && f.calls.filter(call => call.name.endsWith("stream_session")).length === 3);
   assert.equal(f.closed.length, 1);
+});
+
+test("refreshing the picker removes stop controls for devices stopped outside the panel", async t => {
+  const f = fixture(t);
+  await f.ios.panel.load();
+  await waitFor(() => f.ios.element("screen").draws > 0);
+  const picker = getDevicePicker(f.ios.element("devices") as unknown as HTMLElement);
+  f.stopDevices();
+  await picker.refresh!();
+  assert.equal(picker.getSnapshot().items[0].running, false);
+  assert.equal(picker.getSnapshot().items[0].canStop, false);
+  await picker.stopDevice("iphone-1");
+  assert.equal(f.calls.some(call => call.name.startsWith("mobile_shutdown")), false);
+  assert.equal(f.ios.root.hidden, false);
 });
 
 test("device settings target each selected simulator and leave both streams open", async t => {

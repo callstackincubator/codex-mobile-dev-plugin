@@ -43,6 +43,7 @@ export function createSimulatorPanel(
   bezelImage.addEventListener("error", () => { setBezel(); fitScreen(); });
   const screenshotButton = element<HTMLButtonElement>("screenshot");
   let status: Status | undefined;
+  let statusRevision = 0;
   let selected: SimulatorDevice | undefined;
   type PanelStream = { id: string; frameUri: string; epoch: number; platform: "ios" | "android"; controller: AbortController; input?: StreamInput; reader?: FrameStream<ImageBitmap>; closing?: Promise<void> };
   const reconnect = new ReconnectLoop();
@@ -293,6 +294,7 @@ export function createSimulatorPanel(
   }
 
   function renderStatus(next: Status, previous = selected?.udid) {
+    statusRevision++;
     status = next;
     const oldDevice = next.devices.find(device => device.udid === previous);
     if (reconnect.active && (!next.connected || oldDevice?.state !== "Booted")) void disconnect();
@@ -474,8 +476,9 @@ export function createSimulatorPanel(
   }
 
   async function listDevices() {
+    const revision = ++statusRevision;
     const result = await call(platform === "android" ? "mobile_list_android_devices" : "mobile_list_simulators");
-    renderStatus(result.structuredContent as Status);
+    if (revision === statusRevision && !disposed) renderStatus(result.structuredContent as Status);
   }
 
   async function start() {
@@ -495,10 +498,13 @@ export function createSimulatorPanel(
     await connect();
   }
 
+  devices.refresh = async () => { if (!busy && !disposed && toolsAvailable) await listDevices(); };
+
   devices.stop = async id => {
     const device = status?.devices.find(device => device.udid === id);
     if (busy || disposed || !toolsAvailable || device?.state !== "Booted") throw new Error("This device is no longer running.");
     const wasSelected = selected?.udid === id;
+    statusRevision++;
     busy = true;
     controls();
     try {
@@ -515,7 +521,8 @@ export function createSimulatorPanel(
       }
     } catch (error) {
       notice(error instanceof Error ? error.message : String(error));
-      if (wasSelected) await connect().catch(() => {});
+      await listDevices().catch(() => {});
+      if (wasSelected && selected?.udid === id && selected.state === "Booted") await connect().catch(() => {});
       throw error;
     } finally { busy = false; controls(); }
   };
@@ -612,6 +619,7 @@ export function createSimulatorPanel(
       if (disposing) return disposing;
       disposed = true;
       devices.stop = undefined;
+      devices.refresh = undefined;
       settings.dispose();
       toolsAvailable = false;
       resizeObserver.disconnect();
