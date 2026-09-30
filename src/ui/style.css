@@ -9,19 +9,6 @@ body { font-size: 12px; }
 [data-element="screen"] { border-radius: max(8px, calc(var(--frame-radius) - 7px)); }
 [data-element="device-frame"][data-bezel="true"] { isolation: isolate; position: relative; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
 [data-element="device-frame"][data-bezel="true"] [data-element="screen"] { z-index: 2; position: absolute; }
-.simulator-panel + .simulator-panel { border-left: 1px solid var(--border); }
-.simulator-panel[hidden] + .simulator-panel { border-left: 0; }
-
-/* Codex's fullscreen view places logs beside the devices and floats its composer. */
-@media (min-width: 900px) {
-  html[data-layout="split"] #workspace-panels { display: grid; grid-template-columns: 48px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-  html[data-layout="split"] #workspace-panels:has(#logs-drawer[data-open="true"]) { grid-template-columns: minmax(320px, 1fr) minmax(0, 2fr); }
-  html[data-layout="split"] #simulator-panels { grid-column: 2; grid-row: 1; }
-  html[data-layout="split"] #logs-drawer { grid-column: 1; grid-row: 1; height: auto; min-height: 0; max-height: none; border-top: 0; border-right: 1px solid var(--border); }
-  html[data-layout="split"] #logs-drawer[data-open="false"] .logs-heading { flex-direction: column; padding: 8px 4px; }
-  html[data-layout="split"] #logs-drawer[data-open="false"] .logs-heading > :not(#logs-toggle) { display: none; }
-  html[data-layout="split"] .logs-content { flex-direction: column; }
-  html[data-layout="split"] #log-detail { flex-basis: 42%; border-left: 0; border-top: 1px solid var(--border); }
-}
+/* Split sizes come from Resizable rather than fixed grid tracks. */
 html[data-view="workspace"] [data-element="stage"] { padding-bottom: calc(24px + max(64px, var(--host-safe-bottom, 0px), env(safe-area-inset-bottom, 0px))); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }

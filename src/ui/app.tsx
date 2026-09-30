@@ -32,21 +32,21 @@ const panels = (["ios", "android"] as const).map(platform => {
 const [ios, android] = panels;
 logsPanel.setLayout(document.documentElement.dataset.view === "workspace");
 
-function updateSelection() {
+function updateSelection(updateLogSource = true) {
   const visible = panels.filter(panel => !panel.root.hidden);
   const active = visible.find(panel => panel.platform === activePlatform) ?? visible[0];
   const selected = active?.selected;
   panelContext.selectSimulators(visible.flatMap(panel => panel.selected ? [panel.selected] : []), selected);
-  logsPanel.selectSimulator(selected);
+  if (updateLogSource) logsPanel.selectSimulator(selected);
   for (const panel of panels) panel.root.dataset.active = String(panel === active);
 }
 
 function changeLayout(layout: DeviceLayout) {
   for (const panel of panels) {
     panel.root.hidden = layout !== "both" && layout !== panel.platform;
-    panel.fitScreen();
   }
-  updateSelection();
+  requestAnimationFrame(() => { for (const panel of panels) if (!panel.root.hidden) panel.fitScreen(); });
+  updateSelection(false);
 }
 
 let stopLiveReload = () => {};

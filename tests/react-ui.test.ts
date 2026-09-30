@@ -16,13 +16,14 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const previous = new Map<string, PropertyDescriptor | undefined>();
   const globals = { window: dom.window, document: dom.window.document, navigator: dom.window.navigator, HTMLElement: dom.window.HTMLElement,
     HTMLFormElement: dom.window.HTMLFormElement, HTMLInputElement: dom.window.HTMLInputElement, HTMLSelectElement: dom.window.HTMLSelectElement, Node: dom.window.Node, Event: dom.window.Event, CustomEvent: dom.window.CustomEvent,
-    Element: dom.window.Element, DocumentFragment: dom.window.DocumentFragment, MutationObserver: dom.window.MutationObserver,
+    NodeFilter: dom.window.NodeFilter, Element: dom.window.Element, DocumentFragment: dom.window.DocumentFragment, MutationObserver: dom.window.MutationObserver,
     getComputedStyle: dom.window.getComputedStyle.bind(dom.window), requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window), cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window),
     ResizeObserver: class { observe() {} unobserve() {} disconnect() {} }, IS_REACT_ACT_ENVIRONMENT: true };
   for (const [key, value] of Object.entries(globals)) {
     previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
     Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
   }
+  Object.defineProperty(dom.window, "ResizeObserver", { value: globals.ResizeObserver });
   // Supply list measurements for DOM behavior, without a browser or visual checks.
   Object.defineProperty(dom.window.HTMLElement.prototype, "clientHeight", { get: () => 360 });
   Object.defineProperty(dom.window.HTMLElement.prototype, "clientWidth", { get: () => 640 });
@@ -35,7 +36,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   t.after(async () => { await cleanupView(); dom.window.close(); for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); } await rm(directory, { recursive: true, force: true }); });
   const output = resolve(directory, "workspace.mjs");
   await build({ entryPoints: ["src/ui/components/workspace.tsx"], outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
-    external: ["react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react"] });
+    external: ["react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels"] });
   const { Workspace } = await import(pathToFileURL(output).href);
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
@@ -44,10 +45,11 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const panel = new LogsPanel({} as App, context as PanelContext);
   const root = createRoot(dom.window.document.getElementById("root")!);
   cleanupView = async () => { await act(async () => { root.unmount(); await panel.dispose(); }); };
-  await act(async () => { root.render(createElement(Workspace, { logs: panel, onLayout() {} })); });
+  const layouts: string[] = [];
+  await act(async () => { root.render(createElement(Workspace, { logs: panel, onLayout(layout: string) { layouts.push(layout); } })); });
   const canvas = dom.window.document.querySelector('canvas');
-  const picker = dom.window.document.querySelector('[data-element="devices"]') as HTMLSelectElement;
-  picker.replaceChildren(new dom.window.Option("Running device", "device-1"));
+  const picker = dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]');
+  assert.ok(picker);
   await act(async () => { (dom.window.document.getElementById("tool-logs") as HTMLButtonElement).click(); panel.list.setFollow(false); panel.list.append([
     { sequence: 1, timestamp: "2026-09-30T12:00:00Z", message: '<script>alert("log")</script>', stack: "at loadProfile", level: "error", source: "js", origin: "metro" },
     { sequence: 2, timestamp: "2026-09-30T12:00:01Z", message: "Native output", level: "info", source: "native", origin: "ios" },
@@ -60,15 +62,37 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await act(async () => { (dom.window.document.getElementById("log-attach") as HTMLButtonElement).click(); });
   assert.equal(attached?.stack, "at loadProfile");
   assert.equal(dom.window.document.getElementById("log-attach")?.textContent, "Attached to chat");
-  const infoFilter = [...dom.window.document.querySelectorAll('[data-slot="toggle-group-item"]')].find(button => button.textContent === "info") as HTMLButtonElement;
+  const levelFilter = dom.window.document.querySelector('[aria-label="Filter log levels"]') as HTMLButtonElement;
+  await act(async () => { levelFilter.click(); });
+  const infoFilter = [...dom.window.document.querySelectorAll('[role="option"]')].find(button => button.textContent === "info") as HTMLElement;
   await act(async () => { infoFilter.click(); });
   assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 1);
+  await act(async () => { levelFilter.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
-  assert.equal(picker.value, "device-1");
-  assert.equal(dom.window.document.querySelector('[data-element="refresh"] svg')?.getAttribute("viewBox"), "0 0 24 24");
+  assert.equal(dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]'), picker);
+  assert.equal(dom.window.document.querySelector('[data-element="screenshot"] svg')?.getAttribute("viewBox"), "0 0 24 24");
   await act(async () => { (dom.window.document.querySelector('[aria-label="Log sources"]') as HTMLButtonElement).click(); });
   assert.ok(dom.window.document.getElementById("logs-native"));
-  await act(async () => { (dom.window.document.getElementById("logs-toggle") as HTMLButtonElement).click(); });
+  const sourceFilter = dom.window.document.querySelector('[aria-label="Filter log sources"]') as HTMLElement;
+  assert.ok(dom.window.document.getElementById("logs-settings")?.contains(sourceFilter));
+  const nativeFilter = [...sourceFilter.querySelectorAll('button')].find(option => option.textContent === "Native") as HTMLButtonElement;
+  await act(async () => { nativeFilter.click(); });
+  assert.deepEqual([...panel.list.getSnapshot().sources], ["js"]);
+  assert.ok(dom.window.document.getElementById("logs-settings"));
+  await act(async () => { (dom.window.document.querySelector('[aria-label="Log sources"]') as HTMLButtonElement).click(); });
+  assert.equal(panel.getSnapshot().settings, false);
+  const iosToggle = dom.window.document.querySelector('[aria-label="Show iOS simulator"]') as HTMLButtonElement;
+  const androidToggle = dom.window.document.querySelector('[aria-label="Show Android simulator"]') as HTMLButtonElement;
+  await act(async () => { iosToggle.click(); });
+  await act(async () => { androidToggle.click(); });
+  assert.deepEqual(layouts, ["android", "none"]);
+  assert.equal(iosToggle.getAttribute("aria-pressed"), "false");
+  assert.equal(androidToggle.getAttribute("aria-pressed"), "false");
+  await act(async () => { iosToggle.click(); });
+  await act(async () => { androidToggle.click(); });
+  assert.deepEqual(layouts, ["android", "none", "ios", "both"]);
+  assert.equal(dom.window.document.querySelector("canvas"), canvas);
+  await act(async () => { (dom.window.document.getElementById("tool-logs") as HTMLButtonElement).click(); });
   assert.equal(dom.window.document.getElementById("logs-body")?.hidden, true);
   assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 0);
 });
