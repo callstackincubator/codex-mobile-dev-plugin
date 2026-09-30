@@ -1,7 +1,7 @@
-import { CameraIcon, HouseIcon, CopyIcon, SmartphoneIcon, type LucideIcon } from "lucide-react";
+import { CameraIcon, HouseIcon, CopyIcon, PowerIcon, SmartphoneIcon, type LucideIcon } from "lucide-react";
 import { memo } from "react";
 import { Button } from "./ui/button";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty";
+import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty";
 import { DevicePicker } from "./device-picker";
 import { DeviceSettings } from "./device-settings";
 
@@ -30,6 +30,7 @@ export const SimulatorView = memo(function SimulatorView({ platform }: { platfor
         <div data-element="device-nine-patch" className="pointer-events-none absolute inset-0 z-3" hidden />
         <canvas data-element="screen" className="block size-full touch-none bg-black focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-ring" tabIndex={0} aria-label={`${label} screen. Click or drag to interact. Focus to type.`} />
       </div>
+      <div data-element="stopped" className="absolute inset-0 z-10 bg-background/70" hidden><Empty><EmptyHeader><EmptyMedia variant="icon"><PowerIcon /></EmptyMedia><EmptyTitle>Device stopped</EmptyTitle></EmptyHeader><EmptyContent><Button data-element="start-device" size="sm">Start device</Button></EmptyContent></Empty></div>
     </section>
     <footer className="flex h-11 shrink-0 items-center gap-x-3 border-t px-2 text-[10px] text-muted-foreground">
       <span data-element="notice" className="sr-only" hidden><span data-element="notice-message" /></span>

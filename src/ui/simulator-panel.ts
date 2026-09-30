@@ -32,6 +32,7 @@ export function createSimulatorPanel(
   let bezel: Bezel | undefined;
   let sourceBezel: Bezel | undefined;
   let showFrame = true;
+  let stoppedDisplay = false;
   let useAndroidNinePatch = false;
   bezelImage.addEventListener("error", () => { setBezel(); fitScreen(); });
   const screenshotButton = element<HTMLButtonElement>("screenshot");
@@ -64,6 +65,7 @@ export function createSimulatorPanel(
     const active = ready && stream != null && !inputBlocked && !busy && toolsAvailable;
     settings.configure(selected?.udid ?? "", busy || !toolsAvailable || selected?.state !== "Booted" || disposed);
     settings.prefetch();
+    element<HTMLButtonElement>("start-device").disabled = busy || !toolsAvailable || !selected || selected.state === "Booted" || disposed;
     devices.disabled = busy || !toolsAvailable || !status?.connected || !status.devices.length;
     screenshotButton.disabled = busy || !toolsAvailable || !status?.connected || selected?.state !== "Booted" || !panelContext.canAttachScreenshots;
     screenshotButton.title = panelContext.canAttachScreenshots ? "Screenshot to chat and clipboard" : "This host does not support screenshot attachments";
@@ -167,6 +169,8 @@ export function createSimulatorPanel(
   }
 
   function empty(message: string) {
+    stoppedDisplay = false;
+    element("stopped").hidden = true;
     frame.hidden = true;
     element("empty").hidden = false;
     element("empty").textContent = message;
@@ -269,18 +273,17 @@ export function createSimulatorPanel(
   function selectDevice() {
     selected = status?.devices.find(device => device.udid === devices.value);
     selectionChanged(selected);
-    if (!reconnect.active) empty(selected ? "Select a device to open its screen." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No simulators. Add an iOS runtime in Xcode."));
+    if (!reconnect.active && !stoppedDisplay) empty(selected ? "Select a device to open its screen." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No simulators. Add an iOS runtime in Xcode."));
     controls();
   }
 
-  function renderStatus(next: Status) {
+  function renderStatus(next: Status, previous = selected?.udid) {
     status = next;
-    const previous = selected?.udid;
     const oldDevice = next.devices.find(device => device.udid === previous);
     if (reconnect.active && (!next.connected || oldDevice?.state !== "Booted")) void disconnect();
     const running = next.devices.find(device => device.state === "Booted");
     devices.update({
-      items: next.devices.map(device => ({ value: device.udid, label: `${device.name}${device.runtime ? ` · ${runtimeLabel(device.runtime)}` : ""}`, kind: /ipad|tablet|pixel.*tab/i.test(device.name) ? "tablet" : "phone", running: device.state === "Booted" })),
+      items: next.devices.map(device => ({ value: device.udid, label: `${device.name}${device.runtime ? ` · ${runtimeLabel(device.runtime)}` : ""}`, kind: /ipad|tablet|pixel.*tab/i.test(device.name) ? "tablet" : "phone", running: device.state === "Booted", canStop: device.state === "Booted" && (platform === "ios" || /^emulator-\d+$/.test(device.udid)) })),
       value: previous && oldDevice ? previous : running?.udid ?? "",
       placeholder: next.devices.length ? "Select a device" : next.connected ? "No simulators" : "Simulator unavailable",
     });
@@ -374,6 +377,8 @@ export function createSimulatorPanel(
   }
 
   function drawFrame(image: CanvasImageSource, width: number, height: number) {
+    stoppedDisplay = false;
+    element("stopped").hidden = true;
     const resized = canvas.width !== width || canvas.height !== height;
     if (resized) { canvas.width = width; canvas.height = height; }
     context.drawImage(image, 0, 0);
@@ -441,6 +446,31 @@ export function createSimulatorPanel(
     await connect();
   }
 
+  devices.stop = async id => {
+    const device = status?.devices.find(device => device.udid === id);
+    if (busy || disposed || !toolsAvailable || device?.state !== "Booted") throw new Error("This device is no longer running.");
+    const wasSelected = selected?.udid === id;
+    busy = true;
+    controls();
+    try {
+      if (wasSelected) await disconnect();
+      const result = await call(platform === "android" ? "mobile_shutdown_android_emulator" : "mobile_shutdown_simulator", platform === "android" ? { deviceId: id } : { udid: id }, { timeout: 30000 });
+      const next = result.structuredContent as Status;
+      const selectedId = wasSelected && platform === "android" ? next.devices.find(item => item.name === device.name)?.udid : selected?.udid;
+      if (wasSelected && next.connected) stoppedDisplay = true;
+      renderStatus(next, selectedId);
+      if (wasSelected && stoppedDisplay) {
+        element("empty").hidden = true;
+        element("stopped").hidden = false;
+        fitScreen();
+      }
+    } catch (error) {
+      notice(error instanceof Error ? error.message : String(error));
+      if (wasSelected) await connect().catch(() => {});
+      throw error;
+    } finally { busy = false; controls(); }
+  };
+
   function mappedPoint(event: PointerEvent) {
     const rect = canvas.getBoundingClientRect();
     return {
@@ -475,6 +505,7 @@ export function createSimulatorPanel(
     }
   });
   devicePickerElement.addEventListener("change", () => { void action(async () => { await disconnect(); selectDevice(); await start(); }); });
+  element("start-device").addEventListener("click", () => { void action(start); });
   root.querySelectorAll<HTMLButtonElement>("[data-button]").forEach(button => {
     button.addEventListener("click", () => { send({ type: "button", button: button.dataset.button }); });
   });
@@ -528,6 +559,7 @@ export function createSimulatorPanel(
     dispose() {
       if (disposing) return disposing;
       disposed = true;
+      devices.stop = undefined;
       settings.dispose();
       toolsAvailable = false;
       resizeObserver.disconnect();

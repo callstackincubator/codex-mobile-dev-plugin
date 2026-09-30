@@ -5,7 +5,6 @@ import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { PanelContext } from "../src/ui/model-context.ts";
 import { createSimulatorPanel } from "../src/ui/simulator-panel.ts";
-
 import { getDeviceSettings } from "../src/ui/device-settings.ts";
 
 class Element extends EventTarget {
@@ -52,6 +51,7 @@ function fixture(t: TestContext) {
   let delayedOpen: Promise<void> | undefined;
   let blockedIos = false;
   let stopped = false;
+  const stoppedPlatforms = new Set<string>();
   const document = Object.assign(new EventTarget(), { visibilityState: "visible", createElement: () => new Element() });
   class Decoder {
     state = "configured";
@@ -89,10 +89,12 @@ function fixture(t: TestContext) {
         } };
       }
       if (call.name.endsWith("_stream_close")) closed.push(call.arguments.sessionId as string);
-      if (call.name.startsWith("mobile_boot")) stopped = false;
-      if (call.name.startsWith("mobile_list") || call.name.startsWith("mobile_boot")) {
+      const callPlatform = call.name.includes("android") ? "android" : "ios";
+      if (call.name.startsWith("mobile_boot")) { stopped = false; stoppedPlatforms.delete(callPlatform); }
+      if (call.name.startsWith("mobile_shutdown")) stoppedPlatforms.add(callPlatform);
+      if (call.name.startsWith("mobile_list") || call.name.startsWith("mobile_boot") || call.name.startsWith("mobile_shutdown")) {
         const android = call.name.includes("android");
-        return { content: [], structuredContent: { connected: true, devices: [{ udid: android ? "emulator-5554" : "iphone-1", name: android ? "Pixel" : "iPhone", state: stopped ? "Shutdown" : "Booted", runtime: "", platform: android ? "android" : "ios" }] } };
+        return { content: [], structuredContent: { connected: true, devices: [{ udid: android ? (stoppedPlatforms.has("android") ? "avd:Pixel" : "emulator-5554") : "iphone-1", name: android ? "Pixel" : "iPhone", state: stopped || stoppedPlatforms.has(callPlatform) ? "Shutdown" : "Booted", runtime: "", platform: android ? "android" : "ios" }] } };
       }
       if (call.name === "mobile_device_settings" || call.name === "mobile_update_device_setting") return { content: [], structuredContent: { settings: { appearance: "dark", locationSupported: true } } };
       return { content: [] };
@@ -113,7 +115,7 @@ function fixture(t: TestContext) {
   } as unknown as App;
   const panels = (["ios", "android"] as const).map(platform => {
     const root = new Element();
-    for (const name of ["devices", "settings", "screen", "device-frame", "stage", "device-bezel", "screenshot", "notice", "notice-message", "empty", "screenshot-status"]) root.elements.set(name, new Element());
+    for (const name of ["devices", "settings", "screen", "device-frame", "stage", "device-bezel", "screenshot", "notice", "notice-message", "empty", "stopped", "start-device", "screenshot-status"]) root.elements.set(name, new Element());
     root.elements.get("device-frame")!.hidden = true;
     for (const button of ["home", "app-switcher"]) { const element = new Element(); element.dataset.button = button; root.buttons.push(element); }
     const panel = createSimulatorPanel(app, root as unknown as HTMLElement, platform, { canAttachScreenshots: true } as PanelContext, (_device, active) => selections.push({ platform, active }));
@@ -131,6 +133,29 @@ async function waitFor(predicate: () => boolean) {
     await new Promise(resolve => setTimeout(resolve, 5));
   }
 }
+
+for (const platform of ["ios", "android"] as const) test(`stopping the selected ${platform} device leaves the other stream open and allows restarting it`, async t => {
+  const f = fixture(t);
+  await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
+  await waitFor(() => f.ios.element("screen").draws > 0 && f.android.element("screen").draws > 0);
+  const target = f[platform];
+  const picker = getDevicePicker(target.element("devices") as unknown as HTMLElement);
+  await picker.stopDevice(picker.value);
+  const shutdown = f.calls.find(call => call.name === (platform === "ios" ? "mobile_shutdown_simulator" : "mobile_shutdown_android_emulator"));
+  assert.deepEqual(shutdown?.arguments, platform === "ios" ? { udid: "iphone-1" } : { deviceId: "emulator-5554" });
+  assert.equal(f.closed.length, 1);
+  assert.ok(f.closed[0].startsWith(platform));
+  assert.equal(target.panel.selected?.state, "Shutdown");
+  assert.equal(target.panel.selected?.udid, platform === "ios" ? "iphone-1" : "avd:Pixel");
+  assert.equal(picker.getSnapshot().items[0].canStop, false);
+  assert.equal(target.root.hidden, false);
+  assert.equal(target.element("device-frame").hidden, false);
+  assert.equal(target.element("stopped").hidden, false);
+  assert.equal(target.element("start-device").disabled, false);
+  dispatch(target.element("start-device"), "click");
+  await waitFor(() => target.element("stopped").hidden && f.calls.filter(call => call.name.endsWith("stream_session")).length === 3);
+  assert.equal(f.closed.length, 1);
+});
 
 test("device settings target each selected simulator and leave both streams open", async t => {
   const f = fixture(t);
