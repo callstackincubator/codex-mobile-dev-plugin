@@ -1,4 +1,4 @@
-export type DeviceOption = { value: string; label: string };
+export type DeviceOption = { value: string; label: string; kind?: "phone" | "tablet"; running?: boolean };
 export class DevicePickerStore {
   private state = { items: [] as DeviceOption[], value: "", disabled: true, placeholder: "Loading devices..." };
   private listeners = new Set<() => void>();

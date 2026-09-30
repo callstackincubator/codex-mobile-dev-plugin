@@ -212,7 +212,7 @@ export function createSimulatorPanel(
     if (reconnect.active && (!next.connected || oldDevice?.state !== "Booted")) void disconnect();
     const running = next.devices.find(device => device.state === "Booted");
     devices.update({
-      items: next.devices.map(device => ({ value: device.udid, label: `${device.name}${device.runtime ? ` · ${runtimeLabel(device.runtime)}` : ""}` })),
+      items: next.devices.map(device => ({ value: device.udid, label: `${device.name}${device.runtime ? ` · ${runtimeLabel(device.runtime)}` : ""}`, kind: /ipad|tablet|pixel.*tab/i.test(device.name) ? "tablet" : "phone", running: device.state === "Booted" })),
       value: previous && oldDevice ? previous : running?.udid ?? "",
       placeholder: next.devices.length ? "Select a device" : next.connected ? "No simulators" : "Simulator unavailable",
     });
