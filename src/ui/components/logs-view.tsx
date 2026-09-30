@@ -100,7 +100,6 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
             <Button id="log-attach" variant="outline" disabled={logs.attaching || logs.selectedAttached || !logs.canAttach} onClick={() => void panel.list.attach()} title={logs.canAttach ? "Include this log and stack trace with your next message" : "This host does not support log attachments"}>{logs.selectedAttached ? <CheckIcon /> : <PaperclipIcon />}{logs.selectedAttached ? "Attached to chat" : "Attach to chat"}</Button>
           </LogDetails></ResizablePanel></>}
         </ResizablePanelGroup>
-        {logs.attachmentStatus && <Alert role="status" className="shrink-0 rounded-none border-x-0 border-b-0"><AlertDescription>{logs.attachmentStatus}</AlertDescription></Alert>}
       </CollapsibleContent>
       {state.open && <footer id="logs-footer" className="flex h-11 shrink-0 items-center border-t px-2">
           <Select multiple value={[...logs.levels]} onValueChange={values => panel.list.setFilters("levels", values)}>

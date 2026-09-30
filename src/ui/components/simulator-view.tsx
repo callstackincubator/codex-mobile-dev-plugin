@@ -30,8 +30,8 @@ export const SimulatorView = memo(function SimulatorView({ platform }: { platfor
       </div>
     </section>
     <footer className="flex h-11 shrink-0 items-center gap-x-3 border-t px-3 text-[10px] text-muted-foreground" role="status" aria-live="polite" aria-atomic="true">
-      <span data-element="notice" className="min-w-0 flex-1 truncate" hidden><span data-element="notice-message" /></span>
-      <span data-element="screenshot-status" className="min-w-0 flex-1 truncate" hidden />
+      <span data-element="notice" className="sr-only" hidden><span data-element="notice-message" /></span>
+      <span data-element="screenshot-status" className="sr-only" hidden />
     </footer>
   </section>;
 });
