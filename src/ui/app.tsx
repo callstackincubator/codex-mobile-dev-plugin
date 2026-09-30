@@ -54,6 +54,9 @@ let disposingUI: Promise<void> | undefined;
 function disposeUI() {
   return disposingUI ??= (async () => {
     window.removeEventListener("pagehide", onPageHide);
+    window.removeEventListener("focus", resumeContext);
+    window.removeEventListener("pageshow", resumeContext);
+    document.removeEventListener("visibilitychange", resumeContext);
     await Promise.allSettled([...panels.map(panel => panel.dispose()), logsPanel.dispose()]);
     reactRoot.unmount();
   })();
@@ -68,8 +71,18 @@ function hostContext() {
   if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
   document.documentElement.style.setProperty("--font-sans", '"Inter Variable", sans-serif');
   panelContext.hostChanged();
+  panelContext.resume();
   for (const panel of panels) { panel.fitScreen(); panel.controls(); }
 }
+function resumeContext() {
+  if (document.visibilityState !== "hidden" && !disposingUI) {
+    panelContext.hostChanged();
+    panelContext.resume();
+  }
+}
+window.addEventListener("focus", resumeContext);
+window.addEventListener("pageshow", resumeContext);
+document.addEventListener("visibilitychange", resumeContext);
 app.ontoolinput = () => { if (!ios.selected) ios.empty("Loading simulators…", "Finding available iOS simulators."); };
 app.ontoolresult = result => {
   if (result.isError) { ios.notice(result.content.filter(item => item.type === "text").map(item => item.text).join("\n")); return; }

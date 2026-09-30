@@ -65,6 +65,17 @@ test("attaching a log preserves simulator context and contains the full message 
   assert.deepEqual(updates.at(-1)?.structuredContent?.selectedLog, log);
 });
 
+test("clicking an already active device does not republish captures or fill the context queue", async () => {
+  const { context, updates } = fixture(); context.selectSimulator(simulator); await context.attachScreenshot({ id: "capture", data: PNG.toString("base64"), simulator });
+  const writes = updates.length;
+  for (let i = 0; i < 30; i++) context.selectSimulator({ ...simulator });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(updates.length, writes);
+  context.selectSimulator({ ...simulator, state: "Shutdown" });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(updates.length, writes + 1);
+});
+
 test("clearing an attachment in the host prevents a later simulator refresh from restoring it", async () => {
   const { context, updates, clear, removeContent } = fixture();
   await context.attach(log); clear(); assert.equal(context.attachedKey, undefined);
