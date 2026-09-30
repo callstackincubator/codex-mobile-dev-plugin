@@ -4,3 +4,4 @@ vendor/baguette/
 release/
 .DS_Store
 *.log
+.local-dev/

@@ -1,0 +1,33 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtemp, writeFile, rm, mkdir, utimes } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { loadUIResource } from "../src/server/ui-resource.ts";
+
+test("live UI is opt-in, changes revision on edits, and falls back when the watcher stops", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "mobile-dev-ui-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const config = pathToFileURL(join(directory, "ui-dev.json"));
+  const output = join(directory, ".local-dev");
+  await mkdir(output);
+  assert.deepEqual(await loadUIResource("production", config), { html: "production" });
+  await writeFile(config, JSON.stringify({ origin: "https://127.0.0.1:5173" }));
+  assert.deepEqual(await loadUIResource("production", config), { html: "production" });
+  await writeFile(config, JSON.stringify({ mode: "mcp-live", projectRoot: directory }));
+  await writeFile(join(output, "ui-watch.json"), "{}");
+  await writeFile(join(output, "app.html"), '<html><head></head><body><div id="root">Logs</div></body></html>');
+  const first = await loadUIResource("production", config);
+  assert.match(first.liveRevision!, /^[a-f0-9]{64}$/);
+  assert.match(first.html, /mobile-dev-live-revision/);
+  await writeFile(join(output, "app.html"), '<html><head></head><body><div id="root">jonas</div></body></html>');
+  const second = await loadUIResource("production", config);
+  assert.notEqual(second.liveRevision, first.liveRevision);
+  assert.match(second.html, /jonas/);
+  const old = new Date(Date.now() - 15000);
+  await utimes(join(output, "ui-watch.json"), old, old);
+  assert.deepEqual(await loadUIResource("production", config), { html: "production" });
+  await rm(config);
+  assert.deepEqual(await loadUIResource("production", config), { html: "production" });
+});

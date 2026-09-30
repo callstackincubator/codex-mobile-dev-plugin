@@ -8,6 +8,24 @@ import { Baguette } from "../src/server/baguette.ts";
 import { parseBaseUrl } from "../src/shared/protocol.ts";
 import { fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "./fixtures.ts";
 
+test("live UI reads return changed HTML through MCP without network permissions", async t => {
+  let revision = "a".repeat(64);
+  const plugin = await createPlugin(async () => ({ html: '<html data-view="panel">jonas</html>', liveRevision: revision }));
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "dev-panel-test", version: "1" });
+  t.after(async () => { await client.close(); await plugin.close(); });
+  await plugin.server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const first = await client.readResource({ uri: APP_URI });
+  assert.deepEqual(first.contents[0]._meta?.ui, { csp: { connectDomains: [], resourceDomains: [] } });
+  const uri = `ui://mobile-dev/live?after=${revision}`;
+  const unchanged = await client.readResource({ uri });
+  assert.deepEqual(JSON.parse(unchanged.contents[0].text as string), { revision });
+  revision = "b".repeat(64);
+  const changed = await client.readResource({ uri });
+  assert.deepEqual(JSON.parse(changed.contents[0].text as string), { revision, html: '<html data-view="panel">jonas</html>' });
+});
+
 test("cached side tabs load the current UI through old resource addresses", async t => {
   const html = "<!doctype html><title>Current simulator</title><canvas></canvas>";
   const plugin = await createPlugin(html);
@@ -16,7 +34,7 @@ test("cached side tabs load the current UI through old resource addresses", asyn
   t.after(async () => { await client.close(); await plugin.close(); });
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
-  assert.equal(APP_URI, "ui://mobile-dev/0.1.22/simulator.html");
+  assert.equal(APP_URI, "ui://mobile-dev/0.1.32/simulator.html");
   for (const uri of [APP_URI, "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/simulator.html", ...[1, 2, 3, 4, 5, 6].map(version => `ui://mobile-dev/v${version}/simulator.html`)]) {
     const { contents } = await client.readResource({ uri });
     assert.equal(contents[0].uri, uri);
@@ -45,7 +63,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.equal((workspace._meta?.ui as { resourceUri: string }).resourceUri, WORKSPACE_URI);
   const workspaceResource = await client.readResource({ uri: WORKSPACE_URI });
   assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);
-  assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.22/workspace.html");
+  assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.32/workspace.html");
   for (const uri of ["ui://mobile-dev/0.1.21/workspace.html", "ui://mobile-dev/0.1.20/workspace.html", "ui://mobile-dev/workspace.html"]) {
     const oldWorkspace = await client.readResource({ uri });
     assert.equal(oldWorkspace.contents[0].text, workspaceResource.contents[0].text);

@@ -12,12 +12,14 @@ import type { Status } from "../shared/protocol.ts";
 import { PanelContext } from "./model-context.ts";
 import { LogsPanel } from "./logs-panel.ts";
 import { createSimulatorPanel } from "./simulator-panel.ts";
+import { startLiveReload } from "./live-reload.ts";
 
-const app = new App({ name: "mobile-dev-ui", version: "0.1.22" }, {}, { autoResize: false });
+const app = new App({ name: "mobile-dev-ui", version: "0.1.32" }, {}, { autoResize: false });
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
 const logsPanel = new LogsPanel(app, panelContext);
-flushSync(() => createRoot(document.getElementById("root")!).render(<Workspace logs={logsPanel} onLayout={changeLayout} />));
+const reactRoot = createRoot(document.getElementById("root")!);
+flushSync(() => reactRoot.render(<Workspace logs={logsPanel} onLayout={changeLayout} />));
 
 let activePlatform: "ios" | "android" = "ios";
 const panels = (["ios", "android"] as const).map(platform => {
@@ -47,8 +49,18 @@ function changeLayout(layout: DeviceLayout) {
   updateSelection();
 }
 
-window.addEventListener("pagehide", () => { for (const panel of panels) void panel.dispose(); void logsPanel.dispose(); });
-app.onteardown = async () => { await Promise.all([...panels.map(panel => panel.dispose()), logsPanel.dispose()]); return {}; };
+let stopLiveReload = () => {};
+let disposingUI: Promise<void> | undefined;
+function disposeUI() {
+  return disposingUI ??= (async () => {
+    window.removeEventListener("pagehide", onPageHide);
+    await Promise.allSettled([...panels.map(panel => panel.dispose()), logsPanel.dispose()]);
+    reactRoot.unmount();
+  })();
+}
+function onPageHide() { stopLiveReload(); void disposeUI(); }
+window.addEventListener("pagehide", onPageHide);
+app.onteardown = async () => { stopLiveReload(); await disposeUI(); return {}; };
 
 function hostContext() {
   const host = app.getHostContext();
@@ -76,7 +88,10 @@ void (async () => {
       panel.setAvailable(available);
       if (!available) panel.notice("This host cannot call the plugin's simulator tools.");
     }
-    if (available) await Promise.all([ios.resume(), android.load()]);
+    if (available) {
+      stopLiveReload = startLiveReload(app, disposeUI);
+      await Promise.all([ios.resume(), android.load()]);
+    }
   } catch (error) {
     for (const panel of panels) panel.notice(error instanceof Error ? error.message : "Could not connect to Codex.");
   }
