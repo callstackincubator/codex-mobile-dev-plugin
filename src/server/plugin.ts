@@ -142,9 +142,9 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
       inputSchema: deviceInput, outputSchema: statusOutput,
       annotations: { ...write, destructiveHint: action === "shutdown" },
     }, guarded(async ({ udid }: { udid: string }) => {
-      await baguette.device(udid);
-      await baguette.json(`/simulators/${udid}/${action}`, { method: "POST" }, 60000);
-      return result(await baguette.status(), `${action === "boot" ? "Booted" : "Shut down"} ${udid}.`);
+      const status = await baguette.changeDeviceState(udid, action);
+      if (action === "shutdown") streams.closeDevice(udid);
+      return result(status, `${action === "boot" ? "Booted" : "Shut down"} ${udid}.`);
     }));
   }
 

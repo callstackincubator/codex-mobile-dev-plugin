@@ -28,6 +28,8 @@ export class Baguette {
   readonly baseUrl: URL;
   private child?: ChildProcess;
   private starting?: Promise<Status>;
+  private readonly lifecycle = new AbortController();
+  private readonly deviceChanges = new Map<string, Promise<Status>>();
   private diagnostics = "";
   private disposed = false;
   private readonly embedded: boolean;
@@ -39,7 +41,9 @@ export class Baguette {
 
   async json(path: string, options: RequestInit = {}, timeout = 10000): Promise<unknown> {
     const response = await fetch(new URL(path, this.baseUrl), {
-      ...options, redirect: "error", signal: AbortSignal.timeout(timeout),
+      ...options, redirect: "error", signal: AbortSignal.any([
+        this.lifecycle.signal, AbortSignal.timeout(timeout), ...(options.signal ? [options.signal] : []),
+      ]),
     });
     if (!response.ok) throw new Error(`Baguette returned HTTP ${response.status} for ${path}.`);
     const payload = await response.json();
@@ -47,12 +51,12 @@ export class Baguette {
     return payload;
   }
 
-  async status(): Promise<Status> {
+  async status(signal?: AbortSignal): Promise<Status> {
     if (this.embedded && !this.child) {
       return { connected: false, managed: false, baseUrl: this.baseUrl.origin, devices: [], error: "The bundled simulator backend has not started." };
     }
     try {
-      const devices = normalizeDevices(await this.json("/simulators.json", {}, 2000));
+      const devices = normalizeDevices(await this.json("/simulators.json", { signal }, 2000));
       return { connected: true, managed: this.child != null, baseUrl: this.baseUrl.origin, devices };
     } catch (error) {
       return {
@@ -166,6 +170,40 @@ export class Baguette {
     return definitionSchema.parse(await this.json(`/simulators/${udid}/definition.json`));
   }
 
+  async changeDeviceState(udid: string, action: "boot" | "shutdown", timeout = 120000): Promise<Status> {
+    udidSchema.parse(udid);
+    const previous = this.deviceChanges.get(udid);
+    const change = (async () => {
+      await previous?.catch(() => {});
+      const device = await this.device(udid);
+      const expected = action === "boot" ? "Booted" : "Shutdown";
+      // Baguette's boot route also repairs input. Never call it on a running device.
+      if (device.state === expected) return this.status();
+      const signal = AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(timeout)]);
+      try {
+        const inProgress = device.state === (action === "boot" ? "Booting" : "ShuttingDown");
+        if (!inProgress) await this.json(`/simulators/${udid}/${action}`, { method: "POST", signal }, timeout);
+        while (true) {
+          signal.throwIfAborted();
+          const status = await this.status(signal);
+          signal.throwIfAborted();
+          if (!status.connected) throw new Error(status.error);
+          const current = status.devices.find(item => item.udid === udid);
+          if (!current) throw new SimulatorUnavailableError("This simulator is no longer available. Refresh the device list.");
+          if (current.state === expected) return status;
+          await delay(250, undefined, { signal });
+        }
+      } catch (error) {
+        if (this.disposed) throw new Error("The plugin server has closed.");
+        if (signal.aborted) throw new Error(`The simulator did not finish ${action === "boot" ? "booting" : "shutting down"} within ${timeout / 1000} seconds. Refresh the device list before trying again.`);
+        throw error;
+      }
+    })();
+    this.deviceChanges.set(udid, change);
+    try { return await change; }
+    finally { if (this.deviceChanges.get(udid) === change) this.deviceChanges.delete(udid); }
+  }
+
   async repairInput(udid: string): Promise<void> {
     await this.device(udid, true);
     const { stdout, stderr } = await promisify(execFile)(await this.executable(), ["heal", "--udid", udid], {
@@ -176,6 +214,7 @@ export class Baguette {
 
   dispose() {
     this.disposed = true;
+    this.lifecycle.abort();
     this.child?.kill("SIGTERM");
     this.child = undefined;
   }

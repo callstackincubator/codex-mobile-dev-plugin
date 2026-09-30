@@ -101,8 +101,10 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const rejected = await client.callTool({ name: "mobile_send_input", arguments: { udid: UDID, input } });
   assert.equal(rejected.isError, true);
   assert.match(JSON.stringify(rejected.content), /input rejected/);
+  const active = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
   const stopped = await client.callTool({ name: "mobile_shutdown_simulator", arguments: { udid: UDID } });
   assert.equal((stopped.structuredContent?.devices as { state: string; udid: string }[]).find(item => item.udid === UDID)?.state, "Shutdown");
+  await assert.rejects(client.readResource({ uri: active._meta?.frameUri as string }), /expired or closed/);
   const noStream = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
   assert.equal(noStream.isError, true);
   assert.equal(noStream._meta?.retryable, false);

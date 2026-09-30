@@ -23,6 +23,8 @@ export async function fakeBaguette() {
   let state = "Booted";
   let inputFails = false;
   let sendFrames = true;
+  let lifecycleState: string | undefined;
+  let lifecycleFails = false;
   const inputs: unknown[] = [];
   const requests: { path: string; origin?: string }[] = [];
   const http = createServer(async (request, response) => {
@@ -37,7 +39,8 @@ export async function fakeBaguette() {
     } else if (path.endsWith("/definition.json")) {
       response.end(JSON.stringify({ identity: { udid: UDID, name: "iPhone 17", model: "iPhone 17" }, screen: { rect: SCREEN } }));
     } else if (path.endsWith("/boot")) {
-      state = "Booted"; response.end('{"ok":true}');
+      if (lifecycleFails) { response.end('{"ok":false,"error":"boot failed"}'); return; }
+      state = lifecycleState ?? "Booted"; response.end('{"ok":true}');
     } else if (path.endsWith("/shutdown")) {
       state = "Shutdown"; response.end('{"ok":true}');
     } else if (path.endsWith("/input")) {
@@ -70,6 +73,8 @@ export async function fakeBaguette() {
     setState(next: string) { state = next; },
     setInputFailure() { inputFails = true; },
     setFrames(enabled: boolean) { sendFrames = enabled; },
+    setLifecycleState(next?: string) { lifecycleState = next; },
+    setLifecycleFailure(enabled: boolean) { lifecycleFails = enabled; },
     async close() {
       for (const client of websocket.clients) client.terminate();
       await new Promise<void>(resolve => websocket.close(() => resolve()));
