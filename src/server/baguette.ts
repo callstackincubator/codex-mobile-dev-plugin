@@ -9,11 +9,19 @@ import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { errorMessage, normalizeDevices, parseBaseUrl, udidSchema } from "../shared/protocol.ts";
 import type { Status } from "../shared/protocol.ts";
+import { buttonMarginsSchema } from "../shared/bezel.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 
 export const definitionSchema = z.object({
   identity: z.object({ udid: udidSchema, name: z.string(), model: z.string() }),
-  screen: z.object({ rect: z.object({ width: z.number().positive(), height: z.number().positive() }) }),
+  screen: z.object({
+    rect: z.object({ width: z.number().positive(), height: z.number().positive(), x: z.number().optional(), y: z.number().optional() }),
+    viewport: z.object({ width: z.number().positive(), height: z.number().positive() }).optional(),
+    clipRadius: z.number().nonnegative().optional(),
+    buttonMargins: buttonMarginsSchema.optional(),
+    bezelImage: z.object({ rest: z.string() }).optional(),
+    maskImage: z.string().optional(),
+  }),
 });
 
 export class Baguette {

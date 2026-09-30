@@ -2,6 +2,8 @@ import { App, applyDocumentTheme, applyHostStyleVariables } from "@modelcontextp
 import { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import "@openai/mcp-extensions/app/styles.css";
 import "./style.css";
+import { bezelGeometrySchema } from "../shared/bezel.ts";
+import type { Bezel } from "../shared/bezel.ts";
 import type { SimulatorDevice, Status } from "../shared/protocol.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
 import { PanelContext } from "./model-context.ts";
@@ -19,6 +21,9 @@ const canvas = element<HTMLCanvasElement>("screen");
 const context = canvas.getContext("2d")!;
 const frame = element("device-frame");
 const stage = element("stage");
+const bezelImage = element<HTMLImageElement>("device-bezel");
+let bezel: Bezel | undefined;
+bezelImage.addEventListener("error", () => { setBezel(); fitScreen(); });
 const startButton = element<HTMLButtonElement>("start");
 const refreshButton = element<HTMLButtonElement>("refresh");
 const repairButton = element<HTMLButtonElement>("repair-input");
@@ -149,11 +154,38 @@ function empty(message: string) {
   element("empty").textContent = message;
 }
 
+function setBezel(value?: Bezel) {
+  bezel = value;
+  frame.dataset.bezel = String(!!value);
+  bezelImage.hidden = !value;
+  canvas.removeAttribute("style");
+  if (!value) { bezelImage.removeAttribute("src"); return; }
+  bezelImage.src = value.image;
+  const { rect, viewport, clipRadius } = value;
+  canvas.style.left = `${rect.x / viewport.width * 100}%`;
+  canvas.style.top = `${rect.y / viewport.height * 100}%`;
+  canvas.style.width = `${rect.width / viewport.width * 100}%`;
+  canvas.style.height = `${rect.height / viewport.height * 100}%`;
+  canvas.style.borderRadius = `${clipRadius / rect.width * 100}% / ${clipRadius / rect.height * 100}%`;
+  if (value.mask) {
+    canvas.style.maskImage = `url("${value.mask}")`;
+    canvas.style.maskSize = "100% 100%";
+    canvas.style.maskRepeat = "no-repeat";
+    canvas.style.borderRadius = "0";
+  }
+}
+
 function fitScreen() {
   if (frame.hidden || !canvas.width || !canvas.height) return;
   const style = getComputedStyle(stage);
   const width = stage.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
   const height = stage.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+  if (bezel) {
+    const scale = Math.max(0, Math.min(width / bezel.viewport.width, height / bezel.viewport.height));
+    frame.style.width = `${bezel.viewport.width * scale}px`;
+    frame.style.height = `${bezel.viewport.height * scale}px`;
+    return;
+  }
   const ratio = canvas.width / canvas.height;
   const screenWidth = Math.max(0, Math.min(width - 14, (height - 14) * ratio));
   frame.style.width = `${screenWidth + 14}px`;
@@ -221,6 +253,11 @@ async function openAndReceive(udid: string, sessionEpoch: number, signal: AbortS
   if (typeof id !== "string" || typeof frameUri !== "string") throw new StopReconnectError("The plugin did not return a stream session.");
   if (signal.aborted || sessionEpoch !== epoch) { await call("mobile_stream_close", { sessionId: id }, { timeout: 3000 }).catch(() => {}); return; }
   const data = result.structuredContent as { definition: { screen: { rect: { width: number; height: number } } }; inputStatus?: { state: string } };
+  const candidate = result._meta?.bezel as Bezel | undefined;
+  const geometry = bezelGeometrySchema.safeParse(candidate);
+  const validImage = (value: unknown): value is string => typeof value === "string" && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(value);
+  setBezel(geometry.success && validImage(candidate?.image)
+    ? { ...geometry.data, image: candidate.image, ...(validImage(candidate.mask) ? { mask: candidate.mask } : {}) } : undefined);
   inputBlocked = data.inputStatus?.state === "blocked";
   notice();
   points = { width: data.definition.screen.rect.width, height: data.definition.screen.rect.height };

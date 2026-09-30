@@ -2,6 +2,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { z } from "zod";
+import { readBezel } from "./bezel.ts";
 import { Baguette } from "./baguette.ts";
 import { StreamSessions } from "./stream-sessions.ts";
 import { LogSessions } from "./log-sessions.ts";
@@ -197,11 +198,12 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     _meta: { ui: { resourceUri: APP_URI, visibility: ["app"] } },
   }, guarded(async ({ udid, fps }: { udid: string; fps: number }) => {
     const definition = await baguette.definition(udid);
+    const bezel = await readBezel(baguette, udid, definition.screen);
     const inputStatus = await simulatorInput.status(udid);
     const sessionId = await streams.open(udid, fps);
     return {
       ...result({ udid, definition, fps, inputStatus }, `Stream ready for ${definition.identity.name}.`),
-      _meta: { sessionId, frameUri: `stream://mobile-dev/${sessionId}/frame?after=0` },
+      _meta: { ...(bezel ? { bezel } : {}), sessionId, frameUri: `stream://mobile-dev/${sessionId}/frame?after=0` },
     };
   }));
 
