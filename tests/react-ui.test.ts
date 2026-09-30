@@ -35,7 +35,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   t.after(async () => { await cleanupView(); dom.window.close(); for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); } await rm(directory, { recursive: true, force: true }); });
   const output = resolve(directory, "workspace.mjs");
   await build({ entryPoints: ["src/ui/components/workspace.tsx"], outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
-    loader: { ".svg": "text" }, external: ["react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui"] });
+    external: ["react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react"] });
   const { Workspace } = await import(pathToFileURL(output).href);
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
@@ -65,7 +65,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 1);
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
   assert.equal(picker.value, "device-1");
-  assert.equal(dom.window.document.querySelector('[data-element="refresh"] svg')?.getAttribute("viewBox"), "0 -960 960 960");
+  assert.equal(dom.window.document.querySelector('[data-element="refresh"] svg')?.getAttribute("viewBox"), "0 0 24 24");
   await act(async () => { (dom.window.document.querySelector('[aria-label="Log sources"]') as HTMLButtonElement).click(); });
   assert.ok(dom.window.document.getElementById("logs-native"));
   await act(async () => { (dom.window.document.getElementById("logs-toggle") as HTMLButtonElement).click(); });

@@ -46,7 +46,7 @@ await writeFile("dist/serve-emu/release.json", JSON.stringify({
 }, null, 2) + "\n");
 const app = await build({
   entryPoints: ["src/ui/app.tsx"], jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
-  loader: { ".svg": "text", ".woff2": "dataurl", ".woff": "dataurl" },
+  loader: { ".woff2": "dataurl", ".woff": "dataurl" },
   plugins: [{ name: "shadcn-theme", setup(build) {
     build.onLoad({ filter: /theme\.css$/ }, async ({ path }) => {
       const compiler = await compile(await readFile(path, "utf8"), { base: dirname(path), onDependency() {} });
