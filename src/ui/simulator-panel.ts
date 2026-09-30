@@ -59,6 +59,7 @@ export function createSimulatorPanel(
   let points = { width: 0, height: 0 };
   let pointer: { id: number; x: number; y: number; edge?: string } | undefined;
   let seenFrames = 0;
+  let pausedFrame: HTMLCanvasElement | undefined;
   let busy = false;
   let resumeRequested = false;
   let toolsAvailable = false;
@@ -194,6 +195,11 @@ export function createSimulatorPanel(
     const state = annotations.getSnapshot();
     canvas.dataset.selecting = String(state.selecting || !!state.draft);
     if (state.selecting || state.draft) releasePointer();
+    if (!state.selecting && pausedFrame) {
+      const latest = pausedFrame;
+      pausedFrame = undefined;
+      if (ready && stream) drawFrame(latest, latest.width, latest.height);
+    }
     deviceButtons();
   });
 
@@ -360,6 +366,7 @@ export function createSimulatorPanel(
   async function connect() {
     if (disposed || !toolsAvailable || !selected || selected.state !== "Booted") return;
     await disconnect();
+    if (document.visibilityState === "hidden" || disposed) return;
     if (frame.hidden) empty("Connecting…", "Opening the device screen.");
     const sessionEpoch = epoch;
     const udid = selected.udid;
@@ -438,7 +445,7 @@ export function createSimulatorPanel(
         uri.searchParams.set("after", String(after));
         const resource = await app.readServerResource({ uri: uri.href }, { signal: readSignal, timeout: 15000 });
         const result = readFrame(resource);
-        const browserArrivedAt = arrivals.take(uri.href, result.serverPreparedAt);
+        const browserArrivedAt = arrivals.take(uri.href, result.serverPreparedAt) ?? performance.timeOrigin + performance.now();
         browserProfile.response(result.serverPreparedAt,
           browserArrivedAt, result.frame?.sequence ?? null);
         if (result.connectionState === "reconnecting") {
@@ -475,6 +482,9 @@ export function createSimulatorPanel(
 
   function drawFrame(image: CanvasImageSource, width: number, height: number) {
     if (annotations.getSnapshot().selecting && ready) {
+      pausedFrame ??= document.createElement("canvas");
+      if (pausedFrame.width !== width || pausedFrame.height !== height) { pausedFrame.width = width; pausedFrame.height = height; }
+      pausedFrame.getContext("2d")?.drawImage(image, 0, 0);
       seenFrames++;
       return;
     }
@@ -657,9 +667,12 @@ export function createSimulatorPanel(
     return action(connect);
   }
   function onVisibility() {
-    if (document.visibilityState === "visible" && reconnect.active && !ready && !busy) void resume();
+    if (document.visibilityState === "hidden") void disconnect();
+    else if (toolsAvailable && selected?.state === "Booted" && !ready && !disposed) void resume();
   }
   document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("pageshow", onVisibility);
+  window.addEventListener("focus", onVisibility);
 
   controls();
   return {
@@ -688,6 +701,8 @@ export function createSimulatorPanel(
       window.removeEventListener("message", observeFrame);
       arrivals.clear();
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pageshow", onVisibility);
+      window.removeEventListener("focus", onVisibility);
       root.removeEventListener("pointerdown", activate, { capture: true });
       root.removeEventListener("focusin", activate);
       return disposing = disconnect();

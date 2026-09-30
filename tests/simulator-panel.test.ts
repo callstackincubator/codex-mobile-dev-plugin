@@ -161,6 +161,49 @@ async function waitFor(predicate: () => boolean) {
   }
 }
 
+test("missing timing observations do not disconnect valid iOS frames", async t => {
+  const f = fixture(t); f.missTiming(); await f.ios.panel.load();
+  await waitFor(() => f.ios.element("screen").draws > 0);
+  assert.equal(f.calls.filter(call => call.name === "mobile_stream_session").length, 1);
+  assert.equal(f.closed.length, 0);
+});
+
+for (const platform of ["ios", "android"] as const) test(`leaving Select restores the latest ${platform} frame even when the device is quiet`, async t => {
+  const f = fixture(t); const target = f[platform]; await target.panel.load();
+  await waitFor(() => target.element("screen").draws > 0);
+  const store = getScreenAnnotations(target.element("stage") as unknown as HTMLElement);
+  await store.toggle();
+  f.frame(platform, 2);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(target.element("screen").draws, 1);
+  store.exit();
+  assert.equal(target.element("screen").draws, 2);
+  assert.equal(f.closed.length, 0);
+});
+
+test("returning to a hidden chat reopens its streams and preserves the note input", async t => {
+  const f = fixture(t); await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
+  await waitFor(() => f.ios.element("screen").draws > 0 && f.android.element("screen").draws > 0);
+  const store = getScreenAnnotations(f.ios.element("stage") as unknown as HTMLElement);
+  await store.toggle(); store.select({ x: 50, y: 40 }); store.setText("Keep this note");
+  f.visibility("hidden");
+  await waitFor(() => f.closed.length === 2);
+  assert.equal(store.getSnapshot().draft?.text, "Keep this note");
+  f.visibility("visible");
+  await waitFor(() => f.ios.element("screen").draws > 1 && f.android.element("screen").draws > 1);
+  assert.equal(f.calls.filter(call => call.name.endsWith("_stream_session")).length, 4);
+  assert.equal(store.getSnapshot().draft?.text, "Keep this note");
+  assert.equal(f.calls.some(call => call.name.startsWith("mobile_boot")), false);
+});
+
+test("a stopped receive loop retries when its chat becomes visible again", async t => {
+  const f = fixture(t); f.invalidFrame(); await f.ios.panel.load();
+  await waitFor(() => f.ios.element("notice-message").textContent.includes("invalid frame metadata"));
+  f.visibility("visible");
+  await waitFor(() => f.ios.element("screen").draws > 0);
+  assert.equal(f.calls.filter(call => call.name === "mobile_stream_session").length, 2);
+});
+
 test("status arriving during startup still connects the selected device", async t => {
   const f = fixture(t);
   const starting = f.ios.panel.resume();

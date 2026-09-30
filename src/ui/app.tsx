@@ -61,7 +61,7 @@ function disposeUI() {
     reactRoot.unmount();
   })();
 }
-function onPageHide() { stopLiveReload(); void disposeUI(); }
+function onPageHide(event: PageTransitionEvent) { if (!event.persisted) { stopLiveReload(); void disposeUI(); } }
 window.addEventListener("pagehide", onPageHide);
 app.onteardown = async () => { stopLiveReload(); await disposeUI(); return {}; };
 

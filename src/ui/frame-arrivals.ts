@@ -1,5 +1,3 @@
-import { StopReconnectError } from "./reconnect.ts";
-
 export class FrameArrivals {
   private readonly arrivals = new Map<string, number>();
 
@@ -20,11 +18,10 @@ export class FrameArrivals {
     }
   }
 
-  take(uri: string, serverPreparedAt: number): number {
+  take(uri: string, serverPreparedAt: number): number | undefined {
     const key = `${uri}|${serverPreparedAt}`;
     const arrivedAt = this.arrivals.get(key);
     this.arrivals.delete(key);
-    if (arrivedAt == null) throw new StopReconnectError("The frame response was not observed by the panel's timing listener.");
     return arrivedAt;
   }
 
