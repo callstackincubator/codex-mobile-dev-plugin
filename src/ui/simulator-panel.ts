@@ -55,6 +55,7 @@ export function createSimulatorPanel(
   let pointer: { id: number; x: number; y: number; edge?: string } | undefined;
   let seenFrames = 0;
   let busy = false;
+  let resumeRequested = false;
   let toolsAvailable = false;
   let disposed = false;
   let disposing: Promise<void> | undefined;
@@ -170,7 +171,14 @@ export function createSimulatorPanel(
     if (busy || disposed) return;
     busy = true; controls(); notice();
     try { await callback(); } catch (error) { notice(error instanceof Error ? error.message : String(error)); }
-    finally { busy = false; controls(); }
+    finally {
+      busy = false;
+      controls();
+      if (resumeRequested) {
+        resumeRequested = false;
+        if (!reconnect.active && !disposed) void resume();
+      }
+    }
   }
 
   function empty(message: string, description = "") {
@@ -578,7 +586,10 @@ export function createSimulatorPanel(
   root.addEventListener("pointerdown", activate, { capture: true });
   root.addEventListener("focusin", activate);
   function activate() { selectionChanged(selected, true); }
-  function resume() { return action(connect); }
+  function resume() {
+    if (busy) { resumeRequested = true; return Promise.resolve(); }
+    return action(connect);
+  }
   function onVisibility() {
     if (document.visibilityState === "visible" && reconnect.active && !ready && !busy) void resume();
   }
@@ -595,7 +606,7 @@ export function createSimulatorPanel(
     empty,
     resume,
     load: () => action(async () => { await listDevices(); await connect(); }),
-    acceptStatus(next: Status) { renderStatus(next); if (toolsAvailable) void resume(); },
+    acceptStatus(next: Status) { renderStatus(next); if (toolsAvailable && !reconnect.active) void resume(); },
     setAvailable(value: boolean) { toolsAvailable = value; controls(); },
     dispose() {
       if (disposing) return disposing;

@@ -27,7 +27,6 @@ export function DevicePicker({ id, label }: { id: string; label: string }) {
         {state.items.map(item => <div key={item.value} className={`flex min-w-0 items-center rounded-md ${item.value === state.value ? "bg-accent" : ""}`}>
           <Button variant="ghost" data-device-option={item.value} aria-pressed={item.value === state.value} disabled={state.disabled || !!state.stoppingId} className="h-auto min-h-7 min-w-0 flex-1 justify-start rounded-md px-1.5 py-1 text-left font-normal" ref={item.value === state.value ? selectedButton : undefined} onClick={() => {
             setOpen(false);
-            if (item.value === store.value && item.running) return;
             store.value = item.value;
             container.current?.dispatchEvent(new Event("change"));
           }}><DeviceLabel item={item} wrap /></Button>

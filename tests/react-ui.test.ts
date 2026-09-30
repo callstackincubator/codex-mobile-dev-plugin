@@ -55,6 +55,10 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   let deviceChanges = 0;
   pickerElement.addEventListener("change", () => { deviceChanges++; });
   await act(async () => { pickerStore.update({ value: "iphone", disabled: false, items: [{ value: "iphone", label: "iPhone", running: true, canStop: true }, { value: "ipad", label: "iPad", running: false, canStop: false }] }); });
+  await act(async () => { (picker as HTMLButtonElement).click(); });
+  await act(async () => { (dom.window.document.querySelector('[data-device-option="iphone"]') as HTMLButtonElement).click(); });
+  assert.equal(deviceChanges, 1, "Reselecting a running device retries its connection.");
+  deviceChanges = 0;
   let stoppedDevice = "";
   pickerStore.stop = async (id: string) => { stoppedDevice = id; pickerStore.update({ items: [{ value: "iphone", label: "iPhone", running: false, canStop: false }, { value: "ipad", label: "iPad", running: false, canStop: false }] }); };
   await act(async () => { (picker as HTMLButtonElement).click(); });

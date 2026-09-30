@@ -71,7 +71,7 @@ function hostContext() {
   panelContext.hostChanged();
   for (const panel of panels) { panel.fitScreen(); panel.controls(); }
 }
-app.ontoolinput = () => { ios.empty("Loading simulators…", "Finding available iOS simulators."); };
+app.ontoolinput = () => { if (!ios.selected) ios.empty("Loading simulators…", "Finding available iOS simulators."); };
 app.ontoolresult = result => {
   if (result.isError) { ios.notice(result.content.filter(item => item.type === "text").map(item => item.text).join("\n")); return; }
   if (result.structuredContent && "devices" in result.structuredContent) ios.acceptStatus(result.structuredContent as Status);
@@ -90,7 +90,7 @@ void (async () => {
     }
     if (available) {
       stopLiveReload = startLiveReload(app, disposeUI);
-      await Promise.all([ios.resume(), android.load()]);
+      await Promise.all([ios.load(), android.load()]);
     }
   } catch (error) {
     for (const panel of panels) panel.notice(error instanceof Error ? error.message : "Could not connect to Codex.");

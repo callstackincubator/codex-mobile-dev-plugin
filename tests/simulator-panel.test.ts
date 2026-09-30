@@ -147,6 +147,20 @@ async function waitFor(predicate: () => boolean) {
   }
 }
 
+test("status arriving during startup still connects the selected device", async t => {
+  const f = fixture(t);
+  const starting = f.ios.panel.resume();
+  f.ios.panel.acceptStatus({ connected: true, managed: true, baseUrl: "http://localhost/", devices: [{ udid: "iphone-1", name: "iPhone", state: "Booted", runtime: "" }] });
+  await starting;
+  await waitFor(() => f.ios.element("screen").draws > 0);
+  assert.equal(f.ios.element("empty").hidden, true);
+  assert.equal(f.calls.filter(call => call.name === "mobile_stream_session").length, 1);
+  f.ios.panel.acceptStatus({ connected: true, managed: true, baseUrl: "http://localhost/", devices: [{ udid: "iphone-1", name: "iPhone", state: "Booted", runtime: "" }] });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(f.calls.filter(call => call.name === "mobile_stream_session").length, 1);
+  assert.equal(f.closed.length, 0);
+});
+
 for (const platform of ["ios", "android"] as const) test(`stopping the selected ${platform} device leaves the other stream open and allows restarting it`, async t => {
   const f = fixture(t);
   await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
