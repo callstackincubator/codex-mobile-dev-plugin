@@ -102,7 +102,7 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
 
   registerAppTool(server, "mobile_open_workspace", {
     title: "Mobile Dev",
-    description: "Open the fullscreen Mobile Dev workspace with logs on the left and an iOS or Android device on the right. Starts the bundled backend without booting a device.",
+    description: "Open the fullscreen Mobile Dev workspace with logs on the left and iOS and Android devices side by side on the right. Starts the bundled backend without booting a device.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
       ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
@@ -112,7 +112,7 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
 
   registerAppTool(server, "mobile_open_simulator", {
     title: "Mobile simulator",
-    description: "Open the Mobile Dev simulator panel in Codex and start the plugin's bundled Baguette backend. Choose iOS or Android in the panel. Shows devices without booting any.",
+    description: "Open the Mobile Dev simulator panel in Codex and start the plugin's bundled Baguette backend. Shows iOS and Android side by side without booting any devices.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
       ui: { resourceUri: APP_URI, visibility: ["app", "model"] },

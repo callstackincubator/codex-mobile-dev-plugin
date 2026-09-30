@@ -121,3 +121,20 @@ test("a host without image attachment support rejects screenshots", async () => 
   assert.equal(context.canAttachScreenshots, false);
   await assert.rejects(context.attachScreenshot(screenshot), /does not support screenshot/);
 });
+
+test("side by side devices share both IDs while logs keep the active selection", async () => {
+  const { context, updates } = fixture();
+  const android = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const };
+  context.selectSimulators([simulator, android], android);
+  await context.attach(log);
+  const last = updates.at(-1)!;
+  assert.deepEqual(last.structuredContent?.selectedSimulators, [simulator, android]);
+  assert.equal(last.structuredContent?.selectedSimulator, android);
+  assert.match(JSON.stringify(last.content), /Active Android simulator: Pixel/);
+  assert.match(JSON.stringify(last.content), /Visible iOS simulator: iPhone/);
+  context.selectSimulators([simulator], simulator);
+  await context.attach(log);
+  assert.deepEqual(updates.at(-1)?.structuredContent?.selectedSimulators, [simulator]);
+  assert.equal(updates.at(-1)?.content?.some(item => item.type === "text" && item.text.includes("emulator-5554")), false);
+  assert.deepEqual(updates.at(-1)?.structuredContent?.selectedLog, log);
+});
