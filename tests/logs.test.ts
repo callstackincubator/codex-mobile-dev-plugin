@@ -117,7 +117,7 @@ test("Metro connects only the chosen target, enables Runtime, and cleans up its 
 test("MCP log sessions validate devices and expose batches without browser network access", async t => {
   const fake = await fakeBaguette(); let sink: LogSink | undefined; let stopped = false;
   const logs = new LogSessions({ native: (_target, next) => { sink = next; return async () => { stopped = true; }; }, metro: () => async () => {} });
-  const plugin = await createPlugin("<title>Logs</title>", new Baguette(fake.url), fakeSimulatorInput(), logs);
+  const plugin = await createPlugin("<head><!-- STREAM_CONFIG --></head><title>Logs</title>", new Baguette(fake.url), fakeSimulatorInput(), logs);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair(); const client = new Client({ name: "logs-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
   await plugin.server.connect(serverTransport); await client.connect(clientTransport);

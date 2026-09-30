@@ -1,23 +1,22 @@
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { z } from "zod";
 import { readBezel } from "./bezel.ts";
 import { Baguette } from "./baguette.ts";
 import { StreamSessions } from "./stream-sessions.ts";
+import { SharedStreamService } from "./shared-stream-service.ts";
+import type { SharedStreaming } from "./shared-stream-service.ts";
+import { MacLocalCertificate } from "./local-certificate.ts";
+import type { LocalCertificate } from "./local-certificate.ts";
 import { LogSessions } from "./log-sessions.ts";
 import { registerLogTools } from "./log-tools.ts";
 import { SimulatorInputService } from "./simulator-input.ts";
 import type { SimulatorInput } from "./simulator-input.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
-import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../shared/protocol.ts";
+import { errorMessage, inputSchema, udidSchema } from "../shared/protocol.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-export const APP_URI = "ui://mobile-dev/0.1.16/simulator.html";
-export const WORKSPACE_URI = "ui://mobile-dev/0.1.16/workspace.html";
-// Codex can retain entrypoint metadata after updating the installed plugin.
-const legacyAppUris = ["ui://mobile-dev/0.1.15/simulator.html", "ui://mobile-dev/0.1.14/simulator.html", "ui://mobile-dev/0.1.13/simulator.html", "ui://mobile-dev/0.1.12/simulator.html", "ui://mobile-dev/0.1.11/simulator.html", "ui://mobile-dev/simulator.html", ...Array.from({ length: 6 }, (_, index) => `ui://mobile-dev/v${index + 1}/simulator.html`)];
-const legacyWorkspaceUris = ["ui://mobile-dev/0.1.15/workspace.html", "ui://mobile-dev/0.1.14/workspace.html", "ui://mobile-dev/0.1.13/workspace.html", "ui://mobile-dev/0.1.12/workspace.html", "ui://mobile-dev/0.1.11/workspace.html", "ui://mobile-dev/workspace.html"];
 const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
@@ -39,9 +38,17 @@ function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
   };
 }
 
-export async function createPlugin(html: string, baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions()) {
-  const streams = new StreamSessions(baguette);
-  const server = new McpServer({ name: "mobile-dev", version: "0.1.16" }, {
+export async function createPlugin(html: string, baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), certificate: LocalCertificate = new MacLocalCertificate(), shared: SharedStreaming = new SharedStreamService()) {
+  const marker = "<!-- STREAM_CONFIG -->";
+  if (html.includes(marker) === false) throw new Error("The panel bundle is missing its streaming configuration placeholder. Rebuild the plugin.");
+  const streams = new StreamSessions(baguette, simulatorInput);
+  await streams.start();
+  const streamOrigin = shared.origin;
+  const appUri = "ui://mobile-dev/0.1.18/shared-stream/simulator.html";
+  const workspaceUri = "ui://mobile-dev/0.1.18/shared-stream/workspace.html";
+  const config = `<meta id="stream-origin" content="${streamOrigin}">`;
+  const resourceHtml = html.replace(marker, config);
+  const server = new McpServer({ name: "mobile-dev", version: "0.1.18" }, {
     instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. Opening the panel does not boot a device.",
   });
   new OpenAIExtensions(server);
@@ -58,36 +65,17 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
 
   const readApp = async (uri: URL) => ({
     contents: [{
-      uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: (uri.href === WORKSPACE_URI || legacyWorkspaceUris.includes(uri.href))
-        ? html.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
-        : html,
+      uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: uri.href === workspaceUri
+        ? resourceHtml.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
+        : resourceHtml,
       _meta: {
-        ui: { csp: { connectDomains: [], resourceDomains: [] } },
+        ui: { csp: { connectDomains: [streamOrigin], resourceDomains: [] } },
         "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] },
       },
     }],
   });
-  registerAppResource(server, "mobile-dev-simulator", APP_URI, {}, readApp);
-  registerAppResource(server, "mobile-dev-workspace", WORKSPACE_URI, {}, readApp);
-  for (const [index, uri] of legacyWorkspaceUris.entries()) {
-    registerAppResource(server, `mobile-dev-workspace-legacy-${index}`, uri, {}, readApp);
-  }
-  for (const [index, uri] of legacyAppUris.entries()) {
-    registerAppResource(server, `mobile-dev-simulator-v${index + 1}`, uri, {}, readApp);
-  }
-
-  server.registerResource("simulator-frame", new ResourceTemplate("stream://mobile-dev/{sessionId}/frame?after={sequence}", { list: undefined }), {
-    mimeType: "image/jpeg",
-    description: "Read the next frame of an authorized panel stream. The session expires when the panel stops reading.",
-  }, async (uri, variables) => {
-    const id = sessionIdSchema.parse(variables.sessionId);
-    const after = z.coerce.number().int().nonnegative().parse(variables.sequence);
-    const frame = await streams.frame(id, after);
-    return { contents: frame
-      ? [{ uri: uri.href, mimeType: "image/jpeg", blob: frame.data, _meta: { sequence: frame.sequence } }]
-      : [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify({ idle: true, state: streams.connectionState(id) }) }],
-    };
-  });
+  registerAppResource(server, "mobile-dev-simulator", appUri, {}, readApp);
+  registerAppResource(server, "mobile-dev-workspace", workspaceUri, {}, readApp);
 
   const openPanel = guarded(async () => {
     let status;
@@ -101,7 +89,7 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     description: "Open the fullscreen Mobile Dev workspace with logs on the left and the iOS simulator on the right. Starts the bundled backend without booting a device.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
-      ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
+      ui: { resourceUri: workspaceUri, visibility: ["app", "model"] },
       "openai/ui": { entrypoints: [{ type: "global" }] },
     },
   }, openPanel);
@@ -111,7 +99,7 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     description: "Open the Mobile Dev simulator panel in Codex and start the plugin's bundled Baguette backend. Shows devices without booting any.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
-      ui: { resourceUri: APP_URI, visibility: ["app", "model"] },
+      ui: { resourceUri: appUri, visibility: ["app", "model"] },
       "openai/ui": { entrypoints: [{ type: "thread" }] },
     },
   }, openPanel);
@@ -195,33 +183,46 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     return { content: [{ type: "image", mimeType: "image/png", data: bytes.toString("base64") }, { type: "text", text: `Screen of ${udid}.` }], structuredContent: { udid } };
   }));
 
+  registerAppTool(server, "mobile_certificate_status", {
+    title: "Check local streaming setup", description: "Read local certificate status without creating certificates or changing Keychain trust.",
+    inputSchema: {}, annotations: read, _meta: { ui: { visibility: ["app"] } },
+  }, guarded(async () => {
+    return result(await certificate.status(), "Local streaming certificate status.");
+  }));
+
+  registerAppTool(server, "mobile_setup_certificate", {
+    title: "Set up local streaming", description: "Create a unique local certificate and request macOS Keychain trust for SSL to 127.0.0.1. Invoke only from the panel's setup button after the user reads the explanation.",
+    inputSchema: {}, annotations: write, _meta: { ui: { visibility: ["app"] } },
+  }, guarded(async () => {
+    const status = await certificate.setup();
+    const material = await certificate.material();
+    if (material == null) throw new Error("The local streaming certificate is not trusted yet.");
+    await shared.configureTls(material);
+    return result(status, "Local streaming is ready.");
+  }));
+
   registerAppTool(server, "mobile_stream_session", {
-    title: "Connect simulator stream", description: "Open the bundled Baguette's MJPEG capture for the panel. Frames and input use the host's MCP bridge; no browser network access is needed.",
-    inputSchema: { ...deviceInput, fps: z.number().int().min(1).max(60).default(30) },
+    title: "Connect simulator stream", description: "Authorize a local H.264 WebSocket stream for the panel. Video and gestures use the local TLS endpoint.",
+    inputSchema: { ...deviceInput, fps: z.number().int().min(1).max(60).default(60) },
     annotations: write,
-    _meta: { ui: { resourceUri: APP_URI, visibility: ["app"] } },
+    _meta: { ui: { resourceUri: appUri, visibility: ["app"] } },
   }, guarded(async ({ udid, fps }: { udid: string; fps: number }) => {
+    const certificateStatus = await certificate.status();
+    if (certificateStatus.state !== "ready") return { isError: true, content: [{ type: "text", text: "Set up the local streaming certificate in the panel." }], _meta: { tlsRequired: true, retryable: false } };
+    const material = await certificate.material();
+    if (material == null) throw new Error("The local streaming certificate is unavailable.");
+    await shared.configureTls(material);
     const definition = await baguette.definition(udid);
     const bezel = await readBezel(baguette, udid, definition.screen);
     const inputStatus = await simulatorInput.status(udid);
-    const sessionId = await streams.open(udid, fps);
+    const session = await streams.open(udid, fps);
+    let streamUrl: string;
+    try { streamUrl = await shared.publish(session.id, session.url); }
+    catch (error) { streams.closeSession(session.id); throw error; }
     return {
       ...result({ udid, definition, fps, inputStatus }, `Stream ready for ${definition.identity.name}.`),
-      _meta: { ...(bezel ? { bezel } : {}), sessionId, frameUri: `stream://mobile-dev/${sessionId}/frame?after=0` },
+      _meta: { ...(bezel ? { bezel } : {}), sessionId: session.id, streamUrl },
     };
-  }));
-
-  registerAppTool(server, "mobile_stream_input", {
-    title: "Send panel input", description: "Send a batch of validated gestures, keys, or buttons to an authorized panel stream.",
-    inputSchema: { sessionId: sessionIdSchema, messages: z.array(streamMessageSchema).min(1).max(64) },
-    annotations: write, _meta: { ui: { visibility: ["app"] } },
-  }, guarded(async ({ sessionId, messages }: { sessionId: string; messages: unknown[] }) => {
-    if (streams.connectionState(sessionId) === "reconnecting") return {
-      isError: true, content: [{ type: "text", text: "The simulator stream is reconnecting." }], _meta: { streamDisconnected: true },
-    };
-    const blocked = await blockedInput(streams.deviceId(sessionId));
-    if (blocked) return blocked;
-    return result({ accepted: streams.input(sessionId, messages) }, "Input sent to the simulator.");
   }));
 
   registerAppTool(server, "mobile_stream_close", {
@@ -229,12 +230,13 @@ export async function createPlugin(html: string, baguette = new Baguette(), simu
     inputSchema: { sessionId: sessionIdSchema },
     annotations: write, _meta: { ui: { visibility: ["app"] } },
   }, guarded(async ({ sessionId }: { sessionId: string }) => {
+    await shared.closeSession(sessionId);
     streams.closeSession(sessionId);
     return result({}, "Simulator stream closed.");
   }));
 
   return {
-    server,
-    async close() { streams.close(); await logs.close(); baguette.dispose(); await server.close(); },
+    server, appUri, workspaceUri,
+    async close() { await shared.close(); await streams.close(); await logs.close(); baguette.dispose(); await server.close(); },
   };
 }

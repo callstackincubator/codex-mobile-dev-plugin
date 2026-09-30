@@ -8,14 +8,17 @@ import type { SimulatorDevice, Status } from "../shared/protocol.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
 import { PanelContext } from "./model-context.ts";
 import { LogsPanel } from "./logs-panel.ts";
+import { VideoStream } from "./video-stream.ts";
+import { assertStreamPolicy } from "./stream-policy.ts";
 
-const app = new App({ name: "mobile-dev-ui", version: "0.1.16" }, {}, { autoResize: false });
+const app = new App({ name: "mobile-dev-ui", version: "0.1.18" }, {}, { autoResize: false });
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
 const logsPanel = new LogsPanel(app, panelContext);
 logsPanel.setLayout(document.documentElement.dataset.view === "workspace");
 document.getElementById("tool-logs")!.addEventListener("click", () => logsPanel.show());
 function element<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
+const streamOrigin = element<HTMLMetaElement>("stream-origin").content;
 const devices = element<HTMLSelectElement>("devices");
 const canvas = element<HTMLCanvasElement>("screen");
 const context = canvas.getContext("2d")!;
@@ -29,7 +32,11 @@ const refreshButton = element<HTMLButtonElement>("refresh");
 const repairButton = element<HTMLButtonElement>("repair-input");
 let status: Status | undefined;
 let selected: SimulatorDevice | undefined;
-type PanelStream = { id: string; frameUri: string; epoch: number; inputs: object[]; sending?: Promise<void>; closing?: Promise<void> };
+type PanelStream = { id: string; url: string; epoch: number; video?: VideoStream; pending?: VideoFrame; paint?: number; closing?: Promise<void> };
+const setupPanel = element("stream-setup");
+const setupButton = element<HTMLButtonElement>("setup-certificate");
+const checkCertificateButton = element<HTMLButtonElement>("check-certificate");
+let certificateReady = false;
 const reconnect = new ReconnectLoop();
 let stream: PanelStream | undefined;
 let ready = false;
@@ -55,7 +62,9 @@ function controls() {
   repairButton.disabled = busy || !selected || !toolsAvailable;
   devices.disabled = busy || !toolsAvailable || !status?.connected || !status.devices.length;
   refreshButton.disabled = busy || !toolsAvailable;
-  startButton.disabled = busy || !toolsAvailable || !status || (status.connected && !selected);
+  startButton.disabled = busy || !toolsAvailable || !certificateReady || !status || (status.connected && !selected);
+  setupButton.disabled = busy || !toolsAvailable;
+  checkCertificateButton.disabled = busy || !toolsAvailable;
   startButton.textContent = busy ? "Working…" : reconnect.active ? "Pause" : status && !status.connected ? "Retry" : "Start";
   startButton.dataset.streaming = String(reconnect.active);
   document.querySelectorAll<HTMLButtonElement>("[data-button]").forEach(button => { button.disabled = !active; });
@@ -63,32 +72,7 @@ function controls() {
 
 function send(message: object) {
   if (!ready || !stream || inputBlocked) return;
-  const previous = stream.inputs.at(-1) as { type?: string } | undefined;
-  if ((message as { type?: string }).type === "touch1-move" && previous?.type === "touch1-move") stream.inputs.pop();
-  stream.inputs.push(message);
-  void flushInput(stream);
-}
-
-function flushInput(session: PanelStream): Promise<void> {
-  if (session.sending) return session.sending;
-  if (!session.inputs.length) return Promise.resolve();
-  session.sending = (async () => {
-    try {
-      while (session.inputs.length) {
-        await call("mobile_stream_input", { sessionId: session.id, messages: session.inputs.splice(0, 64) }, { timeout: 5000 });
-      }
-    } catch (error) {
-      session.inputs.length = 0;
-      if (session.epoch === epoch) {
-        const failure = error as Error & { inputBlocked?: boolean; streamDisconnected?: boolean };
-        if (failure.inputBlocked) inputBlocked = true;
-        if (failure.streamDisconnected) { ready = false; cancelPointer(); }
-        notice(failure.streamDisconnected ? "Reconnecting…" : failure.message ?? "Simulator input failed.");
-        controls();
-      }
-    } finally { session.sending = undefined; }
-  })();
-  return session.sending;
+  stream.video?.send(message);
 }
 
 function releasePointer() {
@@ -105,11 +89,13 @@ function cancelPointer() {
   if (previous && canvas.hasPointerCapture(previous.id)) canvas.releasePointerCapture(previous.id);
 }
 
-function closePanel(session: PanelStream, graceful = false): Promise<void> {
+function closePanel(session: PanelStream): Promise<void> {
   if (session.closing) return session.closing;
   session.closing = (async () => {
-    if (graceful) await flushInput(session);
-    else session.inputs.length = 0;
+    session.video?.close();
+    if (session.paint != null) cancelAnimationFrame(session.paint);
+    session.pending?.close();
+    session.pending = undefined;
     if (stream === session) { cancelPointer(); stream = undefined; ready = false; controls(); }
     try { await call("mobile_stream_close", { sessionId: session.id }, { timeout: 3000 }); }
     catch { /* Idle streams also expire on the server. */ }
@@ -120,7 +106,7 @@ function closePanel(session: PanelStream, graceful = false): Promise<void> {
 async function disconnect() {
   releasePointer();
   const previous = stream;
-  const closing = previous ? closePanel(previous, true) : Promise.resolve();
+  const closing = previous ? closePanel(previous) : Promise.resolve();
   reconnect.stop();
   epoch++;
   stream = undefined;
@@ -202,7 +188,7 @@ function selectDevice() {
   selected = status?.devices.find(device => device.udid === devices.value);
   panelContext.selectSimulator(selected);
   logsPanel.selectSimulator(selected);
-  if (!reconnect.active) empty(selected ? "Press Start to open this simulator." : "No simulators. Add an iOS runtime in Xcode.");
+  if (certificateReady && !reconnect.active) empty(selected ? "Press Start to open this simulator." : "No simulators. Add an iOS runtime in Xcode.");
   controls();
 }
 
@@ -229,6 +215,7 @@ function renderStatus(next: Status) {
 
 async function connect() {
   if (!selected || selected.state !== "Booted") return;
+  if (!await checkCertificate()) return;
   await disconnect();
   if (frame.hidden) empty("Connecting…");
   const sessionEpoch = epoch;
@@ -247,11 +234,18 @@ async function connect() {
 }
 
 async function openAndReceive(udid: string, sessionEpoch: number, signal: AbortSignal) {
-  const result = await call("mobile_stream_session", { udid, fps: 30 }, { timeout: 30000 });
+  const result = await call("mobile_stream_session", { udid, fps: 60 }, { timeout: 30000 });
   const id = result._meta?.sessionId;
-  const frameUri = result._meta?.frameUri;
-  if (typeof id !== "string" || typeof frameUri !== "string") throw new StopReconnectError("The plugin did not return a stream session.");
+  const url = result._meta?.streamUrl;
+  if (typeof id !== "string" || typeof url !== "string") throw new StopReconnectError("The plugin did not return a stream session.");
   if (signal.aborted || sessionEpoch !== epoch) { await call("mobile_stream_close", { sessionId: id }, { timeout: 3000 }).catch(() => {}); return; }
+  try {
+    const capabilities = app.getHostCapabilities();
+    assertStreamPolicy(url, streamOrigin, capabilities?.sandbox?.csp?.connectDomains);
+  } catch (error) {
+    await call("mobile_stream_close", { sessionId: id }, { timeout: 3000 }).catch(() => {});
+    throw error;
+  }
   const data = result.structuredContent as { definition: { screen: { rect: { width: number; height: number } } }; inputStatus?: { state: string } };
   const candidate = result._meta?.bezel as Bezel | undefined;
   const geometry = bezelGeometrySchema.safeParse(candidate);
@@ -261,7 +255,7 @@ async function openAndReceive(udid: string, sessionEpoch: number, signal: AbortS
   inputBlocked = data.inputStatus?.state === "blocked";
   notice();
   points = { width: data.definition.screen.rect.width, height: data.definition.screen.rect.height };
-  stream = { id, frameUri, epoch: sessionEpoch, inputs: [] };
+  stream = { id, url, epoch: sessionEpoch };
   ready = false;
   frames = 0; seenFrames = 0; frameWindow = performance.now();
   controls();
@@ -271,44 +265,80 @@ async function openAndReceive(udid: string, sessionEpoch: number, signal: AbortS
 }
 
 async function receiveFrames(session: PanelStream, signal: AbortSignal) {
-  const uri = new URL(session.frameUri);
-  let after = 0;
-  while (!signal.aborted && session.epoch === epoch) {
-    uri.searchParams.set("after", String(after));
-    const result = await app.readServerResource({ uri: uri.href }, { signal, timeout: 15000 });
-    if (signal.aborted || session.epoch !== epoch) return;
-    const image = result.contents.find(item => item.mimeType === "image/jpeg" && "blob" in item);
-    if (!image || !("blob" in image)) {
-      const idle = result.contents.find(item => item.mimeType === "application/json" && "text" in item);
-      if (idle && "text" in idle && JSON.parse(idle.text).state === "reconnecting") {
-        ready = false; cancelPointer(); session.inputs.length = 0;
-        element("frame-stats").textContent = "Reconnecting…";
-        notice("Reconnecting…"); controls();
-      }
-      continue;
-    }
-    const sequence = Number(image._meta?.sequence);
-    if (!Number.isSafeInteger(sequence) || sequence <= after) throw new StopReconnectError("The plugin returned an invalid frame sequence.");
-    after = sequence;
-    const bytes = Uint8Array.from(atob(image.blob), character => character.charCodeAt(0));
-    const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }));
+  const paint = () => {
+    session.paint = undefined;
+    const videoFrame = session.pending;
+    session.pending = undefined;
+    if (videoFrame == null) return;
     try {
       if (signal.aborted || session.epoch !== epoch) return;
-      const resized = canvas.width !== bitmap.width || canvas.height !== bitmap.height;
-      if (resized) { canvas.width = bitmap.width; canvas.height = bitmap.height; }
-      context.drawImage(bitmap, 0, 0);
+      const width = videoFrame.displayWidth;
+      const height = videoFrame.displayHeight;
+      const resized = canvas.width !== width || canvas.height !== height;
+      if (resized) { canvas.width = width; canvas.height = height; }
+      context.drawImage(videoFrame, 0, 0);
       frame.hidden = false; element("empty").hidden = true;
       if (!ready) { ready = true; reconnect.connected(); notice(); controls(); }
-      if (!seenFrames || resized) fitScreen();
+      if (seenFrames === 0 || resized) fitScreen();
       seenFrames++; frames++;
-      const elapsed = performance.now() - frameWindow;
-      if (elapsed >= 1000) {
-        element("frame-stats").textContent = `${Math.round(frames * 1000 / elapsed)} fps`;
-        frames = 0; frameWindow = performance.now();
-      }
-    } finally { bitmap.close(); }
-  }
+    } finally { videoFrame.close(); }
+  };
+  session.video = new VideoStream(session.url, 60, {
+    frame: videoFrame => {
+      session.pending?.close();
+      session.pending = videoFrame;
+      if (session.paint == null) session.paint = requestAnimationFrame(paint);
+    },
+    inputBlocked: message => { inputBlocked = true; cancelPointer(); notice(message); controls(); },
+  });
+  const stats = setInterval(() => {
+    const now = performance.now();
+    const elapsed = now - frameWindow;
+    const fps = Math.round(frames * 1000 / elapsed);
+    element("frame-stats").textContent = `${fps} fps`;
+    frames = 0;
+    frameWindow = now;
+  }, 1000);
+  const abort = () => { session.video?.close(); };
+  signal.addEventListener("abort", abort, { once: true });
+  if (signal.aborted) abort();
+  try { await session.video.finished; }
+  finally { clearInterval(stats); signal.removeEventListener("abort", abort); }
 }
+
+async function checkCertificate(): Promise<boolean> {
+  const result = await call("mobile_certificate_status", {});
+  const data = result.structuredContent as { state: string };
+  certificateReady = data.state === "ready";
+  setupPanel.hidden = certificateReady;
+  if (certificateReady) {
+    element("stream-setup-status").textContent = "";
+  } else {
+    frame.hidden = true;
+    element("empty").hidden = true;
+    element("stream-setup-status").textContent = data.state === "expired"
+      ? "Your certificate has expired. Create a new one to continue."
+      : data.state === "untrusted" ? "Your certificate needs browser-compatible trust. Press the button to update its macOS Keychain trust." : "";
+    setupButton.textContent = data.state === "untrusted" ? "Update certificate trust & enable streaming" : "Create certificate & enable streaming";
+  }
+  controls();
+  return certificateReady;
+}
+
+setupButton.addEventListener("click", () => {
+  void action(async () => {
+    element("stream-setup-status").textContent = "Setting up certificate trust. Approve the macOS Keychain request when it appears…";
+    try {
+      await call("mobile_setup_certificate", {}, { timeout: 180000 });
+      if (await checkCertificate()) await connect();
+    } catch (error) {
+      element("stream-setup-status").textContent = error instanceof Error ? error.message : String(error);
+    }
+  });
+});
+checkCertificateButton.addEventListener("click", () => {
+  void action(async () => { if (await checkCertificate()) await connect(); });
+});
 
 async function start() {
   const listed = await call("mobile_list_simulators");
@@ -407,7 +437,8 @@ void (async () => {
     toolsAvailable = !!capabilities?.serverTools && !!capabilities?.serverResources;
     logsPanel.setAvailable(toolsAvailable);
     controls();
-    if (!toolsAvailable) notice("This host cannot call the plugin's simulator tools.");
+    if (toolsAvailable) await checkCertificate();
+    else notice("This host cannot call the plugin's simulator tools.");
   } catch (error) {
     notice(error instanceof Error ? error.message : "Could not connect to Codex.");
   }

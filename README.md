@@ -2,11 +2,13 @@
 
 An iOS simulator panel for Codex desktop. The plugin includes Baguette 0.2.1 for streaming and agent-device 0.20.9 for agent control. Both runtimes ship in the plugin and start on demand. No separate install or server command is needed.
 
+**Streaming experiment status (2026-09-30):** embedded video is blocked in Codex Desktop 26.928.21956, build 12404, by `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`. The local H.264 server and TLS checks pass, but certificate setup and CSP do not grant the panel's browser permission. Ordinary MCP tools and logs use the host bridge. Read the [streaming investigation](docs/local-streaming-investigation.md) for the implementation, resolved failures, remaining limitation, test evidence, and [upstream report](https://github.com/openai/codex/issues/49679). This branch is an investigation checkpoint.
+
 The first version supports:
 
 - A native sidebar entry and a panel beside a chat.
 - A centered simulator with one toolbar for device selection, Start/Pause, Home, App Switcher, Lock, and refresh.
-- Live MJPEG with a target of 30 fps and a small frame counter. The host's MCP bridge sets the delivered frame rate.
+- Experimental H.264 with a target of 60 fps over a direct local secure WebSocket, with a frame counter; currently blocked by the host permission described above.
 - Pointer taps and drags and printable US-ASCII typing directly on the focused screen.
 - A Repair input button when Xcode 27 Device Hub blocks interaction.
 - Automatic reconnect after a stream or backend failure, with Pause to stop retries.
@@ -35,7 +37,7 @@ codex plugin add mobile-dev@mobile-dev-local
 
 Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile_open_workspace` for the fullscreen view. Call `mobile_open_simulator` for the panel beside a chat. Choose a simulator from its panel dropdown and press Start. Start boots the device if needed, then connects its screen. A selected running device connects automatically. The panel uses Apple’s device bezel and screen mask from the installed DeviceKit assets, with a simple frame as a fallback when assets are unavailable. Click the screen to type or drag. Pause closes the stream and keeps the last frame.
 
-The local ZIP at `release/mobile-dev-0.1.16-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+The local ZIP at `release/mobile-dev-0.1.18-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 Ask the agent to inspect or control the app on the selected simulator. The panel shares the selected UDID with the chat's model context. The agent uses the bundled agent-device tools with that UDID, opens a named session, reads accessibility refs, then presses elements or fills fields. Baguette keeps the live stream in the panel. The tools take the same session name on later calls so refs and app state stay together.
 
@@ -74,7 +76,7 @@ npm run test:agent-device
 
 `package` copies built files into `release/marketplace/plugins/mobile-dev` and creates the ZIP. It includes agent-device's runtime `node_modules`, licenses, and Apple runner source. It does not need this development checkout or a global agent-device install to run. The source repo's existing build-codex-native-plugins skill stays outside that release package.
 
-`test` checks MCP contracts, frame reads, input validation, and capture cleanup against a local fixture. `test:package` copies the release package into a temporary directory, starts its bundled Baguette, reads the real device list, and checks shutdown. It does not boot or change a simulator. Run it on an Apple Silicon Mac with Xcode.
+`test` checks MCP contracts, secure binary streaming, input validation, and capture cleanup against a local fixture. `test:package` copies the release package into a temporary directory, starts its bundled Baguette, reads the real device list, and checks shutdown. It does not boot or change a simulator. Run it on an Apple Silicon Mac with Xcode.
 
 `test:agent-device` starts the agent-device MCP server from a copied package with no global CLI on its PATH. It checks the control tools, pinned runtime, isolated state directory, real iOS device list, and daemon cleanup. It does not open an app, take screenshots, or send input.
 
@@ -90,15 +92,17 @@ The second MCP entry runs `dist/agent-device-server.mjs`, which launches the off
 
 Use the panel's UDID and a named agent-device session for agent work. Refs belong to the latest snapshot or settled diff in that session. `press` and `fill` take a target such as `{ "kind": "ref", "ref": "@e12" }` or `{ "kind": "selector", "selector": "label=\"Search\"" }`. Use actual refs from the current result. Closing a session can close its app; leave `shutdown` unset to keep the simulator running. Another live agent-device daemon can own a runner lease. End that owner's work or choose another simulator instead of releasing its live claim.
 
-The app gets a random stream session through an app-only MCP tool. The MCP server opens a WebSocket to its bundled Baguette, keeps the latest JPEG, and returns it through `resources/read`. The app sends input through an app-only tool that checks each message. Frames and input stay inside the host's MCP bridge. The app makes no direct network requests.
+On first use, the panel explains local streaming and offers **Create certificate & enable streaming**. Clicking it creates a certificate unique to the Mac and requests macOS Keychain trust for SSL. The certificate itself is valid only for `127.0.0.1` and cannot issue other certificates. Approve the Keychain request to continue. Opening the panel only checks setup; it does not create or trust certificates. Setup lasts one year and is reused across plugin updates. If an earlier setup used hostname-scoped Keychain trust, the panel offers **Update certificate trust & enable streaming** to repair it. Chromium ignores hostname-scoped trust entries, even when macOS certificate verification succeeds. Keys and certificates live in `~/Library/Application Support/Mobile Dev/tls` with private permissions. To revoke trust, delete **Mobile Dev local streaming** from the login keychain in Keychain Access. Delete the TLS directory to remove its files.
 
-The UI resource's CSP has empty connection and resource allowlists. Codex desktop 0.159.0 filters plain HTTP and WebSocket origins out of widget CSP, including loopback addresses. The MCP transport avoids those browser connections. A session expires after five minutes without reads or input. Closing or pausing a viewer closes its upstream capture. Ending the MCP process stops its Baguette child and streams. Simulator devices remain under CoreSimulator's control.
+The app gets a random stream token through an app-only MCP tool and attempts to connect to the plugin's loopback WSS endpoint. The implemented path relays Baguette's binary H.264 packets to WebCodecs. The panel paints the newest decoded frame on each animation tick and closes superseded frames. Gestures use the same socket with schema validation and Device Hub checks. MCP carries setup and session lifecycle calls, rather than individual video frames or gestures. The current host blocks the browser connection before this video path can run; the target FPS has not been verified in the embedded panel.
 
-When a socket drops, the server reopens it for the same device and preserves the frame sequence. If Baguette exits, the next read starts a new bundled process. Heartbeats detect sockets that stop responding. Failed attempts wait between 0.5 and 10 seconds. The panel also reconnects after MCP errors or an expired session. It keeps the last frame, shows Reconnecting, and discards input from the failed connection. Pause, closing the panel, or selecting another device cancels retries. Reconnect never boots a stopped simulator or runs an input repair.
+The UI resource's CSP permits the exact local WSS origin. The observed desktop host filters plain HTTP and WebSocket origins out of widget CSP; TLS makes the origin eligible for that allowlist. Chromium's Local Network Access permission is a separate check, which the observed host denies for this panel. Repeating certificate setup or changing macOS Local Network settings alone does not override that host denial. A token can connect once and expires after one minute if unused. Heartbeats detect stalled connections. Closing or pausing a viewer closes its upstream capture. Ending the MCP process stops its Baguette child and streams. Simulator devices remain under CoreSimulator's control.
+
+When a socket drops, the panel creates a new session for the same device. If Baguette exits, opening the next session starts a new bundled process. Failed attempts wait between 0.5 and 10 seconds. The panel keeps the last frame, shows Reconnecting, and discards input from the failed connection. Pause, closing the panel, or selecting another device cancels retries. Reconnect never boots a stopped simulator or runs an input repair. Certificate or unsupported decoder errors require user action.
 
 On macOS 27 with Xcode 27, the bundled Baguette can list simulators and capture frames. Device Hub can stop taps, buttons, and keys from reaching an iOS 27 device. The panel checks this state when connecting and sending input. When blocked, it shows Repair input and explains that the repair closes running apps. The button runs the bundled Baguette's `heal` command, then reconnects capture with new input handles. It restarts backboardd and SpringBoard without rebooting the device. Relaunching Device Hub can block input again. The panel never repairs a running device without the user clicking Repair input or asking to fix input. Baguette's boot route also repairs input after boot. Do not run the repair to diagnose video. See [Baguette's Device Hub notes](https://github.com/tddworks/baguette/blob/main/docs/features/device-hub/README.md).
 
-UI resource addresses include the release version so Codex can load new HTML after an update. The original simulator and workspace addresses and the old v1 through v6 simulator addresses still return the current UI. After updating, restart Codex once if it still uses an older MCP process.
+UI resource addresses are stable for each release. All MCP processes use one shared local streaming service at `wss://127.0.0.1:49321`, so discovery metadata, cached HTML, CSP, and stream sessions agree even when Codex routes them through different processes. The service starts on demand and exits 30 seconds after its last MCP client disconnects. Each MCP client registers its own capture routes over a private Unix socket; disconnecting a client closes only its streams. Frames and gestures travel through local sockets without MCP frame requests. If the fixed port is occupied, streaming reports an error instead of selecting a different port. The panel checks the host-approved CSP before connecting. After updating the installed plugin, restart Codex once and reopen Mobile Dev to load the new resource address.
 
 ## Tools
 
@@ -115,7 +119,8 @@ UI resource addresses include the release version so Codex can load new HTML aft
 | `mobile_send_input` | Send validated input in device points |
 | `mobile_repair_input` | Reclaim input from Device Hub, closing running apps |
 | `mobile_stream_session` | Create a panel stream, app-only |
-| `mobile_stream_input` | Send a batch of panel input, app-only |
+| `mobile_certificate_status` | Check local streaming setup, app-only |
+| `mobile_setup_certificate` | Create and request trust for the local certificate after a setup button click, app-only |
 | `mobile_stream_close` | Close a panel stream, app-only |
 | `mobile_log_sources` | List connected Android devices and local Metro targets |
 | `mobile_logs_session` | Start native and/or Metro log readers |

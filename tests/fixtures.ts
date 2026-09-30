@@ -76,3 +76,50 @@ export async function fakeBaguette() {
     },
   };
 }
+
+export async function fakeCertificate() {
+  const { mkdtemp, readFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const execute = promisify(execFile);
+  const root = tmpdir();
+  const prefix = join(root, "mobile-dev-test-cert-");
+  const directory = await mkdtemp(prefix);
+  const keyPath = join(directory, "key.pem");
+  const certPath = join(directory, "cert.pem");
+  try {
+    await execute("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", keyPath, "-out", certPath]);
+    const key = await readFile(keyPath);
+    const cert = await readFile(certPath);
+    let state: "ready" | "missing" = "ready";
+    let setups = 0;
+    return {
+      key, cert,
+      get setups() { return setups; },
+      missing() { state = "missing"; },
+      async status() { return { state }; },
+      async material() { return state === "ready" ? { key, cert } : undefined; },
+      async setup() { setups++; state = "ready"; return { state }; },
+    };
+  } finally { await rm(directory, { recursive: true, force: true }); }
+}
+
+export async function fakeStreamingService() {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { startStreamService, SharedStreamService } = await import("../src/server/shared-stream-service.ts");
+  const root = tmpdir();
+  const prefix = join(root, "mobile-stream-service-");
+  const directory = await mkdtemp(prefix);
+  const socketPath = join(directory, "control.sock");
+  const service = await startStreamService({ socketPath, port: 0 });
+  return {
+    origin: service.origin,
+    socketPath,
+    client() { return new SharedStreamService({ socketPath, origin: service.origin, launch() { throw new Error("The test streaming service stopped unexpectedly."); } }); },
+    async close() { await service.close(); await rm(directory, { recursive: true, force: true }); },
+  };
+}
