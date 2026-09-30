@@ -20,7 +20,7 @@ export function LogDetails({ log, onClose, children }: { log: StackedLog; onClos
   const time = new Date(log.lastTimestamp).toLocaleTimeString(undefined, { hour12: false });
   const prefix = log.tag || log.process;
   const message = `${prefix ? `${prefix}: ` : ""}${log.message}`;
-  return <aside id="log-detail" data-level={log.level} className="log-detail flex h-full min-w-0 flex-col overflow-hidden bg-background" aria-label="Selected log">
+  return <aside id="log-detail" data-level={log.level} className="log-detail flex h-full min-w-0 flex-col overflow-hidden bg-card" aria-label="Selected log">
     <header className="log-detail-heading flex h-11 shrink-0 items-center gap-2 border-b px-3">
       <Icon className="log-severity size-4" />
       <h2 className="text-sm font-semibold capitalize">{log.level === "warn" ? "Warning" : log.level}</h2>
