@@ -6,6 +6,10 @@ The phone encodes its display. The addon transfers each final compressed allocat
 
 The native queue holds at most eight frames or 4 MiB. Overflow invalidates the decoder generation, drops queued frames, and requests a fresh keyframe. Only complete access units with validated parameter sets reach Node. The capture session owns its UDP sockets, tunnel, and stream identities returned by the device. Teardown names those identities in `stopmediastream`; it never uses `stopAll=true`.
 
+All video acknowledgments and receiver feedback use the sender port announced in the device's start response. Missing or invalid ports fail setup explicitly. Native diagnostics go to the MCP server's stderr with the `[mobile-dev:ios-mirror]` prefix: they identify queue overflows, packet discontinuities, resets, keyframe requests and recovery latency without logging frame contents. The panel console also reports decoder interruptions and received recovery keyframes.
+
+Run `npm run test:ios-mirror -- <UDID> 30 --recovery` to force reader pauses and a reset, and verify that each produces a new decoder generation and keyframe through native capture and stdio MCP delivery. Keep the phone unlocked and its screen moving during the check; an idle display can stop emitting frames and will not overflow the queue.
+
 Build with `npm run rebuild:ios-mirror` on an Apple Silicon Mac with Rust and Xcode command line tools. `Cargo.lock` pins all native dependencies. End users receive the prebuilt addon and need no compiler. The plugin build verifies the source and binary hashes.
 
 Protocol transport uses [idevice](https://github.com/jkcoxson/idevice) at `a64b8867815b3da17b5c927531bdba877e8456ef` (MIT). The media parser and negotiation files are derived from idevice plus [device-hub-ios](https://github.com/JaviSoto/device-hub-ios) at `1fcdfb0a6799b62f05625d0cbb359bec57256b94`'s focused display-stream patches (MIT); see the included license files. The vendored media module is separate from our bridge/session code.

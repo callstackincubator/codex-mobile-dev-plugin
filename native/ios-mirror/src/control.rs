@@ -8,6 +8,20 @@ async fn await_reply<T>(operation: impl Future<Output = Result<T, idevice::Idevi
     result.map_err(|_| "The iPhone display service did not respond.".to_string())?.map_err(|error| error.to_string())
 }
 
+pub fn sender_port(response: &plist::Value) -> Result<u16, String> {
+    let port = response.as_dictionary()
+        .and_then(|output| output.get("connection"))
+        .and_then(plist::Value::as_dictionary)
+        .and_then(|connection| connection.get("sender"))
+        .and_then(plist::Value::as_dictionary)
+        .and_then(|sender| sender.get("port"))
+        .and_then(plist::Value::as_unsigned_integer)
+        .ok_or("The device returned no video feedback port.")?;
+    let port = u16::try_from(port).map_err(|_| "The device returned an invalid video feedback port.")?;
+    if port == 0 { return Err("The device returned an invalid video feedback port.".into()); }
+    Ok(port)
+}
+
 
 pub struct Control<R: ReadWrite> {
     client: RemoteXpcClient<R>,
@@ -54,5 +68,54 @@ impl<R: ReadWrite> Control<R> {
         input.insert("identifiers".into(), XPCObject::Array(identifiers));
         self.invoke("com.apple.coredevice.feature.stopmediastream", input, Some("com.apple.coredevice.action.mediastreamstop")).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn response(port: plist::Value) -> plist::Value {
+        let mut sender = plist::Dictionary::new();
+        sender.insert("port".into(), port);
+        let sender = plist::Value::Dictionary(sender);
+        let mut connection = plist::Dictionary::new();
+        connection.insert("sender".into(), sender);
+        let connection = plist::Value::Dictionary(connection);
+        let mut output = plist::Dictionary::new();
+        output.insert("connection".into(), connection);
+        plist::Value::Dictionary(output)
+    }
+
+    #[test]
+    fn reads_the_negotiated_sender_port() {
+        let port = plist::Value::from(63137u64);
+        let output = response(port);
+        let result = sender_port(&output);
+        assert_eq!(result, Ok(63137));
+    }
+
+    #[test]
+    fn rejects_invalid_sender_ports() {
+        let ports = [
+            plist::Value::from(0u64),
+            plist::Value::from(65536u64),
+            plist::Value::from(u64::MAX),
+            plist::Value::from(-1i64),
+            plist::Value::from("50001"),
+        ];
+        for port in ports {
+            let output = response(port);
+            let result = sender_port(&output);
+            assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn missing_sender_port_does_not_use_a_guessed_endpoint() {
+        let output = plist::Dictionary::new();
+        let output = plist::Value::Dictionary(output);
+        let result = sender_port(&output);
+        assert!(result.is_err());
     }
 }

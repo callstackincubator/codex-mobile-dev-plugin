@@ -32,11 +32,12 @@ export class PhysicalIosVideo {
     if (decoder && decoder.state !== "closed") decoder.close();
   }
 
-  private recover() {
+  private recover(reason: string) {
     this.resetDecoder();
     const now = performance.now();
     if (this.closed || now - this.lastReset < 1000) return;
     this.lastReset = now;
+    console.warn("[mobile-dev] Physical iOS decoder requested recovery", { reason, generation: this.generation });
     this.requestKey();
   }
 
@@ -44,6 +45,9 @@ export class PhysicalIosVideo {
     if (this.closed) return;
     if (this.failure) throw this.failure;
     const configuration = batch.configuration;
+    if (batch.generation !== this.generation && this.generation >= 0) {
+      console.warn("[mobile-dev] Physical iOS video interrupted", { generation: batch.generation, dropped: batch.dropped });
+    }
     const changed = batch.generation !== this.generation || configuration?.revision !== this.revision;
     if (changed) {
       this.resetDecoder();
@@ -60,7 +64,10 @@ export class PhysicalIosVideo {
           try { if (this.closed === false && this.decoder === decoder) this.output(frame); }
           finally { frame.close(); }
         },
-        error: error => { this.failure = new StopReconnectError(`HEVC decoding failed: ${error.message}`); },
+        error: error => {
+          console.error("[mobile-dev] Physical iOS HEVC decoding failed", error);
+          this.failure = new StopReconnectError(`HEVC decoding failed: ${error.message}`);
+        },
       });
       decoder.configure(config);
       this.decoder = decoder;
@@ -69,12 +76,26 @@ export class PhysicalIosVideo {
     for (const frame of batch.frames) {
       if (this.closed) return;
       if (this.failure) throw this.failure;
-      if (this.decoder === undefined || (this.sawKey === false && frame.key === false)) { this.recover(); continue; }
-      if (this.decoder.decodeQueueSize >= 8) { this.recover(); return; }
+      if (this.decoder === undefined || (this.sawKey === false && frame.key === false)) {
+        const reason = this.decoder === undefined ? "Missing decoder configuration" : "Waiting for a keyframe";
+        this.recover(reason);
+        continue;
+      }
+      if (this.decoder.decodeQueueSize >= 8) { this.recover("HEVC decode queue reached eight frames"); return; }
       const bytes = decodeVideoBytes(frame.data);
       const chunk = new EncodedVideoChunk({ type: frame.key ? "key" : "delta", timestamp: frame.timestamp, data: bytes });
-      try { this.decoder.decode(chunk); this.sawKey = true; }
-      catch { this.recover(); return; }
+      try {
+        this.decoder.decode(chunk);
+        if (frame.key && this.sawKey === false && this.generation > 0) {
+          console.info("[mobile-dev] Physical iOS recovery keyframe received", { generation: this.generation, timestamp: frame.timestamp });
+        }
+        this.sawKey = true;
+      }
+      catch (error) {
+        const reason = error instanceof Error ? error.message : "HEVC decode rejected the frame";
+        this.recover(reason);
+        return;
+      }
     }
   }
 

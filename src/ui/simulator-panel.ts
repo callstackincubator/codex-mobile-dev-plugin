@@ -563,7 +563,9 @@ export function createSimulatorPanel(
       ready = false;
       notice("Recovering physical device video…");
       controls();
-      void call("mobile_ios_mirror_reset", { sessionId: session.id }, { timeout: 5000 }).catch(() => {});
+      void call("mobile_ios_mirror_reset", { sessionId: session.id }, { timeout: 5000 }).catch(error => {
+        console.warn("[mobile-dev] Physical iOS keyframe request failed", error);
+      });
     });
     const opened = performance.now();
     try {

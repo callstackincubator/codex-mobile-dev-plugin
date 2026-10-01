@@ -104,6 +104,7 @@ pub async fn open_device(udid: String) -> Result<Capture> {
     let worker_shared = shared.clone();
     tokio::spawn(async move {
         let result = run(&udid, &worker_shared, receiver, started).await;
+        if let Err(error) = &result { eprintln!("[mobile-dev:ios-mirror] capture_failed error={error}"); }
         let mut queue = worker_shared.queue.lock().unwrap();
         queue.error = result.err();
         queue.closed = true;
@@ -181,8 +182,10 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
             let start = control.invoke("com.apple.coredevice.feature.startmediastream", params, None);
             let answer = setup(deadline, start).await?;
             ids.push(connection_id(&answer)?);
+            let feedback_port = control::sender_port(&answer)?;
             let answer = answer.as_dictionary().and_then(|d| d.get("negotiatorAnswer")).and_then(plist::Value::as_data).ok_or("No HEVC negotiation answer.")?;
             let identity = parse_screen_video_answer(answer).map_err(|e| e.to_string())?;
+            eprintln!("[mobile-dev:ios-mirror] capture_started receiver_ssrc={our_ssrc} media_ssrc={} feedback_port={feedback_port}", identity.ssrc);
             let mut assembler = HevcAccessUnitAssembler::new(identity.payload_type, identity.ssrc);
             let mut interval = tokio::time::interval(Duration::from_millis(500));
             let mut last_key = Instant::now() - Duration::from_secs(1);
@@ -191,6 +194,9 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
             let mut highest_sequence = 0;
             let mut frame_count = 0u16;
             let origin = Instant::now();
+            let mut recovery_started = Some(origin);
+            let mut video_packets = 0u64;
+            let mut last_video_packet = origin;
             let mut first_timestamp = None;
             let mut configuration_revision = 0;
             let _ = started.send(Ok(()));
@@ -200,16 +206,31 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
                         Some(Command::Close) | None => return Ok(()),
                         Some(Command::Reset) => {
                             assembler.mark_stream_discontinuity(); key_requested = true;
+                            let now = Instant::now();
+                            recovery_started = Some(now);
                             let mut queue = shared.queue.lock().unwrap();
                             queue.invalidate();
+                            let generation = queue.generation;
+                            let dropped = queue.dropped;
+                            drop(queue);
+                            eprintln!("[mobile-dev:ios-mirror] reset_requested receiver_ssrc={our_ssrc} generation={generation} dropped={dropped}");
                         }
                     },
                     _ = interval.tick() => {
                         let clock = origin.elapsed().as_millis() as u16;
-                        video.send_to(50001, rtcp::build_rctl(our_ssrc, clock, frame_count, highest_sequence)).await.map_err(|e| e.to_string())?;
+                        let report = rtcp::build_rctl(our_ssrc, clock, frame_count, highest_sequence);
+                        video.send_to(feedback_port, report).await.map_err(|e| e.to_string())?;
                         if key_requested && last_key.elapsed() >= Duration::from_secs(1) {
                             let feedback = rtcp::build_keyframe_request(our_ssrc, "mobile-dev", identity.ssrc, &[], fir_sequence);
-                            video.send_to(50001, feedback).await.map_err(|e| e.to_string())?;
+                            video.send_to(feedback_port, feedback).await.map_err(|e| e.to_string())?;
+                            let waiting_ms = recovery_started.map(|started| {
+                                let elapsed = started.elapsed();
+                                elapsed.as_millis()
+                            });
+                            let waiting_ms = waiting_ms.unwrap_or(0);
+                            let packet_idle = last_video_packet.elapsed();
+                            let packet_idle_ms = packet_idle.as_millis();
+                            eprintln!("[mobile-dev:ios-mirror] keyframe_requested receiver_ssrc={our_ssrc} feedback_port={feedback_port} fir_sequence={fir_sequence} waiting_ms={waiting_ms} video_packets={video_packets} packet_idle_ms={packet_idle_ms}");
                             fir_sequence = fir_sequence.wrapping_add(1); last_key = Instant::now();
                         }
                     },
@@ -217,19 +238,41 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
                     datagram = video.recv() => {
                         let datagram = datagram.map_err(|e| e.to_string())?;
                         if rtcp::is_rtcp(&datagram.data) { continue; }
-                        let Some(packet) = RtpPacket::parse(&datagram.data) else { assembler.mark_stream_discontinuity(); key_requested = true; continue; };
-                        if packet.ssrc == identity.ssrc && packet.payload_type == identity.payload_type { highest_sequence = packet.sequence_number; }
+                        let Some(packet) = RtpPacket::parse(&datagram.data) else {
+                            if key_requested == false {
+                                let now = Instant::now();
+                                recovery_started = Some(now);
+                                eprintln!("[mobile-dev:ios-mirror] malformed_rtp receiver_ssrc={our_ssrc} bytes={}", datagram.data.len());
+                            }
+                            assembler.mark_stream_discontinuity(); key_requested = true;
+                            continue;
+                        };
+                        if packet.ssrc == identity.ssrc && packet.payload_type == identity.payload_type {
+                            highest_sequence = packet.sequence_number;
+                            video_packets = video_packets.wrapping_add(1);
+                            last_video_packet = Instant::now();
+                        }
                         for event in assembler.push_packet(&packet) {
                             match event {
                                 HevcDepacketizerEvent::PacketRejected(_) => {},
-                                HevcDepacketizerEvent::Discontinuity(_) => {
+                                HevcDepacketizerEvent::Discontinuity(reason) => {
+                                    if key_requested == false {
+                                        let now = Instant::now();
+                                        recovery_started = Some(now);
+                                    }
                                     key_requested = true;
-                                    shared.queue.lock().unwrap().invalidate();
+                                    let mut queue = shared.queue.lock().unwrap();
+                                    queue.invalidate();
+                                    let generation = queue.generation;
+                                    let dropped = queue.dropped;
+                                    drop(queue);
+                                    eprintln!("[mobile-dev:ios-mirror] discontinuity receiver_ssrc={our_ssrc} reason={reason:?} sequence={} timestamp={} generation={generation} dropped={dropped}", packet.sequence_number, packet.timestamp);
                                     shared.changed.notify_one();
                                 },
                                 HevcDepacketizerEvent::AccessUnit(unit) => {
                                     frame_count = frame_count.wrapping_add(1);
-                                    video.send_to(50001, rtcp::build_frame_ack(our_ssrc, unit.rtp_timestamp)).await.map_err(|e| e.to_string())?;
+                                    let acknowledgment = rtcp::build_frame_ack(our_ssrc, unit.rtp_timestamp);
+                                    video.send_to(feedback_port, acknowledgment).await.map_err(|e| e.to_string())?;
                                     let configuration = if unit.parameter_set_revision != configuration_revision {
                                         let parameters = assembler.parameter_sets().ok_or("Missing HEVC configuration.")?;
                                         Some(codec::configuration(parameters)?)
@@ -239,10 +282,35 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
                                     let first = *first_timestamp.get_or_insert(unit.rtp_timestamp);
                                     let timestamp = f64::from(unit.rtp_timestamp.wrapping_sub(first)) * (1_000_000.0 / 90_000.0);
                                     let frame = Frame { bytes: unit.bytes, timestamp, key: unit.is_sync };
-                                    if queue.push(frame, configuration) {
-                                        if unit.is_sync { key_requested = false; }
-                                    } else { assembler.mark_stream_discontinuity(); key_requested = true; }
-                                    drop(queue); shared.changed.notify_one();
+                                    let queued_frames = queue.frames.len();
+                                    let queued_bytes = queue.bytes;
+                                    let previous_generation = queue.generation;
+                                    let incoming_bytes = frame.bytes.len();
+                                    let accepted = queue.push(frame, configuration);
+                                    let generation = queue.generation;
+                                    let dropped = queue.dropped;
+                                    drop(queue);
+                                    if accepted {
+                                        if generation != previous_generation {
+                                            eprintln!("[mobile-dev:ios-mirror] configuration_changed receiver_ssrc={our_ssrc} revision={} generation={generation} dropped={dropped} key={}", unit.parameter_set_revision, unit.is_sync);
+                                        }
+                                        if unit.is_sync {
+                                            key_requested = false;
+                                            if let Some(started) = recovery_started.take() {
+                                                let elapsed = started.elapsed();
+                                                let waiting_ms = elapsed.as_millis();
+                                                eprintln!("[mobile-dev:ios-mirror] keyframe_received receiver_ssrc={our_ssrc} timestamp={} generation={generation} dropped={dropped} waiting_ms={waiting_ms}", unit.rtp_timestamp);
+                                            }
+                                        }
+                                    } else {
+                                        assembler.mark_stream_discontinuity(); key_requested = true;
+                                        if recovery_started.is_none() {
+                                            let now = Instant::now();
+                                            recovery_started = Some(now);
+                                        }
+                                        eprintln!("[mobile-dev:ios-mirror] queue_overflow receiver_ssrc={our_ssrc} queued_frames={queued_frames} queued_bytes={queued_bytes} incoming_bytes={incoming_bytes} generation={generation} dropped={dropped}");
+                                    }
+                                    shared.changed.notify_one();
                                 }
                             }
                         }
