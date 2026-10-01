@@ -2,9 +2,9 @@ import * as Sentry from "@sentry/react";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import {
   MeasurementWindow, SENTRY_RELEASE, SENTRY_UI_DSN, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY,
-  isFrequentTool, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan,
+  isFrequentTool, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, validateTelemetryEnvironment,
 } from "../shared/telemetry.ts";
-import type { Surface, TelemetryAttributes, TelemetryEnvironment } from "../shared/telemetry.ts";
+import type { Surface, TelemetryAttributes } from "../shared/telemetry.ts";
 
 export { ErrorBoundary } from "@sentry/react";
 
@@ -145,9 +145,7 @@ function visibilityChanged() {
 
 export function startUiTelemetry(app: App) {
   const environmentMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-environment"]');
-  const liveRevision = document.querySelector('meta[name="mobile-dev-live-revision"]');
-  let environment: TelemetryEnvironment = liveRevision === null ? "release" : "development";
-  if (environmentMeta?.content === "development" || environmentMeta?.content === "release") environment = environmentMeta.content;
+  const environment = validateTelemetryEnvironment(environmentMeta?.content);
   const browserTracing = Sentry.browserTracingIntegration({ instrumentNavigation: false });
   Sentry.init({
     dsn: SENTRY_UI_DSN,

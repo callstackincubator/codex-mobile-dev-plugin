@@ -1,7 +1,10 @@
 import { access, chmod, copyFile, cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { assertBuildEnvironment, telemetryBuildEnvironment } from "./telemetry-build.mjs";
 
+const telemetryEnvironment = telemetryBuildEnvironment();
+await assertBuildEnvironment("dist", telemetryEnvironment);
 const manifest = JSON.parse(await readFile("plugin.json", "utf8"));
 const marketplace = resolve("release/marketplace");
 const plugin = `${marketplace}/plugins/${manifest.name}`;

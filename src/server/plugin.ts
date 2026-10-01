@@ -1,3 +1,4 @@
+import { addToolIcons, PHONE_ICONS } from "./tool-icons.ts";
 import type { UIResource } from "./ui-resource.ts";
 import { LIVE_UI_URI } from "../shared/live-ui.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -5,6 +6,7 @@ import { wrapMcpServerWithSentry } from "@sentry/node";
 import { PLUGIN_VERSION } from "../shared/version.ts";
 import { SENTRY_ORIGIN } from "../shared/telemetry.ts";
 import { captureServerError } from "./telemetry.ts";
+import { resolveTelemetryEnvironment } from "./telemetry-environment.ts";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { z } from "zod";
@@ -18,6 +20,7 @@ import { registerIosDeviceTools } from "./ios-devices.ts";
 import { StreamSessions } from "./stream-sessions.ts";
 import { LogSessions } from "./log-sessions.ts";
 import { registerLogTools } from "./log-tools.ts";
+import { registerInspectionTools } from "./inspection-tools.ts";
 import { CpuSessions, createCpuSessions } from "./cpu/sessions.ts";
 import { registerCpuTools } from "./cpu/tools.ts";
 import { DisplayFpsSessions } from "./fps/sessions.ts";
@@ -105,13 +108,15 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   const cpu = selectedCpu;
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
-    instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. For Android use mobile_list_android_devices and the mobile_android tools. serve-emu handles Android video and panel input. Opening the panel does not boot a device.",
+    instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. See the Mobile Dev skill for device control, logs, and performance workflows.",
   });
   wrapMcpServerWithSentry(server, { recordInputs: false, recordOutputs: false });
+  addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS });
   new OpenAIExtensions(server);
   registerIosDeviceTools(server);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   registerLogTools(server, logs, baguette);
+  const closeInspection = registerInspectionTools(server, baguette, android);
   registerCpuTools(server, cpu, baguette);
   registerDisplayFpsTools(server, fps);
   const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot, async deviceId => {
@@ -154,11 +159,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   }
 
   function configureUI(content: string): string {
-    const telemetryEnvironment = process.env.MOBILE_DEV_ENVIRONMENT;
-    if (telemetryEnvironment === "development" || telemetryEnvironment === "release") {
-      return content.replace(/name="mobile-dev-environment" content="(?:development|release)"/, `name="mobile-dev-environment" content="${telemetryEnvironment}"`);
-    }
-    return content;
+    const telemetryEnvironment = resolveTelemetryEnvironment();
+    return content.replace(/name="mobile-dev-environment" content="(?:development|release)"/, `name="mobile-dev-environment" content="${telemetryEnvironment}"`);
   }
   const readApp = async (uri: URL) => {
     const resource = typeof html === "string" ? { html } : await html();
@@ -224,7 +226,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   registerAppTool(server, "mobile_open_workspace", {
     title: "Mobile Dev",
-    description: "Open the fullscreen Mobile Dev workspace with logs and performance tools on the left and iOS and Android devices side by side on the right. Starts the bundled backend without booting a device.",
+    description: "Open the fullscreen Mobile Dev workspace when the user asks for fullscreen, with logs and performance tools on the left and iOS and Android devices side by side on the right. For app development beside a chat, prefer mobile_open_simulator. Starts the bundled backend without booting a device.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
       ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
@@ -234,7 +236,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   registerAppTool(server, "mobile_open_simulator", {
     title: "Mobile simulator",
-    description: "Open the Mobile Dev simulator panel in Codex and start the plugin's bundled Baguette backend. Shows iOS and Android side by side without booting any devices.",
+    description: "Open the Mobile Dev simulator beside the chat when building, running, changing, or debugging a local iOS, Android, Expo, React Native, or SwiftUI app. Call before the first device launch unless a panel is already open or the user requests a tool-only workflow. Starts the bundled Baguette backend without booting devices.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
       ui: { resourceUri: APP_URI, visibility: ["app", "model"] },
@@ -261,7 +263,9 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   for (const action of ["boot", "shutdown"] as const) {
     server.registerTool(`mobile_${action}_simulator`, {
       title: action === "boot" ? "Boot iOS simulator" : "Shut down iOS simulator",
-      description: `${action === "boot" ? "Boot" : "Shut down"} the selected simulator. Use a UDID from the device list.`,
+      description: action === "boot"
+        ? "Boot an installed iOS simulator chosen for the app task. Follow the user's choice or choose a suitable device from the list when none runs. Reuse a suitable running device. Use a UDID from the device list."
+        : "Shut down the selected simulator. Use a UDID from the device list.",
       inputSchema: deviceInput, outputSchema: statusOutput,
       annotations: { ...write, destructiveHint: action === "shutdown" },
     }, guarded(async ({ udid }: { udid: string }) => {
@@ -399,7 +403,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   return {
     server,
     async close() {
-      closeAndroid(); streams.close();
+      closeInspection(); closeAndroid(); streams.close();
       try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror()]); }
       finally { baguette.dispose(); await server.close(); }
     },

@@ -1,5 +1,5 @@
 import { CameraIcon, HouseIcon, CopyIcon, PowerIcon, SmartphoneIcon, type LucideIcon } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useState, type ReactNode } from "react";
 import { Button } from "./ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty";
 import { DevicePicker } from "./device-picker";
@@ -14,13 +14,15 @@ const deviceButtons: { action: string; icon: LucideIcon; label: string }[] = [
 
 // The stream controller owns canvas pixels and device control state after mount.
 // Keep this subtree stable so log batches never reset a live device.
-export const SimulatorView = memo(function SimulatorView({ platform }: { platform: "ios" | "android" }) {
+export const SimulatorView = memo(function SimulatorView({ platform, toolbar }: { platform: "ios" | "android"; toolbar?: ReactNode }) {
   const [annotations] = useState(() => new ScreenAnnotationsStore());
   const label = platform === "ios" ? "iOS" : "Android";
+  const sidebar = document.documentElement.dataset.view !== "workspace";
   const id = (name: string) => `${platform}-${name}`;
-  return <section hidden={platform === "android"} id={`${platform}-panel`} className="simulator-panel group/simulator @container flex h-full min-w-0 flex-1 flex-col" data-platform={platform} aria-label={`${label} simulator`}>
+  return <section hidden={platform === "android"} id={`${platform}-panel`} className="simulator-panel group/simulator @container relative flex h-full min-w-0 flex-1 flex-col" data-platform={platform} aria-label={`${label} simulator`}>
     <header className="flex h-[49px] shrink-0 items-center border-b px-2">
       <div className="flex w-full min-w-0 items-center gap-1" role="toolbar" aria-label={`${label} controls`}>
+        {toolbar}
         <DevicePicker id={id("devices")} label={`${label} device`} />
         {deviceButtons.map(({ action, icon: Icon, label }) => <Button key={action} variant="ghost" size="icon" className="shrink-0 data-[unsupported=true]:text-muted-foreground data-[unsupported=true]:cursor-not-allowed data-[unsupported=true]:disabled:pointer-events-auto data-[unsupported=true]:hover:bg-transparent data-[unsupported=true]:hover:text-muted-foreground" data-button={action} title={label} aria-label={label} disabled><Icon /></Button>)}
         <Button variant="ghost" size="icon" className="shrink-0" data-element="screenshot" title="Screenshot to chat and clipboard" aria-label="Screenshot to chat and clipboard" disabled><CameraIcon /></Button>
@@ -37,7 +39,7 @@ export const SimulatorView = memo(function SimulatorView({ platform }: { platfor
       <div data-element="stopped" className="absolute inset-0 z-10 bg-background/70" hidden><Empty><EmptyHeader><EmptyMedia variant="icon"><PowerIcon /></EmptyMedia><EmptyTitle>Device stopped</EmptyTitle></EmptyHeader><EmptyContent><Button data-element="start-device" size="sm">Start device</Button></EmptyContent></Empty></div>
       <ScreenAnnotationOverlay store={annotations} />
     </section>
-    <footer className="flex h-11 shrink-0 items-center gap-x-3 border-t px-2 text-[10px] text-muted-foreground">
+    <footer className={sidebar ? "absolute bottom-2 right-2 z-30 flex items-center text-[10px] text-muted-foreground" : "flex h-11 shrink-0 items-center gap-x-3 border-t px-2 text-[10px] text-muted-foreground"}>
       <span data-element="notice" className="sr-only" hidden><span data-element="notice-message" /></span>
       <span data-element="screenshot-status" className="sr-only" hidden />
       <DeviceSettings platform={platform} />

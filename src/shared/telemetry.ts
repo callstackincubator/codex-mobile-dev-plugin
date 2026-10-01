@@ -9,6 +9,12 @@ export const SENTRY_RELEASE = `mobile-dev@${PLUGIN_VERSION}`;
 export const TELEMETRY_META_KEY = "mobile-dev/telemetry";
 export const TELEMETRY_INTERVAL_MS = 30_000;
 export type TelemetryEnvironment = "development" | "release";
+
+export function validateTelemetryEnvironment(value: unknown): TelemetryEnvironment {
+  if (value === "development" || value === "release") return value;
+  throw new Error("Sentry environment must be development or release.");
+}
+
 export type Surface = "logs" | "performance" | "simulator";
 export type TelemetryAttributes = Record<string, string | number | boolean>;
 type Options = NonNullable<Parameters<typeof init>[0]>;

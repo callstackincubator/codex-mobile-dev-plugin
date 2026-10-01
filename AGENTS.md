@@ -44,6 +44,9 @@ new telemetry when existing coverage already answers the relevant questions.
   credentials. Preserve the existing scrubbing and expected-error exclusions.
 - Preserve `development` and `release` environments, the shared plugin release,
   and matching source maps/debug IDs when changing initialization or builds.
+  Local builds/packages default to development; public builds require the explicit
+  release flag. Use the packaged environment for UI, Node and native helpers; do
+  not infer it from watcher state.
   Native SDK integration requires separately scoped work; do not expand a UI or
   Node feature change into native Sentry setup incidentally.
 - Verify instrumentation on the changed execution path, including surface

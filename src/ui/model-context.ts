@@ -3,8 +3,9 @@ import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import type { StackedLog } from "../shared/logs.ts";
 import { formatLogContext, logKey } from "../shared/logs.ts";
-import { annotationDetails, formatAnnotationContext } from "../shared/screen-annotations.ts";
+import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationMessage } from "../shared/screen-annotations.ts";
 import type { ScreenAnnotation } from "../shared/screen-annotations.ts";
+import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 
 export type ScreenshotAttachment = { id: string; data: string; simulator: SimulatorDevice };
 
@@ -55,7 +56,7 @@ export class PanelContext {
   private changed() { this.onChange(); for (const listener of this.listeners) listener(); }
 
   async attachAnnotation(annotation: ScreenAnnotation) {
-    if (!this.canAttachScreenshots) throw new Error("This host does not support screen annotations.");
+    if (!this.canAttach) throw new Error("This host does not support screen annotations.");
     const previous = this.annotations;
     this.annotations = [...previous.filter(item => item.id !== annotation.id), annotation];
     const revision = ++this.revision;
@@ -84,22 +85,40 @@ export class PanelContext {
     if (!this.canSendMessage) throw new Error("This host does not support chat messages.");
     const annotations = this.annotations.filter(item => item.simulator.udid === simulatorId);
     if (!annotations.length) return;
-    const sendImages = !!this.app.getHostCapabilities()?.message?.image;
-    if (!sendImages) await this.publish();
+    const startedAt = performance.now();
+    const text = this.canAttach ? ANNOTATION_EDIT_PROMPT : formatAnnotationMessage(annotations);
+    recordUiTiming("ui.annotations.message_build", performance.now() - startedAt);
     if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
-    const captures = [...new Map(annotations.map(annotation => [annotation.screenshot.id, annotation])).values()];
-    const result = await withComposer(() => {
-      if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
-      return this.app.sendMessage({ role: "user", content: [
-        { type: "text", text: `Please address these simulator screen annotations. Refer to the attached screen captures.\n\n${annotations.map(formatAnnotationContext).join("\n\n")}` },
-        ...(sendImages ? captures.map(annotation => ({ type: "image" as const, mimeType: "image/png", data: annotation.screenshot.data })) : []),
-      ], _meta: { "openai/message": { target: "active", send: true } } });
-    });
-    if (result.isError) throw new Error("Could not send these annotations to chat.");
-    const sent = new Set(annotations.map(item => item.id));
-    this.annotations = this.annotations.filter(item => !sent.has(item.id));
-    for (const id of sent) this.pendingAnnotations.delete(id);
-    this.revision++; this.changed();
+    const sendStartedAt = performance.now();
+    try {
+      // Deferred notes need confirmed attachments before sending the short prompt.
+      if (this.canAttach && annotations.some(annotation => this.pendingAnnotations.has(annotation.id))) await this.publish();
+      const result = await withComposer(() => {
+        if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
+        return this.app.sendMessage({ role: "user", content: [
+          { type: "text", text },
+        ], _meta: { "openai/message": { target: "active", send: true } } }, { timeout: 5000, maxTotalTimeout: 5000 });
+      });
+      if (result.isError) throw new Error("Could not send these annotations to chat.");
+      const sent = new Set(annotations.map(item => item.id));
+      this.annotations = this.annotations.filter(item => !sent.has(item.id));
+      for (const id of sent) this.pendingAnnotations.delete(id);
+      this.revision++; this.changed();
+      countUiEvent("ui.annotations.send_success");
+    } catch (error) {
+      if (composerUnavailable(error)) {
+        countUiEvent("ui.annotations.send_composer_unavailable");
+        throw new Error("Codex could not find this chat's input. Try reopening the chat, or copy the notes and paste them into chat.");
+      }
+      // A timeout does not prove delivery failed. Never retry it automatically.
+      if (typeof error === "object" && error !== null && "code" in error && error.code === -32001) {
+        countUiEvent("ui.annotations.send_timeout");
+        throw new Error("Codex did not confirm delivery. Check the chat before retrying to avoid sending the notes twice.");
+      }
+      countUiEvent("ui.annotations.send_failure");
+      captureUiError(new Error("Annotation chat send failed."), "annotations.send");
+      throw error;
+    } finally { recordUiTiming("ui.annotations.send", performance.now() - sendStartedAt); }
   }
 
   async sendLogToChat(log: StackedLog) {
@@ -159,7 +178,6 @@ export class PanelContext {
       : Array.isArray(current?.structuredContent?.screenshotIds) && current.structuredContent.screenshotIds.includes(screenshot.id));
     const annotations = this.annotations.filter(annotation => this.pendingAnnotations.has(annotation.id) || (current?.content
       ? current.content.some(item => item.type === "text" && item.text === formatAnnotationContext(annotation))
-        && current.content.some(item => item.type === "image" && item.data === annotation.screenshot.data && item._meta?.["mobile-dev/annotationScreenshotId"] === annotation.screenshot.id)
       : Array.isArray(current?.structuredContent?.annotationIds) && current.structuredContent.annotationIds.includes(annotation.id)));
     if (current !== null && current.updateId === this.updateId && (!this.attached || logPresent) && remaining.length === this.screenshots.length && annotations.length === this.annotations.length) return;
     // A clear from the host wins over a pending panel update.
@@ -183,7 +201,6 @@ export class PanelContext {
       if (revision !== this.revision) return;
       const selected = this.simulator;
       const log = this.attached;
-      const captures = [...new Map(this.annotations.map(annotation => [annotation.screenshot.id, annotation])).values()];
       const devices = this.simulators.map(device => {
         const role = device.udid === selected?.udid ? "Active" : "Visible";
         if (device.kind === "physical" && device.platform === "ios") return `${role} physical iOS device: ${device.name}. UDID: ${device.udid}. State: ${device.state}. Transport: ${device.transportType}. The panel mirrors this device through an interactive HEVC stream with pointer taps and drags. Native unified logs use mobile_logs_session with platform ios, kind physical, and this hardware UDID. They do not require launching the app; ordinary print output is unavailable and private values may be redacted. Physical iOS keyboard input, hardware buttons, screenshots, and agent-device control are not implemented yet.`;
@@ -198,9 +215,9 @@ export class PanelContext {
         type: "image" as const, mimeType: "image/png", data: screenshot.data,
         _meta: { "openai/title": `Screenshot of ${screenshot.simulator.name} (${screenshot.simulator.udid})`, "mobile-dev/screenshotId": screenshot.id },
       })),
-      ...this.annotations.map(annotation => ({ type: "text" as const, text: formatAnnotationContext(annotation), _meta: { "openai/title": `#${annotation.number} ${annotation.component.name}`, "mobile-dev/annotationId": annotation.id } })),
-      ...captures.map(annotation => ({ type: "image" as const, mimeType: "image/png", data: annotation.screenshot.data, _meta: { "openai/title": `Annotated screen of ${annotation.simulator.name} at ${annotation.screenshot.capturedAt}`, "mobile-dev/annotationScreenshotId": annotation.screenshot.id } }))];
-      const params = { content, structuredContent: { selectedSimulator: selected ?? null, selectedSimulators: this.simulators, selectedLog: log ?? null, selectedLogKey: log ? logKey(log) : null, screenshotIds: this.screenshots.map(item => item.id), annotationIds: this.annotations.map(item => item.id), screenAnnotations: this.annotations.map(annotationDetails) } };
+      ...(this.annotations.length ? [{ type: "text" as const, annotations: { audience: ["assistant" as const] }, text: ANNOTATION_EDIT_GUIDANCE }] : []),
+      ...this.annotations.map(annotation => ({ type: "text" as const, text: formatAnnotationContext(annotation), _meta: { "openai/title": `${annotation.component.name}: ${annotation.text.replace(/\s+/g, " ").trim()}`, "mobile-dev/annotationId": annotation.id } }))];
+      const params = { content, structuredContent: { selectedSimulator: selected ?? null, selectedSimulators: this.simulators, selectedLog: log ?? null, selectedLogKey: log ? logKey(log) : null, screenshotIds: this.screenshots.map(item => item.id), annotationIds: this.annotations.map(item => item.id) } };
       this.pending = true;
       try {
         await withComposer(async () => {

@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.66",
+  "version": "0.1.78",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:release": "node scripts/build.mjs --release",
     "vendor:baguette": "node scripts/vendor-baguette.mjs",
     "vendor:agent-device": "npm ci --prefix runtimes/agent-device --ignore-scripts --no-audit --no-fund",
     "rebuild:baguette": "node scripts/rebuild-baguette.mjs",
@@ -25,6 +26,7 @@
     "test:ios-logs": "node scripts/smoke-logs.mjs --physical",
     "test:ios-cpu": "node scripts/smoke-ios-cpu.mjs",
     "package": "node scripts/package.mjs",
+    "package:release": "node scripts/package.mjs --release",
     "vendor:serve-emu": "node scripts/vendor-serve-emu.mjs",
     "dev": "node scripts/dev-ui.mjs",
     "dev:off": "node scripts/dev-ui.mjs --off",

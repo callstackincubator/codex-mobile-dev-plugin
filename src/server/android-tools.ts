@@ -31,7 +31,9 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
   }, guarded(async () => { const status = await android.list(); return result(status, status.connected ? JSON.stringify(status.devices) : status.error!); }));
   for (const action of ["boot", "shutdown"] as const) server.registerTool(`mobile_${action}_android_emulator`, {
     title: action === "boot" ? "Boot Android emulator" : "Shut down Android emulator",
-    description: `${action === "boot" ? "Boot" : "Shut down"} the selected Android emulator from the device list.`,
+    description: action === "boot"
+      ? "Boot an installed Android AVD chosen for the app task. Follow the user's choice or choose a suitable AVD from the list when none runs. Reuse a suitable running device. Use the returned running serial for later calls."
+      : "Shut down the selected Android emulator from the device list.",
     inputSchema: deviceInput, annotations: { ...write, destructiveHint: action === "shutdown" },
   }, guarded(async ({ deviceId }: { deviceId: string }) => {
     if (action === "shutdown") { await closeCpu(deviceId); streams.closeDevice(deviceId); }

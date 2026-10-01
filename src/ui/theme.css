@@ -51,7 +51,7 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
+    --background: var(--color-background-primary, #fff);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.145 0 0);
@@ -86,7 +86,7 @@
 }
 
 html[data-theme="dark"] {
-    --background: oklch(0.145 0 0);
+    --background: var(--color-background-primary, #181818);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);
     --card-foreground: oklch(0.985 0 0);
@@ -124,9 +124,9 @@ html[data-theme="dark"] {
     @apply border-border outline-ring/50;
     }
   body {
-    @apply bg-transparent text-foreground;
+    @apply bg-background text-foreground;
     }
   html {
-    @apply bg-transparent font-sans;
+    @apply bg-background font-sans;
     }
 }

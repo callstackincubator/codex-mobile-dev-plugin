@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "mobile-dev",
-  "version": "0.1.66",
-  "description": "Stream iOS simulators and Android devices, monitor native CPU and memory, read native and Metro logs.",
+  "version": "0.1.78",
+  "description": "Keep a simulator beside the chat while building, running, or debugging iOS and Android apps. Stream devices, read native and Metro logs, monitor CPU and memory, and control apps with Mobile Dev tools.",
   "author": {
     "name": "Laurids"
   },
@@ -12,7 +12,7 @@
       "interface": {
         "displayName": "Mobile Dev",
         "shortDescription": "Devices, logs, and performance",
-        "longDescription": "Open an iOS simulator or Android device beside your chat, monitor native iOS and Android CPU and memory usage, read native and Metro logs, and inspect and control apps with Mobile Dev tools.",
+        "longDescription": "Keep an iOS simulator or Android device beside your chat while building, running, or debugging Expo, React Native, SwiftUI, and other mobile apps. Monitor native CPU and memory usage, read native and Metro logs, and inspect and control apps with Mobile Dev tools.",
         "developerName": "Laurids",
         "category": "Developer Tools",
         "capabilities": [
@@ -21,8 +21,9 @@
           "Interactive"
         ],
         "composerIcon": "./assets/icon.svg",
-        "logo": "./assets/icon.svg",
+        "logo": "./assets/store-logo.png",
         "defaultPrompt": [
+          "Build and run my mobile app in the simulator beside this chat.",
           "Open my mobile simulator.",
           "List my iOS and Android devices."
         ]
