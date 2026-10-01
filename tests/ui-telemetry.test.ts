@@ -78,7 +78,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   const bodies = requests.map(request => request.body);
   const encoded = bodies.join("\n");
   assert.ok(requests.length > 0);
-  const allowedRequests = requests.every(request => request.url.startsWith("https://o4512180770177024.ingest.de.sentry.io/"));
+  const allowedRequests = requests.every(request => request.url.startsWith("https://o4512180958068736.ingest.de.sentry.io/"));
   assert.ok(allowedRequests);
   contains(encoded, '"environment":"development"');
   contains(encoded, "ui.logs.publish.mean");

@@ -1,10 +1,10 @@
 import type { init } from "@sentry/react";
 import { PLUGIN_VERSION } from "./version.ts";
 
-export const SENTRY_UI_DSN = "https://5c3b170a7d6408274823689ee7086cab@o4512180770177024.ingest.de.sentry.io/4512180825161808";
-export const SENTRY_SERVER_DSN = "https://2ad52478c34db12f493b48f120d61769@o4512180770177024.ingest.de.sentry.io/4512180828438608";
-export const SENTRY_NATIVE_DSN = "https://78c705196cf69015c1ca5647c15ad390@o4512180770177024.ingest.de.sentry.io/4512180831191120";
-export const SENTRY_ORIGIN = "https://o4512180770177024.ingest.de.sentry.io";
+export const SENTRY_UI_DSN = "https://09bfb50068dbab86252bbb5489ce38ce@o4512180958068736.ingest.de.sentry.io/4512181027471440";
+export const SENTRY_SERVER_DSN = "https://2ee03a9449e1f1b48e3e7c7606b6f562@o4512180958068736.ingest.de.sentry.io/4512181033173072";
+export const SENTRY_NATIVE_DSN = "https://1deeefda39022a67df902c638dcf3c8f@o4512180958068736.ingest.de.sentry.io/4512181036318800";
+export const SENTRY_ORIGIN = "https://o4512180958068736.ingest.de.sentry.io";
 export const SENTRY_RELEASE = `mobile-dev@${PLUGIN_VERSION}`;
 export const TELEMETRY_META_KEY = "mobile-dev/telemetry";
 export const TELEMETRY_INTERVAL_MS = 30_000;

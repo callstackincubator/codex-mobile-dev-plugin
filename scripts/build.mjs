@@ -152,7 +152,7 @@ const server = await build({
   entryPoints: { server: "src/server/index.ts", "agent-device-server": "src/server/agent-device-server.mjs" }, outdir: "dist", outExtension: { ".js": ".mjs" }, bundle: true,
   format: "esm", platform: "node", target: "node22", minify: false, legalComments: "eof", metafile: true,
   sourcemap: "external",
-  plugins: [sentryEsbuildPlugin({ org: "callstackincubator", project: "mobile-dev-server", telemetry: false, sourcemaps: { disable: true }, release: { inject: false, create: false, finalize: false } })],
+  plugins: [sentryEsbuildPlugin({ project: "codex-mobile-dev-server", telemetry: false, sourcemaps: { disable: true }, release: { inject: false, create: false, finalize: false } })],
   banner: { js: "import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);" },
 });
 await mkdir(".sentry/server", { recursive: true });
