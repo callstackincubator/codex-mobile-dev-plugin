@@ -3,7 +3,7 @@ import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import type { StackedLog } from "../shared/logs.ts";
 import { formatLogContext, logKey } from "../shared/logs.ts";
-import { annotationDetails, formatAnnotationContext, formatAnnotationMessage } from "../shared/screen-annotations.ts";
+import { ANNOTATION_EDIT_PROMPT, annotationDetails, formatAnnotationContext, formatAnnotationMessage } from "../shared/screen-annotations.ts";
 import type { ScreenAnnotation } from "../shared/screen-annotations.ts";
 import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 
@@ -86,7 +86,7 @@ export class PanelContext {
     const annotations = this.annotations.filter(item => item.simulator.udid === simulatorId);
     if (!annotations.length) return;
     const startedAt = performance.now();
-    const text = this.canAttach ? "Please address the attached simulator screen annotations." : formatAnnotationMessage(annotations);
+    const text = this.canAttach ? ANNOTATION_EDIT_PROMPT : formatAnnotationMessage(annotations);
     recordUiTiming("ui.annotations.message_build", performance.now() - startedAt);
     if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
     const sendStartedAt = performance.now();

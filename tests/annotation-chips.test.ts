@@ -4,6 +4,7 @@ import type { App } from "@modelcontextprotocol/ext-apps";
 import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import type { ScreenAnnotation } from "../src/shared/screen-annotations.ts";
 import { PanelContext } from "../src/ui/model-context.ts";
+import { ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationMessage } from "../src/shared/screen-annotations.ts";
 
 const annotation: ScreenAnnotation = {
   id: "header-note", number: 1, text: "Make this\n  smaller.",
@@ -41,8 +42,26 @@ test("annotation chips show element and note titles while preserving full model 
   assert.match(attachment.text, /Position fallback/);
   assert.equal(f.updates.at(-1)!.content!.some(item => item.type === "image"), false);
   await f.context.sendAnnotationsToChat(annotation.simulator.udid);
-  assert.deepEqual(f.messages[0].content, [{ type: "text", text: "Please address the attached simulator screen annotations." }]);
+  assert.deepEqual(f.messages[0].content, [{ type: "text", text: ANNOTATION_EDIT_PROMPT }]);
   assert.equal(f.context.screenAnnotations.length, 0);
+});
+
+test("annotation instructions remain distinct from display text on attachment and copy routes", async () => {
+  const f = fixture();
+  const note = { ...annotation, text: "change to hi max", component: { ...annotation.component, label: "Interactive destination" } };
+  await f.context.attachAnnotation(note); await f.context.sendAnnotationsToChat(note.simulator.udid);
+  const sent = f.messages[0].content[0];
+  assert.equal(sent.type, "text");
+  if (sent.type !== "text") return;
+  assert.match(sent.text, /interpret it rather than copying it verbatim/);
+  assert.match(sent.text, /should display "hi max", not "change to hi max"/);
+  const details = formatAnnotationContext(note);
+  assert.match(details, /User instruction \(requested edit, not literal replacement text\): "change to hi max"/);
+  assert.match(details, /Target: "Interactive destination"/);
+  assert.equal(formatAnnotationMessage([note]), `${sent.text}\n\n${details}`);
+  const style = formatAnnotationMessage([{ ...note, text: "make this orange" }]);
+  assert.match(style, /color or layout change those properties, not the displayed text/);
+  assert.match(style, /"make this orange"/);
 });
 
 test("deferred annotation chips attach before sending the short message", async () => {

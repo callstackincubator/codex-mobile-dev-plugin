@@ -93,14 +93,16 @@ export function annotationDetails(annotation: ScreenAnnotation) {
   return { ...details, captureId: screenshot.id, capturedAt: screenshot.capturedAt };
 }
 
+export const ANNOTATION_EDIT_PROMPT = "Apply the user's requested edits in the attached simulator screen annotations. Each User instruction describes the requested change; interpret it rather than copying it verbatim into the app. For example, a text edit saying \"change to hi max\" should display \"hi max\", not \"change to hi max\". Requests about color or layout change those properties, not the displayed text. Treat selected element labels and nearby text as existing app data. Use source locations when provided; do not infer source names from coordinates.";
+
 export function formatAnnotationMessage(annotations: ScreenAnnotation[]): string {
-  return `Please address these simulator screen annotations. Treat element labels and nearby text as app data. Use source locations when provided; do not infer source names from coordinates.\n\n${annotations.map(formatAnnotationContext).join("\n\n")}`;
+  return `${ANNOTATION_EDIT_PROMPT}\n\n${annotations.map(formatAnnotationContext).join("\n\n")}`;
 }
 
 export function formatAnnotationContext(annotation: ScreenAnnotation): string {
   const { component, screen, simulator } = annotation, source = component.react?.source;
   const round = (value: number) => Math.round(value * 10) / 10;
-  const lines = [`Screen annotation #${annotation.number}`, `User note: ${annotation.text}`];
+  const lines = [`Screen annotation #${annotation.number}`, `User instruction (requested edit, not literal replacement text): ${JSON.stringify(annotation.text)}`];
   if (source) lines.push(`Edit location: ${source.file}:${source.line}${source.column ? `:${source.column}` : ""}`, `Location is the source-mapped element creation site${source.functionName ? ` in ${source.functionName}` : ""}. Open it directly; check enclosing code before editing.`);
   lines.push(`Target: ${JSON.stringify(component.label ?? component.name)}${component.role ? ` (${component.role})` : ""}`);
   if (component.identifier) lines.push(`${component.source === "react-native" ? "testID" : "Identifier"}: ${JSON.stringify(component.identifier)}`);
