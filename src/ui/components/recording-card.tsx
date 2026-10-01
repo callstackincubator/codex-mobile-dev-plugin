@@ -10,9 +10,10 @@ import { createRecordingCpuSeries, createRecordingFpsSeries, findRecordingChange
 import type { RecordingPoint } from "../recording-series.ts";
 import { Button } from "./ui/button";
 import { RecordingChartShape, recordingChartPoints } from "./recording-chart-shape";
+import { useMediaQuery } from "./use-media-query";
 
 const MIB = 1048576;
-const REVEAL_DELAY = 1000;
+const REVEAL_DELAY = 550;
 function percent(value: number | null) { return value === null ? "—" : `${value.toFixed(1)}%`; }
 function memoryChange(value: number | null) {
   if (value === null) return "—";
@@ -28,23 +29,24 @@ function RecordingChart({ label, data, duration, range, changes, color, unit, on
 }) {
   const root = useRef<HTMLDivElement>(null);
   const anchor = useRef<number | undefined>(undefined);
-  const [revealPending, setRevealPending] = useState(true);
+  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const [reveal, setReveal] = useState<"pending" | "finished" | "settled">(reducedMotion ? "settled" : "pending");
   const revealStartedAt = useRef<number | undefined>(undefined);
   const revealedData = useRef(data);
   useEffect(() => {
-    if (revealedData.current === data) return;
+    if (revealedData.current === data && reducedMotion === false) return;
     revealedData.current = data;
-    setRevealPending(false);
+    setReveal("settled");
     revealStartedAt.current = undefined;
-  }, [data]);
+  }, [data, reducedMotion]);
   const startReveal = useCallback(() => {
     revealStartedAt.current = performance.now();
   }, []);
   const finishReveal = useCallback(() => {
-    setRevealPending(false);
     const startedAt = revealStartedAt.current;
     revealStartedAt.current = undefined;
     if (startedAt === undefined) return;
+    setReveal("finished");
     // Recharts calls onAnimationStart before its entrance delay.
     const elapsed = performance.now() - startedAt - REVEAL_DELAY;
     recordUiTiming("ui.recording.reveal", elapsed);
@@ -77,11 +79,11 @@ function RecordingChart({ label, data, duration, range, changes, color, unit, on
     const formatted = number.toFixed(unit === "%" ? 1 : 0);
     return `${formatted} ${unit}`;
   }
-  return <section className="recording-track" aria-label={label}>
+  return <section className="recording-track" aria-label={label} data-reveal={reveal}>
     <div className="recording-track-heading"><h3>{label}</h3>{changes.length > 0 && <span className="recording-change-legend">Most rapid changes</span>}</div>
     <div ref={root} className="recording-chart" onPointerDown={event => {
       if (event.button !== 0) return;
-      setRevealPending(false);
+      setReveal("settled");
       revealStartedAt.current = undefined;
       anchor.current = timeAt(event);
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -100,7 +102,7 @@ function RecordingChart({ label, data, duration, range, changes, color, unit, on
           <YAxis width={52} domain={[low, high]} allowDecimals={unit === "%"} tick={{ fontSize: 11 }} tickFormatter={value => unit === "%" ? `${value}%` : value.toFixed(0)} />
           <Tooltip formatter={formatReading} labelFormatter={value => `${value}s`} contentStyle={{ background: "var(--popover)", borderColor: "var(--border)", borderRadius: 8 }} />
           {changes.map(change => <ReferenceArea key={change.start} className="recording-change-highlight" x1={change.start} x2={change.end} fill="#9873e6" fillOpacity={0.16} strokeOpacity={0} />)}
-          <Area type="linear" dataKey="value" name={label} stroke={color} fill={color} fillOpacity={0.07} strokeWidth={2} dot={false} shape={RecordingChartShape} animationInterpolateFn={recordingChartPoints} isAnimationActive={revealPending ? "auto" : false} animationBegin={REVEAL_DELAY} animationDuration={700} animationEasing="ease-out" onAnimationStart={startReveal} onAnimationEnd={finishReveal} connectNulls={false} />
+          <Area type="linear" dataKey="value" name={label} stroke={color} fill={color} fillOpacity={0.07} strokeWidth={2} dot={false} shape={RecordingChartShape} animationInterpolateFn={recordingChartPoints} isAnimationActive={reveal === "pending" ? "auto" : false} animationBegin={REVEAL_DELAY} animationDuration={700} animationEasing="ease-out" onAnimationStart={startReveal} onAnimationEnd={finishReveal} connectNulls={false} />
           {range && <ReferenceArea className="recording-range-highlight" x1={range.start} x2={range.end} fill="#2583ff" fillOpacity={0.12} stroke="#2583ff" strokeOpacity={0.5} />}
         </AreaChart>
       </ResponsiveContainer>

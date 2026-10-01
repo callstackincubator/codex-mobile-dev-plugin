@@ -22,6 +22,9 @@ html[data-view="recording"], html[data-view="recording"] body, html[data-view="r
 .recording-change-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted-foreground); }
 .recording-change-legend::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: #9873e629; border: 1px solid #9873e6; }
 .recording-chart { width: 100%; touch-action: pan-y; user-select: none; cursor: crosshair; }
+.recording-track[data-reveal="pending"] .recording-change-highlight { opacity: 0; }
+.recording-track[data-reveal="finished"] .recording-change-highlight { animation: recording-highlight-reveal 150ms ease-out 250ms both; }
+@keyframes recording-highlight-reveal { from { opacity: 0; } to { opacity: 1; } }
 .recording-selection { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 16px; margin-top: 20px; border: 1px solid var(--border); border-radius: 12px; }
 .recording-breakdown p { margin: 8px 0; color: var(--muted-foreground); }
 .recording-breakdown dl > div { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; }
@@ -41,7 +44,10 @@ html[data-view="recording"], html[data-view="recording"] body, html[data-view="r
 [data-element="device-frame"][data-bezel="true"] { isolation: isolate; position: relative; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
 [data-element="device-frame"][data-bezel="true"] [data-element="screen"] { z-index: 2; position: absolute; }
 /* Split sizes come from Resizable rather than fixed grid tracks. */
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
+  .recording-track .recording-change-highlight { opacity: 1 !important; animation: none !important; }
+}
 
 /* Severity colors match compact console rows while keeping timestamps neutral. */
 .log-row { --log-color: var(--foreground); --log-tint: transparent; color: var(--log-color); background: var(--log-tint); }

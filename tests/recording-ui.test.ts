@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 import { recordingFixture } from "./recording-fixtures.ts";
@@ -31,6 +32,10 @@ for (const reducedMotion of [false, true]) {
     const html = '<html data-view="recording"><head><meta name="mobile-dev-environment" content="development"><meta name="mobile-dev-user-id" content="anon_0123456789abcdef0123456789abcdef"><meta name="mobile-dev-session-id" content="run_1234567890abcdef1234567890abcdef"></head><body><div id="root"></div></body></html>';
     const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
     const window = dom.window;
+    const styles = await readFile("src/ui/style.css", "utf8");
+    const style = window.document.createElement("style");
+    style.textContent = styles;
+    window.document.head.append(style);
     window.matchMedia = (query: string) => ({
       matches: reducedMotion, media: query, onchange: null,
       addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {},
@@ -108,6 +113,13 @@ for (const reducedMotion of [false, true]) {
     await settle();
     const curve = () => window.document.querySelector(".recording-chart .recharts-area-curve");
     const curvePath = () => curve()?.getAttribute("d") ?? "";
+    const revealState = () => charts[0].closest(".recording-track")?.getAttribute("data-reveal");
+    const highlightOpacity = () => {
+      const highlight = charts[0].querySelector(".recording-change-highlight");
+      assert.ok(highlight);
+      const computed = window.getComputedStyle(highlight);
+      return computed.opacity || "1";
+    };
     const curveEnd = () => {
       const path = curvePath();
       const matches = path.matchAll(/[ML]([\d.]+),([\d.]+)/g);
@@ -124,9 +136,13 @@ for (const reducedMotion of [false, true]) {
       assert.ok(follows, "The fill follows exactly the portion of the line already drawn.");
     };
     if (reducedMotion === false) {
-      await new Promise(resolve => window.setTimeout(resolve, 500));
+      await new Promise(resolve => window.setTimeout(resolve, 250));
       const pendingPath = curvePath();
       assert.equal(pendingPath, "", "The card has time to appear before any of the line is drawn.");
+      assert.equal(highlightOpacity(), "0", "Automatic highlights stay hidden during the entrance pause.");
+    } else {
+      assert.equal(highlightOpacity(), "1", "Reduced motion shows the highlights immediately with the full curve.");
+      assert.equal(revealState(), "settled");
     }
     for (let attempt = 0; attempt < 50 && curvePath() === ""; attempt += 1) await settle();
     const initialEnd = curveEnd();
@@ -141,7 +157,9 @@ for (const reducedMotion of [false, true]) {
       const midwayEnd = curveEnd();
       assert.ok(midwayEnd > initialEnd, "The line tip advances along the measured curve.");
       assertFillFollows();
-      await new Promise(resolve => window.setTimeout(resolve, 750));
+      assert.equal(highlightOpacity(), "0", "Automatic highlights remain hidden while the line is drawing.");
+      for (let attempt = 0; attempt < 50 && revealState() === "pending"; attempt += 1) await settle();
+      assert.equal(revealState(), "finished", "Only a completed line starts the delayed highlight fade.");
     }
     const completedEnd = curveEnd();
     assert.equal(completedEnd, 628, "The completed curve reaches the end of the timeline.");
@@ -177,11 +195,14 @@ for (const reducedMotion of [false, true]) {
     await settle();
     const pathAfterDrag = curvePath();
     assert.equal(pathAfterDrag, completedPath, "Selecting a range does not replay the entrance animation.");
+    assert.equal(revealState(), "settled", "Selection ends the highlight entrance so user interaction stays immediate.");
+    assert.equal(highlightOpacity(), "1");
     const refreshed = recordingFixture();
     mounted.controller.accept({ content: [], structuredContent: { recording: refreshed } });
     await settle();
     const pathAfterRefresh = curvePath();
     assert.equal(pathAfterRefresh, completedPath, "Sample refreshes do not replay the entrance animation.");
+    assert.equal(revealState(), "settled", "Sample refreshes do not replay the highlight entrance.");
     const draggedRanges = window.document.querySelectorAll(".recording-range-highlight");
     const changesDuringDrag = window.document.querySelectorAll(".recording-change-highlight");
     assert.equal(draggedRanges.length, 3, "All charts highlight the dragged range.");
