@@ -90,7 +90,7 @@ try {
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.ok(resource.contents[0].text.includes('id="root"'));
   // React creates these controls from the bundled script after the app mounts.
-  for (const control of ["canvas", "logs-drawer", "log-chat", "tool-performance", "performance-drawer", "performance-app", "device-layout", "simulator-panels"]) {
+  for (const control of ["canvas", "logs-drawer", "log-chat", "tool-select", "tool-performance", "performance-drawer", "performance-app", "platform-select", "simulator-panels"]) {
     assert.ok(resource.contents[0].text.includes(control), `Missing bundled UI control: ${control}`);
   }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
