@@ -2,7 +2,7 @@
 
 An iOS and Android simulator panel for Codex desktop. Baguette 0.2.1 provides iOS streaming; serve-emu 0.0.6 and scrcpy 4.0 provide Android streaming. Android needs Bun 1.3.13 or later and an installed Android SDK.
 
-Agent Device is temporarily disabled in 0.1.79 while iterating on inline performance charts. The package registers only the `mobile-dev` MCP server and omits the Agent Device skill. Its implementation and bundled runtime are retained for later reactivation.
+Agent Device is temporarily disabled in 0.1.80 while iterating on inline performance charts. The package registers only the `mobile-dev` MCP server and omits the Agent Device skill. Its implementation and bundled runtime are retained for later reactivation.
 
 The first version supports:
 
@@ -263,9 +263,16 @@ call `mobile_record_performance` with the running app's `target`, a descriptive
 `title`, and `durationSeconds` (default 30, maximum 300). This returns immediately.
 Read `mobile_read_performance_recording` with `recording.id` until its status is
 `recording` before asking the user to perform the interaction. Collection starts
-its duration clock at the first sample, continues without an open panel, stops
-automatically, and detaches the existing native CPU collector. An app cannot have
-two simultaneous CPU collectors; stop its live monitor before recording a run.
+its duration clock when the collectors are ready, continues without an open panel,
+stops automatically, and detaches the CPU and FPS collectors. Every timed run
+attempts CPU, memory, and device-wide Display FPS together, even for a request
+about only one metric. Stop existing CPU and FPS monitors before recording a run.
+FPS requires Android 12+ or physical iOS 17.4+; iOS simulators cannot collect it.
+Unsupported or failed FPS does not discard the CPU/memory recording. Only metrics
+with recorded readings appear in the charts and summaries. A `finishing` phase
+waits up to five seconds on Android or 1.5 seconds on iOS for delayed FPS readback,
+including revisions to earlier intervals, before saving. All samples share the
+CPU collector's monotonic timeline origin.
 
 Call `mobile_render_performance_recording` with that recording ID to display a
 compact MCP Apps chart card. Its UI resource prefers inline presentation; final
@@ -278,15 +285,18 @@ is absolute variation per second in a rolling window of 10% of the recording
 duration (1–10 seconds); changing intervals within 80% of the highest density are
 highlighted. Flat or uniformly changing series have no distinct highlights, and
 missing readings and large delivery gaps are excluded. These regions describe
-changes, not their cause or absolute CPU/memory levels.
-Drag across either chart to select the same interval on CPU and memory; click
+changes, not their cause or absolute CPU/memory/FPS levels.
+Drag across any chart to select the same interval on CPU, memory, and FPS; click
 a chart to clear the selection. The selected thread list shows average
-CPU weighted by measured interval overlap. CPU chart readings span their measured
+CPU weighted by measured interval overlap. CPU and FPS chart readings span their measured
 intervals, so the first complete interval begins at zero; missing readings remain
 gaps. Memory labels, tooltips and changes use whole MiB, while saved samples retain
 their original byte precision.
 CPU can exceed 100%, because 100% represents one occupied core. Memory is RSS on
 Android and physical footprint on iOS, so cross-platform values are not equivalent.
+Display FPS measures the whole device and cannot attribute a slowdown to one app.
+FPS range averages weight measured interval overlap; zero is valid, and missing
+readings remain gaps.
 
 **Ask about this range** sends a user message containing the recording ID and exact
 interval. The agent retrieves the original samples to answer. **Open in Mobile Dev**
@@ -296,7 +306,7 @@ host's text-message capability. Opening a saved run does not start a collector.
 `mobile_finish_performance_recording` stops and saves a run early;
 `mobile_list_performance_recordings` finds recent saved or active runs.
 
-Completed and failed runs retain their original process, memory, and thread samples
+Completed and failed runs retain their original process, memory, FPS, and thread samples
 in private JSON files under `~/Library/Application Support/mobile-dev/recordings`.
 They survive plugin restarts and live-session expiry. Graceful server shutdown saves
 an interrupted run as failed; a forcibly killed process can lose an unfinished run.
@@ -361,7 +371,7 @@ Agent Device telemetry is inactive while its MCP entry is disabled; the active M
 | Storage | Every five minutes, the agent-device launcher measures its own session state directory and the shared Apple runner cache in bytes. It skips symlinks and sends only the storage kind and size. |
 | Usage | Surface views and visible time, tool action outcomes, log searches, attachments and send-to-chat actions are counted without their content. |
 
-UI timings are aggregated into bounded 30-second windows with `.samples`, `.mean`, `.p95` and `.max`; windows also close on a surface or context change. The p95 uses a reservoir of up to 256 observations and describes that window, rather than the percentile of all measurements across users. Filter by environment, release, surface and layout to compare like workloads. `ui.frame_interval` measures browser callback pacing, not actual rendered FPS. Event Timing measures interaction duration through the next paint; `ui.device_input.round_trip` measures the device input request through its MCP acknowledgement. Neither measures device touch-to-photon latency. `ui.interaction.supported` identifies whether the browser supports that API. Codex's embedded UI does not expose reliable renderer CPU, total memory or disk measurements. Device CPU/memory/FPS displayed in the Performance tab remain local and are not forwarded to Sentry.
+UI timings are aggregated into bounded 30-second windows with `.samples`, `.mean`, `.p95` and `.max`; windows also close on a surface or context change. The p95 uses a reservoir of up to 256 observations and describes that window, rather than the percentile of all measurements across users. Filter by environment, release, surface and layout to compare like workloads. `ui.frame_interval` measures browser callback pacing, not actual rendered FPS. Event Timing measures interaction duration through the next paint; `ui.device_input.round_trip` measures the device input request through its MCP acknowledgement. Neither measures device touch-to-photon latency. `ui.interaction.supported` identifies whether the browser supports that API. Codex's embedded UI does not expose reliable renderer CPU, total memory or disk measurements. Since 0.1.80, recording processing, derivation, change-density, and reveal timings include the FPS track when present. `ui.recording.fps_samples` gauges the count of saved FPS intervals, never their measured values. Device CPU/memory/FPS displayed in the Performance tab or saved recording cards remain local and are not forwarded to Sentry.
 
 Native helpers use the pinned Sentry Native 0.17.1 in-process crash backend. It captures fatal signals with stack addresses and module debug IDs; the Rust wrapper also reports task panics with a static message and source location. Crash reports are retained in a private cache and sent on the helper's next start. Host caches live under `~/Library/Caches/mobile-dev/sentry`; Android caches live under `/data/local/tmp/mobile-dev-sentry`. Android collectors relay envelopes through ADB stderr to the Node transport, preserving their stdout data protocol. Native timings use the same bounded 30-second `.samples`, `.mean`, `.p95` and `.max` windows as UI timings. iOS FPS timing covers received-counter processing; Android FPS timing includes Perfetto flush/readback. Video timing covers packet assembly and queue work, not decoding or device rendering.
 

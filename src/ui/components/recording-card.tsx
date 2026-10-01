@@ -6,7 +6,7 @@ import type { RecordingController } from "../recording-controller.ts";
 import type { RecordingRange } from "../../shared/recordings.ts";
 import { summarizeRecording } from "../../shared/recordings.ts";
 import { recordUiTiming } from "../telemetry.ts";
-import { createRecordingCpuSeries, findRecordingChangeRanges } from "../recording-series.ts";
+import { createRecordingCpuSeries, createRecordingFpsSeries, findRecordingChangeRanges } from "../recording-series.ts";
 import type { RecordingPoint } from "../recording-series.ts";
 import { Button } from "./ui/button";
 
@@ -18,6 +18,7 @@ function memoryChange(value: number | null) {
   return `${mib > 0 ? "+" : ""}${mib} MiB`;
 }
 function seconds(value: number) { return `${value.toFixed(1)}s`; }
+function fpsReading(value: number | null) { return value === null ? "—" : value.toFixed(1); }
 
 function RecordingChart({ label, data, duration, range, changes, color, unit, onDrag, onSelect }: {
   label: string; data: RecordingPoint[]; duration: number; range?: RecordingRange; changes: RecordingRange[]; color: string; unit: string;
@@ -108,9 +109,10 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
     const startedAt = performance.now();
     const cpu = findRecordingChangeRanges(recording, "cpuPercent");
     const memory = findRecordingChangeRanges(recording, "memoryBytes");
+    const fps = findRecordingChangeRanges(recording, "fps");
     const elapsed = performance.now() - startedAt;
     recordUiTiming("ui.recording.change_density", elapsed);
-    return { cpu, memory };
+    return { cpu, memory, fps };
   }, [recording]);
   const derived = useMemo(() => {
     if (recording === undefined) return;
@@ -118,20 +120,25 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
     const total = summarizeRecording(recording);
     const selected = summarizeRecording(recording, range);
     const cpu = createRecordingCpuSeries(recording);
+    const fps = createRecordingFpsSeries(recording);
     const memory: RecordingPoint[] = [];
     for (const sample of recording.samples) {
       memory.push({ time: sample.time, value: sample.memoryBytes === null ? null : sample.memoryBytes / MIB });
     }
     const elapsed = performance.now() - startedAt;
     recordUiTiming("ui.recording.derive", elapsed);
-    return { total, selected, cpu, memory };
+    return { total, selected, cpu, memory, fps };
   }, [recording, range]);
   if (recording === undefined || derived === undefined || changes === undefined) return <article className="recording-card"><p role="status">Loading performance recording…</p>{state.error && <p role="alert">{state.error}</p>}</article>;
-  const status = recording.status === "finished" ? "Finished" : recording.status === "failed" ? "Failed" : recording.status === "connecting" ? "Connecting" : "Recording";
+  const status = recording.status === "finished" ? "Finished" : recording.status === "failed" ? "Failed" : recording.status === "connecting" ? "Connecting" : recording.status === "finishing" ? "Finishing" : "Recording";
   const time = new Date(recording.completedAt ?? recording.startedAt);
   const savedAt = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const memoryMetric = recording.memoryMetric === "rss" ? "RSS" : "Physical footprint";
   const shownThreads = detailed ? derived.selected.threads : derived.selected.threads.slice(0, 3);
+  const hasCpu = derived.total.averageCpuPercent !== null;
+  const hasMemory = derived.total.firstMemoryBytes !== null;
+  const hasFps = derived.total.averageFps !== null;
+  const hasReadings = hasCpu || hasMemory || hasFps;
   return <article className="recording-card" aria-label="Saved performance recording">
     <header className="recording-header">
       <span className="recording-icon"><ChartColumnIcon size={24} /></span>
@@ -139,22 +146,26 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
       <span className="recording-status" role="status">{status}</span>
     </header>
     <div className="recording-body">
-      <dl className="recording-metrics"><div><dt>Peak CPU</dt><dd>{percent(derived.total.peakCpuPercent)}</dd></div><div><dt>Memory change</dt><dd>{memoryChange(derived.total.memoryChangeBytes)}</dd></div></dl>
-      <RecordingChart key={`${recording.id}:cpu`} label="CPU" data={derived.cpu} duration={recording.durationSeconds} range={range} changes={changes.cpu} color="#2583ff" unit="%" onDrag={setDrag} onSelect={controller.select} />
-      <RecordingChart key={`${recording.id}:memory`} label={`Memory · ${memoryMetric} · MiB`} data={derived.memory} duration={recording.durationSeconds} range={range} changes={changes.memory} color="#f57b28" unit="MiB" onDrag={setDrag} onSelect={controller.select} />
+      {hasReadings === false && <p role="status">No performance readings recorded yet.</p>}
+      <dl className="recording-metrics">{hasCpu && <div><dt>Peak CPU</dt><dd>{percent(derived.total.peakCpuPercent)}</dd></div>}{hasMemory && <div><dt>Memory change</dt><dd>{memoryChange(derived.total.memoryChangeBytes)}</dd></div>}{hasFps && <div><dt>Average FPS</dt><dd>{fpsReading(derived.total.averageFps)}</dd></div>}</dl>
+      {hasCpu && <RecordingChart key={`${recording.id}:cpu`} label="CPU" data={derived.cpu} duration={recording.durationSeconds} range={range} changes={changes.cpu} color="#2583ff" unit="%" onDrag={setDrag} onSelect={controller.select} />}
+      {hasMemory && <RecordingChart key={`${recording.id}:memory`} label={`Memory · ${memoryMetric} · MiB`} data={derived.memory} duration={recording.durationSeconds} range={range} changes={changes.memory} color="#f57b28" unit="MiB" onDrag={setDrag} onSelect={controller.select} />}
+      {hasFps && <RecordingChart key={`${recording.id}:fps`} label="Display FPS · device-wide" data={derived.fps} duration={recording.durationSeconds} range={range} changes={changes.fps} color="#36a269" unit="fps" onDrag={setDrag} onSelect={controller.select} />}
+      {hasFps && <p className="recording-footnote">Display FPS measures the whole device, including activity outside this app.</p>}
+      {recording.status === "finishing" && <p className="recording-footnote" role="status">Finishing the recording…</p>}
       <div className="recording-selection">
-        <div className="recording-breakdown"><h3>{range ? `Selected range: ${seconds(range.start)}–${seconds(range.end)}` : "Entire recording"}</h3><p>Busiest recorded threads · average CPU</p>
-          {shownThreads.length > 0 ? <dl>{shownThreads.map(thread => <div key={thread.id}><dt title={thread.id}>{thread.name || `Thread ${thread.id}`}</dt><dd>{percent(thread.averageCpuPercent)}</dd></div>)}</dl> : <p>No thread CPU measurements in this range.</p>}
+        <div className="recording-breakdown"><h3>{range ? `Selected range: ${seconds(range.start)}–${seconds(range.end)}` : "Entire recording"}</h3>{hasFps && <p>Average FPS: {fpsReading(derived.selected.averageFps)} · Minimum FPS: {fpsReading(derived.selected.minimumFps)}</p>}{hasCpu && <p>Busiest recorded threads · average CPU</p>}
+          {hasCpu && (shownThreads.length > 0 ? <dl>{shownThreads.map(thread => <div key={thread.id}><dt title={thread.id}>{thread.name || `Thread ${thread.id}`}</dt><dd>{percent(thread.averageCpuPercent)}</dd></div>)}</dl> : <p>No thread CPU measurements in this range.</p>)}
         </div>
         <div className="recording-actions">
-          <Button disabled={state.canMessage === false || state.busy || recording.samples.length === 0} onClick={() => { void controller.send("ask"); }}><MessageCircleIcon />{range ? "Ask about this range" : "Ask about this recording"}</Button>
+          <Button disabled={state.canMessage === false || state.busy || hasReadings === false} onClick={() => { void controller.send("ask"); }}><MessageCircleIcon />{range ? "Ask about this range" : "Ask about this recording"}</Button>
           {detailed === false && <Button variant="outline" disabled={state.canMessage === false || state.busy} onClick={() => { void controller.send("open"); }}><ExternalLinkIcon />Open in Mobile Dev</Button>}
           <p>{state.canMessage ? "Ask sends a new message with this range." : "This host does not support sending chart selections to chat."}</p>
         </div>
       </div>
-      <p className="recording-footnote">Drag across either chart to select a range; click to clear it. CPU values cover their measured intervals; 100% is one core. Missing readings remain gaps.</p>
+      {hasReadings && <p className="recording-footnote">Drag across any chart to select a range; click to clear it. {hasCpu && "100% CPU is one core. "}Missing readings remain gaps.</p>}
       {state.error && <p role="alert" className="recording-error">{state.error}</p>}
-      {detailed && <p className="recording-footnote">{recording.samples.length} original samples · Recording {recording.id} · {time.toLocaleDateString()}</p>}
+      {detailed && <p className="recording-footnote">{recording.samples.length} CPU/memory samples · {hasFps && `${recording.fps.samples.length} FPS samples · `}Recording {recording.id} · {time.toLocaleDateString()}</p>}
     </div>
   </article>;
 }

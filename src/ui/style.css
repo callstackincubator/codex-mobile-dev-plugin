@@ -12,7 +12,7 @@ html[data-view="recording"], html[data-view="recording"] body, html[data-view="r
 .recording-heading p { margin-top: 4px; overflow-wrap: anywhere; }
 .recording-status { border-radius: 20px; padding: 4px 10px; background: var(--muted); font-size: 12px; }
 .recording-body { padding: 20px; }
-.recording-metrics { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 20px; }
+.recording-metrics { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 12px; margin-bottom: 20px; }
 .recording-metrics > div + div { border-left: 1px solid var(--border); padding-left: 20px; }
 .recording-metrics dt { font-weight: 500; }
 .recording-metrics dd { font-size: 28px; font-weight: 600; margin-top: 4px; }
@@ -31,7 +31,7 @@ html[data-view="recording"], html[data-view="recording"] body, html[data-view="r
 .recording-footnote { margin-top: 10px; }
 .recording-error { color: var(--destructive); margin-top: 12px; }
 .recording-workspace { height: 100%; overflow: auto; padding: 12px; }
-@media (max-width: 480px) { .recording-header, .recording-body { padding: 14px; } .recording-icon { display: none; } .recording-selection { grid-template-columns: 1fr; } .recording-actions { border-left: 0; padding-left: 0; border-top: 1px solid var(--border); padding-top: 14px; } }
+@media (max-width: 480px) { .recording-metrics { grid-auto-flow: row; grid-template-columns: 1fr; } .recording-metrics > div + div { border-left: 0; padding-left: 0; } .recording-header, .recording-body { padding: 14px; } .recording-icon { display: none; } .recording-selection { grid-template-columns: 1fr; } .recording-actions { border-left: 0; padding-left: 0; border-top: 1px solid var(--border); padding-top: 14px; } }
 [hidden] { display: none !important; }
 
 /* The controller fits the canvas to each device's frame and screen mask. */

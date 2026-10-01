@@ -122,7 +122,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   registerLogTools(server, logs, baguette);
   const closeInspection = registerInspectionTools(server, baguette, android);
   const validateCpuDevice = registerCpuTools(server, cpu, baguette);
-  const recordings = new PerformanceRecordings(cpu);
+  const recordings = new PerformanceRecordings(cpu, fps);
   registerRecordingTools(server, recordings, validateCpuDevice, WORKSPACE_URI);
   const stopRecordingStorageMetrics = startStorageMetrics({ recordings: recordings.store.directory });
   registerDisplayFpsTools(server, fps);
