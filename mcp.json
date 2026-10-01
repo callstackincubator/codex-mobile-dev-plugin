@@ -6,12 +6,6 @@
       "command": "node",
       "args": ["./dist/server.mjs"],
       "cwd": "./"
-    },
-    "agent-device": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["./dist/agent-device-server.mjs"],
-      "cwd": "./"
     }
   }
 }

@@ -15,6 +15,7 @@ try {
   await cp(source, plugin, { recursive: true, verbatimSymlinks: true });
   const manifest = JSON.parse(await readFile(join(plugin, "mcp.json"), "utf8"));
   const config = manifest.mcpServers["agent-device"];
+  assert.ok(config, "Agent Device is disabled in this package; this smoke test requires its MCP entry to be enabled.");
   assert.deepEqual(config.args, ["./dist/agent-device-server.mjs"]);
   const metadata = JSON.parse(await readFile(join(plugin, "dist/agent-device/release.json"), "utf8"));
   assert.equal(metadata.version, "0.20.9");

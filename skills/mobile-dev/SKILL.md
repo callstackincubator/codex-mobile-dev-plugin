@@ -1,6 +1,6 @@
 ---
 name: mobile-dev
-description: Open and control a local iOS simulator or Android device through the Mobile Dev native panel, bundled Baguette and serve-emu backends, and agent-device MCP tools. Use for streaming, app control, text entry, screenshots, and accessibility reads.
+description: Open and control a local iOS simulator or Android device through the Mobile Dev native panel and bundled Baguette and serve-emu backends. Use for streaming, app control, text entry, screenshots, and accessibility reads.
 ---
 
 # Mobile Dev
@@ -10,8 +10,9 @@ Use the Mobile Dev MCP tools for local iOS and Android work. The plugin includes
 1. Call `mobile_open_simulator` to open the panel beside a chat, `mobile_open_workspace` for the fullscreen view with logs on the left and both simulators on the right, or `mobile_list_simulators` for a tool-only workflow.
 2. Read the returned devices and choose a UDID from that list. Keep an existing running device when it fits the task. Ask the user to choose only when several devices fit and the task gives no clue.
 3. Boot the chosen device with `mobile_boot_simulator` if needed. The panel streams a selected booted device automatically. The user can select a device in each panel dropdown to boot and stream it.
-4. For agent app control, read [the bundled agent-device skill](../agent-device/SKILL.md). Use its MCP tools with the same UDID and a named session. Prefer snapshot refs or selectors for `press`, `fill`, and `scroll`. The plugin carries the agent-device runtime; do not install a global CLI or start another server.
-5. For direct Baguette input, read `mobile_describe_ui` or `mobile_screenshot` first. Gesture coordinates use device points. Match `width` and `height` to the selected device's screen, never to screenshot pixels or the panel's CSS size. Use `mobile_send_input`, then read the screen to confirm what changed. An accepted input does not prove the app handled it.
+4. For direct Baguette input, read `mobile_describe_ui` or `mobile_screenshot` first. Gesture coordinates use device points. Match `width` and `height` to the selected device's screen, never to screenshot pixels or the panel's CSS size. Use `mobile_send_input`, then read the screen to confirm what changed. An accepted input does not prove the app handled it.
+
+Agent Device is temporarily disabled in this plugin while iterating on inline performance charts. Use the available Mobile Dev tools; do not search for Agent Device tools or start its CLI separately.
 
 The panel shows iOS and Android side by side, each with its own controls. The iOS and Android toggles can show either, both, or neither simulator. The chat receives both visible device IDs. iOS requests a 60 fps capture target; actual delivered and painted rates depend on native capture and the host bridge. iOS reads overlap JPEG decoding and keep only the newest pending frame. Frames travel through MCP resource reads, and panel input uses app-only tools. Focus the simulator screen to type printable US-ASCII text. The toolbar has a device dropdown, Home, App Switcher, and Screenshot. Model tools also return screenshots and the accessibility tree. A dropped stream reconnects automatically and keeps the last frame while it waits. Reconnect can restart the bundled backend, but it never boots a stopped device, or replays old gestures. A confirmed Device Hub input block triggers automatic repair on reconnect, limited to once per device per minute. Repair closes running apps; reopen the app afterward. Closing the panel cancels retries and closes its stream. When the MCP process ends, the plugin stops its bundled Baguette process.
 
@@ -45,7 +46,7 @@ Physical Android discovery uses `adb devices -l` and returns `kind: "physical"`,
 
 The panel starts bundled serve-emu 0.0.6 and streams H.264 through MCP. Bundled scrcpy 4.0 mirrors and controls physical Android devices without installing a companion app. Bun 1.3.13 or later and an installed Android SDK are required. No separate serve-emu install or server command is needed. Closing the panel leaves the Android device running. Video errors and backlog recover from a fresh keyframe on the same stream. AVDs start without a separate window, and an early emulator exit ends the boot wait with its error. Input supports Home, Back, Recents, Lock, pointer gestures, and printable US-ASCII text. The host needs WebCodecs H.264 decoding.
 
-For agent control, pass `platform: "android"`, `serial` set to the panel's running device ID, and a named session to agent-device. Do not pass Android serials as iOS UDIDs. Read `mobile_android_describe_ui` or `mobile_android_screenshot` before direct input through `mobile_android_send_input`. Android gesture coordinates use screen pixels with matching width and height. Native logs follow the selected Android serial and optional package filter.
+Use the panel's running serial with the Mobile Dev Android tools. Do not pass Android serials as iOS UDIDs. Read `mobile_android_describe_ui` or `mobile_android_screenshot` before direct input through `mobile_android_send_input`. Android gesture coordinates use screen pixels with matching width and height. Native logs follow the selected Android serial and optional package filter.
 
 ### Display FPS
 

@@ -8,6 +8,3 @@ dependencies:
     - type: "mcp"
       value: "mobile-dev"
       description: "Bundled Baguette simulator tools and native panel"
-    - type: "mcp"
-      value: "agent-device"
-      description: "Bundled agent-device simulator control tools"

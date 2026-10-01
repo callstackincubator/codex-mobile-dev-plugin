@@ -24,7 +24,7 @@ await access("dist/agent-device/node_modules/agent-device/dist/apple/runner/Agen
 await rm(plugin, { recursive: true, force: true });
 await mkdir(plugin, { recursive: true });
 for (const path of ["plugin.json", "mcp.json", "README.md", "THIRD_PARTY_NOTICES.md"]) await copyFile(path, `${plugin}/${path}`);
-for (const path of ["assets", "dist", "skills/mobile-dev", "skills/mobile-dev-setup", "skills/agent-device"]) await cp(path, `${plugin}/${path}`, { recursive: true, verbatimSymlinks: true });
+for (const path of ["assets", "dist", "skills/mobile-dev", "skills/mobile-dev-setup"]) await cp(path, `${plugin}/${path}`, { recursive: true, verbatimSymlinks: true });
 await chmod(`${plugin}/dist/baguette/Baguette`, 0o755);
 await chmod(`${plugin}/dist/ios-logs/mobile-dev-ios-logs`, 0o755);
 await mkdir(`${marketplace}/.agents/plugins`, { recursive: true });

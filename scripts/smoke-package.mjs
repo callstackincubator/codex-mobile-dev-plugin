@@ -15,6 +15,14 @@ let transport;
 let runtimeTransport;
 try {
   await cp(source, plugin, { recursive: true, verbatimSymlinks: true });
+  const mcpPath = join(plugin, "mcp.json");
+  const mcpText = await readFile(mcpPath, "utf8");
+  const mcp = JSON.parse(mcpText);
+  const serverNames = Object.keys(mcp.mcpServers);
+  assert.deepEqual(serverNames, ["mobile-dev"]);
+  const inactiveSkill = join(plugin, "skills/agent-device/SKILL.md");
+  const skillAccess = access(inactiveSkill);
+  await assert.rejects(skillAccess, { code: "ENOENT" });
   await access(join(plugin, "dist/baguette/Baguette"));
   await access(join(plugin, "dist/baguette/Baguette_Baguette.bundle/Web"));
   const require = createRequire(import.meta.url);
