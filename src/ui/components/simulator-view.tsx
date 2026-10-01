@@ -22,7 +22,7 @@ export const SimulatorView = memo(function SimulatorView({ platform }: { platfor
     <header className="flex h-[49px] shrink-0 items-center border-b px-2">
       <div className="flex w-full min-w-0 items-center gap-1" role="toolbar" aria-label={`${label} controls`}>
         <DevicePicker id={id("devices")} label={`${label} device`} />
-        {deviceButtons.map(({ action, icon: Icon, label }) => <Button key={action} variant="ghost" size="icon" className="shrink-0" data-button={action} title={label} aria-label={label} disabled><Icon /></Button>)}
+        {deviceButtons.map(({ action, icon: Icon, label }) => <Button key={action} variant="ghost" size="icon" className="shrink-0 data-[unsupported=true]:text-muted-foreground data-[unsupported=true]:cursor-not-allowed data-[unsupported=true]:disabled:pointer-events-auto data-[unsupported=true]:hover:bg-transparent data-[unsupported=true]:hover:text-muted-foreground" data-button={action} title={label} aria-label={label} disabled><Icon /></Button>)}
         <Button variant="ghost" size="icon" className="shrink-0" data-element="screenshot" title="Screenshot to chat and clipboard" aria-label="Screenshot to chat and clipboard" disabled><CameraIcon /></Button>
         <ScreenSelectButton store={annotations} />
       </div>

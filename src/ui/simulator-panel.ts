@@ -108,8 +108,15 @@ export function createSimulatorPanel(
 
   function deviceButtons() {
     const state = annotations.getSnapshot();
-    const active = ready && stream != null && !stream.physicalIos && !inputBlocked && !busy && toolsAvailable && !state.selecting && !state.draft;
-    root.querySelectorAll<HTMLButtonElement>("[data-button]").forEach(button => { button.disabled = !active; });
+    const unsupported = selected?.kind === "physical" && selected.platform === "ios";
+    const active = ready && stream != null && !unsupported && !stream.physicalIos && !inputBlocked && !busy && toolsAvailable && !state.selecting && !state.draft;
+    const buttons = root.querySelectorAll<HTMLButtonElement>("[data-button]");
+    buttons.forEach(button => {
+      const label = button.dataset.button === "home" ? "Home" : "App switcher";
+      button.disabled = !active;
+      button.dataset.unsupported = unsupported ? "true" : "false";
+      button.title = unsupported ? `${label} is unavailable on physical iOS devices` : label;
+    });
   }
 
   function send(message: StreamMessage) {
