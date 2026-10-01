@@ -17,9 +17,9 @@ function packet() {
   const header = Buffer.alloc(24); header.write("SEMU"); header[4] = 2; header[5] = 1;
   header.writeBigUInt64BE(123456n, 8); return Buffer.concat([header, H264]);
 }
-async function fakeAndroid() {
+async function fakeAndroid(deviceId = ID) {
   const inputs: unknown[] = [];
-  let currentSerial = ID;
+  let currentSerial = deviceId;
   const server = createServer(async (request, response) => {
     if (request.url === "/api/screenshot") { response.setHeader("Content-Type", "image/png"); response.end(PNG); return; }
     response.setHeader("Content-Type", "application/json");
@@ -40,7 +40,7 @@ async function fakeAndroid() {
   const url = `http://127.0.0.1:${address.port}`;
   class FakeAndroid extends ServeEmu {
     boots: string[] = [];
-    async list() { return { connected: true, managed: false, baseUrl: url, devices: [{ udid: ID, name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const }] }; }
+    async list() { return { connected: true, managed: false, baseUrl: url, devices: [{ udid: deviceId, name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const }] }; }
     async boot(id: string) { this.boots.push(id); return this.list(); }
   }
   const backend = new FakeAndroid(url);
@@ -63,6 +63,43 @@ test("Android input maps device pixels, touch phases, and hardware keys", () => 
   assert.deepEqual(androidInput({ type: "button", button: "back" }), { type: "back" });
   assert.deepEqual(androidInput({ type: "key", code: "KeyA", modifiers: ["control"] }), { type: "key", keycode: 29, metaState: 4096 });
   assert.throws(() => androidInput({ type: "run_shell", command: "whoami" }));
+});
+
+test("physical Android panel streams route pointer, typing, and navigation input through scrcpy", async t => {
+  const deviceId = "physical-phone";
+  const fake = await fakeAndroid(deviceId);
+  const streams = new AndroidStreams(fake.backend);
+  t.after(async () => { streams.close(); fake.backend.dispose(); await fake.close(); });
+  const sessionId = await streams.open(deviceId);
+  const accepted = await streams.input(sessionId, [
+    { type: "tap", x: 540, y: 1200, ...SCREEN },
+    { type: "touch1-down", x: 540, y: 1200, ...SCREEN },
+    { type: "touch1-move", x: 540, y: 600, ...SCREEN },
+    { type: "touch1-up", x: 540, y: 600, ...SCREEN },
+    { type: "type", text: "display" },
+    { type: "key", code: "Backspace" },
+    { type: "button", button: "home" },
+    { type: "button", button: "back" },
+    { type: "button", button: "app-switcher" },
+  ]);
+  assert.equal(accepted, 9);
+  await waitFor(() => fake.inputs.length === accepted + 1);
+  const delivered = fake.inputs.filter(input => typeof input === "object" && input !== null && "type" in input && input.type !== "reset-video");
+  const expected = [
+    { type: "tap", x: .5, y: .5 },
+    { type: "touch", action: "down", x: .5, y: .5, pointerId: 0 },
+    { type: "touch", action: "move", x: .5, y: .25, pointerId: 0 },
+    { type: "touch", action: "up", x: .5, y: .25, pointerId: 0 },
+    { type: "text", text: "display" },
+    { type: "key", keycode: 67, metaState: 0 },
+    { type: "home" },
+    { type: "back" },
+    { type: "recents" },
+  ];
+  for (let index = 0; index < expected.length; index++) {
+    assert.deepEqual(delivered[index], { ...expected[index], ack: false, record: false });
+  }
+  assert.deepEqual(fake.backend.boots, []);
 });
 
 test("H.264 packet parsing reads SEMU timestamps, IDR frames, and the SPS codec", () => {

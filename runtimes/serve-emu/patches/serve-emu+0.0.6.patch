@@ -1,0 +1,32 @@
+diff --git a/node_modules/serve-emu/src/scrcpy.ts b/node_modules/serve-emu/src/scrcpy.ts
+index af53f94..0f70bb7 100644
+--- a/node_modules/serve-emu/src/scrcpy.ts
++++ b/node_modules/serve-emu/src/scrcpy.ts
+@@ -1052,6 +1052,8 @@ export async function startScrcpy(
+     );
+     throwIfAborted(startupController.signal, "scrcpy startup aborted");
+ 
++    // Samsung encoders crash on long app_process command lines. The pinned
++    // server already enables control, metadata, and cleanup by default.
+     proc = runtime.spawnAdb(serial, [
+       "shell",
+       `CLASSPATH=${jarPaths.working}`,
+@@ -1063,18 +1065,12 @@ export async function startScrcpy(
+       "log_level=info",
+       "audio=false",
+       "tunnel_forward=true",
+-      "control=true",
+-      "send_dummy_byte=true",
+-      "send_stream_meta=true",
+-      "send_frame_meta=true",
+-      "send_device_meta=true",
+       `max_size=${maxSize}`,
+       `video_bit_rate=${bitRate}`,
+       `max_fps=${maxFps}`,
+       ...(codecOptions.length > 0
+         ? [`video_codec_options=${codecOptions.join(",")}`]
+         : []),
+-      "cleanup=true",
+     ]);
+     childSettled = false;
+     let stderrTail = "";

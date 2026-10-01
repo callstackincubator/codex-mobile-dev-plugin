@@ -2,5 +2,10 @@
   "name": "mobile-dev-serve-emu-runtime",
   "private": true,
   "type": "module",
-  "dependencies": { "serve-emu": "0.0.6" }
+  "dependencies": {
+    "serve-emu": "0.0.6"
+  },
+  "devDependencies": {
+    "patch-package": "8.0.1"
+  }
 }
