@@ -78,7 +78,18 @@ export class LogList {
   search(query: string) { countUiEvent("ui.logs.search"); this.query = query; this.publish(); }
   setFilters(kind: "sources" | "levels", values: string[]) { this[kind] = new Set(values); this.publish(); }
   setStacked(value: boolean) { this.stacked = value; this.publish(); }
-  setFollow(value: boolean) { this.follow = value; this.publish(); }
+  setFollow(value: boolean) {
+    if (this.follow === value) return;
+    this.follow = value;
+    this.publish();
+  }
+  updateScroll(offset: number, contentHeight: number, viewportHeight: number) {
+    const previousOffset = this.scrollOffset;
+    this.scrollOffset = offset;
+    if (offset === previousOffset) return;
+    const distanceFromBottom = contentHeight - viewportHeight - offset;
+    this.setFollow(distanceFromBottom <= 1);
+  }
   select(sequence?: number) {
     this.selectedSequence = sequence;
     if (sequence !== undefined) this.follow = false;

@@ -54,3 +54,51 @@ test("the message budget limits retained logs even before the row limit", () => 
   assert.equal(list.getSnapshot().buffered, 1);
   assert.ok(list.getSnapshot().filtered[0].message.startsWith("b"));
 });
+
+test("scrolling away from the bottom pauses following until the list reaches the bottom again", () => {
+  const { list } = fixture();
+  const first = entry(1);
+  list.append([first], 0);
+  list.updateScroll(800, 1200, 400);
+  const initial = list.getSnapshot();
+  assert.equal(initial.follow, true);
+
+  list.updateScroll(780, 1200, 400);
+  const scrolledUp = list.getSnapshot();
+  assert.equal(scrolledUp.follow, false);
+  assert.equal(list.scrollOffset, 780);
+  const second = entry(2);
+  list.append([second], 0);
+  const appended = list.getSnapshot();
+  assert.equal(appended.follow, false);
+  assert.equal(list.scrollOffset, 780);
+
+  const paused = list.getSnapshot();
+  list.updateScroll(900, 1400, 400);
+  const scrolledDown = list.getSnapshot();
+  assert.equal(scrolledDown, paused, "Scrolling within history does not refilter logs.");
+  list.updateScroll(998, 1400, 400);
+  const nearBottom = list.getSnapshot();
+  assert.equal(nearBottom.follow, false);
+  list.updateScroll(999.5, 1400, 400);
+  const atBottom = list.getSnapshot();
+  assert.equal(atBottom.follow, true, "Fractional scroll offsets count as reaching the bottom.");
+});
+
+test("unchanged scroll offsets preserve manual follow choices across content and layout changes", () => {
+  const { list } = fixture();
+  list.updateScroll(800, 1200, 400);
+  list.updateScroll(800, 1400, 400);
+  const following = list.getSnapshot();
+  assert.equal(following.follow, true, "New content does not pause following before scrolling to it.");
+
+  list.setFollow(false);
+  const paused = list.getSnapshot();
+  list.updateScroll(800, 1200, 400);
+  list.setFollow(false);
+  const repeated = list.getSnapshot();
+  assert.equal(repeated, paused, "Repeated bottom events do not undo a manual pause or republish.");
+  list.updateScroll(800, 1200, 500);
+  const resized = list.getSnapshot();
+  assert.equal(resized.follow, false, "Resizing alone does not reactivate following.");
+});
