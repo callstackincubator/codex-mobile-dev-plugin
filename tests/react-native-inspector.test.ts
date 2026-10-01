@@ -134,7 +134,8 @@ test("MCP inspection resolves shared creation stacks to app JSX without leaking 
   assert.deepEqual(components[0].react?.source, { file: "/project/src/HomeScreen.tsx", line: 49, column: 11, functionName: "HomeScreen.renderItem" });
   assert.deepEqual(components[1].react?.source, components[0].react?.source);
   assert.deepEqual(components[0].react?.owners, ["HomeScreen", "Text"]);
-  assert.doesNotMatch(JSON.stringify(result), /index\.bundle|creationStackIds|sourceStacks/);
+  assert.equal(components[0].react?.sourceKind, "element");
+  assert.doesNotMatch(JSON.stringify(result), /index\.bundle|creationStackIds|ownerStackIds|sourceStacks/);
   server.sourceFailure();
   const fallback = await inspectReactNative({ ...request, url: server.origin });
   assert.equal(fallback.available, true);
@@ -147,6 +148,24 @@ test("source resolution never forwards stack URLs from another server", async t 
   const result = await inspectReactNative({ ...request, url: server.origin });
   assert.equal(result.available, true);
   assert.equal(server.sourceCalls(), 0);
+});
+
+test("source lookup labels an owner fallback and strips its transport-only stack IDs", async t => {
+  const server = await backend(t);
+  server.setResponse({ available: true, windowWidth: 400, tree: [{ ...card, children: [], react: { component: "Text", owners: ["Card"], key: "subtitle" }, creationStackIds: [0], ownerStackIds: [1] }],
+    sourceUrls: [`${server.origin}/index.bundle?platform=ios`], sourceStacks: [
+      [{ url: 0, line: 150, column: 10, methodName: "jsx" }],
+      [{ url: 0, line: 300, column: 12, methodName: "Card" }],
+    ],
+  });
+  const result = await inspectReactNative({ ...request, url: server.origin });
+  assert.equal(result.available, true);
+  if (!result.available) return;
+  const selected = screenComponents(result.tree)[0];
+  assert.equal(selected.react?.sourceKind, "owner");
+  assert.equal(selected.react?.key, "subtitle");
+  assert.equal(selected.react?.source?.file, "/project/src/HomeScreen.tsx");
+  assert.doesNotMatch(JSON.stringify(result), /creationStackIds|ownerStackIds|sourceStacks|index\.bundle/);
 });
 
 test("inspection cancels its socket and rejects invalid native bounds", async t => {
@@ -316,4 +335,17 @@ test("the iterative collector reports its work limit instead of silently cutting
   for (let index = 0; index < 11000; index++) fiber = { tag: 10, child: fiber };
   const result = collectFibers({ ...nativeFiber("RCTView", { x: 0, y: 0, width: 400, height: 900 }), child: fiber });
   assert.equal(result.truncated, true);
+});
+
+test("the collector separates selected creation stacks from owner stacks and keeps the selected React key", () => {
+  const owner = { type: { name: "Card" }, _debugStack: { stack: "Error\n    at Screen (http://localhost:8081/index.bundle:300:13)" } };
+  const target = { ...nativeFiber("RCTText", card.frame, { children: "Subtitle" }), key: "subtitle", _debugOwner: owner };
+  const result = collectFibers(target);
+  assert.deepEqual(result.tree[0].creationStackIds, []);
+  assert.deepEqual(result.tree[0].ownerStackIds, [0]);
+  assert.equal(result.tree[0].react?.key, "subtitle");
+  const ownStack = { stack: "Error\n    at Card (http://localhost:8081/index.bundle:400:13)" };
+  const exact = collectFibers({ ...target, _debugStack: ownStack });
+  assert.deepEqual(exact.tree[0].creationStackIds, [0]);
+  assert.deepEqual(exact.tree[0].ownerStackIds, [1]);
 });

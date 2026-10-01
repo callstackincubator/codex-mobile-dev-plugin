@@ -39,16 +39,17 @@ export function collectReactNativeTree(complete) {
     return id;
   }
   function reactInfo(fiber, name) {
-    const owners = [], ids = [], seen = new Set();
+    const owners = [], ids = [], ownerIds = [], seen = new Set();
     let owner = fiber;
     for (let index = 0; owner && index < 12 && !seen.has(owner); index++) {
       seen.add(owner);
       const stackId = creationStack(owner);
-      if (stackId !== undefined && !ids.includes(stackId)) ids.push(stackId);
+      const targetIds = owner === fiber ? ids : ownerIds;
+      if (stackId !== undefined && !targetIds.includes(stackId)) targetIds.push(stackId);
       if (owner !== fiber) { const ownerName = componentName(owner.type) ?? clean(owner.name); if (ownerName) owners.push(ownerName); }
       owner = owner._debugOwner ?? owner.owner;
     }
-    return { react: { component: fiber.tag === 5 ? owners[0] ?? name : name, owners: owners.reverse() }, creationStackIds: ids };
+    return { react: { component: fiber.tag === 5 ? owners[0] ?? name : name, owners: owners.reverse(), ...(clean(fiber.key) ? { key: clean(fiber.key) } : {}) }, creationStackIds: ids, ownerStackIds: ownerIds };
   }
   for (const [id, renderer] of hook.renderers) {
     if (renderer.rendererPackageName !== "react-native-renderer") continue;

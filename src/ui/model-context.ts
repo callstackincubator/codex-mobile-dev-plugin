@@ -207,6 +207,9 @@ export class PanelContext {
         if (device.kind === "physical" && device.platform === "android") return `${role} physical Android device: ${device.name}. Serial: ${device.udid}. State: ${device.state}. Transport: ${device.transportType}. Use this serial with the Mobile Dev Android tools for platform android.`;
         return `${role} ${device.platform === "android" ? "Android" : "iOS"} simulator: ${device.name}. Device ID: ${device.udid}. State: ${device.state}. Use this ${device.platform === "android" ? "serial" : "UDID"} with the Mobile Dev tools for platform ${device.platform ?? "ios"}.`;
       });
+      const contextStartedAt = performance.now();
+      const annotationContent = this.annotations.map(annotation => ({ type: "text" as const, text: formatAnnotationContext(annotation), _meta: { "openai/title": `${annotation.component.name}: ${annotation.text.replace(/\s+/g, " ").trim()}`, "mobile-dev/annotationId": annotation.id } }));
+      if (this.annotations.length) recordUiTiming("ui.annotations.context_build", performance.now() - contextStartedAt);
       const content = [{ type: "text" as const, annotations: { audience: ["assistant" as const] }, text: devices.length
         ? `Mobile Dev devices. Logs follow the active device.\n${devices.join("\n")}`
         : "Mobile Dev has no selected simulator." },
@@ -216,7 +219,7 @@ export class PanelContext {
         _meta: { "openai/title": `Screenshot of ${screenshot.simulator.name} (${screenshot.simulator.udid})`, "mobile-dev/screenshotId": screenshot.id },
       })),
       ...(this.annotations.length ? [{ type: "text" as const, annotations: { audience: ["assistant" as const] }, text: ANNOTATION_EDIT_GUIDANCE }] : []),
-      ...this.annotations.map(annotation => ({ type: "text" as const, text: formatAnnotationContext(annotation), _meta: { "openai/title": `${annotation.component.name}: ${annotation.text.replace(/\s+/g, " ").trim()}`, "mobile-dev/annotationId": annotation.id } }))];
+      ...annotationContent];
       const params = { content, structuredContent: { selectedSimulator: selected ?? null, selectedSimulators: this.simulators, selectedLog: log ?? null, selectedLogKey: log ? logKey(log) : null, screenshotIds: this.screenshots.map(item => item.id), annotationIds: this.annotations.map(item => item.id) } };
       this.pending = true;
       try {

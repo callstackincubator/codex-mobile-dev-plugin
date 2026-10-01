@@ -1,11 +1,11 @@
-import { componentAt, componentsAt, formatAnnotationMessage, screenComponents } from "../shared/screen-annotations.ts";
-import type { ScreenAnnotation, ScreenBounds, ScreenComponent, ScreenPoint } from "../shared/screen-annotations.ts";
+import { componentAt, componentsAt, formatAnnotationMessage, screenComponents, screenSelectionContext } from "../shared/screen-annotations.ts";
+import type { ScreenAnnotation, ScreenBounds, ScreenComponent, ScreenPoint, ScreenSelectionContext } from "../shared/screen-annotations.ts";
 import { recordUiTiming, countUiEvent } from "./telemetry.ts";
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import type { PanelContext } from "./model-context.ts";
 
 type Capture = { screenshot: ScreenAnnotation["screenshot"]; screen: ScreenAnnotation["screen"] };
-type Draft = Capture & { id: string; number: number; component: ScreenComponent; point: ScreenPoint; text: string; nearbyText?: string[] };
+type Draft = Capture & { id: string; number: number; component: ScreenComponent; point: ScreenPoint; text: string; nearbyText?: string[]; selection?: ScreenSelectionContext };
 export class ScreenAnnotationsStore {
   private state = {
     disabled: true, selecting: false, loading: false, busy: false, sending: false, sendError: "", canSend: false,
@@ -85,7 +85,7 @@ export class ScreenAnnotationsStore {
         const draft = this.state.draft;
         if (draft?.component.source === "screen" && !draft.component.role) {
           const candidates = componentsAt(this.components, draft.point, capture.screen);
-          if (candidates.length) this.update({ draft: { ...draft, component: candidates[0], nearbyText: this.nearbyText(candidates[0]) }, candidates });
+          if (candidates.length) this.update({ draft: { ...draft, component: candidates[0], selection: this.selectionContext(candidates[0]), nearbyText: this.nearbyText(candidates[0]) }, candidates });
         }
       }
     } catch (error) {
@@ -110,7 +110,7 @@ export class ScreenAnnotationsStore {
     if (!this.state.selecting || this.state.busy || this.state.draft || !this.state.capture) return;
     const component = this.component(point);
     if (!component) return;
-    this.update({ draft: { ...this.state.capture, id: crypto.randomUUID(), number: this.nextNumber, point, component, nearbyText: this.nearbyText(component), text: "" }, candidates: componentsAt(this.components, point, this.state.capture.screen), hovered: undefined, status: "" });
+    this.update({ draft: { ...this.state.capture, id: crypto.randomUUID(), number: this.nextNumber, point, component, selection: this.selectionContext(component), nearbyText: this.nearbyText(component), text: "" }, candidates: componentsAt(this.components, point, this.state.capture.screen), hovered: undefined, status: "" });
   }
   private component(point: ScreenPoint): ScreenComponent | undefined {
     if (!this.state.capture) return;
@@ -122,7 +122,12 @@ export class ScreenAnnotationsStore {
   }
   chooseComponent(component: ScreenComponent) {
     if (this.state.draft && !this.state.busy && this.state.candidates.includes(component))
-      this.update({ draft: { ...this.state.draft, component, nearbyText: this.nearbyText(component) } });
+      this.update({ draft: { ...this.state.draft, component, selection: this.selectionContext(component), nearbyText: this.nearbyText(component) } });
+  }
+  private selectionContext(component: ScreenComponent) {
+    const startedAt = performance.now();
+    try { return screenSelectionContext(this.components, component); }
+    finally { recordUiTiming("ui.annotations.selection_context", performance.now() - startedAt); }
   }
   private nearbyText(component: ScreenComponent) {
     const b = component.bounds, limit = (this.state.capture?.screen.width ?? 402) * .25;

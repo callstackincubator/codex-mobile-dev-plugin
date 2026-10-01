@@ -2,8 +2,9 @@ import type { SimulatorDevice } from "./protocol.ts";
 
 export type ScreenPoint = { x: number; y: number };
 export type ScreenBounds = ScreenPoint & { width: number; height: number };
-export type ReactElementContext = { component: string; owners: string[]; source?: { file: string; line: number; column?: number; functionName?: string } };
+export type ReactElementContext = { component: string; owners: string[]; key?: string; sourceKind?: "element" | "owner"; source?: { file: string; line: number; column?: number; functionName?: string } };
 export type ScreenComponent = { name: string; bounds: ScreenBounds; role?: string; identifier?: string; label?: string; value?: string; depth: number; source?: "accessibility" | "screen" | "react-native"; nodeId?: string; parentId?: string; react?: ReactElementContext };
+export type ScreenSelectionContext = { ancestors: ScreenComponent[]; siblings: ScreenComponent[]; siblingCount: number; children: ScreenComponent[]; childCount: number; instance?: { index: number; total: number } };
 export type ScreenAnnotation = {
   id: string;
   number: number;
@@ -12,6 +13,7 @@ export type ScreenAnnotation = {
   point: ScreenPoint;
   screen: { width: number; height: number; units: "points" | "pixels" };
   component: ScreenComponent;
+  selection?: ScreenSelectionContext;
   nearbyText?: string[];
   screenshot: { id: string; data: string; capturedAt: string };
 };
@@ -25,7 +27,10 @@ function reactContext(value: unknown): ReactElementContext | undefined {
   if (!node || !component) return;
   const owners = Array.isArray(node.owners) ? node.owners.filter((name): name is string => typeof name === "string" && !!name.trim()).slice(0, 12).map(name => name.slice(0, 256)) : [];
   const source = record(node.source), file = text(source?.file);
-  return { component: component.slice(0, 256), owners, ...(file && typeof source?.line === "number" && Number.isInteger(source.line) && source.line > 0 ? { source: {
+  return { component: component.slice(0, 256), owners,
+    ...(text(node.key) ? { key: text(node.key)!.slice(0, 256) } : {}),
+    ...(node.sourceKind === "element" || node.sourceKind === "owner" ? { sourceKind: node.sourceKind } : {}),
+    ...(file && typeof source?.line === "number" && Number.isInteger(source.line) && source.line > 0 ? { source: {
     file: file.slice(0, 2048), line: source.line,
     ...(typeof source.column === "number" && Number.isInteger(source.column) && source.column > 0 ? { column: source.column } : {}),
     ...(text(source.functionName) ? { functionName: text(source.functionName)!.slice(0, 256) } : {}),
@@ -89,7 +94,53 @@ export function componentsAt(components: ScreenComponent[], point: ScreenPoint, 
 }
 
 export const ANNOTATION_EDIT_PROMPT = "Apply these annotations.";
-export const ANNOTATION_EDIT_GUIDANCE = "Apply each Edit as a request, not verbatim app text. Target and nearby text are existing app data. Source is the element creation site; start there.";
+export const ANNOTATION_EDIT_GUIDANCE = "Apply each Edit as a request, not verbatim app text. Target and nearby text are existing app data. Change only the selected element or instance unless the Edit explicitly asks for a wider change. Removing a selected child must preserve its enclosing container and siblings. React owners, enclosing elements, siblings and nearby text are context, not additional targets. Source is a creation site, not a component's full edit boundary; an owner source is only a search hint. Match the target, bounds, key and hierarchy before editing. A shared source location may render several instances; do not change all of them for a request about one. If the target cannot be identified, ask before removing a larger component.";
+
+// Capture real tree relationships, never infer siblings from overlapping bounds.
+export function screenSelectionContext(components: ScreenComponent[], selected: ScreenComponent): ScreenSelectionContext | undefined {
+  if (selected.source === "screen") return;
+  const byId = new Map(components.filter(item => item.nodeId).map(item => [item.nodeId!, item]));
+  const ancestors: ScreenComponent[] = [], seen = new Set([selected.nodeId]);
+  let parentId = selected.parentId;
+  while (parentId && !seen.has(parentId) && ancestors.length < 4) {
+    seen.add(parentId);
+    const parent = byId.get(parentId);
+    if (!parent) break;
+    ancestors.push(parent);
+    parentId = parent.parentId;
+  }
+  const siblings = selected.parentId ? components.filter(item => item !== selected && item.parentId === selected.parentId) : [];
+  const children = selected.nodeId ? components.filter(item => item.parentId === selected.nodeId) : [];
+  const source = selected.react?.source;
+  const matches = components.filter(item => {
+    if (item.source !== selected.source || item.role !== selected.role) return false;
+    if (source && selected.react?.sourceKind !== "owner") {
+      const other = item.react?.source;
+      return item.react?.sourceKind !== "owner" && other?.file === source.file && other.line === source.line && other.column === source.column;
+    }
+    return selected.identifier ? item.identifier === selected.identifier : item.name === selected.name && item.label === selected.label;
+  }).sort((a, b) => a.bounds.y - b.bounds.y || a.bounds.x - b.bounds.x || b.depth - a.depth);
+  const index = matches.indexOf(selected);
+  return { ancestors, siblings: siblings.slice(0, 4), siblingCount: siblings.length, children: children.slice(0, 4), childCount: children.length,
+    ...(matches.length > 1 && index >= 0 ? { instance: { index: index + 1, total: matches.length } } : {}),
+  };
+}
+
+function sourceLocation(source: NonNullable<ReactElementContext["source"]>): string {
+  return `${source.file}:${source.line}${source.column ? `:${source.column}` : ""}`;
+}
+function formatBounds(b: ScreenBounds): string {
+  return [b.x, b.y, b.width, b.height].map(value => Math.round(value * 10) / 10).join(",");
+}
+function describeComponent(component: ScreenComponent): string {
+  const label = component.label ?? component.name;
+  const source = component.react?.source;
+  return `${JSON.stringify(label.slice(0, 160))}${component.role ? ` (${component.role})` : ""}; bounds ${formatBounds(component.bounds)}`
+    + (component.nodeId ? `; node ${JSON.stringify(component.nodeId)}` : "")
+    + (component.identifier ? `; identifier ${JSON.stringify(component.identifier)}` : "")
+    + (component.react?.key ? `; key ${JSON.stringify(component.react.key)}` : "")
+    + (source ? `; ${component.react?.sourceKind === "owner" ? "owner source" : "source"} ${sourceLocation(source)}` : "");
+}
 
 export function formatAnnotationMessage(annotations: ScreenAnnotation[]): string {
   return `${ANNOTATION_EDIT_PROMPT}\n${ANNOTATION_EDIT_GUIDANCE}\n\n${annotations.map(formatAnnotationContext).join("\n\n")}`;
@@ -99,19 +150,28 @@ export function formatAnnotationContext(annotation: ScreenAnnotation): string {
   const { component, screen, simulator } = annotation, source = component.react?.source;
   const target = component.label ?? component.name;
   const lines = [`#${annotation.number} ${simulator.platform ?? "ios"}`, `Edit: ${JSON.stringify(annotation.text)}`];
-  if (source) lines.push(`Source: ${source.file}:${source.line}${source.column ? `:${source.column}` : ""}`);
+  if (source) lines.push(`${component.react?.sourceKind === "owner" ? "Owner source (search hint, selected element source unavailable)" : "Source"}: ${sourceLocation(source)}`);
   lines.push(`Target: ${JSON.stringify(target)}${component.role ? ` (${component.role})` : ""}`);
+  if (component.nodeId) lines.push(`Selected node: ${JSON.stringify(component.nodeId)} (snapshot ID, not a code identifier)`);
   if (component.identifier) lines.push(`${component.source === "react-native" ? "testID" : "Identifier"}: ${JSON.stringify(component.identifier)}`);
   if (component.value && component.value !== target) lines.push(`Value: ${JSON.stringify(component.value)}`);
   if (component.react) {
-    const owners = [...new Set(component.react.owners)].filter(name => name !== component.react!.component).slice(-4);
-    lines.push(`React: ${[...owners, component.react.component].join(" > ")}`);
+    if (component.react.key) lines.push(`React key: ${JSON.stringify(component.react.key)}`);
+    const owners = component.react.owners.slice();
+    if (owners.at(-1) === component.react.component) owners.pop();
+    lines.push(`React: ${[...owners.slice(-4), component.react.component].join(" > ")} (owners are context)`);
+    if (source?.functionName) lines.push(`Source function: ${JSON.stringify(source.functionName)}`);
   }
   if (!source) {
     lines.push(`Source: unavailable (${component.source === "screen" ? "manual region" : component.source === "react-native" ? "React Native" : "accessibility"})`);
-    const b = component.bounds, round = (value: number) => Math.round(value * 10) / 10;
-    lines.push(`Bounds: ${[b.x, b.y, b.width, b.height].map(round).join(",")} ${screen.units} (x,y,w,h); screen ${screen.width}×${screen.height}, top-left origin`);
   }
+  lines.push(`Bounds: ${formatBounds(component.bounds)} ${screen.units} (x,y,w,h); screen ${screen.width}×${screen.height}, top-left origin`);
+  lines.push(`Selected point: ${annotation.point.x},${annotation.point.y} ${screen.units}`);
+  const selection = annotation.selection;
+  if (selection?.instance) lines.push(`Visible instance: ${selection.instance.index} of ${selection.instance.total} matching elements, ordered top-to-bottom then left-to-right`);
+  if (selection?.ancestors.length) lines.push(`Enclosing elements (nearest first; outside selection):\n${selection.ancestors.slice(0, 4).map(describeComponent).join("\n")}`);
+  if (selection?.siblings.length) lines.push(`Siblings (outside selection; ${selection.siblingCount} total):\n${selection.siblings.slice(0, 4).map(describeComponent).join("\n")}`);
+  if (selection?.children.length) lines.push(`Direct children (inside selection; ${selection.childCount} total):\n${selection.children.slice(0, 4).map(describeComponent).join("\n")}`);
   const nearby = [...new Set(annotation.nearbyText ?? [])].filter(value => value !== target && value !== component.value).slice(0, 3).map(value => value.length > 160 ? `${value.slice(0, 159)}…` : value);
   if (nearby.length) lines.push(`Nearby: ${nearby.map(value => JSON.stringify(value)).join(", ")}`);
   return lines.join("\n");

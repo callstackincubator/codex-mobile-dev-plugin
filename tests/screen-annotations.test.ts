@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { componentAt, componentsAt, screenComponents, formatAnnotationContext } from "../src/shared/screen-annotations.ts";
+import { componentAt, componentsAt, screenComponents, formatAnnotationContext, screenSelectionContext, ANNOTATION_EDIT_GUIDANCE } from "../src/shared/screen-annotations.ts";
 import { ScreenAnnotationsStore } from "../src/ui/screen-annotations.ts";
 import type { ScreenAnnotation } from "../src/shared/screen-annotations.ts";
 import { PanelContext } from "../src/ui/model-context.ts";
@@ -147,11 +147,72 @@ test("real parents remain selectable without choosing overlapping siblings", asy
   f.store.readTree = async () => tree;
   await f.store.toggle();
   f.store.select({ x: 40, y: 125 });
+  assert.deepEqual(f.store.getSnapshot().draft?.selection?.ancestors.map(item => item.name), ["Card"]);
+  assert.deepEqual(f.store.getSnapshot().draft?.selection?.siblings.map(item => item.name), ["Overlapping sibling"]);
   f.store.setText("Keep this note");
   f.store.chooseComponent(f.store.getSnapshot().candidates[1]);
   assert.equal(f.store.getSnapshot().draft?.component.name, "Card");
   assert.equal(f.store.getSnapshot().draft?.text, "Keep this note");
+  assert.deepEqual(f.store.getSnapshot().draft?.selection?.ancestors, []);
+  assert.deepEqual(f.store.getSnapshot().draft?.selection?.children.map(item => item.name), ["Title", "Overlapping sibling"]);
   f.store.dispose();
+});
+
+test("a child deletion identifies one repeated instance and keeps enclosing rows and siblings outside the target", async () => {
+  const f = fixture();
+  const source = { file: "/project/src/Row.tsx", line: 25, column: 7 };
+  const rows = [0, 1].map(index => ({ source: "react-native", role: "View", label: `Row ${index + 1}`, nodeId: `row-${index}`, frame: { x: 10, y: 100 + index * 90, width: 350, height: 70 },
+    react: { component: "Row", owners: ["HomeScreen"], key: `item-${index}`, source: { ...source, line: 20 } }, children: [
+      { source: "react-native", role: "RCTText", label: `Title ${index + 1}`, nodeId: `title-${index}`, frame: { x: 30, y: 110 + index * 90, width: 150, height: 20 }, react: { component: "Text", owners: ["HomeScreen", "Row"], source: { ...source, line: 24 } } },
+      { source: "react-native", role: "RCTText", label: "Subtitle", nodeId: `subtitle-${index}`, frame: { x: 30, y: 140 + index * 90, width: 150, height: 20 }, react: { component: "Text", owners: ["HomeScreen", "Row"], source } },
+    ],
+  }));
+  f.store.readTree = async () => rows;
+  await f.store.toggle();
+  f.store.select({ x: 40, y: 235 }); f.store.setText("Remove this subtitle"); await f.store.save();
+  const saved = f.context.screenAnnotations[0];
+  assert.equal(saved.component.nodeId, "subtitle-1");
+  assert.deepEqual(saved.selection?.instance, { index: 2, total: 2 });
+  const text = formatAnnotationContext(saved);
+  assert.match(text, /Selected node: "subtitle-1"/);
+  assert.match(text, /Source: \/project\/src\/Row\.tsx:25:7/);
+  assert.match(text, /Bounds: 30,230,150,20 points/);
+  assert.match(text, /Visible instance: 2 of 2/);
+  assert.match(text, /Enclosing elements \(nearest first; outside selection\):\n"Row 2".*key "item-1"/);
+  assert.match(text, /Siblings \(outside selection; 1 total\):\n"Title 2"/);
+  assert.doesNotMatch(text, /Title 1|Row 1/);
+  assert.match(ANNOTATION_EDIT_GUIDANCE, /Removing a selected child must preserve its enclosing container and siblings/);
+  await f.store.send();
+  const attached = f.updates.at(-1)!.content!.find(item => item._meta?.["mobile-dev/annotationId"] === saved.id)!;
+  assert.equal(attached.type === "text" ? attached.text : "", text);
+  f.store.dispose();
+});
+
+test("flat accessibility records and manual regions never invent a parent or siblings", () => {
+  const items = screenComponents([{ ...component, nodeId: "selected" }, { ...component, name: "Other", nodeId: "other" }]);
+  const selected = screenSelectionContext(items, items[0]);
+  assert.deepEqual(selected?.ancestors, []);
+  assert.deepEqual(selected?.siblings, []);
+  assert.deepEqual(selected?.children, []);
+  assert.equal(screenSelectionContext(items, { ...component, source: "screen", role: "manual-region" }), undefined);
+});
+
+test("selection context bounds cyclic ancestry and preserves repeated React owner names", () => {
+  const items = screenComponents([
+    { ...component, nodeId: "child", parentId: "parent", source: "react-native", react: { component: "Text", owners: ["Screen", "Row", "Row", "Text"] } },
+    { ...component, nodeId: "parent", parentId: "child", name: "Parent" },
+  ]);
+  const selection = screenSelectionContext(items, items[0]);
+  assert.deepEqual(selection?.ancestors.map(item => item.nodeId), ["parent"]);
+  assert.match(formatAnnotationContext({ ...annotation, component: items[0], selection }), /React: Screen > Row > Row > Text/);
+});
+
+test("an enclosing owner source remains a search hint rather than an exact selected element location", () => {
+  const text = formatAnnotationContext({ ...annotation, component: { ...component, source: "react-native", react: { component: "Text", owners: ["Card"], key: "subtitle", sourceKind: "owner", source: { file: "/project/src/Screen.tsx", line: 10 } } } });
+  assert.match(text, /Owner source \(search hint, selected element source unavailable\): \/project\/src\/Screen\.tsx:10/);
+  assert.doesNotMatch(text, /^Source: \/project/m);
+  assert.match(text, /React key: "subtitle"/);
+  assert.match(text, /Bounds: 10,20,100,40 points/);
 });
 
 test("flat MCP snapshots retain element names, depths and real parents", async () => {
@@ -189,7 +250,7 @@ test("a saved and sent note retains its source location, owners, testID and near
   assert.match(message.text, /React: HomeScreen > CardRow > Text/);
   assert.match(message.text, /testID: "continue-button"/);
   assert.match(message.text, /Nearby:.*Go to the next step/);
-  assert.doesNotMatch(message.text, /Bounds:/);
+  assert.match(message.text, /Bounds: 10,20,100,40 points/);
   assert.doesNotMatch(message.text, /screenshot|note-1|screen-1/);
   f.store.dispose();
 });

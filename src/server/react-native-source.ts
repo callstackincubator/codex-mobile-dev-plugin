@@ -40,8 +40,10 @@ export async function resolveReactNativeSources(nodes: InspectorNode[], urls: st
   }
   for (const node of nodes) {
     if (node.react) {
-      const source = node.creationStackIds?.flatMap(id => indices[id] ?? []).map(index => location(mapped[index])).find(Boolean);
-      if (source) node.react = { ...node.react, source };
+      const fromStacks = (ids: number[] | undefined) => ids?.flatMap(id => indices[id] ?? []).map(index => location(mapped[index])).find(Boolean);
+      const elementSource = fromStacks(node.creationStackIds);
+      const source = elementSource ?? fromStacks(node.ownerStackIds);
+      if (source) node.react = { ...node.react, source, sourceKind: elementSource ? "element" : "owner" };
     }
   }
 }

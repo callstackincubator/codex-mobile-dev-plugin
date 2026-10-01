@@ -39,7 +39,8 @@ test("annotation chips show element and note titles while preserving full model 
   assert.equal(attachment.type, "text");
   if (attachment.type !== "text") return;
   assert.match(attachment.text, /\/app\/src\/Header\.tsx:12/);
-  assert.doesNotMatch(attachment.text, /Bounds:|Captured at|Device:/);
+  assert.match(attachment.text, /Bounds: 20,80,200,30 points/);
+  assert.doesNotMatch(attachment.text, /Captured at|Device:/);
   assert.equal(f.updates.at(-1)!.structuredContent?.screenAnnotations, undefined);
   assert.equal(f.updates.at(-1)!.content!.some(item => item.type === "image"), false);
   await f.context.sendAnnotationsToChat(annotation.simulator.udid);
@@ -98,8 +99,8 @@ test("batch context shares hidden guidance once and bounds locator text without 
   const details = formatAnnotationContext(note);
   assert.ok(details.includes(`Edit: ${JSON.stringify(note.text)}`));
   assert.match(details, /React: Navigator > Screen > Card > Header > Text/);
-  assert.doesNotMatch(details, /fourth|Root|Bounds:|Captured at/);
+  assert.doesNotMatch(details, /fourth|Root|Captured at/);
   assert.equal(details.split("\n").filter(line => line.startsWith("Nearby:"))[0].length < 200, true);
   assert.equal(update.structuredContent?.screenAnnotations, undefined);
-  assert.ok(formatAnnotationContext(annotation).length < 200);
+  assert.match(details, /Bounds: 20,80,200,30 points/);
 });

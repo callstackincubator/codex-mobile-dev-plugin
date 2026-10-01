@@ -103,7 +103,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   store.configure({ udid: "PRIVATE_DEVICE", name: "PRIVATE_DEVICE_NAME", runtime: "iOS 26", state: "Booted" }, false);
   store.capture = () => ({ screenshot: { id: "PRIVATE_CAPTURE", data: "PRIVATE_IMAGE", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 402, height: 874, units: "points" } });
   store.readTree = async () => [{ source: "react-native", role: "RCTText", label: "PRIVATE_LABEL", bounds: { x: 10, y: 20, width: 100, height: 40 }, react: {
-    component: "PRIVATE_COMPONENT", owners: ["PRIVATE_OWNER"], source: { file: "/Users/alice/private.tsx", line: 49, column: 11 },
+    component: "PRIVATE_COMPONENT", owners: ["PRIVATE_OWNER"], key: "PRIVATE_REACT_KEY", source: { file: "/Users/alice/private.tsx", line: 49, column: 11 },
   } }];
   await store.toggle(); store.select({ x: 50, y: 40 }); store.setText("PRIVATE_NOTE"); await store.save(); await store.send();
   store.select({ x: 50, y: 40 }); store.setText("PRIVATE_NOTE_AGAIN"); await store.save();
@@ -168,6 +168,8 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, "ui.annotations.tree_processing.mean");
   contains(encoded, "ui.annotations.inspection.mean");
   contains(encoded, "ui.annotations.message_build.mean");
+  contains(encoded, "ui.annotations.selection_context.mean");
+  contains(encoded, "ui.annotations.context_build.mean");
   contains(encoded, "ui.annotations.send.mean");
   contains(encoded, "ui.annotations.send_success");
   contains(encoded, "ui.annotations.send_timeout");
