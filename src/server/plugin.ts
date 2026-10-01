@@ -107,7 +107,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   const cpu = selectedCpu;
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
-    instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. For Android use mobile_list_android_devices and the mobile_android tools. Use the selected serial with agent-device and platform android. serve-emu handles Android video and panel input. Opening the panel does not boot a device.",
+    instructions: "For local iOS, Android, Expo, React Native, or SwiftUI app development, open mobile_open_simulator beside the chat before the first device launch, or reuse an open Mobile Dev panel. Use mobile_open_workspace when the user asks for fullscreen. Use device-list tools without opening a panel for an explicit tool-only workflow or a host without panels. Planning, docs, code review, and compilation-only requests do not require a panel or device launch. Follow the user's device choice; otherwise reuse a compatible device shared by the panel, then a suitable running simulator or emulator. For app development, choose and boot a suitable installed simulator or AVD if none runs. Pick among equivalent devices yourself; ask only when the choice changes what the task needs and the project gives no answer. Use device IDs from panel context or mobile_list_simulators and mobile_list_android_devices. Build, install, and launch with the app project's own tools on the same device used by the panel and agent control. Reuse an existing app dev server from that project. For app control, use the plugin's agent-device MCP tools with the same device ID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the iOS panel stream and pointer input. Read mobile_describe_ui or mobile_screenshot before sending coordinates; coordinates use device points. For Android use the mobile_android tools, and use the running serial returned after boot with agent-device and platform android. serve-emu handles Android video and panel input. Opening the panel does not boot a device.",
   });
   wrapMcpServerWithSentry(server, { recordInputs: false, recordOutputs: false });
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS });
@@ -228,7 +228,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   registerAppTool(server, "mobile_open_workspace", {
     title: "Mobile Dev",
-    description: "Open the fullscreen Mobile Dev workspace with logs and performance tools on the left and iOS and Android devices side by side on the right. Starts the bundled backend without booting a device.",
+    description: "Open the fullscreen Mobile Dev workspace when the user asks for fullscreen, with logs and performance tools on the left and iOS and Android devices side by side on the right. For app development beside a chat, prefer mobile_open_simulator. Starts the bundled backend without booting a device.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
       ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
@@ -238,7 +238,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   registerAppTool(server, "mobile_open_simulator", {
     title: "Mobile simulator",
-    description: "Open the Mobile Dev simulator panel in Codex and start the plugin's bundled Baguette backend. Shows iOS and Android side by side without booting any devices.",
+    description: "Open the Mobile Dev simulator beside the chat when building, running, changing, or debugging a local iOS, Android, Expo, React Native, or SwiftUI app. Call before the first device launch unless a panel is already open or the user requests a tool-only workflow. Starts the bundled Baguette backend without booting devices.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
       ui: { resourceUri: APP_URI, visibility: ["app", "model"] },
@@ -265,7 +265,9 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   for (const action of ["boot", "shutdown"] as const) {
     server.registerTool(`mobile_${action}_simulator`, {
       title: action === "boot" ? "Boot iOS simulator" : "Shut down iOS simulator",
-      description: `${action === "boot" ? "Boot" : "Shut down"} the selected simulator. Use a UDID from the device list.`,
+      description: action === "boot"
+        ? "Boot an installed iOS simulator chosen for the app task. Follow the user's choice or choose a suitable device from the list when none runs. Reuse a suitable running device. Use a UDID from the device list."
+        : "Shut down the selected simulator. Use a UDID from the device list.",
       inputSchema: deviceInput, outputSchema: statusOutput,
       annotations: { ...write, destructiveHint: action === "shutdown" },
     }, guarded(async ({ udid }: { udid: string }) => {
