@@ -2,6 +2,8 @@ import { fpsSourceHash } from "./build-fps.mjs";
 import { iosMirrorSourceHash } from "./build-ios-mirror.mjs";
 import { iosLogsSourceHash } from "./build-ios-logs.mjs";
 import { build } from "esbuild";
+import { sentryEsbuildPlugin } from "@sentry/node/esbuild";
+import SentryCli from "@sentry/cli";
 import { compile } from "@tailwindcss/node";
 import { Scanner } from "@tailwindcss/oxide";
 import { access, copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -85,7 +87,6 @@ await rm("dist/agent-device", { recursive: true, force: true });
 await cp(`${runtime}/node_modules`, "dist/agent-device/node_modules", { recursive: true, verbatimSymlinks: true });
 await copyFile(`${runtime}/config.json`, "dist/agent-device/config.json");
 await copyFile(`${runtime}/package-lock.json`, "dist/agent-device/package-lock.json");
-await copyFile("src/server/agent-device-server.mjs", "dist/agent-device-server.mjs");
 await writeFile("dist/agent-device/release.json", JSON.stringify({
   name: installed.name, version: installed.version, url: pinned.resolved, integrity: pinned.integrity,
   lockfileSHA256: createHash("sha256").update(lock).digest("hex"),
@@ -126,20 +127,37 @@ const app = await build({
     });
   } }],
   bundle: true, write: false, format: "iife", platform: "browser",
-  outfile: "app.js",
+  outfile: ".sentry/ui/app.js", sourcemap: "external",
   target: "chrome120", minify: true, legalComments: "eof", metafile: true,
 });
-const js = app.outputFiles.find(file => file.path.endsWith(".js") || file.path === "<stdout>").text;
+await mkdir(".sentry/ui", { recursive: true });
+for (const file of app.outputFiles) await writeFile(file.path, file.contents);
+const cli = new SentryCli();
+await cli.execute(["sourcemaps", "inject", ".sentry/ui"]);
+const js = await readFile(".sentry/ui/app.js", "utf8");
 const css = app.outputFiles.find(file => file.path.endsWith(".css"))?.text ?? "";
 const template = await readFile("src/ui/index.html", "utf8");
 await writeFile("dist/app.html", template
   .replace("<!-- APP_STYLE -->", () => `<style>${css}</style>`)
-  .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}</script>`));
+  .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}\n//# sourceURL=app:///mobile-dev-ui.js\n</script>`));
 const server = await build({
-  entryPoints: ["src/server/index.ts"], outfile: "dist/server.mjs", bundle: true,
+  entryPoints: { server: "src/server/index.ts", "agent-device-server": "src/server/agent-device-server.mjs" }, outdir: "dist", outExtension: { ".js": ".mjs" }, bundle: true,
   format: "esm", platform: "node", target: "node22", minify: false, legalComments: "eof", metafile: true,
-  banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
+  sourcemap: "external",
+  plugins: [sentryEsbuildPlugin({ org: "callstackincubator", project: "mobile-dev-server", telemetry: false, sourcemaps: { disable: true }, release: { inject: false, create: false, finalize: false } })],
+  banner: { js: "import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);" },
 });
+await mkdir(".sentry/server", { recursive: true });
+for (const name of ["server.mjs", "agent-device-server.mjs"]) {
+  await copyFile(`dist/${name}`, `.sentry/server/${name}`);
+  await copyFile(`dist/${name}.map`, `.sentry/server/${name}.map`);
+  await rm(`dist/${name}.map`);
+}
+await cli.execute(["sourcemaps", "inject", ".sentry/server"]);
+for (const name of ["server.mjs", "agent-device-server.mjs"]) {
+  await copyFile(`.sentry/server/${name}`, `dist/${name}`);
+  execFileSync(process.execPath, ["--check", `dist/${name}`]);
+}
 // Tailwind compiles these styles before esbuild records its input files.
 const packageRoots = new Set(["shadcn", "tailwindcss", "tw-animate-css"].map(name => resolve("node_modules", name)));
 for (const path of [...Object.keys(app.metafile.inputs), ...Object.keys(server.metafile.inputs)]) {

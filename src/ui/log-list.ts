@@ -1,6 +1,7 @@
 import type { LogEntry, StackedLog } from "../shared/logs.ts";
 import { logKey, stackLogs } from "../shared/logs.ts";
 import type { PanelContext } from "./model-context.ts";
+import { countUiEvent, recordUiTiming, setUiGauge, captureUiError } from "./telemetry.ts";
 
 export class LogList {
   scrollOffset = 0;
@@ -44,10 +45,20 @@ export class LogList {
       selectedAttached: !!selected && this.context.attachedKey === logKey(selected) };
   }
 
-  private publish() { this.snapshot = this.makeSnapshot(); for (const listener of this.listeners) listener(); }
+  private publish() {
+    const startedAt = performance.now();
+    this.snapshot = this.makeSnapshot();
+    const elapsed = performance.now() - startedAt;
+    recordUiTiming("ui.logs.filter", elapsed);
+    setUiGauge("ui.logs.buffered_rows", this.entries.length);
+    setUiGauge("ui.logs.filtered_rows", this.snapshot.filtered.length);
+    for (const listener of this.listeners) listener();
+  }
 
   append(entries: LogEntry[], dropped: number) {
     if (!entries.length && !dropped) return;
+    countUiEvent("ui.logs.received", entries.length);
+    countUiEvent("ui.logs.dropped", dropped);
     this.dropped += dropped;
     this.entries.push(...entries.map(entry => ({ ...entry, sequence: ++this.sequence })));
     if (this.entries.length > 2000) this.entries.splice(0, this.entries.length - 2000);
@@ -64,7 +75,7 @@ export class LogList {
   }
 
   clear() { this.entries = []; this.selectedSequence = undefined; this.dropped = 0; this.scrollOffset = 0; this.publish(); }
-  search(query: string) { this.query = query; this.publish(); }
+  search(query: string) { countUiEvent("ui.logs.search"); this.query = query; this.publish(); }
   setFilters(kind: "sources" | "levels", values: string[]) { this[kind] = new Set(values); this.publish(); }
   setStacked(value: boolean) { this.stacked = value; this.publish(); }
   setFollow(value: boolean) { this.follow = value; this.publish(); }
@@ -81,16 +92,18 @@ export class LogList {
     this.attaching = true; this.publish();
     try {
       await this.context.attach(remove ? undefined : selected);
+      const action = remove ? "ui.logs.attachment_removed" : "ui.logs.attached";
+      countUiEvent(action);
       this.attachmentStatus = remove || !this.context.attachedKey ? "Attachment removed." : "Attached to your next chat message.";
-    } catch (error) { this.attachmentStatus = error instanceof Error ? error.message : String(error); }
+    } catch (error) { captureUiError(error, "logs.attach"); this.attachmentStatus = error instanceof Error ? error.message : String(error); }
     finally { this.attaching = false; this.publish(); }
   }
 
   async sendToChat(log: StackedLog) {
     if (this.sending || !this.context.canSendMessage) return;
     this.sending = true; this.chatError = ""; this.publish();
-    try { await this.context.sendLogToChat(log); }
-    catch (error) { this.chatError = error instanceof Error ? error.message : String(error); }
+    try { await this.context.sendLogToChat(log); countUiEvent("ui.logs.sent_to_chat"); }
+    catch (error) { captureUiError(error, "logs.send_to_chat"); this.chatError = error instanceof Error ? error.message : String(error); }
     finally { this.sending = false; this.publish(); }
   }
 }

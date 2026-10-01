@@ -1,6 +1,10 @@
 import type { UIResource } from "./ui-resource.ts";
 import { LIVE_UI_URI } from "../shared/live-ui.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { wrapMcpServerWithSentry } from "@sentry/node";
+import { PLUGIN_VERSION } from "../shared/version.ts";
+import { SENTRY_ORIGIN } from "../shared/telemetry.ts";
+import { captureServerError } from "./telemetry.ts";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { z } from "zod";
@@ -25,10 +29,12 @@ import { copyPNGToClipboard } from "./clipboard.ts";
 import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../shared/protocol.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-export const APP_URI = "ui://mobile-dev/0.1.56/simulator.html";
-export const WORKSPACE_URI = "ui://mobile-dev/0.1.56/workspace.html";
+export const APP_URI = `ui://mobile-dev/${PLUGIN_VERSION}/simulator.html`;
+export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
 // Codex can retain entrypoint metadata after updating the installed plugin.
 const legacyAppUris = [
+  "ui://mobile-dev/0.1.57/simulator.html",
+  "ui://mobile-dev/0.1.56/simulator.html",
   "ui://mobile-dev/0.1.52/simulator.html",
   "ui://mobile-dev/0.1.44/simulator.html",
   "ui://mobile-dev/0.1.43/simulator.html",
@@ -48,6 +54,8 @@ const legacyAppUris = [
   "ui://mobile-dev/0.1.30/simulator.html",
   "ui://mobile-dev/0.1.29/simulator.html", "ui://mobile-dev/0.1.28/simulator.html", "ui://mobile-dev/0.1.27/simulator.html", "ui://mobile-dev/0.1.26/simulator.html", "ui://mobile-dev/0.1.25/simulator.html", "ui://mobile-dev/0.1.24/simulator.html", "ui://mobile-dev/0.1.23/simulator.html", "ui://mobile-dev/0.1.22/simulator.html", "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/0.1.19/simulator.html", "ui://mobile-dev/0.1.18/simulator.html", "ui://mobile-dev/0.1.17/simulator.html", "ui://mobile-dev/0.1.16/simulator.html", "ui://mobile-dev/0.1.15/simulator.html", "ui://mobile-dev/0.1.14/simulator.html", "ui://mobile-dev/0.1.13/simulator.html", "ui://mobile-dev/0.1.12/simulator.html", "ui://mobile-dev/0.1.11/simulator.html", "ui://mobile-dev/simulator.html", ...Array.from({ length: 6 }, (_, index) => `ui://mobile-dev/v${index + 1}/simulator.html`)];
 const legacyWorkspaceUris = [
+  "ui://mobile-dev/0.1.57/workspace.html",
+  "ui://mobile-dev/0.1.56/workspace.html",
   "ui://mobile-dev/0.1.52/workspace.html",
   "ui://mobile-dev/0.1.44/workspace.html",
   "ui://mobile-dev/0.1.43/workspace.html",
@@ -83,7 +91,10 @@ function result(data: Record<string, unknown>, message: string): CallToolResult 
 function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
   return async (input: T): Promise<CallToolResult> => {
     try { return await handler(input); }
-    catch (error) { return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { retryable: !(error instanceof SimulatorUnavailableError) } }; }
+    catch (error) {
+      captureServerError(error, "simulator.tool");
+      return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { retryable: !(error instanceof SimulatorUnavailableError) } };
+    }
   };
 }
 
@@ -93,9 +104,10 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   if (selectedCpu === undefined) selectedCpu = await createCpuSessions();
   const cpu = selectedCpu;
   const fps = new DisplayFpsSessions();
-  const server = new McpServer({ name: "mobile-dev", version: "0.1.56" }, {
+  const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
     instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. For Android use mobile_list_android_devices and the mobile_android tools. Use the selected serial with agent-device and platform android. serve-emu handles Android video and panel input. Opening the panel does not boot a device.",
   });
+  wrapMcpServerWithSentry(server, { recordInputs: false, recordOutputs: false });
   new OpenAIExtensions(server);
   registerIosDeviceTools(server);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
@@ -141,16 +153,23 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     };
   }
 
+  function configureUI(content: string): string {
+    const telemetryEnvironment = process.env.MOBILE_DEV_ENVIRONMENT;
+    if (telemetryEnvironment === "development" || telemetryEnvironment === "release") {
+      return content.replace(/name="mobile-dev-environment" content="(?:development|release)"/, `name="mobile-dev-environment" content="${telemetryEnvironment}"`);
+    }
+    return content;
+  }
   const readApp = async (uri: URL) => {
     const resource = typeof html === "string" ? { html } : await html();
-    const content = resource.html;
+    const content = configureUI(resource.html);
     return ({
     contents: [{
       uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: (uri.href === WORKSPACE_URI || legacyWorkspaceUris.includes(uri.href))
         ? content.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
         : content,
       _meta: {
-        ui: { csp: { connectDomains: [], resourceDomains: [] } },
+        ui: { csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
         "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] },
       },
     }],
@@ -164,7 +183,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     const revision = resource.liveRevision;
     return { contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify({
       revision,
-      html: revision && revision !== uri.searchParams.get("after") ? resource.html : undefined,
+      html: revision && revision !== uri.searchParams.get("after") ? configureUI(resource.html) : undefined,
     }) }] };
   });
   registerAppResource(server, "mobile-dev-simulator", APP_URI, {}, readApp);

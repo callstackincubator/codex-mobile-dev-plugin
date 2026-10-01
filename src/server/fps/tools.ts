@@ -9,6 +9,7 @@ import { errorMessage } from "../../shared/protocol.ts";
 import { listIosDevices } from "../ios-devices.ts";
 import { listAndroidLogDevices } from "../native-logs.ts";
 import type { DisplayFpsSessions } from "./sessions.ts";
+import { captureServerError } from "../telemetry.ts";
 
 const sessionString = z.string();
 const sessionId = sessionString.regex(/^[a-f0-9]{64}$/);
@@ -28,7 +29,10 @@ const write = { ...read, readOnlyHint: false };
 function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
   return async (input: T): Promise<CallToolResult> => {
     try { return await handler(input); }
-    catch (error) { return { isError: true, content: [{ type: "text", text: errorMessage(error) }] }; }
+    catch (error) {
+      captureServerError(error, "display_fps.tool");
+      return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
+    }
   };
 }
 

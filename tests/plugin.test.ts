@@ -1,3 +1,4 @@
+import { SENTRY_ORIGIN } from "../src/shared/telemetry.ts";
 import { setImmediate } from "node:timers/promises";
 import { SimulatorInputService } from "../src/server/simulator-input.ts";
 import test from "node:test";
@@ -10,7 +11,7 @@ import { Baguette } from "../src/server/baguette.ts";
 import { parseBaseUrl } from "../src/shared/protocol.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "./fixtures.ts";
 
-test("live UI reads return changed HTML through MCP without network permissions", async t => {
+test("live UI reads use MCP and allow only Sentry browser connections", async t => {
   let revision = "a".repeat(64);
   const plugin = await createTestPlugin(async () => ({ html: '<html data-view="panel">jonas</html>', liveRevision: revision }));
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -19,13 +20,45 @@ test("live UI reads return changed HTML through MCP without network permissions"
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
   const first = await client.readResource({ uri: APP_URI });
-  assert.deepEqual(first.contents[0]._meta?.ui, { csp: { connectDomains: [], resourceDomains: [] } });
+  assert.deepEqual(first.contents[0]._meta?.ui, { csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
   const uri = `ui://mobile-dev/live?after=${revision}`;
   const unchanged = await client.readResource({ uri });
   assert.deepEqual(JSON.parse(unchanged.contents[0].text as string), { revision });
   revision = "b".repeat(64);
   const changed = await client.readResource({ uri });
   assert.deepEqual(JSON.parse(changed.contents[0].text as string), { revision, html: '<html data-view="panel">jonas</html>' });
+});
+
+test("environment overrides apply to both initial UI resources and live reload", async t => {
+  const previous = process.env.MOBILE_DEV_ENVIRONMENT;
+  process.env.MOBILE_DEV_ENVIRONMENT = "release";
+  const html = '<html><meta name="mobile-dev-environment" content="development"></html>';
+  const revision = "a".repeat(64);
+  const plugin = await createTestPlugin(async () => ({ html, liveRevision: revision }));
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "telemetry-environment-test", version: "1" });
+  t.after(async () => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_ENVIRONMENT;
+    else process.env.MOBILE_DEV_ENVIRONMENT = previous;
+    await client.close();
+    await plugin.close();
+  });
+  await plugin.server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const initial = await client.readResource({ uri: APP_URI });
+  const initialText = initial.contents[0].text;
+  assert.ok(typeof initialText === "string");
+  assert.match(initialText, /mobile-dev-environment" content="release"/);
+  const live = await client.readResource({ uri: "ui://mobile-dev/live?after=old" });
+  const liveText = live.contents[0].text;
+  assert.ok(typeof liveText === "string");
+  const update = JSON.parse(liveText);
+  assert.match(update.html, /mobile-dev-environment" content="release"/);
+  process.env.MOBILE_DEV_ENVIRONMENT = "development";
+  const development = await client.readResource({ uri: APP_URI });
+  const developmentText = development.contents[0].text;
+  assert.ok(typeof developmentText === "string");
+  assert.match(developmentText, /mobile-dev-environment" content="development"/);
 });
 
 test("cached side tabs load the current UI through old resource addresses", async t => {
@@ -36,7 +69,7 @@ test("cached side tabs load the current UI through old resource addresses", asyn
   t.after(async () => { await client.close(); await plugin.close(); });
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
-  assert.equal(APP_URI, "ui://mobile-dev/0.1.56/simulator.html");
+  assert.equal(APP_URI, "ui://mobile-dev/0.1.58/simulator.html");
   const previousPanel = await client.readResource({ uri: "ui://mobile-dev/0.1.52/simulator.html" });
   assert.equal(previousPanel.contents[0].text, html);
   for (const uri of [APP_URI, "ui://mobile-dev/0.1.44/simulator.html", "ui://mobile-dev/0.1.43/simulator.html", "ui://mobile-dev/0.1.42/simulator.html", "ui://mobile-dev/0.1.41/simulator.html", "ui://mobile-dev/0.1.40/simulator.html", "ui://mobile-dev/0.1.39/simulator.html", "ui://mobile-dev/0.1.38/simulator.html", "ui://mobile-dev/0.1.37/simulator.html", "ui://mobile-dev/0.1.36/simulator.html", "ui://mobile-dev/0.1.35/simulator.html", "ui://mobile-dev/0.1.34/simulator.html", "ui://mobile-dev/0.1.33/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html", "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/simulator.html", ...[1, 2, 3, 4, 5, 6].map(version => `ui://mobile-dev/v${version}/simulator.html`)]) {
@@ -67,7 +100,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.equal((workspace._meta?.ui as { resourceUri: string }).resourceUri, WORKSPACE_URI);
   const workspaceResource = await client.readResource({ uri: WORKSPACE_URI });
   assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);
-  assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.56/workspace.html");
+  assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.58/workspace.html");
   const previousWorkspace = await client.readResource({ uri: "ui://mobile-dev/0.1.52/workspace.html" });
   assert.equal(previousWorkspace.contents[0].text, workspaceResource.contents[0].text);
   for (const uri of ["ui://mobile-dev/0.1.44/workspace.html", "ui://mobile-dev/0.1.43/workspace.html", "ui://mobile-dev/0.1.42/workspace.html", "ui://mobile-dev/0.1.41/workspace.html", "ui://mobile-dev/0.1.40/workspace.html", "ui://mobile-dev/0.1.39/workspace.html", "ui://mobile-dev/0.1.38/workspace.html", "ui://mobile-dev/0.1.37/workspace.html", "ui://mobile-dev/0.1.36/workspace.html", "ui://mobile-dev/0.1.35/workspace.html", "ui://mobile-dev/0.1.34/workspace.html", "ui://mobile-dev/0.1.33/workspace.html", "ui://mobile-dev/0.1.24/mcp-stream/workspace.html", "ui://mobile-dev/0.1.21/workspace.html", "ui://mobile-dev/0.1.20/workspace.html", "ui://mobile-dev/workspace.html"]) {
@@ -88,7 +121,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   OpenAIUiResourceMetadataSchema.parse(resource.contents[0]._meta?.["openai/ui"]);
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.match(resource.contents[0].text as string, /data-view="panel" data-layout="stacked"/);
-  assert.deepEqual(resource.contents[0]._meta?.ui, { csp: { connectDomains: [], resourceDomains: [] } });
+  assert.deepEqual(resource.contents[0]._meta?.ui, { csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
   const status = await client.callTool({ name: "mobile_open_simulator", arguments: {} });
   assert.equal(status.structuredContent?.connected, true);
   assert.equal((status.structuredContent?.devices as unknown[]).length, 2);

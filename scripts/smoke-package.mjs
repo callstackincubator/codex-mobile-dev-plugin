@@ -95,13 +95,13 @@ try {
   }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.56/simulator.html");
+  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.58/simulator.html");
   assert.ok(resource.contents[0].text.includes('workspace-toolbar'));
   assert.ok(resource.contents[0].text.includes('workspace-panels'));
   assert.ok(resource.contents[0].text.includes('tool-logs'));
   assert.ok(resource.contents[0].text.includes('Memory usage'), 'The packaged Performance view must include the live memory track.');
-  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.56/workspace.html");
-  assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, []);
+  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.58/workspace.html");
+  assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, ["https://o4512180770177024.ingest.de.sentry.io"]);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
   runtimeTransport = new StdioClientTransport({ command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe" });
   const runtime = new Client({ name: "mobile-dev-package-runtime", version: "1" });
@@ -109,7 +109,7 @@ try {
   const runtimeResource = await runtime.readResource({ uri: entrypoint._meta.ui.resourceUri });
   assert.deepEqual(runtimeResource.contents[0], resource.contents[0]);
   await runtime.close();
-  console.log("Discovery/runtime processes agree on UI addresses, HTML, and CSP without browser network access.");
+  console.log("Discovery/runtime processes agree on UI addresses, HTML, and Sentry-only browser connections.");
   assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
   const oldWorkspace = await client.readResource({ uri: "ui://mobile-dev/workspace.html" });
   assert.equal(oldWorkspace.contents[0].text, workspaceResource.contents[0].text);

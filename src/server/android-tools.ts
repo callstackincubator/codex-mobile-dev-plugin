@@ -7,6 +7,7 @@ import { ServeEmu, androidIdSchema } from "./serve-emu.ts";
 import { AndroidStreams, androidInput } from "./android-streams.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { errorMessage, inputSchema } from "../shared/protocol.ts";
+import { captureServerError } from "./telemetry.ts";
 
 const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const deviceInput = { deviceId: androidIdSchema.describe("An Android serial or avd: name returned by mobile_list_android_devices.") };
@@ -16,7 +17,10 @@ function result(data: object, text: string): CallToolResult { return { content: 
 function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
   return async (input: T): Promise<CallToolResult> => {
     try { return await handler(input); }
-    catch (error) { return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { retryable: !(error instanceof SimulatorUnavailableError) } }; }
+    catch (error) {
+      captureServerError(error, "android.tool");
+      return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { retryable: !(error instanceof SimulatorUnavailableError) } };
+    }
   };
 }
 

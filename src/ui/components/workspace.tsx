@@ -11,6 +11,7 @@ import { Toggle } from "./ui/toggle";
 import { usePanelRef, useGroupRef } from "react-resizable-panels";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./ui/resizable";
 import { useMediaQuery } from "./use-media-query";
+import { markUiSurfaceReady, setUiSurface, setUiTelemetryContext } from "../telemetry.ts";
 
 export type DeviceLayout = "both" | "ios" | "android" | "none";
 
@@ -22,6 +23,10 @@ export function Workspace({ logs, performance, onLayout }: { logs: LogsPanel; pe
   const split = wide && document.documentElement.dataset.view === "workspace";
   const logState = useSyncExternalStore(logs.subscribe, logs.getSnapshot);
   const open = tool === "logs" ? logState.open : performanceState.open;
+  useEffect(() => { setUiSurface(open ? tool : "simulator"); }, [tool, open]);
+  useEffect(() => {
+    setUiTelemetryContext({ logs_open: logState.open, logs_paused: logState.paused, performance_running: performanceState.monitoring || performanceState.fpsMonitoring });
+  }, [logState.open, logState.paused, performanceState.monitoring, performanceState.fpsMonitoring]);
   const isOpen = () => tool === "logs" ? logs.getSnapshot().open : performance.getSnapshot().open;
   const closeTools = () => {
     if (logs.getSnapshot().open) logs.toggle();
@@ -29,10 +34,13 @@ export function Workspace({ logs, performance, onLayout }: { logs: LogsPanel; pe
     void performance.disconnect();
   };
   const showTool = (next: "logs" | "performance") => {
+    const startedAt = globalThis.performance.now();
     if (next === tool && isOpen()) { closeTools(); return; }
     setTool(next);
     if (next === "logs") { performance.hide(); logs.show(); }
     else { logs.hide(); performance.show(); }
+    setUiSurface(next);
+    markUiSurfaceReady(startedAt);
   };
   const logsRef = usePanelRef();
   const simulatorGroupRef = useGroupRef();

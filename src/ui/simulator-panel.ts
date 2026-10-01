@@ -10,6 +10,7 @@ import { physicalConnectionLabel } from "../shared/ios-devices.ts";
 import type { PhysicalIosDevice } from "../shared/ios-devices.ts";
 import type { DeviceOption } from "./device-picker.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
+import { countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { PanelContext } from "./model-context.ts";
 import { getScreenAnnotations } from "./screen-annotations.ts";
 import { screenRegions } from "../shared/screen-regions.ts";
@@ -62,6 +63,7 @@ export function createSimulatorPanel(
   const reconnect = new ReconnectLoop();
   let stream: PanelStream | undefined;
   let ready = false;
+  let firstFrameStartedAt: number | undefined;
   let inputBlocked = false;
   let inputRepairMessage = "";
   let epoch = 0;
@@ -116,7 +118,11 @@ export function createSimulatorPanel(
       try {
         const tool = session.platform === "android" ? "mobile_android_stream_input" : "mobile_stream_input";
         await call(tool, { sessionId: session.id, messages }, { timeout: 5000 });
-      } finally { session.reader?.inputTiming(performance.now() - started); }
+      } finally {
+        const elapsed = performance.now() - started;
+        session.reader?.inputTiming(elapsed);
+        recordUiTiming("ui.device_input.round_trip", elapsed);
+      }
     }, error => {
       if (session.epoch !== epoch) return;
       const failure = error as Error & { inputBlocked?: boolean; streamDisconnected?: boolean };
@@ -433,6 +439,7 @@ export function createSimulatorPanel(
   }
 
   async function openAndReceive(udid: string, sessionEpoch: number, signal: AbortSignal) {
+    const connectionStartedAt = performance.now();
     const streamPlatform = platform;
     const physicalIos = selected?.udid === udid && selected.kind === "physical" && selected.platform === "ios";
     const closeTool = physicalIos ? "mobile_ios_mirror_close" : streamPlatform === "android" ? "mobile_android_stream_close" : "mobile_stream_close";
@@ -456,6 +463,7 @@ export function createSimulatorPanel(
     stream = { id, frameUri, epoch: sessionEpoch, platform: streamPlatform, physicalIos, controller: new AbortController() };
     ready = false;
     seenFrames = 0;
+    firstFrameStartedAt = connectionStartedAt;
     controls();
     const session = stream;
     if (physicalIos === false) session.input = createInput(session);
@@ -535,6 +543,7 @@ export function createSimulatorPanel(
   }
 
   function drawFrame(image: CanvasImageSource, width: number, height: number) {
+    const paintStartedAt = performance.now();
     if (annotations.getSnapshot().selecting && ready) {
       pausedFrame ??= document.createElement("canvas");
       if (pausedFrame.width !== width || pausedFrame.height !== height) { pausedFrame.width = width; pausedFrame.height = height; }
@@ -547,6 +556,15 @@ export function createSimulatorPanel(
     const resized = canvas.width !== width || canvas.height !== height;
     if (resized) { canvas.width = width; canvas.height = height; }
     context.drawImage(image, 0, 0);
+    if (firstFrameStartedAt !== undefined) {
+      const firstFrameElapsed = performance.now() - firstFrameStartedAt;
+      recordUiTiming("ui.video.first_frame", firstFrameElapsed);
+      firstFrameStartedAt = undefined;
+    }
+    const paintElapsed = performance.now() - paintStartedAt;
+    recordUiTiming("ui.video.paint", paintElapsed);
+    const frameMetric = platform === "ios" ? "ui.video.ios.frames" : "ui.video.android.frames";
+    countUiEvent(frameMetric);
     frame.hidden = false; element("empty").hidden = true;
     if (!ready) { ready = true; reconnect.connected(); notice(); controls(); }
     if (!seenFrames || resized) fitScreen();

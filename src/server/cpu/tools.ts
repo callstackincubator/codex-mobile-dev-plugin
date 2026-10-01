@@ -2,6 +2,7 @@ import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { captureServerError } from "../telemetry.ts";
 import { z } from "zod";
 import { cpuDeviceSchema, cpuTargetSchema } from "../../shared/cpu.ts";
 import type { CpuTarget } from "../../shared/cpu.ts";
@@ -21,7 +22,10 @@ const write = { ...read, readOnlyHint: false };
 function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
   return async (input: T): Promise<CallToolResult> => {
     try { return await handler(input); }
-    catch (error) { return { isError: true, content: [{ type: "text", text: errorMessage(error) }] }; }
+    catch (error) {
+      captureServerError(error, "cpu.tool");
+      return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
+    }
   };
 }
 

@@ -12,6 +12,7 @@ import { metroTargets } from "./metro-logs.ts";
 import { listIosDevices } from "./ios-devices.ts";
 import { physicalIosLogDevice } from "./physical-ios-logs.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { captureServerError } from "./telemetry.ts";
 
 const sessionId = z.string().regex(/^[a-f0-9]{64}$/);
 const sequence = z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -20,7 +21,10 @@ const metadata = { ui: { visibility: ["app", "model"] as ("app" | "model")[] } }
 function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
   return async (input: T): Promise<CallToolResult> => {
     try { return await handler(input); }
-    catch (error) { return { isError: true, content: [{ type: "text", text: errorMessage(error) }] }; }
+    catch (error) {
+      captureServerError(error, "logs.tool");
+      return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
+    }
   };
 }
 

@@ -1,6 +1,10 @@
+import "./instrument.ts";
+import * as Sentry from "@sentry/node";
+import { startStorageMetrics } from "./storage-metrics.ts";
+import { closeServerTelemetry } from "./telemetry.ts";
 import { spawn, execFile } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -8,6 +12,8 @@ import { promisify } from "node:util";
 const runtime = fileURLToPath(new URL("./agent-device/", import.meta.url));
 const cli = join(runtime, "node_modules/agent-device/bin/agent-device.mjs");
 const stateDir = await mkdtemp(join(tmpdir(), "mobile-dev-agent-device-"));
+const runnerCache = join(homedir(), ".agent-device/apple-runner");
+const stopStorageMetrics = startStorageMetrics({ agent_device_state: stateDir, apple_runner_cache: runnerCache });
 // Use this package's config and daemon rather than an inherited global/cloud setup.
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("AGENT_DEVICE_")));
 Object.assign(env, {
@@ -21,6 +27,7 @@ const exited = new Promise(resolve => {
   child.once("exit", (code, signal) => resolve({ code, signal }));
   child.once("error", error => {
     console.error(`[mobile-dev] agent-device failed to start: ${error.message}`);
+    Sentry.captureException(error, { tags: { operation: "agent_device.start" } });
     resolve({ code: 1 });
   });
 });
@@ -38,6 +45,7 @@ let closing;
 function close(signal) {
   if (closing) return closing;
   closing = (async () => {
+    stopStorageMetrics();
     process.stdin.unpipe(child.stdin);
     process.stdin.destroy();
     child.stdin.end();
@@ -53,7 +61,14 @@ function close(signal) {
       console.error(`[mobile-dev] agent-device cleanup failed: ${error.stderr?.trim() || error.message}`);
     }
     // Keep logs and artifacts readable after a chat closes. The OS manages this temp directory.
-    process.exitCode = (await exited).code ?? 0;
+    const result = await exited;
+    if (signal === undefined && (result.code !== 0 || result.signal)) {
+      const exitCode = String(result.code ?? "none");
+      const exitSignal = result.signal ?? "none";
+      Sentry.captureMessage("agent-device exited unexpectedly", { level: "error", tags: { operation: "agent_device.exit", exit_code: exitCode, exit_signal: exitSignal } });
+    }
+    process.exitCode = result.code ?? 0;
+    await closeServerTelemetry();
   })();
   return closing;
 }

@@ -1,4 +1,5 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
+import { recordUiTiming, setUiGauge } from "./telemetry.ts";
 import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES } from "../shared/cpu.ts";
 import type { CpuApp, CpuBatch, CpuPhase, CpuSample, CpuTarget } from "../shared/cpu.ts";
 import type { SimulatorDevice } from "../shared/protocol.ts";
@@ -207,6 +208,7 @@ export class PerformancePanel {
         if (epoch !== this.epoch || session.abort.signal.aborted) return;
         const content = resource.contents.find(item => item.mimeType === "application/json" && "text" in item);
         if (content === undefined || !("text" in content)) throw new Error("The plugin returned an invalid CPU batch.");
+        const processingStartedAt = performance.now();
         const batch: CpuBatch = JSON.parse(content.text);
         after = batch.cursor;
         if (batch.timeOrigin !== undefined && this.timeOrigin === undefined) this.timeOrigin = batch.timeOrigin;
@@ -234,6 +236,10 @@ export class PerformancePanel {
           }
         }
         this.update({ samples, threadHistory, phase: batch.phase, error: batch.error ?? "", monitoring: batch.phase === "connecting" || batch.phase === "recording" });
+        const processingElapsed = performance.now() - processingStartedAt;
+        recordUiTiming("ui.performance.process_batch", processingElapsed);
+        setUiGauge("ui.performance.retained_samples", samples.length);
+        setUiGauge("ui.performance.threads", threadHistory.size);
       }
     } finally { await this.closeSession(session); }
   }

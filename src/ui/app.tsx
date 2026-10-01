@@ -14,14 +14,20 @@ import { LogsPanel } from "./logs-panel.ts";
 import { PerformancePanel } from "./performance-panel.ts";
 import { createSimulatorPanel } from "./simulator-panel.ts";
 import { startLiveReload } from "./live-reload.ts";
+import { ErrorBoundary, captureUiError, startUiTelemetry, stopUiTelemetry, setUiTelemetryContext } from "./telemetry.ts";
+import { PLUGIN_VERSION } from "../shared/version.ts";
 
-const app = new App({ name: "mobile-dev-ui", version: "0.1.55" }, {}, { autoResize: false });
+const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, {}, { autoResize: false });
+startUiTelemetry(app);
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
 const performancePanel = new PerformancePanel(app);
 const logsPanel = new LogsPanel(app, panelContext);
 const reactRoot = createRoot(document.getElementById("root")!);
-flushSync(() => reactRoot.render(<Workspace performance={performancePanel} logs={logsPanel} onLayout={changeLayout} />));
+const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
+  <Workspace performance={performancePanel} logs={logsPanel} onLayout={changeLayout} />
+</ErrorBoundary>;
+flushSync(() => { reactRoot.render(workspace); });
 
 let activePlatform: "ios" | "android" = "ios";
 const panels = (["ios", "android"] as const).map(platform => {
@@ -38,6 +44,7 @@ function updateSelection(updateToolSource = true) {
   const visible = panels.filter(panel => !panel.root.hidden);
   const active = visible.find(panel => panel.platform === activePlatform) ?? visible[0];
   const selected = active?.selected;
+  setUiTelemetryContext({ device_platform: selected?.platform ?? "ios", device_kind: selected?.kind ?? "simulator" });
   panelContext.selectSimulators(visible.flatMap(panel => panel.selected ? [panel.selected] : []), selected);
   if (updateToolSource) {
     logsPanel.selectSimulator(selected);
@@ -49,6 +56,7 @@ function updateSelection(updateToolSource = true) {
 }
 
 function changeLayout(layout: DeviceLayout) {
+  setUiTelemetryContext({ layout });
   if (layout === "ios" || layout === "android") activePlatform = layout;
   for (const panel of panels) {
     panel.root.hidden = layout !== "both" && layout !== panel.platform;
@@ -67,6 +75,7 @@ function disposeUI() {
     document.removeEventListener("visibilitychange", resumeContext);
     await Promise.allSettled([...panels.map(panel => panel.dispose()), logsPanel.dispose(), performancePanel.dispose()]);
     reactRoot.unmount();
+    await stopUiTelemetry();
   })();
 }
 function onPageHide(event: PageTransitionEvent) { if (!event.persisted) { stopLiveReload(); void disposeUI(); } }
@@ -114,6 +123,7 @@ void (async () => {
       await Promise.all([ios.load(), android.load()]);
     }
   } catch (error) {
+    captureUiError(error, "host.connect");
     for (const panel of panels) panel.notice(error instanceof Error ? error.message : "Could not connect to Codex.");
   }
 })();
