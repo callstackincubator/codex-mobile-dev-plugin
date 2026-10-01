@@ -81,7 +81,12 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   window.eval(built.outputFiles[0].text);
   const api = window.Telemetry;
   const calls: Record<string, unknown>[] = [];
-  const app = { async callServerTool(params: Record<string, unknown>) { calls.push(params); return { content: [{ type: "text", text: "PRIVATE_TOOL_RESULT" }] }; } };
+  const callRestriction = "A phone or VoIP call is currently in progress on the device.";
+  const app = { async callServerTool(params: Record<string, unknown>) {
+    calls.push(params);
+    if (params.name === "mobile_ios_mirror_session") return { isError: true, content: [{ type: "text", text: callRestriction }] };
+    return { content: [{ type: "text", text: "PRIVATE_TOOL_RESULT" }] };
+  } };
   api.startUiTelemetry(app);
   api.setUiSurface("logs");
   api.setUiTelemetryContext({ layout: "both", device_platform: "ios", device_kind: "physical" });
@@ -148,6 +153,14 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   api.recordUiTiming("ui.recording.derive", 3);
   await app.callServerTool({ name: "mobile_read_performance_recording", arguments: { recordingId: "PRIVATE_RECORDING_ID" } });
   assert.equal(calls[3]._meta, undefined, "Recording polling does not create a trace per refresh.");
+  api.setUiSurface("simulator");
+  api.setUiTelemetryContext({ device_platform: "ios", device_kind: "physical" });
+  const restricted = await app.callServerTool({ name: "mobile_ios_mirror_session", arguments: { udid: "PRIVATE_PHONE" } });
+  assert.equal(restricted.isError, true);
+  const mirrorContext = calls[4]._meta["mobile-dev/telemetry"];
+  assert.equal(mirrorContext.surface, "simulator");
+  assert.equal(mirrorContext.device_platform, "ios");
+  assert.equal(mirrorContext.device_kind, "physical");
   Object.defineProperty(window.document, "visibilityState", { configurable: true, value: "hidden" });
   const visibilityChange = new window.Event("visibilitychange");
   window.document.dispatchEvent(visibilityChange);
@@ -188,6 +201,9 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, '"surface":{"value":"recording"');
   contains(encoded, "ui.frame_interval.mean");
   contains(encoded, "UI failure");
+  contains(encoded, '"action":{"value":"mobile_ios_mirror_session"');
+  contains(encoded, '"outcome":{"value":"error"');
+  contains(encoded, callRestriction, false);
   contains(encoded, "PRIVATE_", false);
   contains(encoded, "alice", false);
   contains(encoded, '"value":999', false);

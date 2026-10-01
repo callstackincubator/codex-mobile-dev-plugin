@@ -126,8 +126,16 @@ pub async fn open_device(udid: String) -> Result<Capture> {
     let (started, ready) = tokio::sync::oneshot::channel();
     let worker_shared = shared.clone();
     tokio::spawn(async move {
-        let result = run(&udid, &worker_shared, receiver, started).await;
-        if let Err(error) = &result { eprintln!("[mobile-dev:ios-mirror] capture_failed error={error}"); }
+        let mut started = Some(started);
+        let result = run(&udid, &worker_shared, receiver, &mut started).await;
+        if let Err(error) = &result {
+            if let Some(started) = started {
+                let message = error.clone();
+                let response = Err(message);
+                let _ = started.send(response);
+            }
+            eprintln!("[mobile-dev:ios-mirror] capture_failed error={error}");
+        }
         let mut queue = worker_shared.queue.lock().unwrap();
         queue.error = result.err();
         queue.closed = true;
@@ -142,8 +150,8 @@ pub async fn open_device(udid: String) -> Result<Capture> {
         Ok(Ok(Ok(()))) => Ok(Capture { shared, commands: sender }),
         Ok(Ok(Err(message))) => Err(Error::from_reason(message)),
         Ok(Err(_)) => {
-            let message = shared.queue.lock().unwrap().error.clone().unwrap_or_else(|| "The physical device capture stopped during setup.".into());
-            Err(Error::from_reason(message))
+            let error = Error::from_reason("The physical device capture worker stopped during setup.");
+            Err(error)
         },
         _ => { let _ = sender.send(Command::Close); Err(Error::from_reason("Timed out opening the physical device display.")) }
     }
@@ -157,7 +165,7 @@ fn connection_id(response: &plist::Value) -> std::result::Result<u64, String> {
         .ok_or_else(|| "The device returned no stream identity.".into())
 }
 
-async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<Command>, started: tokio::sync::oneshot::Sender<std::result::Result<(), String>>) -> std::result::Result<(), String> {
+async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<Command>, started: &mut Option<tokio::sync::oneshot::Sender<std::result::Result<(), String>>>) -> std::result::Result<(), String> {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(25);
     let address = UsbmuxdAddr::UnixSocket("/var/run/usbmuxd".into());
     let connect = address.connect(1);
@@ -229,7 +237,10 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
             let mut last_video_packet = origin;
             let mut first_timestamp = None;
             let mut configuration_revision = 0;
-            let _ = started.send(Ok(()));
+            if let Some(started) = started.take() {
+                let response = Ok(());
+                let _ = started.send(response);
+            }
             loop {
                 tokio::select! {
                     command = commands.recv() => match command {

@@ -66,6 +66,7 @@ function fixture(t: TestContext) {
   let stopped = false;
   let physicalDevices: PhysicalIosDevice[] = [];
   let physicalError = "";
+  let physicalCaptureError = "";
   let simulatorError = "";
   let delayedDiscovery: Promise<void> | undefined;
   let androidDevices: SimulatorDevice[] | undefined;
@@ -132,6 +133,7 @@ function fixture(t: TestContext) {
         return { isError: true, content: [{ type: "text", text: "Input disconnected" }], _meta: { streamDisconnected: true } };
       }
       if (call.name === "mobile_ios_mirror_session") {
+        if (physicalCaptureError) return { isError: true, content: [{ type: "text", text: physicalCaptureError }] };
         const id = `physical-${++sessionNumber}`;
         await delayedOpen;
         return { content: [], _meta: { bezel: physicalBezel, sessionId: id, frameUri: `ios-video://mobile-dev/${id}/video` }, structuredContent: { name: "Physical iPhone" } };
@@ -198,6 +200,7 @@ function fixture(t: TestContext) {
     visibility(value: string) { document.visibilityState = value; document.dispatchEvent(new Event("visibilitychange")); },
     frame(platform: "ios" | "android", sequence: number) { const id = [...pendingReads.keys()].find(id => id.startsWith(platform)); assert.ok(id); pendingReads.get(id)!(sequence); },
     missTiming() { observeFrames = false; }, invalidFrame() { invalidFrame = true; },
+    failPhysicalCapture(message: string) { physicalCaptureError = message; },
   };
 }
 
@@ -430,6 +433,32 @@ test("physical iOS devices mirror above simulators and route touches to their ow
   for (const button of f.ios.root.buttons) assert.equal(button.dataset.unsupported, "false");
   assert.equal(f.ios.root.buttons[0].title, "Home");
   assert.equal(f.ios.root.buttons[1].title, "App switcher");
+});
+
+test("physical iOS capture errors stay visible and clear when mirroring recovers", async t => {
+  const f = fixture(t);
+  f.setPhysicalDevices([physicalPhone]);
+  await f.ios.panel.load();
+  await f.android.panel.load();
+  await waitFor(() => f.android.element("screen").draws > 0);
+  const message = "A phone or VoIP call is currently in progress on the device.";
+  f.failPhysicalCapture(message);
+  const pickerElement = f.ios.element("devices");
+  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  picker.value = physicalPhone.udid;
+  dispatch(pickerElement, "change");
+  await waitFor(() => f.ios.element("empty-description").textContent === message);
+  assert.equal(f.ios.element("empty").hidden, false);
+  assert.equal(f.ios.element("empty").textContent, "Screen unavailable");
+  assert.equal(f.ios.element("empty-description").hidden, false);
+  assert.equal(f.ios.element("device-frame").hidden, true);
+  assert.equal(f.ios.element("screenshot").disabled, true);
+  assert.equal(f.android.element("device-frame").hidden, false);
+  f.failPhysicalCapture("");
+  await waitFor(() => f.ios.element("device-frame").hidden === false);
+  assert.equal(f.ios.element("empty").hidden, true);
+  assert.equal(f.ios.element("notice").hidden, true);
+  assert.equal(f.ios.element("screenshot").disabled, false);
 });
 
 test("physical iOS screenshots capture the displayed frame without a simulator backend", async t => {
