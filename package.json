@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.75",
+  "version": "0.1.76",
   "private": true,
   "type": "module",
   "engines": {
