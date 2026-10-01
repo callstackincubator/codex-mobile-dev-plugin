@@ -420,6 +420,7 @@ test("physical iOS screenshots capture the displayed frame without a simulator b
   f.failSimulators("Simulator backend unavailable");
   await f.ios.panel.load();
   const screenshot = f.ios.element("screenshot");
+  f.ios.root.elements.delete("screenshot-status");
   await waitFor(() => screenshot.disabled === false);
   dispatch(screenshot, "click");
   await waitFor(() => f.screenshots.length === 1);
@@ -428,13 +429,10 @@ test("physical iOS screenshots capture the displayed frame without a simulator b
   assert.equal(captured?.arguments.image, "AA==");
   assert.equal(f.screenshots[0].data, captured?.arguments.image);
   assert.equal(f.screenshots[0].simulator.udid, physicalPhone.udid);
-  const status = f.ios.element("screenshot-status");
-  assert.match(status.textContent, /Screenshot attached to chat\. Copied to clipboard/);
   await waitFor(() => screenshot.disabled === false);
   f.failClipboard();
   dispatch(screenshot, "click");
   await waitFor(() => f.screenshots.length === 2);
-  assert.match(status.textContent, /Screenshot attached to chat\. Clipboard copy failed: Clipboard unavailable/);
   const simulatorCaptures = f.calls.filter(call => call.name === "mobile_capture_screenshot");
   assert.equal(simulatorCaptures.length, 0);
   f.visibility("hidden");

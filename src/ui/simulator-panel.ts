@@ -857,13 +857,6 @@ export function createSimulatorPanel(
   screenshotButton.addEventListener("click", () => { void action(async () => {
     if (!selected || !selectedDeviceConnected() || !panelContext.canAttachScreenshots) return;
     const simulator = selected;
-    const screenshotStatus = element("screenshot-status");
-    screenshotStatus.hidden = false;
-    function screenshotMessage(message: string) {
-      screenshotStatus.textContent = message;
-      screenshotStatus.title = message;
-    }
-    screenshotMessage("Taking screenshot…");
     try {
       const physicalIos = simulator.kind === "physical" && simulator.platform === "ios";
       let tool: string;
@@ -880,19 +873,13 @@ export function createSimulatorPanel(
       const result = await call(tool, parameters, { timeout: 30000 });
       const image = result.content.find(item => item.type === "image" && item.mimeType === "image/png");
       if (!image || image.type !== "image") throw new Error("The plugin did not return a PNG screenshot.");
-      const clipboard = result.structuredContent as { copied: boolean; clipboardError?: string };
-      const clipboardStatus = clipboard.copied ? "Copied to clipboard." : `Clipboard copy failed: ${clipboard.clipboardError ?? "Unknown error"}.`;
-      let attached = false;
-      try { attached = await panelContext.attachScreenshot({ id: crypto.randomUUID(), data: image.data, simulator }); }
+      try { await panelContext.attachScreenshot({ id: crypto.randomUUID(), data: image.data, simulator }); }
       catch (error) {
         captureUiError(error, "screenshot.attach");
-        screenshotMessage(`${clipboardStatus} Chat attachment failed: ${error instanceof Error ? error.message : String(error)}`);
         return;
       }
-      screenshotMessage(`${attached ? "Screenshot attached to chat." : "Screenshot removed from chat."} ${clipboardStatus}`);
     } catch (error) {
       captureUiError(error, "screenshot.capture");
-      screenshotMessage(error instanceof Error ? error.message : String(error));
     }
   }); });
   root.addEventListener("pointerdown", activate, { capture: true });
