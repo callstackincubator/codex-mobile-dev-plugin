@@ -248,8 +248,26 @@ test("FPS statistics include idle zeros, weight interval duration, and leave mis
   assert.equal(series.minimum, 0);
   assert.equal(series.maximum, 60);
   assert.equal(series.current, 20);
-  const gap = series.data.at(-2);
-  assert.deepEqual(gap, { time: 5.001, value: null });
+  assert.deepEqual(series.data, [
+    { time: 0, value: 60 }, { time: 1, value: 60 },
+    { time: 1, value: 30 }, { time: 3, value: 30 },
+    { time: 3, value: 0 }, { time: 4, value: 0 },
+    { time: 4, value: null }, { time: 5, value: null },
+    { time: 9, value: 20 }, { time: 10, value: 20 },
+  ]);
+});
+
+test("FPS covers each measured interval from its start and leaves unmeasured time empty", () => {
+  const series = createFpsSeries([
+    { time: 1, interval: 0, fps: null },
+    { time: 2, interval: 1, fps: 60 },
+    { time: 5, interval: 1, fps: 20 },
+  ]);
+  assert.deepEqual(series.data, [
+    { time: 1, value: 60 }, { time: 2, value: 60 },
+    { time: 2, value: null },
+    { time: 4, value: 20 }, { time: 5, value: 20 },
+  ]);
 });
 
 test("the device FPS panel records on physical iOS without an app, backfills history, and closes on disconnect", async () => {

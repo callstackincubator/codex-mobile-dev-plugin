@@ -5,7 +5,9 @@ import { CHART_RIGHT_PADDING, LIVE_VIEW_DURATION, SIDEBAR_WIDTH } from "./consta
 import type { ZoomState } from "./types";
 
 export function useTimelineViewport(samples: CpuSample[], scrollElement: HTMLDivElement | null, fpsSamples?: DisplayFpsSample[]) {
-  const first = Math.min(samples[0]?.time ?? Infinity, fpsSamples?.[0]?.time ?? Infinity);
+  const firstFps = fpsSamples?.find(sample => sample.fps !== null && sample.interval > 0);
+  const fpsStart = firstFps ? firstFps.time - firstFps.interval : Infinity;
+  const first = Math.min(samples[0]?.time ?? Infinity, fpsStart);
   const left = Number.isFinite(first) ? first : 0;
   const lastCpu = samples.at(-1);
   const lastFps = fpsSamples?.at(-1);
@@ -13,6 +15,7 @@ export function useTimelineViewport(samples: CpuSample[], scrollElement: HTMLDiv
   const [following, setFollowing] = useState(true);
   const [selection, setSelection] = useState<ZoomState | null>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
+  const [hasMoreToRight, setHasMoreToRight] = useState(false);
   const scrollLeft = useRef(0);
   const previousViewport = useRef<{ left: number; pixelsPerSecond: number } | null>(null);
   const live = useMemo<ZoomState>(() => ({ left, right, viewDuration: LIVE_VIEW_DURATION, isZoomed: false,
@@ -20,7 +23,8 @@ export function useTimelineViewport(samples: CpuSample[], scrollElement: HTMLDiv
   const zoom = selection ?? live;
   const plotWidth = Math.max(0, viewportWidth - SIDEBAR_WIDTH - CHART_RIGHT_PADDING);
   const pixelsPerSecond = plotWidth / zoom.viewDuration;
-  const contentWidth = SIDEBAR_WIDTH + CHART_RIGHT_PADDING + (zoom.right - zoom.left) * pixelsPerSecond;
+  const chartWidth = CHART_RIGHT_PADDING + (zoom.right - zoom.left) * pixelsPerSecond;
+  const contentWidth = SIDEBAR_WIDTH + chartWidth;
 
   const reset = useCallback(() => {
     setSelection(null);
@@ -52,6 +56,8 @@ export function useTimelineViewport(samples: CpuSample[], scrollElement: HTMLDiv
     scrollElement.scrollLeft = Math.max(0, offset);
     scrollLeft.current = scrollElement.scrollLeft;
     previousViewport.current = { left: zoom.left, pixelsPerSecond };
+    const remaining = scrollElement.scrollWidth - scrollElement.clientWidth - scrollElement.scrollLeft;
+    setHasMoreToRight(remaining > 1);
   }, [scrollElement, following, contentWidth, pixelsPerSecond, zoom.left]);
 
   useEffect(() => {
@@ -64,8 +70,9 @@ export function useTimelineViewport(samples: CpuSample[], scrollElement: HTMLDiv
     if (Math.abs(offset - scrollLeft.current) < 1) return;
     scrollLeft.current = offset;
     const maximum = element.scrollWidth - element.clientWidth;
+    setHasMoreToRight(maximum - offset > 1);
     setFollowing(selection === null && offset >= maximum - 1);
   }, [selection]);
 
-  return { zoom, following, contentWidth, reset, change, handleScroll };
+  return { zoom, following, contentWidth, chartWidth, hasMoreToRight, reset, change, handleScroll };
 }

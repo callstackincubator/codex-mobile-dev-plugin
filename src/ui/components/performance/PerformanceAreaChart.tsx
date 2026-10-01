@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useMemo } from "react";
+import React, { memo, useCallback, useContext, useMemo, type ComponentProps } from "react";
 import {
   AreaChart,
   Area,
@@ -6,11 +6,11 @@ import {
   XAxis,
   YAxis,
   ReferenceArea,
-  ResponsiveContainer,
   Tooltip,
   type MouseHandlerDataParam,
 } from "recharts";
 import type { ZoomState } from "../../performance/types";
+import { TimelineChartWidth } from "../../performance/TimelineChartWidth";
 import type { CpuPoint } from "../../../shared/cpu";
 import {
   COLORS,
@@ -38,6 +38,7 @@ type PerformanceAreaChartProps = {
   gradientId?: string;
   tooltipPostfix?: string;
   trackHeight?: number;
+  curveType?: ComponentProps<typeof Area>["type"];
 };
 
 const defaultChartColors = {
@@ -55,7 +56,9 @@ export const PerformanceAreaChart = memo(function PerformanceAreaChart({
   gradientId = "colorValue",
   tooltipPostfix,
   trackHeight = TRACK_HEIGHT,
+  curveType = "step",
 }: PerformanceAreaChartProps) {
+  const chartWidth = useContext(TimelineChartWidth);
   const { refAreaLeft, refAreaRight, left, right, viewDuration } = zoomState;
   const yDomain = useMemo(() => {
     const domain = getAxisYDomain(data, left, right, 10);
@@ -140,77 +143,77 @@ export const PerformanceAreaChart = memo(function PerformanceAreaChart({
         </Button>
       </div>}
 
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart
-          data={data}
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={zoom}
-          margin={CHART_MARGIN}
-          accessibilityLayer={false}
-        >
-          <defs>
-            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop
-                offset="0%"
-                stopColor={chartColors.fillStart}
-                stopOpacity={0.8}
-              />
-              <stop
-                offset="100%"
-                stopColor={chartColors.fillEnd}
-                stopOpacity={0.1}
-              />
-            </linearGradient>
-          </defs>
-          <CartesianGrid
-            vertical={true}
-            horizontal={false}
-            stroke={COLORS.gridLine}
-            strokeWidth={1}
-            strokeDasharray="0"
-          />
-          <XAxis
-            allowDataOverflow
-            dataKey="time"
-            domain={xDomain}
-            type="number"
-            ticks={xAxisTicks}
-            hide
-          />
-          <YAxis allowDataOverflow domain={yDomain} type="number" hide />
-          <Area
-            type="step"
-            dataKey="value"
-            stroke={chartColors.stroke}
-            strokeWidth={1}
-            fill={`url(#${gradientId})`}
-            dot={false}
-            activeDot={false}
-            animationDuration={300}
-            isAnimationActive={false}
-          />
-          <Tooltip
-            content={tooltip}
-            isAnimationActive={false}
-            cursor={false}
-            position={tooltipPosition}
-            offset={4}
-          />
-          {refAreaLeft !== undefined && refAreaRight !== undefined ? (
-            <ReferenceArea
-              x1={refAreaLeft}
-              x2={refAreaRight}
-              strokeOpacity={0.8}
-              fill={COLORS.selectionOverlay}
-              fillOpacity={0.2}
-              strokeWidth={1}
-              stroke={COLORS.selectionOverlay}
-              shape={renderSelectionReferenceArea}
+      <AreaChart
+        width={chartWidth}
+        height={trackHeight - 1}
+        data={data}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={zoom}
+        margin={CHART_MARGIN}
+        accessibilityLayer={false}
+      >
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop
+              offset="0%"
+              stopColor={chartColors.fillStart}
+              stopOpacity={0.8}
             />
-          ) : null}
-        </AreaChart>
-      </ResponsiveContainer>
+            <stop
+              offset="100%"
+              stopColor={chartColors.fillEnd}
+              stopOpacity={0.1}
+            />
+          </linearGradient>
+        </defs>
+        <CartesianGrid
+          vertical={true}
+          horizontal={false}
+          stroke={COLORS.gridLine}
+          strokeWidth={1}
+          strokeDasharray="0"
+        />
+        <XAxis
+          allowDataOverflow
+          dataKey="time"
+          domain={xDomain}
+          type="number"
+          ticks={xAxisTicks}
+          hide
+        />
+        <YAxis allowDataOverflow domain={yDomain} type="number" hide />
+        <Area
+          type={curveType}
+          dataKey="value"
+          stroke={chartColors.stroke}
+          strokeWidth={1}
+          fill={`url(#${gradientId})`}
+          dot={false}
+          activeDot={false}
+          animationDuration={300}
+          isAnimationActive={false}
+        />
+        <Tooltip
+          content={tooltip}
+          isAnimationActive={false}
+          cursor={false}
+          position={tooltipPosition}
+          offset={4}
+        />
+        {refAreaLeft !== undefined && refAreaRight !== undefined ? (
+          <ReferenceArea
+            x1={refAreaLeft}
+            x2={refAreaRight}
+            strokeOpacity={0.8}
+            fill={COLORS.selectionOverlay}
+            fillOpacity={0.2}
+            strokeWidth={1}
+            stroke={COLORS.selectionOverlay}
+            shape={renderSelectionReferenceArea}
+          />
+        ) : null}
+      </AreaChart>
     </div>
   );
 });

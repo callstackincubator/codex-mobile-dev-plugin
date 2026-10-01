@@ -38,6 +38,7 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
   Object.defineProperty(dom.window, "ResizeObserver", { value: ResizeObserver });
   Object.defineProperty(dom.window.HTMLElement.prototype, "clientHeight", { get: () => 360 });
   Object.defineProperty(dom.window.HTMLElement.prototype, "clientWidth", { get: () => viewportWidth });
+  Object.defineProperty(dom.window.HTMLElement.prototype, "offsetWidth", { get: () => viewportWidth });
   dom.window.HTMLElement.prototype.getBoundingClientRect = function () {
     const tracks = this.getAttribute("aria-label") === "Live CPU, memory and display FPS";
     const scroller = this.closest<HTMLElement>("[data-performance-scroll]");
@@ -63,15 +64,21 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
     external: ["react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "lucide-react", "@base-ui/react/*", "radix-ui"],
     plugins: [{ name: "observe-chart-inputs", setup(builder) {
       builder.onLoad({ filter: /PerformanceAreaChart\.tsx$/ }, () => ({ loader: "tsx", contents: `
+        import { useContext } from "react";
+        import { TimelineChartWidth } from "../../performance/TimelineChartWidth";
         export function PerformanceAreaChart({ zoomState, onZoomChange, onZoomOut }) {
-          return <div data-domain={zoomState.left + ":" + zoomState.right + ":" + zoomState.viewDuration}>
+          const width = useContext(TimelineChartWidth);
+          return <div data-chart-width={width} data-domain={zoomState.left + ":" + zoomState.right + ":" + zoomState.viewDuration}>
             <button aria-label="Select test range" onClick={() => onZoomChange({ left: 5, right: 10, viewDuration: 5, isZoomed: true, refAreaLeft: undefined, refAreaRight: undefined })}>Select</button>
             <button aria-label="Reset test range" onClick={onZoomOut}>Reset</button>
           </div>;
         }` }));
       builder.onLoad({ filter: /TimelineRuler\.tsx$/ }, () => ({ loader: "tsx", contents: `
+        import { useContext } from "react";
+        import { TimelineChartWidth } from "../../performance/TimelineChartWidth";
         export function TimelineRuler({ zoomState, cursorLabel }) {
-          return <div data-domain={zoomState.left + ":" + zoomState.right + ":" + zoomState.viewDuration}><span ref={cursorLabel} /></div>;
+          const width = useContext(TimelineChartWidth);
+          return <div data-chart-width={width} data-domain={zoomState.left + ":" + zoomState.right + ":" + zoomState.viewDuration}><span ref={cursorLabel} /></div>;
         }` }));
     } }],
   });
@@ -131,8 +138,22 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
     const difference = Math.abs(actual - expected);
     assert.ok(difference < 0.001, `${actual} differs from ${expected}`);
   };
+  const assertChartWidths = () => {
+    const charts = dom.window.document.querySelectorAll<HTMLElement>("[data-chart-width]");
+    const contentWidth = Number.parseFloat(tracks.style.width);
+    for (const chart of charts) {
+      const width = Number(chart.dataset.chartWidth);
+      closeTo(width, contentWidth - 170);
+    }
+  };
+  const assertRightFade = (visible: boolean) => {
+    const fade = dom.window.document.querySelector("[data-performance-right-fade]");
+    assert.equal(fade !== null, visible);
+  };
   assertDomains("1:31:30");
   assert.equal(tracks.style.width, "640px");
+  assertChartWidths();
+  assertRightFade(false);
   await click('[aria-label="Expand CPU"]');
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
   const thread = dom.window.document.querySelector('[data-cpu-thread="worker"]');
@@ -151,6 +172,8 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
   const pixelsPerSecond = (640 - 170 - 12) / 30;
   closeTo(scroller.scrollWidth, 182 + 149 * pixelsPerSecond);
   closeTo(scroller.scrollLeft, scroller.scrollWidth - 640);
+  assertChartWidths();
+  assertRightFade(false);
   await act(async () => {
     const event = new dom.window.Event("scroll");
     scroller.dispatchEvent(event);
@@ -164,11 +187,14 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
   });
   const followingPaused = tracks.textContent?.includes("Follow live");
   assert.ok(followingPaused);
+  assertRightFade(true);
   const retainedSamples = longSamples.slice(1);
   const nextSample = sample(151);
   const nextSamples = [...retainedSamples, nextSample];
   await publish(nextSamples);
   closeTo(scroller.scrollLeft, 59 * pixelsPerSecond);
+  assertChartWidths();
+  assertRightFade(true);
   await act(async () => {
     const event = new dom.window.MouseEvent("mousemove", { bubbles: true, clientX: 270 });
     tracks.dispatchEvent(event);
@@ -183,7 +209,27 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
   });
   const resizedScale = (800 - 170 - 12) / 30;
   closeTo(2 + scroller.scrollLeft / resizedScale, visibleStart);
+  assertChartWidths();
   await click('[aria-label="Reset test range"]');
   closeTo(scroller.scrollLeft, scroller.scrollWidth - 800);
   assertDomains("2:151:30");
+  assertRightFade(false);
+  snapshot = { ...snapshot, fpsMonitoring: true, fpsPhase: "recording", fpsSupported: true,
+    fpsSamples: [{ time: 4, interval: 0, fps: null }, { time: 5, interval: 1, fps: 60 }] };
+  await publish([]);
+  assertDomains("4:34:30");
+  assertChartWidths();
+  assertRightFade(false);
+  snapshot = { ...snapshot, fpsSamples: [{ time: 40, interval: 1, fps: 60 }, { time: 80, interval: 1, fps: 60 }] };
+  await publish([]);
+  assertDomains("39:80:30");
+  assertChartWidths();
+  await act(async () => {
+    scroller.scrollLeft = 0;
+    const event = new dom.window.Event("scroll");
+    scroller.dispatchEvent(event);
+  });
+  assertRightFade(true);
+  await click('[aria-label="Reset test range"]');
+  assertRightFade(false);
 });

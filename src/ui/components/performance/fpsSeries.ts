@@ -9,9 +9,12 @@ export function createFpsSeries(samples: DisplayFpsSample[]) {
   let maximum: number | null = null;
   let previous: DisplayFpsSample | undefined;
   for (const sample of samples) {
-    if (previous && sample.time - previous.time > Math.max(sample.interval * 1.5, 2.5)) {
-      data.push({ time: previous.time + 0.001, value: null });
+    if (sample.interval <= 0) continue;
+    const start = sample.time - sample.interval;
+    if (previous && previous.fps !== null && start > previous.time + 0.001) {
+      data.push({ time: previous.time, value: null });
     }
+    data.push({ time: start, value: sample.fps });
     data.push({ time: sample.time, value: sample.fps });
     if (sample.fps !== null && sample.interval > 0) {
       total += sample.fps * sample.interval;

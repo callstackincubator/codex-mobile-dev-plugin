@@ -4,6 +4,7 @@ import type { PerformancePanel } from "../performance-panel.ts";
 import { SIDEBAR_WIDTH, TIMELINE_HEIGHT } from "../performance/constants";
 import { useCursorTracking } from "../performance/useCursorTracking";
 import { useTimelineViewport } from "../performance/useTimelineViewport";
+import { TimelineChartWidth } from "../performance/TimelineChartWidth";
 import { CpuTrack } from "./performance/CpuTrack";
 import { MemoryTrack } from "./performance/MemoryTrack";
 import { DisplayFpsTrack } from "./performance/DisplayFpsTrack";
@@ -18,7 +19,7 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const container = useRef<HTMLDivElement>(null);
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
-  const { zoom, following, contentWidth, reset, change, handleScroll } = useTimelineViewport(state.samples, scrollElement, state.fpsSamples);
+  const { zoom, following, contentWidth, chartWidth, hasMoreToRight, reset, change, handleScroll } = useTimelineViewport(state.samples, scrollElement, state.fpsSamples);
   const { cursorLabel, handleMouseMove, handleMouseLeave } = useCursorTracking(container, scrollElement, SIDEBAR_WIDTH, zoom);
   useEffect(() => { if (state.fpsMonitoring === false && (state.phase === "connecting" || state.phase === "idle")) reset(); }, [state.phase, state.fpsMonitoring, reset]);
   const selectedRunning = state.apps.some(app => app.bundleId === state.bundleId);
@@ -57,28 +58,34 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
         </PopoverContent>
       </Popover>
     </header>
-    <div ref={setScrollElement} onScroll={handleScroll} className="min-h-0 flex-1 overflow-auto" data-performance-scroll>
-      {state.sourceError && <Alert variant="destructive" className="rounded-none border-x-0 border-t-0"><AlertDescription>{state.sourceError}</AlertDescription></Alert>}
-      <div ref={container} style={{ width: contentWidth, minWidth: "100%" }} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} aria-label="Live CPU, memory and display FPS">
-        <div className="flex border-b" style={{ height: TIMELINE_HEIGHT }}>
-          <div className="sticky left-0 z-[60] flex shrink-0 items-center gap-2 border-r bg-background px-2 text-[10px] text-muted-foreground" style={{ width: SIDEBAR_WIDTH }}>
-            <span>Live performance</span>
-            {state.phase === "failed" && <button type="button" className="text-blue-500" onClick={() => panel.retry()}>Retry</button>}
-            {following === false && <button type="button" className="text-blue-500" onClick={reset}>Follow live</button>}
-          </div>
-          <div className="min-w-0 flex-1"><TimelineRuler cursorLabel={cursorLabel} zoomState={zoom} onZoomOut={reset} /></div>
+    <div className="relative flex min-h-0 flex-col">
+      <div ref={setScrollElement} onScroll={handleScroll} className="min-h-0 overflow-auto" data-performance-scroll>
+        {state.sourceError && <Alert variant="destructive" className="rounded-none border-x-0 border-t-0"><AlertDescription>{state.sourceError}</AlertDescription></Alert>}
+        <div ref={container} style={{ width: contentWidth, minWidth: "100%" }} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} aria-label="Live CPU, memory and display FPS">
+          <TimelineChartWidth.Provider value={chartWidth}>
+            <div className="flex border-b" style={{ height: TIMELINE_HEIGHT }}>
+              <div className="sticky left-0 z-[60] flex shrink-0 items-center gap-2 border-r bg-background px-2 text-[10px] text-muted-foreground" style={{ width: SIDEBAR_WIDTH }}>
+                <span>Live performance</span>
+                {state.phase === "failed" && <button type="button" className="text-blue-500" onClick={() => panel.retry()}>Retry</button>}
+                {following === false && <button type="button" className="text-blue-500" onClick={reset}>Follow live</button>}
+              </div>
+              <div className="min-w-0 flex-1"><TimelineRuler cursorLabel={cursorLabel} zoomState={zoom} onZoomOut={reset} /></div>
+            </div>
+            <DisplayFpsTrack samples={state.fpsSamples} phase={state.fpsPhase} error={state.fpsError} supported={state.fpsSupported}
+              platform={state.platform} zoomState={zoom} onZoomChange={change} onZoomOut={reset} onRetry={() => panel.retryFps()} />
+            <CpuTrack samples={state.samples} threadHistory={state.threadHistory} platform={state.platform}
+              threadOrder={state.threadOrder} onThreadOrderChange={order => panel.setThreadOrder(order)}
+              phase={state.phase} error={state.error || null} scrollElement={scrollElement}
+              zoomState={zoom} onZoomChange={change} onZoomOut={reset} />
+            <MemoryTrack samples={state.samples} platform={state.platform} phase={state.phase} error={state.error || null}
+              zoomState={zoom} onZoomChange={change} onZoomOut={reset} />
+          </TimelineChartWidth.Provider>
         </div>
-        <DisplayFpsTrack samples={state.fpsSamples} phase={state.fpsPhase} error={state.fpsError} supported={state.fpsSupported}
-          platform={state.platform} zoomState={zoom} onZoomChange={change} onZoomOut={reset} onRetry={() => panel.retryFps()} />
-        <CpuTrack samples={state.samples} threadHistory={state.threadHistory} platform={state.platform}
-          threadOrder={state.threadOrder} onThreadOrderChange={order => panel.setThreadOrder(order)}
-          phase={state.phase} error={state.error || null} scrollElement={scrollElement}
-          zoomState={zoom} onZoomChange={change} onZoomOut={reset} />
-        <MemoryTrack samples={state.samples} platform={state.platform} phase={state.phase} error={state.error || null}
-          zoomState={zoom} onZoomChange={change} onZoomOut={reset} />
       </div>
-      {state.bundleId === "" && <p className="p-4 text-xs text-muted-foreground">Open an app to record CPU and memory. A single running app is selected automatically; choose one in performance settings when several are running.</p>}
+      {hasMoreToRight && <div aria-hidden="true" data-performance-right-fade className="pointer-events-none absolute inset-y-0 z-[70] w-10"
+        style={{ right: scrollElement ? scrollElement.offsetWidth - scrollElement.clientWidth : 0,
+          bottom: scrollElement ? scrollElement.offsetHeight - scrollElement.clientHeight : 0,
+          background: "linear-gradient(to right, transparent, var(--background))" }} />}
     </div>
-    <footer className="flex min-h-11 shrink-0 items-center border-t px-3 text-[11px] text-muted-foreground">100% = one CPU core · Display FPS includes system UI; quiet screens can show 0 · Last 150 seconds</footer>
   </section>;
 }

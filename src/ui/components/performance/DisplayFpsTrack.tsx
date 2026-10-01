@@ -39,7 +39,7 @@ export function DisplayFpsTrack({ samples, phase, error, supported, platform, zo
     <TrackLabel label="Display FPS" icon={<GaugeIcon className="size-4 text-green-500" />} metrics={metrics} title={title} />
     <div className="relative h-full min-w-0 flex-1 border-b border-border">
       <PerformanceAreaChart data={series.data} zoomState={zoomState} onZoomChange={onZoomChange} onZoomOut={onZoomOut}
-        chartColors={colors} gradientId="displayFpsGradient" tooltipPostfix="FPS" />
+        chartColors={colors} gradientId="displayFpsGradient" tooltipPostfix="FPS" curveType="linear" />
       {showMessage && <div role={error ? "alert" : "status"} className="absolute inset-0 flex items-center justify-center gap-2 bg-background/90 px-4 text-xs text-muted-foreground">
         <span>{message}</span>{phase === "failed" && <button className="shrink-0 text-green-500" onClick={onRetry}>Retry FPS</button>}
       </div>}
