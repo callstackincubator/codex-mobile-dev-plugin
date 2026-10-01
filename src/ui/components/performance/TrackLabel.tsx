@@ -23,7 +23,7 @@ export const TrackLabel: React.FC<TrackLabelProps> = ({ label, icon, metrics, is
     : 'text-xs font-semibold text-muted-foreground truncate';
   return (
     <div
-      className="p-2 flex flex-col shrink-0 border-r border-b border-border bg-muted/30 group-hover:bg-muted/50"
+      className="sticky left-0 z-[60] p-2 flex flex-col shrink-0 border-r border-b border-border bg-[color-mix(in_srgb,var(--muted)_30%,var(--background))] group-hover:bg-[color-mix(in_srgb,var(--muted)_50%,var(--background))]"
       title={title}
       style={{ width: `${SIDEBAR_WIDTH}px` }}
     >

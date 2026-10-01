@@ -8,12 +8,13 @@ import {
   ReferenceArea,
   ResponsiveContainer,
   Tooltip,
+  type MouseHandlerDataParam,
 } from "recharts";
 import type { ZoomState } from "../../performance/types";
 import type { CpuPoint } from "../../../shared/cpu";
 import {
   COLORS,
-  TIMELINE_EXTENSION_PERCENT,
+  CHART_MARGIN,
   TRACK_HEIGHT,
 } from "../../performance/constants";
 import {
@@ -44,7 +45,6 @@ const defaultChartColors = {
   fillStart: COLORS.areaChartFillStart,
   fillEnd: COLORS.areaChartFillEnd,
 };
-const chartMargin = { top: 0, right: 0, bottom: 0, left: 0 };
 
 export const PerformanceAreaChart = memo(function PerformanceAreaChart({
   data,
@@ -56,17 +56,16 @@ export const PerformanceAreaChart = memo(function PerformanceAreaChart({
   tooltipPostfix,
   trackHeight = TRACK_HEIGHT,
 }: PerformanceAreaChartProps) {
-  const { refAreaLeft, refAreaRight, left, right } = zoomState;
+  const { refAreaLeft, refAreaRight, left, right, viewDuration } = zoomState;
   const yDomain = useMemo(() => {
     const domain = getAxisYDomain(data, left, right, 10);
     return domain;
   }, [data, left, right]);
-  const extendedRight = right + (right - left) * TIMELINE_EXTENSION_PERCENT;
-  const xDomain = useMemo(() => [left, extendedRight], [left, extendedRight]);
+  const xDomain = useMemo(() => [left, right], [left, right]);
   const xAxisTicks = useMemo(() => {
-    const ticks = generateTicks(extendedRight, right - left, left);
+    const ticks = generateTicks(right, viewDuration, left);
     return ticks;
-  }, [left, right, extendedRight]);
+  }, [left, right, viewDuration]);
   const tooltip = useMemo(() => <ChartToolTip postfix={tooltipPostfix} />, [tooltipPostfix]);
   const tooltipPosition = useMemo(() => ({ y: trackHeight / 2 }), [trackHeight]);
 
@@ -95,14 +94,16 @@ export const PerformanceAreaChart = memo(function PerformanceAreaChart({
     onZoomChange({
       left,
       right,
+      viewDuration: right - left,
+      isZoomed: true,
       refAreaLeft: undefined,
       refAreaRight: undefined,
     });
   }, [zoomState, onZoomChange]);
 
   const onMouseDown = useCallback(
-    (e: any) => {
-      if (e && e.activeLabel !== undefined) {
+    (e: MouseHandlerDataParam) => {
+      if (typeof e.activeLabel === "number") {
         onZoomChange({ ...zoomState, refAreaLeft: e.activeLabel });
       }
     },
@@ -110,11 +111,10 @@ export const PerformanceAreaChart = memo(function PerformanceAreaChart({
   );
 
   const onMouseMove = useCallback(
-    (e: any) => {
+    (e: MouseHandlerDataParam) => {
       if (
         zoomState.refAreaLeft !== undefined &&
-        e &&
-        e.activeLabel !== undefined
+        typeof e.activeLabel === "number"
       ) {
         onZoomChange({ ...zoomState, refAreaRight: e.activeLabel });
       }
@@ -128,7 +128,7 @@ export const PerformanceAreaChart = memo(function PerformanceAreaChart({
       style={{ userSelect: "none" }}
       onDoubleClick={onZoomOut}
     >
-      <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+      {zoomState.isZoomed && <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
         <Button
           type="button"
           variant="secondary"
@@ -138,7 +138,7 @@ export const PerformanceAreaChart = memo(function PerformanceAreaChart({
         >
           Zoom Out
         </Button>
-      </div>
+      </div>}
 
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart
@@ -146,7 +146,7 @@ export const PerformanceAreaChart = memo(function PerformanceAreaChart({
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={zoom}
-          margin={chartMargin}
+          margin={CHART_MARGIN}
           accessibilityLayer={false}
         >
           <defs>

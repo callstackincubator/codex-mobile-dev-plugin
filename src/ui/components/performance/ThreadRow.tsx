@@ -52,7 +52,7 @@ export const ThreadRow = memo(function ThreadRow({
   return (
     <div
       data-cpu-thread={threadId}
-      className="flex flex-row overflow-hidden"
+      className="group flex flex-row"
       style={{ height: `${height}px` }}
     >
 

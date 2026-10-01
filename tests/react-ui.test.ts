@@ -216,7 +216,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(tracks.style.getPropertyValue("--performance-cursor-x"), "100px");
   assert.equal(tracks.style.getPropertyValue("--performance-cursor-opacity"), "1");
   const cursorLabel = tracks.querySelector('[aria-hidden="true"] span');
-  assert.equal(cursorLabel?.textContent, "00:06.893");
+  assert.equal(cursorLabel?.textContent, "00:07.550");
   await act(async () => { tracks.dispatchEvent(new dom.window.MouseEvent("mouseout", { bubbles: true, relatedTarget: dom.window.document.body })); });
   assert.equal(tracks.style.getPropertyValue("--performance-cursor-opacity"), "0");
   const unnamedThread = dom.window.document.querySelector('[title*="ID: 0xc963a4"]');

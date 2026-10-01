@@ -71,7 +71,7 @@ export const CpuTrack: React.FC<CpuTrackProps> = ({
   return (
     <>
       <div
-        className="group flex flex-row overflow-hidden"
+        className="group flex flex-row"
         style={{ height: `${TRACK_HEIGHT}px` }}
       >
         <TrackLabel
@@ -100,7 +100,7 @@ export const CpuTrack: React.FC<CpuTrackProps> = ({
         </div>
       </div>
       {isExpanded && <div className="flex border-b border-border bg-muted/30">
-        <div className="flex shrink-0 items-center gap-2 border-r border-border p-2" style={{ width: SIDEBAR_WIDTH }}>
+        <div className="sticky left-0 z-[60] flex shrink-0 items-center gap-2 border-r border-border bg-background p-2" style={{ width: SIDEBAR_WIDTH }}>
           <label htmlFor="cpu-thread-order" className="text-[10px] text-muted-foreground">Sort</label>
           <NativeSelect id="cpu-thread-order" aria-label="Thread order" size="sm" value={threadOrder}
             title="Activity: highest current CPU first; previously active threads stay above those with no recorded activity. First seen: stable recording order."
@@ -113,7 +113,7 @@ export const CpuTrack: React.FC<CpuTrackProps> = ({
           </NativeSelect>
         </div>
       </div>}
-      {isExpanded && <LegendList data={threads} scrollElement={scrollElement} renderItem={renderThread}
+      {isExpanded && <LegendList data={threads} scrollElement={scrollElement} renderItem={renderThread} extraData={zoomState}
         keyExtractor={threadKey} getFixedItemSize={threadHeight} estimatedItemSize={THREAD_HEIGHT}
         drawDistance={THREAD_HEIGHT} maintainVisibleContentPosition={false} aria-label="CPU threads" />}
     </>

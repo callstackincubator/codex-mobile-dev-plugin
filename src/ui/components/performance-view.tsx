@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIcon, RefreshCwIcon, SlidersHorizontalIcon, SquareIcon } from "lucide-react";
 import type { PerformancePanel } from "../performance-panel.ts";
-import type { ZoomState } from "../performance/types";
-import { CPU_HISTORY_SECONDS } from "../../shared/cpu.ts";
-import { MIN_VIEW_DURATION, SIDEBAR_WIDTH, TIMELINE_HEIGHT } from "../performance/constants";
+import { SIDEBAR_WIDTH, TIMELINE_HEIGHT } from "../performance/constants";
 import { useCursorTracking } from "../performance/useCursorTracking";
+import { useTimelineViewport } from "../performance/useTimelineViewport";
 import { CpuTrack } from "./performance/CpuTrack";
 import { MemoryTrack } from "./performance/MemoryTrack";
 import { TimelineRuler } from "./performance/TimelineRuler";
@@ -18,18 +17,9 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const container = useRef<HTMLDivElement>(null);
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
-  const last = state.samples.at(-1);
-  const end = Math.max(last?.time ?? 0, MIN_VIEW_DURATION);
-  const start = Math.max(0, end - CPU_HISTORY_SECONDS);
-  const [following, setFollowing] = useState(true);
-  const [selection, setSelection] = useState<ZoomState>({ left: 0, right: MIN_VIEW_DURATION, refAreaLeft: undefined, refAreaRight: undefined });
-  const live = useMemo<ZoomState>(() => ({ left: start, right: end, refAreaLeft: undefined, refAreaRight: undefined }), [start, end]);
-  const zoom = following ? live : selection;
-  const { cursorLabel, handleMouseMove, handleMouseLeave } = useCursorTracking(container, SIDEBAR_WIDTH, zoom);
-  const reset = useCallback(() => setFollowing(true), []);
-  const change = useCallback((next: ZoomState) => { setFollowing(false); setSelection(next); }, []);
-  useEffect(() => { if (state.phase === "connecting" || state.phase === "idle") setFollowing(true); }, [state.phase]);
-  useEffect(() => { if (selection.right < start) setFollowing(true); }, [selection.right, start]);
+  const { zoom, following, contentWidth, reset, change, handleScroll } = useTimelineViewport(state.samples, scrollElement);
+  const { cursorLabel, handleMouseMove, handleMouseLeave } = useCursorTracking(container, scrollElement, SIDEBAR_WIDTH, zoom);
+  useEffect(() => { if (state.phase === "connecting" || state.phase === "idle") reset(); }, [state.phase, reset]);
   const selectedRunning = state.apps.some(app => app.bundleId === state.bundleId);
 
   return <section id="performance-drawer" className="flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-labelledby="tool-performance">
@@ -60,11 +50,11 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
         </PopoverContent>
       </Popover>
     </header>
-    <div ref={setScrollElement} className="min-h-0 flex-1 overflow-y-auto" data-performance-scroll>
+    <div ref={setScrollElement} onScroll={handleScroll} className="min-h-0 flex-1 overflow-auto" data-performance-scroll>
       {state.sourceError && <Alert variant="destructive" className="rounded-none border-x-0 border-t-0"><AlertDescription>{state.sourceError}</AlertDescription></Alert>}
-      <div ref={container} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} aria-label="Live app CPU and memory usage">
+      <div ref={container} style={{ width: contentWidth, minWidth: "100%" }} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} aria-label="Live app CPU and memory usage">
         <div className="flex border-b" style={{ height: TIMELINE_HEIGHT }}>
-          <div className="flex shrink-0 items-center gap-2 border-r px-2 text-[10px] text-muted-foreground" style={{ width: SIDEBAR_WIDTH }}>
+          <div className="sticky left-0 z-[60] flex shrink-0 items-center gap-2 border-r bg-background px-2 text-[10px] text-muted-foreground" style={{ width: SIDEBAR_WIDTH }}>
             <span>Live performance</span>
             {state.phase === "failed" && <button type="button" className="text-blue-500" onClick={() => panel.retry()}>Retry</button>}
             {following === false && <button type="button" className="text-blue-500" onClick={reset}>Follow live</button>}

@@ -1,7 +1,7 @@
 import React, { memo, useMemo, type ComponentProps, type RefObject } from 'react';
 import { BarChart, Bar, CartesianGrid, XAxis, ReferenceArea, ResponsiveContainer } from 'recharts';
 import type { DataPoint, ZoomState } from '../../performance/types';
-import { COLORS, TIMELINE_EXTENSION_PERCENT } from '../../performance/constants';
+import { COLORS, CHART_MARGIN } from '../../performance/constants';
 import { generateTicks, formatTime } from '../../performance/utils';
 import { renderSelectionReferenceArea } from './SelectionReferenceArea';
 import { TimelineCursorIndicator } from './TimelineCursorIndicator';
@@ -12,7 +12,6 @@ type TimelineRulerProps = {
   onZoomOut: () => void;
 };
 
-const chartMargin = { top: 0, right: 0, bottom: 0, left: 0 };
 const tickStyle: ComponentProps<typeof XAxis>['tick'] = { fill: COLORS.timeLabel, fontSize: 10, fontFamily: 'monospace', dy: 0, dx: 5, textAnchor: 'start' };
 
 export const TimelineRuler = memo(function TimelineRuler({
@@ -20,18 +19,16 @@ export const TimelineRuler = memo(function TimelineRuler({
   zoomState,
   onZoomOut
 }: TimelineRulerProps) {
-  const { left, right, refAreaLeft, refAreaRight } = zoomState;
+  const { left, right, viewDuration, refAreaLeft, refAreaRight } = zoomState;
 
-  const extendedRight = right + (right - left) * TIMELINE_EXTENSION_PERCENT;
-  const currentZoomDuration = right - left;
   const xAxisTicks = useMemo(() => {
-    const ticks = generateTicks(extendedRight, currentZoomDuration, left);
+    const ticks = generateTicks(right, viewDuration, left);
     return ticks;
-  }, [extendedRight, currentZoomDuration, left]);
-  const xDomain = useMemo(() => [left, extendedRight], [left, extendedRight]);
-  const timelineData = useMemo<DataPoint[]>(() => [{ time: left, value: 1 }, { time: extendedRight, value: 1 }], [left, extendedRight]);
+  }, [right, viewDuration, left]);
+  const xDomain = useMemo(() => [left, right], [left, right]);
+  const timelineData = useMemo<DataPoint[]>(() => [{ time: left, value: 1 }, { time: right, value: 1 }], [left, right]);
   const formatTick = (seconds: number) => {
-    if (currentZoomDuration >= 0.01) return formatTime(seconds);
+    if (viewDuration >= 0.01) return formatTime(seconds);
     const milliseconds = seconds * 1000;
     const label = milliseconds.toFixed(3);
     return `${label} ms`;
@@ -45,7 +42,7 @@ export const TimelineRuler = memo(function TimelineRuler({
       <ResponsiveContainer width="100%" height="100%" >
         <BarChart
           data={timelineData}
-          margin={chartMargin}
+          margin={CHART_MARGIN}
           accessibilityLayer={false}
         >
           <CartesianGrid

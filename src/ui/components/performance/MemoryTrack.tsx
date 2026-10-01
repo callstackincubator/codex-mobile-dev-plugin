@@ -38,7 +38,7 @@ export function MemoryTrack({ samples, platform, phase, error, zoomState, onZoom
   if (error) message = error;
   const showMessage = series.current === null || phase === "failed";
 
-  return <div role="region" aria-label="Memory usage" className="group flex flex-row overflow-hidden" style={{ height: TRACK_HEIGHT }}>
+  return <div role="region" aria-label="Memory usage" className="group flex flex-row" style={{ height: TRACK_HEIGHT }}>
     <TrackLabel label="Memory" icon={<DatabaseIcon className="size-4 text-orange-500" />} metrics={metrics} title={title} />
     <div className="min-w-0 flex-1 h-full relative border-b border-border">
       <PerformanceAreaChart data={series.data} zoomState={zoomState}
