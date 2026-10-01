@@ -1,12 +1,57 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
-import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { buildNativeSentry, nativeTelemetrySourceHash, nativeSentryLicense, saveNativeSymbols } from "./native-telemetry.mjs";
 
 const execute = promisify(execFile);
+
+export async function baguetteTelemetrySourceHash() {
+  const hash = createHash("sha256");
+  await nativeTelemetrySourceHash(hash);
+  const script = await readFile("scripts/rebuild-baguette.mjs");
+  hash.update(script);
+  return hash.digest("hex");
+}
+
+async function addBaguetteTelemetry(source, sdk) {
+  const packagePath = join(source, "Package.swift");
+  const packageText = await readFile(packagePath, "utf8");
+  const targetMarker = "    targets: [\n";
+  const dependencyMarker = '            dependencies: [\n                .product(name: "ArgumentParser"';
+  if (packageText.includes(targetMarker) === false || packageText.includes(dependencyMarker) === false) {
+    throw new Error("The pinned Baguette package does not match its telemetry integration points.");
+  }
+  const includeLiteral = JSON.stringify(sdk.include);
+  const libraryLiteral = JSON.stringify(sdk.library);
+  const telemetryTarget = `        .target(name: "MobileDevTelemetry", path: "Sources/MobileDevTelemetry",\n`
+    + `            cSettings: [.define("SENTRY_BUILD_STATIC", to: "1"), .unsafeFlags(["-I", ${includeLiteral}])],\n`
+    + `            linkerSettings: [.unsafeFlags([${libraryLiteral}]), .linkedLibrary("curl")]),\n`;
+  const withTarget = packageText.replace(targetMarker, targetMarker + telemetryTarget);
+  const updated = withTarget.replace(dependencyMarker, '            dependencies: [\n                "MobileDevTelemetry",\n                .product(name: "ArgumentParser"');
+  await writeFile(packagePath, updated);
+  const directory = join(source, "Sources/MobileDevTelemetry");
+  const includeDirectory = join(directory, "include");
+  const telemetrySource = join(directory, "telemetry.c");
+  const telemetryHeader = join(includeDirectory, "telemetry.h");
+  await mkdir(includeDirectory, { recursive: true });
+  await copyFile("native/telemetry/telemetry.c", telemetrySource);
+  await copyFile("native/telemetry/telemetry.h", telemetryHeader);
+  const entrypoint = join(source, "Sources/Baguette/App/RootCommand.swift");
+  const entryText = await readFile(entrypoint, "utf8");
+  const mainMarker = "@main\nstruct Baguette:";
+  if (entryText.includes(mainMarker) === false) throw new Error("The pinned Baguette entry point changed.");
+  const entry = entryText.replace(mainMarker, "struct Baguette:");
+  await writeFile(entrypoint, entry);
+  const wrapper = `import MobileDevTelemetry\n\n@main\nenum MobileDevEntry {\n`
+    + `    static func main() async {\n        mobile_dev_telemetry_init("baguette")\n`
+    + `        await Baguette.main()\n        mobile_dev_telemetry_close()\n    }\n}\n`;
+  const wrapperPath = join(source, "Sources/Baguette/App/MobileDevEntry.swift");
+  await writeFile(wrapperPath, wrapper);
+}
 
 export async function rebuildBaguette(sourceDirectory) {
   const release = JSON.parse(await readFile("vendor/baguette-release.json", "utf8"));
@@ -29,6 +74,8 @@ export async function rebuildBaguette(sourceDirectory) {
     if (commit.trim() !== release.rebuild.sourceCommit) throw new Error("Baguette source does not match the pinned commit.");
     const { stdout: changes } = await execute("git", ["-C", source, "status", "--porcelain", "--untracked-files=no"]);
     if (changes.trim()) throw new Error("Baguette source has changes. Rebuild from the pinned source.");
+    const sdk = await buildNativeSentry();
+    await addBaguetteTelemetry(source, sdk);
     console.log(`Rebuilding Baguette ${release.version} with ${swift.trim().split("\n")[0]}…`);
     try {
       await execute("xcrun", ["swift", "build", "-c", "release", "--product", "Baguette"], {
@@ -36,6 +83,7 @@ export async function rebuildBaguette(sourceDirectory) {
       });
     } catch (error) { throw new Error(`Baguette build failed. ${String(error.stderr ?? error.message).slice(-5000)}`); }
     const executable = join(source, ".build/release/Baguette");
+    await saveNativeSymbols(executable, "Baguette");
     const target = "vendor/baguette/Baguette";
     // Replace the inode so macOS cannot reuse the old code-signature cache.
     await rm(target, { force: true });
@@ -47,10 +95,14 @@ export async function rebuildBaguette(sourceDirectory) {
         licenses.push(`${dependency} (${file})\n\n${await readFile(join(checkouts, dependency, file), "utf8")}`);
       }
     }
-    await writeFile("vendor/baguette/third-party-licenses.txt", licenses.join("\n\n====================\n\n"));
+    const sentryLicense = await nativeSentryLicense();
+    licenses.push(sentryLicense);
+    const licenseText = licenses.join("\n\n====================\n\n");
+    await writeFile("vendor/baguette/third-party-licenses.txt", licenseText);
     const binarySha256 = createHash("sha256").update(await readFile(target)).digest("hex");
     await writeFile("vendor/baguette/release.json", JSON.stringify({ ...release, build: {
       sourceCommit: commit.trim(), swift: swift.trim(), binarySha256,
+      telemetrySourceSHA256: await baguetteTelemetrySourceHash(),
     } }, null, 2) + "\n");
     console.log(`Bundled runtime rebuilt; SHA-256 ${binarySha256}.`);
   } finally { if (temporary) await rm(temporary, { recursive: true, force: true }); }

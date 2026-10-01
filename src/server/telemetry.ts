@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/node";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { TELEMETRY_META_KEY } from "../shared/telemetry.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { closeNativeTelemetry } from "./native-telemetry.ts";
 
 export function captureServerError(error: unknown, operation: string) {
   if (error instanceof SimulatorUnavailableError) return;
@@ -45,5 +46,6 @@ export function installTracePropagation(transport: Transport) {
 }
 
 export async function closeServerTelemetry() {
+  await closeNativeTelemetry();
   await Sentry.close(2000);
 }

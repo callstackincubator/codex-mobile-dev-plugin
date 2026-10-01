@@ -14,6 +14,7 @@
 #include <libimobiledevice/ostrace.h>
 #include <libimobiledevice/service.h>
 #include <plist/plist.h>
+#include "../telemetry/telemetry.h"
 
 #define MAX_PACKET (1024 * 1024)
 #define MAX_MESSAGE 16384
@@ -213,6 +214,8 @@ static int emit_record(const char *bytes, uint32_t length, const char *process_f
 }
 
 int main(int argc, char **argv) {
+    mobile_dev_telemetry_init("ios-logs");
+    double connected_at = mobile_dev_telemetry_now();
     if (argc < 4 || argc > 5 || strcmp(argv[1], "--device") != 0
         || (strcmp(argv[3], "usb") != 0 && strcmp(argv[3], "network") != 0)) {
         fprintf(stderr, "Usage: mobile-dev-ios-logs --device <hardware-udid> <usb|network> [executable-name]\n");
@@ -257,6 +260,9 @@ int main(int argc, char **argv) {
     int result = start_activity(client);
     if (result != 0) goto cleanup;
     puts("{\"ready\":true}");
+    double ready_at = mobile_dev_telemetry_now();
+    double connect_ms = ready_at - connected_at;
+    mobile_dev_telemetry_timing(MOBILE_DEV_CONNECT, connect_ms);
     const char *filter = argc == 5 ? argv[4] : NULL;
     while (stopping == 0) {
         char *bytes = NULL;
@@ -264,7 +270,11 @@ int main(int argc, char **argv) {
         uint8_t type = 0;
         result = receive_packet(client, &bytes, &length, &type);
         if (result != 0) break;
+        double process_at = mobile_dev_telemetry_now();
         result = emit_record(bytes, length, filter);
+        double processed_at = mobile_dev_telemetry_now();
+        double process_ms = processed_at - process_at;
+        mobile_dev_telemetry_timing(MOBILE_DEV_LOG_PROCESS, process_ms);
         free(bytes);
         if (result != 0) {
             fprintf(stderr, "Invalid unified-log record or closed output stream.\n");

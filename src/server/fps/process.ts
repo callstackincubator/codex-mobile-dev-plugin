@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { CpuMonitor } from "../cpu/monitor.ts";
+import { NativeTelemetryRelay } from "../native-telemetry.ts";
 
 export async function collectorProcess(command: string, args: string[], options: {
   signal: AbortSignal;
@@ -35,11 +36,11 @@ export async function collectorProcess(command: string, args: string[], options:
   };
   const abort = () => { void stop().catch(() => {}); };
   options.signal.addEventListener("abort", abort, { once: true });
-  child.stderr.on("data", (chunk: Buffer) => {
-    const text = chunk.toString("utf8");
+  const telemetry = new NativeTelemetryRelay(text => {
     diagnostics = (diagnostics + text).slice(-4096);
     options.diagnostic?.(text);
   });
+  child.stderr.on("data", (chunk: Buffer) => { telemetry.write(chunk); });
   child.stdout.on("data", (chunk: Buffer) => {
     if (stopping || failure) return;
     const accept = () => { startedSuccessfully = true; ready(); };
@@ -67,6 +68,7 @@ export async function collectorProcess(command: string, args: string[], options:
   child.stdin.on("error", () => {});
   child.once("error", error => { failure = error; end(error); });
   child.once("close", (code, signal) => {
+    telemetry.end();
     options.signal.removeEventListener("abort", abort);
     clearTimeout(watchdog);
     exited();

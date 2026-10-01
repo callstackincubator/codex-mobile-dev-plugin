@@ -36,6 +36,7 @@ fn fps(value: &Value) -> Result<Option<f64>, String> {
 }
 
 async fn connect(udid: &str) -> Result<(RsdHandshake, idevice::tcp::handle::AdapterHandle), String> {
+    let _timing = mobile_dev_telemetry::Timer::start(mobile_dev_telemetry::Timing::Connect);
     let socket = "/var/run/usbmuxd".into();
     let address = UsbmuxdAddr::UnixSocket(socket);
     let connected = address.connect(1).await;
@@ -94,6 +95,7 @@ async fn run(udid: &str) -> Result<(), String> {
                 _ = stdin.read(&mut byte) => return Ok(()),
                 received = tokio::time::timeout(sample_timeout, incoming) => {
                     let reading_result = received.map_err(|_| "The iPhone stopped sending Display FPS counters")?;
+                    let _timing = mobile_dev_telemetry::Timer::start(mobile_dev_telemetry::Timing::FpsRead);
                     let message = reading_result.map_err(|error| error.to_string())?;
                     let Some(data) = message.data else { continue; };
                     let Some(value) = fps(&data)? else { continue; };
@@ -151,6 +153,7 @@ async fn debugserver(udid: &str) -> Result<(), String> {
 
 #[tokio::main]
 async fn main() {
+    mobile_dev_telemetry::init("ios-fps");
     let mut args = std::env::args();
     args.next();
     let Some(mode) = args.next() else { eprintln!("Expected fps, debugserver or foreground"); std::process::exit(1); };
@@ -161,6 +164,7 @@ async fn main() {
         "foreground" => foreground::run(&udid).await,
         _ => Err("Expected fps, debugserver or foreground".into()),
     };
+    mobile_dev_telemetry::close();
     if let Err(error) = result { eprintln!("{error}"); std::process::exit(1); }
 }
 

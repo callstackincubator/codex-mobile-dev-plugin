@@ -14,6 +14,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include "../telemetry/telemetry.h"
 
 #define MAX_THREADS 4096
 typedef struct { int tid; uint64_t ticks, start; char name[256]; } Counter;
@@ -122,6 +123,7 @@ static int failure(const char *operation) {
 
 #ifndef COLLECTOR_TEST
 int main(int argc, char **argv) {
+    mobile_dev_telemetry_init("android-cpu");
     if (argc != 2) { fprintf(stderr, "Usage: mobile-dev-cpu PID\n"); return 1; }
     char *end;
     long pid = strtol(argv[1], &end, 10);
@@ -194,6 +196,8 @@ int main(int argc, char **argv) {
         if (fflush(stdout) != 0) return 1;
         uint64_t now = micros(CLOCK_MONOTONIC);
         uint64_t duration = now - started;
+        double sampling_ms = (double)duration / 1000.0;
+        mobile_dev_telemetry_timing(MOBILE_DEV_CPU_SAMPLE, sampling_ms);
         int timeout = duration < 1000000 ? (int)((1000000 - duration + 999) / 1000) : 0;
         struct pollfd input = { .fd = STDIN_FILENO, .events = POLLIN };
         int ready = poll(&input, 1, timeout);

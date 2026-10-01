@@ -1,33 +1,21 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import * as Sentry from "@sentry/node";
 import { SENTRY_RELEASE, SENTRY_SERVER_DSN, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan } from "../shared/telemetry.ts";
-import type { TelemetryEnvironment } from "../shared/telemetry.ts";
+import { TELEMETRY_ENVIRONMENT } from "./telemetry-environment.ts";
 
-function environment(): TelemetryEnvironment {
-  const override = process.env.MOBILE_DEV_ENVIRONMENT;
-  if (override !== undefined && override !== "development" && override !== "release") {
-    throw new Error("MOBILE_DEV_ENVIRONMENT must be development or release.");
-  }
-  if (override !== undefined) return override;
-  const configUrl = new URL("../ui-dev.json", import.meta.url);
-  if (existsSync(configUrl)) {
-    const configText = readFileSync(configUrl, "utf8");
-    const config = JSON.parse(configText);
-    if (config.mode === "mcp-live" && typeof config.projectRoot === "string") {
-      const heartbeatPath = `${config.projectRoot}/.local-dev/ui-watch.json`;
-      if (existsSync(heartbeatPath)) {
-        const heartbeat = statSync(heartbeatPath);
-        if (Date.now() - heartbeat.mtimeMs < 10_000) return "development";
-      }
-    }
-  }
-  return "release";
-}
+process.env.MOBILE_DEV_NATIVE_RELEASE = SENTRY_RELEASE;
+process.env.MOBILE_DEV_NATIVE_ENVIRONMENT = TELEMETRY_ENVIRONMENT;
+const nativeHome = homedir();
+const nativeCache = join(nativeHome, "Library/Caches/mobile-dev/sentry");
+if (process.env.MOBILE_DEV_TELEMETRY !== "off") mkdirSync(nativeCache, { recursive: true, mode: 0o700 });
+process.env.MOBILE_DEV_NATIVE_CACHE = nativeCache;
 
 const client = Sentry.init({
   dsn: SENTRY_SERVER_DSN,
   release: SENTRY_RELEASE,
-  environment: environment(),
+  environment: TELEMETRY_ENVIRONMENT,
   enabled: process.env.MOBILE_DEV_TELEMETRY !== "off",
   dataCollection: { userInfo: false, genAI: { inputs: false, outputs: false } },
   integrations: defaults => {

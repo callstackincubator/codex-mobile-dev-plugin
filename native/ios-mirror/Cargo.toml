@@ -8,6 +8,7 @@ license = "MIT"
 crate-type = ["cdylib"]
 
 [dependencies]
+mobile-dev-telemetry = { path = "../telemetry" }
 idevice = { git = "https://github.com/jkcoxson/idevice", rev = "a64b8867815b3da17b5c927531bdba877e8456ef", default-features = false, features = ["ring", "usbmuxd", "core_device_proxy", "tunnel_tcp_stack", "display_stream"] }
 napi = { version = "3", default-features = false, features = ["napi8", "tokio_rt"] }
 napi-derive = "3"
@@ -24,4 +25,6 @@ napi-build = "2"
 [profile.release]
 lto = true
 strip = false
+debug = 2
+split-debuginfo = "packed"
 codegen-units = 1

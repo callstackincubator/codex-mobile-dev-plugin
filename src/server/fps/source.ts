@@ -10,6 +10,7 @@ import { collectorProcess } from "./process.ts";
 import { deployFpsHelper } from "./android-helper.ts";
 import { FrameTimeline } from "./frame-timeline.ts";
 import type { FrameReading } from "./frame-timeline.ts";
+import { nativeCollectorCommand } from "../native-telemetry.ts";
 
 const execute = promisify(execFile);
 const fpsNumber = z.number();
@@ -65,7 +66,8 @@ async function startAndroid(options: FpsMonitorOptions, root: URL): Promise<CpuM
   const remote = await deployFpsHelper(adb, options.target.deviceId, options.signal, root);
   let firstReady: (() => void) | undefined;
   const timeline = new FrameTimeline(reading => { options.onSample(reading); firstReady?.(); });
-  return collectorProcess(adb, [...prefix, "shell", "-T", `exec ${remote}`], {
+  const command = nativeCollectorCommand(remote);
+  return collectorProcess(adb, [...prefix, "shell", "-T", command], {
     signal: options.signal,
     data(chunk, ready) { firstReady = ready; timeline.push(chunk); },
   });

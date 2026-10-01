@@ -5,6 +5,7 @@ edition = "2024"
 license = "MIT"
 
 [dependencies]
+mobile-dev-telemetry = { path = "../telemetry" }
 idevice = { git = "https://github.com/jkcoxson/idevice", rev = "a64b8867815b3da17b5c927531bdba877e8456ef", default-features = false, features = ["ring", "usbmuxd", "core_device_proxy", "tunnel_tcp_stack", "dvt", "rsd", "debug_proxy"] }
 plist = "1.8"
 serde_json = "1"
@@ -12,5 +13,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signa
 
 [profile.release]
 lto = true
-strip = "symbols"
+debug = 2
+split-debuginfo = "packed"
+strip = false
 codegen-units = 1

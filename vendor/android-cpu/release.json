@@ -1,24 +1,24 @@
 {
-  "sourceSHA256": "b6091b61c9f54e056b35afa159d558845043a6d434ede3acd48ee4002c0e1ce9",
-  "compiler": "Android (13989888, +pgo, -bolt, +lto, -mlgo, based on r563880c) clang version 21.0.0 (https://android.googlesource.com/toolchain/llvm-project 5e96669f06077099aa41290cdb4c5e6fa0f59349)\nTarget: arm64-apple-darwin27.0.0\nThread model: posix\nInstalledDir: /Users/hannomargelo/Library/Android/sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/darwin-x86_64/bin\n",
+  "sourceSHA256": "bbe2b34d1f8c072421446b5390a6caf4d12875335e7297c1ceeba82aa1967aea",
+  "compiler": "Android (12470979, +pgo, -bolt, +lto, -mlgo, based on r522817c) clang version 18.0.3 (https://android.googlesource.com/toolchain/llvm-project d8003a456d14a3deb8054cdaa529ffbf02d9b262)\nTarget: x86_64-apple-darwin27.0.0\nThread model: posix\nInstalledDir: /Users/hannomargelo/Library/Android/sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/darwin-x86_64/bin\n",
   "api": 21,
   "flashlightCommit": "5ef203ae184547a3b2984fa4f9b76d672895f861",
   "binaries": {
     "arm64-v8a": {
-      "sha256": "99bf1f2bdd1f6e6b484cabe25b1edefaf4a83955c2e58d7c184e0b0ccb972976",
-      "bytes": 10104
+      "sha256": "31f737556babd973c5a1cfd4ccf65985fbd8c9597a47ca3b279f7f5b383b8593",
+      "bytes": 1557072
     },
     "armeabi-v7a": {
-      "sha256": "aa0d5b63ddd471953bbadceda0abf89f94e3d9890c64dde87289e7acff2d0fc4",
-      "bytes": 9476
+      "sha256": "257f2b0255b104647634d2c9b5dc634dfa10028d1c6ac8f6c361eeaa2edf27fe",
+      "bytes": 971244
     },
     "x86": {
-      "sha256": "19c3292f4033bc98ec40bcd09d6abf53350eecdde99243d8a0ba4de8cdfa98f0",
-      "bytes": 8676
+      "sha256": "fd498e5d6a3669f8e6dc700cfb0a868cd1200fcc69336fd6858ddcf89f3e85b7",
+      "bytes": 1637388
     },
     "x86_64": {
-      "sha256": "5680c607a1ca8da5db3361f345987745363d2902e36441f9a464bce87688b0e8",
-      "bytes": 10240
+      "sha256": "9cb406be84607c8676fa19f148a4003ff7e7f6f1532cf6950a72c0e44c4fdeb2",
+      "bytes": 1506344
     }
   }
 }

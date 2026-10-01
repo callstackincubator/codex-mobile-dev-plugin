@@ -1,6 +1,8 @@
 import { fpsSourceHash } from "./build-fps.mjs";
 import { iosMirrorSourceHash } from "./build-ios-mirror.mjs";
 import { iosLogsSourceHash } from "./build-ios-logs.mjs";
+import { androidCpuSourceHash } from "./build-android-cpu.mjs";
+import { baguetteTelemetrySourceHash } from "./rebuild-baguette.mjs";
 import { build } from "esbuild";
 import { sentryEsbuildPlugin } from "@sentry/node/esbuild";
 import SentryCli from "@sentry/cli";
@@ -14,6 +16,10 @@ import { dirname, resolve } from "node:path";
 await mkdir("dist", { recursive: true });
 await access("vendor/baguette/Baguette");
 await access("vendor/baguette/Baguette_Baguette.bundle");
+const baguetteReleaseText = await readFile("vendor/baguette/release.json", "utf8");
+const baguetteRelease = JSON.parse(baguetteReleaseText);
+const baguetteTelemetryHash = await baguetteTelemetrySourceHash();
+if (baguetteRelease.build.telemetrySourceSHA256 !== baguetteTelemetryHash) throw new Error("Run npm run rebuild:baguette after changing native telemetry.");
 await cp("vendor/baguette", "dist/baguette", { recursive: true });
 const iosMirrorRelease = JSON.parse(await readFile("vendor/ios-mirror/release.json", "utf8"));
 const iosMirrorHash = await iosMirrorSourceHash();
@@ -46,6 +52,9 @@ for (const source of iosLogsRelease.sources) {
 }
 for (const file of ["README.md", "LICENSE", "collector.c", "dependencies.json"]) await copyFile(`native/ios-logs/${file}`, `dist/ios-logs/${file}`);
 await copyFile("scripts/build-ios-logs.mjs", "dist/ios-logs/build-ios-logs.mjs");
+await copyFile("scripts/native-telemetry.mjs", "dist/ios-logs/native-telemetry.mjs");
+await mkdir("dist/telemetry", { recursive: true });
+for (const file of ["telemetry.c", "telemetry.h"]) await copyFile(`native/telemetry/${file}`, `dist/telemetry/${file}`);
 for (const platform of ["ios", "android"]) {
   const root = `vendor/${platform}-fps`;
   const text = await readFile(`${root}/release.json`, "utf8");
@@ -67,8 +76,7 @@ for (const platform of ["ios", "android"]) {
   if (platform === "android") await copyFile("native/android-fps/perfetto/LIBCXX-LICENSE.TXT", "dist/android-fps/LIBCXX-LICENSE.TXT");
 }
 const cpuRelease = JSON.parse(await readFile("vendor/android-cpu/release.json", "utf8"));
-const cpuSource = await readFile("native/android-cpu/collector.c");
-const cpuSourceHash = createHash("sha256").update(cpuSource).digest("hex");
+const cpuSourceHash = await androidCpuSourceHash();
 if (cpuSourceHash !== cpuRelease.sourceSHA256) throw new Error("Rebuild the Android CPU collector after editing its source.");
 for (const [abi, metadata] of Object.entries(cpuRelease.binaries)) {
   const bytes = await readFile(`vendor/android-cpu/${abi}/mobile-dev-cpu`);

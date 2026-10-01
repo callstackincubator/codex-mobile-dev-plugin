@@ -11,6 +11,7 @@ import type { CpuReading } from "./counters.ts";
 import type { CpuMonitor } from "./monitor.ts";
 import { AndroidCpuSampler, androidReadySchema, androidSampleSchema } from "./android-counters.ts";
 import { errorMessage } from "../../shared/protocol.ts";
+import { nativeCollectorCommand, NativeTelemetryRelay } from "../native-telemetry.ts";
 
 const execute = promisify(execFile);
 const abiSchema = z.enum(["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]);
@@ -76,7 +77,9 @@ export async function startAndroidCpuMonitor(options: Options,
   const adb = await dependencies.adbPath();
   const remote = await dependencies.deploy(adb, options.deviceId, options.signal);
   options.signal.throwIfAborted();
-  const child = dependencies.spawn(adb, ["-s", options.deviceId, "shell", "-T", `exec ${remote} ${options.pid}`], {
+  const pid = String(options.pid);
+  const command = nativeCollectorCommand(remote, [pid]);
+  const child = dependencies.spawn(adb, ["-s", options.deviceId, "shell", "-T", command], {
     stdio: ["pipe", "pipe", "pipe"], shell: false,
   });
   let finish!: (error: Error) => void;
@@ -90,6 +93,7 @@ export async function startAndroidCpuMonitor(options: Options,
   let diagnostics = "";
   let pending = "";
   const decoder = new StringDecoder("utf8");
+  const telemetry = new NativeTelemetryRelay(text => { diagnostics = (diagnostics + text).slice(-4096); });
   let watchdog: NodeJS.Timeout;
   const deadline = () => {
     clearTimeout(watchdog);
@@ -113,12 +117,13 @@ export async function startAndroidCpuMonitor(options: Options,
   child.stdin?.on("error", error => { if (stopping === undefined) fail(error); });
   child.once("error", error => { exited(); fail(error); });
   child.once("close", (code, signal) => {
+    telemetry.end();
     exited();
     clearTimeout(watchdog);
     options.signal.removeEventListener("abort", abort);
     finish(new Error(diagnostics.trim() || `Android CPU collector exited (${code ?? signal}). The app may have stopped.`));
   });
-  child.stderr?.on("data", (chunk: Buffer) => { diagnostics = (diagnostics + chunk.toString()).slice(-4096); });
+  child.stderr?.on("data", (chunk: Buffer) => { telemetry.write(chunk); });
   child.stdout?.on("data", (chunk: Buffer) => {
     if (stopping) return;
     pending += decoder.write(chunk);

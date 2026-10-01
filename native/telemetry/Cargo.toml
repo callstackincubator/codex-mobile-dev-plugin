@@ -1,0 +1,8 @@
+[package]
+name = "mobile-dev-telemetry"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[build-dependencies]
+cc = "1"

@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
+import { buildNativeSentry, nativeTelemetrySourceHash, nativeSentryLicense } from "./native-telemetry.mjs";
 
 export async function iosLogsSourceHash() {
   const hash = createHash("sha256");
@@ -12,6 +13,7 @@ export async function iosLogsSourceHash() {
   }
   const script = await readFile("scripts/build-ios-logs.mjs");
   hash.update(script);
+  await nativeTelemetrySourceHash(hash);
   return hash.digest("hex");
 }
 
@@ -23,6 +25,7 @@ if (executedScriptPath === buildScriptPath) {
   const prefix = `${root}/prefix`;
   const output = resolve("vendor/ios-logs");
   const openssl = process.env.MOBILE_DEV_OPENSSL_PREFIX ?? "/opt/homebrew/opt/openssl@3";
+  const sdk = await buildNativeSentry();
   const sslVersion = execFileSync(`${openssl}/bin/openssl`, ["version"], { encoding: "utf8" });
   const sslVersionText = sslVersion.trim();
   const environment = { ...process.env, PKG_CONFIG_PATH: `${prefix}/lib/pkgconfig:${openssl}/lib/pkgconfig`,
@@ -68,8 +71,14 @@ if (executedScriptPath === buildScriptPath) {
   const trimmedFlags = flagsText.trim();
   const flags = trimmedFlags.split(/\s+/);
   const executable = `${output}/mobile-dev-ios-logs`;
-  execFileSync("clang", ["-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-arch", "arm64", "-mmacosx-version-min=14.0",
-    "native/ios-logs/collector.c", ...flags, "-o", executable], { stdio: "inherit" });
+  execFileSync("clang", ["-std=c11", "-O2", "-g", "-Wall", "-Wextra", "-Werror", "-arch", "arm64", "-mmacosx-version-min=14.0",
+    "-DSENTRY_BUILD_STATIC=1", "-I", sdk.include, "native/ios-logs/collector.c", "native/telemetry/telemetry.c",
+    sdk.library, "-lcurl", ...flags, "-o", executable], { stdio: "inherit" });
+  const symbols = resolve(".sentry/native/darwin-arm64/mobile-dev-ios-logs.dSYM");
+  await mkdir(".sentry/native/darwin-arm64", { recursive: true });
+  await rm(symbols, { recursive: true, force: true });
+  await rename(`${executable}.dSYM`, symbols);
+  execFileSync("strip", ["-x", executable]);
   const libraryFiles = await readdir(`${prefix}/lib`);
   const libraries = new Map();
   for (const file of libraryFiles) {
@@ -113,6 +122,8 @@ if (executedScriptPath === buildScriptPath) {
   const licenseText = licenses.join("\n\n====================\n\n");
   await writeFile(`${output}/third-party-licenses.txt`, licenseText);
   const sourceSHA256 = await iosLogsSourceHash();
+  const sentryLicense = await nativeSentryLicense();
+  await writeFile(`${output}/SENTRY-LICENSE.txt`, sentryLicense);
   const releaseText = JSON.stringify({ name: "mobile-dev-ios-logs", target: "darwin-arm64", sourceSHA256,
     sources, openssl: sslVersionText, binaries }, null, 2);
   await writeFile(`${output}/release.json`, `${releaseText}\n`);

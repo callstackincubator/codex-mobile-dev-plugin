@@ -7,6 +7,7 @@
 #include <poll.h>
 #include <time.h>
 #include <unistd.h>
+#include "../telemetry/telemetry.h"
 
 static volatile sig_atomic_t stopping = 0;
 static void stop(int) { stopping = 1; }
@@ -18,6 +19,7 @@ static uint64_t boottime() {
 }
 
 int main() {
+  mobile_dev_telemetry_init("android-fps");
   std::signal(SIGINT, stop);
   std::signal(SIGTERM, stop);
   std::signal(SIGPIPE, stop);
@@ -43,6 +45,7 @@ int main() {
     pollfd input{STDIN_FILENO, POLLIN | POLLHUP, 0};
     int result = poll(&input, 1, 1000);
     if (result > 0 || stopping) break;
+    double read_started = mobile_dev_telemetry_now();
     if (session->FlushBlocking(3000) == false) {
       std::fprintf(stderr, "FrameTimeline did not acknowledge a flush.\n");
       failed = true;
@@ -80,6 +83,9 @@ int main() {
     const size_t packet_size = bytes.size();
     std::fwrite(packet_bytes, 1, packet_size, stdout);
     std::fflush(stdout);
+    double finished = mobile_dev_telemetry_now();
+    double read_ms = finished - read_started;
+    mobile_dev_telemetry_timing(MOBILE_DEV_FPS_READ, read_ms);
   }
   session->StopBlocking();
   return failed ? 1 : 0;

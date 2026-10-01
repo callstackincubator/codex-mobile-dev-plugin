@@ -404,9 +404,17 @@ name = "mobile-dev-ios-fps"
 version = "0.1.0"
 dependencies = [
  "idevice",
+ "mobile-dev-telemetry",
  "plist",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "mobile-dev-telemetry"
+version = "0.1.0"
+dependencies = [
+ "cc",
 ]
 
 [[package]]

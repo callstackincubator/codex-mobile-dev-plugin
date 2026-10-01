@@ -2,6 +2,9 @@
 #define main collector_main
 #include "../../native/ios-logs/collector.c"
 #undef main
+void mobile_dev_telemetry_init(const char *component) { (void)component; }
+double mobile_dev_telemetry_now(void) { return 0; }
+void mobile_dev_telemetry_timing(enum mobile_dev_timing kind, double duration) { (void)kind; (void)duration; }
 
 int main(void) {
     const char path[] = "/Applications/Example.app/Example";

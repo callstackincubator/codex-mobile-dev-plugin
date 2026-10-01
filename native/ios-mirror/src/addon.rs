@@ -14,6 +14,11 @@ use napi_derive::napi;
 use tokio::sync::{Notify, mpsc};
 use uuid::Uuid;
 
+#[napi_derive::module_init]
+pub fn initialize_telemetry() {
+    mobile_dev_telemetry::init("ios-mirror");
+}
+
 struct Shared {
     queue: Mutex<Queue>,
     changed: Notify,
@@ -88,6 +93,7 @@ impl Capture {
 
     #[napi]
     pub async fn touch(&self, samples: Vec<TouchSample>, generation: u32) -> Result<()> {
+        let _timing = mobile_dev_telemetry::Timer::start(mobile_dev_telemetry::Timing::Input);
         if samples.is_empty() || samples.len() > 64 { return Err(Error::from_reason("Send between one and 64 physical iOS touch samples.")); }
         let (reply, received) = tokio::sync::oneshot::channel();
         let command = Command::Touch { samples, generation, reply };
@@ -114,6 +120,7 @@ impl Drop for Capture {
 
 #[napi]
 pub async fn open_device(udid: String) -> Result<Capture> {
+    let _timing = mobile_dev_telemetry::Timer::start(mobile_dev_telemetry::Timing::Connect);
     let shared = Arc::new(Shared { queue: Mutex::new(Queue::default()), changed: Notify::new(), stopped: Notify::new() });
     let (sender, receiver) = mpsc::unbounded_channel();
     let (started, ready) = tokio::sync::oneshot::channel();
@@ -294,6 +301,7 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
                             video_packets = video_packets.wrapping_add(1);
                             last_video_packet = Instant::now();
                         }
+                        let _timing = mobile_dev_telemetry::Timer::start(mobile_dev_telemetry::Timing::FrameProcess);
                         for event in assembler.push_packet(&packet) {
                             match event {
                                 HevcDepacketizerEvent::PacketRejected(_) => {},
