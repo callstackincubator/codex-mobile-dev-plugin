@@ -4,7 +4,9 @@ import { componentAt, componentsAt, screenComponents, formatAnnotationContext } 
 import { ScreenAnnotationsStore } from "../src/ui/screen-annotations.ts";
 import type { ScreenAnnotation } from "../src/shared/screen-annotations.ts";
 import { PanelContext } from "../src/ui/model-context.ts";
-import type { App } from "@modelcontextprotocol/ext-apps";
+import { App } from "@modelcontextprotocol/ext-apps";
+import { AppBridge } from "@modelcontextprotocol/ext-apps/app-bridge";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { OpenAIExtensions, OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
 import { PNG, UDID } from "./fixtures.ts";
 
@@ -13,7 +15,7 @@ const capture = { screenshot: { id: "screen-1", data: PNG.toString("base64"), ca
 const component = { name: "Continue", identifier: "continue-button", role: "AXButton", depth: 2, bounds: { x: 10, y: 20, width: 100, height: 40 } };
 const annotation: ScreenAnnotation = { ...capture, id: "note-1", number: 1, text: "Make this button larger", simulator, point: { x: 50, y: 40 }, component };
 
-function fixture() {
+function fixture(messageApp?: App) {
   let current: OpenAIModelContextHostState | undefined;
   let failure: string | undefined;
   let failuresLeft = Infinity;
@@ -26,7 +28,7 @@ function fixture() {
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const context = new PanelContext({
     getHostCapabilities: () => ({ message: { text: {}, ...(imageMessages ? { image: {} } : {}) }, updateModelContext: imageAttachments ? { image: {} } : {} }),
-    async sendMessage(message: Parameters<App["sendMessage"]>[0]) { if (sendFailures-- > 0) throw new Error("MCP app messages require an available composer"); messages.push(message); return { isError: rejected }; },
+    async sendMessage(message: Parameters<App["sendMessage"]>[0], options: Parameters<App["sendMessage"]>[1]) { if (sendFailures-- > 0) throw new Error("MCP app messages require an available composer"); messages.push(message); return messageApp ? messageApp.sendMessage(message, options) : { isError: rejected }; },
   } as unknown as App, { modelContext: {
     getCurrent: () => current,
     async update(params: Parameters<App["updateModelContext"]>[0]) {
@@ -43,7 +45,7 @@ function fixture() {
     remove(id: string) { if (current) current = { ...current, updateId: "removed", content: current.content?.filter(item => item._meta?.["mobile-dev/annotationId"] !== id) }; context.hostChanged(); },
     fail() { failure = "Host refused context"; }, reject(value = true) { rejected = value; }, hold(value?: Promise<void>) { gate = value; },
     noComposer(count = Infinity) { failure = "MCP model context requires an available composer"; failuresLeft = count; },
-    restoreComposer() { failure = undefined; }, imageMessages() { imageMessages = true; }, noImages() { imageAttachments = false; }, delayMessageComposer() { sendFailures = 1; },
+    restoreComposer() { failure = undefined; }, imageMessages() { imageMessages = true; }, noImages() { imageAttachments = false; }, delayMessageComposer(count = 1) { sendFailures = count; },
   };
 }
 
@@ -372,6 +374,55 @@ test("clearing notes during a composer retry cancels the message", async () => {
   await rejected;
   assert.equal(f.messages.length, 0);
   f.store.dispose();
+});
+
+test("a second batch survives a missing composer and sends after a manual retry", async () => {
+  const f = fixture(); await f.context.attachAnnotation(annotation); await f.store.send();
+  await f.context.attachAnnotation({ ...annotation, id: "next-batch", text: "SECOND_BATCH" });
+  f.delayMessageComposer(Infinity); await f.store.send();
+  assert.equal(f.store.getSnapshot().busy, false);
+  assert.equal(f.store.getSnapshot().sending, false);
+  assert.match(f.store.getSnapshot().sendError, /Codex could not find this chat's input/);
+  assert.equal(f.context.screenAnnotations.length, 1);
+  assert.match(f.store.messageText, /SECOND_BATCH/);
+  assert.doesNotMatch(f.store.messageText, /Make this button larger|data:image|AA==/);
+  f.delayMessageComposer(0); await f.store.send();
+  assert.equal(f.messages.length, 2);
+  assert.equal(f.messages[1].content[0].type, "text");
+  assert.equal(f.store.getSnapshot().sendError, "");
+  assert.equal(f.context.screenAnnotations.length, 0);
+  f.store.dispose();
+});
+
+test("a stalled SDK send times out, unlocks after a stream reset, and never resends automatically", async t => {
+  const app = new App({ name: "annotation-test", version: "1" }, {}, { autoResize: false });
+  const bridge = new AppBridge(null, { name: "host-test", version: "1" }, { message: { text: {} } });
+  let attempts = 0;
+  bridge.onmessage = async () => { attempts++; return new Promise(() => {}); };
+  const [appTransport, hostTransport] = InMemoryTransport.createLinkedPair();
+  await bridge.connect(hostTransport); await app.connect(appTransport);
+  const f = fixture(app);
+  t.after(async () => { f.store.dispose(); await app.close(); await bridge.close(); });
+  await f.context.attachAnnotation(annotation);
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const sending = f.store.send();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.store.getSnapshot().sending, true);
+  f.store.configure(simulator, true); f.store.configure(simulator, false);
+  await f.store.send();
+  assert.equal(attempts, 1, "A stream reset must not allow a duplicate send.");
+  t.mock.timers.tick(5000); await sending;
+  assert.equal(f.store.getSnapshot().busy, false);
+  assert.equal(f.store.getSnapshot().sending, false);
+  assert.match(f.store.getSnapshot().sendError, /did not confirm delivery.*before retrying/);
+  assert.equal(f.context.screenAnnotations.length, 1);
+  t.mock.timers.tick(60000); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(attempts, 1);
+  bridge.onmessage = async () => { attempts++; return {}; };
+  await f.store.send();
+  assert.equal(attempts, 2);
+  assert.equal(f.store.getSnapshot().sendError, "");
+  assert.equal(f.context.screenAnnotations.length, 0);
 });
 
 test("a fresh annotation batch starts at one after chat clears or sends the prior batch", async () => {

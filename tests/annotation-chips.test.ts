@@ -59,7 +59,7 @@ test("deferred annotation chips attach before sending the short message", async 
 test("an unavailable composer keeps deferred chips and does not send a message without context", async () => {
   const f = fixture(); f.composer(false);
   await f.context.attachAnnotation(annotation);
-  await assert.rejects(f.context.sendAnnotationsToChat(annotation.simulator.udid), /requires an available composer/);
+  await assert.rejects(f.context.sendAnnotationsToChat(annotation.simulator.udid), /could not find this chat's input/);
   assert.equal(f.messages.length, 0);
   assert.equal(f.context.screenAnnotations.length, 1);
 });

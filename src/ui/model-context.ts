@@ -5,7 +5,7 @@ import type { StackedLog } from "../shared/logs.ts";
 import { formatLogContext, logKey } from "../shared/logs.ts";
 import { annotationDetails, formatAnnotationContext, formatAnnotationMessage } from "../shared/screen-annotations.ts";
 import type { ScreenAnnotation } from "../shared/screen-annotations.ts";
-import { recordUiTiming } from "./telemetry.ts";
+import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 
 export type ScreenshotAttachment = { id: string; data: string; simulator: SimulatorDevice };
 
@@ -89,19 +89,36 @@ export class PanelContext {
     const text = this.canAttach ? "Please address the attached simulator screen annotations." : formatAnnotationMessage(annotations);
     recordUiTiming("ui.annotations.message_build", performance.now() - startedAt);
     if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
-    // Deferred notes need confirmed attachments before sending the short prompt.
-    if (this.canAttach && annotations.some(annotation => this.pendingAnnotations.has(annotation.id))) await this.publish();
-    const result = await withComposer(() => {
-      if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
-      return this.app.sendMessage({ role: "user", content: [
-        { type: "text", text },
-      ], _meta: { "openai/message": { target: "active", send: true } } });
-    });
-    if (result.isError) throw new Error("Could not send these annotations to chat.");
-    const sent = new Set(annotations.map(item => item.id));
-    this.annotations = this.annotations.filter(item => !sent.has(item.id));
-    for (const id of sent) this.pendingAnnotations.delete(id);
-    this.revision++; this.changed();
+    const sendStartedAt = performance.now();
+    try {
+      // Deferred notes need confirmed attachments before sending the short prompt.
+      if (this.canAttach && annotations.some(annotation => this.pendingAnnotations.has(annotation.id))) await this.publish();
+      const result = await withComposer(() => {
+        if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
+        return this.app.sendMessage({ role: "user", content: [
+          { type: "text", text },
+        ], _meta: { "openai/message": { target: "active", send: true } } }, { timeout: 5000, maxTotalTimeout: 5000 });
+      });
+      if (result.isError) throw new Error("Could not send these annotations to chat.");
+      const sent = new Set(annotations.map(item => item.id));
+      this.annotations = this.annotations.filter(item => !sent.has(item.id));
+      for (const id of sent) this.pendingAnnotations.delete(id);
+      this.revision++; this.changed();
+      countUiEvent("ui.annotations.send_success");
+    } catch (error) {
+      if (composerUnavailable(error)) {
+        countUiEvent("ui.annotations.send_composer_unavailable");
+        throw new Error("Codex could not find this chat's input. Try reopening the chat, or copy the notes and paste them into chat.");
+      }
+      // A timeout does not prove delivery failed. Never retry it automatically.
+      if (typeof error === "object" && error !== null && "code" in error && error.code === -32001) {
+        countUiEvent("ui.annotations.send_timeout");
+        throw new Error("Codex did not confirm delivery. Check the chat before retrying to avoid sending the notes twice.");
+      }
+      countUiEvent("ui.annotations.send_failure");
+      captureUiError(new Error("Annotation chat send failed."), "annotations.send");
+      throw error;
+    } finally { recordUiTiming("ui.annotations.send", performance.now() - sendStartedAt); }
   }
 
   async sendLogToChat(log: StackedLog) {

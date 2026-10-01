@@ -1,4 +1,4 @@
-import { componentAt, componentsAt, screenComponents } from "../shared/screen-annotations.ts";
+import { componentAt, componentsAt, formatAnnotationMessage, screenComponents } from "../shared/screen-annotations.ts";
 import type { ScreenAnnotation, ScreenBounds, ScreenComponent, ScreenPoint } from "../shared/screen-annotations.ts";
 import { recordUiTiming, countUiEvent } from "./telemetry.ts";
 import type { SimulatorDevice } from "../shared/protocol.ts";
@@ -8,7 +8,7 @@ type Capture = { screenshot: ScreenAnnotation["screenshot"]; screen: ScreenAnnot
 type Draft = Capture & { id: string; number: number; component: ScreenComponent; point: ScreenPoint; text: string; nearbyText?: string[] };
 export class ScreenAnnotationsStore {
   private state = {
-    disabled: true, selecting: false, loading: false, busy: false, canSend: false,
+    disabled: true, selecting: false, loading: false, busy: false, sending: false, sendError: "", canSend: false,
     error: "", status: "", annotations: [] as ScreenAnnotation[],
     draft: undefined as Draft | undefined, hovered: undefined as ScreenComponent | undefined,
     viewport: { x: 0, y: 0, width: 0, height: 0, stageWidth: 0, stageHeight: 0 },
@@ -29,6 +29,7 @@ export class ScreenAnnotationsStore {
   readTree?: (simulator: SimulatorDevice) => Promise<unknown>;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.state;
+  get messageText() { return formatAnnotationMessage(this.state.annotations); }
   private update(patch: Partial<typeof this.state>) { this.state = { ...this.state, ...patch }; for (const listener of this.listeners) listener(); }
 
   connect(context: PanelContext) {
@@ -42,7 +43,7 @@ export class ScreenAnnotationsStore {
     this.nextNumber = Math.max(1, ...annotations.map(item => item.number + 1));
     const removedDraft = this.state.draft && this.state.annotations.some(item => item.id === this.state.draft?.id) && !annotations.some(item => item.id === this.state.draft?.id);
     const status = this.state.status === "Note saved. It will attach when this chat reconnects." && !this.context?.annotationsPending && annotations.length ? "Attached to your next chat message." : this.state.status;
-    this.update({ annotations, status, canSend: !!this.context?.canSendMessage, ...(removedDraft ? { draft: undefined } : {}) });
+    this.update({ annotations, status, canSend: !!this.context?.canSendMessage, ...(!annotations.length ? { sendError: "" } : {}), ...(removedDraft ? { draft: undefined } : {}) });
   }
   configure(simulator: SimulatorDevice | undefined, disabled: boolean) {
     if (simulator?.udid !== this.simulator?.udid) {
@@ -52,11 +53,11 @@ export class ScreenAnnotationsStore {
       this.dragStart = undefined;
       this.hoverPoint = undefined;
       this.nextNumber = 1;
-      this.update({ selecting: false, loading: false, busy: false, draft: undefined, hovered: undefined, capture: undefined, selectionBounds: undefined, candidates: [], error: "", status: "" });
+      this.update({ selecting: false, loading: false, busy: this.state.sending, draft: undefined, hovered: undefined, capture: undefined, selectionBounds: undefined, candidates: [], error: "", sendError: "", status: "" });
       this.sync();
     }
     if (disabled !== this.state.disabled) {
-      if (disabled) { this.revision++; this.cancelSelection(); this.update({ selecting: false, loading: false, busy: false, hovered: undefined }); }
+      if (disabled) { this.revision++; this.cancelSelection(); this.update({ selecting: false, loading: false, busy: this.state.sending, hovered: undefined }); }
       this.update({ disabled });
     }
   }
@@ -172,7 +173,7 @@ export class ScreenAnnotationsStore {
     const draft = this.state.draft;
     if (!draft?.text.trim() || !this.simulator || !this.context || this.state.busy) return;
     const revision = this.revision;
-    this.update({ busy: true, error: "" });
+    this.update({ busy: true, error: "", sendError: "" });
     try {
       const attached = await this.context.attachAnnotation({ ...draft, text: draft.text.trim(), simulator: this.simulator });
       if (revision !== this.revision) return;
@@ -190,11 +191,12 @@ export class ScreenAnnotationsStore {
   }
   async send() {
     if (!this.simulator || !this.context || this.state.busy || !this.state.annotations.length) return;
-    const revision = this.revision;
-    this.update({ busy: true, error: "" });
-    try { await this.context.sendAnnotationsToChat(this.simulator.udid); if (revision === this.revision) this.update({ status: "Annotations sent to chat." }); }
-    catch (error) { if (revision === this.revision) this.update({ error: error instanceof Error ? error.message : String(error) }); }
-    finally { if (revision === this.revision) this.update({ busy: false }); }
+    const simulatorId = this.simulator.udid;
+    this.update({ busy: true, sending: true, error: "", sendError: "" });
+    try { await this.context.sendAnnotationsToChat(simulatorId); if (simulatorId === this.simulator?.udid) this.update({ status: "Annotations sent to chat." }); }
+    catch (error) { if (simulatorId === this.simulator?.udid) { const message = error instanceof Error ? error.message : String(error); this.update({ error: message, sendError: message }); } }
+    // Stream readiness can change the selection revision while chat is sending.
+    finally { this.update({ busy: false, sending: false }); }
   }
   dispose() { this.revision++; this.cancelSelection(); this.unsubscribe?.(); this.context = undefined; this.capture = undefined; this.readTree = undefined; }
 }

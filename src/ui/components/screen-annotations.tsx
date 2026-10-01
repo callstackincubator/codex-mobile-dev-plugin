@@ -1,9 +1,23 @@
-import { useSyncExternalStore } from "react";
-import { ArrowUpIcon, MessageCircleIcon, MousePointer2Icon, SendIcon, Trash2Icon } from "lucide-react";
+import { useState, useSyncExternalStore } from "react";
+import { ArrowUpIcon, CircleAlertIcon, MessageCircleIcon, MousePointer2Icon, SendIcon, Trash2Icon } from "lucide-react";
 import type { ScreenAnnotationsStore } from "../screen-annotations";
 import type { ScreenBounds } from "../../shared/screen-annotations";
 import { Button } from "./ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+
+function AnnotationSendError({ store, error }: { store: ScreenAnnotationsStore; error: string }) {
+  const [copyStatus, setCopyStatus] = useState("");
+  async function copy() {
+    try { await navigator.clipboard.writeText(store.messageText); setCopyStatus("Copied"); }
+    catch { setCopyStatus("Select and copy the text below."); }
+  }
+  return <Popover><PopoverTrigger asChild><Button variant="ghost" size="icon-sm" className="rounded-full text-destructive" aria-label={`Send failed: ${error}`} title={error}><CircleAlertIcon /></Button></PopoverTrigger><PopoverContent className="w-80 space-y-3" side="top">
+    <p className="text-sm" role="alert">{error}</p>
+    <Button size="sm" variant="outline" onClick={() => void copy()}>Copy notes</Button>
+    {copyStatus && <p className="text-xs text-muted-foreground" role="status">{copyStatus}</p>}
+    <textarea readOnly aria-label="Annotation message to copy" className="h-36 w-full resize-none rounded-md border border-border bg-transparent p-2 text-xs" value={store.messageText} onFocus={event => event.currentTarget.select()} />
+  </PopoverContent></Popover>;
+}
 
 export function ScreenSelectButton({ store }: { store: ScreenAnnotationsStore }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
@@ -45,7 +59,8 @@ export function ScreenAnnotationOverlay({ store }: { store: ScreenAnnotationsSto
     </form>}
     {!!state.annotations.length && !draft && <div className="pointer-events-auto absolute bottom-2 left-1/2 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1 rounded-full border border-border/50 bg-popover/65 p-1 shadow-sm backdrop-blur-xl backdrop-saturate-150">
       <Popover><PopoverTrigger asChild><Button variant="ghost" size="sm" className="rounded-full"><MessageCircleIcon className="text-blue-500" />{state.annotations.length} {state.annotations.length === 1 ? "note" : "notes"}</Button></PopoverTrigger><PopoverContent className="max-h-64 w-64 overflow-y-auto p-1" side="top">{state.annotations.map(annotation => <div key={annotation.id} className="flex items-center"><button type="button" className="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left hover:bg-muted" disabled={state.busy} onClick={() => store.edit(annotation)}><p className="truncate text-xs font-medium">#{annotation.number} {annotation.component.name}</p><p className="truncate text-xs text-muted-foreground">{annotation.text}</p></button><Button variant="ghost" size="icon-xs" aria-label={`Remove annotation ${annotation.number}`} disabled={state.busy} onClick={() => void store.remove(annotation.id)}><Trash2Icon /></Button></div>)}</PopoverContent></Popover>
-      {state.canSend && <Button size="sm" className="rounded-full" disabled={state.busy || state.disabled} onClick={() => void store.send()}><SendIcon />Send to chat</Button>}
+      {state.sendError && <AnnotationSendError key={state.sendError} store={store} error={state.sendError} />}
+      {state.canSend && <Button size="sm" className="rounded-full" disabled={state.busy} title={state.sendError || undefined} onClick={() => void store.send()}><SendIcon />{state.sending ? "Sending…" : state.sendError ? "Retry send" : "Send to chat"}</Button>}
     </div>}
   </div>;
 }
