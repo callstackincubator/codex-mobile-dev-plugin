@@ -61,6 +61,26 @@ test("environment overrides apply to both initial UI resources and live reload",
   assert.match(developmentText, /mobile-dev-environment" content="development"/);
 });
 
+test("local packaged UI uses development without a live watcher", async t => {
+  const previous = process.env.MOBILE_DEV_ENVIRONMENT;
+  delete process.env.MOBILE_DEV_ENVIRONMENT;
+  const html = '<html><meta name="mobile-dev-environment" content="release"></html>';
+  const plugin = await createTestPlugin(html);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "local-build-environment-test", version: "1" });
+  t.after(async () => {
+    if (previous !== undefined) process.env.MOBILE_DEV_ENVIRONMENT = previous;
+    await client.close();
+    await plugin.close();
+  });
+  await plugin.server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const resource = await client.readResource({ uri: APP_URI });
+  const content = resource.contents[0].text;
+  assert.ok(typeof content === "string");
+  assert.match(content, /mobile-dev-environment" content="development"/);
+});
+
 test("cached side tabs load the current UI through old resource addresses", async t => {
   const html = "<!doctype html><title>Current simulator</title><canvas></canvas>";
   const plugin = await createTestPlugin(html);

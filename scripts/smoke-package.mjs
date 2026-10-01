@@ -15,6 +15,9 @@ let transport;
 let runtimeTransport;
 try {
   await cp(source, plugin, { recursive: true, verbatimSymlinks: true });
+  const telemetryConfigText = await readFile(join(plugin, "dist/telemetry-environment.json"), "utf8");
+  const telemetryConfig = JSON.parse(telemetryConfigText);
+  assert.ok(telemetryConfig.environment === "development" || telemetryConfig.environment === "release");
   await access(join(plugin, "dist/baguette/Baguette"));
   await access(join(plugin, "dist/baguette/Baguette_Baguette.bundle/Web"));
   const require = createRequire(import.meta.url);
@@ -101,6 +104,9 @@ try {
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
   assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.78/simulator.html");
+  const telemetryEnvironment = process.env.MOBILE_DEV_ENVIRONMENT ?? telemetryConfig.environment;
+  const telemetryMarker = `name="mobile-dev-environment" content="${telemetryEnvironment}"`;
+  assert.ok(resource.contents[0].text.includes(telemetryMarker));
   assert.ok(resource.contents[0].text.includes('workspace-toolbar'));
   assert.ok(resource.contents[0].text.includes('workspace-panels'));
   assert.ok(resource.contents[0].text.includes('tool-logs'));

@@ -6,6 +6,7 @@ import { wrapMcpServerWithSentry } from "@sentry/node";
 import { PLUGIN_VERSION } from "../shared/version.ts";
 import { SENTRY_ORIGIN } from "../shared/telemetry.ts";
 import { captureServerError } from "./telemetry.ts";
+import { resolveTelemetryEnvironment } from "./telemetry-environment.ts";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { z } from "zod";
@@ -158,11 +159,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   }
 
   function configureUI(content: string): string {
-    const telemetryEnvironment = process.env.MOBILE_DEV_ENVIRONMENT;
-    if (telemetryEnvironment === "development" || telemetryEnvironment === "release") {
-      return content.replace(/name="mobile-dev-environment" content="(?:development|release)"/, `name="mobile-dev-environment" content="${telemetryEnvironment}"`);
-    }
-    return content;
+    const telemetryEnvironment = resolveTelemetryEnvironment();
+    return content.replace(/name="mobile-dev-environment" content="(?:development|release)"/, `name="mobile-dev-environment" content="${telemetryEnvironment}"`);
   }
   const readApp = async (uri: URL) => {
     const resource = typeof html === "string" ? { html } : await html();
