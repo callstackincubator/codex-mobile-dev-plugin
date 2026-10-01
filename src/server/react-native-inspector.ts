@@ -3,12 +3,16 @@ import { WebSocket } from "ws";
 import { z } from "zod";
 import { metroTargets } from "./metro-logs.ts";
 import { collectReactNativeTree } from "./react-native-snapshot.js";
-import type { ScreenBounds } from "../shared/screen-annotations.ts";
+import type { ScreenBounds, ReactElementContext } from "../shared/screen-annotations.ts";
+import { resolveReactNativeSources } from "./react-native-source.ts";
+import { captureServerError } from "./telemetry.ts";
 
-export type InspectorNode = { source: "react-native"; role: string; label?: string; identifier?: string; frame: ScreenBounds; nodeId?: string; parentId?: string; depth?: number; children: InspectorNode[] };
+export type InspectorNode = { source: "react-native"; role: string; label?: string; identifier?: string; frame: ScreenBounds; nodeId?: string; parentId?: string; depth?: number; children: InspectorNode[]; react?: ReactElementContext; creationStackIds?: number[] };
 const frame = z.object({ x: z.number().finite(), y: z.number().finite(), width: z.number().positive().finite(), height: z.number().positive().finite() });
-const node: z.ZodType<InspectorNode> = z.lazy(() => z.object({ source: z.literal("react-native"), role: z.string().max(256), label: z.string().max(256).optional(), identifier: z.string().max(256).optional(), frame, nodeId: z.string().max(256).optional(), parentId: z.string().max(256).optional(), depth: z.number().int().min(0).max(10000).optional(), children: z.array(node).max(3000).default([]) }));
-const snapshot = z.object({ available: z.boolean(), tree: z.array(node).max(3000).optional(), windowWidth: z.number().nonnegative().finite().optional(), truncated: z.boolean().optional() });
+const react = z.object({ component: z.string().max(256), owners: z.array(z.string().max(256)).max(12), source: z.object({ file: z.string().max(2048), line: z.number().int().positive(), column: z.number().int().positive().optional(), functionName: z.string().max(256).optional() }).optional() });
+const node: z.ZodType<InspectorNode> = z.lazy(() => z.object({ source: z.literal("react-native"), role: z.string().max(256), label: z.string().max(256).optional(), identifier: z.string().max(256).optional(), frame, nodeId: z.string().max(256).optional(), parentId: z.string().max(256).optional(), depth: z.number().int().min(0).max(10000).optional(), children: z.array(node).max(3000).default([]), react: react.optional(), creationStackIds: z.array(z.number().int().min(0).max(511)).max(12).optional() }));
+const creationFrame = z.object({ url: z.number().int().min(0).max(31), line: z.number().int().positive(), column: z.number().int().nonnegative(), methodName: z.string().max(256) });
+const snapshot = z.object({ available: z.boolean(), tree: z.array(node).max(3000).optional(), windowWidth: z.number().nonnegative().finite().optional(), truncated: z.boolean().optional(), sourceUrls: z.array(z.string().max(2048)).max(32).default([]), sourceStacks: z.array(z.array(creationFrame).max(3)).max(512).default([]) });
 export type InspectorRequest = { url?: string; targetId?: string; deviceName: string; deviceAliases?: string[]; appName?: string; appId?: string; platform: "ios" | "android"; screenWidth: number };
 const normalized = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -36,9 +40,11 @@ export async function inspectReactNative(request: InspectorRequest, signal?: Abo
   }
   const result = snapshot.parse(raw);
   if (!result.available || !result.tree || !result.windowWidth) return { available: false as const, reason: "unsupported-renderer" };
+  try { await resolveReactNativeSources(result.tree, result.sourceUrls, result.sourceStacks, request.url ?? "http://127.0.0.1:8081", signal); }
+  catch { if (!signal?.aborted) captureServerError(new Error("React Native source map lookup failed."), "inspection.symbolicate"); }
   // RN measurements use DIPs; Android screenshots and AX bounds use physical pixels.
   const scale = request.platform === "android" ? request.screenWidth / result.windowWidth : 1;
-  const scaleNode = (item: InspectorNode): InspectorNode => ({ ...item, frame: {
+  const scaleNode = ({ creationStackIds, ...item }: InspectorNode): InspectorNode => ({ ...item, frame: {
     x: item.frame.x * scale, y: item.frame.y * scale, width: item.frame.width * scale, height: item.frame.height * scale,
   }, children: item.children.map(scaleNode) });
   return { available: true as const, tree: result.tree.map(scaleNode), truncated: !!result.truncated };

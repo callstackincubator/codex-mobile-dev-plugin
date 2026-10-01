@@ -16,8 +16,24 @@ const card = { source: "react-native", role: "Pressable", label: "Row", frame: {
 
 async function backend(t: TestContext) {
   let origin = "", calls = 0, targets: unknown[] = [], response: unknown = { available: true, tree: [card], windowWidth: 400, truncated: false };
+  let sourceCalls = 0, sourceFailure = false;
   let hold = false;
-  const http = createServer((_request, reply) => { reply.setHeader("Content-Type", "application/json"); reply.end(JSON.stringify(targets)); });
+  const http = createServer((request, reply) => {
+    reply.setHeader("Content-Type", "application/json");
+    if (request.url === "/symbolicate") {
+      sourceCalls++;
+      let body = "";
+      request.on("data", bytes => { body += bytes; });
+      request.on("end", () => {
+        if (sourceFailure) { reply.statusCode = 404; reply.end("{}"); return; }
+        const frames = JSON.parse(body).stack;
+        reply.end(JSON.stringify({ stack: frames.map((frame: { methodName: string }, index: number) => ({ ...frame,
+          file: index % 3 === 0 ? "/project/node_modules/react/jsx-runtime.js" : "/project/src/HomeScreen.tsx",
+          lineNumber: 49, column: 10, methodName: index % 3 === 0 ? "jsx" : "HomeScreen.renderItem", collapse: index % 3 === 0,
+        })) }));
+      });
+    } else reply.end(JSON.stringify(targets));
+  });
   const ws = new WebSocketServer({ server: http, verifyClient: info => info.origin === origin });
   const bindings = new Set<string>();
   ws.on("connection", socket => {
@@ -51,7 +67,7 @@ async function backend(t: TestContext) {
   const target = { id: "app", appId: "com.example.playground", deviceName: "iPhone 17", webSocketDebuggerUrl: origin.replace("http:", "ws:") + "/inspector", reactNative: { capabilities: { supportsMultipleDebuggers: true } } };
   targets = [target];
   t.after(async () => { for (const socket of ws.clients) socket.terminate(); await new Promise<void>(resolve => ws.close(() => http.close(() => resolve()))); });
-  return { origin, target, setTargets: (value: unknown[]) => { targets = value; }, setResponse: (value: unknown) => { response = value; }, hold: () => { hold = true; }, calls: () => calls, bindings, ws };
+  return { origin, target, setTargets: (value: unknown[]) => { targets = value; }, setResponse: (value: unknown) => { response = value; }, sourceFailure: () => { sourceFailure = true; }, sourceCalls: () => sourceCalls, hold: () => { hold = true; }, calls: () => calls, bindings, ws };
 }
 
 const request = { deviceName: "iPhone 17", appName: "playground", platform: "ios" as const, screenWidth: 400 };
@@ -102,6 +118,35 @@ test("flat debugger snapshots preserve deep parent links through Android scaling
   assert.deepEqual(componentsAt(components, { x: 120, y: 375 }).map(node => node.name), ["Subtitle", "Row"]);
   assert.equal(components[1].depth, 285);
   assert.equal(components[1].parentId, "rn-row");
+});
+
+test("MCP inspection resolves shared creation stacks to app JSX without leaking bundle URLs", async t => {
+  const server = await backend(t);
+  const base = { ...card, children: [], react: { component: "Text", owners: ["HomeScreen", "Text"] }, creationStackIds: [0] };
+  server.setResponse({ available: true, windowWidth: 400, tree: [base, { ...base, label: "Second row" }], sourceUrls: [`${server.origin}/index.bundle?platform=ios`], sourceStacks: [[
+    { url: 0, line: 150, column: 10, methodName: "jsx" }, { url: 0, line: 300, column: 12, methodName: "renderItem" },
+  ]] });
+  const result = await inspectReactNative({ ...request, url: server.origin });
+  assert.equal(result.available, true);
+  if (!result.available) return;
+  assert.equal(server.sourceCalls(), 1, "Resolve all elements in one request.");
+  const components = screenComponents(result.tree);
+  assert.deepEqual(components[0].react?.source, { file: "/project/src/HomeScreen.tsx", line: 49, column: 11, functionName: "HomeScreen.renderItem" });
+  assert.deepEqual(components[1].react?.source, components[0].react?.source);
+  assert.deepEqual(components[0].react?.owners, ["HomeScreen", "Text"]);
+  assert.doesNotMatch(JSON.stringify(result), /index\.bundle|creationStackIds|sourceStacks/);
+  server.sourceFailure();
+  const fallback = await inspectReactNative({ ...request, url: server.origin });
+  assert.equal(fallback.available, true);
+  if (fallback.available) assert.equal(fallback.tree[0].react?.source, undefined);
+});
+
+test("source resolution never forwards stack URLs from another server", async t => {
+  const server = await backend(t);
+  server.setResponse({ available: true, windowWidth: 400, tree: [{ ...card, react: { component: "Text", owners: ["HomeScreen"] }, creationStackIds: [0] }], sourceUrls: ["http://example.com/index.bundle"], sourceStacks: [[{ url: 0, line: 100, column: 10, methodName: "renderItem" }]] });
+  const result = await inspectReactNative({ ...request, url: server.origin });
+  assert.equal(result.available, true);
+  assert.equal(server.sourceCalls(), 0);
 });
 
 test("inspection cancels its socket and rejects invalid native bounds", async t => {
@@ -250,6 +295,20 @@ test("retained native-stack screens do not cover visible text, and decorative te
   assert.equal(componentAt(components, { x: 20, y: 105 })?.name, "Visible title");
   assert.equal(components.some(node => node.name === "Old home title"), false);
   assert.equal(componentAt(components, { x: 375, y: 105 })?.name, "›");
+});
+
+test("the collector keeps React owners and deduplicates creation stacks, including numeric text", () => {
+  const creation = { stack: "Error: react-stack-top-frame\n    at jsx (http://localhost:8081/index.bundle:150:11)\n    at Counter (http://localhost:8081/index.bundle:300:13)" };
+  const screen = { type: { name: "CounterScreen" }, _debugStack: creation, _debugOwner: undefined as unknown };
+  screen._debugOwner = screen;
+  const owner = { type: { render: { name: "Text" } }, _debugOwner: screen, _debugStack: creation };
+  const target = { ...nativeFiber("RCTText", card.frame, { children: 0 }), _debugOwner: owner, _debugStack: creation };
+  const result = collectFibers({ ...target, sibling: { ...target, memoizedProps: { children: 1 } } }) as ReturnType<typeof collectFibers> & { sourceUrls: string[]; sourceStacks: unknown[] };
+  assert.equal(result.tree[0].label, "0");
+  assert.deepEqual(result.tree[0].react, { component: "Text", owners: ["CounterScreen", "Text"] });
+  assert.deepEqual(result.tree[0].creationStackIds, [0]);
+  assert.equal(result.sourceStacks.length, 1);
+  assert.equal(result.sourceUrls.length, 1);
 });
 
 test("the iterative collector reports its work limit instead of silently cutting off deep fibers", () => {

@@ -2,7 +2,8 @@ import type { SimulatorDevice } from "./protocol.ts";
 
 export type ScreenPoint = { x: number; y: number };
 export type ScreenBounds = ScreenPoint & { width: number; height: number };
-export type ScreenComponent = { name: string; bounds: ScreenBounds; role?: string; identifier?: string; label?: string; value?: string; depth: number; source?: "accessibility" | "screen" | "react-native"; nodeId?: string; parentId?: string };
+export type ReactElementContext = { component: string; owners: string[]; source?: { file: string; line: number; column?: number; functionName?: string } };
+export type ScreenComponent = { name: string; bounds: ScreenBounds; role?: string; identifier?: string; label?: string; value?: string; depth: number; source?: "accessibility" | "screen" | "react-native"; nodeId?: string; parentId?: string; react?: ReactElementContext };
 export type ScreenAnnotation = {
   id: string;
   number: number;
@@ -11,6 +12,7 @@ export type ScreenAnnotation = {
   point: ScreenPoint;
   screen: { width: number; height: number; units: "points" | "pixels" };
   component: ScreenComponent;
+  nearbyText?: string[];
   screenshot: { id: string; data: string; capturedAt: string };
 };
 
@@ -18,6 +20,17 @@ function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 function text(value: unknown): string | undefined { return typeof value === "string" && value.trim() ? value : undefined; }
+function reactContext(value: unknown): ReactElementContext | undefined {
+  const node = record(value), component = text(node?.component);
+  if (!node || !component) return;
+  const owners = Array.isArray(node.owners) ? node.owners.filter((name): name is string => typeof name === "string" && !!name.trim()).slice(0, 12).map(name => name.slice(0, 256)) : [];
+  const source = record(node.source), file = text(source?.file);
+  return { component: component.slice(0, 256), owners, ...(file && typeof source?.line === "number" && Number.isInteger(source.line) && source.line > 0 ? { source: {
+    file: file.slice(0, 2048), line: source.line,
+    ...(typeof source.column === "number" && Number.isInteger(source.column) && source.column > 0 ? { column: source.column } : {}),
+    ...(text(source.functionName) ? { functionName: text(source.functionName)!.slice(0, 256) } : {}),
+  } } : {}) };
+}
 function bounds(value: unknown): ScreenBounds | undefined {
   const rect = record(value);
   if (!rect) return;
@@ -43,7 +56,8 @@ export function screenComponents(tree: unknown): ScreenComponent[] {
       const role = text(node.role) ?? text(node.className);
       const nodeId = text(node.nodeId) ?? `node-${components.length}`;
       const nodeDepth = typeof node.depth === "number" && Number.isInteger(node.depth) && node.depth >= 0 && node.depth <= 10000 ? node.depth : depth;
-      components.push({ name: text(node.name) ?? label ?? identifier ?? role ?? "Element", bounds: frame, label, identifier, role, value: text(node.value), depth: nodeDepth, source: node.source === "react-native" ? "react-native" : node.source === "screen" ? "screen" : "accessibility", nodeId, parentId: text(node.parentId) ?? parentId });
+      const react = node.source === "react-native" ? reactContext(node.react) : undefined;
+      components.push({ name: text(node.name) ?? label ?? identifier ?? role ?? "Element", bounds: frame, label, identifier, role, value: text(node.value), depth: nodeDepth, source: node.source === "react-native" ? "react-native" : node.source === "screen" ? "screen" : "accessibility", nodeId, parentId: text(node.parentId) ?? parentId, ...(react ? { react } : {}) });
       parentId = nodeId;
     }
     for (const key of ["children", "elements", "nodes", "tree", "root"]) if (node[key]) visit(node[key], depth + 1, parentId);
@@ -76,9 +90,24 @@ export function componentsAt(components: ScreenComponent[], point: ScreenPoint, 
 
 export function annotationDetails(annotation: ScreenAnnotation) {
   const { screenshot, ...details } = annotation;
-  return { ...details, screenshotId: screenshot.id, capturedAt: screenshot.capturedAt };
+  return { ...details, captureId: screenshot.id, capturedAt: screenshot.capturedAt };
 }
 
 export function formatAnnotationContext(annotation: ScreenAnnotation): string {
-  return `Simulator screen annotation #${annotation.number}\nUser note: ${annotation.text}\nScreen and element context: ${JSON.stringify(annotationDetails(annotation))}\nCoordinates start at the screen's top-left, excluding the device frame. ${annotation.component.source === "screen" ? "These bounds describe a user-selected screen point or region. No native component name is available." : annotation.component.source === "react-native" ? "Component names and bounds come from the React Native runtime inspector." : "Component names come from the accessibility tree, not source code."} No screenshot is attached.`;
+  const { component, screen, simulator } = annotation, source = component.react?.source;
+  const round = (value: number) => Math.round(value * 10) / 10;
+  const lines = [`Screen annotation #${annotation.number}`, `User note: ${annotation.text}`];
+  if (source) lines.push(`Edit location: ${source.file}:${source.line}${source.column ? `:${source.column}` : ""}`, `Location is the source-mapped element creation site${source.functionName ? ` in ${source.functionName}` : ""}. Open it directly; check enclosing code before editing.`);
+  lines.push(`Target: ${JSON.stringify(component.label ?? component.name)}${component.role ? ` (${component.role})` : ""}`);
+  if (component.identifier) lines.push(`${component.source === "react-native" ? "testID" : "Identifier"}: ${JSON.stringify(component.identifier)}`);
+  if (component.value) lines.push(`Value: ${JSON.stringify(component.value)}`);
+  if (component.react) {
+    lines.push(`React component: ${component.react.component}`);
+    if (component.react.owners.length) lines.push(`React owners, outer to inner: ${component.react.owners.join(" > ")}`);
+  }
+  if (!source) lines.push(component.source === "screen" ? "Manual selection. No component or source location was reported." : component.source === "react-native" ? "React source location unavailable; use the reported component, owners and label." : "Accessibility element only. No React component or source location was reported.");
+  if (annotation.nearbyText?.length) lines.push(`Nearby text from the same capture: ${annotation.nearbyText.map(value => JSON.stringify(value)).join(", ")}`);
+  const b = component.bounds;
+  lines.push(`Position fallback: x=${round(b.x)}, y=${round(b.y)}, width=${round(b.width)}, height=${round(b.height)} ${screen.units}; screen ${screen.width}×${screen.height}, origin top-left, excluding device frame.`, `Device: ${simulator.name}, ${simulator.platform ?? "ios"}, ${simulator.runtime}. Captured at ${annotation.screenshot.capturedAt}.`);
+  return lines.join("\n");
 }

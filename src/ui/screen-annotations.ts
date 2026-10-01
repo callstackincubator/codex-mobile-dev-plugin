@@ -1,11 +1,11 @@
 import { componentAt, componentsAt, screenComponents } from "../shared/screen-annotations.ts";
 import type { ScreenAnnotation, ScreenBounds, ScreenComponent, ScreenPoint } from "../shared/screen-annotations.ts";
-import { recordUiTiming } from "./telemetry.ts";
+import { recordUiTiming, countUiEvent } from "./telemetry.ts";
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import type { PanelContext } from "./model-context.ts";
 
 type Capture = { screenshot: ScreenAnnotation["screenshot"]; screen: ScreenAnnotation["screen"] };
-type Draft = Capture & { id: string; number: number; component: ScreenComponent; point: ScreenPoint; text: string };
+type Draft = Capture & { id: string; number: number; component: ScreenComponent; point: ScreenPoint; text: string; nearbyText?: string[] };
 export class ScreenAnnotationsStore {
   private state = {
     disabled: true, selecting: false, loading: false, busy: false, canSend: false,
@@ -80,10 +80,11 @@ export class ScreenAnnotationsStore {
         const startedAt = performance.now();
         this.components = screenComponents(tree);
         recordUiTiming("ui.annotations.tree_processing", performance.now() - startedAt);
+        if (this.components.some(component => component.react?.source)) countUiEvent("ui.annotations.source_available");
         const draft = this.state.draft;
         if (draft?.component.source === "screen" && !draft.component.role) {
           const candidates = componentsAt(this.components, draft.point, capture.screen);
-          if (candidates.length) this.update({ draft: { ...draft, component: candidates[0] }, candidates });
+          if (candidates.length) this.update({ draft: { ...draft, component: candidates[0], nearbyText: this.nearbyText(candidates[0]) }, candidates });
         }
       }
     } catch (error) {
@@ -108,7 +109,7 @@ export class ScreenAnnotationsStore {
     if (!this.state.selecting || this.state.busy || this.state.draft || !this.state.capture) return;
     const component = this.component(point);
     if (!component) return;
-    this.update({ draft: { ...this.state.capture, id: crypto.randomUUID(), number: this.nextNumber, point, component, text: "" }, candidates: componentsAt(this.components, point, this.state.capture.screen), hovered: undefined, status: "" });
+    this.update({ draft: { ...this.state.capture, id: crypto.randomUUID(), number: this.nextNumber, point, component, nearbyText: this.nearbyText(component), text: "" }, candidates: componentsAt(this.components, point, this.state.capture.screen), hovered: undefined, status: "" });
   }
   private component(point: ScreenPoint): ScreenComponent | undefined {
     if (!this.state.capture) return;
@@ -120,7 +121,16 @@ export class ScreenAnnotationsStore {
   }
   chooseComponent(component: ScreenComponent) {
     if (this.state.draft && !this.state.busy && this.state.candidates.includes(component))
-      this.update({ draft: { ...this.state.draft, component } });
+      this.update({ draft: { ...this.state.draft, component, nearbyText: this.nearbyText(component) } });
+  }
+  private nearbyText(component: ScreenComponent) {
+    const b = component.bounds, limit = (this.state.capture?.screen.width ?? 402) * .25;
+    const distance = (item: ScreenComponent) => {
+      const r = item.bounds;
+      return Math.hypot(Math.max(b.x - r.x - r.width, r.x - b.x - b.width, 0), Math.max(b.y - r.y - r.height, r.y - b.y - b.height, 0));
+    };
+    return [...new Set(this.components.filter(item => /Text|Label/.test(item.role ?? "") && item.label && item.label !== item.role && item.label !== component.label && distance(item) <= limit)
+      .sort((a, b) => distance(a) - distance(b)).map(item => item.label!.slice(0, 256)))].slice(0, 5);
   }
   beginSelection(point: ScreenPoint) {
     if (!this.state.selecting || this.state.busy || this.state.draft) return false;
@@ -146,7 +156,7 @@ export class ScreenAnnotationsStore {
     if (!bounds) { this.select(start); return; }
     if (!this.state.capture || !this.state.selecting || this.state.disabled || this.state.busy) return;
     const component: ScreenComponent = { name: "Selected region", source: "screen", role: "manual-region", depth: 0, bounds };
-    this.update({ draft: { ...this.state.capture, id: crypto.randomUUID(), number: this.nextNumber, point: start, component, text: "" }, candidates: [], hovered: undefined, status: "" });
+    this.update({ draft: { ...this.state.capture, id: crypto.randomUUID(), number: this.nextNumber, point: start, component, nearbyText: this.nearbyText(component), text: "" }, candidates: [], hovered: undefined, status: "" });
   }
   cancelSelection() {
     this.dragStart = undefined;

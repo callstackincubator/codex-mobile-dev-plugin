@@ -11,7 +11,7 @@ function contains(text: string, fragment: string, expected = true) {
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export * as Sentry from "@sentry/react";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -52,6 +52,17 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   api.setUiSurface("simulator");
   api.recordUiTiming("ui.annotations.tree_processing", 3);
   api.recordUiTiming("ui.annotations.inspection", 12);
+  const context = new api.PanelContext({ getHostCapabilities: () => ({ message: { text: {} } }), async sendMessage() { return {}; } }, {
+    modelContext: { getCurrent: () => undefined, async update() { return { updateId: "PRIVATE_UPDATE" }; } },
+  });
+  const store = new api.ScreenAnnotationsStore();
+  store.connect(context);
+  store.configure({ udid: "PRIVATE_DEVICE", name: "PRIVATE_DEVICE_NAME", runtime: "iOS 26", state: "Booted" }, false);
+  store.capture = () => ({ screenshot: { id: "PRIVATE_CAPTURE", data: "PRIVATE_IMAGE", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 402, height: 874, units: "points" } });
+  store.readTree = async () => [{ source: "react-native", role: "RCTText", label: "PRIVATE_LABEL", bounds: { x: 10, y: 20, width: 100, height: 40 }, react: {
+    component: "PRIVATE_COMPONENT", owners: ["PRIVATE_OWNER"], source: { file: "/Users/alice/private.tsx", line: 49, column: 11 },
+  } }];
+  await store.toggle(); store.select({ x: 50, y: 40 }); store.setText("PRIVATE_NOTE"); await store.save(); await store.send(); store.dispose();
   api.countUiEvent("ui.annotations.runtime_available");
   api.countUiEvent("ui.annotations.inspection_fallback");
   api.setUiSurface("logs");
@@ -98,6 +109,8 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, "ui.logs.publish.mean");
   contains(encoded, "ui.annotations.tree_processing.mean");
   contains(encoded, "ui.annotations.inspection.mean");
+  contains(encoded, "ui.annotations.message_build.mean");
+  contains(encoded, "ui.annotations.source_available");
   contains(encoded, "ui.annotations.runtime_available");
   contains(encoded, "ui.annotations.inspection_fallback");
   contains(encoded, '"surface":{"value":"simulator"');

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { componentAt, componentsAt, screenComponents } from "../src/shared/screen-annotations.ts";
+import { componentAt, componentsAt, screenComponents, formatAnnotationContext } from "../src/shared/screen-annotations.ts";
 import { ScreenAnnotationsStore } from "../src/ui/screen-annotations.ts";
 import type { ScreenAnnotation } from "../src/shared/screen-annotations.ts";
 import { PanelContext } from "../src/ui/model-context.ts";
@@ -96,7 +96,7 @@ test("a sparse accessibility tree supports explicit regions without pixel guesse
   assert.deepEqual(f.store.getSnapshot().draft?.component.bounds, { x: 20, y: 400, width: 280, height: 50 });
   assert.equal(f.store.getSnapshot().draft?.component.role, "manual-region");
   f.store.setText("Make this button bigger"); await f.store.save();
-  assert.match(JSON.stringify(f.updates.at(-1)?.content), /No native component name is available/);
+  assert.match(JSON.stringify(f.updates.at(-1)?.content), /No component or source location was reported/);
   f.store.dispose();
 });
 
@@ -170,6 +170,34 @@ test("flat MCP snapshots retain element names, depths and real parents", async (
   f.store.chooseComponent(f.store.getSnapshot().candidates[1]);
   assert.equal(f.store.getSnapshot().draft?.component.name, "Card");
   f.store.dispose();
+});
+
+test("a saved and sent note retains its source location, owners, testID and nearby text", async () => {
+  const react = { component: "Text", owners: ["HomeScreen", "CardRow", "Text"], source: { file: "/project/src/HomeScreen.tsx", line: 49, column: 11, functionName: "HomeScreen.renderItem" } };
+  const f = fixture();
+  f.store.readTree = async () => [{ ...component, source: "react-native", react, label: "Continue" }, { name: "Go to the next step", label: "Go to the next step", role: "Text", bounds: { x: 10, y: 65, width: 100, height: 20 } }];
+  await f.store.toggle(); f.store.select({ x: 50, y: 40 }); f.store.setText("Make this larger"); await f.store.save();
+  assert.deepEqual(f.context.screenAnnotations[0].component.react, react);
+  assert.deepEqual(f.context.screenAnnotations[0].nearbyText, ["Go to the next step"]);
+  await f.store.send();
+  const message = f.messages[0].content[0];
+  assert.equal(message.type, "text");
+  if (message.type !== "text") return;
+  assert.match(message.text, /Edit location: \/project\/src\/HomeScreen\.tsx:49:11/);
+  assert.match(message.text, /React owners, outer to inner: HomeScreen > CardRow > Text/);
+  assert.match(message.text, /testID: "continue-button"/);
+  assert.match(message.text, /Nearby text.*Go to the next step/);
+  assert.ok(message.text.indexOf("Edit location") < message.text.indexOf("Position fallback"));
+  assert.doesNotMatch(message.text, /screenshot|note-1|screen-1/);
+  f.store.dispose();
+});
+
+test("native and manual annotations do not invent React components or source locations", () => {
+  assert.match(formatAnnotationContext(annotation), /Accessibility element only/);
+  assert.doesNotMatch(formatAnnotationContext(annotation), /React component:|Edit location:/);
+  const manual = { ...annotation, component: { ...component, source: "screen" as const, role: "manual-region" } };
+  assert.match(formatAnnotationContext(manual), /Manual selection/);
+  assert.doesNotMatch(formatAnnotationContext(manual), /React component:|Edit location:/);
 });
 
 test("region drags clamp to screen bounds and cancel without creating a note", async () => {
