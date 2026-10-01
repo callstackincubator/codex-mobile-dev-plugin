@@ -151,14 +151,21 @@ export class PerformancePanel {
       if (platform === "ios" && device.kind === "physical") parameters.kind = "physical";
       const result = await this.call("mobile_performance_sources", parameters);
       if (this.disposed || discovery !== this.discovery) return;
-      const data = result.structuredContent as { apps: CpuApp[] };
+      const running = result.structuredContent?.apps;
+      if (Array.isArray(running) === false) throw new Error("The plugin did not return running apps.");
+      const apps: CpuApp[] = running;
       const previous = this.snapshot.apps.find(app => app.bundleId === this.snapshot.bundleId);
       let bundleId = this.snapshot.bundleId;
-      if (bundleId === "" && data.apps.length === 1) bundleId = data.apps[0].bundleId;
+      if (bundleId === "") {
+        if (platform === "ios" && device.kind === "physical") {
+          const foreground = apps.find(app => app.foreground === true);
+          if (foreground) bundleId = foreground.bundleId;
+        } else if (apps.length === 1) bundleId = apps[0].bundleId;
+      }
       const key = this.deviceKey(device);
       this.selections.set(key, bundleId);
-      const selected = data.apps.find(app => app.bundleId === bundleId);
-      this.update({ apps: data.apps, bundleId, sourceError: "" });
+      const selected = apps.find(app => app.bundleId === bundleId);
+      this.update({ apps, bundleId, sourceError: "" });
       if (selected && previous?.pid !== selected.pid) this.restart();
       if (bundleId && selected === undefined) {
         await this.stop();

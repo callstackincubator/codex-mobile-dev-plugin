@@ -8,7 +8,7 @@ import { cpuDeviceSchema, cpuTargetSchema } from "../../shared/cpu.ts";
 import type { CpuTarget } from "../../shared/cpu.ts";
 import { errorMessage } from "../../shared/protocol.ts";
 import type { Baguette } from "../baguette.ts";
-import { runningCpuApps } from "./apps.ts";
+import { runningPerformanceApps } from "./sources.ts";
 import { listAndroidLogDevices } from "../native-logs.ts";
 import { listIosDevices } from "../ios-devices.ts";
 import type { CpuSessions } from "./sessions.ts";
@@ -30,7 +30,7 @@ function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
 }
 
 export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: Baguette,
-  sources = { apps: runningCpuApps, androidDevices: listAndroidLogDevices, iosDevices: listIosDevices }) {
+  sources = { apps: runningPerformanceApps, androidDevices: listAndroidLogDevices, iosDevices: listIosDevices }) {
   async function validateDevice(device: { platform: "ios" | "android"; deviceId: string; kind?: "simulator" | "physical" }) {
     if (device.platform === "ios" && device.kind === "physical") {
       const devices = await sources.iosDevices();
@@ -55,7 +55,7 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: 
   });
 
   registerAppTool(server, "mobile_performance_sources", {
-    title: "Find running apps for CPU and memory monitoring", description: "List running user apps on a booted iOS simulator or connected Android device, or running development apps on a paired physical iPhone. For physical iOS pass kind: physical and the hardware UDID from mobile_list_ios_devices. Does not launch apps or attach a debugger.",
+    title: "Find running apps for CPU and memory monitoring", description: "List running user apps on a booted iOS simulator or connected Android device, or running development apps on a paired physical iPhone. Physical iOS marks the currently open development app with foreground: true when its main process owns the current screen. For physical iOS pass kind: physical and the hardware UDID from mobile_list_ios_devices. Does not launch apps or attach a debugger.",
     inputSchema: cpuDeviceSchema, annotations: read, _meta: metadata,
   }, safe(async (device: z.infer<typeof cpuDeviceSchema>) => {
     await validateDevice(device);

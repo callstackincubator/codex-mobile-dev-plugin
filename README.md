@@ -43,7 +43,7 @@ Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile
 
 Use Select in the simulator toolbar to pause the screen. Hover to outline a component, then click to add a note. When an app omits its controls from accessibility, Select uses regions detected from the screen and labels them as screen regions. Saved notes leave numbered blue bubbles. Each note attaches the captured screen, available accessibility name, bounds, and device coordinates to your next chat message. Click a bubble to edit or remove a note, or use Send to chat to send all notes for that device. If chat is unavailable, the panel keeps the notes and retries when you return. A sent or cleared batch starts again at 1.
 
-The local ZIP at `release/mobile-dev-0.1.58-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+The local ZIP at `release/mobile-dev-0.1.59-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 The iOS dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Simulators**. It refreshes every three seconds while the iOS panel is visible, and when opening the dropdown. Selecting a physical device opens view-only screen mirroring through its paired developer connection. The phone sends HEVC video; a bundled native Node-API addon assembles compressed frames and transfers them into Node without copying the frame payload, then the panel decodes them through WebCodecs. MCP serializes the compressed bytes as base64, so the full path is not zero copy. The capture queue is limited to eight frames or 4 MiB and requests a keyframe after overflow. Physical iOS input and screenshots are not implemented yet; those controls remain disabled. CPU and memory monitoring can attach to an already running development app on a paired iOS 17.4+ device. Mirroring requires Developer Mode and a host with HEVC WebCodecs support. `mobile_list_ios_devices` also returns remembered disconnected devices with their connection state; the picker shows connected devices only. Discovery errors remain visible while available simulators continue to work.
 
@@ -132,6 +132,14 @@ with Xcode/LLDB detached. Physical devices also require pairing, Developer Mode 
 a mounted developer disk image. App discovery lists running development apps and
 attaches by PID without launching or restarting them. Attach and detach briefly pause
 the app; ending monitoring leaves it running.
+
+On physical iOS, the picker automatically selects the currently open development
+app when there is no selection yet, even when several development apps are running.
+The paired accessibility service identifies the main process owning the current
+screen. System apps, extensions and missing screen elements do not select a
+background development app. Manual selections and active recordings keep their
+chosen target when the foreground app changes. Discovery does not launch an app,
+move accessibility focus or attach a debugger.
 On Android, a bundled CPU and memory C helper reads kernel process and thread counters
 over one persistent ADB connection. It adapts BAM's MIT-licensed
 [Flashlight collector](https://github.com/bamlab/flashlight/tree/5ef203ae184547a3b2984fa4f9b76d672895f861/packages/platforms/android/cpp-profiler).

@@ -277,6 +277,7 @@ test("switching devices closes the old monitor and restores each device's select
 
 test("a physical iPhone discovers apps, selects CPU monitoring and closes on disconnect", async t => {
   const fake = host();
+  fake.setApps([{ bundleId: "com.example.app", pid: 123, foreground: true }]);
   const panel = new PerformancePanel(fake.app);
   t.after(() => panel.dispose());
   const physical: SimulatorDevice = { platform: "ios", kind: "physical", udid: "00008150-001068280AE8C01C", coreDeviceId: OTHER_UDID,
@@ -297,4 +298,54 @@ test("a physical iPhone discovers apps, selects CPU monitoring and closes on dis
   assert.equal(disconnected.monitoring, false);
   const names = fake.events.map(event => event.split(":")[0]);
   assert.deepEqual(names, ["open", "close"]);
+});
+
+const physical: SimulatorDevice = { ...device, platform: "ios", kind: "physical", state: "connected", udid: "00008150-001068280AE8C01C" };
+
+test("physical iOS selects the foreground app among several candidates and preserves the chosen recording", async t => {
+  const fake = host();
+  const first = { bundleId: "app.a", pid: 123 };
+  const second = { bundleId: "app.b", pid: 456 };
+  fake.setApps([first, { ...second, foreground: true }]);
+  const panel = new PerformancePanel(fake.app);
+  t.after(() => panel.dispose());
+  panel.selectSimulator(physical);
+  panel.setAvailable(true);
+  panel.show();
+  await tick();
+  assert.equal(panel.getSnapshot().bundleId, second.bundleId);
+  assert.equal(fake.targets[0].bundleId, second.bundleId);
+
+  fake.setApps([{ ...first, foreground: true }, second]);
+  await panel.discover();
+  await tick();
+  assert.equal(panel.getSnapshot().bundleId, second.bundleId);
+  assert.equal(fake.events.length, 1, "A foreground change does not replace an active recording.");
+
+  panel.selectApp(first.bundleId);
+  await tick();
+  fake.setApps([first, { ...second, foreground: true }]);
+  await panel.discover();
+  await tick();
+  assert.equal(panel.getSnapshot().bundleId, first.bundleId);
+  assert.equal(fake.targets.at(-1)?.bundleId, first.bundleId);
+});
+
+test("physical iOS leaves background apps unselected and detects an app opened after discovery", async t => {
+  const fake = host();
+  const app = { bundleId: "app.a", pid: 123 };
+  fake.setApps([app]);
+  const panel = new PerformancePanel(fake.app);
+  t.after(() => panel.dispose());
+  panel.selectSimulator(physical);
+  panel.setAvailable(true);
+  panel.show();
+  await tick();
+  assert.equal(panel.getSnapshot().bundleId, "");
+  assert.deepEqual(fake.events, [], "A sole background app is not a foreground match.");
+  fake.setApps([{ ...app, foreground: true }]);
+  await panel.discover();
+  await tick();
+  assert.equal(panel.getSnapshot().bundleId, app.bundleId);
+  assert.equal(fake.events.length, 1);
 });

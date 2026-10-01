@@ -6,6 +6,8 @@ use idevice::{IdeviceService, RsdService, core_device_proxy::CoreDeviceProxy,
 use plist::Value;
 use tokio::io::AsyncReadExt;
 
+mod foreground;
+
 const SERVICE: &str = "com.apple.instruments.server.services.graphics.opengl";
 const COUNTER: &str = "CoreAnimationFramesPerSecond";
 
@@ -151,12 +153,13 @@ async fn debugserver(udid: &str) -> Result<(), String> {
 async fn main() {
     let mut args = std::env::args();
     args.next();
-    let Some(mode) = args.next() else { eprintln!("Expected fps or debugserver"); std::process::exit(1); };
+    let Some(mode) = args.next() else { eprintln!("Expected fps, debugserver or foreground"); std::process::exit(1); };
     let Some(udid) = args.next() else { eprintln!("Expected a physical iPhone UDID"); std::process::exit(1); };
     let result = match mode.as_str() {
         "fps" => run(&udid).await,
         "debugserver" => debugserver(&udid).await,
-        _ => Err("Expected fps or debugserver".into()),
+        "foreground" => foreground::run(&udid).await,
+        _ => Err("Expected fps, debugserver or foreground".into()),
     };
     if let Err(error) = result { eprintln!("{error}"); std::process::exit(1); }
 }

@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 
 export async function fpsSourceHash(platform) {
   const files = platform === "ios"
-    ? ["Cargo.toml", "Cargo.lock", "src/main.rs"]
+    ? ["Cargo.toml", "Cargo.lock", "src/main.rs", "src/foreground.rs"]
     : ["collector.cpp", "perfetto/perfetto.h", "perfetto/perfetto.cc"];
   const hash = createHash("sha256");
   for (const file of files) {
