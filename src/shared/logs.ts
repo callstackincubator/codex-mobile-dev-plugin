@@ -2,8 +2,11 @@ import { z } from "zod";
 import { udidSchema } from "./protocol.ts";
 
 export const logLevels = ["info", "warn", "error", "debug"] as const;
-export const nativeLogTargetSchema = z.discriminatedUnion("platform", [
-  z.object({ platform: z.literal("ios"), deviceId: udidSchema, process: z.string().trim().min(1).max(256).optional() }).strict(),
+const iosProcess = z.string().trim().min(1).max(256).optional();
+const physicalUdid = z.string().regex(/^(?:[a-fA-F0-9]{8}-[a-fA-F0-9]{16}|[a-fA-F0-9]{40})$/);
+export const nativeLogTargetSchema = z.union([
+  z.object({ platform: z.literal("ios"), kind: z.literal("simulator").optional(), deviceId: udidSchema, process: iosProcess }).strict(),
+  z.object({ platform: z.literal("ios"), kind: z.literal("physical"), deviceId: physicalUdid, process: iosProcess }).strict(),
   z.object({ platform: z.literal("android"), deviceId: z.string().regex(/^[a-zA-Z0-9._:-]{1,128}$/), packageName: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)+$/).optional() }).strict(),
 ]);
 export const metroLogTargetSchema = z.object({ url: z.string().max(2048), targetId: z.string().min(1).max(512) }).strict();

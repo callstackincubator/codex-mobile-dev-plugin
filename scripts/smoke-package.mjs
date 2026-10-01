@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 
 const source = resolve(process.argv[2] ?? "release/marketplace/plugins/mobile-dev");
 const temporary = await mkdtemp(join(tmpdir(), "mobile-dev-package-test-"));
@@ -21,6 +22,21 @@ try {
   const mirror = require(mirrorPath);
   assert.equal(typeof mirror.openDevice, "function");
   await access(join(plugin, "dist/ios-mirror/third-party-licenses.txt"));
+  const iosLogsPath = join(plugin, "dist/ios-logs/mobile-dev-ios-logs");
+  const iosLogsReleasePath = join(plugin, "dist/ios-logs/release.json");
+  const iosLogsReleaseText = await readFile(iosLogsReleasePath, "utf8");
+  const iosLogsRelease = JSON.parse(iosLogsReleaseText);
+  const iosLogsLicensePath = join(plugin, "dist/ios-logs/third-party-licenses.txt");
+  await access(iosLogsLicensePath);
+  for (const dependency of iosLogsRelease.sources) {
+    const archivePath = join(plugin, `dist/ios-logs/sources/${dependency.name}-${dependency.version}.tar.bz2`);
+    await access(archivePath);
+  }
+  const unavailablePhone = spawnSync(iosLogsPath, ["--device", "00000000-0000000000000000", "usb"], { encoding: "utf8", timeout: 5000 });
+  assert.equal(unavailablePhone.error, undefined);
+  assert.equal(unavailablePhone.status, 1);
+  assert.match(unavailablePhone.stderr, /unavailable to libimobiledevice/);
+  console.log("The relocated physical iOS log reader loads its bundled libraries and dependency sources.");
   assert.equal(JSON.parse(await readFile(join(plugin, "plugin.json"), "utf8")).name, "mobile-dev");
   transport = new StdioClientTransport({
     command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe",
@@ -75,12 +91,12 @@ try {
   }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.49/simulator.html");
+  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.50/simulator.html");
   assert.ok(resource.contents[0].text.includes('workspace-toolbar'));
   assert.ok(resource.contents[0].text.includes('workspace-panels'));
   assert.ok(resource.contents[0].text.includes('tool-logs'));
   assert.ok(resource.contents[0].text.includes('Memory usage'), 'The packaged Performance view must include the live memory track.');
-  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.49/workspace.html");
+  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.50/workspace.html");
   assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, []);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
   runtimeTransport = new StdioClientTransport({ command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe" });

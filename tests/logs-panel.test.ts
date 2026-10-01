@@ -7,12 +7,39 @@ import type { LogOptions, LogRecord } from "../src/shared/logs.ts";
 import type { LogSink } from "../src/server/native-logs.ts";
 import { LogSessions } from "../src/server/log-sessions.ts";
 import { LogsPanel } from "../src/ui/logs-panel.ts";
+import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
 
 const device = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const };
 async function waitFor(predicate: () => boolean) {
   const end = Date.now() + 2000;
   while (!predicate()) { assert.ok(Date.now() < end); await new Promise(resolve => setTimeout(resolve, 5)); }
 }
+
+test("the selected connected iPhone opens physical logs and a disconnected phone opens none", async t => {
+  const phone: PhysicalIosDevice = { udid: "00008110-000A0B1C2D3E4000", coreDeviceId: "11111111-1111-4111-8111-111111111111",
+    name: "Test iPhone", model: "iPhone", runtime: "iOS 27.0", state: "connected", platform: "ios", kind: "physical",
+    transportType: "localNetwork", pairingState: "paired" };
+  const opened: LogOptions[] = [];
+  const app = { async callServerTool(input: { name: string; arguments: { options?: LogOptions } }) {
+    if (input.name === "mobile_logs_session") {
+      assert.ok(input.arguments.options);
+      opened.push(input.arguments.options);
+    }
+    return { content: [] };
+  } } as unknown as App;
+  const panel = new LogsPanel(app, { canAttach: true } as PanelContext);
+  t.after(() => panel.dispose());
+  panel.configure({ process: "Example" });
+  panel.selectSimulator(phone);
+  panel.setAvailable(true);
+  panel.show();
+  await waitFor(() => opened.length === 1);
+  assert.deepEqual(opened[0], { native: { platform: "ios", kind: "physical", deviceId: phone.udid, process: "Example" } });
+  panel.selectSimulator({ ...phone, state: "disconnected" });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(opened.length, 1);
+  assert.equal(panel.getSnapshot().status, "Choose a source");
+});
 
 test("pausing closes a log session, and a late session cannot restore a closed panel", async t => {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];

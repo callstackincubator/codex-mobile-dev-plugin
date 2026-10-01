@@ -57,7 +57,7 @@ test("native process reads handle split UTF-8, oversized lines, and explicit can
   const entries: LogRecord[] = [];
   let received!: () => void;
   const ready = new Promise<void>(resolve => { received = resolve; });
-  const code = String.raw`const line = Buffer.from(JSON.stringify({ eventMessage: 'hello 🌍' }) + '\n'); process.stdout.write('x'.repeat(70000) + '\n'); process.stdout.write(line.subarray(0, line.length - 5)); setTimeout(() => { process.stdout.write(line.subarray(line.length - 5)); setInterval(() => {}, 1000); }, 10);`;
+  const code = String.raw`const line = Buffer.from(JSON.stringify({ eventMessage: 'hello 🌍' }) + '\n'); process.stdout.write(JSON.stringify({ eventMessage: 'x'.repeat(300000) }) + '\n'); process.stdout.write(line.subarray(0, line.length - 5)); setTimeout(() => { process.stdout.write(line.subarray(line.length - 5)); setInterval(() => {}, 1000); }, 10);`;
   const running = runLogProcess(process.execPath, ["-e", code], parseIOSLog, { status() {}, log(log) { entries.push(log); received(); } }, controller.signal);
   await ready; controller.abort(); await running;
   assert.equal(entries.length, 1); assert.equal(entries[0].message, "hello 🌍");

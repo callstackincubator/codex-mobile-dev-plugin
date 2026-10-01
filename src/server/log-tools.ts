@@ -9,6 +9,8 @@ import type { LogOptions } from "../shared/logs.ts";
 import { errorMessage, parseBaseUrl } from "../shared/protocol.ts";
 import { listAndroidLogDevices } from "./native-logs.ts";
 import { metroTargets } from "./metro-logs.ts";
+import { listIosDevices } from "./ios-devices.ts";
+import { physicalIosLogDevice } from "./physical-ios-logs.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 const sessionId = z.string().regex(/^[a-f0-9]{64}$/);
@@ -22,7 +24,7 @@ function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
   };
 }
 
-export function registerLogTools(server: McpServer, logs: LogSessions, baguette: Baguette) {
+export function registerLogTools(server: McpServer, logs: LogSessions, baguette: Baguette, discoverIosDevices = listIosDevices) {
   server.registerResource("log-batch", new ResourceTemplate("logs://mobile-dev/{sessionId}/batch?after={sequence}", { list: undefined }), {
     mimeType: "application/json", description: "Read a batch from an authorized Mobile Dev log session. Idle sessions expire after five minutes.",
   }, async (uri, variables) => ({ contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(await logs.read(sessionId.parse(variables.sessionId), sequence.parse(variables.sequence))) }] }));
@@ -40,10 +42,13 @@ export function registerLogTools(server: McpServer, logs: LogSessions, baguette:
   }));
 
   registerAppTool(server, "mobile_logs_session", {
-    title: "Start app logs", description: "Stream iOS simulator unified logs, Android logcat, and/or a selected Metro inspector's JS console and exceptions. Use an iOS executable name for process, or an Android packageName to follow its PID across app restarts. Leaving the app filter empty includes all device processes. Metro URL must be local HTTP and targetId must come from mobile_log_sources. Does not launch or rebuild the app.",
+    title: "Start app logs", description: "Stream iOS simulator or physical-device unified logs, Android logcat, and/or a selected Metro inspector's JS console and exceptions. For a physical iPhone, use kind physical and the hardware UDID from mobile_list_ios_devices, not its CoreDevice ID. The phone must be connected and paired. Use an iOS executable name for process, or an Android packageName to follow the app across restarts. Leaving the app filter empty includes all device processes. iOS unified logs exclude ordinary print/printf output and may redact private values. Metro URL must be local HTTP and targetId must come from mobile_log_sources. Does not launch or rebuild the app.",
     inputSchema: { options: logOptionsSchema }, annotations, _meta: metadata,
   }, safe(async ({ options }: { options: LogOptions }) => {
-    if (options.native?.platform === "ios") await baguette.device(options.native.deviceId, true);
+    if (options.native?.platform === "ios") {
+      if (options.native.kind === "physical") await physicalIosLogDevice(options.native.deviceId, discoverIosDevices);
+      else await baguette.device(options.native.deviceId, true);
+    }
     if (options.native?.platform === "android" && !(await listAndroidLogDevices()).some(device => device.id === options.native?.deviceId)) {
       throw new Error("The selected Android device is absent or unauthorized. Refresh log sources.");
     }

@@ -26,7 +26,7 @@ export class LogsPanel {
   private discovery = 0;
   private snapshot = {
     open: false, paused: false, available: false, settings: false, discovering: false,
-    status: "Closed", statusMessage: "", error: "", sourceNotice: "", selectedLabel: "Selected simulator",
+    status: "Closed", statusMessage: "", error: "", sourceNotice: "", selectedLabel: "Selected device",
     native: "ios", process: "", metroUrl: "http://127.0.0.1:8081", target: "",
     android: [] as { id: string; name: string }[], metro: [] as MetroTarget[],
   };
@@ -65,9 +65,10 @@ export class LogsPanel {
     if (split && !this.openedForSplitLayout) { this.openedForSplitLayout = true; this.show(); }
   }
   selectSimulator(simulator?: SimulatorDevice) {
-    const changed = simulator?.udid !== this.simulator?.udid || simulator?.state !== this.simulator?.state;
+    const changed = simulator?.udid !== this.simulator?.udid || simulator?.state !== this.simulator?.state
+      || simulator?.kind !== this.simulator?.kind || simulator?.platform !== this.simulator?.platform;
     this.simulator = simulator;
-    this.update({ selectedLabel: simulator ? `${simulator.platform === "android" ? "Android" : "iOS"} · ${simulator.name}` : "Selected simulator" });
+    this.update({ selectedLabel: simulator ? `${simulator.platform === "android" ? "Android" : "iOS"} · ${simulator.name}` : "Selected device" });
     if (changed && this.open && this.snapshot.native === "ios") this.restart();
   }
   private controls() {
@@ -80,10 +81,13 @@ export class LogsPanel {
     const options: LogOptions = {};
     const { native, target, metroUrl } = this.snapshot;
     const process = this.snapshot.process.trim();
-    if (native === "ios" && this.simulator?.state === "Booted") {
-      options.native = this.simulator.platform === "android"
-        ? { platform: "android", deviceId: this.simulator.udid, ...(process ? { packageName: process } : {}) }
-        : { platform: "ios", deviceId: this.simulator.udid, ...(process ? { process } : {}) };
+    const selected = this.simulator;
+    const physicalIos = selected?.kind === "physical" && selected.platform === "ios";
+    const ready = physicalIos ? selected.state === "connected" : selected?.state === "Booted";
+    if (native === "ios" && selected && ready) {
+      options.native = selected.platform === "android"
+        ? { platform: "android", deviceId: selected.udid, ...(process ? { packageName: process } : {}) }
+        : { platform: "ios", deviceId: selected.udid, ...(physicalIos ? { kind: "physical" } : {}), ...(process ? { process } : {}) };
     } else if (native.startsWith("android:")) {
       options.native = { platform: "android", deviceId: native.slice(8), ...(process ? { packageName: process } : {}) };
     }

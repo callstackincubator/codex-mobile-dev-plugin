@@ -1,4 +1,5 @@
 import { iosMirrorSourceHash } from "./build-ios-mirror.mjs";
+import { iosLogsSourceHash } from "./build-ios-logs.mjs";
 import { build } from "esbuild";
 import { compile } from "@tailwindcss/node";
 import { Scanner } from "@tailwindcss/oxide";
@@ -19,6 +20,29 @@ const iosMirrorBinaryHash = createHash("sha256").update(iosMirrorBinary).digest(
 if (iosMirrorBinaryHash !== iosMirrorRelease.binarySHA256) throw new Error("Physical iOS capture addon integrity check failed.");
 await cp("vendor/ios-mirror", "dist/ios-mirror", { recursive: true });
 for (const file of ["README.md", "IDEVICE-LICENSE.txt", "DEVICE-HUB-LICENSE.txt"]) await copyFile(`native/ios-mirror/${file}`, `dist/ios-mirror/${file}`);
+const iosLogsReleaseText = await readFile("vendor/ios-logs/release.json", "utf8");
+const iosLogsRelease = JSON.parse(iosLogsReleaseText);
+const iosLogsHash = await iosLogsSourceHash();
+if (iosLogsHash !== iosLogsRelease.sourceSHA256) throw new Error("Run npm run rebuild:ios-logs after editing the physical iOS log reader.");
+for (const [file, metadata] of Object.entries(iosLogsRelease.binaries)) {
+  const bytes = await readFile(`vendor/ios-logs/${file}`);
+  const hash = createHash("sha256");
+  hash.update(bytes);
+  const sha256 = hash.digest("hex");
+  if (sha256 !== metadata.sha256) throw new Error(`Physical iOS log reader integrity check failed for ${file}.`);
+}
+await rm("dist/ios-logs", { recursive: true, force: true });
+await cp("vendor/ios-logs", "dist/ios-logs", { recursive: true });
+for (const source of iosLogsRelease.sources) {
+  const archive = `${source.name}-${source.version}.tar.bz2`;
+  const bytes = await readFile(`vendor/ios-logs/sources/${archive}`);
+  const hash = createHash("sha256");
+  hash.update(bytes);
+  const sha256 = hash.digest("hex");
+  if (sha256 !== source.sha256) throw new Error(`Physical iOS log dependency source integrity check failed for ${archive}.`);
+}
+for (const file of ["README.md", "LICENSE", "collector.c", "dependencies.json"]) await copyFile(`native/ios-logs/${file}`, `dist/ios-logs/${file}`);
+await copyFile("scripts/build-ios-logs.mjs", "dist/ios-logs/build-ios-logs.mjs");
 const cpuRelease = JSON.parse(await readFile("vendor/android-cpu/release.json", "utf8"));
 const cpuSource = await readFile("native/android-cpu/collector.c");
 const cpuSourceHash = createHash("sha256").update(cpuSource).digest("hex");
@@ -116,4 +140,4 @@ for (const directory of [...packageRoots].sort()) {
   for (const file of files) licenses.push(`${metadata.name} ${metadata.version} (${file})\n\n${await readFile(`${directory}/${file}`, "utf8")}`);
 }
 await writeFile("dist/third-party-licenses.txt", licenses.join("\n\n====================\n\n"));
-console.log("Built the panel, Baguette, serve-emu, and agent-device runtimes.");
+console.log("Built the panel, physical iOS logs, Baguette, serve-emu, and agent-device runtimes.");

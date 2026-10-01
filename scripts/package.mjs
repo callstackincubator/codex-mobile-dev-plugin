@@ -12,6 +12,8 @@ await access("dist/baguette/Baguette_Baguette.bundle");
 await access("dist/agent-device-server.mjs");
 await access("dist/ios-mirror/darwin-arm64.node");
 await access("dist/ios-mirror/third-party-licenses.txt");
+await access("dist/ios-logs/mobile-dev-ios-logs");
+await access("dist/ios-logs/third-party-licenses.txt");
 for (const abi of ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]) await access(`dist/android-cpu/${abi}/mobile-dev-cpu`);
 await access("dist/android-cpu/LICENSE");
 await access("dist/serve-emu/node_modules/serve-emu/src/cli.ts");
@@ -22,6 +24,7 @@ await mkdir(plugin, { recursive: true });
 for (const path of ["plugin.json", "mcp.json", "README.md", "THIRD_PARTY_NOTICES.md"]) await copyFile(path, `${plugin}/${path}`);
 for (const path of ["assets", "dist", "skills/mobile-dev", "skills/mobile-dev-setup", "skills/agent-device"]) await cp(path, `${plugin}/${path}`, { recursive: true, verbatimSymlinks: true });
 await chmod(`${plugin}/dist/baguette/Baguette`, 0o755);
+await chmod(`${plugin}/dist/ios-logs/mobile-dev-ios-logs`, 0o755);
 await mkdir(`${marketplace}/.agents/plugins`, { recursive: true });
 await writeFile(`${marketplace}/.agents/plugins/marketplace.json`, JSON.stringify({
   name: "mobile-dev-local",

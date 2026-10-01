@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import type { LogRecord, LogSourceStatus, NativeLogTarget } from "../shared/logs.ts";
 import { errorMessage } from "../shared/protocol.ts";
 import { parseIOSLog, parseLogcat } from "./log-parsers.ts";
+import { physicalIosLogCommand } from "./physical-ios-logs.ts";
 
 const execute = promisify(execFile);
 export type LogSink = { log: (log: LogRecord) => void; status: (status: LogSourceStatus) => void };
@@ -30,7 +31,7 @@ export async function listAndroidLogDevices(): Promise<{ id: string; name: strin
   });
 }
 
-export function runLogProcess(command: string, args: string[], parse: (line: string) => LogRecord | undefined, sink: LogSink, signal: AbortSignal): Promise<void> {
+export function runLogProcess(command: string, args: string[], parse: (line: string) => LogRecord | undefined, sink: LogSink, signal: AbortSignal, readyLine?: string): Promise<void> {
   if (signal.aborted) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
@@ -39,24 +40,39 @@ export function runLogProcess(command: string, args: string[], parse: (line: str
     let discarding = false;
     let diagnostics = "";
     let stopping = false;
+    let ready = readyLine === undefined;
     let killTimer: NodeJS.Timeout | undefined;
     const stop = () => { if (stopping) return; stopping = true; child.kill("SIGTERM"); killTimer = setTimeout(() => child.kill("SIGKILL"), 1000); killTimer.unref(); };
+    const startupTimer = readyLine === undefined ? undefined : setTimeout(() => {
+      diagnostics = "The iPhone did not accept log streaming within 15 seconds. Unlock it and check the connection.";
+      stop();
+    }, 15000);
     signal.addEventListener("abort", stop, { once: true });
-    child.once("spawn", () => { sink.status({ source: "native", state: "live" }); if (signal.aborted) stop(); });
+    child.once("spawn", () => { if (ready) sink.status({ source: "native", state: "live" }); if (signal.aborted) stop(); });
     child.stdout.on("data", (chunk: Buffer) => {
       const text = decoder.write(chunk);
       for (const part of text.match(/[^\n]*\n|[^\n]+$/g) ?? []) {
         const complete = part.endsWith("\n");
         if (!discarding) pending += part;
-        if (pending.length > 65536) { pending = ""; discarding = true; }
+        if (pending.length > 256 * 1024) { pending = ""; discarding = true; }
         if (complete) {
-          if (!discarding && !signal.aborted) { const record = parse(pending.trimEnd()); if (record) sink.log(record); }
+          if (discarding === false && signal.aborted === false) {
+            const line = pending.trimEnd();
+            if (ready === false && line === readyLine) {
+              ready = true;
+              clearTimeout(startupTimer);
+              sink.status({ source: "native", state: "live" });
+            } else {
+              const record = parse(line);
+              if (record) sink.log(record);
+            }
+          }
           pending = ""; discarding = false;
         }
       }
     });
     child.stderr.on("data", chunk => { diagnostics = (diagnostics + chunk.toString()).slice(-2048); });
-    const cleanup = () => { signal.removeEventListener("abort", stop); clearTimeout(killTimer); };
+    const cleanup = () => { signal.removeEventListener("abort", stop); clearTimeout(killTimer); clearTimeout(startupTimer); };
     child.once("error", error => { cleanup(); signal.aborted ? resolve() : reject(error); });
     child.once("close", (code, exitSignal) => {
       cleanup();
@@ -66,7 +82,7 @@ export function runLogProcess(command: string, args: string[], parse: (line: str
   });
 }
 
-export function startNativeLogs(target: NativeLogTarget, sink: LogSink): StopLogSource {
+export function startNativeLogs(target: NativeLogTarget, sink: LogSink, physicalCommand = physicalIosLogCommand): StopLogSource {
   const controller = new AbortController();
   const signal = controller.signal;
   const scopedSink: LogSink = { status: sink.status, log: log => sink.log({ ...log, deviceId: target.deviceId,
@@ -79,8 +95,13 @@ export function startNativeLogs(target: NativeLogTarget, sink: LogSink): StopLog
       try {
         if (target.platform === "ios") {
           if (process.platform !== "darwin") throw new Error("iOS logs require macOS and Xcode.");
-          await runLogProcess("xcrun", ["simctl", "spawn", target.deviceId, "log", "stream", "--style", "ndjson", "--level", "debug",
-            ...(target.process ? ["--process", target.process] : [])], parseIOSLog, scopedSink, signal);
+          if (target.kind === "physical") {
+            const reader = await physicalCommand(target);
+            await runLogProcess(reader.command, reader.args, parseIOSLog, scopedSink, signal, '{"ready":true}');
+          } else {
+            await runLogProcess("xcrun", ["simctl", "spawn", target.deviceId, "log", "stream", "--style", "ndjson", "--level", "debug",
+              ...(target.process ? ["--process", target.process] : [])], parseIOSLog, scopedSink, signal);
+          }
         } else if (!target.packageName) {
           await runLogProcess(adb, ["-s", target.deviceId, "logcat", "-v", "threadtime", "-T", "1", "*:V"], parseLogcat, scopedSink, signal);
         } else {
