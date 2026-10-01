@@ -109,6 +109,10 @@ export class IosMirrorSessions {
     session.capture.reset();
   }
 
+  deviceId(id: string) {
+    return this.session(id).udid;
+  }
+
   async closeSession(id: string) {
     const session = this.sessions.get(id);
     if (session === undefined) return;
