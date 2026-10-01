@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { OpenAIUiToolMetadataSchema, OpenAIUiResourceMetadataSchema } from "@openai/mcp-extensions/server";
 import { APP_URI, WORKSPACE_URI } from "../src/server/plugin.ts";
+import { RECORDING_URI } from "../src/shared/recordings.ts";
 import { Baguette } from "../src/server/baguette.ts";
 import { parseBaseUrl } from "../src/shared/protocol.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "./fixtures.ts";
@@ -89,7 +90,7 @@ test("cached side tabs load the current UI through old resource addresses", asyn
   t.after(async () => { await client.close(); await plugin.close(); });
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
-  assert.equal(APP_URI, "ui://mobile-dev/0.1.78/simulator.html");
+  assert.equal(APP_URI, "ui://mobile-dev/0.1.79/simulator.html");
   const previousPanel = await client.readResource({ uri: "ui://mobile-dev/0.1.52/simulator.html" });
   assert.equal(previousPanel.contents[0].text, html);
   for (const uri of [APP_URI, "ui://mobile-dev/0.1.44/simulator.html", "ui://mobile-dev/0.1.43/simulator.html", "ui://mobile-dev/0.1.42/simulator.html", "ui://mobile-dev/0.1.41/simulator.html", "ui://mobile-dev/0.1.40/simulator.html", "ui://mobile-dev/0.1.39/simulator.html", "ui://mobile-dev/0.1.38/simulator.html", "ui://mobile-dev/0.1.37/simulator.html", "ui://mobile-dev/0.1.36/simulator.html", "ui://mobile-dev/0.1.35/simulator.html", "ui://mobile-dev/0.1.34/simulator.html", "ui://mobile-dev/0.1.33/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html", "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/simulator.html", ...[1, 2, 3, 4, 5, 6].map(version => `ui://mobile-dev/v${version}/simulator.html`)]) {
@@ -129,8 +130,15 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   }
   assert.equal((workspace._meta?.ui as { resourceUri: string }).resourceUri, WORKSPACE_URI);
   const workspaceResource = await client.readResource({ uri: WORKSPACE_URI });
+  const recordingResource = await client.readResource({ uri: RECORDING_URI });
+  assert.match(recordingResource.contents[0].text as string, /data-view="recording"/);
+  assert.equal(recordingResource.contents[0].mimeType, "text/html;profile=mcp-app");
+  assert.deepEqual(recordingResource.contents[0]._meta?.["openai/ui"], { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] });
+  assert.deepEqual(recordingResource.contents[0]._meta?.ui, { prefersBorder: true, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
+  const renderRecording = tools.tools.find(tool => tool.name === "mobile_render_performance_recording");
+  assert.deepEqual(renderRecording?._meta?.ui, { resourceUri: RECORDING_URI, visibility: ["app", "model"] });
   assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);
-  assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.78/workspace.html");
+  assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.79/workspace.html");
   const previousWorkspace = await client.readResource({ uri: "ui://mobile-dev/0.1.52/workspace.html" });
   assert.equal(previousWorkspace.contents[0].text, workspaceResource.contents[0].text);
   for (const uri of ["ui://mobile-dev/0.1.44/workspace.html", "ui://mobile-dev/0.1.43/workspace.html", "ui://mobile-dev/0.1.42/workspace.html", "ui://mobile-dev/0.1.41/workspace.html", "ui://mobile-dev/0.1.40/workspace.html", "ui://mobile-dev/0.1.39/workspace.html", "ui://mobile-dev/0.1.38/workspace.html", "ui://mobile-dev/0.1.37/workspace.html", "ui://mobile-dev/0.1.36/workspace.html", "ui://mobile-dev/0.1.35/workspace.html", "ui://mobile-dev/0.1.34/workspace.html", "ui://mobile-dev/0.1.33/workspace.html", "ui://mobile-dev/0.1.24/mcp-stream/workspace.html", "ui://mobile-dev/0.1.21/workspace.html", "ui://mobile-dev/0.1.20/workspace.html", "ui://mobile-dev/workspace.html"]) {

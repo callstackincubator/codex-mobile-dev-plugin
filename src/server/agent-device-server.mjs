@@ -1,85 +1,90 @@
 import "./instrument.ts";
-import * as Sentry from "@sentry/node";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { agentDeviceBackend, createAgentDeviceAdapter } from "./agent-device-adapter.ts";
 import { startStorageMetrics } from "./storage-metrics.ts";
-import { closeServerTelemetry } from "./telemetry.ts";
-import { spawn, execFile } from "node:child_process";
+import { captureServerError, closeServerTelemetry, installTracePropagation } from "./telemetry.ts";
+import { execFile } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-const runtime = fileURLToPath(new URL("./agent-device/", import.meta.url));
+const runtimeUrl = new URL("./agent-device/", import.meta.url);
+const runtime = fileURLToPath(runtimeUrl);
 const cli = join(runtime, "node_modules/agent-device/bin/agent-device.mjs");
-const stateDir = await mkdtemp(join(tmpdir(), "mobile-dev-agent-device-"));
-const runnerCache = join(homedir(), ".agent-device/apple-runner");
+const temporary = tmpdir();
+const statePrefix = join(temporary, "mobile-dev-agent-device-");
+const stateDir = await mkdtemp(statePrefix);
+const home = homedir();
+const runnerCache = join(home, ".agent-device/apple-runner");
 const stopStorageMetrics = startStorageMetrics({ agent_device_state: stateDir, apple_runner_cache: runnerCache });
-// Use this package's config and daemon rather than an inherited global/cloud setup.
-const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("AGENT_DEVICE_")));
-Object.assign(env, {
-  AGENT_DEVICE_CONFIG: join(runtime, "config.json"),
-  AGENT_DEVICE_STATE_DIR: stateDir,
-  AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1",
-});
+const env = {};
+for (const [key, value] of Object.entries(process.env)) {
+  if (key.startsWith("AGENT_DEVICE_") === false && value !== undefined) env[key] = value;
+}
+env.AGENT_DEVICE_CONFIG = join(runtime, "config.json");
+env.AGENT_DEVICE_STATE_DIR = stateDir;
+env.AGENT_DEVICE_NO_UPDATE_NOTIFIER = "1";
 console.error(`[mobile-dev] agent-device state directory: ${stateDir}`);
-const child = spawn(process.execPath, [cli, "mcp"], { cwd: stateDir, env, stdio: ["pipe", "inherit", "inherit"] });
-const exited = new Promise(resolve => {
-  child.once("exit", (code, signal) => resolve({ code, signal }));
-  child.once("error", error => {
-    console.error(`[mobile-dev] agent-device failed to start: ${error.message}`);
-    Sentry.captureException(error, { tags: { operation: "agent_device.start" } });
-    resolve({ code: 1 });
-  });
-});
-
-async function waitForExit(timeout) {
-  let timer;
-  try {
-    return await Promise.race([exited.then(() => true), new Promise(resolve => {
-      timer = setTimeout(() => resolve(false), timeout);
-    })]);
-  } finally { clearTimeout(timer); }
-}
-
-let closing;
-function close(signal) {
-  if (closing) return closing;
-  closing = (async () => {
+const client = new Client({ name: "mobile-dev-agent-device-adapter", version: "1" });
+const backendTransport = new StdioClientTransport({ command: process.execPath, args: [cli, "mcp"], cwd: stateDir, env, stderr: "inherit" });
+const transport = new StdioServerTransport();
+installTracePropagation(transport);
+const run = promisify(execFile);
+let server;
+let closing = false;
+let closed;
+function close() {
+  if (closing) return closed;
+  closing = true;
+  closed = (async () => {
     stopStorageMetrics();
-    process.stdin.unpipe(child.stdin);
     process.stdin.destroy();
-    child.stdin.end();
-    if (signal) child.kill(signal);
-    if (!await waitForExit(1000)) child.kill("SIGTERM");
-    if (!await waitForExit(1000)) child.kill("SIGKILL");
     try {
-      // The CLI verifies the daemon's PID identity and cleans only its own runner leases.
-      await promisify(execFile)(process.execPath, [cli, "daemon", "stop", "--state-dir", stateDir, "--clean"], {
-        cwd: stateDir, env, timeout: 10000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024,
-      });
-    } catch (error) {
-      console.error(`[mobile-dev] agent-device cleanup failed: ${error.stderr?.trim() || error.message}`);
+      try { await server?.close(); }
+      finally { await client.close(); }
+    } finally {
+      try {
+        // The CLI checks the daemon's PID identity and releases only its own runner leases.
+        await run(process.execPath, [cli, "daemon", "stop", "--state-dir", stateDir, "--clean"], {
+          cwd: stateDir, env, timeout: 10000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024,
+        });
+      } catch (error) {
+        const detail = error.stderr?.trim() || error.message;
+        console.error(`[mobile-dev] agent-device cleanup failed: ${detail}`);
+        const failure = new Error("Agent Device cleanup failed.");
+        captureServerError(failure, "agent_device.cleanup");
+      }
+      // Keep logs and artifacts readable after a chat closes. The OS manages this temp directory.
+      await closeServerTelemetry();
     }
-    // Keep logs and artifacts readable after a chat closes. The OS manages this temp directory.
-    const result = await exited;
-    if (signal === undefined && (result.code !== 0 || result.signal)) {
-      const exitCode = String(result.code ?? "none");
-      const exitSignal = result.signal ?? "none";
-      Sentry.captureMessage("agent-device exited unexpectedly", { level: "error", tags: { operation: "agent_device.exit", exit_code: exitCode, exit_signal: exitSignal } });
-    }
-    process.exitCode = result.code ?? 0;
-    await closeServerTelemetry();
   })();
-  return closing;
+  return closed;
 }
-
-process.stdin.pipe(child.stdin);
-child.stdin.on("error", error => {
-  if (error.code !== "EPIPE") console.error(`[mobile-dev] agent-device stdin: ${error.message}`);
-  void close("SIGTERM");
-});
+client.onclose = () => {
+  if (closing) return;
+  process.exitCode = 1;
+  const error = new Error("Agent Device runtime disconnected unexpectedly.");
+  captureServerError(error, "agent_device.exit");
+  void close();
+};
+transport.onclose = () => { void close(); };
 process.stdin.once("end", () => { void close(); });
 process.stdin.once("close", () => { void close(); });
-process.on("SIGINT", () => { void close("SIGINT"); });
-process.on("SIGTERM", () => { void close("SIGTERM"); });
-void exited.then(() => close());
+process.on("SIGINT", () => { void close(); });
+process.on("SIGTERM", () => { void close(); });
+try {
+  await client.connect(backendTransport);
+  const backend = agentDeviceBackend(client);
+  server = await createAgentDeviceAdapter(backend);
+  if (closing === false) await server.connect(transport);
+} catch (error) {
+  console.error(`[mobile-dev] agent-device failed to start: ${error.message}`);
+  const failure = new Error("Agent Device adapter failed to start.");
+  captureServerError(failure, "agent_device.start");
+  process.exitCode = 1;
+  await close();
+}

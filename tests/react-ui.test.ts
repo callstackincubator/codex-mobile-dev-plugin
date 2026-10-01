@@ -7,6 +7,8 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { LogsPanel } from "../src/ui/logs-panel.ts";
 import { PerformancePanel } from "../src/ui/performance-panel.ts";
+import { RecordingController } from "../src/ui/recording-controller.ts";
+import { recordingFixture } from "./recording-fixtures.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { PanelContext } from "../src/ui/model-context.ts";
 import { logKey } from "../src/shared/logs.ts";
@@ -40,7 +42,16 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   };
   const directory = await mkdtemp(resolve("node_modules/.mobile-dev-ui-test-"));
   let cleanupView = async () => {};
-  t.after(async () => { await cleanupView(); dom.window.close(); for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); } await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => {
+    await cleanupView();
+    await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+    dom.window.close();
+    for (const [key, descriptor] of previous) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+    }
+    await rm(directory, { recursive: true, force: true });
+  });
   const output = resolve(directory, "workspace.mjs");
   await build({ stdin: { contents: 'export { Workspace } from "./src/ui/components/workspace.tsx"; export { getDeviceSettings } from "./src/ui/device-settings.ts"; export { getDevicePicker } from "./src/ui/device-picker.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
     external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels"] });
@@ -58,10 +69,12 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     return () => { logSubscribers--; unsubscribe(); };
   };
   let emitCpu: ((batch: CpuBatch) => void) | undefined;
+  let cpuSessionsOpened = 0;
   const performanceApp = {
     async callServerTool({ name }: { name: string }) {
       if (name === "mobile_performance_sources") return { content: [], structuredContent: { apps: [{ bundleId: "com.example.app", pid: 123 }] } };
       if (name === "mobile_cpu_close") return { content: [] };
+      if (name === "mobile_cpu_session") cpuSessionsOpened++;
       const sessionId = "1".repeat(64);
       return { content: [], structuredContent: { sessionId, cpuUri: `cpu://mobile-dev/${sessionId}/batch?after=0` } };
     },
@@ -78,13 +91,14 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     },
   };
   const performance = new PerformancePanel(performanceApp as unknown as App);
+  const recordingController = new RecordingController(performanceApp as unknown as App);
   performance.selectSimulator({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
   performance.setAvailable(true);
   const root = createRoot(dom.window.document.getElementById("root")!);
-  cleanupView = async () => { await act(async () => { root.unmount(); await panel.dispose(); await performance.dispose(); }); };
+  cleanupView = async () => { recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); await performance.dispose(); }); };
   const layouts: string[] = [];
   let commits = 0;
-  const workspace = createElement(Workspace, { logs: panel, performance, onLayout(layout: string) { layouts.push(layout); } });
+  const workspace = createElement(Workspace, { logs: panel, performance, recordingController, onLayout(layout: string) { layouts.push(layout); } });
   const profiled = createElement(Profiler, { id: "workspace", onRender() { commits++; } }, workspace);
   await act(async () => { root.render(profiled); });
   const canvas = dom.window.document.querySelector('canvas');
@@ -332,4 +346,16 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await selectTool("none");
   assert.equal(dom.window.document.getElementById("logs-body")?.hidden, true);
   assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 0);
+  const sessionsBeforeOpening = cpuSessionsOpened;
+  await act(async () => {
+    recordingController.accept({ content: [], structuredContent: { recording: recordingFixture(), range: { start: 12, end: 18 } } });
+  });
+  const toolsTrigger = dom.window.document.getElementById("tool-select");
+  const showsPerformance = toolsTrigger?.textContent?.includes("Performance");
+  assert.ok(showsPerformance);
+  assert.ok(dom.window.document.body.textContent?.includes("Selected range: 12.0s–18.0s"));
+  assert.ok(dom.window.document.body.textContent?.includes("Checkout scroll · Run 1"));
+  assert.equal(layouts.at(-1), "none", "Opening a saved run gives the detailed chart the workspace.");
+  assert.equal(cpuSessionsOpened, sessionsBeforeOpening, "Opening a saved recording does not start another collector.");
+  assert.equal(dom.window.document.querySelector("canvas"), canvas, "Saved recordings preserve the existing device DOM.");
 });

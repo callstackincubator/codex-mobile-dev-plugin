@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.78",
+  "version": "0.1.79",
   "private": true,
   "type": "module",
   "engines": {
@@ -21,6 +21,7 @@
     "test:package": "node scripts/smoke-package.mjs",
     "test:cpu-cache": "node scripts/smoke-cpu-cache.mjs",
     "test:agent-device": "node scripts/smoke-agent-device.mjs",
+    "check:mcp-budget": "node scripts/mcp-tool-budget.mjs",
     "test:reconnect": "node scripts/smoke-reconnect.mjs",
     "test:logs": "node scripts/smoke-logs.mjs",
     "test:ios-logs": "node scripts/smoke-logs.mjs --physical",
@@ -46,6 +47,7 @@
     "@openai/mcp-extensions": "0.1.0",
     "@sentry/node": "11.2.0",
     "@sentry/react": "11.2.0",
+    "ajv": "8.20.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.49.0",

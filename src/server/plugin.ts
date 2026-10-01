@@ -23,6 +23,10 @@ import { registerLogTools } from "./log-tools.ts";
 import { registerInspectionTools } from "./inspection-tools.ts";
 import { CpuSessions, createCpuSessions } from "./cpu/sessions.ts";
 import { registerCpuTools } from "./cpu/tools.ts";
+import { PerformanceRecordings } from "./performance-recordings.ts";
+import { registerRecordingTools } from "./recording-tools.ts";
+import { RECORDING_URI } from "../shared/recordings.ts";
+import { startStorageMetrics } from "./storage-metrics.ts";
 import { DisplayFpsSessions } from "./fps/sessions.ts";
 import { registerDisplayFpsTools } from "./fps/tools.ts";
 import { SimulatorInputService } from "./simulator-input.ts";
@@ -117,7 +121,10 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   registerLogTools(server, logs, baguette);
   const closeInspection = registerInspectionTools(server, baguette, android);
-  registerCpuTools(server, cpu, baguette);
+  const validateCpuDevice = registerCpuTools(server, cpu, baguette);
+  const recordings = new PerformanceRecordings(cpu);
+  registerRecordingTools(server, recordings, validateCpuDevice, WORKSPACE_URI);
+  const stopRecordingStorageMetrics = startStorageMetrics({ recordings: recordings.store.directory });
   registerDisplayFpsTools(server, fps);
   const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot, async deviceId => {
     const closeCpu = cpu.closeDevice(deviceId);
@@ -190,6 +197,15 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   });
   registerAppResource(server, "mobile-dev-simulator", APP_URI, {}, readApp);
   registerAppResource(server, "mobile-dev-workspace", WORKSPACE_URI, {}, readApp);
+  registerAppResource(server, "mobile-dev-recording", RECORDING_URI, {}, async uri => {
+    const resource = typeof html === "string" ? { html } : await html();
+    const configured = configureUI(resource.html);
+    const content = configured.replace('data-view="panel"', 'data-view="recording"');
+    return { contents: [{ uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: content, _meta: {
+      ui: { prefersBorder: true, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
+      "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] },
+    } }] };
+  });
   for (const [index, uri] of legacyWorkspaceUris.entries()) {
     registerAppResource(server, `mobile-dev-workspace-legacy-${index}`, uri, {}, readApp);
   }
@@ -403,6 +419,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   return {
     server,
     async close() {
+      stopRecordingStorageMetrics();
+      await recordings.close();
       closeInspection(); closeAndroid(); streams.close();
       try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror()]); }
       finally { baguette.dispose(); await server.close(); }

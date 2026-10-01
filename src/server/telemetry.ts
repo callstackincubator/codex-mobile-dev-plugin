@@ -25,7 +25,7 @@ export function installTracePropagation(transport: Transport) {
             const attributes: Record<string, string> = {};
             if (context !== null && typeof context === "object") {
               const allowed: Record<string, readonly string[]> = {
-                surface: ["logs", "performance", "simulator"], view: ["panel", "workspace"], layout: ["ios", "android", "both", "none"],
+                surface: ["logs", "performance", "simulator", "recording"], view: ["panel", "workspace", "recording"], layout: ["ios", "android", "both", "none"],
                 device_platform: ["ios", "android"], device_kind: ["physical", "simulator", "emulator"],
               };
               for (const [key, value] of Object.entries(context)) {

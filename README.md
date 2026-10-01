@@ -1,6 +1,8 @@
 # Mobile Dev for Codex
 
-An iOS and Android simulator panel for Codex desktop. The plugin includes Baguette 0.2.1 for streaming and agent-device 0.20.9 for agent control. serve-emu 0.0.6 and scrcpy 4.0 provide Android streaming. All three runtimes ship in the plugin and start on demand. Android needs Bun 1.3.13 or later and an installed Android SDK.
+An iOS and Android simulator panel for Codex desktop. Baguette 0.2.1 provides iOS streaming; serve-emu 0.0.6 and scrcpy 4.0 provide Android streaming. Android needs Bun 1.3.13 or later and an installed Android SDK.
+
+Agent Device is temporarily disabled in 0.1.79 while iterating on inline performance charts. The package registers only the `mobile-dev` MCP server and omits the Agent Device skill. Its implementation and bundled runtime are retained for later reactivation.
 
 The first version supports:
 
@@ -16,9 +18,8 @@ The first version supports:
 - A resizable log panel with search, repeat counts, log attachments, source settings in a popover, and a compact level filter.
 - iOS simulator and physical-device unified logs, Android logcat from connected devices, and JS console messages and exceptions from a selected Metro app.
 - A Performance tab with live iOS and Android CPU and memory usage, expandable thread charts, and a rolling 150-second timeline.
+- Saved CPU and memory runs with interactive charts in chat, linked range selection, thread summaries, and actions to ask about a range or open it in Mobile Dev.
 - MCP tools for device lists, boot and shutdown, input, screenshots, and accessibility reads.
-- agent-device's 55 official MCP tools, including app launch, snapshot refs, element presses, text entry, scrolling, waits, and debugging.
-- A bundled agent-device skill and a workflow guide from the pinned CLI version.
 
 ## Requirements
 
@@ -26,7 +27,7 @@ The plugin needs Node.js 22.18 or later. iOS needs an Apple Silicon Mac with Xco
 
 Physical iOS discovery requires Xcode 27 or later. It uses the selected Xcode installation's `xcrun devicectl` JSON output and needs no additional native library. Pair the phone with Xcode and enable wireless connectivity there to discover it over Wi-Fi.
 
-The native panel targets Codex desktop, iOS simulators, and Android emulators or attached devices. Both MCP servers also work through stdio in a local MCP client. agent-device defaults to iOS. Set `platform: "android"` and `serial` to the selected Android device ID for Android control. This plugin does not build the user's app. Codex's permission and confirmation rules still apply to tool calls.
+The native panel targets Codex desktop, iOS simulators, and Android emulators or attached devices. The active Mobile Dev MCP server also works through stdio in a local MCP client. Use the selected UDID for iOS tools and the selected running serial for Android tools. This plugin does not build the user's app. Codex's permission and confirmation rules still apply to tool calls.
 
 Android logs need `adb` from an installed Android SDK. The reader checks `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk`, then PATH. Metro logs need an existing local Metro server and an app with an inspector target. The log tools connect to that server without starting it.
 
@@ -43,13 +44,13 @@ Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile
 
 Use Select in the simulator toolbar to pause the screen. Hover to outline a component, then click to add a note. React Native development apps can supply runtime elements when accessibility omits a view. Drag to mark a region when neither source exposes it. Saved notes leave numbered blue bubbles. Notes attach text and available element details to your next chat message. The captured screen stays local for editing; annotations never attach screenshots. Click a bubble to edit or remove a note, or use Send to chat to send all notes for that device. If chat is unavailable, the panel keeps the notes and retries when you return. A sent or cleared batch starts again at 1.
 
-The local ZIP at `release/mobile-dev-0.1.78-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+The local ZIP at `release/mobile-dev-0.1.79-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 The iOS dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Simulators**. It refreshes every three seconds while the iOS panel is visible, and when opening the dropdown. Selecting a physical device opens interactive screen mirroring through its paired developer connection. The phone sends HEVC video; a bundled native Node-API addon assembles compressed frames and transfers them into Node without copying the frame payload, then the panel decodes them through WebCodecs. MCP serializes the compressed bytes as base64, so the full path is not zero copy. The capture queue is limited to eight frames or 4 MiB and requests a keyframe after overflow. Physical iOS supports pointer taps, long presses, and drags through CoreDevice UniversalHID on the same developer tunnel. Input starts after a fresh video frame, uses normalized touchscreen coordinates, and releases held touches when the stream closes or resets. Screenshot captures the displayed mirrored frame as a PNG, attaches it to chat, and copies the same image to the macOS clipboard. Select annotates screen regions using the mirrored frame's pixel coordinates; native accessibility component names are unavailable. Both controls require a connected device and a ready video frame. Keyboard and hardware-button controls remain disabled. CPU and memory monitoring can attach to an already running development app on a paired iOS 17.4+ device. Mirroring requires Developer Mode and a host with HEVC WebCodecs support. `mobile_list_ios_devices` also returns remembered disconnected devices with their connection state; the picker shows connected devices only. Discovery errors remain visible while available simulators continue to work.
 
 Physical iOS mirroring uses the same Apple DeviceKit bezel and framebuffer mask as the matching simulator model. Discovery preserves the hardware product type, which selects the installed Xcode device profile. The bundled Baguette CLI renders its bezel without starting a simulator, and macOS rasterizes its mask. These assets are cached per model outside the video path. A missing device profile or failed render reports an error before capture starts.
 
-Ask the agent to inspect or control the app on the selected device. The panel shares both visible device IDs and platforms with the chat. Click a device panel to make it the active device for logs. Hiding a simulator keeps the current log source and buffered logs. The agent uses the bundled agent-device tools with the chosen device ID, opens a named session, reads accessibility refs, then presses elements or fills fields. Baguette streams iOS and serve-emu streams Android in the panel. The tools take the same session name on later calls so refs and app state stay together.
+Ask the agent to inspect or control the app on the selected device. The panel shares both visible device IDs and platforms with the chat. Click a device panel to make it the active device for logs. Hiding a simulator keeps the current log source and buffered logs. Use Mobile Dev's screenshot, accessibility and input tools for the selected platform. Baguette streams iOS and serve-emu streams Android in the panel.
 
 For mobile app development, the bundled skill tells the agent to open the panel beside the chat before the first device launch, or reuse an open panel. It covers iOS, Android, Expo, React Native, and SwiftUI work. The agent follows your device choice, reuses a suitable running device, or chooses and boots an installed simulator or AVD. It asks only when the choice changes what the task needs. The app project's own tools build, install, and launch the app on that device; the agent reuses an existing app dev server.
 
@@ -63,7 +64,7 @@ The Android dropdown shows **Connected devices** first, with USB or Wi-Fi labels
 
 Android H.264 packets travel through MCP resource reads. The panel decodes them with WebCodecs, so the host must support H.264 `VideoDecoder`. Each device gets its own backend and each panel gets its own stream session. Decoder errors and video backlog request a fresh keyframe on the same connection. The panel drops delta frames until it can decode that keyframe. Requests have a cooldown, and stale decoder callbacks cannot repaint a closed stream. The plugin reuses a matching serve-emu server at port 3300. Set `SERVE_EMU_URL` to reuse another loopback HTTP server; it must already stream the selected serial. Closing MCP stops only backends the plugin started.
 
-For tool use, call `mobile_list_android_devices`. It returns serials for connected devices and `avd:<name>` IDs for stopped AVDs. Boot a selected AVD with `mobile_boot_android_emulator` and use its returned running serial for later calls. `mobile_shutdown_android_emulator` stops an emulator. `mobile_android_screenshot`, `mobile_android_describe_ui`, and `mobile_android_send_input` inspect and control running devices. Gesture coordinates use screen pixels and matching screen width and height. For agent-device, pass `platform: "android"`, `serial`, and a named session.
+For tool use, call `mobile_list_android_devices`. It returns serials for connected devices and `avd:<name>` IDs for stopped AVDs. Boot a selected AVD with `mobile_boot_android_emulator` and use its returned running serial for later calls. `mobile_shutdown_android_emulator` stops an emulator. `mobile_android_screenshot`, `mobile_android_describe_ui`, and `mobile_android_send_input` inspect and control running devices. Gesture coordinates use screen pixels and matching screen width and height. Use the selected running serial with the Mobile Dev Android tools.
 
 `vendor:serve-emu` installs the pinned npm runtime with package scripts disabled and checks the bundled scrcpy 4.0 server's SHA-256. `build` copies the full runtime and records package integrity, lockfile hash, and scrcpy hash in `dist/serve-emu/release.json`. Starting Android requires no npm install or runtime download.
 
@@ -208,7 +209,7 @@ npm run build
 npm test
 npm run package
 npm run test:package
-npm run test:agent-device
+npm run check:mcp-budget
 ```
 
 `vendor:baguette` downloads the pinned official release and checks its SHA-256. It keeps the full resource bundle and rebuilds the same v0.2.1 source with Swift 6.4 or later because the official binary crashes in Swift task allocation on macOS 27. Preparing Baguette requires Xcode 27, Git, and network access to fetch its pinned source and Swift dependencies. `rebuild:baguette` repeats the source build. `vendor/baguette/release.json` records the source commit, compiler version, and rebuilt binary SHA-256.
@@ -221,7 +222,7 @@ npm run test:agent-device
 
 `test` checks MCP contracts, frame reads, input validation, and capture cleanup against a local fixture. `test:package` copies the release package into a temporary directory, starts its bundled Baguette, reads the real device list, and checks shutdown. It does not boot or change a simulator. Run it on an Apple Silicon Mac with Xcode.
 
-`test:agent-device` starts the agent-device MCP server from a copied package with no global CLI on its PATH. It checks the control tools, pinned runtime, isolated state directory, real iOS device list, and daemon cleanup. It does not open an app, take screenshots, or send input.
+`test:agent-device` requires reactivating the Agent Device MCP entry first. It starts the retained MCP server from a copied package with no global CLI on its PATH. It checks the control tools, pinned runtime, isolated state directory, real iOS device list, and daemon cleanup. It does not open an app, take screenshots, or send input.
 
 `npm run test:reconnect -- <UDID>` tests an already booted simulator with a copied package. It terminates only that test package's own Baguette process and checks that the same stream resumes with a new bundled process. It never boots a simulator, repairs input, or sends gestures.
 
@@ -231,7 +232,11 @@ The host installs a cache copy. After changing source, rebuild and package, then
 
 Each MCP process owns one bundled Baguette child process. It selects a free loopback port, launches `dist/baguette/Baguette serve --host 127.0.0.1 --port <port> --no-plugins`, and shares that child across its tool calls and panel sessions. It does not use a separate Baguette server on port 8421. An opening failure returns an error the panel can show.
 
-The second MCP entry runs `dist/agent-device-server.mjs`, which launches the official bundled `agent-device mcp` with Node. The wrapper uses the package's iOS config and a private temporary state directory. It clears inherited agent-device settings so a global or cloud daemon cannot take over this connection. Commands start its local daemon as needed. On MCP shutdown, the wrapper runs the bundled `daemon stop --state-dir <own-directory> --clean` command, which checks the daemon's PID identity and releases its runner leases. It keeps logs and artifacts in that state directory for later reads. Call agent-device `session` with `action: "state-dir"` to find it.
+The retained, currently inactive Agent Device entry point is `dist/agent-device-server.mjs`, which launches the official bundled `agent-device mcp` with Node through an SDK adapter. The adapter publishes all 55 operations, preserves their typed command arguments and output contracts, and validates inputs before forwarding them. State paths, remote daemon credentials, runner configuration and output-format settings belong to the plugin and are absent from tool inputs. Batch steps use the same compact contracts. Device selectors remain on setup, discovery, installation and script tools; interactions require a named session and reuse the upstream runtime's device binding. There is no global platform override. File operations retain `cwd` where it is relevant.
+
+The wrapper uses an explicit empty package config and a private temporary state directory. Default platform and form selectors would bypass the native session's device binding, so those are set only through device setup commands. It clears inherited agent-device settings so a global or cloud daemon cannot take over this connection. Commands start its local daemon as needed. On MCP shutdown, the wrapper runs the bundled `daemon stop --state-dir <own-directory> --clean` command, which checks the daemon's PID identity and releases its runner leases. It keeps logs and artifacts in that state directory for later reads. Call agent-device `session` with `action: "state-dir"` to find it.
+
+`npm run check:mcp-budget` reads the packaged servers' catalogs and estimates their model-visible specifications, including repeated namespace instructions and plugin attribution, before the host applies lossy schema compaction. With Agent Device deactivated, the current estimate is 33,997 bytes for 35 model-visible tools, below [Codex's shared 64,000-byte plugin budget](https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_exposure.rs). The schema cleanup in 0.1.68 reduced the combined catalog from 238,784 to 99,568 bytes; temporarily removing its Agent Device entry makes room for the recording tools. Other enabled plugins also consume the shared budget. Splitting the same tools into more enabled MCP servers does not avoid it.
 
 Use the panel's UDID and a named agent-device session for agent work. Refs belong to the latest snapshot or settled diff in that session. `press` and `fill` take a target such as `{ "kind": "ref", "ref": "@e12" }` or `{ "kind": "selector", "selector": "label=\"Search\"" }`. Use actual refs from the current result. Closing a session can close its app; leave `shutdown` unset to keep the simulator running. Another live agent-device daemon can own a runner lease. End that owner's work or choose another simulator instead of releasing its live claim.
 
@@ -251,6 +256,53 @@ UI resource addresses include the release version so Codex can load new HTML aft
 
 Performance findings and historical measurements are documented in [the profiling report](docs/stream-profiling.md). Diagnostic timing reports remain available in Console; the simulator uses the upstream UI without temporary timing widgets.
 
+### Saved recordings in chat
+
+For a request such as “Record CPU and memory for 30 seconds while I scroll checkout”,
+call `mobile_record_performance` with the running app's `target`, a descriptive
+`title`, and `durationSeconds` (default 30, maximum 300). This returns immediately.
+Read `mobile_read_performance_recording` with `recording.id` until its status is
+`recording` before asking the user to perform the interaction. Collection starts
+its duration clock at the first sample, continues without an open panel, stops
+automatically, and detaches the existing native CPU collector. An app cannot have
+two simultaneous CPU collectors; stop its live monitor before recording a run.
+
+Call `mobile_render_performance_recording` with that recording ID to display a
+compact MCP Apps chart card. Its UI resource prefers inline presentation; final
+placement depends on the host's MCP Apps support. Charts reveal from left to right
+over 700 ms when first shown, honoring reduced motion preferences. Selecting a
+range ends the reveal; later updates do not replay it. Active cards refresh once
+per second while visible. Purple shading marks the regions with the most rapid
+changes in each chart independently, without selecting or zooming the recording. Density
+is absolute variation per second in a rolling window of 10% of the recording
+duration (1–10 seconds); changing intervals within 80% of the highest density are
+highlighted. Flat or uniformly changing series have no distinct highlights, and
+missing readings and large delivery gaps are excluded. These regions describe
+changes, not their cause or absolute CPU/memory levels.
+Drag across either chart to select the same interval on CPU and memory; click
+a chart to clear the selection. The selected thread list shows average
+CPU weighted by measured interval overlap. CPU chart readings span their measured
+intervals, so the first complete interval begins at zero; missing readings remain
+gaps. Memory labels, tooltips and changes use whole MiB, while saved samples retain
+their original byte precision.
+CPU can exceed 100%, because 100% represents one occupied core. Memory is RSS on
+Android and physical footprint on iOS, so cross-platform values are not equivalent.
+
+**Ask about this range** sends a user message containing the recording ID and exact
+interval. The agent retrieves the original samples to answer. **Open in Mobile Dev**
+sends a request to call `mobile_open_performance_recording`, which opens the saved
+run and selection in the workspace's Performance panel. Both buttons require the
+host's text-message capability. Opening a saved run does not start a collector.
+`mobile_finish_performance_recording` stops and saves a run early;
+`mobile_list_performance_recordings` finds recent saved or active runs.
+
+Completed and failed runs retain their original process, memory, and thread samples
+in private JSON files under `~/Library/Application Support/mobile-dev/recordings`.
+They survive plugin restarts and live-session expiry. Graceful server shutdown saves
+an interrupted run as failed; a forcibly killed process can lose an unfinished run.
+Saved runs are not automatically deleted. Recording samples, device IDs, app IDs,
+titles and selected ranges are not sent to Sentry.
+
 ## Screen annotations
 
 Send to chat shows only "Apply these annotations." Edit guidance stays in assistant-only context once per batch. Notes carry the full instruction, target, exact source location when available, and up to four nearby React owners. Without a source location, notes retain bounds and screen units. Nearby text is deduplicated and limited to three entries of 160 characters. The model receives each note once; full capture records stay local.
@@ -269,6 +321,20 @@ Annotations send text only. Each note includes the user request, element label, 
 
 ## Sentry
 
+Saved chart cards use the `recording` surface and view. Existing readiness,
+interaction and frame-pacing coverage is preserved. `ui.recording.process` and
+`ui.recording.derive` measure result validation and chart/summary processing;
+`ui.recording.change_density` measures highlight calculation on sample updates
+and is cached across range selection changes;
+`ui.recording.reveal` measures completed entrance animations in milliseconds,
+using the existing bounded timing windows;
+`ui.recording.message_ack` ends when the host acknowledges a button's message.
+`ui.recording.samples` counts samples held by the visible card, and bounded event
+counts record range selections and Ask/Open actions. `storage.bytes` with
+`kind: recordings` measures local saved-file storage. Recording polling is excluded
+from trace sampling, and hidden cards stop polling. None of these measurements
+contains device CPU/memory values, recording IDs, titles or selected intervals.
+
 `ui.annotations.tree_processing` measures local element processing in milliseconds, including React Native nodes when available. Since 0.1.66, normal inspection validates flat records here; server-side tree flattening falls within `ui.annotations.inspection`, which measures the MCP inspection round trip, including native accessibility and optional Metro work. `ui.annotations.runtime_available` counts snapshots with runtime elements. `ui.annotations.inspection_fallback` counts native-tool retries. `ui.annotations.inspection_truncated` counts snapshots that reach the collector's work or measurement limits. Inspection timing includes failed calls and retries. It uses the current simulator surface and the same bounded timing windows as other UI measurements. Tree contents and selected regions are not sent to Sentry.
 
 Since 0.1.69, inspection timing also includes the bounded Metro source-map lookup. `ui.annotations.source_available` counts snapshots with at least one resolved source location; `ui.annotations.message_build` measures text construction for Send to chat. Source-map transport failures use the existing server error handler with a fixed message. Source paths, component names, creation stacks, note text and images are never sent to Sentry.
@@ -281,6 +347,8 @@ The environments are `development` and `release`. `npm run build` and `npm run p
 
 Unhandled JavaScript errors and rejected promises, React render errors, and handled MCP tool failures produce issues. Expected stopped-device errors and cancelled operations are excluded. Sentry traces 10% of ordinary tool actions, continuing the UI trace through the MCP bridge. Frame reads, polling, discovery and pointer input are excluded from trace sampling. The SDK does not record MCP arguments or results.
 
+Agent Device telemetry is inactive while its MCP entry is disabled; the active Mobile Dev server and recording UI retain their existing coverage. When enabled, the Agent Device adapter measures ordinary `tools/call <command>` operations with sampled traces and continues incoming trace metadata through to the native MCP request. Discovery and session lookup are excluded from sampling. `agent_device.catalog.ready` measures catalog loading and validator compilation in milliseconds at startup. Handled native failures use static error messages so app content and tool payloads cannot enter telemetry. Node runtime and owned-storage measurements retain the `agent-device-wrapper` component. Unexpected backend disconnects replace the raw launcher's exit-code/signal report, since the SDK owns the child process lifecycle.
+
 | Measurement | Collection and interpretation |
 | --- | --- |
 | Node CPU and memory | Sentry runtime metrics every 30 seconds: process CPU utilization, RSS, heap, external memory and array buffers. Each Node launcher is measured separately; the agent-device daemon is outside this coverage. |
@@ -288,7 +356,7 @@ Unhandled JavaScript errors and rejected promises, React render errors, and hand
 | Native operations | Bounded timing windows for connection, physical iOS input acknowledgement and video packet processing, iOS log processing, Android CPU sampling, and FPS read/processing. Filter by `component`, `runtime_platform` and `surface` to identify the responsible helper. Baguette currently records resources and crashes. |
 | Node responsiveness | Automatic event-loop delay, utilization and process uptime. |
 | UI responsiveness | Browser tracing captures available web vitals. Custom metrics record visible animation-frame intervals, intervals over 50 ms, Event Timing interaction durations, long tasks and long animation frames where supported. |
-| Product surfaces | Metrics carry `surface=simulator`, `logs` or `performance`, plus view, visible device layout and monitoring state. Log filter time, buffered/filtered rows, performance batch processing, canvas draw time and time to first video frame help explain slow surfaces. |
+| Product surfaces | Metrics carry `surface=simulator`, `logs`, `performance` or `recording`, plus view, visible device layout and monitoring state. Log filter time, buffered/filtered rows, performance batch processing, canvas draw time and time to first video frame help explain slow surfaces. |
 | Frame capture | `ui.screenshot.capture` measures synchronous canvas PNG encoding and base64 extraction in milliseconds for Select captures and physical iOS screenshots. Screenshot tools retain sampled MCP traces and report handled capture, attachment, and clipboard failures without image content. |
 | Storage | Every five minutes, the agent-device launcher measures its own session state directory and the shared Apple runner cache in bytes. It skips symlinks and sends only the storage kind and size. |
 | Usage | Surface views and visible time, tool action outcomes, log searches, attachments and send-to-chat actions are counted without their content. |
@@ -337,11 +405,17 @@ That file is also listed in `.worktreeinclude` for local worktrees. Use the orga
 | `mobile_cpu_session` | Connect a native process and thread CPU plus memory monitor |
 | `mobile_read_cpu` | Read live CPU and memory samples and connection status |
 | `mobile_cpu_close` | Stop one CPU and memory monitor while leaving its app running |
+| `mobile_record_performance` | Start a timed CPU and memory recording that saves automatically |
+| `mobile_read_performance_recording` | Read original samples and a selected interval's summary |
+| `mobile_render_performance_recording` | Show an interactive chart card in chat |
+| `mobile_open_performance_recording` | Open a saved run and selection in the workspace |
+| `mobile_finish_performance_recording` | Stop and save a recording early |
+| `mobile_list_performance_recordings` | Find recent saved and active runs |
 | `mobile_display_fps_session` | Start device-wide Display FPS on Android 12+ or physical iOS 17.4+ |
 | `mobile_read_display_fps` | Read FPS intervals and connection status |
 | `mobile_display_fps_close` | Stop FPS collection and release the tracing connection |
 
-The `agent-device` MCP server exposes the pinned runtime's official tools directly, including `open`, `snapshot`, `press`, `fill`, `type`, `scroll`, `wait`, `find`, `get`, `is`, `close`, and debugging tools. Their input schemas describe each command. The bundled [control skill](skills/agent-device/SKILL.md) explains session ordering and links to the version-matched guide.
+When reactivated, the `agent-device` MCP server exposes the pinned runtime's official operations through compact, validated schemas, including `open`, `snapshot`, `press`, `fill`, `type`, `scroll`, `wait`, `find`, `get`, `is`, `close`, and debugging tools. Their input schemas describe each command. The source [control skill](skills/agent-device/SKILL.md), currently excluded from the package, explains session ordering and links to the version-matched guide.
 
 ## Sources
 

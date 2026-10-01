@@ -44,6 +44,17 @@ try {
   }
   const press = tools.find(tool => tool.name === "press");
   assert.ok(press.inputSchema.properties.target.oneOf.some(target => target.properties.kind.const === "ref"));
+  assert.deepEqual(press.inputSchema.required, ["target", "session"]);
+  for (const tool of tools) {
+    for (const field of ["stateDir", "daemonBaseUrl", "daemonAuthToken", "mcpOutputFormat", "responseLevel", "iosXctestrunFile"]) {
+      assert.equal(tool.inputSchema.properties[field], undefined, `${tool.name} exposes plugin configuration ${field}`);
+    }
+  }
+  assert.equal(press.inputSchema.properties.platform, undefined);
+  assert.equal(press.inputSchema.properties.udid, undefined);
+  const otherState = join(temporary, "other-state");
+  const rejected = await client.callTool({ name: "devices", arguments: { platform: "ios", stateDir: otherState } });
+  assert.equal(rejected.isError, true);
   const state = await client.callTool({ name: "session", arguments: { action: "state-dir" } });
   assert.equal(state.isError, false, JSON.stringify(state.content));
   stateDir = state.structuredContent?.stateDir;

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
+import { recordingFixture } from "./recording-fixtures.ts";
 
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
@@ -47,7 +48,7 @@ test("browser errors use the served environment regardless of live-reload marker
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -136,6 +137,17 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   assert.equal(screenshotContext.device_kind, "physical");
   api.setUiSurface("performance");
   api.recordUiTiming("ui.performance.batch", 9);
+  const controller = new api.RecordingController(app);
+  const recording = recordingFixture();
+  recording.title = "PRIVATE_RECORDING_TITLE";
+  recording.deviceName = "PRIVATE_RECORDING_DEVICE";
+  controller.accept({ content: [], structuredContent: { recording } });
+  assert.equal(api.getUiTelemetryAttributes().surface, "recording");
+  assert.equal(api.getUiTelemetryAttributes().device_platform, "android");
+  api.setUiTelemetryContext({ view: "recording" });
+  api.recordUiTiming("ui.recording.derive", 3);
+  await app.callServerTool({ name: "mobile_read_performance_recording", arguments: { recordingId: "PRIVATE_RECORDING_ID" } });
+  assert.equal(calls[3]._meta, undefined, "Recording polling does not create a trace per refresh.");
   Object.defineProperty(window.document, "visibilityState", { configurable: true, value: "hidden" });
   const visibilityChange = new window.Event("visibilitychange");
   window.document.dispatchEvent(visibilityChange);
@@ -143,6 +155,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   frame(10_000);
   const error = new window.Error("UI failure /Users/alice/private.log");
   api.captureUiError(error, "test");
+  controller.dispose();
   await api.stopUiTelemetry();
   assert.equal(frames.size, 0);
   const bodies = requests.map(request => request.body);
@@ -165,11 +178,14 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, "ui.annotations.inspection_fallback");
   contains(encoded, '"surface":{"value":"simulator"');
   contains(encoded, "ui.performance.batch.mean");
+  contains(encoded, "ui.recording.process.mean");
+  contains(encoded, "ui.recording.derive.mean");
   contains(encoded, "ui.screenshot.capture.mean");
   contains(encoded, "ui.annotations.inspection_truncated");
   contains(encoded, '"surface":{"value":"logs"');
   contains(encoded, '"surface":{"value":"performance"');
   contains(encoded, '"surface":{"value":"simulator"');
+  contains(encoded, '"surface":{"value":"recording"');
   contains(encoded, "ui.frame_interval.mean");
   contains(encoded, "UI failure");
   contains(encoded, "PRIVATE_", false);

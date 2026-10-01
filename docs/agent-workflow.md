@@ -6,7 +6,7 @@ Use these cases in fresh Codex desktop chats with the packaged plugin installed 
 | --- | --- |
 | "Build a small Expo counter app." No device runs; one compatible simulator is installed. | Use Mobile Dev when preparing the first device launch, open the side panel, choose and boot the simulator, then build and launch with the app project's tools. No extra device-choice question. |
 | "Add a settings screen to this SwiftUI app and run it." A compatible iOS simulator runs. | Open the side panel, reuse the simulator, and launch the changed app on its UDID. |
-| "Fix this React Native app on Android and run it." An Android emulator runs. | Open the side panel, discover Android devices, and use the same running serial for launch and agent-device. |
+| "Fix this React Native app on Android and run it." An Android emulator runs. | Open the side panel, discover Android devices, and use the same running serial for launch and Mobile Dev app control. |
 | "Run this Android app." No emulator runs; one compatible AVD is installed. | Open the side panel, list Android devices, boot that AVD, and use its returned running serial. |
 | "Run this app on the iPad simulator." A different iPhone simulator runs. | Follow the named iPad target, boot it if needed, and keep panel selection and launch target aligned. |
 | "Add a screen and run it." A compatible device is already visible in Mobile Dev and the project's dev server runs. | Reuse the panel, its device, and the project's server. Keep the app available after the work. |

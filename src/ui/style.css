@@ -2,6 +2,36 @@
 html[data-theme="dark"] { color-scheme: dark; }
 html, body, #root { height: 100%; overflow: hidden; }
 body { font-size: 12px; }
+html[data-view="recording"], html[data-view="recording"] body, html[data-view="recording"] #root { height: auto; overflow: visible; }
+.recording-card { margin: 12px; border: 1px solid var(--border); border-radius: 16px; background: var(--background); color: var(--foreground); font-size: 13px; overflow: hidden; }
+.recording-header { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+.recording-icon { display: grid; place-items: center; width: 42px; height: 42px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 10px; color: #2583ff; }
+.recording-heading { flex: 1; min-width: 0; }
+.recording-heading h2 { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.recording-heading p, .recording-actions p, .recording-footnote { color: var(--muted-foreground); font-size: 12px; }
+.recording-heading p { margin-top: 4px; overflow-wrap: anywhere; }
+.recording-status { border-radius: 20px; padding: 4px 10px; background: var(--muted); font-size: 12px; }
+.recording-body { padding: 20px; }
+.recording-metrics { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 20px; }
+.recording-metrics > div + div { border-left: 1px solid var(--border); padding-left: 20px; }
+.recording-metrics dt { font-weight: 500; }
+.recording-metrics dd { font-size: 28px; font-weight: 600; margin-top: 4px; }
+.recording-track { margin-top: 18px; }
+.recording-track h3, .recording-breakdown h3 { font-weight: 600; }
+.recording-track-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.recording-change-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted-foreground); }
+.recording-change-legend::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: #9873e629; border: 1px solid #9873e6; }
+.recording-chart { width: 100%; touch-action: pan-y; user-select: none; cursor: crosshair; }
+.recording-selection { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 16px; margin-top: 20px; border: 1px solid var(--border); border-radius: 12px; }
+.recording-breakdown p { margin: 8px 0; color: var(--muted-foreground); }
+.recording-breakdown dl > div { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; }
+.recording-breakdown dt { overflow-wrap: anywhere; }
+.recording-breakdown dd { font-variant-numeric: tabular-nums; }
+.recording-actions { display: flex; flex-direction: column; gap: 10px; justify-content: center; border-left: 1px solid var(--border); padding-left: 20px; }
+.recording-footnote { margin-top: 10px; }
+.recording-error { color: var(--destructive); margin-top: 12px; }
+.recording-workspace { height: 100%; overflow: auto; padding: 12px; }
+@media (max-width: 480px) { .recording-header, .recording-body { padding: 14px; } .recording-icon { display: none; } .recording-selection { grid-template-columns: 1fr; } .recording-actions { border-left: 0; padding-left: 0; border-top: 1px solid var(--border); padding-top: 14px; } }
 [hidden] { display: none !important; }
 
 /* The controller fits the canvas to each device's frame and screen mask. */

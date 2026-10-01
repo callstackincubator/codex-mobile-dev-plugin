@@ -34,15 +34,20 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: 
   async function validateDevice(device: { platform: "ios" | "android"; deviceId: string; kind?: "simulator" | "physical" }) {
     if (device.platform === "ios" && device.kind === "physical") {
       const devices = await sources.iosDevices();
-      const connected = devices.some(candidate => candidate.udid === device.deviceId && candidate.state === "connected" && candidate.pairingState === "paired");
-      if (connected === false) throw new Error("Connect the paired iPhone and enable Developer Mode to monitor CPU and memory.");
-      return;
+      const connected = devices.find(candidate => candidate.udid === device.deviceId && candidate.state === "connected" && candidate.pairingState === "paired");
+      if (connected === undefined) throw new Error("Connect the paired iPhone and enable Developer Mode to monitor CPU and memory.");
+      return connected.name;
     }
-    if (device.platform === "ios") { await baguette.device(device.deviceId, true); return; }
+    if (device.platform === "ios") {
+      const simulator = await baguette.device(device.deviceId, true);
+      return simulator.name;
+    }
     const devices = await sources.androidDevices();
-    if (devices.some(candidate => candidate.id === device.deviceId) === false) {
+    const connected = devices.find(candidate => candidate.id === device.deviceId);
+    if (connected === undefined) {
       throw new Error("The Android device is offline or unauthorized. Connect and authorize it through ADB.");
     }
+    return connected.name;
   }
   server.registerResource("cpu-batch", new ResourceTemplate("cpu://mobile-dev/{sessionId}/batch?after={sequence}", { list: undefined }), {
     mimeType: "application/json", description: "Read live process and thread CPU plus main-process memory samples from an authorized Mobile Dev performance session.",
@@ -92,4 +97,5 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: 
     await cpu.closeSession(id);
     return { content: [{ type: "text", text: "CPU and memory monitor stopped." }], structuredContent: {} };
   }));
+  return validateDevice;
 }

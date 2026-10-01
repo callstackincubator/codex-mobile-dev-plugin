@@ -6,30 +6,45 @@ import { PerformanceView } from "./performance-view";
 import { SimulatorView } from "./simulator-view";
 import { LogsView } from "./logs-view";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select";
+import { Button } from "./ui/button";
 
 import { usePanelRef, useGroupRef } from "react-resizable-panels";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./ui/resizable";
 import { useMediaQuery } from "./use-media-query";
 import { markUiSurfaceReady, setUiSurface, setUiTelemetryContext } from "../telemetry.ts";
+import type { RecordingController } from "../recording-controller.ts";
+import { RecordingCard } from "./recording-card";
 
 export type DeviceLayout = "both" | "ios" | "android" | "none";
 
-export function Workspace({ logs, performance, onLayout }: { logs: LogsPanel; performance: PerformancePanel; onLayout: (layout: DeviceLayout) => void }) {
+export function Workspace({ logs, performance, recordingController, onLayout }: { logs: LogsPanel; performance: PerformancePanel; recordingController: RecordingController; onLayout: (layout: DeviceLayout) => void }) {
   const [tool, setTool] = useState<"logs" | "performance">("logs");
-  const performanceState = useSyncExternalStore(performance.subscribe, performance.getSnapshot);
+  const [savedVisible, setSavedVisible] = useState(false);
   const [layout, setLayout] = useState<DeviceLayout>("ios");
+  const recordingState = useSyncExternalStore(recordingController.subscribe, recordingController.getSnapshot);
+  useEffect(() => {
+    if (recordingState.recording === undefined) return;
+    setTool("performance");
+    setSavedVisible(true);
+    setLayout("none");
+    onLayout("none");
+    logs.hide();
+    performance.hide();
+  }, [recordingState.recording?.id]);
+  const performanceState = useSyncExternalStore(performance.subscribe, performance.getSnapshot);
   const wide = useMediaQuery("(min-width: 900px)");
   const fullscreen = document.documentElement.dataset.view === "workspace";
   const split = wide && fullscreen;
   const collapsedToolSize = fullscreen ? (split ? 48 : 44) : 0;
   const logState = useSyncExternalStore(logs.subscribe, logs.getSnapshot);
-  const open = tool === "logs" ? logState.open : performanceState.open;
-  useEffect(() => { setUiSurface(open ? tool : "simulator"); }, [tool, open]);
+  const open = tool === "logs" ? logState.open : savedVisible || performanceState.open;
+  useEffect(() => { setUiSurface(open ? savedVisible ? "recording" : tool : "simulator"); }, [tool, open, savedVisible]);
   useEffect(() => {
     setUiTelemetryContext({ logs_open: logState.open, logs_paused: logState.paused, performance_running: performanceState.monitoring || performanceState.fpsMonitoring });
   }, [logState.open, logState.paused, performanceState.monitoring, performanceState.fpsMonitoring]);
-  const isOpen = () => tool === "logs" ? logs.getSnapshot().open : performance.getSnapshot().open;
+  const isOpen = () => tool === "logs" ? logs.getSnapshot().open : savedVisible || performance.getSnapshot().open;
   const closeTools = () => {
+    setSavedVisible(false);
     if (logs.getSnapshot().open) logs.toggle();
     performance.hide();
     void performance.disconnect();
@@ -38,6 +53,7 @@ export function Workspace({ logs, performance, onLayout }: { logs: LogsPanel; pe
     const startedAt = globalThis.performance.now();
     if (next === tool && isOpen()) { closeTools(); return; }
     setTool(next);
+    setSavedVisible(false);
     if (next === "logs") { performance.hide(); logs.show(); }
     else { logs.hide(); performance.show(); }
     setUiSurface(next);
@@ -56,7 +72,7 @@ export function Workspace({ logs, performance, onLayout }: { logs: LogsPanel; pe
     if (!previous) return;
     if (size.inPixels <= collapsedToolSize + 1 && isOpen()) closeTools();
     else if (size.inPixels > 80 && isOpen() === false) showTool(tool);
-  }}>{tool === "logs" && <LogsView panel={logs} />}{tool === "performance" && open && <PerformanceView panel={performance} />}</ResizablePanel>;
+  }}>{tool === "logs" && <LogsView panel={logs} />}{tool === "performance" && open && (savedVisible ? <div className="recording-workspace"><Button variant="outline" size="sm" onClick={() => { setSavedVisible(false); performance.show(); }}>Live performance</Button><RecordingCard controller={recordingController} detailed /></div> : <PerformanceView panel={performance} />)}</ResizablePanel>;
   const toolbar = <>
     <Select items={[{ value: "none", label: "Tools" }, { value: "logs", label: "Logs" }, { value: "performance", label: "Performance" }]} value={open ? tool : "none"} onValueChange={value => {
       if (value === "none") closeTools();

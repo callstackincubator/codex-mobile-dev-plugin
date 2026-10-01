@@ -19,6 +19,12 @@ let observer: PerformanceObserver | undefined;
 const measurements = new Map<string, MeasurementWindow>();
 const gauges = new Map<string, number>();
 const counts = new Map<string, number>();
+const readinessFrames = new Set<number>();
+
+function cancelReadinessFrames() {
+  for (const id of readinessFrames) cancelAnimationFrame(id);
+  readinessFrames.clear();
+}
 
 export function recordUiTiming(name: string, duration: number) {
   if (running === false || document.visibilityState === "hidden") return;
@@ -79,6 +85,7 @@ export function setUiSurface(next: Surface) {
     recordEntries(entries);
   }
   flushUiMeasurements();
+  cancelReadinessFrames();
   surface = next;
   attributes = { ...attributes, surface };
   measurements.clear();
@@ -113,13 +120,18 @@ export function captureUiError(error: unknown, operation: string) {
 export function markUiSurfaceReady(startedAt: number) {
   if (running === false) return;
   const selectedSurface = surface;
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
+  const firstFrame = requestAnimationFrame(() => {
+    readinessFrames.delete(firstFrame);
+    if (running === false || surface !== selectedSurface) return;
+    const secondFrame = requestAnimationFrame(() => {
+      readinessFrames.delete(secondFrame);
       if (running === false || surface !== selectedSurface) return;
       const elapsed = performance.now() - startedAt;
       recordUiTiming("ui.surface.ready", elapsed);
     });
+    readinessFrames.add(secondFrame);
   });
+  readinessFrames.add(firstFrame);
 }
 
 function observeFrames(now: number) {
@@ -161,7 +173,8 @@ export function startUiTelemetry(app: App) {
     beforeBreadcrumb: breadcrumb => breadcrumb.category === "mobile-dev" ? breadcrumb : null,
   });
   running = true;
-  const view = document.documentElement.dataset.view === "workspace" ? "workspace" : "panel";
+  const requestedView = document.documentElement.dataset.view;
+  const view = requestedView === "recording" || requestedView === "workspace" ? requestedView : "panel";
   attributes = { ...attributes, view };
   Sentry.setTags({ component: "ui", surface, view });
   Sentry.setAttributes(attributes);
@@ -209,6 +222,7 @@ export function startUiTelemetry(app: App) {
 export async function stopUiTelemetry() {
   flushUiMeasurements();
   running = false;
+  cancelReadinessFrames();
   visibleSince = 0;
   if (frameId !== undefined) cancelAnimationFrame(frameId);
   clearInterval(timer);

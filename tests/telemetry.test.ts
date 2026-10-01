@@ -13,6 +13,7 @@ import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubSpan, TELEMETRY_M
 import { captureServerError, installTracePropagation } from "../src/server/telemetry.ts";
 import { directoryBytes } from "../src/server/storage-metrics.ts";
 import { SimulatorUnavailableError } from "../src/server/simulator-unavailable.ts";
+import { adapterClient } from "./agent-device-fixtures.ts";
 
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
@@ -36,7 +37,7 @@ test("UI timing windows retain exact totals, reset, and ignore invalid measureme
 test("high frequency reads and input avoid trace sampling even with a sampled parent", () => {
   let inherited = 0;
   const inherit = (rate: number) => { inherited++; return rate; };
-  for (const name of ["resources/read frame://private-session", "notifications/tools/list_changed", "tools/call mobile_stream_input", "tools/call mobile_ios_mirror_input", "tools/call mobile_read_cpu"]) {
+  for (const name of ["resources/read frame://private-session", "notifications/tools/list_changed", "tools/call mobile_stream_input", "tools/call mobile_ios_mirror_input", "tools/call mobile_read_cpu", "tools/call devices", "tools/call session", "tools/call events"]) {
     const rate = sampleTrace(name, inherit);
     assert.equal(rate, 0);
   }
@@ -45,6 +46,46 @@ test("high frequency reads and input avoid trace sampling even with a sampled pa
   assert.equal(rate, 0.1);
   const screenshotRate = sampleTrace("tools/call mobile_ios_mirror_capture_screenshot", inherit);
   assert.equal(screenshotRate, 0.1);
+});
+
+test("Agent Device adapter continues traces and reports failures without native tool payloads", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false,
+    tracesSampler: context => context.inheritOrSampleWith(1), beforeSend: scrubErrorEvent, beforeSendSpan: scrubSpan,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  let observedTrace: string | undefined;
+  let calls = 0;
+  const { client } = await adapterClient(t, async () => {
+    calls++;
+    const span = Sentry.getActiveSpan();
+    observedTrace = span?.spanContext().traceId;
+    if (calls === 2) throw new Error("PRIVATE_NATIVE_ERROR with PRIVATE_NATIVE_ARGUMENT");
+    if (calls > 2) return { isError: true, content: [], structuredContent: { code: "DEVICE_NOT_FOUND", message: "PRIVATE_STOPPED_DEVICE" } };
+    return { isError: true, content: [{ type: "text", text: "PRIVATE_NATIVE_RESULT" }] };
+  });
+  const traceId = "1234567890abcdef1234567890abcdef";
+  await client.callTool({ name: "type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" }, _meta: {
+    "sentry-trace": `${traceId}-1234567890abcdef-1`,
+  } });
+  assert.equal(observedTrace, traceId);
+  await client.callTool({ name: "type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" } });
+  await Sentry.flush();
+  const encoded = JSON.stringify(envelopes);
+  contains(encoded, "PRIVATE_", false);
+  contains(encoded, traceId);
+  contains(encoded, "Agent Device command failed.");
+  contains(encoded, "Agent Device tool transport failed.");
+  contains(encoded, "agent_device.catalog.ready");
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const errors = items.filter(item => item[0].type === "event");
+  await client.callTool({ name: "type", arguments: { session: "PRIVATE_SESSION", text: "PRIVATE_NATIVE_ARGUMENT" } });
+  await Sentry.flush();
+  const afterItems = envelopes.flatMap(envelope => envelope[1]);
+  const afterErrors = afterItems.filter(item => item[0].type === "event");
+  assert.equal(afterErrors.length, errors.length, "Expected unavailable devices must not produce Sentry issues");
 });
 
 test("error and streamed-span filters remove app payloads and local identifiers", () => {
@@ -108,6 +149,12 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   assert.equal(observedTags?.layout, "both");
   assert.equal(observedTags?.user, undefined);
   assert.equal(observedTags?.component, undefined);
+  await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_RECORDING_ARGUMENT" }, _meta: {
+    [TELEMETRY_META_KEY]: { surface: "recording", view: "recording", recordingId: "PRIVATE_RECORDING_ID" },
+  } });
+  assert.equal(observedTags?.surface, "recording");
+  assert.equal(observedTags?.view, "recording");
+  assert.equal(observedTags?.recordingId, undefined);
   await Sentry.flush();
   const encoded = JSON.stringify(envelopes);
   contains(encoded, "PRIVATE_", false);
@@ -116,13 +163,13 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   contains(encoded, "Handled tool failed");
   const eventItems = envelopes.flatMap(envelope => envelope[1]);
   const errors = eventItems.filter(item => item[0].type === "event");
-  assert.equal(errors.length, 1);
+  assert.equal(errors.length, 2);
   const unavailable = new SimulatorUnavailableError("Expected stopped simulator");
   captureServerError(unavailable, "expected");
   await Sentry.flush();
   const afterItems = envelopes.flatMap(envelope => envelope[1]);
   const afterErrors = afterItems.filter(item => item[0].type === "event");
-  assert.equal(afterErrors.length, 1);
+  assert.equal(afterErrors.length, 2);
 });
 
 test("storage measurements count owned files without following external symlinks", async t => {
