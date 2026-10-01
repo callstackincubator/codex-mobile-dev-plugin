@@ -28,7 +28,7 @@ function bounds(value: unknown): ScreenBounds | undefined {
     return { x: x as number, y: y as number, width: width as number, height: height as number };
 }
 
-// Baguette returns nested AX nodes; serve-emu returns flat nodes with pixel bounds.
+// Accept backend trees and normalized, flat MCP snapshots with explicit parents.
 export function screenComponents(tree: unknown): ScreenComponent[] {
   const components: ScreenComponent[] = [];
   function visit(value: unknown, depth: number, parentId?: string) {
@@ -41,8 +41,9 @@ export function screenComponents(tree: unknown): ScreenComponent[] {
       const label = text(node.label) ?? text(node.text) ?? text(node.contentDescription) ?? text(node.title);
       const identifier = text(node.identifier) ?? text(node.resourceId) ?? text(node.id);
       const role = text(node.role) ?? text(node.className);
-      const nodeId = `node-${components.length}`;
-      components.push({ name: label ?? identifier ?? role ?? "Element", bounds: frame, label, identifier, role, value: text(node.value), depth, source: node.source === "react-native" ? "react-native" : "accessibility", nodeId, parentId });
+      const nodeId = text(node.nodeId) ?? `node-${components.length}`;
+      const nodeDepth = typeof node.depth === "number" && Number.isInteger(node.depth) && node.depth >= 0 && node.depth <= 160 ? node.depth : depth;
+      components.push({ name: text(node.name) ?? label ?? identifier ?? role ?? "Element", bounds: frame, label, identifier, role, value: text(node.value), depth: nodeDepth, source: node.source === "react-native" ? "react-native" : node.source === "screen" ? "screen" : "accessibility", nodeId, parentId: text(node.parentId) ?? parentId });
       parentId = nodeId;
     }
     for (const key of ["children", "elements", "nodes", "tree", "root"]) if (node[key]) visit(node[key], depth + 1, parentId);

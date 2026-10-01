@@ -138,6 +138,36 @@ test("the panel receives runtime and native elements through an MCP tool, with n
   assert.equal(inspector.calls(), 1);
 });
 
+test("deep runtime trees cross MCP as shallow records with their parent links intact", async t => {
+  const inspector = await backend(t);
+  let tree: Record<string, unknown> = card;
+  for (let i = 0; i < 90; i++) tree = { source: "react-native", role: `Wrapper${i}`, frame: { x: 0, y: 0, width: 400, height: 800 }, children: [tree] };
+  inspector.setResponse({ available: true, tree: [tree], windowWidth: 400, truncated: false });
+  const native = await fakeBaguette();
+  const plugin = await createTestPlugin("<canvas></canvas>", new Baguette(native.url), fakeSimulatorInput());
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "inspection-depth-test", version: "1" });
+  t.after(async () => { await client.close(); await plugin.close(); await native.close(); });
+  await plugin.server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const result = await client.callTool({ name: "mobile_inspect_ui", arguments: { platform: "ios", deviceId: UDID, deviceName: "iPhone 17", screenWidth: 400, metroUrl: inspector.origin, targetId: "app" } });
+  assert.notEqual(result.isError, true);
+  const pending: [unknown, number][] = [[result, 0]];
+  let depth = 0;
+  while (pending.length) {
+    const [value, level] = pending.pop()!;
+    if (!value || typeof value !== "object") continue;
+    depth = Math.max(depth, level + 1);
+    for (const child of Object.values(value)) pending.push([child, level + 1]);
+  }
+  assert.ok(depth <= 8, `MCP JSON must stay below host decoder limits; received depth ${depth}.`);
+  const components = screenComponents(result.structuredContent?.tree);
+  assert.equal(components.filter(node => node.source === "react-native").length, 92);
+  assert.equal(componentAt(components, { x: 300, y: 130 }, { width: 400, height: 800 })?.name, "Row");
+  assert.deepEqual(componentsAt(components, { x: 40, y: 125 }, { width: 400, height: 800 }).map(node => node.name), ["Title", "Row"]);
+  assert.equal(componentAt(components, { x: 50, y: 40 }, { width: 400, height: 800 })?.name, "Continue");
+});
+
 
 test("native screen fallback returns asynchronous bounds through the temporary binding", async () => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, "__REACT_DEVTOOLS_GLOBAL_HOOK__");

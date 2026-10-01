@@ -151,6 +151,26 @@ test("real parents remain selectable without choosing overlapping siblings", asy
   f.store.dispose();
 });
 
+test("flat MCP snapshots retain element names, depths and real parents", async () => {
+  const tree = { source: "react-native", role: "Pressable", label: "Card", frame: { x: 10, y: 100, width: 350, height: 70 }, children: [
+    { source: "react-native", role: "Text", label: "Title", frame: { x: 30, y: 120, width: 150, height: 20 } },
+    { source: "react-native", role: "View", frame: { x: 20, y: 110, width: 200, height: 40 } },
+  ] };
+  const items = screenComponents(tree);
+  const snapshot = JSON.parse(JSON.stringify(items));
+  assert.deepEqual(screenComponents(snapshot), items);
+  const f = fixture();
+  f.store.readTree = async () => snapshot;
+  await f.store.toggle();
+  f.store.hover({ x: 300, y: 130 });
+  assert.equal(f.store.getSnapshot().hovered?.name, "Card");
+  f.store.select({ x: 40, y: 125 });
+  assert.deepEqual(f.store.getSnapshot().candidates.map(item => item.name), ["Title", "Card"]);
+  f.store.chooseComponent(f.store.getSnapshot().candidates[1]);
+  assert.equal(f.store.getSnapshot().draft?.component.name, "Card");
+  f.store.dispose();
+});
+
 test("region drags clamp to screen bounds and cancel without creating a note", async () => {
   const f = fixture();
   await f.store.toggle();

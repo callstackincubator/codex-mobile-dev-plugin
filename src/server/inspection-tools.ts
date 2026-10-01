@@ -8,6 +8,7 @@ import type { ServeEmu } from "./serve-emu.ts";
 import { inspectReactNative } from "./react-native-inspector.ts";
 import { captureServerError } from "./telemetry.ts";
 import { errorMessage, udidSchema } from "../shared/protocol.ts";
+import { screenComponents } from "../shared/screen-annotations.ts";
 
 const execute = promisify(execFile);
 
@@ -51,7 +52,8 @@ export function registerInspectionTools(server: McpServer, baguette: Baguette, a
         // Metro is optional. Native apps, absent servers and reloads retain AX selection.
         runtime = { available: false, reason: "inspector-unavailable" };
       }
-      const data = { tree: runtime.available ? [runtime.tree, native] : native, runtime: { available: runtime.available, truncated: runtime.available ? runtime.truncated : false } };
+      // Deep React trees exceed host JSON decoder limits. Keep ancestry as IDs on flat records.
+      const data = { tree: screenComponents(runtime.available ? [runtime.tree, native] : native), runtime: { available: runtime.available, truncated: runtime.available ? runtime.truncated : false } };
       return { content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data };
     } catch (error) {
       captureServerError(error, "inspection.tool");

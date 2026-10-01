@@ -151,7 +151,7 @@ function fixture(t: TestContext) {
       if (call.name === "mobile_device_settings" || call.name === "mobile_update_device_setting") return { content: [], structuredContent: { settings: { appearance: "dark", locationSupported: true } } };
       if (call.name === "mobile_inspect_ui") {
         if (inspectionFailure) return { isError: true, content: [{ type: "text", text: "Inspection unavailable" }] };
-        return { content: [], structuredContent: { runtime: { available: true }, tree: [{ source: "react-native", role: "Pressable", label: "Continue", frame: { x: 10, y: 20, width: 100, height: 100 } }] } };
+        return { content: [], structuredContent: { runtime: { available: true }, tree: [{ source: "react-native", name: "Continue", role: "Pressable", bounds: { x: 10, y: 20, width: 100, height: 100 }, nodeId: "node-0", depth: 0 }] } };
       }
       if (call.name.endsWith("_describe_ui")) return { content: [], structuredContent: { tree: { elements: [{ label: "Continue", role: "AXButton", frame: { x: 10, y: 20, width: 100, height: 100 } }] } } };
       return { content: [] };
