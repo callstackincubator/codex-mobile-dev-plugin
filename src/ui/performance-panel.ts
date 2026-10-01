@@ -141,11 +141,14 @@ export class PerformancePanel {
   async discover() {
     if (this.disposed || this.snapshot.available === false || this.snapshot.discovering || this.enabled === false) return;
     const device = this.simulator;
-    if (device === undefined || (device.platform !== "android" && device.kind === "physical") || (device.state !== "Booted" && device.state !== "connected")) { this.update({ phase: "idle" }); return; }
+    if (device === undefined || (device.state !== "Booted" && device.state !== "connected")) { this.update({ phase: "idle" }); return; }
     const discovery = ++this.discovery;
     this.update({ discovering: true });
     try {
-      const result = await this.call("mobile_performance_sources", { deviceId: device.udid, platform: device.platform ?? "ios" });
+      const platform = device.platform ?? "ios";
+      const parameters: { deviceId: string; platform: string; kind?: "physical" } = { deviceId: device.udid, platform };
+      if (platform === "ios" && device.kind === "physical") parameters.kind = "physical";
+      const result = await this.call("mobile_performance_sources", parameters);
       if (this.disposed || discovery !== this.discovery) return;
       const data = result.structuredContent as { apps: CpuApp[] };
       const previous = this.snapshot.apps.find(app => app.bundleId === this.snapshot.bundleId);
@@ -179,6 +182,7 @@ export class PerformancePanel {
     }
     this.resetHistory({ phase: "connecting", error: "", monitoring: true });
     const target: CpuTarget = { deviceId: device.udid, platform: device.platform ?? "ios", bundleId };
+    if (target.platform === "ios" && device.kind === "physical") target.kind = "physical";
     this.running = this.receive(target, epoch, stopping).catch(error => {
       if (this.disposed === false && epoch === this.epoch) this.update({ phase: "failed", error: errorMessage(error), monitoring: false });
     });

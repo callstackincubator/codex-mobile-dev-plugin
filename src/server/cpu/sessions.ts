@@ -67,7 +67,7 @@ export class CpuSessions {
   private async initialize(session: Session) {
     const signal = session.abort.signal;
     try {
-      const apps = await this.sources.apps(session.target.deviceId, signal, session.target.platform);
+      const apps = await this.sources.apps(session.target.deviceId, signal, session.target.platform, session.target.kind);
       signal.throwIfAborted();
       const app = apps.find(candidate => candidate.bundleId === session.target.bundleId);
       if (app === undefined) throw new Error("The selected app is no longer running. Open it on the selected device.");

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { CpuApp, CpuBatch, CpuSample, CpuTarget } from "../src/shared/cpu.ts";
+import type { SimulatorDevice } from "../src/shared/protocol.ts";
 import { PerformancePanel } from "../src/ui/performance-panel.ts";
 import { UDID, OTHER_UDID } from "./fixtures.ts";
 
@@ -272,4 +273,28 @@ test("switching devices closes the old monitor and restores each device's select
   assert.equal(panel.getSnapshot().selectedLabel, "iPhone");
   const names = fake.events.map(event => event.split(":")[0]);
   assert.deepEqual(names, ["open", "close", "open", "close", "open"]);
+});
+
+test("a physical iPhone discovers apps, selects CPU monitoring and closes on disconnect", async t => {
+  const fake = host();
+  const panel = new PerformancePanel(fake.app);
+  t.after(() => panel.dispose());
+  const physical: SimulatorDevice = { platform: "ios", kind: "physical", udid: "00008150-001068280AE8C01C", coreDeviceId: OTHER_UDID,
+    name: "Paired iPhone", model: "iPhone", productType: "iPhone18,1", runtime: "iOS 27", state: "connected", pairingState: "paired", transportType: "wired" };
+  panel.selectSimulator(physical);
+  panel.setAvailable(true);
+  panel.show();
+  await tick();
+  assert.deepEqual(fake.sources, [physical.udid]);
+  const snapshot = panel.getSnapshot();
+  assert.equal(snapshot.bundleId, "com.example.app");
+  assert.equal(snapshot.physical, true);
+  assert.equal(snapshot.monitoring, true);
+  assert.deepEqual(fake.targets, [{ platform: "ios", kind: "physical", deviceId: physical.udid, bundleId: "com.example.app" }]);
+  panel.selectSimulator({ ...physical, state: "disconnected" });
+  await tick();
+  const disconnected = panel.getSnapshot();
+  assert.equal(disconnected.monitoring, false);
+  const names = fake.events.map(event => event.split(":")[0]);
+  assert.deepEqual(names, ["open", "close"]);
 });

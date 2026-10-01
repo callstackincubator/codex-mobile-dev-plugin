@@ -30,7 +30,7 @@ export async function startDisplayFpsMonitor(options: FpsMonitorOptions,
   await access(path);
   let pending = "";
   let previous: number | undefined;
-  return collectorProcess(path, [options.target.deviceId], { signal: options.signal, data(chunk, ready) {
+  return collectorProcess(path, ["fps", options.target.deviceId], { signal: options.signal, data(chunk, ready) {
     pending += chunk.toString("utf8");
     if (pending.length > 65536) throw new Error("The iPhone FPS collector returned an oversized sample.");
     let newline = pending.indexOf("\n");

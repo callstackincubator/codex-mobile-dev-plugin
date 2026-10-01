@@ -1,6 +1,7 @@
 use std::{io::{self, Write}, time::Duration};
 use idevice::{IdeviceService, RsdService, core_device_proxy::CoreDeviceProxy,
     dvt::{message::AuxValue, remote_server::RemoteServerClient},
+    debug_proxy::DebugProxyClient,
     rsd::RsdHandshake, usbmuxd::{Connection, UsbmuxdAddr}};
 use plist::Value;
 use tokio::io::AsyncReadExt;
@@ -32,7 +33,7 @@ fn fps(value: &Value) -> Result<Option<f64>, String> {
     }
 }
 
-async fn connect(udid: &str) -> Result<(RemoteServerClient<Box<dyn idevice::ReadWrite>>, idevice::tcp::handle::AdapterHandle), String> {
+async fn connect(udid: &str) -> Result<(RsdHandshake, idevice::tcp::handle::AdapterHandle), String> {
     let socket = "/var/run/usbmuxd".into();
     let address = UsbmuxdAddr::UnixSocket(socket);
     let connected = address.connect(1).await;
@@ -42,8 +43,8 @@ async fn connect(udid: &str) -> Result<(RemoteServerClient<Box<dyn idevice::Read
     let candidates = devices.iter();
     let matches = candidates.filter(|device| device.udid == udid);
     let preferred = matches.min_by_key(|device| if device.connection_type == Connection::Usb { 0 } else { 1 });
-    let device = preferred.ok_or("Connect the paired iPhone and enable Developer Mode. Display FPS requires iOS 17.4 or newer.")?;
-    let provider = device.to_provider(address, "mobile-dev-display-fps");
+    let device = preferred.ok_or("Connect the paired iPhone and enable Developer Mode. Physical iOS performance monitoring requires iOS 17.4 or newer.")?;
+    let provider = device.to_provider(address, "mobile-dev-performance");
     let proxy_connection = CoreDeviceProxy::connect(&provider).await;
     let proxy = proxy_connection.map_err(|error| error.to_string())?;
     let info = proxy.tunnel_info();
@@ -54,17 +55,17 @@ async fn connect(udid: &str) -> Result<(RemoteServerClient<Box<dyn idevice::Read
     let stream_connection = adapter.connect(port).await;
     let stream = stream_connection.map_err(|error| error.to_string())?;
     let handshake_result = RsdHandshake::new(stream).await;
-    let mut handshake = handshake_result.map_err(|error| error.to_string())?;
-    let client_connection = RemoteServerClient::connect_rsd(&mut adapter, &mut handshake).await;
-    let client = client_connection.map_err(|error| error.to_string())?;
-    Ok((client, adapter))
+    let handshake = handshake_result.map_err(|error| error.to_string())?;
+    Ok((handshake, adapter))
 }
 
 async fn run(udid: &str) -> Result<(), String> {
     let connection_timeout = Duration::from_secs(20);
     let connecting = connect(udid);
     let connection = tokio::time::timeout(connection_timeout, connecting).await;
-    let (mut client, _adapter) = connection.map_err(|_| "Timed out connecting to the iPhone")??;
+    let (mut handshake, mut adapter) = connection.map_err(|_| "Timed out connecting to the iPhone")??;
+    let client_connection = RemoteServerClient::connect_rsd(&mut adapter, &mut handshake).await;
+    let mut client = client_connection.map_err(|error| error.to_string())?;
     let opening = client.make_channel(SERVICE);
     let channel_timeout = Duration::from_secs(5);
     let channel_result = tokio::time::timeout(channel_timeout, opening).await;
@@ -112,12 +113,52 @@ async fn run(udid: &str) -> Result<(), String> {
     result
 }
 
+async fn debugserver(udid: &str) -> Result<(), String> {
+    let (mut handshake, mut adapter) = connect(udid).await?;
+    let opening = DebugProxyClient::connect_rsd(&mut adapter, &mut handshake).await;
+    let proxy = opening.map_err(|error| error.to_string())?;
+    let mut remote = proxy.into_inner();
+    let binding = tokio::net::TcpListener::bind("127.0.0.1:0").await;
+    let listener = binding.map_err(|error| error.to_string())?;
+    let address_result = listener.local_addr();
+    let address = address_result.map_err(|error| error.to_string())?;
+    let port = address.port();
+    let ready = serde_json::json!({ "port": port });
+    println!("{ready}");
+    let mut stdout = io::stdout();
+    let flushed = stdout.flush();
+    flushed.map_err(|error| error.to_string())?;
+    let mut stdin = tokio::io::stdin();
+    let mut byte = [0u8; 1];
+    let signal_kind = tokio::signal::unix::SignalKind::terminate();
+    let signal_result = tokio::signal::unix::signal(signal_kind);
+    let mut termination = signal_result.map_err(|error| error.to_string())?;
+    let forwarding = async {
+        let accepted = listener.accept().await;
+        let (mut local, _) = accepted.map_err(|error| error.to_string())?;
+        let result = tokio::io::copy_bidirectional(&mut local, &mut remote).await;
+        result.map_err(|error| error.to_string())?;
+        Ok::<(), String>(())
+    };
+    tokio::select! {
+        result = forwarding => result,
+        _ = stdin.read(&mut byte) => Ok(()),
+        _ = termination.recv() => Ok(()),
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let mut args = std::env::args();
     args.next();
+    let Some(mode) = args.next() else { eprintln!("Expected fps or debugserver"); std::process::exit(1); };
     let Some(udid) = args.next() else { eprintln!("Expected a physical iPhone UDID"); std::process::exit(1); };
-    if let Err(error) = run(&udid).await { eprintln!("{error}"); std::process::exit(1); }
+    let result = match mode.as_str() {
+        "fps" => run(&udid).await,
+        "debugserver" => debugserver(&udid).await,
+        _ => Err("Expected fps or debugserver".into()),
+    };
+    if let Err(error) = result { eprintln!("{error}"); std::process::exit(1); }
 }
 
 #[cfg(test)]

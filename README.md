@@ -43,9 +43,9 @@ Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile
 
 Use Select in the simulator toolbar to pause the screen. Hover to outline a component, then click to add a note. When an app omits its controls from accessibility, Select uses regions detected from the screen and labels them as screen regions. Saved notes leave numbered blue bubbles. Each note attaches the captured screen, available accessibility name, bounds, and device coordinates to your next chat message. Click a bubble to edit or remove a note, or use Send to chat to send all notes for that device. If chat is unavailable, the panel keeps the notes and retries when you return. A sent or cleared batch starts again at 1.
 
-The local ZIP at `release/mobile-dev-0.1.53-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+The local ZIP at `release/mobile-dev-0.1.55-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
-The iOS dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Simulators**. It refreshes every three seconds while the iOS panel is visible, and when opening the dropdown. Selecting a physical device opens view-only screen mirroring through its paired developer connection. The phone sends HEVC video; a bundled native Node-API addon assembles compressed frames and transfers them into Node without copying the frame payload, then the panel decodes them through WebCodecs. MCP serializes the compressed bytes as base64, so the full path is not zero copy. The capture queue is limited to eight frames or 4 MiB and requests a keyframe after overflow. Physical iOS input, screenshots, and CPU/memory collection are not implemented yet; those controls remain disabled. Mirroring requires Developer Mode and a host with HEVC WebCodecs support. `mobile_list_ios_devices` also returns remembered disconnected devices with their connection state; the picker shows connected devices only. Discovery errors remain visible while available simulators continue to work.
+The iOS dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Simulators**. It refreshes every three seconds while the iOS panel is visible, and when opening the dropdown. Selecting a physical device opens view-only screen mirroring through its paired developer connection. The phone sends HEVC video; a bundled native Node-API addon assembles compressed frames and transfers them into Node without copying the frame payload, then the panel decodes them through WebCodecs. MCP serializes the compressed bytes as base64, so the full path is not zero copy. The capture queue is limited to eight frames or 4 MiB and requests a keyframe after overflow. Physical iOS input and screenshots are not implemented yet; those controls remain disabled. CPU and memory monitoring can attach to an already running development app on a paired iOS 17.4+ device. Mirroring requires Developer Mode and a host with HEVC WebCodecs support. `mobile_list_ios_devices` also returns remembered disconnected devices with their connection state; the picker shows connected devices only. Discovery errors remain visible while available simulators continue to work.
 
 Physical iOS mirroring uses the same Apple DeviceKit bezel and framebuffer mask as the matching simulator model. Discovery preserves the hardware product type, which selects the installed Xcode device profile. The bundled Baguette CLI renders its bezel without starting a simulator, and macOS rasterizes its mask. These assets are cached per model outside the video path. A missing device profile or failed render reports an error before capture starts.
 
@@ -125,8 +125,13 @@ rows near the viewport render, using the existing performance scrollbar.
 Cursor movement updates the shared cursor position and time label without
 rendering charts. Chart bounds update with each sample in the same render.
 
-On iOS, collection uses debugserver from the selected full Xcode installation. The app
-needs a development signature with `get-task-allow`, with Xcode/LLDB detached.
+On iOS simulators, collection uses debugserver from the selected full Xcode installation.
+Physical iOS 17.4+ devices use the device debugproxy through the same paired developer
+tunnel as Display FPS. The app needs a development signature with `get-task-allow`,
+with Xcode/LLDB detached. Physical devices also require pairing, Developer Mode and
+a mounted developer disk image. App discovery lists running development apps and
+attaches by PID without launching or restarting them. Attach and detach briefly pause
+the app; ending monitoring leaves it running.
 On Android, a bundled CPU and memory C helper reads kernel process and thread counters
 over one persistent ADB connection. It adapts BAM's MIT-licensed
 [Flashlight collector](https://github.com/bamlab/flashlight/tree/5ef203ae184547a3b2984fa4f9b76d672895f861/packages/platforms/android/cpp-profiler).
@@ -156,7 +161,7 @@ The green **Display FPS** track shares the CPU and memory timeline, cursor, zoom
 
 Android 12+ uses only Perfetto FrameTimeline's presented actual display frames, excluding dropped frames and individual app/layer frames. A bundled external native consumer reads a bounded 4 MiB trace buffer once per second over ADB without creating a trace file, attaching a debugger, requiring root or installing an app SDK. Readback adds roughly three seconds of delay. SurfaceFlinger can report a frame later; the chart updates that frame's original interval. Devices without FrameTimeline and Android versions below 12 report an explicit limitation.
 
-Physical iOS 17.4+ devices use the global Instruments `CoreAnimationFramesPerSecond` counter through a bundled native helper and the paired developer connection over USB or Wi-Fi. Developer Mode is required. There is no Instruments GUI, Python installation, app SDK or LLDB attachment. iOS simulators do not support this FPS collector. CPU and memory currently remain available on iOS simulators and connected Android devices.
+Physical iOS 17.4+ devices use the global Instruments `CoreAnimationFramesPerSecond` counter through a bundled native helper and the paired developer connection over USB or Wi-Fi. Developer Mode is required. There is no Instruments GUI, Python installation, app SDK or LLDB attachment. iOS simulators do not support this FPS collector. CPU and memory are available on iOS simulators, paired iOS 17.4+ devices with a running development app, and connected Android devices.
 
 Text agents can call `mobile_display_fps_session` with `platform` and `deviceId`, read `mobile_read_display_fps` or the returned `fpsUri`, then finish with `mobile_display_fps_close`. FPS sample times use the server's monotonic clock in seconds; the session returns `timeOrigin`. CPU batches expose their own `timeOrigin` so consumers can align app-relative CPU times with device FPS. FPS sessions expire after five minutes without reads and release their tracing connection on shutdown or device switching.
 
@@ -165,12 +170,18 @@ JavaScript profiling, detailed allocation debugging and DevSuite's network track
 Text agents can monitor CPU and memory without opening the panel. Call
 `mobile_performance_sources` with `platform` and `deviceId`, then
 `mobile_cpu_session` with a target containing those fields and the chosen
-`bundleId`. The result includes `sessionId` and `cpuUri` in both JSON text and
+`bundleId`. For physical iOS, include `kind: "physical"` in both requests and use
+the hardware `udid` from `mobile_list_ios_devices`. The result includes `sessionId` and `cpuUri` in both JSON text and
 `structuredContent`. Call `mobile_read_cpu` with that `sessionId`; subsequent
 reads should pass the last `cursor` as `after` to receive only new samples.
 Wait for a full one-second interval before interpreting the initial null
 baseline. Each reading includes connection status, total CPU, individual thread usage and `memoryBytes`. The batch’s `memoryMetric` is `rss` on Android or `physical-footprint` on iOS. Finish with `mobile_cpu_close`. The panel uses the same session
 result and collector.
+
+`npm run test:ios-cpu -- --device <hardware-UDID> --bundle <bundle-id>` checks an
+already running development app through the built MCP server, then detaches and
+verifies its PID stayed unchanged. Add `--with-fps` to check concurrent Display FPS.
+It does not launch or restart the app.
 
 ## Develop and package
 
@@ -252,7 +263,7 @@ Performance findings and historical measurements are documented in [the profilin
 | `mobile_read_logs` | Read a log batch and source status |
 | `mobile_logs_keep_alive` | Keep background collection alive without sending logs (app only) |
 | `mobile_logs_close` | Stop a session's log readers |
-| `mobile_performance_sources` | List running user apps in a booted iOS simulator |
+| `mobile_performance_sources` | List running apps on iOS simulators, paired iPhones, or Android devices |
 | `mobile_cpu_session` | Connect a native process and thread CPU plus memory monitor |
 | `mobile_read_cpu` | Read live CPU and memory samples and connection status |
 | `mobile_cpu_close` | Stop one CPU and memory monitor while leaving its app running |

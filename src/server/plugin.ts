@@ -25,8 +25,8 @@ import { copyPNGToClipboard } from "./clipboard.ts";
 import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../shared/protocol.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-export const APP_URI = "ui://mobile-dev/0.1.53/simulator.html";
-export const WORKSPACE_URI = "ui://mobile-dev/0.1.53/workspace.html";
+export const APP_URI = "ui://mobile-dev/0.1.55/simulator.html";
+export const WORKSPACE_URI = "ui://mobile-dev/0.1.55/workspace.html";
 // Codex can retain entrypoint metadata after updating the installed plugin.
 const legacyAppUris = [
   "ui://mobile-dev/0.1.52/simulator.html",
@@ -93,7 +93,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   if (selectedCpu === undefined) selectedCpu = await createCpuSessions();
   const cpu = selectedCpu;
   const fps = new DisplayFpsSessions();
-  const server = new McpServer({ name: "mobile-dev", version: "0.1.53" }, {
+  const server = new McpServer({ name: "mobile-dev", version: "0.1.55" }, {
     instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. For Android use mobile_list_android_devices and the mobile_android tools. Use the selected serial with agent-device and platform android. serve-emu handles Android video and panel input. Opening the panel does not boot a device.",
   });
   new OpenAIExtensions(server);

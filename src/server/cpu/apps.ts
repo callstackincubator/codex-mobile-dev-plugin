@@ -1,9 +1,68 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { z } from "zod";
 import type { CpuApp } from "../../shared/cpu.ts";
 import { adbPath } from "../native-logs.ts";
 
 const execute = promisify(execFile);
+type DeviceCommand = (file: string, args: string[], options: { encoding: "utf8"; timeout: number; maxBuffer: number; signal?: AbortSignal }) => Promise<{ stdout: string }>;
+
+const text = z.string();
+const number = z.number();
+const integer = number.int();
+const pid = integer.positive();
+const executable = text.optional();
+const processEntry = z.object({ executable, processIdentifier: pid });
+const processes = z.array(processEntry);
+const developerApp = z.boolean();
+const application = z.object({ bundleIdentifier: text, url: text, builtByDeveloper: developerApp });
+const applications = z.array(application);
+const success = z.literal("success");
+const info = z.object({ outcome: success });
+const processResult = z.object({ runningProcesses: processes });
+const processResponse = z.object({ info, result: processResult });
+const appResult = z.object({ apps: applications });
+const appResponse = z.object({ info, result: appResult });
+
+function devicePath(url: string): string {
+  const decoded = fileURLToPath(url);
+  const path = decoded.replace(/^\/private\/var\//, "/var/");
+  return path.replace(/\/$/, "");
+}
+
+export function parsePhysicalApps(apps: string, processes: string): CpuApp[] {
+  const appJson: unknown = JSON.parse(apps);
+  const processJson: unknown = JSON.parse(processes);
+  const installed = appResponse.parse(appJson);
+  const running = processResponse.parse(processJson);
+  const bundles = new Map<string, string>();
+  for (const app of installed.result.apps) {
+    if (app.builtByDeveloper === false || app.bundleIdentifier.startsWith("com.apple.")) continue;
+    const path = devicePath(app.url);
+    bundles.set(path, app.bundleIdentifier);
+  }
+  const result: CpuApp[] = [];
+  for (const process of running.result.runningProcesses) {
+    if (process.executable === undefined) continue;
+    const path = devicePath(process.executable);
+    const directory = dirname(path);
+    const bundleId = bundles.get(directory);
+    if (bundleId) result.push({ bundleId, pid: process.processIdentifier });
+  }
+  return result;
+}
+
+export async function runningPhysicalApps(deviceId: string, signal?: AbortSignal, run: DeviceCommand = execute): Promise<CpuApp[]> {
+  const prefix = ["devicectl", "device", "info"];
+  const options = ["--device", deviceId, "--quiet", "--timeout", "10", "--omit-deprecated-fields-in-json", "--json-output", "-"];
+  const settings: Parameters<DeviceCommand>[2] = { encoding: "utf8", timeout: 15000, maxBuffer: 4 * 1024 * 1024, signal };
+  const installed = run("/usr/bin/xcrun", [...prefix, "apps", "--no-include-default-apps", ...options], settings);
+  const running = run("/usr/bin/xcrun", [...prefix, "processes", ...options], settings);
+  const results = await Promise.all([installed, running]);
+  return parsePhysicalApps(results[0].stdout, results[1].stdout);
+}
 
 export function parseRunningApps(output: string): CpuApp[] {
   const apps: CpuApp[] = [];
@@ -39,7 +98,8 @@ export function parseAndroidApps(packages: string, processes: string): CpuApp[] 
 }
 
 const packageLists = new Map<string, { expires: number; output: string }>();
-export async function runningCpuApps(deviceId: string, signal?: AbortSignal, platform: "ios" | "android" = "ios"): Promise<CpuApp[]> {
+export async function runningCpuApps(deviceId: string, signal?: AbortSignal, platform: "ios" | "android" = "ios", kind?: "simulator" | "physical"): Promise<CpuApp[]> {
+  if (platform === "ios" && kind === "physical") return runningPhysicalApps(deviceId, signal);
   if (platform === "ios") return runningSimulatorApps(deviceId, signal);
   const adb = await adbPath();
   let packages = packageLists.get(deviceId);

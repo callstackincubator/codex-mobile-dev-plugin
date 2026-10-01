@@ -43,14 +43,14 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
         <PopoverContent align="end" className="w-[min(340px,calc(100vw-24px))] p-3">
           <Field className="gap-2">
             <div className="flex items-center justify-between gap-2"><FieldLabel htmlFor="performance-app" className="text-xs">{state.selectedLabel}</FieldLabel><Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" disabled={state.available === false || state.discovering} onClick={() => void panel.discover()}><RefreshCwIcon />Refresh</Button></div>
-            <NativeSelect id="performance-app" className="w-full" disabled={state.physical && state.platform === "ios"} value={state.bundleId} onChange={event => panel.selectApp(event.target.value)}>
+            <NativeSelect id="performance-app" className="w-full" value={state.bundleId} onChange={event => panel.selectApp(event.target.value)}>
               <NativeSelectOption value="">Choose an app</NativeSelectOption>
               {state.bundleId && selectedRunning === false && <NativeSelectOption value={state.bundleId}>{state.bundleId} · Waiting for app</NativeSelectOption>}
               {state.apps.map(app => <NativeSelectOption key={app.bundleId} value={app.bundleId}>{app.bundleId} · {app.pid}</NativeSelectOption>)}
             </NativeSelect>
             <FieldDescription className="text-[11px]">{state.platform === "android"
               ? "Open an app on this Android device. CPU and memory monitoring work with release builds too."
-              : state.physical ? "Display FPS works on a paired iOS 17.4+ paired device. CPU and memory currently require an iOS simulator."
+              : state.physical ? "Open a development build on this paired iPhone with Developer Mode enabled. Detach Xcode or LLDB before connecting."
               : "Open a development build in the iOS simulator. Detach Xcode or LLDB before connecting."}</FieldDescription>
           </Field>
           {state.sourceError && <p role="alert" className="mt-2 text-xs text-destructive">{state.sourceError}</p>}
@@ -77,9 +77,7 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
         <MemoryTrack samples={state.samples} platform={state.platform} phase={state.phase} error={state.error || null}
           zoomState={zoom} onZoomChange={change} onZoomOut={reset} />
       </div>
-      {state.bundleId === "" && <p className="p-4 text-xs text-muted-foreground">{state.physical && state.platform === "ios"
-        ? "CPU and memory monitoring currently require an iOS simulator. Display FPS records independently of the selected app."
-        : "Open an app to record CPU and memory. A single running app is selected automatically; choose one in performance settings when several are running."}</p>}
+      {state.bundleId === "" && <p className="p-4 text-xs text-muted-foreground">Open an app to record CPU and memory. A single running app is selected automatically; choose one in performance settings when several are running.</p>}
     </div>
     <footer className="flex min-h-11 shrink-0 items-center border-t px-3 text-[11px] text-muted-foreground">100% = one CPU core · Display FPS includes system UI; quiet screens can show 0 · Last 150 seconds</footer>
   </section>;
