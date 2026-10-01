@@ -70,6 +70,13 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   const input = { name: "mobile_android_stream_input", arguments: { text: "PRIVATE_INPUT" } };
   await app.callServerTool(input);
   assert.equal(calls[1], input, "High frequency input stays on the original MCP path.");
+  api.setUiSurface("simulator");
+  api.recordUiTiming("ui.screenshot.capture", 12);
+  await app.callServerTool({ name: "mobile_ios_mirror_capture_screenshot", arguments: { sessionId: "PRIVATE_DEVICE_SESSION", image: "PRIVATE_SCREENSHOT" } });
+  const screenshotContext = calls[2]._meta["mobile-dev/telemetry"];
+  assert.equal(screenshotContext.surface, "simulator");
+  assert.equal(screenshotContext.device_platform, "ios");
+  assert.equal(screenshotContext.device_kind, "physical");
   api.setUiSurface("performance");
   api.recordUiTiming("ui.performance.batch", 9);
   Object.defineProperty(window.document, "visibilityState", { configurable: true, value: "hidden" });
@@ -94,8 +101,10 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, "ui.annotations.inspection_fallback");
   contains(encoded, '"surface":{"value":"simulator"');
   contains(encoded, "ui.performance.batch.mean");
+  contains(encoded, "ui.screenshot.capture.mean");
   contains(encoded, '"surface":{"value":"logs"');
   contains(encoded, '"surface":{"value":"performance"');
+  contains(encoded, '"surface":{"value":"simulator"');
   contains(encoded, "ui.frame_interval.mean");
   contains(encoded, "UI failure");
   contains(encoded, "PRIVATE_", false);
