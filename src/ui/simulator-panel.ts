@@ -5,7 +5,7 @@ import { getDeviceSettings } from "./device-settings.ts";
 import type { DeviceSettings } from "../shared/device-settings.ts";
 import { bezelGeometrySchema } from "../shared/bezel.ts";
 import type { Bezel } from "../shared/bezel.ts";
-import type { SimulatorDevice, Status } from "../shared/protocol.ts";
+import type { SimulatorDevice, Status, TouchInput } from "../shared/protocol.ts";
 import { physicalConnectionLabel } from "../shared/ios-devices.ts";
 import type { PhysicalIosDevice } from "../shared/ios-devices.ts";
 import type { DeviceOption } from "./device-picker.ts";
@@ -59,7 +59,7 @@ export function createSimulatorPanel(
   let discoveryError = "";
   let listing: Promise<void> | undefined;
   let discoveryTimer: ReturnType<typeof setTimeout> | undefined;
-  type PanelStream = { id: string; frameUri: string; epoch: number; platform: "ios" | "android"; physicalIos: boolean; controller: AbortController; input?: StreamInput; reader?: FrameStream<ImageBitmap>; closing?: Promise<void> };
+  type PanelStream = { id: string; frameUri: string; epoch: number; platform: "ios" | "android"; physicalIos: boolean; generation?: number; controller: AbortController; input?: StreamInput; reader?: FrameStream<ImageBitmap>; closing?: Promise<void> };
   const reconnect = new ReconnectLoop();
   let stream: PanelStream | undefined;
   let ready = false;
@@ -68,7 +68,7 @@ export function createSimulatorPanel(
   let inputRepairMessage = "";
   let epoch = 0;
   let points = { width: 0, height: 0 };
-  let pointer: { id: number; x: number; y: number; edge?: string } | undefined;
+  let pointer: { id: number; x: number; y: number; edge?: TouchInput["edge"] } | undefined;
   let seenFrames = 0;
   let pausedFrame: HTMLCanvasElement | undefined;
   let busy = false;
@@ -116,8 +116,11 @@ export function createSimulatorPanel(
     return new StreamInput(async messages => {
       const started = performance.now();
       try {
-        const tool = session.platform === "android" ? "mobile_android_stream_input" : "mobile_stream_input";
-        await call(tool, { sessionId: session.id, messages }, { timeout: 5000 });
+        const tool = session.physicalIos ? "mobile_ios_mirror_input" : session.platform === "android" ? "mobile_android_stream_input" : "mobile_stream_input";
+        const parameters = session.physicalIos
+          ? { sessionId: session.id, messages, generation: session.generation }
+          : { sessionId: session.id, messages };
+        await call(tool, parameters, { timeout: 5000 });
       } finally {
         const elapsed = performance.now() - started;
         session.reader?.inputTiming(elapsed);
@@ -466,7 +469,7 @@ export function createSimulatorPanel(
     firstFrameStartedAt = connectionStartedAt;
     controls();
     const session = stream;
-    if (physicalIos === false) session.input = createInput(session);
+    session.input = createInput(session);
     const receiveSignal = AbortSignal.any([signal, session.controller.signal]);
     try {
       if (session.physicalIos) await receiveIosFrames(session, receiveSignal);
@@ -578,6 +581,8 @@ export function createSimulatorPanel(
       drawFrame(image, image.displayWidth, image.displayHeight);
     }, () => {
       if (signal.aborted || session.epoch !== epoch) return;
+      session.input?.clear();
+      cancelPointer();
       ready = false;
       notice("Recovering physical device video…");
       controls();
@@ -594,6 +599,13 @@ export function createSimulatorPanel(
         if (content === undefined || !("text" in content)) throw new StopReconnectError("The plugin returned an invalid physical device video batch.");
         const value: unknown = JSON.parse(content.text);
         const batch = iosVideoBatchSchema.parse(value);
+        if (session.generation !== batch.generation) {
+          session.input?.clear();
+          cancelPointer();
+          ready = false;
+          session.generation = batch.generation;
+          controls();
+        }
         await decoder.accept(batch);
         if (seenFrames === 0 && performance.now() - opened > 15000) throw new Error("The iPhone has not produced a screen frame. Unlock it and retry.");
       }
@@ -774,6 +786,7 @@ export function createSimulatorPanel(
   canvas.addEventListener("lostpointercapture", releasePointer);
   window.addEventListener("blur", releasePointer);
   canvas.addEventListener("keydown", event => {
+    if (stream?.physicalIos) return;
     if (annotations.getSnapshot().selecting || annotations.getSnapshot().draft) {
       if (event.key === "Escape") { event.preventDefault(); annotations.exit(); }
       return;

@@ -13,9 +13,11 @@ const bezel: Bezel = { rect: { x: 27, y: 18, width: 400, height: 872 }, viewport
 
 test("physical mirroring tools stream compressed frames over an app-only MCP session", async t => {
   let closed = 0;
+  const touches: unknown[] = [];
   const sessions = new IosMirrorSessions(async udid => {
     assert.equal(udid, phone.udid);
-    return { async read() { return { generation: 1, dropped: 0, frames: [{ data: Buffer.from([1, 2, 3]), timestamp: 0, key: true }] }; }, reset() {}, async close() { closed++; } };
+    return { async read() { return { generation: 1, dropped: 0, frames: [{ data: Buffer.from([1, 2, 3]), timestamp: 0, key: true }] }; },
+      async touch(samples, generation) { touches.push({ samples, generation }); }, reset() {}, async close() { closed++; } };
   });
   const server = new McpServer({ name: "mirror-test", version: "1" });
   const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone], async device => {
@@ -43,6 +45,22 @@ test("physical mirroring tools stream compressed frames over an app-only MCP ses
   const batch = JSON.parse(content.text);
   assert.equal(batch.frames[0].data, "AQID");
   assert.equal(batch.frames[0].timestamp, 0);
+  const touch = await client.callTool({ name: "mobile_ios_mirror_input", arguments: {
+    sessionId: id, generation: 1, messages: [
+      { type: "touch1-down", x: 200, y: 400, width: 400, height: 800 },
+      { type: "touch1-up", x: 200, y: 400, width: 400, height: 800 },
+    ],
+  } });
+  assert.equal(touch.isError, undefined);
+  assert.deepEqual(touches, [{ samples: [
+    { phase: 0, x: 200, y: 400, width: 400, height: 800 },
+    { phase: 2, x: 200, y: 400, width: 400, height: 800 },
+  ], generation: 1 }]);
+  const invalid = await client.callTool({ name: "mobile_ios_mirror_input", arguments: {
+    sessionId: id, generation: 1, messages: [{ type: "button", button: "home" }],
+  } });
+  assert.equal(invalid.isError, true);
+  assert.equal(touches.length, 1);
   await client.callTool({ name: "mobile_ios_mirror_close", arguments: { sessionId: id } });
   assert.equal(closed, 1);
 });

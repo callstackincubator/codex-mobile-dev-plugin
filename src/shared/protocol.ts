@@ -9,11 +9,15 @@ const duration = z.number().finite().min(0).max(5);
 const dimensions = { width: size, height: size };
 const edge = z.enum(["left", "top", "right", "bottom"]).optional();
 
+export const touchInputSchema = z.object({
+  type: z.enum(["touch1-down", "touch1-move", "touch1-up"]), x: point, y: point, ...dimensions, edge,
+}).strict();
+export type TouchInput = z.infer<typeof touchInputSchema>;
+
 export const inputSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("tap"), x: point, y: point, ...dimensions, duration: duration.optional() }).strict(),
   z.object({ type: z.literal("swipe"), startX: point, startY: point, endX: point, endY: point, ...dimensions, duration: duration.optional() }).strict(),
-  ...(["touch1-down", "touch1-move", "touch1-up"] as const).map(type =>
-    z.object({ type: z.literal(type), x: point, y: point, ...dimensions, edge }).strict()),
+  touchInputSchema,
   z.object({
     type: z.literal("button"),
     button: z.enum(["home", "back", "power", "lock", "volume-up", "volume-down", "action", "app-switcher"]),

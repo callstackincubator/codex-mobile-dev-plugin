@@ -308,7 +308,7 @@ test("Android discovery polls visible panels, shares refreshes, and removes disc
   assert.equal(disposedReads.length, 3);
 });
 
-test("physical iOS devices mirror above simulators with view-only controls", async t => {
+test("physical iOS devices mirror above simulators and route touches to their own session", async t => {
   const f = fixture(t);
   f.setPhysicalDevices([physicalPhone]);
   await f.ios.panel.load();
@@ -349,6 +349,22 @@ test("physical iOS devices mirror above simulators with view-only controls", asy
   const boots = f.calls.filter(call => call.name.startsWith("mobile_boot"));
   const streams = f.calls.filter(call => call.name === "mobile_stream_session");
   assert.equal(disabledButtons, true);
+  dispatch(screen, "pointerdown", { pointerId: 1, button: 0, clientX: 75, clientY: 150 });
+  dispatch(screen, "pointermove", { pointerId: 1, clientX: 90, clientY: 150 });
+  dispatch(screen, "pointerup", { pointerId: 1 });
+  await waitFor(() => {
+    const physicalInput = f.calls.filter(call => call.name === "mobile_ios_mirror_input");
+    const samples = physicalInput.flatMap(call => call.arguments.messages as { type: string }[]);
+    return samples.some(sample => sample.type === "touch1-up");
+  });
+  const physicalInput = f.calls.filter(call => call.name === "mobile_ios_mirror_input");
+  const samples = physicalInput.flatMap(call => call.arguments.messages as unknown[]);
+  assert.deepEqual(samples, [
+    { type: "touch1-down", x: 200, y: 400, width: 400, height: 800 },
+    { type: "touch1-move", x: 240, y: 400, width: 400, height: 800 },
+    { type: "touch1-up", x: 240, y: 400, width: 400, height: 800 },
+  ]);
+  assert.equal(physicalInput.every(call => call.arguments.generation === 1), true);
   assert.equal(boots.length, 0);
   assert.equal(streams.length, previousStreams.length);
   await picker.stopDevice(physicalPhone.udid);

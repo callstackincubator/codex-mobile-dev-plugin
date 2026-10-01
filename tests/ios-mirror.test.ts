@@ -1,19 +1,44 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { IosMirrorSessions } from "../src/server/ios-mirror.ts";
-import type { NativeCapture } from "../src/server/ios-mirror.ts";
+import type { NativeCapture, NativeTouchSample } from "../src/server/ios-mirror.ts";
 
 function fixture() {
   let closed = 0;
   let resets = 0;
+  const touches: { samples: NativeTouchSample[]; generation: number }[] = [];
   const bytes = Buffer.from([0, 0, 0, 2, 0x26, 1]);
   const capture: NativeCapture = {
     async read() { return { generation: 1, dropped: 0, configuration: { revision: 1, width: 1216, height: 2656, codec: "hvc1.1.6.L150.B0", description: Buffer.from([1]) }, frames: [{ data: bytes, timestamp: 0, key: true }] }; },
+    async touch(samples, generation) { touches.push({ samples, generation }); },
     reset() { resets++; }, async close() { closed++; },
   };
   const sessions = new IosMirrorSessions(async () => capture);
-  return { sessions, capture, bytes, get closed() { return closed; }, get resets() { return resets; } };
+  return { sessions, capture, bytes, touches, get closed() { return closed; }, get resets() { return resets; } };
 }
+
+test("physical touches require the delivered video generation and serialize native writes", async t => {
+  const f = fixture();
+  t.after(() => f.sessions.close());
+  const id = await f.sessions.open("phone");
+  const messages = [{ type: "touch1-down", x: 200, y: 400, width: 400, height: 800 }] as const;
+  const touch = [...messages];
+  const premature = f.sessions.input(id, touch, 1);
+  await assert.rejects(premature, /fresh physical iOS screen/);
+  await f.sessions.batch(id);
+  await f.sessions.input(id, touch, 1);
+  assert.deepEqual(f.touches, [{ samples: [{ phase: 0, x: 200, y: 400, width: 400, height: 800 }], generation: 1 }]);
+  let release!: () => void;
+  f.capture.touch = () => new Promise<void>(resolve => { release = resolve; });
+  const pending = f.sessions.input(id, touch, 1);
+  const overlapping = f.sessions.input(id, touch, 1);
+  await assert.rejects(overlapping, /already pending/);
+  release();
+  await pending;
+  f.sessions.reset(id);
+  const stale = f.sessions.input(id, touch, 1);
+  await assert.rejects(stale, /fresh physical iOS screen/);
+});
 
 test("physical mirroring serializes compressed native buffers and preserves zero timestamps", async t => {
   const f = fixture();

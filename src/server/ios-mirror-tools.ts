@@ -2,7 +2,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 
-import { errorMessage } from "../shared/protocol.ts";
+import { errorMessage, touchInputSchema } from "../shared/protocol.ts";
 import { listIosDevices } from "./ios-devices.ts";
 import { IosMirrorSessions } from "./ios-mirror.ts";
 import { readPhysicalIosBezel } from "./physical-ios-bezel.ts";
@@ -22,7 +22,7 @@ export function registerIosMirrorTools(server: McpServer, appUri: string, sessio
   });
 
   registerAppTool(server, "mobile_ios_mirror_session", {
-    title: "Mirror physical iOS device", description: "Open a view-only HEVC screen stream for a connected, paired iPhone or iPad over USB or Wi-Fi.",
+    title: "Mirror physical iOS device", description: "Open an interactive HEVC screen stream for a connected, paired iPhone or iPad over USB or Wi-Fi. Supports pointer taps and drags.",
     inputSchema: { udid: z.string().regex(/^[A-Fa-f0-9-]{8,64}$/) }, annotations, _meta: { ui: { resourceUri: appUri, visibility: ["app"] } },
   }, async ({ udid }) => {
     try {
@@ -33,6 +33,19 @@ export function registerIosMirrorTools(server: McpServer, appUri: string, sessio
       const id = await sessions.open(udid);
       return { content: [{ type: "text", text: `Mirroring ${device.name}.` }], structuredContent: { name: device.name }, _meta: { bezel, sessionId: id, frameUri: `ios-video://mobile-dev/${id}/video` } };
     } catch (error) { return { isError: true, content: [{ type: "text", text: errorMessage(error) }] }; }
+  });
+
+  registerAppTool(server, "mobile_ios_mirror_input", {
+    title: "Touch physical iOS screen", description: "Send ordered touch-down, move, and release samples to this physical iOS screen stream. Coordinates use the displayed frame dimensions.",
+    inputSchema: { sessionId, generation: z.number().int().min(0), messages: z.array(touchInputSchema).min(1).max(64) }, annotations,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async ({ sessionId: id, messages, generation }) => {
+    try {
+      await sessions.input(id, messages, generation);
+      return { content: [{ type: "text", text: "Touch input delivered." }] };
+    } catch (error) {
+      return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { streamDisconnected: true } };
+    }
   });
 
   registerAppTool(server, "mobile_ios_mirror_reset", {

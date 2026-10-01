@@ -1,4 +1,4 @@
-use crate::{codec, control, media, queue::{Queue, Frame}};
+use crate::{codec, control, input::{TouchClient, TouchSample}, media, queue::{Queue, Frame}};
 
 use std::{future::Future, sync::{Arc, Mutex}, time::{Duration, Instant}};
 
@@ -20,7 +20,11 @@ struct Shared {
     stopped: Notify,
 }
 
-enum Command { Reset, Close }
+enum Command {
+    Reset,
+    Close,
+    Touch { samples: Vec<TouchSample>, generation: u32, reply: tokio::sync::oneshot::Sender<std::result::Result<(), String>> },
+}
 
 #[napi(object)]
 pub struct VideoConfiguration {
@@ -81,6 +85,18 @@ impl Capture {
 
     #[napi]
     pub fn reset(&self) { let _ = self.commands.send(Command::Reset); }
+
+    #[napi]
+    pub async fn touch(&self, samples: Vec<TouchSample>, generation: u32) -> Result<()> {
+        if samples.is_empty() || samples.len() > 64 { return Err(Error::from_reason("Send between one and 64 physical iOS touch samples.")); }
+        let (reply, received) = tokio::sync::oneshot::channel();
+        let command = Command::Touch { samples, generation, reply };
+        self.commands.send(command).map_err(|_| Error::from_reason("The physical iOS input session closed."))?;
+        let result = tokio::time::timeout(Duration::from_secs(4), received).await;
+        let response = result.map_err(|_| Error::from_reason("The physical iOS input timed out."))?;
+        let delivered = response.map_err(|_| Error::from_reason("The physical iOS input session closed."))?;
+        delivered.map_err(Error::from_reason)
+    }
 
     #[napi]
     pub async fn close(&self) {
@@ -169,6 +185,7 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
         let session = Uuid::new_v4();
         let our_ssrc = Uuid::new_v4().as_u128() as u32;
         let call_info = CallInfoBlob { call_id: 0, client_version: 1, device_type: "Mac17,7".into(), framework_version: "2205.3.1".into(), os_version: "25F71".into(), device_name: None, audio_device_uid: None };
+        let mut input = None;
         let capture = async {
             let call_id = Uuid::new_v4().to_string().to_uppercase();
             let offer = build_screen_audio_offer(&call_id, &call_info).map_err(|e| e.to_string())?;
@@ -185,6 +202,12 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
             let feedback_port = control::sender_port(&answer)?;
             let answer = answer.as_dictionary().and_then(|d| d.get("negotiatorAnswer")).and_then(plist::Value::as_data).ok_or("No HEVC negotiation answer.")?;
             let identity = parse_screen_video_answer(answer).map_err(|e| e.to_string())?;
+            let hid_port = handshake.services.get("com.apple.coredevice.hid.universalhidservice")
+                .ok_or("The iPhone does not expose its touch-input service. Prepare it with Xcode 27 and enable Developer Mode.")?.port;
+            let connect = adapter.connect(hid_port);
+            let stream = setup(deadline, connect).await?;
+            let connect = TouchClient::connect(stream);
+            input = Some(setup(deadline, connect).await?);
             eprintln!("[mobile-dev:ios-mirror] capture_started receiver_ssrc={our_ssrc} media_ssrc={} feedback_port={feedback_port}", identity.ssrc);
             let mut assembler = HevcAccessUnitAssembler::new(identity.payload_type, identity.ssrc);
             let mut interval = tokio::time::interval(Duration::from_millis(500));
@@ -204,7 +227,26 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
                 tokio::select! {
                     command = commands.recv() => match command {
                         Some(Command::Close) | None => return Ok(()),
+                        Some(Command::Touch { samples, generation, reply }) => {
+                            let available = {
+                                let queue = shared.queue.lock().unwrap();
+                                queue.generation == generation && queue.configuration.is_some() && queue.closed == false
+                            };
+                            let operation = async {
+                                if available == false { return Err("Wait for a fresh physical iOS screen before sending input.".to_string()); }
+                                let touch = input.as_mut().ok_or("Physical iOS touch input is unavailable.")?;
+                                touch.send(samples).await
+                            };
+                            let result = tokio::time::timeout(Duration::from_secs(2), operation).await;
+                            let result = result.unwrap_or_else(|_| Err("The physical iOS touch service timed out.".into()));
+                            let failure = result.as_ref().err().cloned();
+                            let _ = reply.send(result);
+                            if let Some(error) = failure { return Err(error); }
+                        }
                         Some(Command::Reset) => {
+                            if let Some(touch) = input.as_mut() {
+                                touch.release().await?;
+                            }
                             assembler.mark_stream_discontinuity(); key_requested = true;
                             let now = Instant::now();
                             recovery_started = Some(now);
@@ -256,6 +298,7 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
                             match event {
                                 HevcDepacketizerEvent::PacketRejected(_) => {},
                                 HevcDepacketizerEvent::Discontinuity(reason) => {
+                                    if let Some(touch) = input.as_mut() { touch.release().await?; }
                                     if key_requested == false {
                                         let now = Instant::now();
                                         recovery_started = Some(now);
@@ -277,21 +320,22 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
                                         let parameters = assembler.parameter_sets().ok_or("Missing HEVC configuration.")?;
                                         Some(codec::configuration(parameters)?)
                                     } else { None };
-                                    let mut queue = shared.queue.lock().unwrap();
                                     if let Some(configuration) = &configuration { configuration_revision = configuration.revision; }
                                     let first = *first_timestamp.get_or_insert(unit.rtp_timestamp);
                                     let timestamp = f64::from(unit.rtp_timestamp.wrapping_sub(first)) * (1_000_000.0 / 90_000.0);
                                     let frame = Frame { bytes: unit.bytes, timestamp, key: unit.is_sync };
-                                    let queued_frames = queue.frames.len();
-                                    let queued_bytes = queue.bytes;
-                                    let previous_generation = queue.generation;
                                     let incoming_bytes = frame.bytes.len();
-                                    let accepted = queue.push(frame, configuration);
-                                    let generation = queue.generation;
-                                    let dropped = queue.dropped;
-                                    drop(queue);
+                                    let (accepted, queued_frames, queued_bytes, previous_generation, generation, dropped) = {
+                                        let mut queue = shared.queue.lock().unwrap();
+                                        let queued_frames = queue.frames.len();
+                                        let queued_bytes = queue.bytes;
+                                        let previous_generation = queue.generation;
+                                        let accepted = queue.push(frame, configuration);
+                                        (accepted, queued_frames, queued_bytes, previous_generation, queue.generation, queue.dropped)
+                                    };
                                     if accepted {
                                         if generation != previous_generation {
+                                            if let Some(touch) = input.as_mut() { touch.release().await?; }
                                             eprintln!("[mobile-dev:ios-mirror] configuration_changed receiver_ssrc={our_ssrc} revision={} generation={generation} dropped={dropped} key={}", unit.parameter_set_revision, unit.is_sync);
                                         }
                                         if unit.is_sync {
@@ -303,6 +347,7 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
                                             }
                                         }
                                     } else {
+                                        if let Some(touch) = input.as_mut() { touch.release().await?; }
                                         assembler.mark_stream_discontinuity(); key_requested = true;
                                         if recovery_started.is_none() {
                                             let now = Instant::now();
@@ -318,6 +363,13 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
                 }
             }
         }.await;
+        if let Some(touch) = input.as_mut() {
+            let release = touch.release();
+            let released = tokio::time::timeout(Duration::from_secs(2), release).await;
+            if matches!(released, Ok(Ok(()))) == false {
+                eprintln!("[mobile-dev:ios-mirror] touch_release_failed");
+            }
+        }
         let stop = tokio::time::timeout(Duration::from_secs(2), control.stop(&ids)).await;
         if capture.is_ok() { stop.map_err(|_| "Timed out stopping the physical display stream.".to_string())??; }
         capture

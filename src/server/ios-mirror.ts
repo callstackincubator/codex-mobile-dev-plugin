@@ -3,10 +3,12 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { IosVideoBatch } from "../shared/ios-video.ts";
+import type { TouchInput } from "../shared/protocol.ts";
 
 type NativeConfiguration = { revision: number; width: number; height: number; codec: string; description: Buffer };
 type NativeBatch = { generation: number; frames: { data: Buffer; timestamp: number; key: boolean }[]; configuration?: NativeConfiguration; dropped: number };
-export type NativeCapture = { read(): Promise<NativeBatch>; reset(): void; close(): Promise<void> };
+export type NativeTouchSample = { phase: number; x: number; y: number; width: number; height: number };
+export type NativeCapture = { read(): Promise<NativeBatch>; touch(samples: NativeTouchSample[], generation: number): Promise<void>; reset(): void; close(): Promise<void> };
 type NativeAddon = { openDevice(udid: string): Promise<NativeCapture> };
 export type OpenCapture = (udid: string) => Promise<NativeCapture>;
 
@@ -25,7 +27,7 @@ async function openCapture(udid: string) {
   return addon.openDevice(udid);
 }
 
-type Session = { capture: NativeCapture; udid: string; expires: number; sequence: number; reading: boolean; closed: boolean; configuration?: IosVideoBatch["configuration"] };
+type Session = { capture: NativeCapture; udid: string; expires: number; sequence: number; reading: boolean; inputting: boolean; generation?: number; closed: boolean; configuration?: IosVideoBatch["configuration"] };
 
 export class IosMirrorSessions {
   private readonly sessions = new Map<string, Session>();
@@ -54,7 +56,7 @@ export class IosMirrorSessions {
       if (this.disposed) { await capture.close(); throw new Error("The plugin server has closed."); }
       const bytes = randomBytes(32);
       const id = bytes.toString("hex");
-      this.sessions.set(id, { capture, udid, expires: Date.now() + 300000, sequence: 0, reading: false, closed: false });
+      this.sessions.set(id, { capture, udid, expires: Date.now() + 300000, sequence: 0, reading: false, inputting: false, closed: false });
       return id;
     } finally { this.opening.delete(udid); }
   }
@@ -76,6 +78,8 @@ export class IosMirrorSessions {
     try {
       const batch = await session.capture.read();
       if (session.closed) throw new Error("The physical device stream closed.");
+      if (session.generation !== batch.generation) session.generation = undefined;
+      if (batch.frames.some(frame => frame.key)) session.generation = batch.generation;
       if (batch.configuration) {
         const { description, ...configuration } = batch.configuration;
         session.configuration = { ...configuration, description: description.toString("base64") };
@@ -85,8 +89,23 @@ export class IosMirrorSessions {
     } finally { session.reading = false; }
   }
 
+  async input(id: string, messages: TouchInput[], generation: number) {
+    const session = this.session(id);
+    if (session.generation !== generation) throw new Error("Wait for a fresh physical iOS screen before sending input.");
+    if (session.inputting) throw new Error("Physical iOS input is already pending.");
+    session.inputting = true;
+    try {
+      const samples: NativeTouchSample[] = messages.map(message => {
+        const phase = message.type === "touch1-down" ? 0 : message.type === "touch1-move" ? 1 : 2;
+        return { phase, x: message.x, y: message.y, width: message.width, height: message.height };
+      });
+      await session.capture.touch(samples, generation);
+    } finally { session.inputting = false; }
+  }
+
   reset(id: string) {
     const session = this.session(id);
+    session.generation = undefined;
     session.capture.reset();
   }
 

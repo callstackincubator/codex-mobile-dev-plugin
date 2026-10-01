@@ -1,5 +1,6 @@
 mod codec;
 mod control;
+mod input;
 #[allow(dead_code)]
 mod media;
 mod queue;
