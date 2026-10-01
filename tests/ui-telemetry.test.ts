@@ -8,6 +8,42 @@ function contains(text: string, fragment: string, expected = true) {
   assert.equal(included, expected, `Telemetry fragment: ${fragment}`);
 }
 
+test("browser errors use the served environment regardless of live-reload markers", async t => {
+  const root = process.cwd();
+  const built = await build({
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts";', resolveDir: root, loader: "ts" },
+    bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
+    define: { "process.env.NODE_ENV": '"production"' },
+  });
+  for (const environment of ["development", "release"]) {
+    const html = `<html><head><meta name="mobile-dev-environment" content="${environment}"><meta name="mobile-dev-live-revision" content="test"></head></html>`;
+    const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
+    t.after(() => dom.window.close());
+    Object.defineProperty(dom.window.performance, "getEntriesByType", { value: () => [] });
+    Object.defineProperty(dom.window.performance, "getEntries", { value: () => [] });
+    const bodies: string[] = [];
+    dom.window.fetch = async (_url, options) => {
+      const body = String(options?.body ?? "");
+      bodies.push(body);
+      return new Response("", { status: 200 });
+    };
+    dom.window.eval(built.outputFiles[0].text);
+    const api = dom.window.Telemetry;
+    api.startUiTelemetry({ async callServerTool() { return { content: [] }; } });
+    const error = new dom.window.Error("Environment validation");
+    api.captureUiError(error, "test");
+    await api.stopUiTelemetry();
+    const captured = bodies.join("\n");
+    contains(captured, `"environment":"${environment}"`);
+    const other = environment === "development" ? "release" : "development";
+    contains(captured, `"environment":"${other}"`, false);
+  }
+  const invalid = new JSDOM("<html><head></head></html>", { runScripts: "outside-only" });
+  t.after(() => invalid.window.close());
+  invalid.window.eval(built.outputFiles[0].text);
+  assert.throws(() => invalid.window.Telemetry.startUiTelemetry({}), /Sentry environment must be/);
+});
+
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
   const root = process.cwd();
   const built = await build({

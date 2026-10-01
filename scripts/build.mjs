@@ -3,6 +3,7 @@ import { iosMirrorSourceHash } from "./build-ios-mirror.mjs";
 import { iosLogsSourceHash } from "./build-ios-logs.mjs";
 import { androidCpuSourceHash } from "./build-android-cpu.mjs";
 import { baguetteTelemetrySourceHash } from "./rebuild-baguette.mjs";
+import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { build } from "esbuild";
 import { sentryEsbuildPlugin } from "@sentry/node/esbuild";
 import SentryCli from "@sentry/cli";
@@ -13,6 +14,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 
+const telemetryEnvironment = telemetryBuildEnvironment();
 await mkdir("dist", { recursive: true });
 await access("vendor/baguette/Baguette");
 await access("vendor/baguette/Baguette_Baguette.bundle");
@@ -145,7 +147,8 @@ await cli.execute(["sourcemaps", "inject", ".sentry/ui"]);
 const js = await readFile(".sentry/ui/app.js", "utf8");
 const css = app.outputFiles.find(file => file.path.endsWith(".css"))?.text ?? "";
 const template = await readFile("src/ui/index.html", "utf8");
-await writeFile("dist/app.html", template
+const configuredTemplate = template.replace('name="mobile-dev-environment" content="development"', `name="mobile-dev-environment" content="${telemetryEnvironment}"`);
+await writeFile("dist/app.html", configuredTemplate
   .replace("<!-- APP_STYLE -->", () => `<style>${css}</style>`)
   .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}\n//# sourceURL=app:///mobile-dev-ui.js\n</script>`));
 const server = await build({
@@ -187,4 +190,6 @@ for (const directory of [...packageRoots].sort()) {
   for (const file of files) licenses.push(`${metadata.name} ${metadata.version} (${file})\n\n${await readFile(`${directory}/${file}`, "utf8")}`);
 }
 await writeFile("dist/third-party-licenses.txt", licenses.join("\n\n====================\n\n"));
-console.log("Built the panel, physical iOS logs, Baguette, serve-emu, and agent-device runtimes.");
+const telemetryConfig = JSON.stringify({ environment: telemetryEnvironment }, null, 2);
+await writeFile("dist/telemetry-environment.json", telemetryConfig + "\n");
+console.log(`Built the panel and runtimes with Sentry environment ${telemetryEnvironment}.`);

@@ -48,8 +48,7 @@ if (!running) {
         const js = result.outputFiles.find(file => file.path.endsWith(".js")).text;
         const css = result.outputFiles.find(file => file.path.endsWith(".css"))?.text ?? "";
         const template = await readFile(resolve(projectRoot, "src/ui/index.html"), "utf8");
-        const developmentTemplate = template.replace('name="mobile-dev-environment" content="release"', 'name="mobile-dev-environment" content="development"');
-        const html = developmentTemplate.replace("<!-- APP_STYLE -->", () => `<style>${css}</style>`)
+        const html = template.replace("<!-- APP_STYLE -->", () => `<style>${css}</style>`)
           .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}</script>`);
         await writeFile(resolve(output, "app.html.tmp"), html);
         await rename(resolve(output, "app.html.tmp"), resolve(output, "app.html"));
