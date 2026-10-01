@@ -235,6 +235,12 @@ test("physical Android devices appear above emulators and stream without emulato
   const session = f.calls.findLast(call => call.name === "mobile_android_stream_session");
   assert.deepEqual(session?.arguments, { deviceId: androidPhone.udid });
   assert.equal(f.android.element("screenshot").disabled, false);
+  for (const button of f.android.root.buttons) {
+    assert.equal(button.disabled, false);
+    assert.equal(button.dataset.unsupported, "false");
+  }
+  assert.equal(f.android.root.buttons[0].title, "Home");
+  assert.equal(f.android.root.buttons[1].title, "App switcher");
   await picker.stopDevice(androidPhone.udid);
   const lifecycle = f.calls.filter(call => call.name.startsWith("mobile_boot") || call.name.startsWith("mobile_shutdown"));
   assert.equal(lifecycle.length, 0);
@@ -368,6 +374,9 @@ test("physical iOS devices mirror above simulators and route touches to their ow
   const boots = f.calls.filter(call => call.name.startsWith("mobile_boot"));
   const streams = f.calls.filter(call => call.name === "mobile_stream_session");
   assert.equal(disabledButtons, true);
+  for (const button of f.ios.root.buttons) assert.equal(button.dataset.unsupported, "true");
+  assert.equal(f.ios.root.buttons[0].title, "Home is unavailable on physical iOS devices");
+  assert.equal(f.ios.root.buttons[1].title, "App switcher is unavailable on physical iOS devices");
   dispatch(screen, "pointerdown", { pointerId: 1, button: 0, clientX: 75, clientY: 150 });
   dispatch(screen, "pointermove", { pointerId: 1, clientX: 90, clientY: 150 });
   dispatch(screen, "pointerup", { pointerId: 1 });
@@ -412,6 +421,15 @@ test("physical iOS devices mirror above simulators and route touches to their ow
   const disconnectedState = picker.getSnapshot();
   const phonePresent = disconnectedState.items.some(item => item.value === physicalPhone.udid);
   assert.equal(phonePresent, false);
+  picker.value = "iphone-1";
+  dispatch(pickerElement, "change");
+  await waitFor(() => {
+    const buttonsEnabled = f.ios.root.buttons.every(button => !button.disabled);
+    return f.ios.panel.selected?.kind !== "physical" && buttonsEnabled;
+  });
+  for (const button of f.ios.root.buttons) assert.equal(button.dataset.unsupported, "false");
+  assert.equal(f.ios.root.buttons[0].title, "Home");
+  assert.equal(f.ios.root.buttons[1].title, "App switcher");
 });
 
 test("physical iOS screenshots capture the displayed frame without a simulator backend", async t => {
