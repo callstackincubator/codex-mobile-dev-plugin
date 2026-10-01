@@ -86,6 +86,9 @@ try {
   assert.notEqual(new URL(panel.structuredContent.baseUrl).port, "8421");
   const baseUrl = panel.structuredContent.baseUrl;
   const entrypoint = tools.tools.find(tool => tool.name === "mobile_open_simulator");
+  for (const tool of [entrypoint, workspace]) {
+    assert.deepEqual(Object.keys(tool._meta["openai/ui"]), ["entrypoints"]);
+  }
   const resource = await client.readResource({ uri: entrypoint._meta.ui.resourceUri });
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.ok(resource.contents[0].text.includes('id="root"'));
