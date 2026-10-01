@@ -5,11 +5,13 @@ import { z } from "zod";
 import { errorMessage } from "../shared/protocol.ts";
 import { listIosDevices } from "./ios-devices.ts";
 import { IosMirrorSessions } from "./ios-mirror.ts";
+import { readPhysicalIosBezel } from "./physical-ios-bezel.ts";
+import type { PhysicalIosBezelReader } from "./physical-ios-bezel.ts";
 
 const sessionId = z.string().regex(/^[a-f0-9]{64}$/);
 const annotations = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 
-export function registerIosMirrorTools(server: McpServer, appUri: string, sessions = new IosMirrorSessions(), discover = listIosDevices) {
+export function registerIosMirrorTools(server: McpServer, appUri: string, sessions = new IosMirrorSessions(), discover = listIosDevices, readBezel: PhysicalIosBezelReader = readPhysicalIosBezel) {
   server.registerResource("ios-physical-video", new ResourceTemplate("ios-video://mobile-dev/{sessionId}/video", { list: undefined }), {
     title: "Physical iOS device video", mimeType: "application/json",
   }, async (uri, variables) => {
@@ -27,8 +29,9 @@ export function registerIosMirrorTools(server: McpServer, appUri: string, sessio
       const devices = await discover();
       const device = devices.find(device => device.udid === udid);
       if (device === undefined || device.state !== "connected") throw new Error("The physical iOS device is no longer connected.");
+      const bezel = await readBezel(device);
       const id = await sessions.open(udid);
-      return { content: [{ type: "text", text: `Mirroring ${device.name}.` }], structuredContent: { name: device.name }, _meta: { sessionId: id, frameUri: `ios-video://mobile-dev/${id}/video` } };
+      return { content: [{ type: "text", text: `Mirroring ${device.name}.` }], structuredContent: { name: device.name }, _meta: { bezel, sessionId: id, frameUri: `ios-video://mobile-dev/${id}/video` } };
     } catch (error) { return { isError: true, content: [{ type: "text", text: errorMessage(error) }] }; }
   });
 

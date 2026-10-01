@@ -10,6 +10,8 @@ import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
 import type { PhysicalAndroidDevice } from "../src/shared/android-devices.ts";
 import type { SimulatorDevice } from "../src/shared/protocol.ts";
 
+const physicalBezel = { rect: { x: 27, y: 18, width: 400, height: 872 }, viewport: { width: 454, height: 908 }, clipRadius: 62, image: "data:image/png;base64,AQID", mask: "data:image/png;base64,BAUG" };
+
 class Element extends EventTarget {
   hidden = false;
   disabled = false;
@@ -109,7 +111,7 @@ function fixture(t: TestContext) {
       if (call.name === "mobile_ios_mirror_session") {
         const id = `physical-${++sessionNumber}`;
         await delayedOpen;
-        return { content: [], _meta: { sessionId: id, frameUri: `ios-video://mobile-dev/${id}/video` }, structuredContent: { name: "Physical iPhone" } };
+        return { content: [], _meta: { bezel: physicalBezel, sessionId: id, frameUri: `ios-video://mobile-dev/${id}/video` }, structuredContent: { name: "Physical iPhone" } };
       }
       if (call.name.endsWith("_stream_session")) {
         const android = call.name.includes("android");
@@ -168,7 +170,7 @@ function fixture(t: TestContext) {
 
 const physicalPhone: PhysicalIosDevice = {
   udid: "00008110-000A0B1C2D3E4000", coreDeviceId: "11111111-1111-4111-8111-111111111111",
-  name: "Physical iPhone", model: "iPhone 17 Pro", state: "connected", runtime: "iOS 27.0",
+  name: "Physical iPhone", model: "iPhone 17 Pro", productType: "iPhone18,1", state: "connected", runtime: "iOS 27.0",
   platform: "ios", kind: "physical", transportType: "localNetwork", pairingState: "paired",
 };
 
@@ -317,6 +319,13 @@ test("physical iOS devices mirror above simulators with view-only controls", asy
   const start = f.ios.element("start-device");
   const screenshot = f.ios.element("screenshot");
   await waitFor(() => f.ios.element("device-frame").hidden === false);
+  const frame = f.ios.element("device-frame");
+  const image = f.ios.element("device-bezel");
+  const screen = f.ios.element("screen");
+  assert.equal(frame.dataset.bezel, "true");
+  assert.equal(image.hidden, false);
+  assert.equal(Reflect.get(image, "src"), physicalBezel.image);
+  assert.equal(Reflect.get(screen.style, "maskImage"), `url("${physicalBezel.mask}")`);
   const physicalStreams = f.calls.filter(call => call.name === "mobile_ios_mirror_session");
   assert.equal(physicalStreams.length, 1);
   assert.equal(physicalStreams[0].arguments.udid, physicalPhone.udid);

@@ -23,7 +23,7 @@ import { parseIOSLog } from "../src/server/log-parsers.ts";
 const execute = promisify(execFile);
 const phone: PhysicalIosDevice = {
   udid: "00008110-000A0B1C2D3E4000", coreDeviceId: "11111111-1111-4111-8111-111111111111",
-  name: "Test iPhone", model: "iPhone", state: "connected", runtime: "iOS 27.0",
+  name: "Test iPhone", model: "iPhone", productType: "iPhone18,1", state: "connected", runtime: "iOS 27.0",
   platform: "ios", kind: "physical", transportType: "wired", pairingState: "paired",
 };
 const target: PhysicalIosLogTarget = { platform: "ios", kind: "physical", deviceId: phone.udid, process: "Example" };

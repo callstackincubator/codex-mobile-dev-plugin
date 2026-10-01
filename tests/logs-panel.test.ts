@@ -17,7 +17,7 @@ async function waitFor(predicate: () => boolean) {
 
 test("the selected connected iPhone opens physical logs and a disconnected phone opens none", async t => {
   const phone: PhysicalIosDevice = { udid: "00008110-000A0B1C2D3E4000", coreDeviceId: "11111111-1111-4111-8111-111111111111",
-    name: "Test iPhone", model: "iPhone", runtime: "iOS 27.0", state: "connected", platform: "ios", kind: "physical",
+    name: "Test iPhone", model: "iPhone", productType: "iPhone18,1", runtime: "iOS 27.0", state: "connected", platform: "ios", kind: "physical",
     transportType: "localNetwork", pairingState: "paired" };
   const opened: LogOptions[] = [];
   const app = { async callServerTool(input: { name: string; arguments: { options?: LogOptions } }) {

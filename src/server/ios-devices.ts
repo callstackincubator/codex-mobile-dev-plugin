@@ -15,7 +15,7 @@ const ios = z.literal("iOS");
 const success = z.literal("success");
 const number = z.number();
 const jsonVersion = number.min(5);
-const hardware = z.object({ udid: text, marketingName: text, reality: physical, platform: ios });
+const hardware = z.object({ udid: text, marketingName: text, productType: text, reality: physical, platform: ios });
 const state = z.object({ name: text });
 const osVersionNumber = z.object({ stringValue: text });
 const software = z.object({ osVersionNumber });
@@ -39,6 +39,7 @@ export async function listIosDevices(run: DeviceCommand = execute): Promise<Phys
     coreDeviceId: identifier,
     name: properties.state.name,
     model: properties.hardware.marketingName,
+    productType: properties.hardware.productType,
     state: properties.connection.state,
     runtime: `iOS ${properties.software.osVersionNumber.stringValue}`,
     platform: "ios",

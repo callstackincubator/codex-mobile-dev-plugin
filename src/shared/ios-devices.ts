@@ -10,6 +10,7 @@ export const physicalIosDeviceSchema = z.object({
   coreDeviceId: identifier,
   name: text,
   model: text,
+  productType: text,
   state: text,
   runtime: text,
   platform,

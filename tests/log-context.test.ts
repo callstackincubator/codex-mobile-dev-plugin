@@ -120,7 +120,7 @@ test("physical iOS context identifies its view-only mirroring capability", async
   const { context, updates } = fixture();
   const phone: PhysicalIosDevice = {
     udid: "00008110-000A0B1C2D3E4000", coreDeviceId: "11111111-1111-4111-8111-111111111111",
-    name: "Physical iPhone", model: "iPhone 17 Pro", state: "connected", runtime: "iOS 27.0",
+    name: "Physical iPhone", model: "iPhone 17 Pro", productType: "iPhone18,1", state: "connected", runtime: "iOS 27.0",
     platform: "ios", kind: "physical", transportType: "localNetwork", pairingState: "paired",
   };
   context.selectSimulator(phone);

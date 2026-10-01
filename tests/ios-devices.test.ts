@@ -12,7 +12,7 @@ function device(transportType = "wired", connectionState = "connected") {
   return {
     identifier: coreDeviceId,
     properties: {
-      hardware: { udid, marketingName: "iPhone 17 Pro", reality: "physical", platform: "iOS" },
+      hardware: { udid, marketingName: "iPhone 17 Pro", productType: "iPhone18,1", reality: "physical", platform: "iOS" },
       state: { name: "Test iPhone" }, software: { osVersionNumber: { components: [27, 0, 0, 0, 0], originalComponentsCount: 2, stringValue: "27.0" } },
       connection: { state: connectionState, transportType, pairingState: "paired" },
     },
@@ -29,7 +29,7 @@ test("discovery preserves identity and reports USB, Wi-Fi, and disconnected stat
     const source = device(transport, state);
     const payload = response([source]);
     const devices = await listIosDevices(async () => payload);
-    assert.deepEqual(devices, [{ udid, coreDeviceId, name: "Test iPhone", model: "iPhone 17 Pro", state,
+    assert.deepEqual(devices, [{ udid, coreDeviceId, name: "Test iPhone", model: "iPhone 17 Pro", productType: "iPhone18,1", state,
       runtime: "iOS 27.0", platform: "ios", kind: "physical", transportType: transport, pairingState: "paired" }]);
   }
 });
