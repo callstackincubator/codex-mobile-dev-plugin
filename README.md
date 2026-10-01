@@ -9,6 +9,7 @@ The first version supports:
 - A screenshot button that adds an iOS or Android PNG to the chat input and copies the same image to the macOS clipboard.
 - Live MJPEG for iOS with a 60 fps capture target, and H.264 for Android. Actual frame rates depend on native capture and the host bridge.
 - An iOS/Android picker, Android AVD boot and shutdown, and connected Android devices.
+- Physical iPhones and iPads discovered over USB or Wi-Fi, grouped above iOS simulators in the same picker.
 - Pointer taps and drags and printable US-ASCII typing directly on the focused screen.
 - A notice when Xcode 27 Device Hub blocks interaction. Repair remains available through the `mobile_repair_input` tool.
 - Automatic reconnect after a stream or backend failure.
@@ -22,6 +23,8 @@ The first version supports:
 ## Requirements
 
 The plugin needs Node.js 22.18 or later. iOS needs an Apple Silicon Mac with Xcode 26 or later and an installed simulator runtime. Baguette uses Apple's simulator frameworks. agent-device builds its bundled XCTest runner with Xcode on its first interaction and caches it under `~/.agent-device/apple-runner`. The plugin carries all three runtimes, their npm dependencies, and the Apple runner source. It does not download code at runtime.
+
+Physical iOS discovery requires Xcode 27 or later. It uses the selected Xcode installation's `xcrun devicectl` JSON output and needs no additional native library. Pair the phone with Xcode and enable wireless connectivity there to discover it over Wi-Fi.
 
 The native panel targets Codex desktop, iOS simulators, and Android emulators or attached devices. Both MCP servers also work through stdio in a local MCP client. agent-device defaults to iOS. Set `platform: "android"` and `serial` to the selected Android device ID for Android control. This plugin does not build the user's app. Codex's permission and confirmation rules still apply to tool calls.
 
@@ -38,7 +41,9 @@ codex plugin add mobile-dev@mobile-dev-local
 
 Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile_open_workspace` for the fullscreen view. Call `mobile_open_simulator` for the panel beside a chat. iOS opens by default. Enable Android from the toolbar to show both panels side by side. Each panel has a device dropdown, Home, App Switcher, and Screenshot. Pick a device in each panel. Use the iOS and Android toggles to show either, both, or neither simulator. Selecting a device boots it if needed, then connects its screen. A selected running device connects automatically. The panel uses Apple’s device bezel and screen mask from the installed DeviceKit assets, with a simple frame as a fallback when assets are unavailable. Use the settings button at the bottom right for appearance, text size, location, and the device frame. iOS also offers contrast; Android offers rotation. The menu shows only settings supported by the bundled backend. Click the screen to type or drag. Closing the panel closes its stream.
 
-The local ZIP at `release/mobile-dev-0.1.44-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+The local ZIP at `release/mobile-dev-0.1.45-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+
+The iOS dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Simulators**. It refreshes every three seconds while the iOS panel is visible, and when opening the dropdown. Selecting a physical device shares its identity with the chat and displays its connection; physical iOS screen mirroring, input, screenshots, native logs, and performance collection are not implemented yet. Simulator controls remain disabled for that selection. `mobile_list_ios_devices` also returns remembered disconnected devices with their connection state; the picker shows connected devices only. Discovery errors remain visible while available simulators continue to work.
 
 Ask the agent to inspect or control the app on the selected device. The panel shares both visible device IDs and platforms with the chat. Click a device panel to make it the active device for logs. Hiding a simulator keeps the current log source and buffered logs. The agent uses the bundled agent-device tools with the chosen device ID, opens a named session, reads accessibility refs, then presses elements or fills fields. Baguette streams iOS and serve-emu streams Android in the panel. The tools take the same session name on later calls so refs and app state stay together.
 
@@ -216,6 +221,7 @@ Performance findings and historical measurements are documented in [the profilin
 | `mobile_open_simulator` | Open the native panel and start the bundled backend |
 | `mobile_open_workspace` | Open fullscreen with logs on the left and the simulator on the right |
 | `mobile_list_simulators` | Start the bundled backend if needed and list devices |
+| `mobile_list_ios_devices` | Discover physical iPhones and iPads with USB/Wi-Fi, pairing state, UDID, and CoreDevice ID |
 | `mobile_start_baguette` | Retry or reconnect the bundled backend |
 | `mobile_boot_simulator` | Boot one listed device |
 | `mobile_shutdown_simulator` | Shut down one listed device |

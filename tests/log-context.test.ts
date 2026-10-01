@@ -5,6 +5,7 @@ import type { OpenAIExtensions, OpenAIModelContextHostState } from "@openai/mcp-
 import { PanelContext } from "../src/ui/model-context.ts";
 import { stackLogs } from "../src/shared/logs.ts";
 import { UDID, PNG } from "./fixtures.ts";
+import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
 
 const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS 26" };
 const log = stackLogs([{ timestamp: "2026-09-30T12:00:00Z", message: "Request failed", level: "error", source: "js", origin: "metro", stack: "at load (App.tsx:9:3)", sequence: 1 }])[0];
@@ -94,6 +95,24 @@ test("Android selection shares its serial and platform for agent-device control"
   await context.attach(undefined);
   assert.match(JSON.stringify(updates.at(-1)?.content), /emulator-5554/);
   assert.match(JSON.stringify(updates.at(-1)?.content), /serial.*platform android/);
+});
+
+test("physical iOS context identifies the device and its streaming limitation", async () => {
+  const { context, updates } = fixture();
+  const phone: PhysicalIosDevice = {
+    udid: "00008110-000A0B1C2D3E4000", coreDeviceId: "11111111-1111-4111-8111-111111111111",
+    name: "Physical iPhone", model: "iPhone 17 Pro", state: "connected", runtime: "iOS 27.0",
+    platform: "ios", kind: "physical", transportType: "localNetwork", pairingState: "paired",
+  };
+  context.selectSimulator(phone);
+  await context.attach(undefined);
+  const last = updates.at(-1);
+  const content = JSON.stringify(last?.content);
+  assert.equal(last?.structuredContent?.selectedSimulator, phone);
+  assert.match(content, /Active physical iOS device: Physical iPhone/);
+  assert.match(content, /Transport: localNetwork/);
+  assert.match(content, /screen streaming is not implemented/);
+  assert.doesNotMatch(content, /iOS simulator/);
 });
 
 const screenshot = { id: "capture-1", data: PNG.toString("base64"), simulator };

@@ -23,8 +23,8 @@ try {
   const client = new Client({ name: "mobile-dev-package-smoke", version: "1" });
   await client.connect(transport);
   const tools = await client.listTools();
-  assert.equal(tools.tools.length, 37);
-  for (const name of ["mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_android_screenshot"]) assert.ok(tools.tools.some(tool => tool.name === name));
+  assert.equal(tools.tools.length, 38);
+  for (const name of ["mobile_list_ios_devices", "mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_android_screenshot"]) assert.ok(tools.tools.some(tool => tool.name === name));
   await access(join(plugin, "dist/serve-emu/node_modules/serve-emu/src/cli.ts"));
   await access(join(plugin, "dist/serve-emu/node_modules/serve-emu/vendor/scrcpy-server-v4.0"));
   for (const abi of ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]) await access(join(plugin, `dist/android-cpu/${abi}/mobile-dev-cpu`));
@@ -54,12 +54,12 @@ try {
   }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.44/simulator.html");
+  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.45/simulator.html");
   assert.ok(resource.contents[0].text.includes('workspace-toolbar'));
   assert.ok(resource.contents[0].text.includes('workspace-panels'));
   assert.ok(resource.contents[0].text.includes('tool-logs'));
   assert.ok(resource.contents[0].text.includes('Memory usage'), 'The packaged Performance view must include the live memory track.');
-  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.44/workspace.html");
+  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.45/workspace.html");
   assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, []);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
   runtimeTransport = new StdioClientTransport({ command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe" });

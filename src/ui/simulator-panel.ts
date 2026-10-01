@@ -6,6 +6,9 @@ import type { DeviceSettings } from "../shared/device-settings.ts";
 import { bezelGeometrySchema } from "../shared/bezel.ts";
 import type { Bezel } from "../shared/bezel.ts";
 import type { SimulatorDevice, Status } from "../shared/protocol.ts";
+import { physicalConnectionLabel } from "../shared/ios-devices.ts";
+import type { PhysicalIosDevice } from "../shared/ios-devices.ts";
+import type { DeviceOption } from "./device-picker.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
 import type { PanelContext } from "./model-context.ts";
 import { AndroidVideo } from "./android-video.ts";
@@ -45,6 +48,10 @@ export function createSimulatorPanel(
   let status: Status | undefined;
   let statusRevision = 0;
   let selected: SimulatorDevice | undefined;
+  let physicalDevices: PhysicalIosDevice[] = [];
+  let discoveryError = "";
+  let listing: Promise<void> | undefined;
+  let discoveryTimer: ReturnType<typeof setTimeout> | undefined;
   type PanelStream = { id: string; frameUri: string; epoch: number; platform: "ios" | "android"; controller: AbortController; input?: StreamInput; reader?: FrameStream<ImageBitmap>; closing?: Promise<void> };
   const reconnect = new ReconnectLoop();
   let stream: PanelStream | undefined;
@@ -62,7 +69,7 @@ export function createSimulatorPanel(
   let disposing: Promise<void> | undefined;
 
   function notice(message = "") {
-    if (!message) message = inputRepairMessage || (inputBlocked ? "Simulator input is blocked. Ask Codex to repair it." : "");
+    if (!message) message = inputRepairMessage || (inputBlocked ? "Simulator input is blocked. Ask Codex to repair it." : discoveryError);
     element("notice-message").textContent = message;
     element("notice").title = message;
     element("notice").classList?.toggle("text-destructive", inputBlocked);
@@ -73,8 +80,9 @@ export function createSimulatorPanel(
     const active = ready && stream != null && !inputBlocked && !busy && toolsAvailable;
     settings.configure(selected?.udid ?? "", busy || !toolsAvailable || selected?.state !== "Booted" || disposed);
     settings.prefetch();
-    element<HTMLButtonElement>("start-device").disabled = busy || !toolsAvailable || !selected || selected.state === "Booted" || disposed;
-    devices.disabled = busy || !toolsAvailable || !status?.connected || !status.devices.length;
+    element<HTMLButtonElement>("start-device").disabled = busy || !toolsAvailable || !selected || selected.kind === "physical" || selected.state === "Booted" || disposed;
+    const hasDevices = status?.devices.length || physicalDevices.length;
+    devices.disabled = busy || !toolsAvailable || !hasDevices || disposed;
     screenshotButton.disabled = busy || !toolsAvailable || !status?.connected || selected?.state !== "Booted" || !panelContext.canAttachScreenshots;
     screenshotButton.title = panelContext.canAttachScreenshots ? "Screenshot to chat and clipboard" : "This host does not support screenshot attachments";
     root.querySelectorAll<HTMLButtonElement>("[data-button]").forEach(button => { button.disabled = !active; });
@@ -288,24 +296,43 @@ export function createSimulatorPanel(
 
   function selectDevice() {
     selected = status?.devices.find(device => device.udid === devices.value);
+    if (selected === undefined) selected = physicalDevices.find(device => device.udid === devices.value);
     selectionChanged(selected);
-    if (!reconnect.active && !stoppedDisplay) empty(selected ? "Select a device to open its screen." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No simulators. Add an iOS runtime in Xcode."));
+    if (selected?.kind === "physical") {
+      const connection = physicalConnectionLabel(selected.transportType);
+      empty(`${selected.name} · ${connection}`, "Screen mirroring for physical devices is not available yet.");
+    } else if (!reconnect.active && !stoppedDisplay) empty(selected ? "Select a device to open its screen." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No iOS devices. Connect an iPhone or add a simulator in Xcode."));
     controls();
   }
 
   function renderStatus(next: Status, previous = selected?.udid) {
     statusRevision++;
     status = next;
-    const oldDevice = next.devices.find(device => device.udid === previous);
+    const available = [...physicalDevices, ...next.devices];
+    const oldDevice = available.find(device => device.udid === previous);
     if (reconnect.active && (!next.connected || oldDevice?.state !== "Booted")) void disconnect();
     const running = next.devices.find(device => device.state === "Booted");
+    const physicalOptions: DeviceOption[] = physicalDevices.map(device => {
+      const connection = physicalConnectionLabel(device.transportType);
+      const kind = /ipad/i.test(device.model) ? "tablet" : "phone";
+      return { value: device.udid, label: `${device.name} · ${connection}`, group: "Connected devices", kind, running: true, statusLabel: "Connected", canStop: false };
+    });
+    const simulatorOptions: DeviceOption[] = next.devices.map(device => {
+      const runtime = runtimeLabel(device.runtime);
+      return {
+        value: device.udid, label: `${device.name}${runtime ? ` · ${runtime}` : ""}`,
+        group: platform === "ios" ? "Simulators" : undefined,
+        kind: /ipad|tablet|pixel.*tab/i.test(device.name) ? "tablet" : "phone", running: device.state === "Booted",
+        canStop: device.state === "Booted" && (platform === "ios" || /^emulator-\d+$/.test(device.udid)),
+      };
+    });
     devices.update({
-      items: next.devices.map(device => ({ value: device.udid, label: `${device.name}${device.runtime ? ` · ${runtimeLabel(device.runtime)}` : ""}`, kind: /ipad|tablet|pixel.*tab/i.test(device.name) ? "tablet" : "phone", running: device.state === "Booted", canStop: device.state === "Booted" && (platform === "ios" || /^emulator-\d+$/.test(device.udid)) })),
-      value: previous && oldDevice ? previous : running?.udid ?? "",
-      placeholder: next.devices.length ? "Select a device" : next.connected ? "No simulators" : "Simulator unavailable",
+      items: [...physicalOptions, ...simulatorOptions],
+      value: previous && oldDevice ? previous : running?.udid ?? physicalDevices[0]?.udid ?? "",
+      placeholder: available.length ? "Select a device" : next.connected ? "No devices" : "Devices unavailable",
     });
     selectDevice();
-    if (!next.connected) {
+    if (!next.connected && physicalDevices.length === 0) {
       empty("Could not start the simulator backend.");
       notice(next.error);
     }
@@ -476,14 +503,60 @@ export function createSimulatorPanel(
   }
 
   async function listDevices() {
+    if (listing) return listing;
+    listing = readDevices();
+    try { await listing; }
+    finally { listing = undefined; }
+  }
+
+  async function readDevices() {
     const revision = ++statusRevision;
-    const result = await call(platform === "android" ? "mobile_list_android_devices" : "mobile_list_simulators");
-    if (revision === statusRevision && !disposed) renderStatus(result.structuredContent as Status);
+    const simulatorRead = call(platform === "android" ? "mobile_list_android_devices" : "mobile_list_simulators");
+    if (platform === "android") {
+      const result = await simulatorRead;
+      if (revision === statusRevision && !disposed) renderStatus(result.structuredContent as Status);
+      return;
+    }
+    const physicalRead = call("mobile_list_ios_devices");
+    const results = await Promise.allSettled([simulatorRead, physicalRead]);
+    if (revision !== statusRevision || disposed) return;
+    const [simulators, physical] = results;
+    const errors: string[] = [];
+    let next: Status;
+    if (simulators.status === "fulfilled") next = simulators.value.structuredContent as Status;
+    else {
+      const error = simulators.reason instanceof Error ? simulators.reason.message : String(simulators.reason);
+      next = { connected: false, managed: false, baseUrl: "", devices: [], error };
+    }
+    if (next.error) errors.push(next.error);
+    if (physical.status === "fulfilled") {
+      const data = physical.value.structuredContent as { physicalDevices: PhysicalIosDevice[] };
+      physicalDevices = data.physicalDevices.filter(device => device.state === "connected");
+    } else {
+      physicalDevices = [];
+      const error = physical.reason instanceof Error ? physical.reason.message : String(physical.reason);
+      errors.push(error);
+    }
+    discoveryError = errors.join(" · ");
+    renderStatus(next);
+    notice();
+  }
+
+  function scheduleDiscovery() {
+    if (platform !== "ios" || disposed || discoveryTimer !== undefined) return;
+    discoveryTimer = setTimeout(async () => {
+      discoveryTimer = undefined;
+      try {
+        if (document.visibilityState === "visible" && !root.hidden && !busy && toolsAvailable) await listDevices();
+      } catch (error) {
+        notice(error instanceof Error ? error.message : String(error));
+      } finally { scheduleDiscovery(); }
+    }, 3000);
   }
 
   async function start() {
     await listDevices();
-    if (!selected) return;
+    if (!selected || selected.kind === "physical") return;
     if (selected.state !== "Booted") {
       empty("Starting simulator…", "The screen will appear when the device is ready.");
       const before = selected;
@@ -612,12 +685,13 @@ export function createSimulatorPanel(
     notice,
     empty,
     resume,
-    load: () => action(async () => { await listDevices(); await connect(); }),
+    load: () => action(async () => { await listDevices(); scheduleDiscovery(); await connect(); }),
     acceptStatus(next: Status) { renderStatus(next); if (toolsAvailable && !reconnect.active) void resume(); },
     setAvailable(value: boolean) { toolsAvailable = value; controls(); },
     dispose() {
       if (disposing) return disposing;
       disposed = true;
+      clearTimeout(discoveryTimer);
       devices.stop = undefined;
       devices.refresh = undefined;
       settings.dispose();

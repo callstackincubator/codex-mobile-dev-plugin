@@ -88,8 +88,11 @@ export class PanelContext {
       if (revision !== this.revision) return;
       const selected = this.simulator;
       const log = this.attached;
-      const devices = this.simulators.map(device =>
-        `${device.udid === selected?.udid ? "Active" : "Visible"} ${device.platform === "android" ? "Android" : "iOS"} simulator: ${device.name}. Device ID: ${device.udid}. State: ${device.state}. Use this ${device.platform === "android" ? "serial" : "UDID"} with the plugin's agent-device tools and platform ${device.platform ?? "ios"} when controlling this device.`);
+      const devices = this.simulators.map(device => {
+        const role = device.udid === selected?.udid ? "Active" : "Visible";
+        if (device.kind === "physical") return `${role} physical iOS device: ${device.name}. UDID: ${device.udid}. State: ${device.state}. Transport: ${device.transportType}. Physical-device screen streaming is not implemented in this panel yet.`;
+        return `${role} ${device.platform === "android" ? "Android" : "iOS"} simulator: ${device.name}. Device ID: ${device.udid}. State: ${device.state}. Use this ${device.platform === "android" ? "serial" : "UDID"} with the plugin's agent-device tools and platform ${device.platform ?? "ios"} when controlling this device.`;
+      });
       const content = [{ type: "text" as const, annotations: { audience: ["assistant" as const] }, text: devices.length
         ? `Mobile Dev devices. Logs follow the active device.\n${devices.join("\n")}`
         : "Mobile Dev has no selected simulator." },

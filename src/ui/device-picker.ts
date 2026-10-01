@@ -1,4 +1,4 @@
-export type DeviceOption = { value: string; label: string; kind?: "phone" | "tablet"; running?: boolean; canStop?: boolean };
+export type DeviceOption = { value: string; label: string; group?: string; kind?: "phone" | "tablet"; running?: boolean; statusLabel?: string; canStop?: boolean };
 export class DevicePickerStore {
   private state = { items: [] as DeviceOption[], value: "", disabled: true, placeholder: "Loading devices...", stoppingId: "", stopError: "" };
   stop?: (id: string) => Promise<void>;

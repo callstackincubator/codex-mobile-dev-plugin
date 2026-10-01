@@ -15,7 +15,7 @@ import { PerformancePanel } from "./performance-panel.ts";
 import { createSimulatorPanel } from "./simulator-panel.ts";
 import { startLiveReload } from "./live-reload.ts";
 
-const app = new App({ name: "mobile-dev-ui", version: "0.1.44" }, {}, { autoResize: false });
+const app = new App({ name: "mobile-dev-ui", version: "0.1.45" }, {}, { autoResize: false });
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
 const performancePanel = new PerformancePanel(app);
@@ -78,7 +78,7 @@ function hostContext() {
   panelContext.hostChanged();
   for (const panel of panels) { panel.fitScreen(); panel.controls(); }
 }
-app.ontoolinput = () => { if (!ios.selected) ios.empty("Loading simulators…", "Finding available iOS simulators."); };
+app.ontoolinput = () => { if (!ios.selected) ios.empty("Loading devices…", "Finding connected iOS devices and simulators."); };
 app.ontoolresult = result => {
   if (result.isError) { ios.notice(result.content.filter(item => item.type === "text").map(item => item.text).join("\n")); return; }
   if (result.structuredContent && "devices" in result.structuredContent) ios.acceptStatus(result.structuredContent as Status);

@@ -6,6 +6,7 @@ import type { App } from "@modelcontextprotocol/ext-apps";
 import type { PanelContext } from "../src/ui/model-context.ts";
 import { createSimulatorPanel } from "../src/ui/simulator-panel.ts";
 import { getDeviceSettings } from "../src/ui/device-settings.ts";
+import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
 
 class Element extends EventTarget {
   hidden = false;
@@ -51,6 +52,10 @@ function fixture(t: TestContext) {
   let delayedOpen: Promise<void> | undefined;
   let blockedIos = false;
   let stopped = false;
+  let physicalDevices: PhysicalIosDevice[] = [];
+  let physicalError = "";
+  let simulatorError = "";
+  let delayedDiscovery: Promise<void> | undefined;
   const stoppedPlatforms = new Set<string>();
   let failedInputPlatform: "ios" | "android" | undefined;
   const document = Object.assign(new EventTarget(), { visibilityState: "visible", createElement: () => new Element() });
@@ -82,6 +87,12 @@ function fixture(t: TestContext) {
   const app = {
     async callServerTool(call: { name: string; arguments: Record<string, unknown> }) {
       calls.push(call);
+      if (call.name === "mobile_list_ios_devices") {
+        await delayedDiscovery;
+        if (physicalError) return { isError: true, content: [{ type: "text", text: physicalError }] };
+        return { content: [], structuredContent: { physicalDevices } };
+      }
+      if (call.name === "mobile_list_simulators" && simulatorError) return { isError: true, content: [{ type: "text", text: simulatorError }] };
       const inputTool = failedInputPlatform === "android" ? "mobile_android_stream_input" : "mobile_stream_input";
       if (failedInputPlatform && call.name === inputTool) {
         failedInputPlatform = undefined;
@@ -136,8 +147,128 @@ function fixture(t: TestContext) {
     return { panel, root, element: (name: string) => root.elements.get(name)! };
   });
   t.after(async () => { await Promise.all(panels.map(({ panel }) => panel.dispose())); for (const reset of restore) reset(); });
-  return { calls, closed, selections, ios: panels[0], android: panels[1], failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; } };
+  return { calls, closed, selections, ios: panels[0], android: panels[1], setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; } };
 }
+
+const physicalPhone: PhysicalIosDevice = {
+  udid: "00008110-000A0B1C2D3E4000", coreDeviceId: "11111111-1111-4111-8111-111111111111",
+  name: "Physical iPhone", model: "iPhone 17 Pro", state: "connected", runtime: "iOS 27.0",
+  platform: "ios", kind: "physical", transportType: "localNetwork", pairingState: "paired",
+};
+
+test("physical devices appear above simulators and selecting one never boots or streams it", async t => {
+  const f = fixture(t);
+  f.setPhysicalDevices([physicalPhone]);
+  await f.ios.panel.load();
+  const pickerElement = f.ios.element("devices");
+  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  const state = picker.getSnapshot();
+  const items = state.items;
+  const groups = items.map(item => item.group);
+  assert.deepEqual(groups, ["Connected devices", "Simulators"]);
+  assert.equal(items[0].label, "Physical iPhone · Wi-Fi");
+  assert.equal(items[0].statusLabel, "Connected");
+  assert.equal(items[0].canStop, false);
+  const previousStreams = f.calls.filter(call => call.name === "mobile_stream_session");
+  picker.value = physicalPhone.udid;
+  dispatch(pickerElement, "change");
+  await waitFor(() => {
+    const state = picker.getSnapshot();
+    return f.ios.panel.selected?.kind === "physical" && state.disabled === false;
+  });
+  const empty = f.ios.element("empty");
+  const description = f.ios.element("empty-description");
+  const start = f.ios.element("start-device");
+  const screenshot = f.ios.element("screenshot");
+  assert.equal(empty.textContent, "Physical iPhone · Wi-Fi");
+  assert.match(description.textContent, /Screen mirroring.*not available yet/);
+  assert.equal(start.disabled, true);
+  assert.equal(screenshot.disabled, true);
+  const disabledButtons = f.ios.root.buttons.every(button => button.disabled);
+  const boots = f.calls.filter(call => call.name.startsWith("mobile_boot"));
+  const streams = f.calls.filter(call => call.name === "mobile_stream_session");
+  assert.equal(disabledButtons, true);
+  assert.equal(boots.length, 0);
+  assert.equal(streams.length, previousStreams.length);
+  await picker.stopDevice(physicalPhone.udid);
+  const shutdowns = f.calls.filter(call => call.name.startsWith("mobile_shutdown"));
+  assert.equal(shutdowns.length, 0);
+  f.setPhysicalDevices([{ ...physicalPhone, transportType: "wired" }]);
+  await picker.refresh?.();
+  assert.equal(picker.value, physicalPhone.udid);
+  const wiredState = picker.getSnapshot();
+  assert.equal(wiredState.items[0].label, "Physical iPhone · USB");
+  f.setPhysicalDevices([{ ...physicalPhone, state: "disconnected", transportType: "none" }]);
+  await picker.refresh?.();
+  const disconnectedState = picker.getSnapshot();
+  const phonePresent = disconnectedState.items.some(item => item.value === physicalPhone.udid);
+  assert.equal(phonePresent, false);
+});
+
+test("physical discovery failure stays visible while simulator discovery remains usable", async t => {
+  const f = fixture(t);
+  f.failDiscovery("Physical discovery requires Xcode 27");
+  await f.ios.panel.load();
+  assert.equal(f.ios.panel.selected?.udid, "iphone-1");
+  const pickerElement = f.ios.element("devices");
+  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  const state = picker.getSnapshot();
+  assert.equal(state.disabled, false);
+  await waitFor(() => f.ios.element("screen").draws > 0);
+  const notice = f.ios.element("notice-message");
+  assert.match(notice.textContent, /Physical discovery requires Xcode 27/);
+  f.failDiscovery("");
+  await picker.refresh?.();
+  assert.equal(notice.textContent, "");
+});
+
+test("physical devices remain selectable when the simulator backend is unavailable", async t => {
+  const f = fixture(t);
+  f.setPhysicalDevices([physicalPhone]);
+  f.failSimulators("Baguette unavailable");
+  await f.ios.panel.load();
+  const element = f.ios.element("devices");
+  const picker = getDevicePicker(element as unknown as HTMLElement);
+  const state = picker.getSnapshot();
+  assert.equal(state.disabled, false);
+  assert.equal(state.value, physicalPhone.udid);
+  const groups = state.items.map(item => item.group);
+  assert.deepEqual(groups, ["Connected devices"]);
+  assert.equal(f.ios.panel.selected?.kind, "physical");
+  const sessions = f.calls.filter(call => call.name === "mobile_stream_session");
+  assert.equal(sessions.length, 0);
+});
+
+test("discovery polls only visible panels, shares an in-flight refresh, and stops on disposal", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = fixture(t);
+  f.setPhysicalDevices([physicalPhone]);
+  f.failSimulators("Baguette unavailable");
+  await f.ios.panel.load();
+  const element = f.ios.element("devices");
+  const picker = getDevicePicker(element as unknown as HTMLElement);
+  f.ios.root.hidden = true;
+  t.mock.timers.tick(3000);
+  const hiddenReads = f.calls.filter(call => call.name === "mobile_list_ios_devices");
+  assert.equal(hiddenReads.length, 1);
+  f.ios.root.hidden = false;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  f.delayDiscovery(gate);
+  f.setPhysicalDevices([]);
+  t.mock.timers.tick(3000);
+  const refreshing = picker.refresh?.();
+  const sharedReads = f.calls.filter(call => call.name === "mobile_list_ios_devices");
+  assert.equal(sharedReads.length, 2);
+  release();
+  await refreshing;
+  const state = picker.getSnapshot();
+  assert.equal(state.items.length, 0);
+  await f.ios.panel.dispose();
+  t.mock.timers.tick(10000);
+  const disposedReads = f.calls.filter(call => call.name === "mobile_list_ios_devices");
+  assert.equal(disposedReads.length, 2);
+});
 
 async function waitFor(predicate: () => boolean) {
   const end = Date.now() + 2000;
@@ -208,7 +339,11 @@ test("device settings target each selected simulator and leave both streams open
   const android = getDeviceSettings(f.android.element("settings") as unknown as HTMLElement);
   await ios.load();
   await android.change({ setting: "appearance", value: "dark" });
-  assert.deepEqual(f.calls.find(call => call.name === "mobile_device_settings")?.arguments, { target: { platform: "ios", id: "iphone-1" } });
+  const iosSettings = f.calls.find(call => {
+    const target = call.arguments.target;
+    return call.name === "mobile_device_settings" && typeof target === "object" && target !== null && "platform" in target && target.platform === "ios";
+  });
+  assert.deepEqual(iosSettings?.arguments, { target: { platform: "ios", id: "iphone-1" } });
   assert.deepEqual(f.calls.find(call => call.name === "mobile_update_device_setting")?.arguments, { target: { platform: "android", id: "emulator-5554" }, change: { setting: "appearance", value: "dark" } });
   ios.toggleFrame(false);
   assert.equal(f.ios.element("screen").style.borderRadius, "0");
