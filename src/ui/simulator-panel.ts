@@ -10,9 +10,10 @@ import { physicalConnectionLabel } from "../shared/ios-devices.ts";
 import type { PhysicalIosDevice } from "../shared/ios-devices.ts";
 import type { DeviceOption } from "./device-picker.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
-import { countUiEvent, recordUiTiming } from "./telemetry.ts";
+import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { PanelContext } from "./model-context.ts";
 import { getScreenAnnotations } from "./screen-annotations.ts";
+import type { ScreenAnnotation } from "../shared/screen-annotations.ts";
 import { AndroidVideo } from "./android-video.ts";
 import { PhysicalIosVideo } from "./ios-mirror-video.ts";
 import { iosVideoBatchSchema } from "../shared/ios-video.ts";
@@ -90,10 +91,18 @@ export function createSimulatorPanel(
     element<HTMLButtonElement>("start-device").disabled = busy || !toolsAvailable || !selected || selected.kind === "physical" || selected.state === "Booted" || disposed;
     const hasDevices = status?.devices.length || physicalDevices.length;
     devices.disabled = busy || !toolsAvailable || !hasDevices || disposed;
-    screenshotButton.disabled = busy || !toolsAvailable || !status?.connected || selected?.state !== "Booted" || !panelContext.canAttachScreenshots;
+    const connected = selectedDeviceConnected();
+    const physicalIos = selected?.kind === "physical" && selected.platform === "ios";
+    const screenshotReady = physicalIos ? ready && stream?.physicalIos === true : status?.connected;
+    screenshotButton.disabled = busy || !toolsAvailable || !connected || !screenshotReady || !panelContext.canAttachScreenshots || disposed;
     screenshotButton.title = panelContext.canAttachScreenshots ? "Screenshot to chat and clipboard" : "This host does not support screenshot attachments";
-    annotations.configure(selected, !ready || busy || !toolsAvailable || selected?.state !== "Booted" || !panelContext.canAttachScreenshots || disposed);
+    annotations.configure(selected, !ready || busy || !toolsAvailable || !connected || !panelContext.canAttachScreenshots || disposed);
     deviceButtons();
+  }
+
+  function selectedDeviceConnected() {
+    const physicalIos = selected?.kind === "physical" && selected.platform === "ios";
+    return physicalIos ? selected?.state === "connected" : selected?.state === "Booted";
   }
 
   function deviceButtons() {
@@ -188,14 +197,30 @@ export function createSimulatorPanel(
     return result;
   }
 
-  annotations.capture = () => {
-    if (!ready || !canvas.width || !canvas.height || !points.width || !points.height) throw new Error("Wait for the simulator screen to load.");
+  function captureScreen(): { screenshot: ScreenAnnotation["screenshot"]; screen: ScreenAnnotation["screen"] } {
+    if (!ready || !canvas.width || !canvas.height || !points.width || !points.height) throw new Error("Wait for the device screen to load.");
+    const started = performance.now();
+    let data: string;
+    try {
+      const url = canvas.toDataURL("image/png");
+      const parts = url.split(",");
+      data = parts[1];
+    } finally {
+      const elapsed = performance.now() - started;
+      recordUiTiming("ui.screenshot.capture", elapsed);
+    }
+    const physicalIos = selected?.kind === "physical" && selected.platform === "ios";
+    const screen: ScreenAnnotation["screen"] = { ...points, units: platform === "android" || physicalIos ? "pixels" : "points" };
+    const now = new Date();
+    const capturedAt = now.toISOString();
     return {
-      screenshot: { id: crypto.randomUUID(), data: canvas.toDataURL("image/png").split(",")[1], capturedAt: new Date().toISOString() },
-      screen: { ...points, units: platform === "android" ? "pixels" : "points" },
+      screenshot: { id: crypto.randomUUID(), data, capturedAt },
+      screen,
     };
-  };
+  }
+  annotations.capture = captureScreen;
   annotations.readTree = async simulator => {
+    if (simulator.kind === "physical" && simulator.platform === "ios") return [];
     const startedAt = performance.now();
     try {
       try {
@@ -812,11 +837,11 @@ export function createSimulatorPanel(
   canvas.addEventListener("lostpointercapture", releasePointer);
   window.addEventListener("blur", releasePointer);
   canvas.addEventListener("keydown", event => {
-    if (stream?.physicalIos) return;
     if (annotations.getSnapshot().selecting || annotations.getSnapshot().draft) {
       if (event.key === "Escape") { event.preventDefault(); cancelAnnotationPointer(); annotations.exit(); }
       return;
     }
+    if (stream?.physicalIos) return;
     if (!ready || inputBlocked || busy || event.metaKey || event.ctrlKey || event.altKey) return;
     if (/^[\x20-\x7e]$/.test(event.key)) {
       event.preventDefault(); send({ type: "type", text: event.key });
@@ -830,7 +855,7 @@ export function createSimulatorPanel(
     button.addEventListener("click", () => { send({ type: "button", button: button.dataset.button === "home" ? "home" : "app-switcher" }); });
   });
   screenshotButton.addEventListener("click", () => { void action(async () => {
-    if (!selected || selected.state !== "Booted" || !panelContext.canAttachScreenshots) return;
+    if (!selected || !selectedDeviceConnected() || !panelContext.canAttachScreenshots) return;
     const simulator = selected;
     const screenshotStatus = element("screenshot-status");
     screenshotStatus.hidden = false;
@@ -840,7 +865,19 @@ export function createSimulatorPanel(
     }
     screenshotMessage("Taking screenshot…");
     try {
-      const result = await call(platform === "android" ? "mobile_android_capture_screenshot" : "mobile_capture_screenshot", platform === "android" ? { deviceId: simulator.udid } : { udid: simulator.udid }, { timeout: 30000 });
+      const physicalIos = simulator.kind === "physical" && simulator.platform === "ios";
+      let tool: string;
+      let parameters: Record<string, unknown>;
+      if (physicalIos) {
+        if (!ready || !stream?.physicalIos) throw new Error("Wait for the device screen to load.");
+        const capture = captureScreen();
+        tool = "mobile_ios_mirror_capture_screenshot";
+        parameters = { sessionId: stream.id, image: capture.screenshot.data };
+      } else {
+        tool = platform === "android" ? "mobile_android_capture_screenshot" : "mobile_capture_screenshot";
+        parameters = platform === "android" ? { deviceId: simulator.udid } : { udid: simulator.udid };
+      }
+      const result = await call(tool, parameters, { timeout: 30000 });
       const image = result.content.find(item => item.type === "image" && item.mimeType === "image/png");
       if (!image || image.type !== "image") throw new Error("The plugin did not return a PNG screenshot.");
       const clipboard = result.structuredContent as { copied: boolean; clipboardError?: string };
@@ -848,11 +885,15 @@ export function createSimulatorPanel(
       let attached = false;
       try { attached = await panelContext.attachScreenshot({ id: crypto.randomUUID(), data: image.data, simulator }); }
       catch (error) {
+        captureUiError(error, "screenshot.attach");
         screenshotMessage(`${clipboardStatus} Chat attachment failed: ${error instanceof Error ? error.message : String(error)}`);
         return;
       }
       screenshotMessage(`${attached ? "Screenshot attached to chat." : "Screenshot removed from chat."} ${clipboardStatus}`);
-    } catch (error) { screenshotMessage(error instanceof Error ? error.message : String(error)); }
+    } catch (error) {
+      captureUiError(error, "screenshot.capture");
+      screenshotMessage(error instanceof Error ? error.message : String(error));
+    }
   }); });
   root.addEventListener("pointerdown", activate, { capture: true });
   root.addEventListener("focusin", activate);
@@ -862,8 +903,7 @@ export function createSimulatorPanel(
     return action(connect);
   }
   function onVisibility() {
-    const physicalIos = selected?.kind === "physical" && selected.platform === "ios";
-    const connected = physicalIos ? selected.state === "connected" : selected?.state === "Booted";
+    const connected = selectedDeviceConnected();
     if (document.visibilityState === "hidden") void disconnect();
     else if (toolsAvailable && connected && !ready && !disposed) void resume();
   }

@@ -43,6 +43,8 @@ test("high frequency reads and input avoid trace sampling even with a sampled pa
   assert.equal(inherited, 0);
   const rate = sampleTrace("tools/call mobile_cpu_session", inherit);
   assert.equal(rate, 0.1);
+  const screenshotRate = sampleTrace("tools/call mobile_ios_mirror_capture_screenshot", inherit);
+  assert.equal(screenshotRate, 0.1);
 });
 
 test("error and streamed-span filters remove app payloads and local identifiers", () => {

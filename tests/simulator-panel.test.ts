@@ -10,6 +10,8 @@ import { getScreenAnnotations } from "../src/ui/screen-annotations.ts";
 import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
 import type { PhysicalAndroidDevice } from "../src/shared/android-devices.ts";
 import type { SimulatorDevice } from "../src/shared/protocol.ts";
+import type { ScreenAnnotation } from "../src/shared/screen-annotations.ts";
+import type { ScreenshotAttachment } from "../src/ui/model-context.ts";
 
 const physicalBezel = { rect: { x: 27, y: 18, width: 400, height: 872 }, viewport: { width: 454, height: 908 }, clipRadius: 62, image: "data:image/png;base64,AQID", mask: "data:image/png;base64,BAUG" };
 
@@ -55,6 +57,9 @@ function fixture(t: TestContext) {
   const pendingReads = new Map<string, (sequence: number) => void>();
   const closed: string[] = [];
   const selections: { platform: string; active?: boolean }[] = [];
+  const screenshots: ScreenshotAttachment[] = [];
+  const attachedAnnotations: ScreenAnnotation[] = [];
+  let screenshotCopied = true;
   let sessionNumber = 0;
   let delayedOpen: Promise<void> | undefined;
   let blockedIos = false;
@@ -154,6 +159,10 @@ function fixture(t: TestContext) {
         return { content: [], structuredContent: { runtime: { available: true }, tree: [{ source: "react-native", name: "Continue", role: "Pressable", bounds: { x: 10, y: 20, width: 100, height: 100 }, nodeId: "node-0", depth: 0 }] } };
       }
       if (call.name.endsWith("_describe_ui")) return { content: [], structuredContent: { tree: { elements: [{ label: "Continue", role: "AXButton", frame: { x: 10, y: 20, width: 100, height: 100 } }] } } };
+      if (call.name.endsWith("_capture_screenshot")) return {
+        content: [{ type: "image", mimeType: "image/png", data: call.arguments.image ?? "AA==" }],
+        structuredContent: { copied: screenshotCopied, ...(screenshotCopied ? {} : { clipboardError: "Clipboard unavailable" }) },
+      };
       return { content: [] };
     },
     async readServerResource({ uri }: { uri: string }, { signal }: { signal: AbortSignal }) {
@@ -175,12 +184,17 @@ function fixture(t: TestContext) {
     for (const name of ["devices", "settings", "screen", "device-frame", "stage", "device-bezel", "screenshot", "notice", "notice-message", "empty", "empty-description", "stopped", "start-device", "screenshot-status"]) root.elements.set(name, new Element());
     root.elements.get("device-frame")!.hidden = true;
     for (const button of ["home", "app-switcher"]) { const element = new Element(); element.dataset.button = button; root.buttons.push(element); }
-    const panel = createSimulatorPanel(app, root as unknown as HTMLElement, platform, { canAttachScreenshots: true, screenAnnotations: [], subscribe: () => () => {} } as unknown as PanelContext, (_device, active) => selections.push({ platform, active }));
+    const panelContext = {
+      canAttachScreenshots: true, screenAnnotations: attachedAnnotations, subscribe: () => () => {},
+      async attachScreenshot(screenshot: ScreenshotAttachment) { screenshots.push(screenshot); return true; },
+      async attachAnnotation(annotation: ScreenAnnotation) { attachedAnnotations.push(annotation); return true; },
+    } as unknown as PanelContext;
+    const panel = createSimulatorPanel(app, root as unknown as HTMLElement, platform, panelContext, (_device, active) => selections.push({ platform, active }));
     panel.setAvailable(true);
     return { panel, root, element: (name: string) => root.elements.get(name)! };
   });
   t.after(async () => { await Promise.all(panels.map(({ panel }) => panel.dispose())); for (const reset of restore) reset(); });
-  return { calls, closed, selections, failInspection() { inspectionFailure = true; }, ios: panels[0], android: panels[1], setAndroidDevices(devices: SimulatorDevice[]) { androidDevices = devices; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; },
+  return { calls, closed, selections, failInspection() { inspectionFailure = true; }, screenshots, attachedAnnotations, ios: panels[0], android: panels[1], failClipboard() { screenshotCopied = false; }, setAndroidDevices(devices: SimulatorDevice[]) { androidDevices = devices; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; },
     visibility(value: string) { document.visibilityState = value; document.dispatchEvent(new Event("visibilitychange")); },
     frame(platform: "ios" | "android", sequence: number) { const id = [...pendingReads.keys()].find(id => id.startsWith(platform)); assert.ok(id); pendingReads.get(id)!(sequence); },
     missTiming() { observeFrames = false; }, invalidFrame() { invalidFrame = true; },
@@ -349,7 +363,7 @@ test("physical iOS devices mirror above simulators and route touches to their ow
   assert.equal(physicalStreams.length, 1);
   assert.equal(physicalStreams[0].arguments.udid, physicalPhone.udid);
   assert.equal(start.disabled, true);
-  assert.equal(screenshot.disabled, true);
+  assert.equal(screenshot.disabled, false);
   const disabledButtons = f.ios.root.buttons.every(button => button.disabled);
   const boots = f.calls.filter(call => call.name.startsWith("mobile_boot"));
   const streams = f.calls.filter(call => call.name === "mobile_stream_session");
@@ -392,12 +406,100 @@ test("physical iOS devices mirror above simulators and route touches to their ow
   const buttonsStillDisabled = f.ios.root.buttons.every(button => button.disabled);
   assert.equal(resumedMirrors.length, 2);
   assert.equal(buttonsStillDisabled, true);
-  assert.equal(screenshot.disabled, true);
+  assert.equal(screenshot.disabled, false);
   f.setPhysicalDevices([{ ...physicalPhone, state: "disconnected", transportType: "none" }]);
   await picker.refresh?.();
   const disconnectedState = picker.getSnapshot();
   const phonePresent = disconnectedState.items.some(item => item.value === physicalPhone.udid);
   assert.equal(phonePresent, false);
+});
+
+test("physical iOS screenshots capture the displayed frame without a simulator backend", async t => {
+  const f = fixture(t);
+  f.setPhysicalDevices([physicalPhone]);
+  f.failSimulators("Simulator backend unavailable");
+  await f.ios.panel.load();
+  const screenshot = f.ios.element("screenshot");
+  await waitFor(() => screenshot.disabled === false);
+  dispatch(screenshot, "click");
+  await waitFor(() => f.screenshots.length === 1);
+  const captured = f.calls.find(call => call.name === "mobile_ios_mirror_capture_screenshot");
+  assert.match(captured?.arguments.sessionId as string, /^physical-/);
+  assert.equal(captured?.arguments.image, "AA==");
+  assert.equal(f.screenshots[0].data, captured?.arguments.image);
+  assert.equal(f.screenshots[0].simulator.udid, physicalPhone.udid);
+  const status = f.ios.element("screenshot-status");
+  assert.match(status.textContent, /Screenshot attached to chat\. Copied to clipboard/);
+  await waitFor(() => screenshot.disabled === false);
+  f.failClipboard();
+  dispatch(screenshot, "click");
+  await waitFor(() => f.screenshots.length === 2);
+  assert.match(status.textContent, /Screenshot attached to chat\. Clipboard copy failed: Clipboard unavailable/);
+  const simulatorCaptures = f.calls.filter(call => call.name === "mobile_capture_screenshot");
+  assert.equal(simulatorCaptures.length, 0);
+  f.visibility("hidden");
+  assert.equal(screenshot.disabled, true);
+  await f.ios.panel.dispose();
+  assert.equal(screenshot.disabled, true);
+});
+
+test("physical iOS Select annotates screen regions in pixels without simulator accessibility or device input", async t => {
+  const f = fixture(t);
+  f.setPhysicalDevices([physicalPhone]);
+  f.failSimulators("Simulator backend unavailable");
+  await f.ios.panel.load();
+  const stage = f.ios.element("stage");
+  const store = getScreenAnnotations(stage as unknown as HTMLElement);
+  await waitFor(() => store.getSnapshot().disabled === false);
+  await store.toggle();
+  const state = store.getSnapshot();
+  assert.equal(state.selecting, true);
+  assert.equal(state.error, "");
+  assert.deepEqual(state.capture?.screen, { width: 400, height: 800, units: "pixels" });
+  const screen = f.ios.element("screen");
+  dispatch(screen, "pointermove", { pointerId: 1, clientX: 75, clientY: 150 });
+  assert.equal(store.getSnapshot().hovered, undefined);
+  dispatch(screen, "pointerdown", { button: 0, pointerId: 1, clientX: 75, clientY: 150 });
+  dispatch(screen, "pointerup", { button: 0, pointerId: 1, clientX: 75, clientY: 150 });
+  const draft = store.getSnapshot().draft;
+  assert.deepEqual(draft?.point, { x: 200, y: 400 });
+  assert.equal(draft?.component.name, "Screen point");
+  store.setText("Make this larger");
+  await store.save();
+  assert.equal(f.attachedAnnotations.length, 1);
+  assert.equal(f.attachedAnnotations[0].simulator.udid, physicalPhone.udid);
+  assert.equal(f.attachedAnnotations[0].screen.units, "pixels");
+  dispatch(screen, "keydown", { key: "Escape", code: "Escape" });
+  assert.equal(store.getSnapshot().selecting, false);
+  dispatch(screen, "keydown", { key: "a", code: "KeyA" });
+  const deviceInput = f.calls.filter(call => call.name === "mobile_ios_mirror_input");
+  const accessibility = f.calls.filter(call => call.name.endsWith("_describe_ui") || call.name === "mobile_inspect_ui");
+  assert.equal(deviceInput.length, 0);
+  assert.equal(accessibility.length, 0);
+  f.visibility("hidden");
+  assert.equal(store.getSnapshot().disabled, true);
+});
+
+test("physical iOS Screenshot and Select wait for video and disable when the phone disconnects", async t => {
+  const f = fixture(t);
+  f.setPhysicalDevices([physicalPhone]);
+  f.failSimulators("Simulator backend unavailable");
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  f.delayOpen(pending);
+  await f.ios.panel.load();
+  const store = getScreenAnnotations(f.ios.element("stage") as unknown as HTMLElement);
+  const screenshot = f.ios.element("screenshot");
+  assert.equal(screenshot.disabled, true);
+  assert.equal(store.getSnapshot().disabled, true);
+  release();
+  await waitFor(() => screenshot.disabled === false);
+  assert.equal(store.getSnapshot().disabled, false);
+  f.setPhysicalDevices([]);
+  const picker = getDevicePicker(f.ios.element("devices") as unknown as HTMLElement);
+  await picker.refresh?.();
+  assert.equal(screenshot.disabled, true);
+  assert.equal(store.getSnapshot().disabled, true);
 });
 
 test("physical discovery failure stays visible while simulator discovery remains usable", async t => {
