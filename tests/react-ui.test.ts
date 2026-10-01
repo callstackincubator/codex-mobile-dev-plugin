@@ -16,6 +16,10 @@ import { UDID } from "./fixtures.ts";
 
 test("React log controls filter virtual rows, attach full logs, and preserve simulator DOM", async t => {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
+  async function selectTool(tool: "logs" | "performance" | "none") {
+    await act(async () => { (dom.window.document.getElementById("tool-select") as HTMLButtonElement).click(); });
+    await act(async () => { (dom.window.document.getElementById(`tool-${tool}`) as HTMLElement).click(); });
+  }
   const previous = new Map<string, PropertyDescriptor | undefined>();
   const globals = { window: dom.window, document: dom.window.document, navigator: dom.window.navigator, HTMLElement: dom.window.HTMLElement,
     HTMLFormElement: dom.window.HTMLFormElement, HTMLInputElement: dom.window.HTMLInputElement, HTMLSelectElement: dom.window.HTMLSelectElement, Node: dom.window.Node, Event: dom.window.Event, CustomEvent: dom.window.CustomEvent,
@@ -146,7 +150,8 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(iosSettings.getSnapshot().frame, false);
   await act(async () => { settingsButton.click(); });
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
-  await act(async () => { (dom.window.document.getElementById("tool-logs") as HTMLButtonElement).click(); panel.list.setFollow(false); panel.list.append([
+  await selectTool("logs");
+  await act(async () => { panel.list.setFollow(false); panel.list.append([
     { sequence: 1, timestamp: "2026-09-30T12:00:00Z", message: '<script>alert("log")</script>', stack: "at loadProfile", level: "error", source: "js", origin: "metro" },
     { sequence: 2, timestamp: "2026-09-30T12:00:01Z", message: "Native output", level: "info", source: "native", origin: "ios" },
   ], 0); });
@@ -177,8 +182,8 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.ok(dom.window.document.getElementById("logs-settings"));
   await act(async () => { (dom.window.document.querySelector('[aria-label="Log sources"]') as HTMLButtonElement).click(); });
   assert.equal(panel.getSnapshot().settings, false);
-  await act(async () => { (dom.window.document.getElementById("tool-performance") as HTMLButtonElement).click(); });
-  assert.equal(dom.window.document.getElementById("tool-performance")?.getAttribute("aria-pressed"), "true");
+  await selectTool("performance");
+  assert.equal(performance.getSnapshot().open, true);
   assert.ok(dom.window.document.getElementById("performance-drawer"));
   assert.equal(dom.window.document.getElementById("logs-drawer"), null);
   assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 0);
@@ -281,12 +286,12 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   });
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
   assert.equal(dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]'), picker);
-  await act(async () => { (dom.window.document.getElementById("tool-logs") as HTMLButtonElement).click(); });
-  assert.equal(dom.window.document.getElementById("tool-logs")?.getAttribute("aria-pressed"), "true");
+  await selectTool("logs");
+  assert.equal(panel.getSnapshot().open, true);
   assert.equal(dom.window.document.getElementById("performance-drawer"), null);
   assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 1);
   assert.equal(logSubscribers, 1);
-  await act(async () => { (dom.window.document.getElementById("tool-performance") as HTMLButtonElement).click(); });
+  await selectTool("performance");
   const reopenCpu = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Expand CPU"]');
   assert.ok(reopenCpu);
   await act(async () => { reopenCpu.click(); });
@@ -308,23 +313,23 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.ok(collapseCpu);
   await act(async () => { collapseCpu.click(); });
   assert.equal(dom.window.document.querySelectorAll("[data-cpu-thread]").length, 0);
-  await act(async () => { (dom.window.document.getElementById("tool-logs") as HTMLButtonElement).click(); });
-  const iosToggle = dom.window.document.querySelector('[aria-label="Show iOS simulator"]') as HTMLButtonElement;
-  const androidToggle = dom.window.document.querySelector('[aria-label="Show Android simulator"]') as HTMLButtonElement;
-  assert.equal(iosToggle.getAttribute("aria-pressed"), "true");
-  assert.equal(androidToggle.getAttribute("aria-pressed"), "false");
+  await selectTool("logs");
+  async function togglePlatform(platform: "ios" | "android") {
+    if (!dom.window.document.getElementById(`platform-${platform}`)) {
+      await act(async () => { (dom.window.document.getElementById("platform-select") as HTMLButtonElement).click(); });
+    }
+    await act(async () => { (dom.window.document.getElementById(`platform-${platform}`) as HTMLElement).click(); });
+  }
   assert.equal((dom.window.document.getElementById("android-panel") as HTMLElement).hidden, true);
-  await act(async () => { androidToggle.click(); });
-  await act(async () => { iosToggle.click(); });
-  await act(async () => { androidToggle.click(); });
+  await togglePlatform("android");
+  await togglePlatform("ios");
+  await togglePlatform("android");
   assert.deepEqual(layouts, ["both", "android", "none"]);
-  assert.equal(iosToggle.getAttribute("aria-pressed"), "false");
-  assert.equal(androidToggle.getAttribute("aria-pressed"), "false");
-  await act(async () => { iosToggle.click(); });
-  await act(async () => { androidToggle.click(); });
+  await togglePlatform("ios");
+  await togglePlatform("android");
   assert.deepEqual(layouts, ["both", "android", "none", "ios", "both"]);
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
-  await act(async () => { (dom.window.document.getElementById("tool-logs") as HTMLButtonElement).click(); });
+  await selectTool("none");
   assert.equal(dom.window.document.getElementById("logs-body")?.hidden, true);
   assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 0);
 });

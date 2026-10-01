@@ -67,7 +67,7 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
   }, [logs.filtered, logs.follow, state.open]);
 
   return <Collapsible open={state.open} onOpenChange={() => panel.toggle()} asChild>
-    <section id="logs-drawer" data-open={state.open} className="@container flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-labelledby="tool-logs">
+    <section id="logs-drawer" data-open={state.open} className="@container flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-label="Logs">
       <span className="sr-only" role="status">{copyStatus}</span>
       {copyStatus === "Could not copy log" && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription>{copyStatus}</AlertDescription></Alert>}
       {state.open && <header className="logs-toolbar flex h-[49px] shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
