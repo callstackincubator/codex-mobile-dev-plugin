@@ -42,7 +42,7 @@ export function screenComponents(tree: unknown): ScreenComponent[] {
       const identifier = text(node.identifier) ?? text(node.resourceId) ?? text(node.id);
       const role = text(node.role) ?? text(node.className);
       const nodeId = text(node.nodeId) ?? `node-${components.length}`;
-      const nodeDepth = typeof node.depth === "number" && Number.isInteger(node.depth) && node.depth >= 0 && node.depth <= 160 ? node.depth : depth;
+      const nodeDepth = typeof node.depth === "number" && Number.isInteger(node.depth) && node.depth >= 0 && node.depth <= 10000 ? node.depth : depth;
       components.push({ name: text(node.name) ?? label ?? identifier ?? role ?? "Element", bounds: frame, label, identifier, role, value: text(node.value), depth: nodeDepth, source: node.source === "react-native" ? "react-native" : node.source === "screen" ? "screen" : "accessibility", nodeId, parentId: text(node.parentId) ?? parentId });
       parentId = nodeId;
     }

@@ -72,6 +72,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   assert.equal(calls[1], input, "High frequency input stays on the original MCP path.");
   api.setUiSurface("simulator");
   api.recordUiTiming("ui.screenshot.capture", 12);
+  api.countUiEvent("ui.annotations.inspection_truncated");
   await app.callServerTool({ name: "mobile_ios_mirror_capture_screenshot", arguments: { sessionId: "PRIVATE_DEVICE_SESSION", image: "PRIVATE_SCREENSHOT" } });
   const screenshotContext = calls[2]._meta["mobile-dev/telemetry"];
   assert.equal(screenshotContext.surface, "simulator");
@@ -102,6 +103,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, '"surface":{"value":"simulator"');
   contains(encoded, "ui.performance.batch.mean");
   contains(encoded, "ui.screenshot.capture.mean");
+  contains(encoded, "ui.annotations.inspection_truncated");
   contains(encoded, '"surface":{"value":"logs"');
   contains(encoded, '"surface":{"value":"performance"');
   contains(encoded, '"surface":{"value":"simulator"');

@@ -89,6 +89,21 @@ test("Android runtime bounds convert from DIPs to screen pixels", async t => {
   if (result.available) assert.deepEqual(result.tree[0].frame, { x: 30, y: 300, width: 1050, height: 210 });
 });
 
+test("flat debugger snapshots preserve deep parent links through Android scaling", async t => {
+  const server = await backend(t);
+  server.setResponse({ available: true, windowWidth: 400, truncated: false, tree: [
+    { source: "react-native", role: "Pressable", label: "Row", frame: card.frame, nodeId: "rn-row", depth: 280 },
+    { source: "react-native", role: "Text", label: "Subtitle", frame: card.children[0].frame, nodeId: "rn-subtitle", parentId: "rn-row", depth: 285 },
+  ] });
+  const result = await inspectReactNative({ ...request, url: server.origin, platform: "android", screenWidth: 1200 });
+  assert.equal(result.available, true);
+  if (!result.available) return;
+  const components = screenComponents(result.tree);
+  assert.deepEqual(componentsAt(components, { x: 120, y: 375 }).map(node => node.name), ["Subtitle", "Row"]);
+  assert.equal(components[1].depth, 285);
+  assert.equal(components[1].parentId, "rn-row");
+});
+
 test("inspection cancels its socket and rejects invalid native bounds", async t => {
   const server = await backend(t);
   server.setResponse({ available: true, tree: [{ ...card, frame: { ...card.frame, width: -1 } }], windowWidth: 400 });
@@ -110,7 +125,8 @@ test("runtime adapter reads native bounds, keeps logical parents and excludes un
     assert.equal(result.available, true);
     assert.equal(result.tree[0].label, "CardRow");
     assert.deepEqual(result.tree[0].frame, card.frame);
-    assert.equal(result.tree[0].children[0].identifier, "card");
+    assert.equal(result.tree[1].identifier, "card");
+    assert.equal(result.tree[1].parentId, result.tree[0].nodeId);
     assert.doesNotMatch(JSON.stringify(result), /PRIVATE_APP_PROP/);
   } finally { if (previous) Object.defineProperty(globalThis, "__REACT_DEVTOOLS_GLOBAL_HOOK__", previous); else delete (globalThis as Record<string, unknown>).__REACT_DEVTOOLS_GLOBAL_HOOK__; }
 });
@@ -188,4 +204,57 @@ test("deep navigation wrappers retain runtime card rows and real enclosing eleme
   for (let i = 0; i < 90; i++) tree = { source: "react-native", role: `Wrapper${i}`, frame: { x: 0, y: 0, width: 400, height: 800 }, children: [tree] };
   const components = screenComponents(tree);
   assert.equal(componentAt(components, { x: 200, y: 105 }, { width: 400, height: 800 })?.name, "Card");
+});
+
+function collectFibers(fiber: unknown) {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "__REACT_DEVTOOLS_GLOBAL_HOOK__");
+  Object.defineProperty(globalThis, "__REACT_DEVTOOLS_GLOBAL_HOOK__", { configurable: true, value: { renderers: new Map([[1, { rendererPackageName: "react-native-renderer" }]]), getFiberRoots: () => new Set([{ current: fiber }]) } });
+  try { return collectReactNativeTree() as { available: boolean; tree: InspectorNode[]; truncated: boolean }; }
+  finally { if (previous) Object.defineProperty(globalThis, "__REACT_DEVTOOLS_GLOBAL_HOOK__", previous); else delete (globalThis as Record<string, unknown>).__REACT_DEVTOOLS_GLOBAL_HOOK__; }
+}
+
+function nativeFiber(type: string, frame: typeof card.frame, props = {}) {
+  return { tag: 5, type, memoizedProps: props, stateNode: { canonical: { publicInstance: { isConnected: true, getBoundingClientRect: () => frame } } } };
+}
+
+test("deep catalog screens retain all ten rows and separate title and subtitle bounds", () => {
+  const rows = Array.from({ length: 10 }, (_, index) => {
+    const y = 140 + index * 64;
+    const title = nativeFiber("RCTText", { x: 32, y: y + 8, width: 327, height: 20 }, { children: `Title ${index}` });
+    const subtitle = nativeFiber("RCTText", { x: 32, y: y + 32, width: 327, height: 17 }, { children: `Subtitle ${index}` });
+    return { ...nativeFiber("Pressable", { x: 16, y, width: 370, height: 60 }), child: { ...title, sibling: subtitle }, sibling: undefined as unknown };
+  });
+  rows.forEach((row, index) => { row.sibling = rows[index + 1]; });
+  let fiber: unknown = rows[0];
+  for (let index = 0; index < 280; index++) fiber = { tag: 10, type: { displayName: "Context" }, child: fiber };
+  const result = collectFibers({ ...nativeFiber("RCTView", { x: 0, y: 0, width: 400, height: 900 }), child: fiber });
+  assert.equal(result.available, true);
+  assert.equal(result.truncated, false);
+  const components = screenComponents(JSON.parse(JSON.stringify(result.tree)));
+  assert.equal(components.filter(node => node.role === "Pressable").length, 10);
+  for (let index = 0; index < 10; index++) {
+    const y = 140 + index * 64;
+    assert.equal(componentAt(components, { x: 100, y: y + 15 }, { width: 400, height: 900 })?.name, `Title ${index}`);
+    assert.equal(componentAt(components, { x: 100, y: y + 38 }, { width: 400, height: 900 })?.name, `Subtitle ${index}`);
+    assert.deepEqual(componentsAt(components, { x: 100, y: y + 38 }, { width: 400, height: 900 }).map(node => node.role), ["RCTText", "Pressable"]);
+  }
+  assert.ok(!JSON.stringify(result).includes('"children"'), "The debugger transport must also remain flat.");
+});
+
+test("retained native-stack screens do not cover visible text, and decorative text stays selectable", () => {
+  const title = nativeFiber("RCTText", card.frame, { children: "Visible title" });
+  const decorative = nativeFiber("RCTText", { x: 370, y: 100, width: 10, height: 20 }, { children: "›", "aria-hidden": true });
+  const active = { type: "Screen", memoizedProps: { activityState: 2, "aria-hidden": false }, child: { ...title, sibling: decorative } };
+  const retained = { type: "Screen", memoizedProps: { activityState: 2, "aria-hidden": true }, child: nativeFiber("RCTText", { ...card.frame, width: 50, height: 20 }, { children: "Old home title" }), sibling: active };
+  const components = screenComponents(collectFibers(retained).tree);
+  assert.equal(componentAt(components, { x: 20, y: 105 })?.name, "Visible title");
+  assert.equal(components.some(node => node.name === "Old home title"), false);
+  assert.equal(componentAt(components, { x: 375, y: 105 })?.name, "›");
+});
+
+test("the iterative collector reports its work limit instead of silently cutting off deep fibers", () => {
+  let fiber: unknown = nativeFiber("RCTText", card.frame);
+  for (let index = 0; index < 11000; index++) fiber = { tag: 10, child: fiber };
+  const result = collectFibers({ ...nativeFiber("RCTView", { x: 0, y: 0, width: 400, height: 900 }), child: fiber });
+  assert.equal(result.truncated, true);
 });

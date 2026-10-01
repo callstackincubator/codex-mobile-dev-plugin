@@ -5,9 +5,9 @@ import { metroTargets } from "./metro-logs.ts";
 import { collectReactNativeTree } from "./react-native-snapshot.js";
 import type { ScreenBounds } from "../shared/screen-annotations.ts";
 
-export type InspectorNode = { source: "react-native"; role: string; label?: string; identifier?: string; frame: ScreenBounds; children: InspectorNode[] };
+export type InspectorNode = { source: "react-native"; role: string; label?: string; identifier?: string; frame: ScreenBounds; nodeId?: string; parentId?: string; depth?: number; children: InspectorNode[] };
 const frame = z.object({ x: z.number().finite(), y: z.number().finite(), width: z.number().positive().finite(), height: z.number().positive().finite() });
-const node: z.ZodType<InspectorNode> = z.lazy(() => z.object({ source: z.literal("react-native"), role: z.string().max(256), label: z.string().max(256).optional(), identifier: z.string().max(256).optional(), frame, children: z.array(node).max(3000) }));
+const node: z.ZodType<InspectorNode> = z.lazy(() => z.object({ source: z.literal("react-native"), role: z.string().max(256), label: z.string().max(256).optional(), identifier: z.string().max(256).optional(), frame, nodeId: z.string().max(256).optional(), parentId: z.string().max(256).optional(), depth: z.number().int().min(0).max(10000).optional(), children: z.array(node).max(3000).default([]) }));
 const snapshot = z.object({ available: z.boolean(), tree: z.array(node).max(3000).optional(), windowWidth: z.number().nonnegative().finite().optional(), truncated: z.boolean().optional() });
 export type InspectorRequest = { url?: string; targetId?: string; deviceName: string; deviceAliases?: string[]; appName?: string; appId?: string; platform: "ios" | "android"; screenWidth: number };
 const normalized = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");

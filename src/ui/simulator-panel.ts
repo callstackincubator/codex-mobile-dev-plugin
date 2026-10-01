@@ -228,6 +228,7 @@ export function createSimulatorPanel(
         if (!result.structuredContent?.tree) throw new Error("Component inspection returned no tree.");
         const runtime = result.structuredContent.runtime;
         if (runtime && typeof runtime === "object" && "available" in runtime && runtime.available === true) countUiEvent("ui.annotations.runtime_available");
+        if (runtime && typeof runtime === "object" && "truncated" in runtime && runtime.truncated === true) countUiEvent("ui.annotations.inspection_truncated");
         return result.structuredContent.tree;
       } catch {
         // Hosts with an older tool list and failed inspectors can still read AX.
