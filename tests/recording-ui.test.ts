@@ -28,7 +28,8 @@ for (const reducedMotion of [false, true]) {
       bundle: true, write: false, format: "iife", globalName: "RecordingTest", platform: "browser", jsx: "automatic",
       define: { "process.env.NODE_ENV": '"production"' },
     });
-    const dom = new JSDOM('<html data-view="recording"><head><meta name="mobile-dev-environment" content="development"></head><body><div id="root"></div></body></html>', { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
+    const html = '<html data-view="recording"><head><meta name="mobile-dev-environment" content="development"><meta name="mobile-dev-user-id" content="anon_0123456789abcdef0123456789abcdef"><meta name="mobile-dev-session-id" content="run_1234567890abcdef1234567890abcdef"></head><body><div id="root"></div></body></html>';
+    const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
     const window = dom.window;
     window.matchMedia = (query: string) => ({
       matches: reducedMotion, media: query, onchange: null,

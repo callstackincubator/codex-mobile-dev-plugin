@@ -7,6 +7,7 @@ import { PLUGIN_VERSION } from "../shared/version.ts";
 import { SENTRY_ORIGIN } from "../shared/telemetry.ts";
 import { captureServerError } from "./telemetry.ts";
 import { resolveTelemetryEnvironment } from "./telemetry-environment.ts";
+import { getTelemetryIdentity } from "./telemetry-identity.ts";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { z } from "zod";
@@ -167,7 +168,13 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   function configureUI(content: string): string {
     const telemetryEnvironment = resolveTelemetryEnvironment();
-    return content.replace(/name="mobile-dev-environment" content="(?:development|release)"/, `name="mobile-dev-environment" content="${telemetryEnvironment}"`);
+    const identity = getTelemetryIdentity();
+    const enabled = identity ? "on" : "off";
+    const identityMeta = identity
+      ? `<meta name="mobile-dev-user-id" content="${identity.userId}"><meta name="mobile-dev-session-id" content="${identity.sessionId}">`
+      : "";
+    const metadata = `<meta name="mobile-dev-environment" content="${telemetryEnvironment}"><meta name="mobile-dev-telemetry" content="${enabled}">${identityMeta}`;
+    return content.replace(/<meta name="mobile-dev-environment" content="(?:development|release)">/, metadata);
   }
   const readApp = async (uri: URL) => {
     const resource = typeof html === "string" ? { html } : await html();

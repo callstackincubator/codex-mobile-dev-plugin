@@ -1,7 +1,7 @@
 {
   "name": "mobile-dev-ios-logs",
   "target": "darwin-arm64",
-  "sourceSHA256": "52c9b031eb562bb152b85a3a21cfe88bf0dc7025717f17785edfaf9c0a335c2c",
+  "sourceSHA256": "9af3b9e7a644df12c873abe332713a806187e8fccbc9651ef6026dbbccfd0bea",
   "sources": [
     {
       "name": "libplist",
@@ -37,27 +37,27 @@
   "openssl": "OpenSSL 3.6.2 7 Apr 2026 (Library: OpenSSL 3.6.2 7 Apr 2026)",
   "binaries": {
     "mobile-dev-ios-logs": {
-      "sha256": "31133fc826da379046989bc10c47cab1c9e03909bcb82057f1405bebaccb814e",
+      "sha256": "26fd2044bfea6c4542155a394e6a5b2aae3626de3565afe6eacf900b62d0b94c",
       "bytes": 384944
     },
     "libimobiledevice-1.0.6.dylib": {
-      "sha256": "229bb457ff0b3b701045ed124e3fdbce0e2115daf01b163735dcfba69c765927",
+      "sha256": "dc6bfcc88c74b53bfe4d3b206d19e304cfc3379d6bbce2b9504a57911a6b0432",
       "bytes": 278608
     },
     "libimobiledevice-glue-1.0.0.dylib": {
-      "sha256": "e2fa173219ed5b6352d76232556b499cdac255cf28b0e277a8867e6b7a1615b8",
+      "sha256": "e2e117e3c48c10409a5b193b8f2661dd44554df3beb9e8512e06440512f3990f",
       "bytes": 79568
     },
     "libplist-2.0.12.dylib": {
-      "sha256": "205279316a58b20e84495fdfdb8d9f860e5197e1602bfd7e80f75a7bcced1ee6",
+      "sha256": "76efe3edc3483ef33a82a2e1a8459a1a1e81a50507c88c5a53de780d054d42bc",
       "bytes": 114976
     },
     "libtatsu.0.dylib": {
-      "sha256": "3a85f550bca667dc9ff46ccb72fe716b33b9f13126d34dfb0bc88f6176fd2a1f",
+      "sha256": "e5fcc2546a4343a34267b99e59ecd07e26f2781982eb8413d587ae06fc577704",
       "bytes": 55408
     },
     "libusbmuxd-2.0.7.dylib": {
-      "sha256": "fad3c8ea428fe603b894133d64610921ddd573e7951a9670b11ea54b03fd584b",
+      "sha256": "b49ec43aa3b124350aa0b67008e166b8764438620977c58a6f85088e33a41a6e",
       "bytes": 71984
     },
     "libssl.3.dylib": {

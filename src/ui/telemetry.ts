@@ -5,6 +5,7 @@ import {
   isFrequentTool, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, validateTelemetryEnvironment,
 } from "../shared/telemetry.ts";
 import type { Surface, TelemetryAttributes } from "../shared/telemetry.ts";
+import { validateTelemetryIdentity } from "../shared/telemetry-identity.ts";
 
 export { ErrorBoundary } from "@sentry/react";
 
@@ -158,11 +159,18 @@ function visibilityChanged() {
 export function startUiTelemetry(app: App) {
   const environmentMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-environment"]');
   const environment = validateTelemetryEnvironment(environmentMeta?.content);
+  const telemetryMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-telemetry"]');
+  const enabled = telemetryMeta?.content !== "off";
+  const userMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-user-id"]');
+  const sessionMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-session-id"]');
+  const identity = enabled ? validateTelemetryIdentity(userMeta?.content, sessionMeta?.content) : undefined;
   const browserTracing = Sentry.browserTracingIntegration({ instrumentNavigation: false });
   Sentry.init({
     dsn: SENTRY_UI_DSN,
     release: SENTRY_RELEASE,
     environment,
+    enabled,
+    initialScope: identity ? { user: { id: identity.userId }, tags: { telemetry_session: identity.sessionId } } : undefined,
     dataCollection: { userInfo: false, genAI: { inputs: false, outputs: false } },
     integrations: [browserTracing],
     tracePropagationTargets: [],
@@ -172,7 +180,8 @@ export function startUiTelemetry(app: App) {
     beforeSendMetric: scrubMetric,
     beforeBreadcrumb: breadcrumb => breadcrumb.category === "mobile-dev" ? breadcrumb : null,
   });
-  running = true;
+  running = enabled;
+  if (running === false) return;
   const requestedView = document.documentElement.dataset.view;
   const view = requestedView === "recording" || requestedView === "workspace" ? requestedView : "panel";
   attributes = { ...attributes, view };

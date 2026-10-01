@@ -42,6 +42,10 @@ new telemetry when existing coverage already answers the relevant questions.
   product metadata and numeric measurements. Do not send app logs, tool arguments
   or results, screenshots, input content, device identifiers, local paths, or
   credentials. Preserve the existing scrubbing and expected-error exclusions.
+- Preserve anonymous affected-user attribution on errors and crashes. UI and native
+  helpers receive the server-owned installation and process-session IDs; never derive
+  identity from account details, device IDs, paths, or host metadata. Keep IDs out of
+  performance metrics and span attributes, and honor telemetry opt-out.
 - Preserve `development` and `release` environments, the shared plugin release,
   and matching source maps/debug IDs when changing initialization or builds.
   Local builds/packages default to development; public builds require the explicit

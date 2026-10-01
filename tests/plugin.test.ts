@@ -11,6 +11,7 @@ import { RECORDING_URI } from "../src/shared/recordings.ts";
 import { Baguette } from "../src/server/baguette.ts";
 import { parseBaseUrl } from "../src/shared/protocol.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "./fixtures.ts";
+import { getTelemetryIdentity } from "../src/server/telemetry-identity.ts";
 
 test("live UI reads use MCP and allow only Sentry browser connections", async t => {
   let revision = "a".repeat(64);
@@ -82,6 +83,53 @@ test("local packaged UI uses development without a live watcher", async t => {
   assert.match(content, /mobile-dev-environment" content="development"/);
 });
 
+test("UI surfaces and live reload receive the server's anonymous identity and opt-out", async t => {
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  const html = '<html data-view="panel"><head><meta name="mobile-dev-environment" content="development"></head></html>';
+  const plugin = await createTestPlugin(async () => ({ html, liveRevision: "new" }));
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "identity-test", version: "1" });
+  t.after(async () => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+    await client.close();
+    await plugin.close();
+  });
+  await plugin.server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const identity = getTelemetryIdentity();
+  assert.ok(identity);
+  const userMarker = `name="mobile-dev-user-id" content="${identity.userId}"`;
+  const sessionMarker = `name="mobile-dev-session-id" content="${identity.sessionId}"`;
+  for (const uri of [APP_URI, WORKSPACE_URI, RECORDING_URI]) {
+    const resource = await client.readResource({ uri });
+    const content = resource.contents[0].text;
+    assert.ok(typeof content === "string");
+    const userIncluded = content.includes(userMarker);
+    const sessionIncluded = content.includes(sessionMarker);
+    assert.ok(userIncluded);
+    assert.ok(sessionIncluded);
+  }
+  const live = await client.readResource({ uri: "ui://mobile-dev/live?after=old" });
+  const liveText = live.contents[0].text;
+  assert.ok(typeof liveText === "string");
+  const update = JSON.parse(liveText);
+  const liveIncludesUser = update.html.includes(userMarker);
+  const liveIncludesSession = update.html.includes(sessionMarker);
+  assert.ok(liveIncludesUser);
+  assert.ok(liveIncludesSession);
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  const disabled = await client.readResource({ uri: APP_URI });
+  const disabledText = disabled.contents[0].text;
+  assert.ok(typeof disabledText === "string");
+  assert.match(disabledText, /mobile-dev-telemetry" content="off"/);
+  const disabledIncludesUser = disabledText.includes("mobile-dev-user-id");
+  const disabledIncludesSession = disabledText.includes("mobile-dev-session-id");
+  assert.equal(disabledIncludesUser, false);
+  assert.equal(disabledIncludesSession, false);
+});
+
 test("cached side tabs load the current UI through old resource addresses", async t => {
   const html = "<!doctype html><title>Current simulator</title><canvas></canvas>";
   const plugin = await createTestPlugin(html);
@@ -90,7 +138,7 @@ test("cached side tabs load the current UI through old resource addresses", asyn
   t.after(async () => { await client.close(); await plugin.close(); });
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
-  assert.equal(APP_URI, "ui://mobile-dev/0.1.81/simulator.html");
+  assert.equal(APP_URI, "ui://mobile-dev/0.1.83/simulator.html");
   const previousPanel = await client.readResource({ uri: "ui://mobile-dev/0.1.52/simulator.html" });
   assert.equal(previousPanel.contents[0].text, html);
   for (const uri of [APP_URI, "ui://mobile-dev/0.1.44/simulator.html", "ui://mobile-dev/0.1.43/simulator.html", "ui://mobile-dev/0.1.42/simulator.html", "ui://mobile-dev/0.1.41/simulator.html", "ui://mobile-dev/0.1.40/simulator.html", "ui://mobile-dev/0.1.39/simulator.html", "ui://mobile-dev/0.1.38/simulator.html", "ui://mobile-dev/0.1.37/simulator.html", "ui://mobile-dev/0.1.36/simulator.html", "ui://mobile-dev/0.1.35/simulator.html", "ui://mobile-dev/0.1.34/simulator.html", "ui://mobile-dev/0.1.33/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html", "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/simulator.html", ...[1, 2, 3, 4, 5, 6].map(version => `ui://mobile-dev/v${version}/simulator.html`)]) {
@@ -138,7 +186,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const renderRecording = tools.tools.find(tool => tool.name === "mobile_render_performance_recording");
   assert.deepEqual(renderRecording?._meta?.ui, { resourceUri: RECORDING_URI, visibility: ["app", "model"] });
   assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);
-  assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.81/workspace.html");
+  assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.83/workspace.html");
   const previousWorkspace = await client.readResource({ uri: "ui://mobile-dev/0.1.52/workspace.html" });
   assert.equal(previousWorkspace.contents[0].text, workspaceResource.contents[0].text);
   for (const uri of ["ui://mobile-dev/0.1.44/workspace.html", "ui://mobile-dev/0.1.43/workspace.html", "ui://mobile-dev/0.1.42/workspace.html", "ui://mobile-dev/0.1.41/workspace.html", "ui://mobile-dev/0.1.40/workspace.html", "ui://mobile-dev/0.1.39/workspace.html", "ui://mobile-dev/0.1.38/workspace.html", "ui://mobile-dev/0.1.37/workspace.html", "ui://mobile-dev/0.1.36/workspace.html", "ui://mobile-dev/0.1.35/workspace.html", "ui://mobile-dev/0.1.34/workspace.html", "ui://mobile-dev/0.1.33/workspace.html", "ui://mobile-dev/0.1.24/mcp-stream/workspace.html", "ui://mobile-dev/0.1.21/workspace.html", "ui://mobile-dev/0.1.20/workspace.html", "ui://mobile-dev/workspace.html"]) {

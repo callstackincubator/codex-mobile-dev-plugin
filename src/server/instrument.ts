@@ -4,6 +4,16 @@ import { join } from "node:path";
 import * as Sentry from "@sentry/node";
 import { SENTRY_RELEASE, SENTRY_SERVER_DSN, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan } from "../shared/telemetry.ts";
 import { TELEMETRY_ENVIRONMENT } from "./telemetry-environment.ts";
+import { getTelemetryIdentity } from "./telemetry-identity.ts";
+
+const identity = getTelemetryIdentity();
+if (identity) {
+  process.env.MOBILE_DEV_NATIVE_USER_ID = identity.userId;
+  process.env.MOBILE_DEV_NATIVE_SESSION_ID = identity.sessionId;
+} else {
+  delete process.env.MOBILE_DEV_NATIVE_USER_ID;
+  delete process.env.MOBILE_DEV_NATIVE_SESSION_ID;
+}
 
 process.env.MOBILE_DEV_NATIVE_RELEASE = SENTRY_RELEASE;
 process.env.MOBILE_DEV_NATIVE_ENVIRONMENT = TELEMETRY_ENVIRONMENT;
@@ -17,6 +27,7 @@ const client = Sentry.init({
   release: SENTRY_RELEASE,
   environment: TELEMETRY_ENVIRONMENT,
   enabled: process.env.MOBILE_DEV_TELEMETRY !== "off",
+  initialScope: identity ? { user: { id: identity.userId }, tags: { telemetry_session: identity.sessionId } } : undefined,
   dataCollection: { userInfo: false, genAI: { inputs: false, outputs: false } },
   integrations: defaults => {
     const selected = defaults.filter(integration => ["Console", "LocalVariables", "LocalVariablesAsync", "ContextLines", "ChildProcess"].includes(integration.name) === false);

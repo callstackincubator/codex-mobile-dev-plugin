@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { NativeTelemetryRelay, nativeCollectorCommand, parseNativeEnvelope } from "../src/server/native-telemetry.ts";
 import { SENTRY_NATIVE_DSN, SENTRY_RELEASE } from "../src/shared/telemetry.ts";
+import { getTelemetryIdentity } from "../src/server/telemetry-identity.ts";
 
 function encode(type: string, payload: unknown, dsn = SENTRY_NATIVE_DSN) {
   const json = JSON.stringify(payload);
@@ -61,16 +62,26 @@ test("native relay rejects other projects, attachments, invalid lengths and over
   assert.equal(diagnostic, "Native Sentry report was invalid and discarded.\nnext diagnostic\n");
 });
 
-test("Android launch commands propagate release, environment and the telemetry off switch", () => {
+test("Android launch commands propagate release, environment, anonymous identity and the telemetry off switch", () => {
   const command = nativeCollectorCommand("/data/local/tmp/mobile-dev-cpu", ["123"]);
   assert.ok(command.includes(SENTRY_RELEASE));
   assert.match(command, /MOBILE_DEV_NATIVE_ENVIRONMENT='(?:development|release)'/);
+  const identity = getTelemetryIdentity();
+  assert.ok(identity);
+  const userIncluded = command.includes(`MOBILE_DEV_NATIVE_USER_ID='${identity.userId}'`);
+  const sessionIncluded = command.includes(`MOBILE_DEV_NATIVE_SESSION_ID='${identity.sessionId}'`);
+  assert.ok(userIncluded);
+  assert.ok(sessionIncluded);
   assert.match(command, /exec '\/data\/local\/tmp\/mobile-dev-cpu' '123'$/);
   const previous = process.env.MOBILE_DEV_TELEMETRY;
   try {
     process.env.MOBILE_DEV_TELEMETRY = "off";
     const disabled = nativeCollectorCommand("/data/local/tmp/mobile-dev-fps");
     assert.match(disabled, /MOBILE_DEV_TELEMETRY=off/);
+    const disabledIncludesUser = disabled.includes("MOBILE_DEV_NATIVE_USER_ID");
+    const disabledIncludesSession = disabled.includes("MOBILE_DEV_NATIVE_SESSION_ID");
+    assert.equal(disabledIncludesUser, false);
+    assert.equal(disabledIncludesSession, false);
     const quoted = nativeCollectorCommand("/tmp/helper", ["a'b"]);
     assert.ok(quoted.includes("'a'\\''b'"));
   } finally {

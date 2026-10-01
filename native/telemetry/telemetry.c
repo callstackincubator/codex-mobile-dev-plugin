@@ -77,10 +77,35 @@ static void scrub_stack(sentry_value_t object) {
     }
 }
 
+static int anonymous_identifier(const char *value, const char *prefix) {
+    if (value == NULL) return 0;
+    size_t prefix_length = strlen(prefix);
+    size_t length = strlen(value);
+    if (length != prefix_length + 32 || strncmp(value, prefix, prefix_length) != 0) return 0;
+    for (size_t index = prefix_length; index < length; index++) {
+        char digit = value[index];
+        if ((digit < '0' || digit > '9') && (digit < 'a' || digit > 'f')) return 0;
+    }
+    return 1;
+}
+
 static sentry_value_t scrub_event(sentry_value_t event, sentry_hint_t *hint, void *state) {
     (void)hint;
     (void)state;
-    const char *fields[] = { "user", "request", "extra", "server_name", "breadcrumbs", "modules" };
+    sentry_value_t user = sentry_value_get_by_key(event, "user");
+    sentry_value_t id = sentry_value_get_by_key(user, "id");
+    const char *user_id = sentry_value_as_string(id);
+    if (anonymous_identifier(user_id, "anon_")) {
+        sentry_value_t safe_user = sentry_value_new_object();
+        sentry_value_t safe_id = sentry_value_new_string(user_id);
+        sentry_value_set_by_key(safe_user, "id", safe_id);
+        sentry_value_set_by_key(event, "user", safe_user);
+    } else sentry_value_remove_by_key(event, "user");
+    sentry_value_t tags = sentry_value_get_by_key(event, "tags");
+    sentry_value_t session = sentry_value_get_by_key(tags, "telemetry_session");
+    const char *session_id = sentry_value_as_string(session);
+    if (anonymous_identifier(session_id, "run_") == 0) sentry_value_remove_by_key(tags, "telemetry_session");
+    const char *fields[] = { "request", "extra", "server_name", "breadcrumbs", "modules" };
     for (size_t index = 0; index < sizeof(fields) / sizeof(fields[0]); index++) {
         sentry_value_remove_by_key(event, fields[index]);
     }
@@ -119,6 +144,16 @@ static sentry_value_t scrub_event(sentry_value_t event, sentry_hint_t *hint, voi
         }
     }
     return event;
+}
+
+static sentry_value_t scrub_metric(sentry_value_t metric, void *state) {
+    (void)state;
+    sentry_value_t attributes = sentry_value_get_by_key(metric, "attributes");
+    const char *fields[] = { "user.id", "user.name", "user.email", "telemetry_session", "session.id" };
+    for (size_t index = 0; index < sizeof(fields) / sizeof(fields[0]); index++) {
+        sentry_value_remove_by_key(attributes, fields[index]);
+    }
+    return metric;
 }
 
 static void attribute(const char *key, const char *text) {
@@ -293,6 +328,9 @@ void mobile_dev_telemetry_init(const char *component) {
     const char *environment = getenv("MOBILE_DEV_NATIVE_ENVIRONMENT");
     if (release == NULL || environment == NULL) return;
     if (strcmp(environment, "development") != 0 && strcmp(environment, "release") != 0) return;
+    const char *user_id = getenv("MOBILE_DEV_NATIVE_USER_ID");
+    const char *session_id = getenv("MOBILE_DEV_NATIVE_SESSION_ID");
+    if (anonymous_identifier(user_id, "anon_") == 0 || anonymous_identifier(session_id, "run_") == 0) return;
     const char *cache = getenv("MOBILE_DEV_NATIVE_CACHE");
 #ifdef __ANDROID__
     cache = "/data/local/tmp/mobile-dev-sentry";
@@ -308,6 +346,7 @@ void mobile_dev_telemetry_init(const char *component) {
     sentry_options_set_environment(options, environment);
     sentry_options_set_database_path(options, database);
     sentry_options_set_before_send(options, scrub_event, NULL);
+    sentry_options_set_before_send_metric(options, scrub_metric, NULL);
     sentry_options_set_auto_session_tracking(options, 0);
     sentry_options_set_max_breadcrumbs(options, 0);
     sentry_options_set_shutdown_timeout(options, 2000);
@@ -319,6 +358,11 @@ void mobile_dev_telemetry_init(const char *component) {
         fprintf(stderr, "[mobile-dev:sentry] Native telemetry could not initialize.\n");
         return;
     }
+    sentry_value_t user = sentry_value_new_object();
+    sentry_value_t id = sentry_value_new_string(user_id);
+    sentry_value_set_by_key(user, "id", id);
+    sentry_set_user(user);
+    sentry_set_tag("telemetry_session", session_id);
     attribute("component", component);
 #ifdef __ANDROID__
     attribute("runtime_platform", "android");

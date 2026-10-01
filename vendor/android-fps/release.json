@@ -1,23 +1,23 @@
 {
   "api": 31,
   "perfettoVersion": "25.0",
-  "sourceSHA256": "557b0f981f91f907ae7dce05641a03316387ccb309524d5dd49dca59362fcfc1",
+  "sourceSHA256": "bf37cad12176f1d09abd18d9314d8c31528b64a3de73aa90f3920674a30e6502",
   "binaries": {
     "arm64-v8a": {
-      "sha256": "11ffc948f8525e366a0ee8283fb6de6f5bc76f66e45046dbfc96a05afd16342a",
-      "bytes": 3167784
+      "sha256": "58d61e5f2f6c7c7fe10d06b491ffa07bf9d24d0bcd764c5b05f8deaf90caaea6",
+      "bytes": 3168936
     },
     "armeabi-v7a": {
-      "sha256": "09a8f35fdae5f16882af0aefc082dba5387bc2d2b081fd8601bf232bc11d79b0",
-      "bytes": 2371544
+      "sha256": "8e262bee67662d77a98b3909fbb4e3892a22d76fd9af0c22e40ad65ca0227dfd",
+      "bytes": 2372888
     },
     "x86": {
-      "sha256": "faeadaf3eec8f9c738f63bf02b64fdb65d35d619f74c0c2ee3e0e21dcae58b4a",
-      "bytes": 3714760
+      "sha256": "4991747900d33b3c3f38b014fece9f22b02adaa75cea24646795c30d39eb386b",
+      "bytes": 3716376
     },
     "x86_64": {
-      "sha256": "9e2cc5adaec349ecdf1e953f3c81af5d21792cfd56b1db5c801531de01678ef3",
-      "bytes": 3190920
+      "sha256": "6f033f2cca91b05eb1bdfb32f16d1a7f82bf47f78b3e5ad83b21b940ebc25818",
+      "bytes": 3192184
     }
   }
 }

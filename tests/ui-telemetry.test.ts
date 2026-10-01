@@ -4,6 +4,10 @@ import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 import { recordingFixture } from "./recording-fixtures.ts";
 
+const userId = "anon_0123456789abcdef0123456789abcdef";
+const sessionId = "run_1234567890abcdef1234567890abcdef";
+const identityMeta = `<meta name="mobile-dev-user-id" content="${userId}"><meta name="mobile-dev-session-id" content="${sessionId}">`;
+
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
   assert.equal(included, expected, `Telemetry fragment: ${fragment}`);
@@ -17,7 +21,7 @@ test("browser errors use the served environment regardless of live-reload marker
     define: { "process.env.NODE_ENV": '"production"' },
   });
   for (const environment of ["development", "release"]) {
-    const html = `<html><head><meta name="mobile-dev-environment" content="${environment}"><meta name="mobile-dev-live-revision" content="test"></head></html>`;
+    const html = `<html><head><meta name="mobile-dev-environment" content="${environment}"><meta name="mobile-dev-live-revision" content="test">${identityMeta}</head></html>`;
     const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
     t.after(() => dom.window.close());
     Object.defineProperty(dom.window.performance, "getEntriesByType", { value: () => [] });
@@ -36,6 +40,8 @@ test("browser errors use the served environment regardless of live-reload marker
     await api.stopUiTelemetry();
     const captured = bodies.join("\n");
     contains(captured, `"environment":"${environment}"`);
+    contains(captured, `"user":{"id":"${userId}"}`);
+    contains(captured, `"telemetry_session":"${sessionId}"`);
     const other = environment === "development" ? "release" : "development";
     contains(captured, `"environment":"${other}"`, false);
   }
@@ -43,6 +49,20 @@ test("browser errors use the served environment regardless of live-reload marker
   t.after(() => invalid.window.close());
   invalid.window.eval(built.outputFiles[0].text);
   assert.throws(() => invalid.window.Telemetry.startUiTelemetry({}), /Sentry environment must be/);
+  const missingIdentity = new JSDOM('<head><meta name="mobile-dev-environment" content="development"></head>', { runScripts: "outside-only" });
+  t.after(() => missingIdentity.window.close());
+  missingIdentity.window.eval(built.outputFiles[0].text);
+  assert.throws(() => missingIdentity.window.Telemetry.startUiTelemetry({}), /generated anonymous/);
+  const disabled = new JSDOM('<head><meta name="mobile-dev-environment" content="development"><meta name="mobile-dev-telemetry" content="off"></head>', { runScripts: "outside-only" });
+  t.after(() => disabled.window.close());
+  let disabledRequests = 0;
+  disabled.window.fetch = async () => { disabledRequests++; return new Response("", { status: 200 }); };
+  disabled.window.eval(built.outputFiles[0].text);
+  disabled.window.Telemetry.startUiTelemetry({});
+  const disabledError = new disabled.window.Error("Disabled telemetry");
+  disabled.window.Telemetry.captureUiError(disabledError, "test");
+  await disabled.window.Telemetry.stopUiTelemetry();
+  assert.equal(disabledRequests, 0);
 });
 
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
@@ -52,7 +72,8 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
-  const dom = new JSDOM('<html data-view="workspace"><head><meta name="mobile-dev-environment" content="development"></head><body></body></html>', {
+  const html = `<html data-view="workspace"><head><meta name="mobile-dev-environment" content="development">${identityMeta}</head><body></body></html>`;
+  const dom = new JSDOM(html, {
     pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/",
   });
   t.after(() => { dom.window.close(); });
