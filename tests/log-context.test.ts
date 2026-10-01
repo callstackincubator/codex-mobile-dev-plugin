@@ -116,7 +116,7 @@ test("physical Android context identifies the transport and serial for control",
   assert.doesNotMatch(content, /simulator|not implemented/);
 });
 
-test("physical iOS context identifies the device and its streaming limitation", async () => {
+test("physical iOS context identifies its view-only mirroring capability", async () => {
   const { context, updates } = fixture();
   const phone: PhysicalIosDevice = {
     udid: "00008110-000A0B1C2D3E4000", coreDeviceId: "11111111-1111-4111-8111-111111111111",
@@ -130,7 +130,7 @@ test("physical iOS context identifies the device and its streaming limitation", 
   assert.equal(last?.structuredContent?.selectedSimulator, phone);
   assert.match(content, /Active physical iOS device: Physical iPhone/);
   assert.match(content, /Transport: localNetwork/);
-  assert.match(content, /screen streaming is not implemented/);
+  assert.match(content, /view-only HEVC stream/);
   assert.doesNotMatch(content, /iOS simulator/);
 });
 

@@ -12,6 +12,8 @@ import type { DeviceOption } from "./device-picker.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
 import type { PanelContext } from "./model-context.ts";
 import { AndroidVideo } from "./android-video.ts";
+import { PhysicalIosVideo } from "./ios-mirror-video.ts";
+import { iosVideoBatchSchema } from "../shared/ios-video.ts";
 import { FrameStream } from "./frame-stream.ts";
 import { FrameArrivals } from "./frame-arrivals.ts";
 import { readFrame } from "./read-frame.ts";
@@ -52,7 +54,7 @@ export function createSimulatorPanel(
   let discoveryError = "";
   let listing: Promise<void> | undefined;
   let discoveryTimer: ReturnType<typeof setTimeout> | undefined;
-  type PanelStream = { id: string; frameUri: string; epoch: number; platform: "ios" | "android"; controller: AbortController; input?: StreamInput; reader?: FrameStream<ImageBitmap>; closing?: Promise<void> };
+  type PanelStream = { id: string; frameUri: string; epoch: number; platform: "ios" | "android"; physicalIos: boolean; controller: AbortController; input?: StreamInput; reader?: FrameStream<ImageBitmap>; closing?: Promise<void> };
   const reconnect = new ReconnectLoop();
   let stream: PanelStream | undefined;
   let ready = false;
@@ -77,7 +79,7 @@ export function createSimulatorPanel(
   }
 
   function controls() {
-    const active = ready && stream != null && !inputBlocked && !busy && toolsAvailable;
+    const active = ready && stream != null && !stream.physicalIos && !inputBlocked && !busy && toolsAvailable;
     settings.configure(selected?.udid ?? "", busy || !toolsAvailable || selected?.state !== "Booted" || disposed);
     settings.prefetch();
     element<HTMLButtonElement>("start-device").disabled = busy || !toolsAvailable || !selected || selected.kind === "physical" || selected.state === "Booted" || disposed;
@@ -137,7 +139,7 @@ export function createSimulatorPanel(
       if (graceful) await flushInput(session);
       session.input?.close();
       if (stream === session) { cancelPointer(); stream = undefined; ready = false; controls(); }
-      try { await call(session.platform === "android" ? "mobile_android_stream_close" : "mobile_stream_close", { sessionId: session.id }, { timeout: 3000 }); }
+      try { await call(session.physicalIos ? "mobile_ios_mirror_close" : session.platform === "android" ? "mobile_android_stream_close" : "mobile_stream_close", { sessionId: session.id }, { timeout: 3000 }); }
       catch { /* Idle streams also expire on the server. */ }
     })();
     return session.closing;
@@ -300,7 +302,7 @@ export function createSimulatorPanel(
     selectionChanged(selected);
     if (selected?.kind === "physical" && selected.platform === "ios") {
       const connection = physicalConnectionLabel(selected.transportType);
-      empty(`${selected.name} · ${connection}`, "Screen mirroring for physical devices is not available yet.");
+      if (reconnect.active === false) empty(`${selected.name} · ${connection}`, "Opening the physical device screen…");
     } else if (selected?.kind === "physical" && selected.state !== "Booted") {
       const description = selected.state === "unauthorized"
         ? "Unlock the device and allow USB debugging, or pair it for wireless debugging."
@@ -315,7 +317,9 @@ export function createSimulatorPanel(
     status = next;
     const available = [...physicalDevices, ...next.devices];
     const oldDevice = available.find(device => device.udid === previous);
-    if (reconnect.active && (!next.connected || oldDevice?.state !== "Booted")) void disconnect();
+    const physicalIos = oldDevice?.kind === "physical" && oldDevice.platform === "ios";
+    const availableForMirroring = physicalIos ? oldDevice.state === "connected" : next.connected && oldDevice?.state === "Booted";
+    if (reconnect.active && availableForMirroring === false) void disconnect();
     const running = next.devices.find(device => device.state === "Booted");
     const physicalOptions: DeviceOption[] = physicalDevices.map(device => {
       const connection = physicalConnectionLabel(device.transportType);
@@ -356,7 +360,9 @@ export function createSimulatorPanel(
   }
 
   async function connect() {
-    if (disposed || !toolsAvailable || !selected || selected.state !== "Booted") return;
+    if (disposed || !toolsAvailable || !selected) return;
+    const connected = selected.kind === "physical" && selected.platform === "ios" ? selected.state === "connected" : selected.state === "Booted";
+    if (connected === false) return;
     await disconnect();
     if (frame.hidden) empty("Connecting…", "Opening the device screen.");
     const sessionEpoch = epoch;
@@ -375,8 +381,11 @@ export function createSimulatorPanel(
 
   async function openAndReceive(udid: string, sessionEpoch: number, signal: AbortSignal) {
     const streamPlatform = platform;
-    const closeTool = streamPlatform === "android" ? "mobile_android_stream_close" : "mobile_stream_close";
-    const result = await call(streamPlatform === "android" ? "mobile_android_stream_session" : "mobile_stream_session", streamPlatform === "android" ? { deviceId: udid } : { udid, fps: 60 }, { timeout: 45000 });
+    const physicalIos = selected?.udid === udid && selected.kind === "physical" && selected.platform === "ios";
+    const closeTool = physicalIos ? "mobile_ios_mirror_close" : streamPlatform === "android" ? "mobile_android_stream_close" : "mobile_stream_close";
+    const openTool = physicalIos ? "mobile_ios_mirror_session" : streamPlatform === "android" ? "mobile_android_stream_session" : "mobile_stream_session";
+    const arguments_ = physicalIos ? { udid } : streamPlatform === "android" ? { deviceId: udid } : { udid, fps: 60 };
+    const result = await call(openTool, arguments_, { timeout: 45000 });
     const id = result._meta?.sessionId;
     const frameUri = result._meta?.frameUri;
     if (typeof id !== "string" || typeof frameUri !== "string") throw new StopReconnectError("The plugin did not return a stream session.");
@@ -390,16 +399,17 @@ export function createSimulatorPanel(
     inputBlocked = data.inputStatus?.state === "blocked";
     inputRepairMessage = data.inputRepairMessage ?? "";
     notice();
-    points = { width: data.definition.screen.rect.width, height: data.definition.screen.rect.height };
-    stream = { id, frameUri, epoch: sessionEpoch, platform: streamPlatform, controller: new AbortController() };
+    if (physicalIos === false) points = { width: data.definition.screen.rect.width, height: data.definition.screen.rect.height };
+    stream = { id, frameUri, epoch: sessionEpoch, platform: streamPlatform, physicalIos, controller: new AbortController() };
     ready = false;
     seenFrames = 0;
     controls();
     const session = stream;
-    session.input = createInput(session);
+    if (physicalIos === false) session.input = createInput(session);
     const receiveSignal = AbortSignal.any([signal, session.controller.signal]);
     try {
-      if (session.platform === "android") await receiveAndroidFrames(session, receiveSignal);
+      if (session.physicalIos) await receiveIosFrames(session, receiveSignal);
+      else if (session.platform === "android") await receiveAndroidFrames(session, receiveSignal);
       else await receiveFrames(session, receiveSignal);
       if (session.controller.signal.aborted) throw session.controller.signal.reason;
     }
@@ -481,6 +491,33 @@ export function createSimulatorPanel(
     if (!ready) { ready = true; reconnect.connected(); notice(); controls(); }
     if (!seenFrames || resized) fitScreen();
     seenFrames++;
+  }
+
+  async function receiveIosFrames(session: PanelStream, signal: AbortSignal) {
+    const decoder = new PhysicalIosVideo(image => {
+      if (signal.aborted || session.epoch !== epoch) return;
+      points = { width: image.displayWidth, height: image.displayHeight };
+      drawFrame(image, image.displayWidth, image.displayHeight);
+    }, () => {
+      if (signal.aborted || session.epoch !== epoch) return;
+      ready = false;
+      notice("Recovering physical device video…");
+      controls();
+      void call("mobile_ios_mirror_reset", { sessionId: session.id }, { timeout: 5000 }).catch(() => {});
+    });
+    const opened = performance.now();
+    try {
+      while (signal.aborted === false && session.epoch === epoch) {
+        const resource = await app.readServerResource({ uri: session.frameUri }, { signal, timeout: 15000 });
+        if (signal.aborted || session.epoch !== epoch) return;
+        const content = resource.contents.find(item => item.mimeType === "application/json" && "text" in item);
+        if (content === undefined || !("text" in content)) throw new StopReconnectError("The plugin returned an invalid physical device video batch.");
+        const value: unknown = JSON.parse(content.text);
+        const batch = iosVideoBatchSchema.parse(value);
+        await decoder.accept(batch);
+        if (seenFrames === 0 && performance.now() - opened > 15000) throw new Error("The iPhone has not produced a screen frame. Unlock it and retry.");
+      }
+    } finally { decoder.close(); }
   }
 
   async function receiveAndroidFrames(session: PanelStream, signal: AbortSignal) {
@@ -578,7 +615,8 @@ export function createSimulatorPanel(
     await listDevices();
     if (!selected) return;
     if (selected.kind === "physical") {
-      if (selected.platform === "android" && selected.state === "Booted") await connect();
+      const connected = selected.platform === "ios" ? selected.state === "connected" : selected.state === "Booted";
+      if (connected) await connect();
       return;
     }
     if (selected.state !== "Booted") {

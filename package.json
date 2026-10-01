@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.48",
+  "version": "0.1.49",
   "private": true,
   "type": "module",
   "engines": {
@@ -23,7 +23,9 @@
     "vendor:serve-emu": "node scripts/vendor-serve-emu.mjs",
     "dev": "node scripts/dev-ui.mjs",
     "dev:off": "node scripts/dev-ui.mjs --off",
-    "test:stream": "node scripts/smoke-stream.mjs"
+    "test:stream": "node scripts/smoke-stream.mjs",
+    "rebuild:ios-mirror": "node scripts/build-ios-mirror.mjs",
+    "test:ios-mirror": "node scripts/smoke-ios-mirror.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

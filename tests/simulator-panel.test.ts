@@ -67,6 +67,7 @@ function fixture(t: TestContext) {
     decodeQueueSize = 0;
     output: (frame: object) => void;
     constructor(options: { output: (frame: object) => void }) { this.output = options.output; }
+    static async isConfigSupported() { return { supported: true }; }
     configure() {}
     decode() { this.output({ displayWidth: 400, displayHeight: 800, close() {} }); }
     close() { this.state = "closed"; }
@@ -105,6 +106,11 @@ function fixture(t: TestContext) {
         failedInputPlatform = undefined;
         return { isError: true, content: [{ type: "text", text: "Input disconnected" }], _meta: { streamDisconnected: true } };
       }
+      if (call.name === "mobile_ios_mirror_session") {
+        const id = `physical-${++sessionNumber}`;
+        await delayedOpen;
+        return { content: [], _meta: { sessionId: id, frameUri: `ios-video://mobile-dev/${id}/video` }, structuredContent: { name: "Physical iPhone" } };
+      }
       if (call.name.endsWith("_stream_session")) {
         const android = call.name.includes("android");
         const id = `${android ? "android" : "ios"}-${++sessionNumber}`;
@@ -114,7 +120,7 @@ function fixture(t: TestContext) {
           inputStatus: { state: !android && blockedIos ? "blocked" : "ready" },
         } };
       }
-      if (call.name.endsWith("_stream_close")) closed.push(call.arguments.sessionId as string);
+      if (call.name.endsWith("_stream_close") || call.name === "mobile_ios_mirror_close") closed.push(call.arguments.sessionId as string);
       const callPlatform = call.name.includes("android") ? "android" : "ios";
       if (call.name.startsWith("mobile_boot")) { stopped = false; stoppedPlatforms.delete(callPlatform); }
       if (call.name.startsWith("mobile_shutdown")) stoppedPlatforms.add(callPlatform);
@@ -131,7 +137,10 @@ function fixture(t: TestContext) {
       if (!reads.has(id)) {
         reads.add(id);
         const serverPreparedAt = performance.timeOrigin + performance.now();
-        const result = { contents: id.startsWith("ios")
+        const physical = address.protocol === "ios-video:";
+        const result = { contents: physical
+          ? [{ uri, mimeType: "application/json", text: JSON.stringify({ generation: 1, sequence: 1, dropped: 0, configuration: { revision: 1, width: 400, height: 800, codec: "hvc1.1.6.L150.B0", description: "AQ==" }, frames: [{ sequence: 1, data: "AA==", timestamp: 0, key: true }] }) }]
+          : id.startsWith("ios")
           ? [{ uri, mimeType: "image/jpeg", blob: "AA==", _meta: { sequence: 1, receivedAt: Date.now(), bytes: 1, serverWaitMs: 0, serverStartedAt: serverPreparedAt, serverPreparedAt } }]
           : [{ uri, mimeType: "application/json", text: JSON.stringify({ sequence: 1, generation: 1, packets: [{ sequence: 1, data: Buffer.from([0, 0, 0, 1, 0x67, 0x64, 0, 0x28, 0, 0, 0, 1, 0x65, 1]).toString("base64") }] }) }] };
         const message = Object.assign(new Event("message"), { data: { jsonrpc: "2.0", result }, source: undefined });
@@ -283,7 +292,7 @@ test("Android discovery polls visible panels, shares refreshes, and removes disc
   assert.equal(disposedReads.length, 3);
 });
 
-test("physical devices appear above simulators and selecting one never boots or streams it", async t => {
+test("physical iOS devices mirror above simulators with view-only controls", async t => {
   const f = fixture(t);
   f.setPhysicalDevices([physicalPhone]);
   await f.ios.panel.load();
@@ -307,8 +316,10 @@ test("physical devices appear above simulators and selecting one never boots or 
   const description = f.ios.element("empty-description");
   const start = f.ios.element("start-device");
   const screenshot = f.ios.element("screenshot");
-  assert.equal(empty.textContent, "Physical iPhone · Wi-Fi");
-  assert.match(description.textContent, /Screen mirroring.*not available yet/);
+  await waitFor(() => f.ios.element("device-frame").hidden === false);
+  const physicalStreams = f.calls.filter(call => call.name === "mobile_ios_mirror_session");
+  assert.equal(physicalStreams.length, 1);
+  assert.equal(physicalStreams[0].arguments.udid, physicalPhone.udid);
   assert.equal(start.disabled, true);
   assert.equal(screenshot.disabled, true);
   const disabledButtons = f.ios.root.buttons.every(button => button.disabled);

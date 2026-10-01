@@ -3,6 +3,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { access, cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 
@@ -15,6 +16,11 @@ try {
   await cp(source, plugin, { recursive: true, verbatimSymlinks: true });
   await access(join(plugin, "dist/baguette/Baguette"));
   await access(join(plugin, "dist/baguette/Baguette_Baguette.bundle/Web"));
+  const require = createRequire(import.meta.url);
+  const mirrorPath = join(plugin, "dist/ios-mirror/darwin-arm64.node");
+  const mirror = require(mirrorPath);
+  assert.equal(typeof mirror.openDevice, "function");
+  await access(join(plugin, "dist/ios-mirror/third-party-licenses.txt"));
   assert.equal(JSON.parse(await readFile(join(plugin, "plugin.json"), "utf8")).name, "mobile-dev");
   transport = new StdioClientTransport({
     command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe",
@@ -24,8 +30,9 @@ try {
   const client = new Client({ name: "mobile-dev-package-smoke", version: "1" });
   await client.connect(transport);
   const tools = await client.listTools();
-  assert.equal(tools.tools.length, 38);
-  for (const name of ["mobile_list_ios_devices", "mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_android_screenshot"]) assert.ok(tools.tools.some(tool => tool.name === name));
+  for (const name of ["mobile_list_ios_devices", "mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_android_screenshot", "mobile_ios_mirror_session", "mobile_ios_mirror_reset", "mobile_ios_mirror_close"]) assert.ok(tools.tools.some(tool => tool.name === name));
+  const physicalMirror = tools.tools.find(tool => tool.name === "mobile_ios_mirror_session");
+  assert.deepEqual(physicalMirror._meta.ui.visibility, ["app"]);
   await access(join(plugin, "dist/serve-emu/node_modules/serve-emu/src/cli.ts"));
   await access(join(plugin, "dist/serve-emu/node_modules/serve-emu/vendor/scrcpy-server-v4.0"));
   const scrcpyClientPath = join(plugin, "dist/serve-emu/node_modules/serve-emu/src/scrcpy.ts");
@@ -68,12 +75,12 @@ try {
   }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.48/simulator.html");
+  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.49/simulator.html");
   assert.ok(resource.contents[0].text.includes('workspace-toolbar'));
   assert.ok(resource.contents[0].text.includes('workspace-panels'));
   assert.ok(resource.contents[0].text.includes('tool-logs'));
   assert.ok(resource.contents[0].text.includes('Memory usage'), 'The packaged Performance view must include the live memory track.');
-  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.48/workspace.html");
+  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.49/workspace.html");
   assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, []);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
   runtimeTransport = new StdioClientTransport({ command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe" });

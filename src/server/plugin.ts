@@ -9,6 +9,7 @@ import { readBezel } from "./bezel.ts";
 import { ServeEmu } from "./serve-emu.ts";
 import { registerAndroidTools } from "./android-tools.ts";
 import { Baguette } from "./baguette.ts";
+import { registerIosMirrorTools } from "./ios-mirror-tools.ts";
 import { registerIosDeviceTools } from "./ios-devices.ts";
 import { StreamSessions } from "./stream-sessions.ts";
 import { LogSessions } from "./log-sessions.ts";
@@ -22,8 +23,8 @@ import { copyPNGToClipboard } from "./clipboard.ts";
 import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../shared/protocol.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-export const APP_URI = "ui://mobile-dev/0.1.48/simulator.html";
-export const WORKSPACE_URI = "ui://mobile-dev/0.1.48/workspace.html";
+export const APP_URI = "ui://mobile-dev/0.1.49/simulator.html";
+export const WORKSPACE_URI = "ui://mobile-dev/0.1.49/workspace.html";
 // Codex can retain entrypoint metadata after updating the installed plugin.
 const legacyAppUris = [
   "ui://mobile-dev/0.1.44/simulator.html",
@@ -87,11 +88,12 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   let selectedCpu = providedCpu;
   if (selectedCpu === undefined) selectedCpu = await createCpuSessions();
   const cpu = selectedCpu;
-  const server = new McpServer({ name: "mobile-dev", version: "0.1.48" }, {
+  const server = new McpServer({ name: "mobile-dev", version: "0.1.49" }, {
     instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. For Android use mobile_list_android_devices and the mobile_android tools. Use the selected serial with agent-device and platform android. serve-emu handles Android video and panel input. Opening the panel does not boot a device.",
   });
   new OpenAIExtensions(server);
   registerIosDeviceTools(server);
+  const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   registerLogTools(server, logs, baguette);
   registerCpuTools(server, cpu, baguette);
   const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot, deviceId => cpu.closeDevice(deviceId));
@@ -369,7 +371,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     server,
     async close() {
       closeAndroid(); streams.close();
-      try { await Promise.all([logs.close(), cpu.close()]); }
+      try { await Promise.all([logs.close(), cpu.close(), closeIosMirror()]); }
       finally { baguette.dispose(); await server.close(); }
     },
   };

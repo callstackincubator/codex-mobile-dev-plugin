@@ -10,6 +10,8 @@ await access("dist/app.html");
 await access("dist/baguette/Baguette");
 await access("dist/baguette/Baguette_Baguette.bundle");
 await access("dist/agent-device-server.mjs");
+await access("dist/ios-mirror/darwin-arm64.node");
+await access("dist/ios-mirror/third-party-licenses.txt");
 for (const abi of ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]) await access(`dist/android-cpu/${abi}/mobile-dev-cpu`);
 await access("dist/android-cpu/LICENSE");
 await access("dist/serve-emu/node_modules/serve-emu/src/cli.ts");
