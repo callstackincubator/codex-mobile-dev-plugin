@@ -179,8 +179,8 @@ test("a saved and sent note retains its source location, owners, testID and near
   await f.store.toggle(); f.store.select({ x: 50, y: 40 }); f.store.setText("Make this larger"); await f.store.save();
   assert.deepEqual(f.context.screenAnnotations[0].component.react, react);
   assert.deepEqual(f.context.screenAnnotations[0].nearbyText, ["Go to the next step"]);
+  const message = f.updates.at(-1)!.content!.find(item => item._meta?.["mobile-dev/annotationId"] === f.context.screenAnnotations[0].id)!;
   await f.store.send();
-  const message = f.messages[0].content[0];
   assert.equal(message.type, "text");
   if (message.type !== "text") return;
   assert.match(message.text, /Edit location: \/project\/src\/HomeScreen\.tsx:49:11/);
@@ -306,7 +306,7 @@ test("selecting supports hover, multiple notes, edits, regions, and Escape witho
   f.store.dispose();
 });
 
-test("send includes every note as text without automatic screenshots, and reports rejection", async () => {
+test("send preserves every note in text attachments without automatic screenshots, and reports rejection", async () => {
   const f = fixture();
   await f.context.attachAnnotation(annotation);
   await f.context.attachAnnotation({ ...annotation, id: "note-2", number: 2, text: "Use a darker color" });
@@ -315,9 +315,11 @@ test("send includes every note as text without automatic screenshots, and report
   assert.equal(f.context.screenAnnotations.length, 2);
   f.reject(false); await f.store.send();
   assert.equal(f.messages.length, 2);
-  assert.match(JSON.stringify(f.messages[0].content), /Make this button larger/);
-  assert.match(JSON.stringify(f.messages[0].content), /Use a darker color/);
-  assert.match(JSON.stringify(f.messages[0].content), /393/);
+  assert.match(JSON.stringify(f.updates.at(-1)?.content), /Make this button larger/);
+  assert.match(JSON.stringify(f.updates.at(-1)?.content), /Use a darker color/);
+  assert.match(JSON.stringify(f.updates.at(-1)?.content), /393/);
+  assert.equal(f.messages[0].content[0].type, "text");
+  assert.match(JSON.stringify(f.messages[0].content), /attached simulator screen annotations/);
   assert.equal(f.updates.at(-1)?.content?.some(item => item.type === "image"), false);
   assert.equal(f.messages[0].content.some(item => item.type === "image"), false);
   assert.equal(f.context.screenAnnotations.length, 0);
