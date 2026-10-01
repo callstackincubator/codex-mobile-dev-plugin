@@ -7,7 +7,7 @@ import { recordingFixture } from "./recording-fixtures.ts";
 for (const reducedMotion of [false, true]) {
   const description = reducedMotion
     ? "reduced motion skips the reveal and preserves recording interactions"
-    : "charts reveal left to right once, then preserve recording interactions";
+    : "charts draw their curves once with the fill following, then preserve recording interactions";
   test(description, async t => {
     const built = await build({
       stdin: { contents: `
@@ -80,6 +80,18 @@ for (const reducedMotion of [false, true]) {
       const hasBundleId = captured.includes("com.example.shop");
       const hasRevealTiming = captured.includes("ui.recording.reveal.mean");
       assert.equal(hasRevealTiming, reducedMotion === false, "Only completed reveals produce timing measurements.");
+      if (reducedMotion === false) {
+        for (const body of telemetry) {
+          const lines = body.split("\n");
+          for (const line of lines) {
+            if (line.includes("ui.recording.reveal.mean") === false) continue;
+            const payload: { items: Array<{ name: string; value: number }> } = JSON.parse(line);
+            const reveal = payload.items.find(item => item.name === "ui.recording.reveal.mean");
+            assert.ok(reveal);
+            assert.ok(reveal.value >= 700 && reveal.value < 1400, "Reveal timing measures the drawing duration and excludes the intentional pause.");
+          }
+        }
+      }
       assert.ok(hasFpsGauge, "Recording telemetry counts FPS samples on the active surface.");
       assert.equal(hasMeasuredFps, false, "Device FPS values stay local.");
       assert.ok(hasDensityTiming, "The actual chart path records highlight processing duration.");
@@ -94,26 +106,47 @@ for (const reducedMotion of [false, true]) {
     const charts = window.document.querySelectorAll<HTMLElement>(".recording-chart");
     assert.equal(charts.length, 3);
     await settle();
-    const revealRect = () => charts[0].querySelector(".recharts-area defs clipPath rect");
-    const initialClip = revealRect();
-    if (reducedMotion) {
-      assert.equal(initialClip, null, "Reduced motion shows the full curve immediately.");
-    } else {
-      assert.ok(initialClip, "The initial curve uses a horizontal reveal clip.");
-      const initialX = initialClip.getAttribute("x");
-      const initialWidthText = initialClip.getAttribute("width");
-      const initialWidth = Number(initialWidthText);
-      assert.equal(initialX, "52", "The reveal is anchored at the beginning of the timeline.");
-      await new Promise(resolve => window.setTimeout(resolve, 200));
-      const midwayClip = revealRect();
-      assert.ok(midwayClip);
-      const midwayWidthText = midwayClip.getAttribute("width");
-      const midwayWidth = Number(midwayWidthText);
-      assert.ok(midwayWidth > initialWidth, "The visible curve expands from left to right.");
-      await new Promise(resolve => window.setTimeout(resolve, 750));
-      const completedClip = revealRect();
-      assert.equal(completedClip, null, "The completed curve is fully visible.");
+    const curve = () => window.document.querySelector(".recording-chart .recharts-area-curve");
+    const curvePath = () => curve()?.getAttribute("d") ?? "";
+    const curveEnd = () => {
+      const path = curvePath();
+      const matches = path.matchAll(/[ML]([\d.]+),([\d.]+)/g);
+      const coordinates = Array.from(matches);
+      const last = coordinates[coordinates.length - 1];
+      assert.ok(last);
+      return Number(last[1]);
+    };
+    const assertFillFollows = () => {
+      const path = curvePath();
+      const fill = charts[0].querySelector(".recharts-area-area");
+      const fillPath = fill?.getAttribute("d") ?? "";
+      const follows = fillPath.startsWith(path);
+      assert.ok(follows, "The fill follows exactly the portion of the line already drawn.");
+    };
+    if (reducedMotion === false) {
+      await new Promise(resolve => window.setTimeout(resolve, 500));
+      const pendingPath = curvePath();
+      assert.equal(pendingPath, "", "The card has time to appear before any of the line is drawn.");
     }
+    for (let attempt = 0; attempt < 50 && curvePath() === ""; attempt += 1) await settle();
+    const initialEnd = curveEnd();
+    const initialPath = curvePath();
+    const revealClip = charts[0].querySelector(".recharts-area defs clipPath rect");
+    assert.equal(revealClip, null, "Drawing the curve does not use a horizontal wipe.");
+    assert.match(initialPath, /^M52,/, "The drawing starts at the beginning of the timeline.");
+    assertFillFollows();
+    if (reducedMotion === false) {
+      assert.ok(initialEnd < 628, "Only the beginning of the curve is drawn initially.");
+      await new Promise(resolve => window.setTimeout(resolve, 200));
+      const midwayEnd = curveEnd();
+      assert.ok(midwayEnd > initialEnd, "The line tip advances along the measured curve.");
+      assertFillFollows();
+      await new Promise(resolve => window.setTimeout(resolve, 750));
+    }
+    const completedEnd = curveEnd();
+    assert.equal(completedEnd, 628, "The completed curve reaches the end of the timeline.");
+    assertFillFollows();
+    const completedPath = curvePath();
     const cpuChanges = charts[0].querySelectorAll(".recording-change-highlight");
     const memoryChanges = charts[1].querySelectorAll(".recording-change-highlight");
     const initialState = mounted.controller.getSnapshot();
@@ -142,13 +175,13 @@ for (const reducedMotion of [false, true]) {
     pointer("pointerdown", 12);
     pointer("pointermove", 18);
     await settle();
-    const clipAfterDrag = revealRect();
-    assert.equal(clipAfterDrag, null, "Selecting a range does not replay the entrance animation.");
+    const pathAfterDrag = curvePath();
+    assert.equal(pathAfterDrag, completedPath, "Selecting a range does not replay the entrance animation.");
     const refreshed = recordingFixture();
     mounted.controller.accept({ content: [], structuredContent: { recording: refreshed } });
     await settle();
-    const clipAfterRefresh = revealRect();
-    assert.equal(clipAfterRefresh, null, "Sample refreshes do not replay the entrance animation.");
+    const pathAfterRefresh = curvePath();
+    assert.equal(pathAfterRefresh, completedPath, "Sample refreshes do not replay the entrance animation.");
     const draggedRanges = window.document.querySelectorAll(".recording-range-highlight");
     const changesDuringDrag = window.document.querySelectorAll(".recording-change-highlight");
     assert.equal(draggedRanges.length, 3, "All charts highlight the dragged range.");
@@ -221,8 +254,13 @@ for (const reducedMotion of [false, true]) {
     const nextState = mounted.controller.getSnapshot();
     assert.equal(nextState.range, undefined, "A different recording clears the prior selection.");
     await settle();
-    const nextClip = window.document.querySelector(".recording-chart .recharts-area defs clipPath rect");
-    assert.equal(nextClip === null, reducedMotion, "A different recording gets its own entrance reveal.");
+    const nextPath = curvePath();
+    assert.equal(nextPath === "", reducedMotion === false, "A different recording gets its own entrance pause; reduced motion shows the full curve immediately.");
+    const updated = { ...next, samples: [...next.samples] };
+    mounted.controller.accept({ content: [], structuredContent: { recording: updated } });
+    await settle();
+    const refreshedEnd = curveEnd();
+    assert.equal(refreshedEnd, 628, "Updating samples during the entrance pause shows the current data without starting another drawing.");
   });
 
 }

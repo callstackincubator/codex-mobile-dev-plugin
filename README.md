@@ -44,7 +44,7 @@ Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile
 
 Use Select in the simulator toolbar to pause the screen. Hover to outline a component, then click to add a note. React Native development apps can supply runtime elements when accessibility omits a view. Drag to mark a region when neither source exposes it. Saved notes leave numbered blue bubbles. Notes attach text and available element details to your next chat message. The captured screen stays local for editing; annotations never attach screenshots. Click a bubble to edit or remove a note, or use Send to chat to send all notes for that device. If chat is unavailable, the panel keeps the notes and retries when you return. A sent or cleared batch starts again at 1.
 
-The local ZIP at `release/mobile-dev-0.1.83-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+`npm run package` writes the local ZIP to `release/mobile-dev-0.1.84-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 The iOS dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Simulators**. It refreshes every three seconds while the iOS panel is visible, and when opening the dropdown. Selecting a physical device opens interactive screen mirroring through its paired developer connection. The phone sends HEVC video; a bundled native Node-API addon assembles compressed frames and transfers them into Node without copying the frame payload, then the panel decodes them through WebCodecs. MCP serializes the compressed bytes as base64, so the full path is not zero copy. The capture queue is limited to eight frames or 4 MiB and requests a keyframe after overflow. Physical iOS supports pointer taps, long presses, and drags through CoreDevice UniversalHID on the same developer tunnel. Input starts after a fresh video frame, uses normalized touchscreen coordinates, and releases held touches when the stream closes or resets. Screenshot captures the displayed mirrored frame as a PNG, attaches it to chat, and copies the same image to the macOS clipboard. Select annotates screen regions using the mirrored frame's pixel coordinates; native accessibility component names are unavailable. Both controls require a connected device and a ready video frame. Keyboard and hardware-button controls remain disabled. CPU and memory monitoring can attach to an already running development app on a paired iOS 17.4+ device. Mirroring requires Developer Mode and a host with HEVC WebCodecs support. `mobile_list_ios_devices` also returns remembered disconnected devices with their connection state; the picker shows connected devices only. Discovery errors remain visible while available simulators continue to work.
 
@@ -276,8 +276,9 @@ CPU collector's monotonic timeline origin.
 
 Call `mobile_render_performance_recording` with that recording ID to display a
 compact MCP Apps chart card. Its UI resource prefers inline presentation; final
-placement depends on the host's MCP Apps support. Charts reveal from left to right
-over 700 ms when first shown, honoring reduced motion preferences. Selecting a
+placement depends on the host's MCP Apps support. Charts wait one second when first
+shown, then draw along the measured curve over 700 ms with the fill following,
+honoring reduced motion preferences. Selecting a
 range ends the reveal; later updates do not replay it. Active cards refresh once
 per second while visible. Purple shading marks the regions with the most rapid
 changes in each chart independently, without selecting or zooming the recording. Density
@@ -336,8 +337,10 @@ interaction and frame-pacing coverage is preserved. `ui.recording.process` and
 `ui.recording.derive` measure result validation and chart/summary processing;
 `ui.recording.change_density` measures highlight calculation on sample updates
 and is cached across range selection changes;
-`ui.recording.reveal` measures completed entrance animations in milliseconds,
-using the existing bounded timing windows;
+`ui.recording.reveal` measures completed entrance drawing in milliseconds,
+using the existing bounded timing windows. Since 0.1.84, the line traces its
+measured curve with the fill following it after a one-second pause for the card
+to appear. That intentional pause is excluded from the reveal timing;
 `ui.recording.message_ack` ends when the host acknowledges a button's message.
 `ui.recording.samples` counts samples held by the visible card, and bounded event
 counts record range selections and Ask/Open actions. `storage.bytes` with

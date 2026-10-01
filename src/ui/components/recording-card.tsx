@@ -9,8 +9,10 @@ import { recordUiTiming } from "../telemetry.ts";
 import { createRecordingCpuSeries, createRecordingFpsSeries, findRecordingChangeRanges } from "../recording-series.ts";
 import type { RecordingPoint } from "../recording-series.ts";
 import { Button } from "./ui/button";
+import { RecordingChartShape, recordingChartPoints } from "./recording-chart-shape";
 
 const MIB = 1048576;
+const REVEAL_DELAY = 1000;
 function percent(value: number | null) { return value === null ? "—" : `${value.toFixed(1)}%`; }
 function memoryChange(value: number | null) {
   if (value === null) return "—";
@@ -28,6 +30,13 @@ function RecordingChart({ label, data, duration, range, changes, color, unit, on
   const anchor = useRef<number | undefined>(undefined);
   const [revealPending, setRevealPending] = useState(true);
   const revealStartedAt = useRef<number | undefined>(undefined);
+  const revealedData = useRef(data);
+  useEffect(() => {
+    if (revealedData.current === data) return;
+    revealedData.current = data;
+    setRevealPending(false);
+    revealStartedAt.current = undefined;
+  }, [data]);
   const startReveal = useCallback(() => {
     revealStartedAt.current = performance.now();
   }, []);
@@ -36,7 +45,8 @@ function RecordingChart({ label, data, duration, range, changes, color, unit, on
     const startedAt = revealStartedAt.current;
     revealStartedAt.current = undefined;
     if (startedAt === undefined) return;
-    const elapsed = performance.now() - startedAt;
+    // Recharts calls onAnimationStart before its entrance delay.
+    const elapsed = performance.now() - startedAt - REVEAL_DELAY;
     recordUiTiming("ui.recording.reveal", elapsed);
   }, []);
   function timeAt(event: PointerEvent<HTMLDivElement>) {
@@ -90,7 +100,7 @@ function RecordingChart({ label, data, duration, range, changes, color, unit, on
           <YAxis width={52} domain={[low, high]} allowDecimals={unit === "%"} tick={{ fontSize: 11 }} tickFormatter={value => unit === "%" ? `${value}%` : value.toFixed(0)} />
           <Tooltip formatter={formatReading} labelFormatter={value => `${value}s`} contentStyle={{ background: "var(--popover)", borderColor: "var(--border)", borderRadius: 8 }} />
           {changes.map(change => <ReferenceArea key={change.start} className="recording-change-highlight" x1={change.start} x2={change.end} fill="#9873e6" fillOpacity={0.16} strokeOpacity={0} />)}
-          <Area type="linear" dataKey="value" name={label} stroke={color} fill={color} fillOpacity={0.07} strokeWidth={2} dot={false} isAnimationActive={revealPending ? "auto" : false} animationDuration={700} animationEasing="ease-out" onAnimationStart={startReveal} onAnimationEnd={finishReveal} connectNulls={false} />
+          <Area type="linear" dataKey="value" name={label} stroke={color} fill={color} fillOpacity={0.07} strokeWidth={2} dot={false} shape={RecordingChartShape} animationInterpolateFn={recordingChartPoints} isAnimationActive={revealPending ? "auto" : false} animationBegin={REVEAL_DELAY} animationDuration={700} animationEasing="ease-out" onAnimationStart={startReveal} onAnimationEnd={finishReveal} connectNulls={false} />
           {range && <ReferenceArea className="recording-range-highlight" x1={range.start} x2={range.end} fill="#2583ff" fillOpacity={0.12} stroke="#2583ff" strokeOpacity={0.5} />}
         </AreaChart>
       </ResponsiveContainer>
