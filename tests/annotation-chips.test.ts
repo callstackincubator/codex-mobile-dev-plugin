@@ -4,7 +4,7 @@ import type { App } from "@modelcontextprotocol/ext-apps";
 import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import type { ScreenAnnotation } from "../src/shared/screen-annotations.ts";
 import { PanelContext } from "../src/ui/model-context.ts";
-import { ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationMessage } from "../src/shared/screen-annotations.ts";
+import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationMessage } from "../src/shared/screen-annotations.ts";
 
 const annotation: ScreenAnnotation = {
   id: "header-note", number: 1, text: "Make this\n  smaller.",
@@ -39,7 +39,8 @@ test("annotation chips show element and note titles while preserving full model 
   assert.equal(attachment.type, "text");
   if (attachment.type !== "text") return;
   assert.match(attachment.text, /\/app\/src\/Header\.tsx:12/);
-  assert.match(attachment.text, /Position fallback/);
+  assert.doesNotMatch(attachment.text, /Bounds:|Captured at|Device:/);
+  assert.equal(f.updates.at(-1)!.structuredContent?.screenAnnotations, undefined);
   assert.equal(f.updates.at(-1)!.content!.some(item => item.type === "image"), false);
   await f.context.sendAnnotationsToChat(annotation.simulator.udid);
   assert.deepEqual(f.messages[0].content, [{ type: "text", text: ANNOTATION_EDIT_PROMPT }]);
@@ -53,14 +54,16 @@ test("annotation instructions remain distinct from display text on attachment an
   const sent = f.messages[0].content[0];
   assert.equal(sent.type, "text");
   if (sent.type !== "text") return;
-  assert.match(sent.text, /interpret it rather than copying it verbatim/);
-  assert.match(sent.text, /should display "hi max", not "change to hi max"/);
+  assert.equal(sent.text, "Apply these annotations.");
+  const guidance = f.updates.at(-1)!.content!.filter(item => item.type === "text" && item.text === ANNOTATION_EDIT_GUIDANCE);
+  assert.equal(guidance.length, 1);
+  assert.deepEqual(guidance[0].annotations?.audience, ["assistant"]);
   const details = formatAnnotationContext(note);
-  assert.match(details, /User instruction \(requested edit, not literal replacement text\): "change to hi max"/);
+  assert.match(details, /Edit: "change to hi max"/);
   assert.match(details, /Target: "Interactive destination"/);
-  assert.equal(formatAnnotationMessage([note]), `${sent.text}\n\n${details}`);
+  assert.equal(formatAnnotationMessage([note]), `${sent.text}\n${ANNOTATION_EDIT_GUIDANCE}\n\n${details}`);
   const style = formatAnnotationMessage([{ ...note, text: "make this orange" }]);
-  assert.match(style, /color or layout change those properties, not the displayed text/);
+  assert.match(style, /Apply each Edit as a request, not verbatim app text/);
   assert.match(style, /"make this orange"/);
 });
 
@@ -81,4 +84,22 @@ test("an unavailable composer keeps deferred chips and does not send a message w
   await assert.rejects(f.context.sendAnnotationsToChat(annotation.simulator.udid), /could not find this chat's input/);
   assert.equal(f.messages.length, 0);
   assert.equal(f.context.screenAnnotations.length, 1);
+});
+
+test("batch context shares hidden guidance once and bounds locator text without cutting edits", async () => {
+  const f = fixture();
+  const note = { ...annotation, text: "change to hi max\n".repeat(100), nearbyText: ["Header title", "Header title", "detail".repeat(100), "second", "third", "fourth"], component: { ...annotation.component, react: { ...annotation.component.react!, owners: ["App", "Root", "Navigator", "Screen", "Card", "Header", "Text"] } } };
+  await f.context.attachAnnotation(note);
+  await f.context.attachAnnotation({ ...annotation, id: "second-note", number: 2 });
+  const update = f.updates.at(-1)!;
+  const guidance = update.content!.filter(item => item.type === "text" && item.text === ANNOTATION_EDIT_GUIDANCE);
+  assert.equal(guidance.length, 1);
+  assert.deepEqual(guidance[0].annotations?.audience, ["assistant"]);
+  const details = formatAnnotationContext(note);
+  assert.ok(details.includes(`Edit: ${JSON.stringify(note.text)}`));
+  assert.match(details, /React: Navigator > Screen > Card > Header > Text/);
+  assert.doesNotMatch(details, /fourth|Root|Bounds:|Captured at/);
+  assert.equal(details.split("\n").filter(line => line.startsWith("Nearby:"))[0].length < 200, true);
+  assert.equal(update.structuredContent?.screenAnnotations, undefined);
+  assert.ok(formatAnnotationContext(annotation).length < 200);
 });

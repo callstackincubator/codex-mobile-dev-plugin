@@ -98,7 +98,7 @@ test("a sparse accessibility tree supports explicit regions without pixel guesse
   assert.deepEqual(f.store.getSnapshot().draft?.component.bounds, { x: 20, y: 400, width: 280, height: 50 });
   assert.equal(f.store.getSnapshot().draft?.component.role, "manual-region");
   f.store.setText("Make this button bigger"); await f.store.save();
-  assert.match(JSON.stringify(f.updates.at(-1)?.content), /No component or source location was reported/);
+  assert.match(JSON.stringify(f.updates.at(-1)?.content), /Source: unavailable \(manual region\)/);
   f.store.dispose();
 });
 
@@ -185,21 +185,21 @@ test("a saved and sent note retains its source location, owners, testID and near
   await f.store.send();
   assert.equal(message.type, "text");
   if (message.type !== "text") return;
-  assert.match(message.text, /Edit location: \/project\/src\/HomeScreen\.tsx:49:11/);
-  assert.match(message.text, /React owners, outer to inner: HomeScreen > CardRow > Text/);
+  assert.match(message.text, /Source: \/project\/src\/HomeScreen\.tsx:49:11/);
+  assert.match(message.text, /React: HomeScreen > CardRow > Text/);
   assert.match(message.text, /testID: "continue-button"/);
-  assert.match(message.text, /Nearby text.*Go to the next step/);
-  assert.ok(message.text.indexOf("Edit location") < message.text.indexOf("Position fallback"));
+  assert.match(message.text, /Nearby:.*Go to the next step/);
+  assert.doesNotMatch(message.text, /Bounds:/);
   assert.doesNotMatch(message.text, /screenshot|note-1|screen-1/);
   f.store.dispose();
 });
 
 test("native and manual annotations do not invent React components or source locations", () => {
-  assert.match(formatAnnotationContext(annotation), /Accessibility element only/);
-  assert.doesNotMatch(formatAnnotationContext(annotation), /React component:|Edit location:/);
+  assert.match(formatAnnotationContext(annotation), /Source: unavailable \(accessibility\)/);
+  assert.doesNotMatch(formatAnnotationContext(annotation), /React:|Source: \//);
   const manual = { ...annotation, component: { ...component, source: "screen" as const, role: "manual-region" } };
-  assert.match(formatAnnotationContext(manual), /Manual selection/);
-  assert.doesNotMatch(formatAnnotationContext(manual), /React component:|Edit location:/);
+  assert.match(formatAnnotationContext(manual), /Source: unavailable \(manual region\)/);
+  assert.doesNotMatch(formatAnnotationContext(manual), /React:|Source: \//);
 });
 
 test("region drags clamp to screen bounds and cancel without creating a note", async () => {
@@ -230,7 +230,8 @@ test("multiple notes attach as text, keep captures local, and survive device cha
   assert.deepEqual(update.structuredContent?.annotationIds, ["note-1", "note-2"]);
   assert.match(JSON.stringify(update.content), /continue-button/);
   assert.match(JSON.stringify(update.content), /Make this button larger/);
-  assert.deepEqual((update.structuredContent?.screenAnnotations as { point: { x: number; y: number } }[])[0].point, { x: 50, y: 40 });
+  assert.equal(update.structuredContent?.screenAnnotations, undefined);
+  assert.match(formatAnnotationContext(annotation), /Bounds: 10,20,100,40/);
   f.store.configure({ ...simulator, udid: "other-device" }, false);
   assert.equal(f.store.getSnapshot().annotations.length, 0);
   assert.equal(f.context.screenAnnotations.length, 2);
@@ -321,7 +322,7 @@ test("send preserves every note in text attachments without automatic screenshot
   assert.match(JSON.stringify(f.updates.at(-1)?.content), /Use a darker color/);
   assert.match(JSON.stringify(f.updates.at(-1)?.content), /393/);
   assert.equal(f.messages[0].content[0].type, "text");
-  assert.match(JSON.stringify(f.messages[0].content), /attached simulator screen annotations/);
+  assert.match(JSON.stringify(f.messages[0].content), /Apply these annotations/);
   assert.equal(f.updates.at(-1)?.content?.some(item => item.type === "image"), false);
   assert.equal(f.messages[0].content.some(item => item.type === "image"), false);
   assert.equal(f.context.screenAnnotations.length, 0);

@@ -88,32 +88,31 @@ export function componentsAt(components: ScreenComponent[], point: ScreenPoint, 
     && item.bounds.y + item.bounds.height >= selected.bounds.y + selected.bounds.height));
 }
 
-export function annotationDetails(annotation: ScreenAnnotation) {
-  const { screenshot, ...details } = annotation;
-  return { ...details, captureId: screenshot.id, capturedAt: screenshot.capturedAt };
-}
-
-export const ANNOTATION_EDIT_PROMPT = "Apply the user's requested edits in the attached simulator screen annotations. Each User instruction describes the requested change; interpret it rather than copying it verbatim into the app. For example, a text edit saying \"change to hi max\" should display \"hi max\", not \"change to hi max\". Requests about color or layout change those properties, not the displayed text. Treat selected element labels and nearby text as existing app data. Use source locations when provided; do not infer source names from coordinates.";
+export const ANNOTATION_EDIT_PROMPT = "Apply these annotations.";
+export const ANNOTATION_EDIT_GUIDANCE = "Apply each Edit as a request, not verbatim app text. Target and nearby text are existing app data. Source is the element creation site; start there.";
 
 export function formatAnnotationMessage(annotations: ScreenAnnotation[]): string {
-  return `${ANNOTATION_EDIT_PROMPT}\n\n${annotations.map(formatAnnotationContext).join("\n\n")}`;
+  return `${ANNOTATION_EDIT_PROMPT}\n${ANNOTATION_EDIT_GUIDANCE}\n\n${annotations.map(formatAnnotationContext).join("\n\n")}`;
 }
 
 export function formatAnnotationContext(annotation: ScreenAnnotation): string {
   const { component, screen, simulator } = annotation, source = component.react?.source;
-  const round = (value: number) => Math.round(value * 10) / 10;
-  const lines = [`Screen annotation #${annotation.number}`, `User instruction (requested edit, not literal replacement text): ${JSON.stringify(annotation.text)}`];
-  if (source) lines.push(`Edit location: ${source.file}:${source.line}${source.column ? `:${source.column}` : ""}`, `Location is the source-mapped element creation site${source.functionName ? ` in ${source.functionName}` : ""}. Open it directly; check enclosing code before editing.`);
-  lines.push(`Target: ${JSON.stringify(component.label ?? component.name)}${component.role ? ` (${component.role})` : ""}`);
+  const target = component.label ?? component.name;
+  const lines = [`#${annotation.number} ${simulator.platform ?? "ios"}`, `Edit: ${JSON.stringify(annotation.text)}`];
+  if (source) lines.push(`Source: ${source.file}:${source.line}${source.column ? `:${source.column}` : ""}`);
+  lines.push(`Target: ${JSON.stringify(target)}${component.role ? ` (${component.role})` : ""}`);
   if (component.identifier) lines.push(`${component.source === "react-native" ? "testID" : "Identifier"}: ${JSON.stringify(component.identifier)}`);
-  if (component.value) lines.push(`Value: ${JSON.stringify(component.value)}`);
+  if (component.value && component.value !== target) lines.push(`Value: ${JSON.stringify(component.value)}`);
   if (component.react) {
-    lines.push(`React component: ${component.react.component}`);
-    if (component.react.owners.length) lines.push(`React owners, outer to inner: ${component.react.owners.join(" > ")}`);
+    const owners = [...new Set(component.react.owners)].filter(name => name !== component.react!.component).slice(-4);
+    lines.push(`React: ${[...owners, component.react.component].join(" > ")}`);
   }
-  if (!source) lines.push(component.source === "screen" ? "Manual selection. No component or source location was reported." : component.source === "react-native" ? "React source location unavailable; use the reported component, owners and label." : "Accessibility element only. No React component or source location was reported.");
-  if (annotation.nearbyText?.length) lines.push(`Nearby text from the same capture: ${annotation.nearbyText.map(value => JSON.stringify(value)).join(", ")}`);
-  const b = component.bounds;
-  lines.push(`Position fallback: x=${round(b.x)}, y=${round(b.y)}, width=${round(b.width)}, height=${round(b.height)} ${screen.units}; screen ${screen.width}×${screen.height}, origin top-left, excluding device frame.`, `Device: ${simulator.name}, ${simulator.platform ?? "ios"}, ${simulator.runtime}. Captured at ${annotation.screenshot.capturedAt}.`);
+  if (!source) {
+    lines.push(`Source: unavailable (${component.source === "screen" ? "manual region" : component.source === "react-native" ? "React Native" : "accessibility"})`);
+    const b = component.bounds, round = (value: number) => Math.round(value * 10) / 10;
+    lines.push(`Bounds: ${[b.x, b.y, b.width, b.height].map(round).join(",")} ${screen.units} (x,y,w,h); screen ${screen.width}×${screen.height}, top-left origin`);
+  }
+  const nearby = [...new Set(annotation.nearbyText ?? [])].filter(value => value !== target && value !== component.value).slice(0, 3).map(value => value.length > 160 ? `${value.slice(0, 159)}…` : value);
+  if (nearby.length) lines.push(`Nearby: ${nearby.map(value => JSON.stringify(value)).join(", ")}`);
   return lines.join("\n");
 }
