@@ -103,8 +103,8 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
     assert.deepEqual(Object.keys(tool._meta?.["openai/ui"] as object), ["entrypoints"]);
     assert.equal(tool.icons?.[0].mimeType, "image/svg+xml");
     const svg = Buffer.from(tool.icons![0].src.split(",")[1], "base64").toString();
-    assert.match(svg, /stroke="#8e8e93"/);
-    assert.match(svg, /<rect/);
+    assert.match(svg, /stroke="currentColor"/);
+    assert.match(svg, /<title>ai-phone-01<\/title>/);
 
   }
   assert.equal((workspace._meta?.ui as { resourceUri: string }).resourceUri, WORKSPACE_URI);
