@@ -196,7 +196,11 @@ export function createSimulatorPanel(
     };
   };
   annotations.readTree = async simulator => {
-    const result = await call(platform === "android" ? "mobile_android_describe_ui" : "mobile_describe_ui", platform === "android" ? { deviceId: simulator.udid } : { udid: simulator.udid }, { timeout: 30000 });
+    const startedAt = performance.now();
+    const result = await call("mobile_inspect_ui", { platform, deviceId: simulator.udid, deviceName: simulator.name, screenWidth: points.width }, { timeout: 30000 });
+    recordUiTiming("ui.annotations.inspection", performance.now() - startedAt);
+    const runtime = result.structuredContent?.runtime;
+    if (runtime && typeof runtime === "object" && "available" in runtime && runtime.available === true) countUiEvent("ui.annotations.runtime_available");
     return result.structuredContent?.tree;
   };
   const stopObservingAnnotations = annotations.subscribe(() => {

@@ -18,6 +18,7 @@ import { registerIosDeviceTools } from "./ios-devices.ts";
 import { StreamSessions } from "./stream-sessions.ts";
 import { LogSessions } from "./log-sessions.ts";
 import { registerLogTools } from "./log-tools.ts";
+import { registerInspectionTools } from "./inspection-tools.ts";
 import { CpuSessions, createCpuSessions } from "./cpu/sessions.ts";
 import { registerCpuTools } from "./cpu/tools.ts";
 import { DisplayFpsSessions } from "./fps/sessions.ts";
@@ -112,6 +113,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   registerIosDeviceTools(server);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   registerLogTools(server, logs, baguette);
+  const closeInspection = registerInspectionTools(server, baguette, android);
   registerCpuTools(server, cpu, baguette);
   registerDisplayFpsTools(server, fps);
   const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot, async deviceId => {
@@ -399,7 +401,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   return {
     server,
     async close() {
-      closeAndroid(); streams.close();
+      closeInspection(); closeAndroid(); streams.close();
       try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror()]); }
       finally { baguette.dispose(); await server.close(); }
     },
