@@ -11,7 +11,7 @@ function contains(text: string, fragment: string, expected = true) {
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export * as Sentry from "@sentry/react";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -49,6 +49,32 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   api.setUiSurface("logs");
   api.setUiTelemetryContext({ layout: "both", device_platform: "ios", device_kind: "physical" });
   api.recordUiTiming("ui.logs.publish", 7);
+  api.setUiSurface("simulator");
+  api.recordUiTiming("ui.annotations.tree_processing", 3);
+  api.recordUiTiming("ui.annotations.inspection", 12);
+  let sendFailure = "";
+  const context = new api.PanelContext({ getHostCapabilities: () => ({ message: { text: {} } }), async sendMessage() {
+    if (sendFailure === "timeout") throw Object.assign(new Error("Request timed out"), { code: -32001 });
+    if (sendFailure === "composer") throw new Error("MCP app messages require an available composer");
+    if (sendFailure) throw new Error("PRIVATE_SEND_ERROR");
+    return {};
+  } }, {
+    modelContext: { getCurrent: () => undefined, async update() { return { updateId: "PRIVATE_UPDATE" }; } },
+  });
+  const store = new api.ScreenAnnotationsStore();
+  store.connect(context);
+  store.configure({ udid: "PRIVATE_DEVICE", name: "PRIVATE_DEVICE_NAME", runtime: "iOS 26", state: "Booted" }, false);
+  store.capture = () => ({ screenshot: { id: "PRIVATE_CAPTURE", data: "PRIVATE_IMAGE", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 402, height: 874, units: "points" } });
+  store.readTree = async () => [{ source: "react-native", role: "RCTText", label: "PRIVATE_LABEL", bounds: { x: 10, y: 20, width: 100, height: 40 }, react: {
+    component: "PRIVATE_COMPONENT", owners: ["PRIVATE_OWNER"], source: { file: "/Users/alice/private.tsx", line: 49, column: 11 },
+  } }];
+  await store.toggle(); store.select({ x: 50, y: 40 }); store.setText("PRIVATE_NOTE"); await store.save(); await store.send();
+  store.select({ x: 50, y: 40 }); store.setText("PRIVATE_NOTE_AGAIN"); await store.save();
+  for (const failure of ["timeout", "composer", "unexpected", ""]) { sendFailure = failure; await store.send(); }
+  store.dispose();
+  api.countUiEvent("ui.annotations.runtime_available");
+  api.countUiEvent("ui.annotations.inspection_fallback");
+  api.setUiSurface("logs");
   frame(116);
   frame(132);
   api.flushUiMeasurements();
@@ -66,6 +92,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   assert.equal(calls[1], input, "High frequency input stays on the original MCP path.");
   api.setUiSurface("simulator");
   api.recordUiTiming("ui.screenshot.capture", 12);
+  api.countUiEvent("ui.annotations.inspection_truncated");
   await app.callServerTool({ name: "mobile_ios_mirror_capture_screenshot", arguments: { sessionId: "PRIVATE_DEVICE_SESSION", image: "PRIVATE_SCREENSHOT" } });
   const screenshotContext = calls[2]._meta["mobile-dev/telemetry"];
   assert.equal(screenshotContext.surface, "simulator");
@@ -89,8 +116,21 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   assert.ok(allowedRequests);
   contains(encoded, '"environment":"development"');
   contains(encoded, "ui.logs.publish.mean");
+  contains(encoded, "ui.annotations.tree_processing.mean");
+  contains(encoded, "ui.annotations.inspection.mean");
+  contains(encoded, "ui.annotations.message_build.mean");
+  contains(encoded, "ui.annotations.send.mean");
+  contains(encoded, "ui.annotations.send_success");
+  contains(encoded, "ui.annotations.send_timeout");
+  contains(encoded, "ui.annotations.send_composer_unavailable");
+  contains(encoded, "ui.annotations.send_failure");
+  contains(encoded, "ui.annotations.source_available");
+  contains(encoded, "ui.annotations.runtime_available");
+  contains(encoded, "ui.annotations.inspection_fallback");
+  contains(encoded, '"surface":{"value":"simulator"');
   contains(encoded, "ui.performance.batch.mean");
   contains(encoded, "ui.screenshot.capture.mean");
+  contains(encoded, "ui.annotations.inspection_truncated");
   contains(encoded, '"surface":{"value":"logs"');
   contains(encoded, '"surface":{"value":"performance"');
   contains(encoded, '"surface":{"value":"simulator"');

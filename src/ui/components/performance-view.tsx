@@ -29,7 +29,7 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
   else if (state.fpsPhase === "connecting" && state.monitoring === false) phase = "connecting";
   else if (state.fpsPhase === "failed" && state.monitoring === false) phase = "failed";
 
-  return <section id="performance-drawer" className="flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-labelledby="tool-performance">
+  return <section id="performance-drawer" className="flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-label="Performance">
     <header className="flex h-[49px] shrink-0 items-center gap-2 border-b px-2">
       <ActivityIcon className="size-4 text-blue-500" />
       <div className="mr-auto min-w-0 text-xs">

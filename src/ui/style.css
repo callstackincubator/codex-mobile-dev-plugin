@@ -7,7 +7,7 @@ body { font-size: 12px; }
 /* The controller fits the canvas to each device's frame and screen mask. */
 [data-element="device-frame"] { --frame-radius: 48px; padding: 7px; border-radius: var(--frame-radius); background: #0c0c0d; box-shadow: 0 0 0 1px #606064, 0 0 0 3px #252527, 0 12px 30px #00000018; }
 [data-element="screen"] { border-radius: max(8px, calc(var(--frame-radius) - 7px)); }
-[data-element="screen"][data-selecting="true"] { cursor: crosshair; }
+[data-element="screen"][data-selecting="true"] { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M3 27V15a12 12 0 1 1 12 12H3Z' fill='%233b82f6' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") 3 27, crosshair; }
 [data-element="device-frame"][data-bezel="true"] { isolation: isolate; position: relative; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
 [data-element="device-frame"][data-bezel="true"] [data-element="screen"] { z-index: 2; position: absolute; }
 /* Split sizes come from Resizable rather than fixed grid tracks. */

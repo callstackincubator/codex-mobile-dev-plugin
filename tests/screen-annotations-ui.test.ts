@@ -37,7 +37,7 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   await act(async () => { root.render(createElement(SimulatorView, { platform: "ios" })); });
   const canvas = dom.window.document.querySelector("canvas");
   const store = getScreenAnnotations(dom.window.document.querySelector('[data-element="stage"]'));
-  const context = new PanelContext({ getHostCapabilities: () => ({ updateModelContext: { image: {} } }) } as App, { modelContext: { getCurrent: () => undefined, update: async () => ({ updateId: "annotation-update" }) } } as unknown as OpenAIExtensions);
+  const context = new PanelContext({ getHostCapabilities: () => ({ updateModelContext: { image: {} }, message: { text: {} } }), async sendMessage() { return { isError: true }; } } as unknown as App, { modelContext: { getCurrent: () => undefined, update: async () => ({ updateId: "annotation-update" }) } } as unknown as OpenAIExtensions);
   store.capture = () => ({ screenshot: { id: "capture", data: "AA==", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 390, height: 844, units: "points" } });
   store.readTree = async () => ({ label: "Continue", identifier: "continue", role: "AXButton", frame: { x: 10, y: 20, width: 100, height: 40 } });
   await act(async () => {
@@ -49,7 +49,7 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   assert.equal(selectButton.getAttribute("aria-pressed"), "true");
   await act(async () => { store.hover({ x: 50, y: 40 }); });
   const highlight = dom.window.document.querySelector('[data-element="component-highlight"]') as HTMLElement;
-  assert.equal(highlight.textContent, "Continue");
+  assert.equal(highlight.textContent, "");
   assert.equal(highlight.dataset.componentSource, "accessibility");
   assert.equal(parseFloat(highlight.style.width), 100 / 390 * 150);
   assert.equal(parseFloat(highlight.style.height), 40 / 844 * 300);
@@ -69,6 +69,35 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   await act(async () => { editInput.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
   assert.equal(context.screenAnnotations[0].text, "Make this button blue");
   assert.equal(dom.window.document.querySelector('[aria-label="Annotation note"]'), null);
+  await act(async () => { store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios" }, true); });
+  const sendButton = Array.from(dom.window.document.querySelectorAll("button")).find(button => button.textContent === "Send to chat")!;
+  assert.equal(sendButton.disabled, false, "Saved notes can send while the simulator reconnects.");
+  await act(async () => { sendButton.click(); });
+  assert.equal(sendButton.disabled, false);
+  assert.equal(sendButton.textContent, "Retry send");
+  assert.equal(context.screenAnnotations.length, 1);
+  const errorButton = dom.window.document.querySelector('[aria-label^="Send failed:"]') as HTMLButtonElement;
+  assert.ok(errorButton);
+  await act(async () => { errorButton.click(); });
+  assert.match(dom.window.document.querySelector('[role="alert"]')!.textContent!, /Could not send/);
+  const message = dom.window.document.querySelector('[aria-label="Annotation message to copy"]') as HTMLTextAreaElement;
+  const errorPopover = message.closest('[data-slot="popover-content"]')!;
+  assert.equal(message.value, store.messageText);
+  assert.equal(message.readOnly, true);
+  assert.match(message.value, /Make this button blue/);
+  let copied = "";
+  let clipboardFails = true;
+  Object.defineProperty(dom.window.navigator, "clipboard", { value: { async writeText(text: string) { if (clipboardFails) throw new Error("Clipboard denied"); copied = text; } } });
+  const copyButton = Array.from(dom.window.document.querySelectorAll("button")).find(button => button.textContent === "Copy notes")!;
+  await act(async () => { copyButton.click(); });
+  assert.match(errorPopover.querySelector('[role="status"]')!.textContent!, /Select and copy/);
+  clipboardFails = false;
+  await act(async () => { copyButton.click(); });
+  assert.equal(copied, message.value);
+  assert.equal(errorPopover.querySelector('[role="status"]')!.textContent!, "Copied");
+  await act(async () => { errorButton.click(); store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios" }, false); });
+  // Let the closing popover restore focus before opening the notes menu.
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   await act(async () => { (Array.from(dom.window.document.querySelectorAll("button")).find(button => button.textContent === "1 note") as HTMLButtonElement).click(); });
   await act(async () => { (dom.window.document.querySelector('[aria-label="Remove annotation 1"]') as HTMLButtonElement).click(); });
   assert.equal(dom.window.document.querySelector('.annotation-marker'), null);

@@ -90,17 +90,17 @@ try {
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.ok(resource.contents[0].text.includes('id="root"'));
   // React creates these controls from the bundled script after the app mounts.
-  for (const control of ["canvas", "logs-drawer", "log-chat", "tool-performance", "performance-drawer", "performance-app", "device-layout", "simulator-panels"]) {
+  for (const control of ["canvas", "logs-drawer", "log-chat", "tool-select", "tool-performance", "performance-drawer", "performance-app", "platform-select", "simulator-panels"]) {
     assert.ok(resource.contents[0].text.includes(control), `Missing bundled UI control: ${control}`);
   }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.66/simulator.html");
+  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.71/simulator.html");
   assert.ok(resource.contents[0].text.includes('workspace-toolbar'));
   assert.ok(resource.contents[0].text.includes('workspace-panels'));
   assert.ok(resource.contents[0].text.includes('tool-logs'));
   assert.ok(resource.contents[0].text.includes('Memory usage'), 'The packaged Performance view must include the live memory track.');
-  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.66/workspace.html");
+  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.71/workspace.html");
   assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, ["https://o4512180958068736.ingest.de.sentry.io"]);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
   runtimeTransport = new StdioClientTransport({ command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe" });

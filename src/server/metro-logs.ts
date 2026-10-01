@@ -5,7 +5,7 @@ import { parseBaseUrl, errorMessage } from "../shared/protocol.ts";
 import { parseMetroEvent } from "./log-parsers.ts";
 import type { LogSink, StopLogSource } from "./native-logs.ts";
 
-type InspectorTarget = MetroTarget & { webSocketDebuggerUrl: string };
+type InspectorTarget = MetroTarget & { webSocketDebuggerUrl: string; supportsMultipleDebuggers: boolean };
 
 export async function metroTargets(origin: string, signal?: AbortSignal): Promise<InspectorTarget[]> {
   const base = parseBaseUrl(origin, "Metro URL");
@@ -23,7 +23,8 @@ export async function metroTargets(origin: string, signal?: AbortSignal): Promis
     if (url.port !== base.port) return [];
     const string = (value: unknown) => typeof value === "string" ? value.slice(0, 512) : undefined;
     return [{ id: item.id, title: string(item.title) ?? item.id, appId: string(item.appId), deviceName: string(item.deviceName),
-      deviceId: string(item.reactNative?.logicalDeviceId), webSocketDebuggerUrl: url.href }];
+      deviceId: string(item.reactNative?.logicalDeviceId), webSocketDebuggerUrl: url.href,
+      supportsMultipleDebuggers: item.reactNative?.capabilities?.supportsMultipleDebuggers === true }];
   });
 }
 

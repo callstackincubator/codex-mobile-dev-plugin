@@ -13,7 +13,6 @@ import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
 import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { PanelContext } from "./model-context.ts";
 import { getScreenAnnotations } from "./screen-annotations.ts";
-import { screenRegions } from "../shared/screen-regions.ts";
 import type { ScreenAnnotation } from "../shared/screen-annotations.ts";
 import { AndroidVideo } from "./android-video.ts";
 import { PhysicalIosVideo } from "./ios-mirror-video.ts";
@@ -97,7 +96,7 @@ export function createSimulatorPanel(
     const screenshotReady = physicalIos ? ready && stream?.physicalIos === true : status?.connected;
     screenshotButton.disabled = busy || !toolsAvailable || !connected || !screenshotReady || !panelContext.canAttachScreenshots || disposed;
     screenshotButton.title = panelContext.canAttachScreenshots ? "Screenshot to chat and clipboard" : "This host does not support screenshot attachments";
-    annotations.configure(selected, !ready || busy || !toolsAvailable || !connected || !panelContext.canAttachScreenshots || disposed);
+    annotations.configure(selected, !ready || busy || !toolsAvailable || !connected || !panelContext.canAttach || disposed);
     deviceButtons();
   }
 
@@ -229,18 +228,22 @@ export function createSimulatorPanel(
   annotations.capture = captureScreen;
   annotations.readTree = async simulator => {
     if (simulator.kind === "physical" && simulator.platform === "ios") return [];
-    const result = await call(platform === "android" ? "mobile_android_describe_ui" : "mobile_describe_ui", platform === "android" ? { deviceId: simulator.udid } : { udid: simulator.udid }, { timeout: 30000 });
-    return result.structuredContent?.tree;
-  };
-  annotations.readRegions = screen => {
-    const sampled = document.createElement("canvas");
-    const scale = Math.min(1, 400 / canvas.width);
-    sampled.width = Math.max(1, Math.round(canvas.width * scale));
-    sampled.height = Math.max(1, Math.round(canvas.height * scale));
-    const pixels = sampled.getContext("2d", { willReadFrequently: true });
-    if (!pixels) return [];
-    pixels.drawImage(canvas, 0, 0, sampled.width, sampled.height);
-    return screenRegions(pixels.getImageData(0, 0, sampled.width, sampled.height).data, sampled.width, sampled.height, screen);
+    const startedAt = performance.now();
+    try {
+      try {
+        const result = await call("mobile_inspect_ui", { platform, deviceId: simulator.udid, deviceName: simulator.name, screenWidth: points.width }, { timeout: 10000 });
+        if (!result.structuredContent?.tree) throw new Error("Component inspection returned no tree.");
+        const runtime = result.structuredContent.runtime;
+        if (runtime && typeof runtime === "object" && "available" in runtime && runtime.available === true) countUiEvent("ui.annotations.runtime_available");
+        if (runtime && typeof runtime === "object" && "truncated" in runtime && runtime.truncated === true) countUiEvent("ui.annotations.inspection_truncated");
+        return result.structuredContent.tree;
+      } catch {
+        // Hosts with an older tool list and failed inspectors can still read AX.
+        countUiEvent("ui.annotations.inspection_fallback");
+        const result = await call(platform === "android" ? "mobile_android_describe_ui" : "mobile_describe_ui", platform === "android" ? { deviceId: simulator.udid } : { udid: simulator.udid }, { timeout: 5000 });
+        return result.structuredContent?.tree;
+      }
+    } finally { recordUiTiming("ui.annotations.inspection", performance.now() - startedAt); }
   };
   const stopObservingAnnotations = annotations.subscribe(() => {
     const state = annotations.getSnapshot();
@@ -796,8 +799,22 @@ export function createSimulatorPanel(
     };
   }
 
+  let annotationPointer: number | undefined;
+  const cancelAnnotationPointer = () => {
+    annotations.cancelSelection();
+    if (annotationPointer !== undefined && canvas.hasPointerCapture(annotationPointer)) canvas.releasePointerCapture(annotationPointer);
+    annotationPointer = undefined;
+  };
   canvas.addEventListener("pointerdown", event => {
-    if (annotations.getSnapshot().selecting && event.button === 0) { event.preventDefault(); annotations.select(mappedPoint(event)); return; }
+    if (annotations.getSnapshot().selecting && event.button === 0) {
+      event.preventDefault();
+      if (annotations.beginSelection(mappedPoint(event))) {
+        annotationPointer = event.pointerId;
+        canvas.setPointerCapture(event.pointerId);
+        canvas.focus();
+      }
+      return;
+    }
     if (annotations.getSnapshot().draft) return;
     if (!ready || inputBlocked || busy || event.button !== 0 || pointer) return;
     const position = mappedPoint(event);
@@ -807,19 +824,29 @@ export function createSimulatorPanel(
     send({ type: "touch1-down", ...position, ...points, ...(edge ? { edge } : {}) });
   });
   canvas.addEventListener("pointermove", event => {
-    if (annotations.getSnapshot().selecting) { annotations.hover(mappedPoint(event)); return; }
+    if (annotations.getSnapshot().selecting) { if (annotationPointer === undefined || annotationPointer === event.pointerId) annotations.hover(mappedPoint(event)); return; }
     if (!pointer || pointer.id !== event.pointerId) return;
     Object.assign(pointer, mappedPoint(event));
     send({ type: "touch1-move", x: pointer.x, y: pointer.y, ...points, ...(pointer.edge ? { edge: pointer.edge } : {}) });
   });
-  canvas.addEventListener("pointerleave", () => annotations.hover());
-  canvas.addEventListener("pointerup", event => { if (pointer?.id === event.pointerId) releasePointer(); });
+  canvas.addEventListener("pointerleave", () => { if (annotationPointer === undefined) annotations.hover(); });
+  canvas.addEventListener("pointerup", event => {
+    if (annotationPointer === event.pointerId) {
+      annotations.endSelection(mappedPoint(event));
+      cancelAnnotationPointer();
+      return;
+    }
+    if (pointer?.id === event.pointerId) releasePointer();
+  });
+  canvas.addEventListener("pointercancel", cancelAnnotationPointer);
+  canvas.addEventListener("lostpointercapture", cancelAnnotationPointer);
+  window.addEventListener("blur", cancelAnnotationPointer);
   canvas.addEventListener("pointercancel", releasePointer);
   canvas.addEventListener("lostpointercapture", releasePointer);
   window.addEventListener("blur", releasePointer);
   canvas.addEventListener("keydown", event => {
     if (annotations.getSnapshot().selecting || annotations.getSnapshot().draft) {
-      if (event.key === "Escape") { event.preventDefault(); annotations.exit(); }
+      if (event.key === "Escape") { event.preventDefault(); cancelAnnotationPointer(); annotations.exit(); }
       return;
     }
     if (stream?.physicalIos) return;
@@ -838,13 +865,6 @@ export function createSimulatorPanel(
   screenshotButton.addEventListener("click", () => { void action(async () => {
     if (!selected || !selectedDeviceConnected() || !panelContext.canAttachScreenshots) return;
     const simulator = selected;
-    const screenshotStatus = element("screenshot-status");
-    screenshotStatus.hidden = false;
-    function screenshotMessage(message: string) {
-      screenshotStatus.textContent = message;
-      screenshotStatus.title = message;
-    }
-    screenshotMessage("Taking screenshot…");
     try {
       const physicalIos = simulator.kind === "physical" && simulator.platform === "ios";
       let tool: string;
@@ -861,19 +881,13 @@ export function createSimulatorPanel(
       const result = await call(tool, parameters, { timeout: 30000 });
       const image = result.content.find(item => item.type === "image" && item.mimeType === "image/png");
       if (!image || image.type !== "image") throw new Error("The plugin did not return a PNG screenshot.");
-      const clipboard = result.structuredContent as { copied: boolean; clipboardError?: string };
-      const clipboardStatus = clipboard.copied ? "Copied to clipboard." : `Clipboard copy failed: ${clipboard.clipboardError ?? "Unknown error"}.`;
-      let attached = false;
-      try { attached = await panelContext.attachScreenshot({ id: crypto.randomUUID(), data: image.data, simulator }); }
+      try { await panelContext.attachScreenshot({ id: crypto.randomUUID(), data: image.data, simulator }); }
       catch (error) {
         captureUiError(error, "screenshot.attach");
-        screenshotMessage(`${clipboardStatus} Chat attachment failed: ${error instanceof Error ? error.message : String(error)}`);
         return;
       }
-      screenshotMessage(`${attached ? "Screenshot attached to chat." : "Screenshot removed from chat."} ${clipboardStatus}`);
     } catch (error) {
       captureUiError(error, "screenshot.capture");
-      screenshotMessage(error instanceof Error ? error.message : String(error));
     }
   }); });
   root.addEventListener("pointerdown", activate, { capture: true });
@@ -917,6 +931,7 @@ export function createSimulatorPanel(
       toolsAvailable = false;
       resizeObserver.disconnect();
       window.removeEventListener("blur", releasePointer);
+      window.removeEventListener("blur", cancelAnnotationPointer);
       window.removeEventListener("message", observeFrame);
       arrivals.clear();
       document.removeEventListener("visibilitychange", onVisibility);
