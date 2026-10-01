@@ -16,7 +16,7 @@ import type { SimulatorDevice, Status } from "../shared/protocol.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 
 const execute = promisify(execFile);
-export const androidIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:-]+$/);
+export const androidIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/);
 const healthSchema = z.object({ serial: androidIdSchema, codec: z.string(), size: z.object({ width: z.number().positive(), height: z.number().positive() }) });
 type Backend = { url: URL; child?: ChildProcess };
 
@@ -53,23 +53,41 @@ export class ServeEmu {
           throw error;
         }),
       ]);
-      const running = await Promise.all(devices.stdout.split("\n").flatMap(line => {
+      const deviceLines = devices.stdout.split(/\r?\n/);
+      const runningReads = deviceLines.flatMap(line => {
         const match = line.match(/^(\S+)\s+(device|offline|unauthorized)(?:\s|$)(.*)/);
-        if (!match || !androidIdSchema.safeParse(match[1]).success) return [];
+        if (!match) return [];
+        const parsedId = androidIdSchema.safeParse(match[1]);
+        if (parsedId.success === false) return [];
         return [(async (): Promise<SimulatorDevice> => {
-          let name = match[3].match(/model:(\S+)/)?.[1].replace(/_/g, " ") ?? match[1];
-          if (/^emulator-\d+$/.test(match[1]) && match[2] === "device") {
+          const rawModel = match[3].match(/(?:^|\s)model:(\S+)/)?.[1];
+          const model = rawModel?.replace(/_/g, " ");
+          let name = model ?? match[1];
+          const emulatorDevice = /^emulator-\d+$/.test(match[1]);
+          if (emulatorDevice && match[2] === "device") {
             const response = await execute(adb, ["-s", match[1], "emu", "avd", "name"], { timeout: 3000 }).catch(() => undefined);
             const avdName = parseAvdName(response?.stdout);
             if (avdName) this.avdNames.set(match[1], avdName);
             name = avdName ?? this.avdNames.get(match[1]) ?? name;
           }
-          return { udid: match[1], name, state: match[2] === "device" ? "Booted" : match[2], runtime: "Android", platform: "android" };
+          const identity = { udid: match[1], name, state: match[2] === "device" ? "Booted" : match[2], runtime: "Android", platform: "android" as const };
+          if (emulatorDevice) return { ...identity, kind: "emulator" };
+          const network = /:\d+$|\._adb(?:-tls-connect)?\._tcp\.?$/.test(match[1]);
+          const transportType = network ? "localNetwork" : "wired";
+          return { ...identity, kind: "physical", transportType, ...(model ? { model } : {}) };
         })()];
-      }));
+      });
+      const running = await Promise.all(runningReads);
       for (const serial of this.avdNames.keys()) if (!running.some(device => device.udid === serial)) this.avdNames.delete(serial);
-      const stopped = avds.stdout.trim().split(/\r?\n/).filter(name => name && androidIdSchema.safeParse(`avd:${name}`).success && !running.some(device => device.name === name))
-        .map(name => ({ udid: `avd:${name}`, name, state: "Shutdown", runtime: "Android", platform: "android" as const }));
+      const avdOutput = avds.stdout.trim();
+      const avdLines = avdOutput.split(/\r?\n/);
+      const stoppedNames = avdLines.filter(name => {
+        if (!name) return false;
+        const parsedId = androidIdSchema.safeParse(`avd:${name}`);
+        const runningAvd = running.some(device => device.kind === "emulator" && device.name === name);
+        return parsedId.success && !runningAvd;
+      });
+      const stopped = stoppedNames.map(name => ({ udid: `avd:${name}`, name, state: "Shutdown", runtime: "Android", platform: "android" as const, kind: "emulator" as const }));
       return { connected: true, managed: [...this.backends.values()].some(backend => !!backend.child), baseUrl: this.external?.origin ?? "", devices: [...running, ...stopped] };
     } catch (error) {
       return { connected: false, managed: false, baseUrl: "", devices: [], error: `Cannot list Android devices. Install Android SDK platform-tools and emulator. ${errorMessage(error)}` };
@@ -108,7 +126,7 @@ export class ServeEmu {
       ready: async () => {
         const status = await this.list();
         if (!status.connected) throw new Error(status.error);
-        const running = status.devices.find(item => item.name === device.name && item.state === "Booted");
+        const running = status.devices.find(item => item.kind === "emulator" && item.name === device.name && item.state === "Booted");
         if (!running) return;
         const response = await execute(adb, ["-s", running.udid, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch(() => undefined);
         if (response?.stdout.trim() === "1") return status;

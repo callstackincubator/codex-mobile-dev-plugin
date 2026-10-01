@@ -34,7 +34,7 @@ fs.writeFileSync(path, JSON.stringify(state));
   assert.equal(running.devices.length, 1);
   assert.equal(running.devices[0].name, "Medium_Phone");
   const stopped = await backend.shutdown("emulator-5554");
-  assert.deepEqual(stopped.devices, [{ udid: "avd:Medium_Phone", name: "Medium_Phone", state: "Shutdown", runtime: "Android", platform: "android" }]);
+  assert.deepEqual(stopped.devices, [{ udid: "avd:Medium_Phone", name: "Medium_Phone", state: "Shutdown", runtime: "Android", platform: "android", kind: "emulator" }]);
   assert.deepEqual((await backend.shutdown("emulator-5554")).devices, stopped.devices);
   const state = JSON.parse(await readFile(statePath, "utf8"));
   assert.equal(state.kills, 1);

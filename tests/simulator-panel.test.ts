@@ -7,6 +7,8 @@ import type { PanelContext } from "../src/ui/model-context.ts";
 import { createSimulatorPanel } from "../src/ui/simulator-panel.ts";
 import { getDeviceSettings } from "../src/ui/device-settings.ts";
 import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
+import type { PhysicalAndroidDevice } from "../src/shared/android-devices.ts";
+import type { SimulatorDevice } from "../src/shared/protocol.ts";
 
 class Element extends EventTarget {
   hidden = false;
@@ -56,6 +58,7 @@ function fixture(t: TestContext) {
   let physicalError = "";
   let simulatorError = "";
   let delayedDiscovery: Promise<void> | undefined;
+  let androidDevices: SimulatorDevice[] | undefined;
   const stoppedPlatforms = new Set<string>();
   let failedInputPlatform: "ios" | "android" | undefined;
   const document = Object.assign(new EventTarget(), { visibilityState: "visible", createElement: () => new Element() });
@@ -87,6 +90,10 @@ function fixture(t: TestContext) {
   const app = {
     async callServerTool(call: { name: string; arguments: Record<string, unknown> }) {
       calls.push(call);
+      if (call.name === "mobile_list_android_devices") {
+        await delayedDiscovery;
+        if (androidDevices) return { content: [], structuredContent: { connected: true, devices: androidDevices } };
+      }
       if (call.name === "mobile_list_ios_devices") {
         await delayedDiscovery;
         if (physicalError) return { isError: true, content: [{ type: "text", text: physicalError }] };
@@ -147,7 +154,7 @@ function fixture(t: TestContext) {
     return { panel, root, element: (name: string) => root.elements.get(name)! };
   });
   t.after(async () => { await Promise.all(panels.map(({ panel }) => panel.dispose())); for (const reset of restore) reset(); });
-  return { calls, closed, selections, ios: panels[0], android: panels[1], setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; } };
+  return { calls, closed, selections, ios: panels[0], android: panels[1], setAndroidDevices(devices: SimulatorDevice[]) { androidDevices = devices; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; } };
 }
 
 const physicalPhone: PhysicalIosDevice = {
@@ -155,6 +162,126 @@ const physicalPhone: PhysicalIosDevice = {
   name: "Physical iPhone", model: "iPhone 17 Pro", state: "connected", runtime: "iOS 27.0",
   platform: "ios", kind: "physical", transportType: "localNetwork", pairingState: "paired",
 };
+
+const androidPhone: PhysicalAndroidDevice = {
+  udid: "phone-serial", name: "Pixel 9", model: "Pixel 9", state: "Booted", runtime: "Android",
+  platform: "android", kind: "physical", transportType: "wired",
+};
+
+test("physical Android devices appear above emulators and stream without emulator lifecycle calls", async t => {
+  const f = fixture(t);
+  f.setAndroidDevices([
+    { udid: "emulator-5554", name: "Pixel AVD", state: "Booted", runtime: "Android", platform: "android", kind: "emulator" },
+    androidPhone,
+  ]);
+  await f.android.panel.load();
+  const pickerElement = f.android.element("devices");
+  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  const state = picker.getSnapshot();
+  const groups = state.items.map(item => item.group);
+  assert.deepEqual(groups, ["Connected devices", "Emulators"]);
+  assert.equal(state.items[0].label, "Pixel 9 · USB");
+  assert.equal(state.items[0].canStop, false);
+  picker.value = androidPhone.udid;
+  dispatch(pickerElement, "change");
+  await waitFor(() => {
+    const state = picker.getSnapshot();
+    return f.android.panel.selected?.udid === androidPhone.udid && state.disabled === false && f.android.element("screen").draws > 0;
+  });
+  const session = f.calls.findLast(call => call.name === "mobile_android_stream_session");
+  assert.deepEqual(session?.arguments, { deviceId: androidPhone.udid });
+  assert.equal(f.android.element("screenshot").disabled, false);
+  await picker.stopDevice(androidPhone.udid);
+  const lifecycle = f.calls.filter(call => call.name.startsWith("mobile_boot") || call.name.startsWith("mobile_shutdown"));
+  assert.equal(lifecycle.length, 0);
+  f.setAndroidDevices([{ ...androidPhone, transportType: "localNetwork" }]);
+  await picker.refresh?.();
+  const wireless = picker.getSnapshot();
+  assert.equal(wireless.value, androidPhone.udid);
+  assert.equal(wireless.items[0].label, "Pixel 9 · Wi-Fi");
+});
+
+for (const state of ["unauthorized", "offline"]) test(`physical Android ${state} devices remain discoverable without booting or streaming`, async t => {
+  const f = fixture(t);
+  f.setAndroidDevices([{ ...androidPhone, state }]);
+  await f.android.panel.load();
+  const pickerElement = f.android.element("devices");
+  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  const snapshot = picker.getSnapshot();
+  assert.equal(snapshot.items.length, 1);
+  assert.equal(snapshot.items[0].running, false);
+  assert.equal(snapshot.items[0].canStop, false);
+  assert.match(snapshot.items[0].label, state === "unauthorized" ? /Unauthorized/ : /Offline/);
+  picker.value = androidPhone.udid;
+  dispatch(pickerElement, "change");
+  await waitFor(() => {
+    const snapshot = picker.getSnapshot();
+    return f.android.panel.selected?.udid === androidPhone.udid && snapshot.disabled === false;
+  });
+  assert.equal(f.android.element("start-device").disabled, true);
+  assert.equal(f.android.element("screenshot").disabled, true);
+  const actions = f.calls.filter(call => call.name.startsWith("mobile_boot") || call.name.endsWith("_stream_session"));
+  assert.equal(actions.length, 0);
+  f.setAndroidDevices([androidPhone]);
+  await picker.refresh?.();
+  await waitFor(() => f.android.element("screen").draws > 0);
+});
+
+test("Android refresh connects an arriving phone once and closes its stream when it disconnects", async t => {
+  const f = fixture(t);
+  f.setAndroidDevices([]);
+  await f.android.panel.load();
+  const pickerElement = f.android.element("devices");
+  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  f.setAndroidDevices([androidPhone]);
+  await picker.refresh?.();
+  await waitFor(() => f.android.element("screen").draws > 0);
+  await picker.refresh?.();
+  const streams = f.calls.filter(call => call.name === "mobile_android_stream_session");
+  assert.equal(streams.length, 1);
+  assert.equal(f.android.panel.selected?.udid, androidPhone.udid);
+  f.setAndroidDevices([]);
+  await picker.refresh?.();
+  await waitFor(() => f.closed.length === 1);
+  assert.equal(f.android.panel.selected, undefined);
+  assert.equal(f.android.root.buttons[0].disabled, true);
+  const lifecycle = f.calls.filter(call => call.name.startsWith("mobile_boot") || call.name.startsWith("mobile_shutdown"));
+  assert.equal(lifecycle.length, 0);
+});
+
+test("Android discovery polls visible panels, shares refreshes, and removes disconnected phones", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = fixture(t);
+  f.setAndroidDevices([]);
+  await f.android.panel.load();
+  const pickerElement = f.android.element("devices");
+  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  f.android.root.hidden = true;
+  t.mock.timers.tick(3000);
+  const hiddenReads = f.calls.filter(call => call.name === "mobile_list_android_devices");
+  assert.equal(hiddenReads.length, 1);
+  f.android.root.hidden = false;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  f.delayDiscovery(gate);
+  f.setAndroidDevices([{ ...androidPhone, state: "unauthorized" }]);
+  t.mock.timers.tick(3000);
+  const refreshing = picker.refresh?.();
+  const sharedReads = f.calls.filter(call => call.name === "mobile_list_android_devices");
+  assert.equal(sharedReads.length, 2);
+  release();
+  await refreshing;
+  const connected = picker.getSnapshot();
+  assert.equal(connected.items[0].value, androidPhone.udid);
+  f.setAndroidDevices([]);
+  await picker.refresh?.();
+  const disconnected = picker.getSnapshot();
+  assert.equal(disconnected.items.length, 0);
+  await f.android.panel.dispose();
+  t.mock.timers.tick(10000);
+  const disposedReads = f.calls.filter(call => call.name === "mobile_list_android_devices");
+  assert.equal(disposedReads.length, 3);
+});
 
 test("physical devices appear above simulators and selecting one never boots or streams it", async t => {
   const f = fixture(t);

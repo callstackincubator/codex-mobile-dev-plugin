@@ -298,9 +298,14 @@ export function createSimulatorPanel(
     selected = status?.devices.find(device => device.udid === devices.value);
     if (selected === undefined) selected = physicalDevices.find(device => device.udid === devices.value);
     selectionChanged(selected);
-    if (selected?.kind === "physical") {
+    if (selected?.kind === "physical" && selected.platform === "ios") {
       const connection = physicalConnectionLabel(selected.transportType);
       empty(`${selected.name} · ${connection}`, "Screen mirroring for physical devices is not available yet.");
+    } else if (selected?.kind === "physical" && selected.state !== "Booted") {
+      const description = selected.state === "unauthorized"
+        ? "Unlock the device and allow USB debugging, or pair it for wireless debugging."
+        : "Reconnect the device and check that ADB debugging is enabled.";
+      empty(`${selected.name} · ${selected.state}`, description);
     } else if (!reconnect.active && !stoppedDisplay) empty(selected ? "Select a device to open its screen." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No iOS devices. Connect an iPhone or add a simulator in Xcode."));
     controls();
   }
@@ -317,17 +322,29 @@ export function createSimulatorPanel(
       const kind = /ipad/i.test(device.model) ? "tablet" : "phone";
       return { value: device.udid, label: `${device.name} · ${connection}`, group: "Connected devices", kind, running: true, statusLabel: "Connected", canStop: false };
     });
-    const simulatorOptions: DeviceOption[] = next.devices.map(device => {
+    const virtualDevices = next.devices.filter(device => device.kind !== "physical");
+    const androidPhysicalOptions: DeviceOption[] = next.devices.flatMap(device => {
+      if (device.kind !== "physical") return [];
+      const connection = physicalConnectionLabel(device.transportType);
+      const running = device.state === "Booted";
+      const stateLabel = device.state === "unauthorized" ? "Unauthorized" : "Offline";
+      return [{
+        value: device.udid, label: `${device.name} · ${connection}${running ? "" : ` · ${stateLabel}`}`,
+        group: "Connected devices", kind: /tablet|pixel.*tab/i.test(device.name) ? "tablet" : "phone",
+        running, statusLabel: "Connected", canStop: false,
+      }];
+    });
+    const simulatorOptions: DeviceOption[] = virtualDevices.map(device => {
       const runtime = runtimeLabel(device.runtime);
       return {
         value: device.udid, label: `${device.name}${runtime ? ` · ${runtime}` : ""}`,
-        group: platform === "ios" ? "Simulators" : undefined,
+        group: platform === "ios" ? "Simulators" : "Emulators",
         kind: /ipad|tablet|pixel.*tab/i.test(device.name) ? "tablet" : "phone", running: device.state === "Booted",
         canStop: device.state === "Booted" && (platform === "ios" || /^emulator-\d+$/.test(device.udid)),
       };
     });
     devices.update({
-      items: [...physicalOptions, ...simulatorOptions],
+      items: [...physicalOptions, ...androidPhysicalOptions, ...simulatorOptions],
       value: previous && oldDevice ? previous : running?.udid ?? physicalDevices[0]?.udid ?? "",
       placeholder: available.length ? "Select a device" : next.connected ? "No devices" : "Devices unavailable",
     });
@@ -514,7 +531,10 @@ export function createSimulatorPanel(
     const simulatorRead = call(platform === "android" ? "mobile_list_android_devices" : "mobile_list_simulators");
     if (platform === "android") {
       const result = await simulatorRead;
-      if (revision === statusRevision && !disposed) renderStatus(result.structuredContent as Status);
+      if (revision === statusRevision && !disposed) {
+        renderStatus(result.structuredContent as Status);
+        if (!busy && !reconnect.active) await connect();
+      }
       return;
     }
     const physicalRead = call("mobile_list_ios_devices");
@@ -543,7 +563,7 @@ export function createSimulatorPanel(
   }
 
   function scheduleDiscovery() {
-    if (platform !== "ios" || disposed || discoveryTimer !== undefined) return;
+    if (disposed || discoveryTimer !== undefined) return;
     discoveryTimer = setTimeout(async () => {
       discoveryTimer = undefined;
       try {
@@ -556,7 +576,11 @@ export function createSimulatorPanel(
 
   async function start() {
     await listDevices();
-    if (!selected || selected.kind === "physical") return;
+    if (!selected) return;
+    if (selected.kind === "physical") {
+      if (selected.platform === "android" && selected.state === "Booted") await connect();
+      return;
+    }
     if (selected.state !== "Booted") {
       empty("Starting simulator…", "The screen will appear when the device is ready.");
       const before = selected;
@@ -564,7 +588,7 @@ export function createSimulatorPanel(
         platform === "android" ? { deviceId: before.udid } : { udid: before.udid }, { timeout: 150000 });
       renderStatus(result.structuredContent as Status);
       if (platform === "android") {
-        const booted = status?.devices.find(device => device.name === before.name && device.state === "Booted");
+        const booted = status?.devices.find(device => device.kind !== "physical" && device.name === before.name && device.state === "Booted");
         if (booted) { devices.value = booted.udid; selectDevice(); }
       }
     }
@@ -576,6 +600,7 @@ export function createSimulatorPanel(
   devices.stop = async id => {
     const device = status?.devices.find(device => device.udid === id);
     if (busy || disposed || !toolsAvailable || device?.state !== "Booted") throw new Error("This device is no longer running.");
+    if (device.kind === "physical") throw new Error("Only simulators and emulators can be stopped from this panel.");
     const wasSelected = selected?.udid === id;
     statusRevision++;
     busy = true;
@@ -584,7 +609,7 @@ export function createSimulatorPanel(
       if (wasSelected) await disconnect();
       const result = await call(platform === "android" ? "mobile_shutdown_android_emulator" : "mobile_shutdown_simulator", platform === "android" ? { deviceId: id } : { udid: id }, { timeout: 30000 });
       const next = result.structuredContent as Status;
-      const selectedId = wasSelected && platform === "android" ? next.devices.find(item => item.name === device.name)?.udid : selected?.udid;
+      const selectedId = wasSelected && platform === "android" ? next.devices.find(item => item.kind !== "physical" && item.name === device.name)?.udid : selected?.udid;
       if (wasSelected && next.connected) stoppedDisplay = true;
       renderStatus(next, selectedId);
       if (wasSelected && stoppedDisplay) {

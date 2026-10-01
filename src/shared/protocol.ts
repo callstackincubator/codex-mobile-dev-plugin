@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { PhysicalIosDevice } from "./ios-devices.ts";
+import type { PhysicalAndroidDevice } from "./android-devices.ts";
 
 export const udidSchema = z.uuid();
 const point = z.number().finite().min(0).max(10000);
@@ -31,7 +32,7 @@ export const streamMessageSchema = z.union([
   z.object({ type: z.literal("set_scale"), scale: z.number().int().min(1).max(4) }).strict(),
 ]);
 
-export type SimulatorDevice = { udid: string; name: string; state: string; runtime: string; platform?: "ios" | "android"; kind?: "simulator" } | PhysicalIosDevice;
+export type SimulatorDevice = { udid: string; name: string; state: string; runtime: string; platform?: "ios" | "android"; kind?: "simulator" | "emulator" } | PhysicalIosDevice | PhysicalAndroidDevice;
 export type DeviceList = { running: unknown[]; available: unknown[] };
 export type Status = {
   connected: boolean;

@@ -23,7 +23,7 @@ function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
 export function registerAndroidTools(server: McpServer, android: ServeEmu, appUri: string, copyScreenshot: (bytes: Buffer) => Promise<void>, closeCpu: (deviceId: string) => Promise<void>) {
   const streams = new AndroidStreams(android);
   server.registerTool("mobile_list_android_devices", {
-    title: "List Android devices", description: "List connected Android devices and installed AVDs without booting or streaming a device.", inputSchema: {}, annotations: read,
+    title: "List Android devices", description: "Discover physical Android devices over USB or Wi-Fi and list running emulators and installed AVDs through ADB. Returns device kind, serial, model when available, transport for physical devices, and device/offline/unauthorized state (authorized devices use Booted). Listing does not boot, pair, authorize, or stream a device.", inputSchema: {}, annotations: read,
   }, guarded(async () => { const status = await android.list(); return result(status, status.connected ? JSON.stringify(status.devices) : status.error!); }));
   for (const action of ["boot", "shutdown"] as const) server.registerTool(`mobile_${action}_android_emulator`, {
     title: action === "boot" ? "Boot Android emulator" : "Shut down Android emulator",

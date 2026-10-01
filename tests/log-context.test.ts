@@ -6,6 +6,7 @@ import { PanelContext } from "../src/ui/model-context.ts";
 import { stackLogs } from "../src/shared/logs.ts";
 import { UDID, PNG } from "./fixtures.ts";
 import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
+import type { PhysicalAndroidDevice } from "../src/shared/android-devices.ts";
 
 const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS 26" };
 const log = stackLogs([{ timestamp: "2026-09-30T12:00:00Z", message: "Request failed", level: "error", source: "js", origin: "metro", stack: "at load (App.tsx:9:3)", sequence: 1 }])[0];
@@ -95,6 +96,24 @@ test("Android selection shares its serial and platform for agent-device control"
   await context.attach(undefined);
   assert.match(JSON.stringify(updates.at(-1)?.content), /emulator-5554/);
   assert.match(JSON.stringify(updates.at(-1)?.content), /serial.*platform android/);
+});
+
+test("physical Android context identifies the transport and serial for control", async () => {
+  const { context, updates } = fixture();
+  const phone: PhysicalAndroidDevice = {
+    udid: "192.168.1.20:5555", name: "Pixel 9", model: "Pixel 9", state: "Booted", runtime: "Android",
+    platform: "android", kind: "physical", transportType: "localNetwork",
+  };
+  context.selectSimulator(phone);
+  await context.attach(undefined);
+  const last = updates.at(-1);
+  const content = JSON.stringify(last?.content);
+  assert.equal(last?.structuredContent?.selectedSimulator, phone);
+  assert.match(content, /Active physical Android device: Pixel 9/);
+  assert.match(content, /Serial: 192\.168\.1\.20:5555/);
+  assert.match(content, /Transport: localNetwork/);
+  assert.match(content, /serial.*platform android/);
+  assert.doesNotMatch(content, /simulator|not implemented/);
 });
 
 test("physical iOS context identifies the device and its streaming limitation", async () => {
