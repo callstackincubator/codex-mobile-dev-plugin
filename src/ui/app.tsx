@@ -15,7 +15,7 @@ import { PerformancePanel } from "./performance-panel.ts";
 import { createSimulatorPanel } from "./simulator-panel.ts";
 import { startLiveReload } from "./live-reload.ts";
 
-const app = new App({ name: "mobile-dev-ui", version: "0.1.52" }, {}, { autoResize: false });
+const app = new App({ name: "mobile-dev-ui", version: "0.1.53" }, {}, { autoResize: false });
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
 const performancePanel = new PerformancePanel(app);
@@ -62,11 +62,14 @@ let disposingUI: Promise<void> | undefined;
 function disposeUI() {
   return disposingUI ??= (async () => {
     window.removeEventListener("pagehide", onPageHide);
+    window.removeEventListener("focus", resumeContext);
+    window.removeEventListener("pageshow", resumeContext);
+    document.removeEventListener("visibilitychange", resumeContext);
     await Promise.allSettled([...panels.map(panel => panel.dispose()), logsPanel.dispose(), performancePanel.dispose()]);
     reactRoot.unmount();
   })();
 }
-function onPageHide() { stopLiveReload(); void disposeUI(); }
+function onPageHide(event: PageTransitionEvent) { if (!event.persisted) { stopLiveReload(); void disposeUI(); } }
 window.addEventListener("pagehide", onPageHide);
 app.onteardown = async () => { stopLiveReload(); await disposeUI(); return {}; };
 
@@ -76,8 +79,18 @@ function hostContext() {
   if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
   document.documentElement.style.setProperty("--font-sans", '"Inter Variable", sans-serif');
   panelContext.hostChanged();
+  panelContext.resume();
   for (const panel of panels) { panel.fitScreen(); panel.controls(); }
 }
+function resumeContext() {
+  if (document.visibilityState !== "hidden" && !disposingUI) {
+    panelContext.hostChanged();
+    panelContext.resume();
+  }
+}
+window.addEventListener("focus", resumeContext);
+window.addEventListener("pageshow", resumeContext);
+document.addEventListener("visibilitychange", resumeContext);
 app.ontoolinput = () => { if (!ios.selected) ios.empty("Loading devices…", "Finding connected iOS devices and simulators."); };
 app.ontoolresult = result => {
   if (result.isError) { ios.notice(result.content.filter(item => item.type === "text").map(item => item.text).join("\n")); return; }

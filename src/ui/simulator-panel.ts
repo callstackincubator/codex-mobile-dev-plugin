@@ -11,6 +11,8 @@ import type { PhysicalIosDevice } from "../shared/ios-devices.ts";
 import type { DeviceOption } from "./device-picker.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
 import type { PanelContext } from "./model-context.ts";
+import { getScreenAnnotations } from "./screen-annotations.ts";
+import { screenRegions } from "../shared/screen-regions.ts";
 import { AndroidVideo } from "./android-video.ts";
 import { PhysicalIosVideo } from "./ios-mirror-video.ts";
 import { iosVideoBatchSchema } from "../shared/ios-video.ts";
@@ -39,6 +41,8 @@ export function createSimulatorPanel(
   const context = canvas.getContext("2d")!;
   const frame = element("device-frame");
   const stage = element("stage");
+  const annotations = getScreenAnnotations(stage);
+  annotations.connect(panelContext);
   const bezelImage = element<HTMLImageElement>("device-bezel");
   let bezel: Bezel | undefined;
   let sourceBezel: Bezel | undefined;
@@ -64,6 +68,7 @@ export function createSimulatorPanel(
   let points = { width: 0, height: 0 };
   let pointer: { id: number; x: number; y: number; edge?: string } | undefined;
   let seenFrames = 0;
+  let pausedFrame: HTMLCanvasElement | undefined;
   let busy = false;
   let resumeRequested = false;
   let toolsAvailable = false;
@@ -79,7 +84,6 @@ export function createSimulatorPanel(
   }
 
   function controls() {
-    const active = ready && stream != null && !stream.physicalIos && !inputBlocked && !busy && toolsAvailable;
     settings.configure(selected?.udid ?? "", busy || !toolsAvailable || selected?.state !== "Booted" || disposed);
     settings.prefetch();
     element<HTMLButtonElement>("start-device").disabled = busy || !toolsAvailable || !selected || selected.kind === "physical" || selected.state === "Booted" || disposed;
@@ -87,6 +91,13 @@ export function createSimulatorPanel(
     devices.disabled = busy || !toolsAvailable || !hasDevices || disposed;
     screenshotButton.disabled = busy || !toolsAvailable || !status?.connected || selected?.state !== "Booted" || !panelContext.canAttachScreenshots;
     screenshotButton.title = panelContext.canAttachScreenshots ? "Screenshot to chat and clipboard" : "This host does not support screenshot attachments";
+    annotations.configure(selected, !ready || busy || !toolsAvailable || selected?.state !== "Booted" || !panelContext.canAttachScreenshots || disposed);
+    deviceButtons();
+  }
+
+  function deviceButtons() {
+    const state = annotations.getSnapshot();
+    const active = ready && stream != null && !stream.physicalIos && !inputBlocked && !busy && toolsAvailable && !state.selecting && !state.draft;
     root.querySelectorAll<HTMLButtonElement>("[data-button]").forEach(button => { button.disabled = !active; });
   }
 
@@ -169,6 +180,39 @@ export function createSimulatorPanel(
     return result;
   }
 
+  annotations.capture = () => {
+    if (!ready || !canvas.width || !canvas.height || !points.width || !points.height) throw new Error("Wait for the simulator screen to load.");
+    return {
+      screenshot: { id: crypto.randomUUID(), data: canvas.toDataURL("image/png").split(",")[1], capturedAt: new Date().toISOString() },
+      screen: { ...points, units: platform === "android" ? "pixels" : "points" },
+    };
+  };
+  annotations.readTree = async simulator => {
+    const result = await call(platform === "android" ? "mobile_android_describe_ui" : "mobile_describe_ui", platform === "android" ? { deviceId: simulator.udid } : { udid: simulator.udid }, { timeout: 30000 });
+    return result.structuredContent?.tree;
+  };
+  annotations.readRegions = screen => {
+    const sampled = document.createElement("canvas");
+    const scale = Math.min(1, 400 / canvas.width);
+    sampled.width = Math.max(1, Math.round(canvas.width * scale));
+    sampled.height = Math.max(1, Math.round(canvas.height * scale));
+    const pixels = sampled.getContext("2d", { willReadFrequently: true });
+    if (!pixels) return [];
+    pixels.drawImage(canvas, 0, 0, sampled.width, sampled.height);
+    return screenRegions(pixels.getImageData(0, 0, sampled.width, sampled.height).data, sampled.width, sampled.height, screen);
+  };
+  const stopObservingAnnotations = annotations.subscribe(() => {
+    const state = annotations.getSnapshot();
+    canvas.dataset.selecting = String(state.selecting || !!state.draft);
+    if (state.selecting || state.draft) releasePointer();
+    if (!state.selecting && pausedFrame) {
+      const latest = pausedFrame;
+      pausedFrame = undefined;
+      if (ready && stream) drawFrame(latest, latest.width, latest.height);
+    }
+    deviceButtons();
+  });
+
   settings.request = async change => {
     if (!selected || selected.state !== "Booted" || disposed) throw new Error("Select a running device first.");
     const result = await call(change ? "mobile_update_device_setting" : "mobile_device_settings", {
@@ -229,6 +273,13 @@ export function createSimulatorPanel(
   }
 
   function fitScreen() {
+    layoutScreen();
+    const rect = canvas.getBoundingClientRect();
+    const container = stage.getBoundingClientRect();
+    annotations.setViewport({ x: rect.left - container.left, y: rect.top - container.top, width: rect.width, height: rect.height, stageWidth: stage.clientWidth, stageHeight: stage.clientHeight });
+  }
+
+  function layoutScreen() {
     if (frame.hidden || !canvas.width || !canvas.height) return;
     const style = getComputedStyle(stage);
     const width = stage.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
@@ -291,6 +342,7 @@ export function createSimulatorPanel(
   }
   const resizeObserver = new ResizeObserver(fitScreen);
   resizeObserver.observe(stage);
+  resizeObserver.observe(canvas);
 
   function runtimeLabel(runtime: string) {
     return runtime.replace(/^com\.apple\.CoreSimulator\.SimRuntime\./, "").replace(/^(iOS|tvOS|watchOS|visionOS)-/, "$1 ").replace(/-/g, ".");
@@ -364,6 +416,7 @@ export function createSimulatorPanel(
     const connected = selected.kind === "physical" && selected.platform === "ios" ? selected.state === "connected" : selected.state === "Booted";
     if (connected === false) return;
     await disconnect();
+    if (document.visibilityState === "hidden" || disposed) return;
     if (frame.hidden) empty("Connecting…", "Opening the device screen.");
     const sessionEpoch = epoch;
     const udid = selected.udid;
@@ -446,7 +499,7 @@ export function createSimulatorPanel(
         uri.searchParams.set("after", String(after));
         const resource = await app.readServerResource({ uri: uri.href }, { signal: readSignal, timeout: 15000 });
         const result = readFrame(resource);
-        const browserArrivedAt = arrivals.take(uri.href, result.serverPreparedAt);
+        const browserArrivedAt = arrivals.take(uri.href, result.serverPreparedAt) ?? performance.timeOrigin + performance.now();
         browserProfile.response(result.serverPreparedAt,
           browserArrivedAt, result.frame?.sequence ?? null);
         if (result.connectionState === "reconnecting") {
@@ -482,6 +535,13 @@ export function createSimulatorPanel(
   }
 
   function drawFrame(image: CanvasImageSource, width: number, height: number) {
+    if (annotations.getSnapshot().selecting && ready) {
+      pausedFrame ??= document.createElement("canvas");
+      if (pausedFrame.width !== width || pausedFrame.height !== height) { pausedFrame.width = width; pausedFrame.height = height; }
+      pausedFrame.getContext("2d")?.drawImage(image, 0, 0);
+      seenFrames++;
+      return;
+    }
     stoppedDisplay = false;
     element("stopped").hidden = true;
     const resized = canvas.width !== width || canvas.height !== height;
@@ -665,13 +725,16 @@ export function createSimulatorPanel(
 
   function mappedPoint(event: PointerEvent) {
     const rect = canvas.getBoundingClientRect();
+    const dimensions = annotations.getSnapshot().selecting ? annotations.getSnapshot().capture?.screen ?? points : points;
     return {
-      x: Math.max(0, Math.min(points.width, (event.clientX - rect.left) / rect.width * points.width)),
-      y: Math.max(0, Math.min(points.height, (event.clientY - rect.top) / rect.height * points.height)),
+      x: Math.max(0, Math.min(dimensions.width, (event.clientX - rect.left) / rect.width * dimensions.width)),
+      y: Math.max(0, Math.min(dimensions.height, (event.clientY - rect.top) / rect.height * dimensions.height)),
     };
   }
 
   canvas.addEventListener("pointerdown", event => {
+    if (annotations.getSnapshot().selecting && event.button === 0) { event.preventDefault(); annotations.select(mappedPoint(event)); return; }
+    if (annotations.getSnapshot().draft) return;
     if (!ready || inputBlocked || busy || event.button !== 0 || pointer) return;
     const position = mappedPoint(event);
     const edge = position.y > points.height - 14 ? "bottom" : position.y < 14 ? "top" : undefined;
@@ -680,15 +743,21 @@ export function createSimulatorPanel(
     send({ type: "touch1-down", ...position, ...points, ...(edge ? { edge } : {}) });
   });
   canvas.addEventListener("pointermove", event => {
+    if (annotations.getSnapshot().selecting) { annotations.hover(mappedPoint(event)); return; }
     if (!pointer || pointer.id !== event.pointerId) return;
     Object.assign(pointer, mappedPoint(event));
     send({ type: "touch1-move", x: pointer.x, y: pointer.y, ...points, ...(pointer.edge ? { edge: pointer.edge } : {}) });
   });
+  canvas.addEventListener("pointerleave", () => annotations.hover());
   canvas.addEventListener("pointerup", event => { if (pointer?.id === event.pointerId) releasePointer(); });
   canvas.addEventListener("pointercancel", releasePointer);
   canvas.addEventListener("lostpointercapture", releasePointer);
   window.addEventListener("blur", releasePointer);
   canvas.addEventListener("keydown", event => {
+    if (annotations.getSnapshot().selecting || annotations.getSnapshot().draft) {
+      if (event.key === "Escape") { event.preventDefault(); annotations.exit(); }
+      return;
+    }
     if (!ready || inputBlocked || busy || event.metaKey || event.ctrlKey || event.altKey) return;
     if (/^[\x20-\x7e]$/.test(event.key)) {
       event.preventDefault(); send({ type: "type", text: event.key });
@@ -734,9 +803,14 @@ export function createSimulatorPanel(
     return action(connect);
   }
   function onVisibility() {
-    if (document.visibilityState === "visible" && reconnect.active && !ready && !busy) void resume();
+    const physicalIos = selected?.kind === "physical" && selected.platform === "ios";
+    const connected = physicalIos ? selected.state === "connected" : selected?.state === "Booted";
+    if (document.visibilityState === "hidden") void disconnect();
+    else if (toolsAvailable && connected && !ready && !disposed) void resume();
   }
   document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("pageshow", onVisibility);
+  window.addEventListener("focus", onVisibility);
 
   controls();
   return {
@@ -758,12 +832,16 @@ export function createSimulatorPanel(
       devices.stop = undefined;
       devices.refresh = undefined;
       settings.dispose();
+      stopObservingAnnotations();
+      annotations.dispose();
       toolsAvailable = false;
       resizeObserver.disconnect();
       window.removeEventListener("blur", releasePointer);
       window.removeEventListener("message", observeFrame);
       arrivals.clear();
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pageshow", onVisibility);
+      window.removeEventListener("focus", onVisibility);
       root.removeEventListener("pointerdown", activate, { capture: true });
       root.removeEventListener("focusin", activate);
       return disposing = disconnect();

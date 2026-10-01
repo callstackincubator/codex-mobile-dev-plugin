@@ -14,7 +14,7 @@ test("arrival timings remain independent for overlapping sessions and are consum
   arrivals.record(second, 1005);
   assert.equal(arrivals.take(first.result.contents[0].uri, 1000), 1003);
   assert.equal(arrivals.take(second.result.contents[0].uri, 1000), 1005);
-  assert.throws(() => arrivals.take(first.result.contents[0].uri, 1000), /not observed/);
+  assert.equal(arrivals.take(first.result.contents[0].uri, 1000), undefined);
 });
 
 test("unrelated and malformed messages cannot populate a frame timing", () => {
@@ -25,8 +25,8 @@ test("unrelated and malformed messages cannot populate a frame timing", () => {
   arrivals.record(unrelated, 10);
   const invalid = response("mobile-frame://first/latest", NaN);
   arrivals.record(invalid, 10);
-  assert.throws(() => arrivals.take(unrelated.result.contents[0].uri, 20), /not observed/);
-  assert.throws(() => arrivals.take(invalid.result.contents[0].uri, NaN), /not observed/);
+  assert.equal(arrivals.take(unrelated.result.contents[0].uri, 20), undefined);
+  assert.equal(arrivals.take(invalid.result.contents[0].uri, NaN), undefined);
 });
 
 test("late cancelled responses cannot retain an unbounded timing history", () => {
@@ -36,8 +36,8 @@ test("late cancelled responses cannot retain an unbounded timing history", () =>
     const message = response(uri, key);
     arrivals.record(message, key + 10);
   }
-  assert.throws(() => arrivals.take(uri, 1), /not observed/);
+  assert.equal(arrivals.take(uri, 1), undefined);
   assert.equal(arrivals.take(uri, 129), 139);
   arrivals.clear();
-  assert.throws(() => arrivals.take(uri, 128), /not observed/);
+  assert.equal(arrivals.take(uri, 128), undefined);
 });

@@ -6,6 +6,7 @@ import type { App } from "@modelcontextprotocol/ext-apps";
 import type { PanelContext } from "../src/ui/model-context.ts";
 import { createSimulatorPanel } from "../src/ui/simulator-panel.ts";
 import { getDeviceSettings } from "../src/ui/device-settings.ts";
+import { getScreenAnnotations } from "../src/ui/screen-annotations.ts";
 import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
 import type { PhysicalAndroidDevice } from "../src/shared/android-devices.ts";
 import type { SimulatorDevice } from "../src/shared/protocol.ts";
@@ -34,6 +35,7 @@ class Element extends EventTarget {
   replaceChildren() { this.children = []; this.value = ""; }
   removeAttribute() {}
   getContext() { return { drawImage: () => { this.draws++; } }; }
+  toDataURL() { return "data:image/png;base64,AA=="; }
   getBoundingClientRect() { return { left: 0, top: 0, width: 150, height: 300 }; }
   setPointerCapture(id: number) { this.captures.add(id); }
   hasPointerCapture(id: number) { return this.captures.has(id); }
@@ -50,6 +52,7 @@ class Element extends EventTarget {
 function fixture(t: TestContext) {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const reads = new Set<string>();
+  const pendingReads = new Map<string, (sequence: number) => void>();
   const closed: string[] = [];
   const selections: { platform: string; active?: boolean }[] = [];
   let sessionNumber = 0;
@@ -63,6 +66,8 @@ function fixture(t: TestContext) {
   let androidDevices: SimulatorDevice[] | undefined;
   const stoppedPlatforms = new Set<string>();
   let failedInputPlatform: "ios" | "android" | undefined;
+  let observeFrames = true;
+  let invalidFrame = false;
   const document = Object.assign(new EventTarget(), { visibilityState: "visible", createElement: () => new Element() });
   class Decoder {
     state = "configured";
@@ -89,6 +94,18 @@ function fixture(t: TestContext) {
     const previous = Object.getOwnPropertyDescriptor(globalThis, name);
     Object.defineProperty(globalThis, name, { value, configurable: true });
     restore.push(() => { if (previous) Object.defineProperty(globalThis, name, previous); else Reflect.deleteProperty(globalThis, name); });
+  }
+  function frameResult(uri: string, id: string, sequence: number) {
+    const serverPreparedAt = performance.timeOrigin + performance.now();
+    const physical = uri.startsWith("ios-video:");
+    const result = { contents: physical
+      ? [{ uri, mimeType: "application/json", text: JSON.stringify({ generation: 1, sequence, dropped: 0, configuration: { revision: 1, width: 400, height: 800, codec: "hvc1.1.6.L150.B0", description: "AQ==" }, frames: [{ sequence, data: "AA==", timestamp: 0, key: true }] }) }]
+      : id.startsWith("ios")
+      ? [{ uri, mimeType: "image/jpeg", blob: "AA==", _meta: { sequence: invalidFrame ? 0 : sequence, receivedAt: Date.now(), bytes: 1, serverWaitMs: 0, serverStartedAt: serverPreparedAt, serverPreparedAt } }]
+      : [{ uri, mimeType: "application/json", text: JSON.stringify({ sequence, generation: 1, packets: [{ sequence, data: Buffer.from([0, 0, 0, 1, 0x67, 0x64, 0, 0x28, 0, 0, 0, 1, 0x65, 1]).toString("base64") }] }) }] };
+    invalidFrame = false;
+    if (observeFrames) window.dispatchEvent(Object.assign(new Event("message"), { data: { jsonrpc: "2.0", result }, source: undefined }));
+    return result;
   }
   const app = {
     async callServerTool(call: { name: string; arguments: Record<string, unknown> }) {
@@ -131,6 +148,7 @@ function fixture(t: TestContext) {
         return { content: [], structuredContent: { connected: true, devices: [{ udid: android ? (stoppedPlatforms.has("android") ? "avd:Pixel" : "emulator-5554") : "iphone-1", name: android ? "Pixel" : "iPhone", state: stopped || stoppedPlatforms.has(callPlatform) ? "Shutdown" : "Booted", runtime: "", platform: android ? "android" : "ios" }] } };
       }
       if (call.name === "mobile_device_settings" || call.name === "mobile_update_device_setting") return { content: [], structuredContent: { settings: { appearance: "dark", locationSupported: true } } };
+      if (call.name.endsWith("_describe_ui")) return { content: [], structuredContent: { tree: { elements: [{ label: "Continue", role: "AXButton", frame: { x: 10, y: 20, width: 100, height: 100 } }] } } };
       return { content: [] };
     },
     async readServerResource({ uri }: { uri: string }, { signal }: { signal: AbortSignal }) {
@@ -138,19 +156,11 @@ function fixture(t: TestContext) {
       const id = address.protocol === "mobile-frame:" ? address.hostname : address.pathname.split("/")[1];
       if (!reads.has(id)) {
         reads.add(id);
-        const serverPreparedAt = performance.timeOrigin + performance.now();
-        const physical = address.protocol === "ios-video:";
-        const result = { contents: physical
-          ? [{ uri, mimeType: "application/json", text: JSON.stringify({ generation: 1, sequence: 1, dropped: 0, configuration: { revision: 1, width: 400, height: 800, codec: "hvc1.1.6.L150.B0", description: "AQ==" }, frames: [{ sequence: 1, data: "AA==", timestamp: 0, key: true }] }) }]
-          : id.startsWith("ios")
-          ? [{ uri, mimeType: "image/jpeg", blob: "AA==", _meta: { sequence: 1, receivedAt: Date.now(), bytes: 1, serverWaitMs: 0, serverStartedAt: serverPreparedAt, serverPreparedAt } }]
-          : [{ uri, mimeType: "application/json", text: JSON.stringify({ sequence: 1, generation: 1, packets: [{ sequence: 1, data: Buffer.from([0, 0, 0, 1, 0x67, 0x64, 0, 0x28, 0, 0, 0, 1, 0x65, 1]).toString("base64") }] }) }] };
-        const message = Object.assign(new Event("message"), { data: { jsonrpc: "2.0", result }, source: undefined });
-        window.dispatchEvent(message);
-        return result;
+        return frameResult(uri, id, 1);
       }
-      return new Promise((_, reject) => {
-        const abort = () => reject(new Error("Aborted"));
+      return new Promise((resolve, reject) => {
+        const abort = () => { pendingReads.delete(id); reject(new Error("Aborted")); };
+        pendingReads.set(id, sequence => { pendingReads.delete(id); signal.removeEventListener("abort", abort); resolve(frameResult(uri, id, sequence)); });
         if (signal.aborted) abort(); else signal.addEventListener("abort", abort, { once: true });
       });
     },
@@ -160,12 +170,16 @@ function fixture(t: TestContext) {
     for (const name of ["devices", "settings", "screen", "device-frame", "stage", "device-bezel", "screenshot", "notice", "notice-message", "empty", "empty-description", "stopped", "start-device", "screenshot-status"]) root.elements.set(name, new Element());
     root.elements.get("device-frame")!.hidden = true;
     for (const button of ["home", "app-switcher"]) { const element = new Element(); element.dataset.button = button; root.buttons.push(element); }
-    const panel = createSimulatorPanel(app, root as unknown as HTMLElement, platform, { canAttachScreenshots: true } as PanelContext, (_device, active) => selections.push({ platform, active }));
+    const panel = createSimulatorPanel(app, root as unknown as HTMLElement, platform, { canAttachScreenshots: true, screenAnnotations: [], subscribe: () => () => {} } as unknown as PanelContext, (_device, active) => selections.push({ platform, active }));
     panel.setAvailable(true);
     return { panel, root, element: (name: string) => root.elements.get(name)! };
   });
   t.after(async () => { await Promise.all(panels.map(({ panel }) => panel.dispose())); for (const reset of restore) reset(); });
-  return { calls, closed, selections, ios: panels[0], android: panels[1], setAndroidDevices(devices: SimulatorDevice[]) { androidDevices = devices; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; } };
+  return { calls, closed, selections, ios: panels[0], android: panels[1], setAndroidDevices(devices: SimulatorDevice[]) { androidDevices = devices; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; },
+    visibility(value: string) { document.visibilityState = value; document.dispatchEvent(new Event("visibilitychange")); },
+    frame(platform: "ios" | "android", sequence: number) { const id = [...pendingReads.keys()].find(id => id.startsWith(platform)); assert.ok(id); pendingReads.get(id)!(sequence); },
+    missTiming() { observeFrames = false; }, invalidFrame() { invalidFrame = true; },
+  };
 }
 
 const physicalPhone: PhysicalIosDevice = {
@@ -345,6 +359,19 @@ test("physical iOS devices mirror above simulators with view-only controls", asy
   assert.equal(picker.value, physicalPhone.udid);
   const wiredState = picker.getSnapshot();
   assert.equal(wiredState.items[0].label, "Physical iPhone · USB");
+  const previousDraws = screen.draws;
+  f.visibility("hidden");
+  await waitFor(() => {
+    const closedMirror = f.closed.some(id => id.startsWith("physical-"));
+    return closedMirror;
+  });
+  f.visibility("visible");
+  await waitFor(() => screen.draws > previousDraws);
+  const resumedMirrors = f.calls.filter(call => call.name === "mobile_ios_mirror_session");
+  const buttonsStillDisabled = f.ios.root.buttons.every(button => button.disabled);
+  assert.equal(resumedMirrors.length, 2);
+  assert.equal(buttonsStillDisabled, true);
+  assert.equal(screenshot.disabled, true);
   f.setPhysicalDevices([{ ...physicalPhone, state: "disconnected", transportType: "none" }]);
   await picker.refresh?.();
   const disconnectedState = picker.getSnapshot();
@@ -424,6 +451,49 @@ async function waitFor(predicate: () => boolean) {
     await new Promise(resolve => setTimeout(resolve, 5));
   }
 }
+
+test("missing timing observations do not disconnect valid iOS frames", async t => {
+  const f = fixture(t); f.missTiming(); await f.ios.panel.load();
+  await waitFor(() => f.ios.element("screen").draws > 0);
+  assert.equal(f.calls.filter(call => call.name === "mobile_stream_session").length, 1);
+  assert.equal(f.closed.length, 0);
+});
+
+for (const platform of ["ios", "android"] as const) test(`leaving Select restores the latest ${platform} frame even when the device is quiet`, async t => {
+  const f = fixture(t); const target = f[platform]; await target.panel.load();
+  await waitFor(() => target.element("screen").draws > 0);
+  const store = getScreenAnnotations(target.element("stage") as unknown as HTMLElement);
+  await store.toggle();
+  f.frame(platform, 2);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(target.element("screen").draws, 1);
+  store.exit();
+  assert.equal(target.element("screen").draws, 2);
+  assert.equal(f.closed.length, 0);
+});
+
+test("returning to a hidden chat reopens its streams and preserves the note input", async t => {
+  const f = fixture(t); await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
+  await waitFor(() => f.ios.element("screen").draws > 0 && f.android.element("screen").draws > 0);
+  const store = getScreenAnnotations(f.ios.element("stage") as unknown as HTMLElement);
+  await store.toggle(); store.select({ x: 50, y: 40 }); store.setText("Keep this note");
+  f.visibility("hidden");
+  await waitFor(() => f.closed.length === 2);
+  assert.equal(store.getSnapshot().draft?.text, "Keep this note");
+  f.visibility("visible");
+  await waitFor(() => f.ios.element("screen").draws > 1 && f.android.element("screen").draws > 1);
+  assert.equal(f.calls.filter(call => call.name.endsWith("_stream_session")).length, 4);
+  assert.equal(store.getSnapshot().draft?.text, "Keep this note");
+  assert.equal(f.calls.some(call => call.name.startsWith("mobile_boot")), false);
+});
+
+test("a stopped receive loop retries when its chat becomes visible again", async t => {
+  const f = fixture(t); f.invalidFrame(); await f.ios.panel.load();
+  await waitFor(() => f.ios.element("notice-message").textContent.includes("invalid frame metadata"));
+  f.visibility("visible");
+  await waitFor(() => f.ios.element("screen").draws > 0);
+  assert.equal(f.calls.filter(call => call.name === "mobile_stream_session").length, 2);
+});
 
 test("status arriving during startup still connects the selected device", async t => {
   const f = fixture(t);
@@ -572,6 +642,29 @@ test("teardown closes both streams and closes sessions that finish opening late"
   assert.ok(f.closed.some(id => id.startsWith("android-")));
   assert.equal(f.ios.element("screen").draws, 0);
   assert.equal(f.android.element("screen").draws, 0);
+});
+
+for (const platform of ["ios", "android"] as const) test(`select mode on ${platform} maps screen coordinates without sending device input`, async t => {
+  const f = fixture(t); const panel = f[platform];
+  await panel.panel.load(); await waitFor(() => panel.element("screen").draws > 0);
+  const store = getScreenAnnotations(panel.element("stage") as unknown as HTMLElement);
+  await store.toggle();
+  assert.equal(store.getSnapshot().selecting, true);
+  assert.equal(panel.root.buttons[0].disabled, true);
+  dispatch(panel.element("screen"), "pointermove", { pointerId: 1, clientX: 20, clientY: 30 });
+  assert.equal(store.getSnapshot().hovered?.name, "Continue");
+  assert.equal(store.getSnapshot().draft, undefined);
+  dispatch(panel.element("screen"), "pointerleave", {});
+  assert.equal(store.getSnapshot().hovered, undefined);
+  dispatch(panel.element("screen"), "pointerdown", { button: 0, pointerId: 1, clientX: 20, clientY: 30 });
+  assert.equal(store.getSnapshot().draft?.component.name, "Continue");
+  assert.equal(store.getSnapshot().draft?.screen.units, platform === "ios" ? "points" : "pixels");
+  assert.equal(f.calls.some(call => call.name.endsWith("_stream_input")), false);
+  dispatch(panel.element("screen"), "keydown", { key: "a", code: "KeyA" });
+  assert.equal(f.calls.some(call => call.name.endsWith("_stream_input")), false);
+  dispatch(panel.element("screen"), "keydown", { key: "Escape", code: "Escape" });
+  assert.equal(store.getSnapshot().selecting, false); assert.equal(store.getSnapshot().draft, undefined);
+  assert.equal(panel.root.buttons[0].disabled, false);
 });
 
 for (const platform of ["ios", "android"] as const) test(`selecting a stopped ${platform} device boots and streams it without Start`, async t => {
