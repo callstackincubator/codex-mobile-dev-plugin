@@ -197,11 +197,20 @@ export function createSimulatorPanel(
   };
   annotations.readTree = async simulator => {
     const startedAt = performance.now();
-    const result = await call("mobile_inspect_ui", { platform, deviceId: simulator.udid, deviceName: simulator.name, screenWidth: points.width }, { timeout: 30000 });
-    recordUiTiming("ui.annotations.inspection", performance.now() - startedAt);
-    const runtime = result.structuredContent?.runtime;
-    if (runtime && typeof runtime === "object" && "available" in runtime && runtime.available === true) countUiEvent("ui.annotations.runtime_available");
-    return result.structuredContent?.tree;
+    try {
+      try {
+        const result = await call("mobile_inspect_ui", { platform, deviceId: simulator.udid, deviceName: simulator.name, screenWidth: points.width }, { timeout: 10000 });
+        if (!result.structuredContent?.tree) throw new Error("Component inspection returned no tree.");
+        const runtime = result.structuredContent.runtime;
+        if (runtime && typeof runtime === "object" && "available" in runtime && runtime.available === true) countUiEvent("ui.annotations.runtime_available");
+        return result.structuredContent.tree;
+      } catch {
+        // Hosts with an older tool list and failed inspectors can still read AX.
+        countUiEvent("ui.annotations.inspection_fallback");
+        const result = await call(platform === "android" ? "mobile_android_describe_ui" : "mobile_describe_ui", platform === "android" ? { deviceId: simulator.udid } : { udid: simulator.udid }, { timeout: 5000 });
+        return result.structuredContent?.tree;
+      }
+    } finally { recordUiTiming("ui.annotations.inspection", performance.now() - startedAt); }
   };
   const stopObservingAnnotations = annotations.subscribe(() => {
     const state = annotations.getSnapshot();

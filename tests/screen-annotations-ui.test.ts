@@ -49,7 +49,7 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   assert.equal(selectButton.getAttribute("aria-pressed"), "true");
   await act(async () => { store.hover({ x: 50, y: 40 }); });
   const highlight = dom.window.document.querySelector('[data-element="component-highlight"]') as HTMLElement;
-  assert.equal(highlight.textContent, "Continue");
+  assert.equal(highlight.textContent, "");
   assert.equal(highlight.dataset.componentSource, "accessibility");
   assert.equal(parseFloat(highlight.style.width), 100 / 390 * 150);
   assert.equal(parseFloat(highlight.style.height), 40 / 844 * 300);

@@ -66,6 +66,7 @@ function fixture(t: TestContext) {
   let androidDevices: SimulatorDevice[] | undefined;
   const stoppedPlatforms = new Set<string>();
   let failedInputPlatform: "ios" | "android" | undefined;
+  let inspectionFailure = false;
   let observeFrames = true;
   let invalidFrame = false;
   const document = Object.assign(new EventTarget(), { visibilityState: "visible", createElement: () => new Element() });
@@ -148,6 +149,10 @@ function fixture(t: TestContext) {
         return { content: [], structuredContent: { connected: true, devices: [{ udid: android ? (stoppedPlatforms.has("android") ? "avd:Pixel" : "emulator-5554") : "iphone-1", name: android ? "Pixel" : "iPhone", state: stopped || stoppedPlatforms.has(callPlatform) ? "Shutdown" : "Booted", runtime: "", platform: android ? "android" : "ios" }] } };
       }
       if (call.name === "mobile_device_settings" || call.name === "mobile_update_device_setting") return { content: [], structuredContent: { settings: { appearance: "dark", locationSupported: true } } };
+      if (call.name === "mobile_inspect_ui") {
+        if (inspectionFailure) return { isError: true, content: [{ type: "text", text: "Inspection unavailable" }] };
+        return { content: [], structuredContent: { runtime: { available: true }, tree: [{ source: "react-native", role: "Pressable", label: "Continue", frame: { x: 10, y: 20, width: 100, height: 100 } }] } };
+      }
       if (call.name.endsWith("_describe_ui")) return { content: [], structuredContent: { tree: { elements: [{ label: "Continue", role: "AXButton", frame: { x: 10, y: 20, width: 100, height: 100 } }] } } };
       return { content: [] };
     },
@@ -175,7 +180,7 @@ function fixture(t: TestContext) {
     return { panel, root, element: (name: string) => root.elements.get(name)! };
   });
   t.after(async () => { await Promise.all(panels.map(({ panel }) => panel.dispose())); for (const reset of restore) reset(); });
-  return { calls, closed, selections, ios: panels[0], android: panels[1], setAndroidDevices(devices: SimulatorDevice[]) { androidDevices = devices; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; },
+  return { calls, closed, selections, failInspection() { inspectionFailure = true; }, ios: panels[0], android: panels[1], setAndroidDevices(devices: SimulatorDevice[]) { androidDevices = devices; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; },
     visibility(value: string) { document.visibilityState = value; document.dispatchEvent(new Event("visibilitychange")); },
     frame(platform: "ios" | "android", sequence: number) { const id = [...pendingReads.keys()].find(id => id.startsWith(platform)); assert.ok(id); pendingReads.get(id)!(sequence); },
     missTiming() { observeFrames = false; }, invalidFrame() { invalidFrame = true; },
@@ -673,6 +678,8 @@ for (const platform of ["ios", "android"] as const) test(`select mode on ${platf
   dispatch(panel.element("screen"), "pointerleave", {});
   assert.equal(store.getSnapshot().hovered, undefined);
   dispatch(panel.element("screen"), "pointerdown", { button: 0, pointerId: 1, clientX: 20, clientY: 30 });
+  assert.equal(store.getSnapshot().draft, undefined);
+  dispatch(panel.element("screen"), "pointerup", { button: 0, pointerId: 1, clientX: 20, clientY: 30 });
   assert.equal(store.getSnapshot().draft?.component.name, "Continue");
   assert.equal(store.getSnapshot().draft?.screen.units, platform === "ios" ? "points" : "pixels");
   assert.equal(f.calls.some(call => call.name.endsWith("_stream_input")), false);
@@ -681,6 +688,22 @@ for (const platform of ["ios", "android"] as const) test(`select mode on ${platf
   dispatch(panel.element("screen"), "keydown", { key: "Escape", code: "Escape" });
   assert.equal(store.getSnapshot().selecting, false); assert.equal(store.getSnapshot().draft, undefined);
   assert.equal(panel.root.buttons[0].disabled, false);
+});
+
+for (const platform of ["ios", "android"] as const) test(`failed inspection on ${platform} falls back to native elements and accepts clicks`, async t => {
+  const f = fixture(t), panel = f[platform];
+  f.failInspection();
+  await panel.panel.load(); await waitFor(() => panel.element("screen").draws > 0);
+  const store = getScreenAnnotations(panel.element("stage") as unknown as HTMLElement);
+  await store.toggle();
+  dispatch(panel.element("screen"), "pointermove", { pointerId: 1, clientX: 20, clientY: 30 });
+  assert.equal(store.getSnapshot().hovered?.name, "Continue");
+  assert.equal(store.getSnapshot().hovered?.source, "accessibility");
+  dispatch(panel.element("screen"), "pointerdown", { button: 0, pointerId: 1, clientX: 20, clientY: 30 });
+  dispatch(panel.element("screen"), "pointerup", { button: 0, pointerId: 1, clientX: 20, clientY: 30 });
+  assert.equal(store.getSnapshot().draft?.component.name, "Continue");
+  assert.ok(f.calls.some(call => call.name === (platform === "ios" ? "mobile_describe_ui" : "mobile_android_describe_ui")));
+  assert.equal(f.calls.some(call => call.name.endsWith("_stream_input")), false);
 });
 
 for (const platform of ["ios", "android"] as const) test(`selecting a stopped ${platform} device boots and streams it without Start`, async t => {

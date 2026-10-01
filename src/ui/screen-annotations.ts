@@ -80,6 +80,11 @@ export class ScreenAnnotationsStore {
         const startedAt = performance.now();
         this.components = screenComponents(tree);
         recordUiTiming("ui.annotations.tree_processing", performance.now() - startedAt);
+        const draft = this.state.draft;
+        if (draft?.component.source === "screen" && !draft.component.role) {
+          const candidates = componentsAt(this.components, draft.point, capture.screen);
+          if (candidates.length) this.update({ draft: { ...draft, component: candidates[0] }, candidates });
+        }
       }
     } catch (error) {
       if (revision === this.revision) this.update({ error: `Could not read component names. You can still annotate a screen region. ${error instanceof Error ? error.message : String(error)}` });
@@ -95,12 +100,12 @@ export class ScreenAnnotationsStore {
   hover(point?: ScreenPoint) {
     if (this.dragStart && point) { this.moveSelection(point); return; }
     this.hoverPoint = point;
-    if (!this.state.selecting || this.state.draft || this.state.loading) return;
+    if (!this.state.selecting || this.state.draft) return;
     const hovered = point ? componentAt(this.components, point, this.state.capture?.screen) : undefined;
     if (hovered !== this.state.hovered) this.update({ hovered });
   }
   select(point: ScreenPoint) {
-    if (!this.state.selecting || this.state.loading || this.state.busy || this.state.draft || !this.state.capture) return;
+    if (!this.state.selecting || this.state.busy || this.state.draft || !this.state.capture) return;
     const component = this.component(point);
     if (!component) return;
     this.update({ draft: { ...this.state.capture, id: crypto.randomUUID(), number: this.nextNumber, point, component, text: "" }, candidates: componentsAt(this.components, point, this.state.capture.screen), hovered: undefined, status: "" });
@@ -118,7 +123,7 @@ export class ScreenAnnotationsStore {
       this.update({ draft: { ...this.state.draft, component } });
   }
   beginSelection(point: ScreenPoint) {
-    if (!this.state.selecting || this.state.loading || this.state.busy || this.state.draft) return false;
+    if (!this.state.selecting || this.state.busy || this.state.draft) return false;
     this.dragStart = point;
     this.update({ hovered: undefined, selectionBounds: undefined });
     return true;

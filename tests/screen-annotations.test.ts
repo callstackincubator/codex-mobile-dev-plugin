@@ -99,6 +99,37 @@ test("a sparse accessibility tree supports explicit regions without pixel guesse
   f.store.dispose();
 });
 
+test("pending inspection accepts clicks and upgrades the open note when elements arrive", async () => {
+  const f = fixture();
+  let release!: (tree: unknown) => void;
+  f.store.readTree = () => new Promise(resolve => { release = resolve; });
+  const reading = f.store.toggle();
+  assert.equal(f.store.getSnapshot().loading, true);
+  assert.equal(f.store.beginSelection({ x: 50, y: 40 }), true);
+  f.store.endSelection({ x: 50, y: 40 });
+  assert.equal(f.store.getSnapshot().draft?.component.name, "Screen point");
+  f.store.setText("Make this wider");
+  release({ label: "Continue", role: "AXButton", frame: component.bounds });
+  await reading;
+  assert.equal(f.store.getSnapshot().draft?.component.name, "Continue");
+  assert.equal(f.store.getSnapshot().draft?.text, "Make this wider");
+  f.store.dispose();
+});
+
+test("pending or failed inspection keeps manual region selection working", async () => {
+  const f = fixture();
+  let reject!: (error: Error) => void;
+  f.store.readTree = () => new Promise((_resolve, fail) => { reject = fail; });
+  const reading = f.store.toggle();
+  f.store.beginSelection({ x: 10, y: 20 });
+  f.store.endSelection({ x: 110, y: 60 });
+  reject(new Error("Request timed out"));
+  await reading;
+  assert.equal(f.store.getSnapshot().draft?.component.role, "manual-region");
+  assert.deepEqual(f.store.getSnapshot().draft?.component.bounds, component.bounds);
+  f.store.dispose();
+});
+
 test("real parents remain selectable without choosing overlapping siblings", async () => {
   const tree = { role: "AXGroup", label: "Card", frame: { x: 10, y: 100, width: 350, height: 70 }, children: [
     { role: "AXStaticText", label: "Title", frame: { x: 30, y: 120, width: 150, height: 20 } },
