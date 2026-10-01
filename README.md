@@ -41,7 +41,7 @@ codex plugin add mobile-dev@mobile-dev-local
 
 Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile_open_workspace` for the fullscreen view. Call `mobile_open_simulator` for the panel beside a chat. iOS opens by default. Enable Android from the toolbar to show both panels side by side. Each panel has a device dropdown, Home, App Switcher, and Screenshot. Pick a device in each panel. Use the iOS and Android toggles to show either, both, or neither simulator. Selecting a device boots it if needed, then connects its screen. A selected running device connects automatically. The panel uses Apple’s device bezel and screen mask from the installed DeviceKit assets, with a simple frame as a fallback when assets are unavailable. Use the settings button at the bottom right for appearance, text size, location, and the device frame. iOS also offers contrast; Android offers rotation. The menu shows only settings supported by the bundled backend. Click the screen to type or drag. Closing the panel closes its stream.
 
-The local ZIP at `release/mobile-dev-0.1.51-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+The local ZIP at `release/mobile-dev-0.1.52-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 The iOS dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Simulators**. It refreshes every three seconds while the iOS panel is visible, and when opening the dropdown. Selecting a physical device opens view-only screen mirroring through its paired developer connection. The phone sends HEVC video; a bundled native Node-API addon assembles compressed frames and transfers them into Node without copying the frame payload, then the panel decodes them through WebCodecs. MCP serializes the compressed bytes as base64, so the full path is not zero copy. The capture queue is limited to eight frames or 4 MiB and requests a keyframe after overflow. Physical iOS input, screenshots, and CPU/memory collection are not implemented yet; those controls remain disabled. Mirroring requires Developer Mode and a host with HEVC WebCodecs support. `mobile_list_ios_devices` also returns remembered disconnected devices with their connection state; the picker shows connected devices only. Discovery errors remain visible while available simulators continue to work.
 
@@ -150,7 +150,15 @@ thread count and device. Reproduce with
 
 The Memory track shows the main process's current usage, sampled average, maximum and minimum in MiB. Android reads RSS from `/proc/<pid>/statm` using the device's runtime page size; shared resident pages are counted in full. iOS requests `phys_footprint` in the same debugserver profiling stream, including compressed memory. These are different platform metrics, identified in the track tooltip; their values are not directly comparable across platforms. Memory is available from the first sample, shares CPU's timeline and session, and resets with the app's PID.
 
-JavaScript profiling, detailed allocation debugging, DevSuite's network track and an FPS collector are deferred.
+The green **Display FPS** track shares the CPU and memory timeline, cursor, zoom and 150-second history. It records independently of the selected app, with current, average, maximum and minimum FPS. It includes other apps and system UI; a quiet or locked screen can report zero. This measures display updates rather than the panel's refresh rate, and does not identify which app caused a drop. Missing measurements remain gaps.
+
+Android 12+ uses only Perfetto FrameTimeline's presented actual display frames, excluding dropped frames and individual app/layer frames. A bundled external native consumer reads a bounded 4 MiB trace buffer once per second over ADB without creating a trace file, attaching a debugger, requiring root or installing an app SDK. Readback adds roughly three seconds of delay. SurfaceFlinger can report a frame later; the chart updates that frame's original interval. Devices without FrameTimeline and Android versions below 12 report an explicit limitation.
+
+Physical iOS 17.4+ devices use the global Instruments `CoreAnimationFramesPerSecond` counter through a bundled native helper and the paired developer connection over USB or Wi-Fi. Developer Mode is required. There is no Instruments GUI, Python installation, app SDK or LLDB attachment. iOS simulators do not support this FPS collector. CPU and memory currently remain available on iOS simulators and connected Android devices.
+
+Text agents can call `mobile_display_fps_session` with `platform` and `deviceId`, read `mobile_read_display_fps` or the returned `fpsUri`, then finish with `mobile_display_fps_close`. FPS sample times use the server's monotonic clock in seconds; the session returns `timeOrigin`. CPU batches expose their own `timeOrigin` so consumers can align app-relative CPU times with device FPS. FPS sessions expire after five minutes without reads and release their tracing connection on shutdown or device switching.
+
+JavaScript profiling, detailed allocation debugging and DevSuite's network track are deferred.
 
 Text agents can monitor CPU and memory without opening the panel. Call
 `mobile_performance_sources` with `platform` and `deviceId`, then
@@ -246,6 +254,9 @@ Performance findings and historical measurements are documented in [the profilin
 | `mobile_cpu_session` | Connect a native process and thread CPU plus memory monitor |
 | `mobile_read_cpu` | Read live CPU and memory samples and connection status |
 | `mobile_cpu_close` | Stop one CPU and memory monitor while leaving its app running |
+| `mobile_display_fps_session` | Start device-wide Display FPS on Android 12+ or physical iOS 17.4+ |
+| `mobile_read_display_fps` | Read FPS intervals and connection status |
+| `mobile_display_fps_close` | Stop FPS collection and release the tracing connection |
 
 The `agent-device` MCP server exposes the pinned runtime's official tools directly, including `open`, `snapshot`, `press`, `fill`, `type`, `scroll`, `wait`, `find`, `get`, `is`, `close`, and debugging tools. Their input schemas describe each command. The bundled [control skill](skills/agent-device/SKILL.md) explains session ordering and links to the version-matched guide.
 

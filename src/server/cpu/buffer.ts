@@ -9,6 +9,7 @@ export class CpuBuffer {
   private closed = false;
   private waiters = new Set<() => void>();
   private readonly memoryMetric: MemoryMetric;
+  timeOrigin?: number;
 
   constructor(memoryMetric: MemoryMetric) { this.memoryMetric = memoryMetric; }
 
@@ -43,6 +44,6 @@ export class CpuBuffer {
       });
     }
     const samples = this.samples.filter(entry => entry.revision > after);
-    return { cursor: this.revision, phase: this.phase, samples: samples.map(entry => entry.sample), memoryMetric: this.memoryMetric, error: this.error };
+    return { cursor: this.revision, timeOrigin: this.timeOrigin, phase: this.phase, samples: samples.map(entry => entry.sample), memoryMetric: this.memoryMetric, error: this.error };
   }
 }

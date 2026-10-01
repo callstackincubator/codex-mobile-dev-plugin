@@ -16,6 +16,8 @@ import { LogSessions } from "./log-sessions.ts";
 import { registerLogTools } from "./log-tools.ts";
 import { CpuSessions, createCpuSessions } from "./cpu/sessions.ts";
 import { registerCpuTools } from "./cpu/tools.ts";
+import { DisplayFpsSessions } from "./fps/sessions.ts";
+import { registerDisplayFpsTools } from "./fps/tools.ts";
 import { SimulatorInputService } from "./simulator-input.ts";
 import type { InputStatus, SimulatorInput } from "./simulator-input.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
@@ -23,8 +25,8 @@ import { copyPNGToClipboard } from "./clipboard.ts";
 import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../shared/protocol.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-export const APP_URI = "ui://mobile-dev/0.1.51/simulator.html";
-export const WORKSPACE_URI = "ui://mobile-dev/0.1.51/workspace.html";
+export const APP_URI = "ui://mobile-dev/0.1.52/simulator.html";
+export const WORKSPACE_URI = "ui://mobile-dev/0.1.52/workspace.html";
 // Codex can retain entrypoint metadata after updating the installed plugin.
 const legacyAppUris = [
   "ui://mobile-dev/0.1.44/simulator.html",
@@ -88,7 +90,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   let selectedCpu = providedCpu;
   if (selectedCpu === undefined) selectedCpu = await createCpuSessions();
   const cpu = selectedCpu;
-  const server = new McpServer({ name: "mobile-dev", version: "0.1.51" }, {
+  const fps = new DisplayFpsSessions();
+  const server = new McpServer({ name: "mobile-dev", version: "0.1.52" }, {
     instructions: "Use mobile_list_simulators to get simulator UDIDs before acting. For app control, use the plugin's agent-device MCP tools with the same UDID and a named session. Prefer its snapshot refs and selectors for press, fill, and scroll. Baguette handles the panel stream and pointer input. Boot only a simulator the user selected. Read mobile_describe_ui or mobile_screenshot before sending coordinates. Coordinates use device points. For Android use mobile_list_android_devices and the mobile_android tools. Use the selected serial with agent-device and platform android. serve-emu handles Android video and panel input. Opening the panel does not boot a device.",
   });
   new OpenAIExtensions(server);
@@ -96,7 +99,12 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   registerLogTools(server, logs, baguette);
   registerCpuTools(server, cpu, baguette);
-  const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot, deviceId => cpu.closeDevice(deviceId));
+  registerDisplayFpsTools(server, fps);
+  const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot, async deviceId => {
+    const closeCpu = cpu.closeDevice(deviceId);
+    const closeFps = fps.closeDevice(deviceId);
+    await Promise.all([closeCpu, closeFps]);
+  });
   registerDeviceSettingsTools(server, baguette, android);
 
   const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<{ inputStatus: InputStatus; inputRepairMessage: string }> }>();
@@ -371,7 +379,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     server,
     async close() {
       closeAndroid(); streams.close();
-      try { await Promise.all([logs.close(), cpu.close(), closeIosMirror()]); }
+      try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror()]); }
       finally { baguette.dispose(); await server.close(); }
     },
   };

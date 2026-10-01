@@ -208,7 +208,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await act(async () => { expandCpu.click(); });
   assert.equal(expandCpu.getAttribute("aria-expanded"), "true");
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
-  const tracks = dom.window.document.querySelector<HTMLElement>('[aria-label="Live app CPU and memory usage"]');
+  const tracks = dom.window.document.querySelector<HTMLElement>('[aria-label="Live CPU, memory and display FPS"]');
   assert.ok(tracks);
   const beforeCursor = commits;
   await act(async () => { tracks.dispatchEvent(new dom.window.MouseEvent("mousemove", { bubbles: true, clientX: 270 })); });

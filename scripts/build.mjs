@@ -1,3 +1,4 @@
+import { fpsSourceHash } from "./build-fps.mjs";
 import { iosMirrorSourceHash } from "./build-ios-mirror.mjs";
 import { iosLogsSourceHash } from "./build-ios-logs.mjs";
 import { build } from "esbuild";
@@ -43,6 +44,26 @@ for (const source of iosLogsRelease.sources) {
 }
 for (const file of ["README.md", "LICENSE", "collector.c", "dependencies.json"]) await copyFile(`native/ios-logs/${file}`, `dist/ios-logs/${file}`);
 await copyFile("scripts/build-ios-logs.mjs", "dist/ios-logs/build-ios-logs.mjs");
+for (const platform of ["ios", "android"]) {
+  const root = `vendor/${platform}-fps`;
+  const text = await readFile(`${root}/release.json`, "utf8");
+  const release = JSON.parse(text);
+  const sourceHash = await fpsSourceHash(platform);
+  if (sourceHash !== release.sourceSHA256) throw new Error(`Run npm run rebuild:${platform}-fps after editing the FPS collector.`);
+  const binaries = platform === "ios"
+    ? [{ path: "mobile-dev-ios-fps", sha256: release.binarySHA256 }]
+    : Object.entries(release.binaries).map(([abi, binary]) => ({ path: `${abi}/mobile-dev-fps`, sha256: binary.sha256 }));
+  for (const binary of binaries) {
+    const bytes = await readFile(`${root}/${binary.path}`);
+    const hash = createHash("sha256");
+    hash.update(bytes);
+    if (hash.digest("hex") !== binary.sha256) throw new Error(`FPS helper integrity check failed for ${binary.path}.`);
+  }
+  await rm(`dist/${platform}-fps`, { recursive: true, force: true });
+  await cp(root, `dist/${platform}-fps`, { recursive: true });
+  await copyFile(`native/${platform}-fps/README.md`, `dist/${platform}-fps/README.md`);
+  if (platform === "android") await copyFile("native/android-fps/perfetto/LIBCXX-LICENSE.TXT", "dist/android-fps/LIBCXX-LICENSE.TXT");
+}
 const cpuRelease = JSON.parse(await readFile("vendor/android-cpu/release.json", "utf8"));
 const cpuSource = await readFile("native/android-cpu/collector.c");
 const cpuSourceHash = createHash("sha256").update(cpuSource).digest("hex");

@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import type { CpuSample } from "../../shared/cpu";
+import type { DisplayFpsSample } from "../../shared/display-fps";
 import { CHART_RIGHT_PADDING, LIVE_VIEW_DURATION, SIDEBAR_WIDTH } from "./constants";
 import type { ZoomState } from "./types";
 
-export function useTimelineViewport(samples: CpuSample[], scrollElement: HTMLDivElement | null) {
-  const first = samples[0];
-  const last = samples.at(-1);
-  const left = first?.time ?? 0;
-  const right = Math.max(last?.time ?? 0, left + LIVE_VIEW_DURATION);
+export function useTimelineViewport(samples: CpuSample[], scrollElement: HTMLDivElement | null, fpsSamples?: DisplayFpsSample[]) {
+  const first = Math.min(samples[0]?.time ?? Infinity, fpsSamples?.[0]?.time ?? Infinity);
+  const left = Number.isFinite(first) ? first : 0;
+  const lastCpu = samples.at(-1);
+  const lastFps = fpsSamples?.at(-1);
+  const right = Math.max(lastCpu?.time ?? 0, lastFps?.time ?? 0, left + LIVE_VIEW_DURATION);
   const [following, setFollowing] = useState(true);
   const [selection, setSelection] = useState<ZoomState | null>(null);
   const [viewportWidth, setViewportWidth] = useState(0);

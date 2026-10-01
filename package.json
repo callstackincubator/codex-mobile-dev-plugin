@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.51",
+  "version": "0.1.52",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,6 +11,8 @@
     "vendor:baguette": "node scripts/vendor-baguette.mjs",
     "vendor:agent-device": "npm ci --prefix runtimes/agent-device --ignore-scripts --no-audit --no-fund",
     "rebuild:baguette": "node scripts/rebuild-baguette.mjs",
+    "rebuild:ios-fps": "node scripts/build-fps.mjs ios",
+    "rebuild:android-fps": "node scripts/build-fps.mjs android",
     "rebuild:android-cpu": "node scripts/build-android-cpu.mjs",
     "rebuild:ios-logs": "node scripts/build-ios-logs.mjs",
     "start": "node dist/server.mjs",

@@ -23,6 +23,7 @@ function host() {
         sources.push(input.arguments.deviceId!);
         return { content: [], structuredContent: { apps } };
       }
+      if (input.name === "mobile_display_fps_session") return { isError: true, content: [{ type: "text", text: "FPS not provided by this CPU fixture" }] };
       if (input.name === "mobile_cpu_close") { events.push(`close:${input.arguments.sessionId}`); return { content: [] }; }
       await opening;
       if (input.arguments.target) targets.push(input.arguments.target);

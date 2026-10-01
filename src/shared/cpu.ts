@@ -12,6 +12,7 @@ export type CpuPhase = "idle" | "connecting" | "recording" | "stopping" | "stopp
 export type MemoryMetric = "rss" | "physical-footprint";
 export type CpuBatch = {
   cursor: number;
+  timeOrigin?: number;
   phase: CpuPhase;
   samples: CpuSample[];
   memoryMetric: MemoryMetric;

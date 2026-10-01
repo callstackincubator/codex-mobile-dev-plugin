@@ -4,18 +4,23 @@ import type { CpuApp, CpuBatch, CpuPhase, CpuSample, CpuTarget } from "../shared
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import { errorMessage } from "../shared/protocol.ts";
 import type { ThreadHistory, ThreadOrder } from "./performance/types.ts";
+import { DisplayFpsPanel, initialFpsState } from "./display-fps-panel.ts";
+import type { DisplayFpsState } from "./display-fps-panel.ts";
 
-type Snapshot = {
+type Snapshot = DisplayFpsState & {
   open: boolean; available: boolean; discovering: boolean; monitoring: boolean;
   selectedLabel: string; platform: "ios" | "android"; bundleId: string; apps: CpuApp[]; samples: CpuSample[];
   threadHistory: ReadonlyMap<string, ThreadHistory>;
   threadOrder: ThreadOrder;
   phase: CpuPhase; error: string; sourceError: string;
+  physical: boolean;
 };
 type Session = { id: string; abort: AbortController; closing?: Promise<void> };
 
 export class PerformancePanel {
   private app: App;
+  private fps: DisplayFpsPanel;
+  private timeOrigin?: number;
   private simulator?: SimulatorDevice;
   private session?: Session;
   private enabled = false;
@@ -28,11 +33,22 @@ export class PerformancePanel {
   private refresh?: ReturnType<typeof setInterval>;
   private selections = new Map<string, string>();
   private listeners = new Set<() => void>();
-  private snapshot: Snapshot = { open: false, available: false, discovering: false, monitoring: false,
+  private snapshot: Snapshot = { ...initialFpsState, physical: false, open: false, available: false, discovering: false, monitoring: false,
     selectedLabel: "Selected device", platform: "ios", bundleId: "", apps: [], samples: [], threadHistory: new Map(), threadOrder: "activity",
     phase: "idle", error: "", sourceError: "" };
 
-  constructor(app: App) { this.app = app; }
+  constructor(app: App) {
+    this.app = app;
+    this.fps = new DisplayFpsPanel(app, (fields, origin) => {
+      if (origin !== undefined && this.timeOrigin === undefined) this.timeOrigin = origin;
+      const samples = fields.fpsSamples;
+      if (samples && this.timeOrigin !== undefined) {
+        const offset = this.timeOrigin;
+        const fpsSamples = samples.map(sample => ({ ...sample, time: sample.time - offset }));
+        this.update({ ...fields, fpsSamples });
+      } else this.update(fields);
+    });
+  }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.snapshot;
   private update(fields: Partial<Snapshot>) { this.snapshot = { ...this.snapshot, ...fields }; for (const listener of this.listeners) listener(); }
@@ -45,6 +61,7 @@ export class PerformancePanel {
   private deviceKey(device: SimulatorDevice) { return `${device.platform ?? "ios"}:${device.udid}`; }
 
   setAvailable(available: boolean) {
+    this.fps.setAvailable(available);
     this.update({ available });
     if (available && this.enabled) { void this.discover(); }
     if (available === false) void this.stop().catch(error => this.failed(error));
@@ -53,8 +70,10 @@ export class PerformancePanel {
   selectSimulator(simulator?: SimulatorDevice) {
     const changed = simulator?.udid !== this.simulator?.udid || simulator?.state !== this.simulator?.state || simulator?.platform !== this.simulator?.platform;
     this.simulator = simulator;
-    this.update({ selectedLabel: simulator?.name ?? "Selected device", platform: simulator?.platform ?? "ios" });
+    this.update({ selectedLabel: simulator?.name ?? "Selected device", platform: simulator?.platform ?? "ios", physical: simulator?.kind === "physical" });
     if (changed === false) return;
+    this.timeOrigin = undefined;
+    this.fps.select(simulator);
     this.discovery++;
     let bundleId = "";
     if (simulator) {
@@ -70,6 +89,7 @@ export class PerformancePanel {
   show() {
     if (this.disposed) return;
     this.enabled = true;
+    this.fps.show();
     this.update({ open: true });
     if (this.refresh === undefined) this.refresh = setInterval(() => { void this.discover(); }, 3000);
     void this.discover();
@@ -86,7 +106,12 @@ export class PerformancePanel {
     this.update({ discovering: false });
     clearInterval(this.refresh);
     this.refresh = undefined;
-    try { await this.stop(); this.update({ monitoring: false, phase: "stopped" }); }
+    try {
+      const cpu = this.stop();
+      const fps = this.fps.disconnect();
+      await Promise.all([cpu, fps]);
+      this.update({ monitoring: false, phase: "stopped" });
+    }
     catch (error) { this.failed(error); }
   }
 
@@ -101,6 +126,7 @@ export class PerformancePanel {
   }
 
   retry() { this.restart(); }
+  retryFps() { this.fps.retry(); }
 
   private async call(name: string, arguments_: Record<string, unknown>) {
     const result = await this.app.callServerTool({ name, arguments: arguments_ }, { timeout: 45000 });
@@ -115,7 +141,7 @@ export class PerformancePanel {
   async discover() {
     if (this.disposed || this.snapshot.available === false || this.snapshot.discovering || this.enabled === false) return;
     const device = this.simulator;
-    if (device?.state !== "Booted") { this.update({ phase: "idle" }); return; }
+    if (device === undefined || (device.platform !== "android" && device.kind === "physical") || (device.state !== "Booted" && device.state !== "connected")) { this.update({ phase: "idle" }); return; }
     const discovery = ++this.discovery;
     this.update({ discovering: true });
     try {
@@ -146,7 +172,7 @@ export class PerformancePanel {
     const epoch = this.epoch;
     const device = this.simulator;
     const bundleId = this.snapshot.bundleId;
-    if (this.enabled === false || this.snapshot.available === false || device?.state !== "Booted" || bundleId === "") {
+    if (this.enabled === false || this.snapshot.available === false || device === undefined || (device.state !== "Booted" && device.state !== "connected") || bundleId === "") {
       void stopping.catch(error => this.failed(error));
       this.update({ monitoring: false });
       return;
@@ -179,7 +205,10 @@ export class PerformancePanel {
         if (content === undefined || !("text" in content)) throw new Error("The plugin returned an invalid CPU batch.");
         const batch: CpuBatch = JSON.parse(content.text);
         after = batch.cursor;
-        const combined = [...this.snapshot.samples, ...batch.samples];
+        if (batch.timeOrigin !== undefined && this.timeOrigin === undefined) this.timeOrigin = batch.timeOrigin;
+        const offset = batch.timeOrigin === undefined ? 0 : batch.timeOrigin - (this.timeOrigin ?? batch.timeOrigin);
+        const incoming = batch.samples.map(sample => ({ ...sample, time: sample.time + offset }));
+        const combined = [...this.snapshot.samples, ...incoming];
         const latest = combined.at(-1)?.time ?? 0;
         const retained = combined.filter(sample => sample.time >= latest - CPU_HISTORY_SECONDS);
         const samples = retained.slice(-CPU_MAX_SAMPLES);

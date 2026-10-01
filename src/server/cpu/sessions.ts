@@ -72,6 +72,7 @@ export class CpuSessions {
       const app = apps.find(candidate => candidate.bundleId === session.target.bundleId);
       if (app === undefined) throw new Error("The selected app is no longer running. Open it on the selected device.");
       const startedAt = performance.now();
+      session.buffer.timeOrigin = startedAt / 1000;
       session.monitor = await this.sources.monitor({ target: session.target, pid: app.pid, signal, onSample: reading => {
         if (signal.aborted || session.stopping) return;
         const now = performance.now();

@@ -39,7 +39,7 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
   Object.defineProperty(dom.window.HTMLElement.prototype, "clientHeight", { get: () => 360 });
   Object.defineProperty(dom.window.HTMLElement.prototype, "clientWidth", { get: () => viewportWidth });
   dom.window.HTMLElement.prototype.getBoundingClientRect = function () {
-    const tracks = this.getAttribute("aria-label") === "Live app CPU and memory usage";
+    const tracks = this.getAttribute("aria-label") === "Live CPU, memory and display FPS";
     const scroller = this.closest<HTMLElement>("[data-performance-scroll]");
     const width = tracks ? Number.parseFloat(this.style.width) : viewportWidth;
     const left = tracks ? -(scroller?.scrollLeft ?? 0) : 0;
@@ -85,7 +85,8 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
     const reading = sample(index + 1);
     return reading;
   });
-  let snapshot: ReturnType<PerformancePanel["getSnapshot"]> = { open: true, available: true, discovering: false, monitoring: true,
+  let snapshot: ReturnType<PerformancePanel["getSnapshot"]> = { open: true, available: true, discovering: false, monitoring: true, physical: false,
+    fpsSamples: [], fpsPhase: "idle", fpsError: "", fpsMonitoring: false, fpsSupported: false,
     selectedLabel: "Test device", platform: "ios", bundleId: "test.app", apps: [{ bundleId: "test.app", pid: 1 }], samples: initialSamples,
     threadHistory: new Map([["worker", { number: 1, peakCpuPercent: 20 }]]), threadOrder: "first-seen", phase: "recording", error: "", sourceError: "" };
   const listeners = new Set<() => void>();
@@ -100,7 +101,7 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
   const view = createElement(PerformanceView, { panel });
   await act(async () => { root.render(view); });
   const scroller = dom.window.document.querySelector<HTMLElement>("[data-performance-scroll]");
-  const tracks = dom.window.document.querySelector<HTMLElement>('[aria-label="Live app CPU and memory usage"]');
+  const tracks = dom.window.document.querySelector<HTMLElement>('[aria-label="Live CPU, memory and display FPS"]');
   assert.ok(scroller && tracks);
   let scrollLeft = 0;
   Object.defineProperty(scroller, "scrollWidth", { get: () => Number.parseFloat(tracks.style.width) });
