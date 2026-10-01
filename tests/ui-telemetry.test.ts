@@ -49,6 +49,9 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   api.setUiSurface("logs");
   api.setUiTelemetryContext({ layout: "both", device_platform: "ios", device_kind: "physical" });
   api.recordUiTiming("ui.logs.publish", 7);
+  api.setUiSurface("simulator");
+  api.recordUiTiming("ui.annotations.tree_processing", 3);
+  api.setUiSurface("logs");
   frame(116);
   frame(132);
   api.flushUiMeasurements();
@@ -82,6 +85,8 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   assert.ok(allowedRequests);
   contains(encoded, '"environment":"development"');
   contains(encoded, "ui.logs.publish.mean");
+  contains(encoded, "ui.annotations.tree_processing.mean");
+  contains(encoded, '"surface":{"value":"simulator"');
   contains(encoded, "ui.performance.batch.mean");
   contains(encoded, '"surface":{"value":"logs"');
   contains(encoded, '"surface":{"value":"performance"');

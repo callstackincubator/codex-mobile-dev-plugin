@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 
 export function ScreenSelectButton({ store }: { store: ScreenAnnotationsStore }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  return <Button variant="ghost" size="icon" className="shrink-0 aria-pressed:bg-blue-500/15 aria-pressed:text-blue-500" data-element="select-mode" title="Select and annotate components" aria-label="Select and annotate components" aria-pressed={state.selecting} disabled={state.disabled || state.busy} onClick={() => void store.toggle()}><MousePointer2Icon /></Button>;
+  return <Button variant="ghost" size="icon" className="shrink-0 aria-pressed:bg-blue-500/15 aria-pressed:text-blue-500" data-element="select-mode" title="Click an element or drag a region to add a note" aria-label="Select and annotate components" aria-pressed={state.selecting} disabled={state.disabled || state.busy} onClick={() => void store.toggle()}><MousePointer2Icon /></Button>;
 }
 
 export function ScreenAnnotationOverlay({ store }: { store: ScreenAnnotationsStore }) {
@@ -30,6 +30,7 @@ export function ScreenAnnotationOverlay({ store }: { store: ScreenAnnotationsSto
   return <div className="pointer-events-none absolute inset-0 z-20" data-element="annotations">
     {draft && (!state.selecting || draft.screenshot.id !== state.capture?.screenshot.id) && <img src={`data:image/png;base64,${draft.screenshot.data}`} alt="Captured simulator screen" className="absolute" style={{ left: v.x, top: v.y, width: v.width, height: v.height }} />}
     {highlighted && <div data-element="component-highlight" data-component-source={highlighted.source ?? "accessibility"} className="absolute border-2 border-solid border-blue-500 bg-blue-500/10" style={rect(highlighted.bounds)} />}
+    {state.selectionBounds && <div data-element="region-selection" className="absolute border-2 border-solid border-blue-500 bg-blue-500/10" style={rect(state.selectionBounds)} />}
     {state.annotations.filter(item => item.screenshot.id === capture?.screenshot.id).map(annotation => {
       const b = rect(annotation.component.bounds);
       return <button key={annotation.id} type="button" className="annotation-marker pointer-events-auto absolute flex size-6 items-center justify-center rounded-full border-2 border-white bg-blue-500 text-[11px] font-semibold text-white shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500" style={{ left: Math.max(v.x, Math.min((b.left ?? 0) + (b.width ?? 0) - 12, v.x + v.width - 24)), top: Math.max(v.y, Math.min((b.top ?? 0) + (b.height ?? 0) - 12, v.y + v.height - 24)) }} title={`#${annotation.number} ${annotation.component.name}: ${annotation.text}`} aria-label={`Edit annotation ${annotation.number}: ${annotation.component.name}`} disabled={state.busy} onClick={() => store.edit(annotation)}>{annotation.number}</button>;
@@ -38,6 +39,7 @@ export function ScreenAnnotationOverlay({ store }: { store: ScreenAnnotationsSto
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); store.closeDraft(); }
       if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void store.save(); }
     }}>
+      {state.candidates.length > 1 && <Popover><PopoverTrigger asChild><Button variant="ghost" size="icon" className="rounded-full" title="Select an enclosing element" aria-label="Select an enclosing element"><MousePointer2Icon /></Button></PopoverTrigger><PopoverContent className="max-h-64 w-64 overflow-y-auto p-1" side="top">{state.candidates.map((candidate, index) => <button key={candidate.nodeId ?? index} type="button" className="block w-full truncate rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted" aria-pressed={candidate === draft.component} disabled={state.busy} onClick={() => store.chooseComponent(candidate)}>{candidate.name}</button>)}</PopoverContent></Popover>}
       <input autoFocus type="text" aria-label="Annotation note" placeholder="Add a note..." className="h-8 min-w-0 flex-1 border-0 bg-transparent px-3 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50" value={draft.text} maxLength={8000} disabled={state.busy} onChange={event => store.setText(event.target.value)} />
       <Button type="submit" size="icon" className="rounded-full bg-foreground text-background hover:bg-foreground/85" title="Attach note to chat" aria-label="Save annotation" disabled={!draft.text.trim() || state.busy}><ArrowUpIcon /></Button>
     </form>}

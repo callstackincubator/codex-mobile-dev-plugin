@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { componentAt, screenComponents } from "../src/shared/screen-annotations.ts";
+import { componentAt, componentsAt, screenComponents } from "../src/shared/screen-annotations.ts";
 import { ScreenAnnotationsStore } from "../src/ui/screen-annotations.ts";
 import type { ScreenAnnotation } from "../src/shared/screen-annotations.ts";
 import { PanelContext } from "../src/ui/model-context.ts";
@@ -81,28 +81,59 @@ test("screen-wide containers never win and smaller controls beat deeper containe
   assert.equal(componentAt(components, { x: 350, y: 500 }, screen), undefined);
 });
 
-test("a sparse accessibility tree uses screen regions for hover and opens the same bounds on click", async () => {
+test("a sparse accessibility tree supports explicit regions without pixel guesses", async () => {
   const f = fixture();
-  const regions = [
-    { name: "Screen region", source: "screen" as const, depth: 0, bounds: { x: 50, y: 200, width: 250, height: 180 } },
-    { name: "Screen region", source: "screen" as const, depth: 0, bounds: { x: 20, y: 400, width: 350, height: 48 } },
-  ];
-  f.store.readRegions = () => regions;
-  let release!: (tree: unknown) => void;
-  f.store.readTree = () => new Promise(resolve => { release = resolve; });
-  const loading = f.store.toggle();
+  f.store.readTree = async () => ({ role: "AXApplication", frame: { x: 0, y: 0, width: 393, height: 852 } });
+  await f.store.toggle();
   f.store.hover({ x: 150, y: 280 });
-  release({ role: "AXApplication", frame: { x: 0, y: 0, width: 393, height: 852 } });
-  await loading;
-  assert.equal(f.store.getSnapshot().hovered, regions[0]);
-  assert.equal(f.store.getSnapshot().draft, undefined);
-  f.store.hover({ x: 200, y: 420 });
-  assert.equal(f.store.getSnapshot().hovered, regions[1]);
-  f.store.select({ x: 200, y: 420 });
-  assert.equal(f.store.getSnapshot().draft?.component, regions[1]);
+  assert.equal(f.store.getSnapshot().hovered, undefined);
+  assert.equal(f.store.beginSelection({ x: 300, y: 450 }), true);
+  f.store.moveSelection({ x: 20, y: 400 });
+  assert.deepEqual(f.store.getSnapshot().selectionBounds, { x: 20, y: 400, width: 280, height: 50 });
+  f.store.endSelection({ x: 20, y: 400 });
+  assert.equal(f.store.getSnapshot().selectionBounds, undefined);
+  assert.deepEqual(f.store.getSnapshot().draft?.component.bounds, { x: 20, y: 400, width: 280, height: 50 });
+  assert.equal(f.store.getSnapshot().draft?.component.role, "manual-region");
   f.store.setText("Make this button bigger"); await f.store.save();
   assert.match(JSON.stringify(f.updates.at(-1)?.content), /No native component name is available/);
-  f.store.hover(); assert.equal(f.store.getSnapshot().hovered, undefined);
+  f.store.dispose();
+});
+
+test("real parents remain selectable without choosing overlapping siblings", async () => {
+  const tree = { role: "AXGroup", label: "Card", frame: { x: 10, y: 100, width: 350, height: 70 }, children: [
+    { role: "AXStaticText", label: "Title", frame: { x: 30, y: 120, width: 150, height: 20 } },
+    { role: "AXGroup", label: "Overlapping sibling", frame: { x: 20, y: 110, width: 200, height: 40 } },
+  ] };
+  const items = screenComponents(tree);
+  const candidates = componentsAt(items, { x: 40, y: 125 }, capture.screen);
+  assert.deepEqual(candidates.map(item => item.name), ["Title", "Card"]);
+  assert.equal(candidates[0].parentId, candidates[1].nodeId);
+  assert.equal(componentAt(items, { x: 300, y: 130 }, capture.screen)?.name, "Card");
+  const f = fixture();
+  f.store.readTree = async () => tree;
+  await f.store.toggle();
+  f.store.select({ x: 40, y: 125 });
+  f.store.setText("Keep this note");
+  f.store.chooseComponent(f.store.getSnapshot().candidates[1]);
+  assert.equal(f.store.getSnapshot().draft?.component.name, "Card");
+  assert.equal(f.store.getSnapshot().draft?.text, "Keep this note");
+  f.store.dispose();
+});
+
+test("region drags clamp to screen bounds and cancel without creating a note", async () => {
+  const f = fixture();
+  await f.store.toggle();
+  f.store.beginSelection({ x: 10, y: 10 });
+  f.store.moveSelection({ x: 900, y: 900 });
+  assert.deepEqual(f.store.getSnapshot().selectionBounds, { x: 10, y: 10, width: 383, height: 842 });
+  f.store.cancelSelection();
+  f.store.endSelection({ x: 50, y: 50 });
+  assert.equal(f.store.getSnapshot().draft, undefined);
+  f.store.beginSelection({ x: 20, y: 20 });
+  f.store.configure(simulator, true);
+  f.store.endSelection({ x: 100, y: 100 });
+  assert.equal(f.store.getSnapshot().draft, undefined);
+  assert.equal(f.store.getSnapshot().selectionBounds, undefined);
   f.store.dispose();
 });
 
@@ -167,7 +198,7 @@ test("selecting supports hover, multiple notes, edits, regions, and Escape witho
   f.store.hover({ x: 50, y: 40 }); assert.equal(f.store.getSnapshot().hovered?.name, "Continue");
   f.store.select({ x: 50, y: 40 }); f.store.setText("Make it bigger"); await f.store.save();
   assert.equal(f.store.getSnapshot().annotations.length, 1); assert.equal(f.store.getSnapshot().draft, undefined);
-  f.store.select({ x: 250, y: 250 }); assert.equal(f.store.getSnapshot().draft?.component.name, "Screen region");
+  f.store.select({ x: 250, y: 250 }); assert.equal(f.store.getSnapshot().draft?.component.name, "Screen point");
   f.store.setText("Add a heading"); await f.store.save();
   assert.equal(f.store.getSnapshot().annotations[1].number, 2);
   f.store.edit(f.context.screenAnnotations[0]); f.store.setText("Make it blue"); await f.store.save();

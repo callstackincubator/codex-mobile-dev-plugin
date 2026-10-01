@@ -247,7 +247,13 @@ UI resource addresses include the release version so Codex can load new HTML aft
 
 Performance findings and historical measurements are documented in [the profiling report](docs/stream-profiling.md). Diagnostic timing reports remain available in Console; the simulator uses the upstream UI without temporary timing widgets.
 
+## Screen annotations
+
+Screen annotations use the device's accessibility tree for native and React Native apps. Click an exposed element to add a note. The note popup can select an enclosing element when the tree includes one; flat Android snapshots offer elements whose reported bounds contain the selection. Drag to mark a region when the app does not expose a view. Region annotations carry user-selected bounds, not inferred component names.
+
 ## Sentry
+
+`ui.annotations.tree_processing` measures local element-tree processing in milliseconds on the current simulator surface. It uses the same bounded timing windows as other UI measurements. Tree contents and selected regions are not sent to Sentry.
 
 The React UI reports to `codex-mobile-dev-ui` (project `4512181027471440`). The main Node MCP server and the agent-device launcher report to `codex-mobile-dev-server`, distinguished by the `component` attribute. Native helpers report to `codex-mobile-dev-native`: Baguette, physical iOS mirroring, iOS FPS and logs, and Android CPU and FPS collectors. All three projects use release `mobile-dev@<plugin version>`.
 

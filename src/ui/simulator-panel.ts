@@ -13,7 +13,6 @@ import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
 import { countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { PanelContext } from "./model-context.ts";
 import { getScreenAnnotations } from "./screen-annotations.ts";
-import { screenRegions } from "../shared/screen-regions.ts";
 import { AndroidVideo } from "./android-video.ts";
 import { PhysicalIosVideo } from "./ios-mirror-video.ts";
 import { iosVideoBatchSchema } from "../shared/ios-video.ts";
@@ -199,16 +198,6 @@ export function createSimulatorPanel(
   annotations.readTree = async simulator => {
     const result = await call(platform === "android" ? "mobile_android_describe_ui" : "mobile_describe_ui", platform === "android" ? { deviceId: simulator.udid } : { udid: simulator.udid }, { timeout: 30000 });
     return result.structuredContent?.tree;
-  };
-  annotations.readRegions = screen => {
-    const sampled = document.createElement("canvas");
-    const scale = Math.min(1, 400 / canvas.width);
-    sampled.width = Math.max(1, Math.round(canvas.width * scale));
-    sampled.height = Math.max(1, Math.round(canvas.height * scale));
-    const pixels = sampled.getContext("2d", { willReadFrequently: true });
-    if (!pixels) return [];
-    pixels.drawImage(canvas, 0, 0, sampled.width, sampled.height);
-    return screenRegions(pixels.getImageData(0, 0, sampled.width, sampled.height).data, sampled.width, sampled.height, screen);
   };
   const stopObservingAnnotations = annotations.subscribe(() => {
     const state = annotations.getSnapshot();
@@ -764,8 +753,22 @@ export function createSimulatorPanel(
     };
   }
 
+  let annotationPointer: number | undefined;
+  const cancelAnnotationPointer = () => {
+    annotations.cancelSelection();
+    if (annotationPointer !== undefined && canvas.hasPointerCapture(annotationPointer)) canvas.releasePointerCapture(annotationPointer);
+    annotationPointer = undefined;
+  };
   canvas.addEventListener("pointerdown", event => {
-    if (annotations.getSnapshot().selecting && event.button === 0) { event.preventDefault(); annotations.select(mappedPoint(event)); return; }
+    if (annotations.getSnapshot().selecting && event.button === 0) {
+      event.preventDefault();
+      if (annotations.beginSelection(mappedPoint(event))) {
+        annotationPointer = event.pointerId;
+        canvas.setPointerCapture(event.pointerId);
+        canvas.focus();
+      }
+      return;
+    }
     if (annotations.getSnapshot().draft) return;
     if (!ready || inputBlocked || busy || event.button !== 0 || pointer) return;
     const position = mappedPoint(event);
@@ -775,20 +778,30 @@ export function createSimulatorPanel(
     send({ type: "touch1-down", ...position, ...points, ...(edge ? { edge } : {}) });
   });
   canvas.addEventListener("pointermove", event => {
-    if (annotations.getSnapshot().selecting) { annotations.hover(mappedPoint(event)); return; }
+    if (annotations.getSnapshot().selecting) { if (annotationPointer === undefined || annotationPointer === event.pointerId) annotations.hover(mappedPoint(event)); return; }
     if (!pointer || pointer.id !== event.pointerId) return;
     Object.assign(pointer, mappedPoint(event));
     send({ type: "touch1-move", x: pointer.x, y: pointer.y, ...points, ...(pointer.edge ? { edge: pointer.edge } : {}) });
   });
-  canvas.addEventListener("pointerleave", () => annotations.hover());
-  canvas.addEventListener("pointerup", event => { if (pointer?.id === event.pointerId) releasePointer(); });
+  canvas.addEventListener("pointerleave", () => { if (annotationPointer === undefined) annotations.hover(); });
+  canvas.addEventListener("pointerup", event => {
+    if (annotationPointer === event.pointerId) {
+      annotations.endSelection(mappedPoint(event));
+      cancelAnnotationPointer();
+      return;
+    }
+    if (pointer?.id === event.pointerId) releasePointer();
+  });
+  canvas.addEventListener("pointercancel", cancelAnnotationPointer);
+  canvas.addEventListener("lostpointercapture", cancelAnnotationPointer);
+  window.addEventListener("blur", cancelAnnotationPointer);
   canvas.addEventListener("pointercancel", releasePointer);
   canvas.addEventListener("lostpointercapture", releasePointer);
   window.addEventListener("blur", releasePointer);
   canvas.addEventListener("keydown", event => {
     if (stream?.physicalIos) return;
     if (annotations.getSnapshot().selecting || annotations.getSnapshot().draft) {
-      if (event.key === "Escape") { event.preventDefault(); annotations.exit(); }
+      if (event.key === "Escape") { event.preventDefault(); cancelAnnotationPointer(); annotations.exit(); }
       return;
     }
     if (!ready || inputBlocked || busy || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -870,6 +883,7 @@ export function createSimulatorPanel(
       toolsAvailable = false;
       resizeObserver.disconnect();
       window.removeEventListener("blur", releasePointer);
+      window.removeEventListener("blur", cancelAnnotationPointer);
       window.removeEventListener("message", observeFrame);
       arrivals.clear();
       document.removeEventListener("visibilitychange", onVisibility);
