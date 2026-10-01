@@ -51,6 +51,10 @@ Physical iOS mirroring uses the same Apple DeviceKit bezel and framebuffer mask 
 
 Ask the agent to inspect or control the app on the selected device. The panel shares both visible device IDs and platforms with the chat. Click a device panel to make it the active device for logs. Hiding a simulator keeps the current log source and buffered logs. The agent uses the bundled agent-device tools with the chosen device ID, opens a named session, reads accessibility refs, then presses elements or fills fields. Baguette streams iOS and serve-emu streams Android in the panel. The tools take the same session name on later calls so refs and app state stay together.
 
+For mobile app development, the bundled skill tells the agent to open the panel beside the chat before the first device launch, or reuse an open panel. It covers iOS, Android, Expo, React Native, and SwiftUI work. The agent follows your device choice, reuses a suitable running device, or chooses and boots an installed simulator or AVD. It asks only when the choice changes what the task needs. The app project's own tools build, install, and launch the app on that device; the agent reuses an existing app dev server.
+
+You can request fullscreen or a tool-only workflow. Planning, docs, code review, and compilation-only requests do not need a panel. Skill matching depends on the prompt and project context; [the workflow cases](docs/agent-workflow.md) cover the expected behavior in fresh chats.
+
 ## Android
 
 Install Bun 1.3.13 or later and Android SDK platform-tools and emulator. Create an AVD in Android Studio or connect an Android device and authorize adb access. The Android panel lists devices without booting one. Selecting an AVD boots it if needed, then starts the bundled serve-emu CLI on a private loopback port. Home, Back, Recents, Lock, pointer gestures, and typing use scrcpy's control socket. Closing the panel leaves the emulator running. AVDs start without a separate emulator window. A failed emulator process reports its exit right away instead of waiting for the boot timeout.
