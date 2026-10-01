@@ -55,7 +55,7 @@ export class PanelContext {
   private changed() { this.onChange(); for (const listener of this.listeners) listener(); }
 
   async attachAnnotation(annotation: ScreenAnnotation) {
-    if (!this.canAttachScreenshots) throw new Error("This host does not support screen annotations.");
+    if (!this.canAttach) throw new Error("This host does not support screen annotations.");
     const previous = this.annotations;
     this.annotations = [...previous.filter(item => item.id !== annotation.id), annotation];
     const revision = ++this.revision;
@@ -84,15 +84,11 @@ export class PanelContext {
     if (!this.canSendMessage) throw new Error("This host does not support chat messages.");
     const annotations = this.annotations.filter(item => item.simulator.udid === simulatorId);
     if (!annotations.length) return;
-    const sendImages = !!this.app.getHostCapabilities()?.message?.image;
-    if (!sendImages) await this.publish();
     if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
-    const captures = [...new Map(annotations.map(annotation => [annotation.screenshot.id, annotation])).values()];
     const result = await withComposer(() => {
       if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
       return this.app.sendMessage({ role: "user", content: [
-        { type: "text", text: `Please address these simulator screen annotations. Refer to the attached screen captures.\n\n${annotations.map(formatAnnotationContext).join("\n\n")}` },
-        ...(sendImages ? captures.map(annotation => ({ type: "image" as const, mimeType: "image/png", data: annotation.screenshot.data })) : []),
+        { type: "text", text: `Please address these simulator screen annotations.\n\n${annotations.map(formatAnnotationContext).join("\n\n")}` },
       ], _meta: { "openai/message": { target: "active", send: true } } });
     });
     if (result.isError) throw new Error("Could not send these annotations to chat.");
@@ -159,7 +155,6 @@ export class PanelContext {
       : Array.isArray(current?.structuredContent?.screenshotIds) && current.structuredContent.screenshotIds.includes(screenshot.id));
     const annotations = this.annotations.filter(annotation => this.pendingAnnotations.has(annotation.id) || (current?.content
       ? current.content.some(item => item.type === "text" && item.text === formatAnnotationContext(annotation))
-        && current.content.some(item => item.type === "image" && item.data === annotation.screenshot.data && item._meta?.["mobile-dev/annotationScreenshotId"] === annotation.screenshot.id)
       : Array.isArray(current?.structuredContent?.annotationIds) && current.structuredContent.annotationIds.includes(annotation.id)));
     if (current !== null && current.updateId === this.updateId && (!this.attached || logPresent) && remaining.length === this.screenshots.length && annotations.length === this.annotations.length) return;
     // A clear from the host wins over a pending panel update.
@@ -183,7 +178,6 @@ export class PanelContext {
       if (revision !== this.revision) return;
       const selected = this.simulator;
       const log = this.attached;
-      const captures = [...new Map(this.annotations.map(annotation => [annotation.screenshot.id, annotation])).values()];
       const devices = this.simulators.map(device => {
         const role = device.udid === selected?.udid ? "Active" : "Visible";
         if (device.kind === "physical" && device.platform === "ios") return `${role} physical iOS device: ${device.name}. UDID: ${device.udid}. State: ${device.state}. Transport: ${device.transportType}. The panel mirrors this device through an interactive HEVC stream with pointer taps and drags. Native unified logs use mobile_logs_session with platform ios, kind physical, and this hardware UDID. They do not require launching the app; ordinary print output is unavailable and private values may be redacted. Physical iOS keyboard input, hardware buttons, screenshots, and agent-device control are not implemented yet.`;
@@ -198,8 +192,7 @@ export class PanelContext {
         type: "image" as const, mimeType: "image/png", data: screenshot.data,
         _meta: { "openai/title": `Screenshot of ${screenshot.simulator.name} (${screenshot.simulator.udid})`, "mobile-dev/screenshotId": screenshot.id },
       })),
-      ...this.annotations.map(annotation => ({ type: "text" as const, text: formatAnnotationContext(annotation), _meta: { "openai/title": `#${annotation.number} ${annotation.component.name}`, "mobile-dev/annotationId": annotation.id } })),
-      ...captures.map(annotation => ({ type: "image" as const, mimeType: "image/png", data: annotation.screenshot.data, _meta: { "openai/title": `Annotated screen of ${annotation.simulator.name} at ${annotation.screenshot.capturedAt}`, "mobile-dev/annotationScreenshotId": annotation.screenshot.id } }))];
+      ...this.annotations.map(annotation => ({ type: "text" as const, text: formatAnnotationContext(annotation), _meta: { "openai/title": `#${annotation.number} ${annotation.component.name}`, "mobile-dev/annotationId": annotation.id } }))];
       const params = { content, structuredContent: { selectedSimulator: selected ?? null, selectedSimulators: this.simulators, selectedLog: log ?? null, selectedLogKey: log ? logKey(log) : null, screenshotIds: this.screenshots.map(item => item.id), annotationIds: this.annotations.map(item => item.id), screenAnnotations: this.annotations.map(annotationDetails) } };
       this.pending = true;
       try {

@@ -185,7 +185,7 @@ function fixture(t: TestContext) {
     root.elements.get("device-frame")!.hidden = true;
     for (const button of ["home", "app-switcher"]) { const element = new Element(); element.dataset.button = button; root.buttons.push(element); }
     const panelContext = {
-      canAttachScreenshots: true, screenAnnotations: attachedAnnotations, subscribe: () => () => {},
+      canAttach: true, canAttachScreenshots: true, screenAnnotations: attachedAnnotations, subscribe: () => () => {},
       async attachScreenshot(screenshot: ScreenshotAttachment) { screenshots.push(screenshot); return true; },
       async attachAnnotation(annotation: ScreenAnnotation) { attachedAnnotations.push(annotation); return true; },
     } as unknown as PanelContext;

@@ -19,12 +19,13 @@ function fixture() {
   let failuresLeft = Infinity;
   let sendFailures = 0;
   let imageMessages = false;
+  let imageAttachments = true;
   let rejected = false;
   let gate: Promise<void> | undefined;
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const context = new PanelContext({
-    getHostCapabilities: () => ({ message: { text: {}, ...(imageMessages ? { image: {} } : {}) }, updateModelContext: { image: {} } }),
+    getHostCapabilities: () => ({ message: { text: {}, ...(imageMessages ? { image: {} } : {}) }, updateModelContext: imageAttachments ? { image: {} } : {} }),
     async sendMessage(message: Parameters<App["sendMessage"]>[0]) { if (sendFailures-- > 0) throw new Error("MCP app messages require an available composer"); messages.push(message); return { isError: rejected }; },
   } as unknown as App, { modelContext: {
     getCurrent: () => current,
@@ -42,7 +43,7 @@ function fixture() {
     remove(id: string) { if (current) current = { ...current, updateId: "removed", content: current.content?.filter(item => item._meta?.["mobile-dev/annotationId"] !== id) }; context.hostChanged(); },
     fail() { failure = "Host refused context"; }, reject(value = true) { rejected = value; }, hold(value?: Promise<void>) { gate = value; },
     noComposer(count = Infinity) { failure = "MCP model context requires an available composer"; failuresLeft = count; },
-    restoreComposer() { failure = undefined; }, imageMessages() { imageMessages = true; }, delayMessageComposer() { sendFailures = 1; },
+    restoreComposer() { failure = undefined; }, imageMessages() { imageMessages = true; }, noImages() { imageAttachments = false; }, delayMessageComposer() { sendFailures = 1; },
   };
 }
 
@@ -188,13 +189,14 @@ test("region drags clamp to screen bounds and cancel without creating a note", a
   f.store.dispose();
 });
 
-test("multiple notes attach with one capture, survive device changes, and retain element metadata", async () => {
+test("multiple notes attach as text, keep captures local, and survive device changes", async () => {
   const f = fixture();
   f.context.selectSimulator(simulator);
   await f.context.attachAnnotation(annotation);
   await f.context.attachAnnotation({ ...annotation, id: "note-2", number: 2, text: "Use a darker color" });
   const update = f.updates.at(-1)!;
-  assert.equal(update.content?.filter(item => item.type === "image").length, 1);
+  assert.equal(update.content?.filter(item => item.type === "image").length, 0);
+  assert.doesNotMatch(JSON.stringify(update), new RegExp(capture.screenshot.data));
   assert.deepEqual(update.structuredContent?.annotationIds, ["note-1", "note-2"]);
   assert.match(JSON.stringify(update.content), /continue-button/);
   assert.match(JSON.stringify(update.content), /Make this button larger/);
@@ -205,10 +207,24 @@ test("multiple notes attach with one capture, survive device changes, and retain
   f.store.configure(simulator, false);
   assert.equal(f.store.getSnapshot().annotations.length, 2);
   await f.context.removeAnnotation("note-1");
-  assert.equal(f.updates.at(-1)?.content?.filter(item => item.type === "image").length, 1);
+  assert.equal(f.updates.at(-1)?.content?.filter(item => item.type === "image").length, 0);
   await f.context.removeAnnotation("note-2");
   assert.equal(f.updates.at(-1)?.content?.filter(item => item.type === "image").length, 0);
   f.store.dispose();
+});
+
+test("annotations work on text-only hosts and preserve explicitly attached screenshots", async () => {
+  const f = fixture(); f.noImages();
+  assert.equal(f.context.canAttachScreenshots, false);
+  await f.context.attachAnnotation(annotation);
+  await f.context.sendAnnotationsToChat(simulator.udid);
+  assert.equal(f.messages[0].content.some(item => item.type === "image"), false);
+  const images = fixture();
+  await images.context.attachScreenshot({ id: "explicit", data: capture.screenshot.data, simulator });
+  await images.context.attachAnnotation(annotation);
+  assert.equal(images.updates.at(-1)?.content?.filter(item => item.type === "image").length, 1);
+  assert.equal(images.updates.at(-1)?.content?.find(item => item.type === "image")?._meta?.["mobile-dev/screenshotId"], "explicit");
+  f.store.dispose(); images.store.dispose();
 });
 
 test("host removals clear markers and a later device selection does not reattach notes", async () => {
@@ -262,7 +278,7 @@ test("selecting supports hover, multiple notes, edits, regions, and Escape witho
   f.store.dispose();
 });
 
-test("send includes every note and original coordinates with captures in model context, and reports rejection", async () => {
+test("send includes every note as text without automatic screenshots, and reports rejection", async () => {
   const f = fixture();
   await f.context.attachAnnotation(annotation);
   await f.context.attachAnnotation({ ...annotation, id: "note-2", number: 2, text: "Use a darker color" });
@@ -274,7 +290,8 @@ test("send includes every note and original coordinates with captures in model c
   assert.match(JSON.stringify(f.messages[0].content), /Make this button larger/);
   assert.match(JSON.stringify(f.messages[0].content), /Use a darker color/);
   assert.match(JSON.stringify(f.messages[0].content), /393/);
-  assert.equal(f.updates.at(-1)?.content?.some(item => item.type === "image"), true);
+  assert.equal(f.updates.at(-1)?.content?.some(item => item.type === "image"), false);
+  assert.equal(f.messages[0].content.some(item => item.type === "image"), false);
   assert.equal(f.context.screenAnnotations.length, 0);
   assert.deepEqual(f.messages[0]._meta?.["openai/message"], { target: "active", send: true });
   f.store.dispose();
@@ -300,18 +317,18 @@ test("an unavailable composer keeps notes locally and reattaches them on return"
   f.restoreComposer(); f.context.resume();
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(f.context.annotationsPending, false);
-  assert.equal(f.updates.at(-1)?.content?.some(item => item.type === "image"), true);
+  assert.equal(f.updates.at(-1)?.content?.some(item => item.type === "image"), false);
   f.store.dispose();
 });
 
-test("image-capable chats send the complete capture without a composer context write", async () => {
+test("even image-capable chats send annotations as text without a composer context write", async () => {
   const f = fixture(); await f.context.attachAnnotation(annotation);
   const writes = f.updates.length;
   f.imageMessages(); f.noComposer(); f.delayMessageComposer();
   await f.store.send();
   assert.equal(f.updates.length, writes);
   assert.equal(f.messages.length, 1);
-  assert.equal(f.messages[0].content.filter(item => item.type === "image").length, 1);
+  assert.equal(f.messages[0].content.filter(item => item.type === "image").length, 0);
   assert.equal(f.context.screenAnnotations.length, 0);
   assert.equal(f.store.getSnapshot().error, "");
   f.store.dispose();

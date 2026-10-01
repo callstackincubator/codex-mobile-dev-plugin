@@ -96,7 +96,7 @@ export function createSimulatorPanel(
     const screenshotReady = physicalIos ? ready && stream?.physicalIos === true : status?.connected;
     screenshotButton.disabled = busy || !toolsAvailable || !connected || !screenshotReady || !panelContext.canAttachScreenshots || disposed;
     screenshotButton.title = panelContext.canAttachScreenshots ? "Screenshot to chat and clipboard" : "This host does not support screenshot attachments";
-    annotations.configure(selected, !ready || busy || !toolsAvailable || !connected || !panelContext.canAttachScreenshots || disposed);
+    annotations.configure(selected, !ready || busy || !toolsAvailable || !connected || !panelContext.canAttach || disposed);
     deviceButtons();
   }
 
