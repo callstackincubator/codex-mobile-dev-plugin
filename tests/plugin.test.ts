@@ -217,6 +217,12 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.equal(status.structuredContent?.connected, true);
   assert.equal((status.structuredContent?.devices as unknown[]).length, 2);
   const session = await client.callTool({ name: "mobile_stream_session", arguments: { udid: UDID } });
+  assert.equal(session.isError, undefined);
+  const definition = session.structuredContent?.definition;
+  assert.ok(definition && typeof definition === "object" && "screen" in definition);
+  const screen = definition.screen;
+  assert.ok(screen && typeof screen === "object" && "maskImage" in screen);
+  assert.equal(screen.maskImage, null);
   assert.equal(session.structuredContent?.fps, 60);
   assert.match(session._meta?.sessionId as string, /^[a-f0-9]{64}$/);
   assert.equal(session._meta?.streamUrl, undefined);

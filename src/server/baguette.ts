@@ -20,7 +20,7 @@ export const definitionSchema = z.object({
     clipRadius: z.number().nonnegative().optional(),
     buttonMargins: buttonMarginsSchema.optional(),
     bezelImage: z.object({ rest: z.string() }).optional(),
-    maskImage: z.string().optional(),
+    maskImage: z.string().nullish(),
   }),
 });
 

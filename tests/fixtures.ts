@@ -49,7 +49,9 @@ export async function fakeBaguette() {
       if (request.method === "POST") { let body = ""; for await (const chunk of request) body += chunk; Object.assign(settings, JSON.parse(body)); }
       response.end(JSON.stringify(settings));
     } else if (path.endsWith("/definition.json")) {
-      response.end(JSON.stringify({ identity: { udid: UDID, name: "iPhone 17", model: "iPhone 17" }, screen: { rect: SCREEN } }));
+      const definition = { identity: { udid: UDID, name: "iPhone 17", model: "iPhone 17" }, screen: { rect: SCREEN, maskImage: null } };
+      const body = JSON.stringify(definition);
+      response.end(body);
     } else if (path.endsWith("/boot")) {
       if (lifecycleFails) { response.end('{"ok":false,"error":"boot failed"}'); return; }
       state = lifecycleState ?? "Booted"; response.end('{"ok":true}');

@@ -31,6 +31,11 @@ test("Apple bezel and mask pass through as PNG data with screen geometry", async
   assert.deepEqual(buttonBezel?.viewport, { width: 454, height: 908 });
   assert.deepEqual(buttonBezel?.rect, { x: 27, y: 18, width: 400, height: 872 });
   assert.equal(buttonBezel?.image, bezel?.image);
+  const unmaskedDefinition = { identity: { udid: UDID, name: "iPhone", model: "iPhone" }, screen: { ...screen, maskImage: null } };
+  const parsedUnmaskedDefinition = definitionSchema.parse(unmaskedDefinition);
+  const unmaskedBezel = await readBezel(backend, UDID, parsedUnmaskedDefinition.screen);
+  assert.equal(unmaskedBezel?.image, bezel?.image);
+  assert.equal(unmaskedBezel?.mask, undefined);
   const missingMask = await readBezel(backend, UDID, { ...screen, maskImage: `/simulators/${UDID}/bad.png` });
   assert.equal(missingMask?.image, bezel?.image);
   assert.equal(missingMask?.mask, undefined);

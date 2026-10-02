@@ -26,7 +26,7 @@ async function png(baguette: Baguette, udid: string, path: string): Promise<stri
 
 export async function readBezel(baguette: Baguette, udid: string, screen: unknown): Promise<Bezel | undefined> {
   const geometry = compositeBezelGeometry(screen);
-  const assets = screen as { bezelImage?: { rest?: string }; maskImage?: string };
+  const assets = screen as { bezelImage?: { rest?: string }; maskImage?: string | null };
   if (!geometry || !assets?.bezelImage?.rest) return;
   try {
     const image = await png(baguette, udid, assets.bezelImage.rest);
