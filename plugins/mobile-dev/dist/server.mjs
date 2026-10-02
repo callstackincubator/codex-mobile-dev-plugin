@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="ea13c068-27dc-50d1-8945-84b9d6d3959a")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="21038681-640d-52ec-ad7c-0d2423e093da")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -62470,7 +62470,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // src/shared/version.ts
-var PLUGIN_VERSION = "0.1.113";
+var PLUGIN_VERSION = "0.1.121";
 
 // src/shared/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -72864,6 +72864,12 @@ async function withDeviceAppsDiagnostic(operation, stage2, platform5, kind3) {
 }
 
 // src/server/telemetry.ts
+function recordAndroidBackendStartup(duration6, outcome) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };
+  public_api_exports.count("android.backend.startup.samples", 1, { attributes });
+  public_api_exports.gauge("android.backend.startup.duration", duration6, { unit: "millisecond", attributes });
+}
 var IOSLogProcessingTelemetry = class {
   window = new MeasurementWindow();
   attributes;
@@ -89125,7 +89131,23 @@ var subsystemThresholds = /* @__PURE__ */ new Map([
   ["com.apple.fileurl", 2],
   ["com.apple.dt.xctest", 2],
   ["com.apple.accessibility", 2],
-  ["com.apple.boardservices", 2]
+  ["com.apple.boardservices", 2],
+  ["com.apple.systemconfiguration", 2],
+  ["com.apple.coreaudio", 2],
+  ["com.apple.launchservices", 2],
+  ["com.apple.apsd", 2],
+  ["com.apple.symptomsd", 2],
+  ["com.apple.remoteservicediscovery", 2],
+  ["com.apple.locationd", 2],
+  ["com.apple.mdnsresponder", 2],
+  ["com.apple.xnu.net", 2],
+  ["com.apple.dt.coredevice", 2],
+  ["com.apple.wifimanager", 2],
+  ["com.apple.bluetooth", 2],
+  ["com.apple.uaps", 2],
+  ["com.apple.corebrightness", 2],
+  ["com.apple.wirelessradiomanager", 2],
+  ["com.apple.wifipolicy", 2]
 ]);
 var imageThresholds = [
   { path: "UIKitCore.framework/UIKitCore", threshold: 1 },
@@ -89157,9 +89179,14 @@ function shouldExcludeIOSLog(level2, subsystem, senderImagePath) {
   const index = levelIndex(level2);
   if (index === void 0 || index > 2) return false;
   if (typeof subsystem === "string") {
-    const normalized2 = subsystem.toLowerCase();
-    const threshold = subsystemThresholds.get(normalized2);
-    if (threshold !== void 0 && index <= threshold) return true;
+    let family = subsystem.toLowerCase();
+    while (family.length > 0) {
+      const threshold = subsystemThresholds.get(family);
+      if (threshold !== void 0 && index <= threshold) return true;
+      const separator = family.lastIndexOf(".");
+      if (separator === -1) break;
+      family = family.slice(0, separator);
+    }
   }
   if (typeof senderImagePath === "string") {
     for (const rule of imageThresholds) {
@@ -89783,12 +89810,11 @@ var ServeEmu = class {
     } catch (error113) {
       if (this.external) throw error113;
     }
-    const cli = fileURLToPath5(new URL("./serve-emu/node_modules/serve-emu/src/cli.ts", import.meta.url));
+    const cliUrl = new URL("./serve-emu/src/cli.mjs", import.meta.url);
+    const cli = fileURLToPath5(cliUrl);
     await access3(cli).catch(() => {
       throw new Error("The plugin is missing its bundled serve-emu runtime. Run npm run vendor:serve-emu and npm run build, then package it again.");
     });
-    const bunPath = process.env.BUN_PATH ?? join11(homedir4(), ".bun/bin/bun");
-    const bun = await access3(bunPath, constants2.X_OK).then(() => bunPath, () => "bun");
     const listener = createServer();
     await new Promise((resolve5, reject) => {
       listener.once("error", reject);
@@ -89799,7 +89825,8 @@ var ServeEmu = class {
     if (!address2 || typeof address2 === "string") throw new Error("Cannot allocate an Android stream port.");
     if (this.disposed) throw new Error("The plugin server has closed.");
     const url3 = new URL(`http://127.0.0.1:${address2.port}`);
-    const child = spawn3(bun, [cli, "--host", "127.0.0.1", "--port", url3.port, "--serial", id, "--max-fps", "30"], {
+    const startedAt = performance.now();
+    const child = spawn3(process.execPath, [cli, "--host", "127.0.0.1", "--port", url3.port, "--serial", id, "--max-fps", "30"], {
       stdio: ["ignore", "pipe", "pipe"],
       shell: false,
       env: { ...process.env, PATH: `${dirname4(await adbPath())}:${process.env.PATH ?? ""}`, SERVE_EMU_UPDATE_CHECK: "0" }
@@ -89821,16 +89848,23 @@ var ServeEmu = class {
     try {
       const deadline = Date.now() + 3e4;
       while (Date.now() < deadline && !this.disposed) {
-        if (launchError) throw new Error(`Cannot start serve-emu. Install Bun 1.3.13 or later. ${launchError.message}`);
+        if (launchError) throw new Error(`Cannot start the bundled Node.js serve-emu runtime. ${launchError.message}`);
         if (child.exitCode !== null || child.signalCode !== null) throw new Error(`serve-emu exited before it became ready. ${diagnostics3.trim()}`);
         try {
-          if ((await this.health(url3)).serial === id) return backend;
+          const health = await this.health(url3);
+          if (health.serial === id) {
+            const duration6 = performance.now() - startedAt;
+            recordAndroidBackendStartup(duration6, "ready");
+            return backend;
+          }
         } catch {
         }
         await delay3(250);
       }
       throw new Error(`serve-emu did not become ready within 30 seconds. ${diagnostics3.trim()}`);
     } catch (error113) {
+      const duration6 = performance.now() - startedAt;
+      recordAndroidBackendStartup(duration6, "failed");
       child.kill("SIGTERM");
       this.backends.delete(id);
       throw error113;
@@ -90472,7 +90506,7 @@ var definitionSchema = external_exports.object({
     clipRadius: external_exports.number().nonnegative().optional(),
     buttonMargins: buttonMarginsSchema.optional(),
     bezelImage: external_exports.object({ rest: external_exports.string() }).optional(),
-    maskImage: external_exports.string().optional()
+    maskImage: external_exports.string().nullish()
   })
 });
 var Baguette = class {
@@ -95919,4 +95953,4 @@ process.on("unhandledRejection", (error113) => {
 });
 await plugin.server.connect(transport2);
 
-//# debugId=ea13c068-27dc-50d1-8945-84b9d6d3959a
+//# debugId=21038681-640d-52ec-ad7c-0d2423e093da

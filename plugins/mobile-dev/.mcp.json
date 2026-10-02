@@ -8,7 +8,7 @@
       ],
       "cwd": ".",
       "env_vars": [
-        "SHELL",
+        "HOME",
         "MOBILE_DEV_TELEMETRY",
         "MOBILE_DEV_ENVIRONMENT"
       ]

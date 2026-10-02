@@ -8,20 +8,18 @@ description: Set up the Mobile Dev plugin's bundled iOS and Android backends and
 The installed plugin contains Baguette 0.2.1, its resource bundle, agent-device 0.20.9 with its dependencies and Apple runner source, and the built MCP servers and panel. Do not install Baguette with Homebrew, install a global agent-device CLI, or start separate servers.
 
 First resolve Mobile Dev tools through the host's tool discovery when available.
-If `mobile_open_simulator` and the device-list tools are unavailable, report that
-Mobile Dev setup is incomplete because its MCP tools did not load. Check plugin
-enablement, the installed MCP manifest, and desktop MCP startup/discovery logs when
-accessible. Report the exact error and stop device setup until the tools are
-available. Do not claim that the chat was created too early without evidence or
-work around the failure with another device backend. Packages from 0.1.107 forward
-`SHELL` in `.mcp.json` and discover Node in the configured interactive login shell.
-The launcher reports missing or unusable executables, ambiguous shell output, and
-versions below 22.18 as `Mobile Dev setup failed` in desktop MCP startup logs.
-Packages through 0.1.106 relied on bare `node` in the desktop PATH; terminal
-`which node` alone did not establish that executable lookup.
+If `mobile_open_simulator` and the device-list tools are unavailable, tell the user:
+"Mobile Dev could not start. I'll check its setup." Follow
+[missing-tools recovery](references/missing-tools.md) before stopping: inspect the
+installed configuration and startup failure, explain the result, and offer a
+repair for that specific failure. Do not leave the user with
+terminal commands to diagnose the problem when you can run the checks. A generic
+startup timeout alone does not justify increasing the timeout. Stop device setup
+until the tools are available; do not claim that the chat was created too early
+without evidence or work around the failure with another device backend.
 
 1. Call `mobile_open_simulator` to open the panel beside the chat, or reuse an open Mobile Dev panel. Use `mobile_open_workspace` if the user asks for fullscreen. For an explicit tool-only workflow or a host without panels, use the device-list tools instead. The iOS tools start the bundled backend on a private loopback port and list simulators.
-2. If the backend fails, read the returned error. Check that this is an Apple Silicon Mac and that `xcode-select -p` points to Xcode 26 or later. Use `xcodebuild -version` when needed. Check that the configured user login shell resolves Node.js 22.18 or later. The shell launcher reports discovery and version failures in MCP startup logs; use that exact error to explain the setup requirement.
+2. If the backend fails, read the returned error. Check that this is an Apple Silicon Mac and that `xcode-select -p` points to Xcode 26 or later. Use `xcodebuild -version` when needed. The launcher uses Codex's bundled Node runtime; diagnose its actual startup error if the tools are unavailable.
 3. If no devices appear, have the user add an iOS runtime in Xcode's Settings, Components. A runtime download can be large, so do not start it without the user's request.
 4. Follow the user's device choice; otherwise reuse a compatible device shared by the panel, then a suitable booted simulator. For app development, choose and boot a suitable installed simulator if none runs. Pick among equivalent devices yourself; ask only when a device choice changes what the task needs and the project gives no answer. Setup alone does not require booting a device. Confirm tool connectivity with `mobile_list_simulators`.
 5. Agent Device is temporarily disabled while iterating on inline performance charts. Use the Mobile Dev tools for device discovery, screenshots, logs and performance; do not search for Agent Device tools or start its CLI separately.
@@ -32,8 +30,8 @@ For source development, `npm run vendor:baguette` downloads the pinned official 
 
 ## Android setup
 
-The package also contains serve-emu 0.0.6, its npm dependencies, and scrcpy 4.0. Android needs Bun 1.3.13 or later, Android SDK platform-tools and emulator, and an AVD or authorized attached device. Check `bun --version` and `mobile_list_android_devices`. The SDK lookup checks `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk`, then PATH. `BUN_PATH` can point to Bun when it is outside `~/.bun/bin` and PATH.
+The package also contains a checked-in Node.js fork of serve-emu 0.0.6, its Node dependencies, and scrcpy 4.0. Android uses the same Codex bundled Node runtime and needs Android SDK platform-tools and emulator, and an AVD or authorized attached device. Check connectivity with `mobile_list_android_devices`. The SDK lookup checks `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk`, then PATH.
 
 Open or reuse the panel for Android work. Call `mobile_list_android_devices` to discover devices; listing does not boot them. Follow the user's choice or reuse a compatible device shared by the panel. For app development, reuse a suitable running emulator or choose an installed AVD and call `mobile_boot_android_emulator` if needed. Pick among equivalent AVDs yourself; ask only when the choice changes what the task needs. The user can also enable Android in the panel toolbar and select an AVD to boot and stream it. Use the returned running serial with the Mobile Dev Android tools. The panel needs WebCodecs H.264 support. Do not install a global serve-emu package or start a second app dev server.
 
-For source development, run `npm run vendor:serve-emu` before building. It installs pinned packages with scripts disabled and checks the scrcpy server hash. The build copies the runtime to `dist/serve-emu`; the installed package needs no npm download.
+For source development, run `npm run vendor:serve-emu` before building. It installs the fork’s pinned Node dependencies with scripts disabled and checks the scrcpy server hash. The build copies the runtime to `dist/serve-emu`; the installed package needs no npm download.

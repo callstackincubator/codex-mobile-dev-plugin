@@ -1,10 +1,16 @@
 {
   "name": "serve-emu",
   "version": "0.0.6",
-  "url": "https://registry.npmjs.org/serve-emu/-/serve-emu-0.0.6.tgz",
-  "integrity": "sha512-A0Z9n08qEKEpz8Mv4CK0CKPQMN7SKc4OG6LFocK2vdk7KTjpAtONw7HNHSKPzo9jMziZfhuVlgwHZEjq1x6NMA==",
-  "lockfileSHA256": "ec97fbf58010385b2f50691bd138ee65c8c8ef2528518ec31edcc1821e5adfd3",
+  "repository": "https://github.com/jiunshinn/serve-emu",
+  "npmTarball": "https://registry.npmjs.org/serve-emu/-/serve-emu-0.0.6.tgz",
+  "npmIntegrity": "sha512-A0Z9n08qEKEpz8Mv4CK0CKPQMN7SKc4OG6LFocK2vdk7KTjpAtONw7HNHSKPzo9jMziZfhuVlgwHZEjq1x6NMA==",
+  "license": "Apache-2.0",
   "scrcpyVersion": "4.0",
   "scrcpySHA256": "84924bd564a1eb6089c872c7521f968058977f91f5ff02514a8c74aff3210f3a",
-  "scrcpyClientSHA256": "5ca62e5fdf3f71144178bbd4251b82c4d7e944301399477a9b8595a68d58098f"
+  "runtime": "node",
+  "entryPoint": "src/cli.mjs",
+  "lockfileSHA256": "8950c150543f0f598761d63557460e77e3b3720459e1deccd816344b09ca37e8",
+  "sourceSHA256": "0da8f2163da677a732f99fa9d9712fe162d47aeddae21b31ffa2bbddc13ff646",
+  "scrcpyClientSHA256": "7372129c120ac7602be667c85f38bce2fe2d9f6c86f0a2ac7db0bb260806f78c",
+  "cliSHA256": "eb0f8213dbe59426fe8c0cf2ed27aad70406d9e0cc74488cf8647ed1d601290f"
 }
