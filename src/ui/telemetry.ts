@@ -6,6 +6,7 @@ import {
 } from "../shared/telemetry.ts";
 import type { Surface, TelemetryAttributes } from "../shared/telemetry.ts";
 import { validateTelemetryIdentity } from "../shared/telemetry-identity.ts";
+import { deviceAppsDiagnosticTags, getDeviceAppsDiagnostic } from "../shared/device-apps-diagnostics.ts";
 
 export { ErrorBoundary } from "@sentry/react";
 
@@ -115,7 +116,10 @@ export function getUiTelemetryAttributes(): TelemetryAttributes {
 export function captureUiError(error: unknown, operation: string) {
   if (running === false) return;
   if (error instanceof Error && error.name === "AbortError") return;
-  Sentry.captureException(error, { tags: { operation, surface } });
+  const diagnostic = getDeviceAppsDiagnostic(error);
+  if (diagnostic?.failure === "cancelled") return;
+  const diagnosticTags = deviceAppsDiagnosticTags(error);
+  Sentry.captureException(error, { tags: { ...diagnosticTags, operation, surface } });
 }
 
 export function markUiSurfaceReady(startedAt: number) {

@@ -2,6 +2,18 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Since 0.1.112, discovery errors carry bounded `discovery_stage` and
+`discovery_failure` tags alongside device platform and kind. Stages distinguish
+device validation, running-app enumeration, foreground lookup, generic discovery,
+UI transport, and response validation. Failures distinguish missing executables,
+timeouts, command failures, invalid responses, cancellation, and unknown errors.
+The server annotates the original error without copying its command or output;
+strict enum metadata carries the classification to the UI. Existing exception
+scrubbing, cancellation exclusions, discovery timing windows, failure counts,
+and frequent-tool trace exclusions remain. No app lists, device IDs, command
+arguments, output, or error payloads are added to telemetry. Historical command
+failures are not considered resolved by this diagnostic change.
+
 Since 0.1.111, physical iOS log-session shutdown cancels pending device discovery
 and its subprocess. Existing MCP operation timing and bounded iOS parsing
 measurements keep their boundaries; cancelled discovery produces no reconnect

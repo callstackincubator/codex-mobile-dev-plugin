@@ -9,6 +9,7 @@ import type { CpuTarget } from "../../shared/cpu.ts";
 import { errorMessage } from "../../shared/protocol.ts";
 import type { Baguette } from "../baguette.ts";
 import { readDeviceApps } from "../device-apps/sources.ts";
+import { withDeviceAppsDiagnostic } from "../../shared/device-apps-diagnostics.ts";
 import { registerDeviceAppsTool } from "../device-apps/tools.ts";
 import { listAndroidLogDevices } from "../native-logs.ts";
 import { listIosDevices } from "../ios-devices.ts";
@@ -61,7 +62,7 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: 
   });
 
   registerDeviceAppsTool(server, async (device, signal) => {
-    await validateDevice(device);
+    await withDeviceAppsDiagnostic(() => validateDevice(device), "device_validation", device.platform, device.kind);
     return sources.apps(device.deviceId, signal, device.platform, device.kind);
   });
 

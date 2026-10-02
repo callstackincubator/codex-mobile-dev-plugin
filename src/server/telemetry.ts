@@ -3,6 +3,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { MeasurementWindow, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY } from "../shared/telemetry.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
+import { deviceAppsDiagnosticTags } from "../shared/device-apps-diagnostics.ts";
 
 export class IOSLogProcessingTelemetry {
   private readonly window = new MeasurementWindow();
@@ -43,7 +44,8 @@ export class IOSLogProcessingTelemetry {
 export function captureServerError(error: unknown, operation: string) {
   if (error instanceof SimulatorUnavailableError) return;
   if (error instanceof Error && error.name === "AbortError") return;
-  Sentry.captureException(error, { tags: { operation } });
+  const diagnosticTags = deviceAppsDiagnosticTags(error);
+  Sentry.captureException(error, { tags: { ...diagnosticTags, operation } });
 }
 
 export function installTracePropagation(transport: Transport) {

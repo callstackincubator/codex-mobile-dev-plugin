@@ -5,6 +5,7 @@ import { cpuDeviceSchema } from "../../shared/cpu.ts";
 import type { DeviceApps } from "../../shared/device-apps.ts";
 import { errorMessage } from "../../shared/protocol.ts";
 import { captureServerError } from "../telemetry.ts";
+import { annotateDeviceAppsError, getDeviceAppsDiagnostic, DEVICE_APPS_DIAGNOSTIC_META } from "../../shared/device-apps-diagnostics.ts";
 
 type Device = z.infer<typeof cpuDeviceSchema>;
 
@@ -21,9 +22,12 @@ export function registerDeviceAppsTool(server: McpServer, discover: (device: Dev
       const text = JSON.stringify(data);
       return { content: [{ type: "text", text }], structuredContent: data };
     } catch (error) {
-      captureServerError(error, "device_apps.discover");
+      const annotated = annotateDeviceAppsError(error, "discovery", device.platform, device.kind);
+      captureServerError(annotated, "device_apps.discover");
+      const diagnostic = getDeviceAppsDiagnostic(annotated);
       const message = errorMessage(error);
-      return { isError: true, content: [{ type: "text", text: message }] };
+      return { isError: true, content: [{ type: "text", text: message }],
+        _meta: { [DEVICE_APPS_DIAGNOSTIC_META]: diagnostic } };
     }
   });
 }

@@ -3,6 +3,8 @@ import type { SimulatorDevice } from "../shared/protocol.ts";
 import { errorMessage } from "../shared/protocol.ts";
 import { deviceAppsSchema } from "../shared/device-apps.ts";
 import type { DeviceApps } from "../shared/device-apps.ts";
+import { deviceAppsDiagnostic, deviceAppsDiagnosticSchema, setDeviceAppsDiagnostic, DEVICE_APPS_DIAGNOSTIC_META } from "../shared/device-apps-diagnostics.ts";
+import type { DeviceAppsDiagnostic, DeviceAppsStage } from "../shared/device-apps-diagnostics.ts";
 import { captureUiError, countUiEvent, recordUiTiming, getUiTelemetryAttributes } from "./telemetry.ts";
 
 export type DeviceAppsSnapshot = DeviceApps & {
@@ -107,16 +109,22 @@ export class DeviceAppsStore {
     if (platform === "ios" && device.kind === "physical") parameters.kind = "physical";
     const startedAt = performance.now();
     const telemetryContext = getUiTelemetryAttributes();
+    let stage: DeviceAppsStage = "transport";
+    let serverDiagnostic: DeviceAppsDiagnostic | undefined;
     try {
       const result = await this.app.callServerTool({ name: "mobile_performance_sources", arguments: parameters }, {
         signal: discovery.abort.signal, timeout: 45000,
       });
       if (this.discovery !== discovery) return;
       if (result.isError) {
+        stage = "discovery";
+        const parsedDiagnostic = deviceAppsDiagnosticSchema.safeParse(result._meta?.[DEVICE_APPS_DIAGNOSTIC_META]);
+        if (parsedDiagnostic.success) serverDiagnostic = parsedDiagnostic.data;
         const texts = result.content.filter(item => item.type === "text");
         const message = texts.map(item => item.text).join("\n");
         throw new Error(message);
       }
+      stage = "response";
       const data = deviceAppsSchema.parse(result.structuredContent);
       this.update({ ...data, ready: true, error: "" });
     } catch (error) {
@@ -124,6 +132,8 @@ export class DeviceAppsStore {
       this.update({ apps: [], foregroundApp: null, ready: false, error: errorMessage(error) });
       if (getUiTelemetryAttributes() === telemetryContext) countUiEvent("ui.device_apps.discovery_failure");
       const failure = new Error("Selected-device app discovery failed.");
+      const diagnostic = serverDiagnostic ?? deviceAppsDiagnostic(error, stage, platform, device.kind);
+      setDeviceAppsDiagnostic(failure, diagnostic);
       captureUiError(failure, "device_apps.discover");
     } finally {
       if (this.discovery === discovery) {
