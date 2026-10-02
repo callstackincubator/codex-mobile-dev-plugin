@@ -6,8 +6,10 @@ import { listIosDevices } from "./ios-devices.ts";
 
 export type PhysicalIosLogTarget = Extract<NativeLogTarget, { kind: "physical" }>;
 
-export async function physicalIosLogDevice(udid: string, discover = listIosDevices) {
-  const devices = await discover();
+export async function physicalIosLogDevice(udid: string, discover = listIosDevices, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  const devices = await discover(signal);
+  signal?.throwIfAborted();
   const device = devices.find(device => device.udid === udid);
   if (device === undefined || device.state !== "connected") throw new Error("The selected physical iOS device is no longer connected. Refresh the device list.");
   if (device.pairingState !== "paired") throw new Error("The selected iPhone is not paired. Unlock it and trust this Mac.");
@@ -15,13 +17,14 @@ export async function physicalIosLogDevice(udid: string, discover = listIosDevic
   return device;
 }
 
-export async function physicalIosLogCommand(target: PhysicalIosLogTarget, discover = listIosDevices,
+export async function physicalIosLogCommand(target: PhysicalIosLogTarget, signal?: AbortSignal, discover = listIosDevices,
   helper = new URL("./ios-logs/mobile-dev-ios-logs", import.meta.url)) {
   if (process.platform !== "darwin") throw new Error("Physical iOS logs require macOS.");
-  const device = await physicalIosLogDevice(target.deviceId, discover);
+  const device = await physicalIosLogDevice(target.deviceId, discover, signal);
   const command = fileURLToPath(helper);
   try { await access(command, constants.X_OK); }
   catch { throw new Error("The bundled physical iOS log reader is missing. Rebuild and package the plugin."); }
+  signal?.throwIfAborted();
   const transport = device.transportType === "localNetwork" ? "network" : "usb";
   const args = ["--device", device.udid, transport];
   if (target.process) args.push(target.process);

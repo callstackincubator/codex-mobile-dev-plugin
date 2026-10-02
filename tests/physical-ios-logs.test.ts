@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
 import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,6 +21,7 @@ import { LogSessions } from "../src/server/log-sessions.ts";
 import { registerLogTools } from "../src/server/log-tools.ts";
 import { Baguette } from "../src/server/baguette.ts";
 import { parseIOSLog } from "../src/server/log-parsers.ts";
+import { listIosDevices } from "../src/server/ios-devices.ts";
 
 const execute = promisify(execFile);
 const phone: PhysicalIosDevice = {
@@ -50,16 +53,51 @@ test("physical log targets require a hardware UDID and cannot enter the simulato
 test("physical readers reuse discovery UDIDs and select its current USB or Wi-Fi transport", { skip: process.platform !== "darwin" }, async () => {
   const helper = pathToFileURL(process.execPath);
   for (const [transportType, mode] of [["wired", "usb"], ["localNetwork", "network"]]) {
-    const command = await physicalIosLogCommand(target, async () => [{ ...phone, transportType }], helper);
+    const command = await physicalIosLogCommand(target, undefined, async () => [{ ...phone, transportType }], helper);
     assert.equal(command.command, process.execPath);
     assert.deepEqual(command.args, ["--device", phone.udid, mode, "Example"]);
   }
-  const disconnected = physicalIosLogCommand(target, async () => [{ ...phone, state: "disconnected" }], helper);
+  const disconnected = physicalIosLogCommand(target, undefined, async () => [{ ...phone, state: "disconnected" }], helper);
   await assert.rejects(disconnected, /no longer connected/);
-  const unpaired = physicalIosLogCommand(target, async () => [{ ...phone, pairingState: "unpaired" }], helper);
+  const unpaired = physicalIosLogCommand(target, undefined, async () => [{ ...phone, pairingState: "unpaired" }], helper);
   await assert.rejects(unpaired, /not paired/);
-  const absent = physicalIosLogCommand(target, async () => [], helper);
+  const absent = physicalIosLogCommand(target, undefined, async () => [], helper);
   await assert.rejects(absent, /no longer connected/);
+});
+
+test("closing physical logs cancels pending discovery without spawning a reader", { skip: process.platform !== "darwin", timeout: 1000 }, async t => {
+  const spawned = t.mock.method(childProcess, "spawn", () => { throw new Error("A cancelled session must not spawn a reader."); });
+  syncBuiltinESMExports();
+  t.after(() => { spawned.mock.restore(); syncBuiltinESMExports(); });
+  const statuses: LogSourceStatus[] = [];
+  let started!: () => void;
+  const ready = new Promise<void>(resolve => { started = resolve; });
+  let discoveryAborted = false;
+  const discover = (signal?: AbortSignal) => listIosDevices(signal, async (_file, _args, options) => {
+    const discoverySignal = options.signal;
+    assert.ok(discoverySignal);
+    return await new Promise<{ stdout: string }>((_resolve, reject) => {
+      discoverySignal.addEventListener("abort", () => {
+        discoveryAborted = true;
+        reject(discoverySignal.reason);
+      }, { once: true });
+      started();
+    });
+  });
+  const helper = pathToFileURL(process.execPath);
+  const logs = new LogSessions({
+    native: selected => startNativeLogs(selected, { log() {}, status: status => statuses.push(status) },
+      (selectedTarget, signal) => physicalIosLogCommand(selectedTarget, signal, discover, helper)),
+    metro: () => async () => {},
+  });
+  t.after(() => logs.close());
+  const session = logs.open({ native: target });
+  await ready;
+  await logs.closeSession(session);
+  assert.equal(discoveryAborted, true);
+  const spawnCount = spawned.mock.callCount();
+  assert.equal(spawnCount, 0);
+  assert.deepEqual(statuses, [{ source: "native", state: "connecting" }]);
 });
 
 test("iOS log targets accept bounded PIDs and reject simultaneous name and PID filters", () => {

@@ -7,7 +7,7 @@ import type { PhysicalIosDevice } from "../shared/ios-devices.ts";
 import { errorMessage } from "../shared/protocol.ts";
 
 const execute = promisify(execFile);
-type DeviceCommand = (file: string, args: string[], options: { encoding: "utf8"; timeout: number; maxBuffer: number }) => Promise<{ stdout: string }>;
+type DeviceCommand = (file: string, args: string[], options: { encoding: "utf8"; timeout: number; maxBuffer: number; signal?: AbortSignal }) => Promise<{ stdout: string }>;
 const text = z.string();
 const identifier = z.uuid();
 const physical = z.literal("physical");
@@ -27,10 +27,12 @@ const info = z.object({ jsonVersion, outcome: success });
 const result = z.object({ devices });
 const response = z.object({ info, result });
 
-export async function listIosDevices(run: DeviceCommand = execute): Promise<PhysicalIosDevice[]> {
+export async function listIosDevices(signal?: AbortSignal, run: DeviceCommand = execute): Promise<PhysicalIosDevice[]> {
+  signal?.throwIfAborted();
   const args = ["devicectl", "list", "devices", "--quiet", "--timeout", "10", "--omit-deprecated-fields-in-json",
     "--filter", "properties.hardware.reality = 'physical' AND properties.hardware.platform = 'iOS'", "--json-output", "-"];
-  const output = await run("/usr/bin/xcrun", args, { encoding: "utf8", timeout: 15000, maxBuffer: 4 * 1024 * 1024 });
+  const output = await run("/usr/bin/xcrun", args, { encoding: "utf8", timeout: 15000, maxBuffer: 4 * 1024 * 1024, signal });
+  signal?.throwIfAborted();
   const payload = JSON.parse(output.stdout);
   const parsed = response.safeParse(payload);
   if (parsed.success === false) throw new Error("devicectl returned unsupported device discovery JSON. Physical iOS discovery requires Xcode 27 or later.");

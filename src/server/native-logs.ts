@@ -110,7 +110,7 @@ export function startNativeLogs(target: NativeLogTarget, sink: LogSink, physical
         if (target.platform === "ios") {
           if (process.platform !== "darwin") throw new Error("iOS logs require macOS and Xcode.");
           if (target.kind === "physical") {
-            const reader = await physicalCommand(target);
+            const reader = await physicalCommand(target, signal);
             await runLogProcess(reader.command, reader.args, parseIOS, scopedSink, signal, '{"ready":true}');
           } else {
             const processFilter = target.pid === undefined ? target.process : String(target.pid);

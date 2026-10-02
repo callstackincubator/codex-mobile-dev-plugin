@@ -2,6 +2,11 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Since 0.1.111, physical iOS log-session shutdown cancels pending device discovery
+and its subprocess. Existing MCP operation timing and bounded iOS parsing
+measurements keep their boundaries; cancelled discovery produces no reconnect
+error and starts no reader. The UI cleanup deadline remains five seconds.
+
 Since 0.1.110, JavaScript error scrubbing removes the automatic Node system-error
 context. This prevents child-process command arguments, device identifiers, local
 paths, and command output from bypassing exception-text scrubbing. Error messages,

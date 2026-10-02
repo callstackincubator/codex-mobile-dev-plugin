@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -28,14 +29,14 @@ test("discovery preserves identity and reports USB, Wi-Fi, and disconnected stat
   for (const [transport, state] of [["wired", "connected"], ["localNetwork", "connected"], ["none", "disconnected"]]) {
     const source = device(transport, state);
     const payload = response([source]);
-    const devices = await listIosDevices(async () => payload);
+    const devices = await listIosDevices(undefined, async () => payload);
     assert.deepEqual(devices, [{ udid, coreDeviceId, name: "Test iPhone", model: "iPhone 17 Pro", productType: "iPhone18,1", state,
       runtime: "iOS 27.0", platform: "ios", kind: "physical", transportType: transport, pairingState: "paired" }]);
   }
 });
 
 test("discovery uses bounded devicectl JSON output and requests only physical iOS devices", async () => {
-  const devices = await listIosDevices(async (file, args, options) => {
+  const devices = await listIosDevices(undefined, async (file, args, options) => {
     assert.equal(file, "/usr/bin/xcrun");
     assert.deepEqual(args, ["devicectl", "list", "devices", "--quiet", "--timeout", "10", "--omit-deprecated-fields-in-json",
       "--filter", "properties.hardware.reality = 'physical' AND properties.hardware.platform = 'iOS'", "--json-output", "-"]);
@@ -49,25 +50,56 @@ test("discovery uses bounded devicectl JSON output and requests only physical iO
 
 test("discovery exposes command failures and rejects unsupported or malformed output", async () => {
   const failure = new Error("xcrun: unable to find utility devicectl");
-  const failed = listIosDevices(async () => { throw failure; });
+  const failed = listIosDevices(undefined, async () => { throw failure; });
   await assert.rejects(failed, failure);
   const old = response([], 3);
-  const unsupported = listIosDevices(async () => old);
+  const unsupported = listIosDevices(undefined, async () => old);
   await assert.rejects(unsupported, /requires Xcode 27/);
   const missingName = device();
   Reflect.deleteProperty(missingName.properties.state, "name");
   const malformed = response([missingName]);
-  const invalid = listIosDevices(async () => malformed);
+  const invalid = listIosDevices(undefined, async () => malformed);
   await assert.rejects(invalid, /unsupported device discovery JSON/);
-  const invalidJson = listIosDevices(async () => ({ stdout: "not JSON" }));
+  const invalidJson = listIosDevices(undefined, async () => ({ stdout: "not JSON" }));
   await assert.rejects(invalidJson, SyntaxError);
+});
+
+test("discovery cancels its pending command and rejects an already cancelled request", { timeout: 2000 }, async t => {
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  let spawned!: () => void;
+  const ready = new Promise<void>(resolve => { spawned = resolve; });
+  let closed = Promise.resolve();
+  const request = listIosDevices(controller.signal, async (_file, _args, options) => {
+    assert.equal(options.signal, controller.signal);
+    return await new Promise<{ stdout: string }>((resolve, reject) => {
+      const child = execFile(process.execPath, ["-e", "setInterval(() => {}, 1000)"], options, (error, stdout) => {
+        if (error) reject(error);
+        else resolve({ stdout });
+      });
+      child.once("spawn", spawned);
+      closed = new Promise<void>(resolve => { child.once("close", resolve); });
+    });
+  });
+  await ready;
+  controller.abort();
+  await assert.rejects(request, { name: "AbortError" });
+  await closed;
+
+  let commands = 0;
+  const cancelled = listIosDevices(controller.signal, async () => {
+    commands++;
+    return response([]);
+  });
+  await assert.rejects(cancelled, { name: "AbortError" });
+  assert.equal(commands, 0);
 });
 
 test("physical discovery is a read-only MCP tool and reports failure instead of an empty list", async t => {
   const server = new McpServer({ name: "ios-discovery-test", version: "1" });
   const source = device("localNetwork");
   const payload = response([source]);
-  const devices = await listIosDevices(async () => payload);
+  const devices = await listIosDevices(undefined, async () => payload);
   let fail = false;
   registerIosDeviceTools(server, async () => {
     if (fail) throw new Error("Discovery unavailable");
