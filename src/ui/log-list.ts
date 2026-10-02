@@ -3,10 +3,12 @@ import { logKey, stackLogs } from "../shared/logs.ts";
 import type { PanelContext } from "./model-context.ts";
 import { countUiEvent, recordUiTiming, setUiGauge, captureUiError } from "./telemetry.ts";
 import { compileLogQuery } from "./log-query.ts";
+import type { DeviceApp, ForegroundApp } from "../shared/device-apps.ts";
 
 export class LogList {
   scrollOffset = 0;
   private entries: LogEntry[] = [];
+  private appIds = new Map<number, string>();
   private selectedSequence?: number;
   private sequence = 0;
   private dropped = 0;
@@ -70,7 +72,12 @@ export class LogList {
     countUiEvent("ui.logs.dropped", dropped);
     this.dropped += dropped;
     const startedAt = performance.now();
-    this.entries.push(...entries.map(entry => ({ ...entry, sequence: ++this.sequence })));
+    for (const entry of entries) {
+      const appId = entry.appId ?? (entry.origin === "metro" || entry.pid === undefined ? undefined : this.appIds.get(entry.pid));
+      this.entries.push({ ...entry, ...(appId ? { appId } : {}), sequence: ++this.sequence });
+    }
+    const elapsed = performance.now() - startedAt;
+    recordUiTiming("ui.logs.app_identity", elapsed);
     // Share spare capacity, but evict from the busier source first.
     const histories = {
       js: { entries: [] as LogEntry[], first: 0, bytes: 0 },
@@ -102,6 +109,32 @@ export class LogList {
     }
     recordUiTiming("ui.logs.retention", performance.now() - startedAt);
     this.publish();
+  }
+
+  setApps(apps: readonly DeviceApp[], foreground: ForegroundApp | null) {
+    const startedAt = performance.now();
+    const identities = new Map<number, string>();
+    for (const app of apps) identities.set(app.pid, app.bundleId);
+    if (foreground?.pid != null && foreground.bundleId) identities.set(foreground.pid, foreground.bundleId);
+    let unchanged = identities.size === this.appIds.size;
+    for (const [pid, bundleId] of identities) {
+      const previous = this.appIds.get(pid);
+      if (previous !== bundleId) { unchanged = false; break; }
+    }
+    if (unchanged) return;
+    this.appIds = identities;
+    let changed = false;
+    for (let index = 0; index < this.entries.length; index++) {
+      const entry = this.entries[index];
+      if (entry.appId !== undefined || entry.pid === undefined || entry.origin === "metro") continue;
+      const appId = identities.get(entry.pid);
+      if (appId === undefined) continue;
+      this.entries[index] = { ...entry, appId };
+      changed = true;
+    }
+    const elapsed = performance.now() - startedAt;
+    recordUiTiming("ui.logs.app_identity", elapsed);
+    if (changed) this.publish();
   }
 
   clear() { this.entries = []; this.selectedSequence = undefined; this.dropped = 0; this.scrollOffset = 0; this.publish(); }

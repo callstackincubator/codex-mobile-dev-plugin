@@ -82,7 +82,7 @@ function receiveMetro(target: InspectorTarget, sink: LogSink, signal: AbortSigna
           enabled = true; clearTimeout(timeout); sink.status({ source: "metro", state: "live" });
         }
         const log = parseMetroEvent(message);
-        if (log) sink.log({ ...log, deviceId: target.deviceId ?? target.deviceName, process: target.appId ?? target.title });
+        if (log) sink.log({ ...log, deviceId: target.deviceId ?? target.deviceName, process: target.appId ?? target.title, appId: target.appId });
       } catch { /* Ignore malformed inspector events. */ }
     });
     socket.once("error", error => finish(error));

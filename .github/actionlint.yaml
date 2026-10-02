@@ -1,0 +1,4 @@
+# The hosted Xcode 27 preview label is newer than actionlint's built-in runner list.
+self-hosted-runner:
+  labels:
+    - xcode-27

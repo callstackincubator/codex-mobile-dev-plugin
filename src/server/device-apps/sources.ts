@@ -1,12 +1,12 @@
 import type { DeviceApps, ForegroundApp } from "../../shared/device-apps.ts";
 import { runningDeviceApps } from "./apps.ts";
-import { foregroundPhysicalPid, foregroundSimulatorPid, foregroundAndroidPackage } from "./foreground.ts";
+import { foregroundPhysicalPid, foregroundSimulatorPid, foregroundAndroidApp } from "./foreground.ts";
 
 const defaultSources = {
   apps: runningDeviceApps,
   physical: foregroundPhysicalPid,
   simulator: foregroundSimulatorPid,
-  android: foregroundAndroidPackage,
+  android: foregroundAndroidApp,
 };
 
 export async function readDeviceApps(deviceId: string, signal?: AbortSignal,
@@ -15,10 +15,8 @@ export async function readDeviceApps(deviceId: string, signal?: AbortSignal,
   const running = sources.apps(deviceId, signal, platform, kind);
   if (platform === "android") {
     const detection = sources.android(deviceId, signal);
-    const [apps, bundleId] = await Promise.all([running, detection]);
-    const app = apps.find(candidate => candidate.bundleId === bundleId);
-    const foregroundApp: ForegroundApp | null = bundleId === null ? null : { bundleId, pid: app?.pid ?? null };
-    const marked = apps.map(candidate => ({ ...candidate, foreground: candidate.bundleId === bundleId }));
+    const [apps, foregroundApp] = await Promise.all([running, detection]);
+    const marked = apps.map(candidate => ({ ...candidate, foreground: candidate.pid === foregroundApp?.pid }));
     return { apps: marked, foregroundApp };
   }
   const detection = kind === "physical" ? sources.physical(deviceId, signal) : sources.simulator(deviceId, signal);

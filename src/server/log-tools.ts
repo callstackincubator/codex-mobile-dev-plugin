@@ -46,7 +46,7 @@ export function registerLogTools(server: McpServer, logs: LogSessions, baguette:
   }));
 
   registerAppTool(server, "mobile_logs_session", {
-    title: "Start app logs", description: "Stream iOS simulator or physical-device unified logs, Android logcat, and/or a selected Metro inspector's JS console and exceptions. For a physical iPhone, use kind physical and the hardware UDID from mobile_list_ios_devices, not its CoreDevice ID. The phone must be connected and paired. Use an iOS executable name for process, or an Android packageName to follow the app across restarts. Leaving the app filter empty includes all device processes. iOS unified logs exclude ordinary print/printf output and may redact private values. Metro URL must be local HTTP and targetId must come from mobile_log_sources. Does not launch or rebuild the app.",
+    title: "Start app logs", description: "Stream iOS simulator or physical-device unified logs, Android logcat, and/or a selected Metro inspector's JS console and exceptions. For a physical iPhone, use kind physical and the hardware UDID from mobile_list_ios_devices, not its CoreDevice ID. The phone must be connected and paired. Use an iOS executable name for process, or pid for one process lifetime; choose only one. Use an Android packageName to follow the app across restarts. Leaving the app filter empty includes all device processes. iOS unified logs exclude ordinary print/printf output and may redact private values. Metro URL must be local HTTP and targetId must come from mobile_log_sources. Does not launch or rebuild the app.",
     inputSchema: { options: logOptionsSchema }, annotations, _meta: metadata,
   }, safe(async ({ options }: { options: LogOptions }) => {
     if (options.native?.platform === "ios") {

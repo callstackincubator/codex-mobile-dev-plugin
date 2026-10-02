@@ -62,6 +62,39 @@ test("physical readers reuse discovery UDIDs and select its current USB or Wi-Fi
   await assert.rejects(absent, /no longer connected/);
 });
 
+test("iOS log targets accept bounded PIDs and reject simultaneous name and PID filters", () => {
+  const pidTarget = { platform: "ios", kind: "physical", deviceId: phone.udid, pid: 123 };
+  const valid = nativeLogTargetSchema.safeParse(pidTarget);
+  assert.equal(valid.success, true);
+  for (const pid of [0, -1, 1.5, 2147483648, "123"]) {
+    const parsed = nativeLogTargetSchema.safeParse({ ...pidTarget, pid });
+    assert.equal(parsed.success, false);
+  }
+  const both = nativeLogTargetSchema.safeParse({ ...pidTarget, process: "Example" });
+  assert.equal(both.success, false);
+});
+
+test("physical iOS PID filters exclude other processes and records without an identity", { skip: process.platform !== "darwin" }, async t => {
+  const entries: LogRecord[] = [];
+  let accepted!: () => void;
+  const ready = new Promise<void>(resolve => { accepted = resolve; });
+  const pidTarget: PhysicalIosLogTarget = { platform: "ios", kind: "physical", deviceId: phone.udid, pid: 123 };
+  const code = `console.log('{"ready":true}');
+    for (const processID of [456, undefined, 123]) console.log(JSON.stringify({ timestamp: '2026-10-02T12:00:00Z', processID,
+      process: 'Example', eventMessage: 'fixture' }));
+    setInterval(() => {}, 1000);`;
+  const stop = startNativeLogs(pidTarget, { log: log => { entries.push(log); accepted(); }, status() {} }, async selected => {
+    assert.deepEqual(selected, pidTarget);
+    return { command: process.execPath, args: ["-e", code] };
+  });
+  t.after(stop);
+  await ready;
+  await stop();
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].pid, 123);
+  assert.equal(entries[0].deviceId, phone.udid);
+});
+
 test("physical streams wait for acceptance, preserve process metadata across PIDs, and close cleanly", { skip: process.platform !== "darwin" }, async t => {
   const entries: LogRecord[] = [];
   const statuses: LogSourceStatus[] = [];
@@ -158,7 +191,10 @@ test("the native decoder handles missing labels, escapes arbitrary messages, and
     `${root}/libplist-2.0.12.dylib`, "-o", binary]);
   const result = await execute(binary, [], { env: { ...process.env, DYLD_LIBRARY_PATH: root } });
   const lines = result.stdout.trim().split("\n");
-  const records = lines.map(parseIOSLog);
+  const decoded = lines.map(line => JSON.parse(line));
+  assert.equal(decoded[0].senderImagePath, "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation");
+  assert.equal(decoded[1].senderImagePath, decoded[0].senderImagePath);
+  const records = lines.map(line => parseIOSLog(line));
   assert.equal(records.length, 2);
   assert.equal(records[0]?.message, 'line\n"quoted" and C:\\\\folder\\"file" 🌍');
   assert.equal(records[0]?.timestamp, "1970-01-01T00:00:42.123Z");
@@ -166,4 +202,10 @@ test("the native decoder handles missing labels, escapes arbitrary messages, and
   assert.equal(records[1]?.pid, 456);
   assert.equal(records[1]?.category, undefined);
   assert.equal(records[1]?.subsystem, undefined);
+  const notice = { ...decoded[1], messageType: "Notice" };
+  const noticeLine = JSON.stringify(notice);
+  const hidden = parseIOSLog(noticeLine);
+  assert.equal(hidden, undefined, "Framework filtering works on physical records without subsystem labels.");
+  const unfiltered = parseIOSLog(noticeLine, false);
+  assert.ok(unfiltered);
 });

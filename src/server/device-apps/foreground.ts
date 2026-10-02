@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { adbPath } from "../native-logs.ts";
+import type { ForegroundApp } from "../../shared/device-apps.ts";
 
 const execute = promisify(execFile);
 const number = z.number();
@@ -57,4 +58,23 @@ export async function foregroundAndroidPackage(deviceId: string, signal?: AbortS
     encoding: "utf8", timeout: 5000, maxBuffer: 4 * 1024 * 1024, signal,
   });
   return parseAndroidForegroundPackage(result.stdout);
+}
+
+export async function foregroundAndroidApp(deviceId: string, signal?: AbortSignal): Promise<ForegroundApp | null> {
+  const bundleId = await foregroundAndroidPackage(deviceId, signal);
+  if (bundleId === null) return null;
+  const adb = await adbPath();
+  const result = await execute(adb, ["-s", deviceId, "shell", "pidof", bundleId], {
+    encoding: "utf8", timeout: 5000, maxBuffer: 4096, signal,
+  });
+  const output = result.stdout.trim();
+  const candidates = output.split(/\s+/);
+  if (candidates.length !== 1) throw new Error("Android did not report one foreground app process.");
+  const numeric = /^\d+$/.test(output);
+  const value = Number(output);
+  const valid = Number.isSafeInteger(value);
+  if (numeric === false || valid === false || value < 1 || value > 2147483647) {
+    throw new Error("Android returned an invalid foreground app PID.");
+  }
+  return { bundleId, pid: value };
 }

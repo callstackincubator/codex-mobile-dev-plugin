@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "./ui/base-sele
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./ui/resizable";
 import { useMediaQuery } from "./use-media-query";
+import { Switch } from "./ui/switch";
 
 const rowKey = (log: StackedLog) => String(log.sequence);
 // User input controls following; estimated row heights must not gate it.
@@ -116,7 +117,7 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
       {copyStatus === "Could not copy log" && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription>{copyStatus}</AlertDescription></Alert>}
       {state.open && <header className="logs-toolbar flex h-[49px] shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
         <span id="logs-status" className="sr-only" role="status">{state.status} · {logs.filtered.length} shown · {logs.buffered} buffered{logs.dropped > 0 ? ` · ${logs.dropped} older logs dropped` : ""}</span>
-          <InputGroup className="h-7 min-w-16 flex-1"><InputGroupInput className="text-xs" aria-label="Search logs" type="search" placeholder="Filter logs..." maxLength={512} autoComplete="off" spellCheck={false} aria-invalid={Boolean(logs.queryError)} aria-describedby={logs.queryError ? "logs-query-error" : undefined} value={logs.query} onChange={event => panel.list.search(event.target.value)} /><InputGroupAddon className="pl-2"><SearchIcon className="size-3.5" /></InputGroupAddon></InputGroup>
+          <InputGroup className="h-7 min-w-16 flex-1"><InputGroupInput className="text-xs" aria-label="Search logs" type="search" placeholder="Filter logs..." maxLength={512} autoComplete="off" spellCheck={false} aria-invalid={Boolean(logs.queryError)} aria-describedby={logs.queryError ? "logs-query-error" : undefined} value={logs.query} onChange={event => panel.search(event.target.value)} /><InputGroupAddon className="pl-2"><SearchIcon className="size-3.5" /></InputGroupAddon></InputGroup>
           <Popover>
             <PopoverTrigger asChild><Button variant="ghost" size="icon-sm" className="shrink-0" title="Log filter help" aria-label="Log filter help"><CircleHelpIcon /></Button></PopoverTrigger>
             <PopoverContent align="start" className="w-[min(360px,calc(100vw-24px))] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto p-3 text-xs" aria-label="Log filter help">
@@ -125,12 +126,14 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
               <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
                 <code>level:error level:warn</code><span>Errors or warnings</span>
                 <code>message:"request failed"</code><span>Message phrase</span>
+                <code>app:com.example.app</code><span>App ID, exact match</span>
+                <code>pid:123</code><span>Process ID, exact match</span>
                 <code>age:5m</code><span>Last five minutes</span>
                 <code>-message:noise</code><span>Exclude matches</span>
                 <code>network &amp; (timeout | failed)</code><span>AND, OR, grouping</span>
                 <code>message~:"error.*timeout"</code><span>Regex, case insensitive</span>
               </div>
-              <p className="mt-3 text-muted-foreground">Fields: level, message, age, source, origin, process, tag, subsystem, category, stack, timestamp. Age units: s, m, h, d. Spaces mean AND.</p>
+              <p className="mt-3 text-muted-foreground">Fields: app, pid, level, message, age, source, origin, process, tag, subsystem, category, stack, timestamp. Age units: s, m, h, d. Spaces mean AND.</p>
             </PopoverContent>
           </Popover>
 
@@ -152,7 +155,8 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
                     <NativeSelectOption value="ios">{state.selectedLabel}</NativeSelectOption><NativeSelectOption value="none">None</NativeSelectOption>
                     {state.android.map(device => <NativeSelectOption key={device.id} value={`android:${device.id}`}>Android · {device.name}</NativeSelectOption>)}
                   </NativeSelect></Field>
-                  <Field className="gap-1"><FieldLabel htmlFor="logs-process" className="text-xs">App filter</FieldLabel><Input id="logs-process" className="h-8 text-xs" placeholder="Process or Android package" value={state.process} maxLength={256} onChange={event => panel.configure({ process: event.target.value })} /><FieldDescription className="text-[11px]">Leave empty to include all apps.</FieldDescription></Field>
+                  <Field className="gap-1"><div className="flex items-center justify-between gap-2"><FieldLabel htmlFor="logs-follow-app" className="text-xs">Follow foreground app</FieldLabel><Switch id="logs-follow-app" aria-label="Follow foreground app" checked={state.followApp} disabled={state.native !== "ios"} onCheckedChange={followApp => panel.configure({ followApp })} /></div><FieldDescription className="text-[11px]">{state.appDiscoveryError || "Updates the app clause in the search bar. Edit or clear that clause to stop following."}</FieldDescription></Field>
+                  <Field className="gap-1"><div className="flex items-center justify-between gap-2"><FieldLabel htmlFor="logs-hide-system" className="text-xs">Hide iOS system noise</FieldLabel><Switch id="logs-hide-system" aria-label="Hide iOS system noise" checked={state.hideSystemLogs} disabled={state.native !== "ios" || state.selectedPlatform === "android"} onCheckedChange={hideSystemLogs => panel.configure({ hideSystemLogs })} /></div><FieldDescription className="text-[11px]">Hides routine Apple framework logs. Errors and faults stay visible. Changing this starts a fresh log stream.</FieldDescription></Field>
                 </div>
                 <div className="flex min-w-0 flex-col gap-2">
                   <Field className="gap-1"><FieldLabel htmlFor="logs-metro-url" className="text-xs">Server URL</FieldLabel><Input id="logs-metro-url" className="h-8 text-xs" type="url" value={state.metroUrl} maxLength={2048} spellCheck={false} onChange={event => panel.configure({ metroUrl: event.target.value })} /></Field>

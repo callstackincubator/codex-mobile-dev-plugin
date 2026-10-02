@@ -61,14 +61,6 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const { createRoot } = await import("react-dom/client");
   let sentLog: StackedLog | undefined;
   const context = { canAttach: true, canSendMessage: true, attachedKey: undefined as string | undefined, onChange() {}, async attach(log?: StackedLog) { this.attachedKey = log ? logKey(log) : undefined; this.onChange(); }, async sendLogToChat(log: StackedLog) { sentLog = log; } };
-  const panel = new LogsPanel({} as App, context as PanelContext);
-  let logSubscribers = 0;
-  const subscribe = panel.list.subscribe;
-  panel.list.subscribe = listener => {
-    logSubscribers++;
-    const unsubscribe = subscribe(listener);
-    return () => { logSubscribers--; unsubscribe(); };
-  };
   let emitCpu: ((batch: CpuBatch) => void) | undefined;
   let cpuSessionsOpened = 0;
   const performanceApp = {
@@ -92,13 +84,22 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     },
   };
   const deviceApps = createDeviceApps(performanceApp as unknown as App);
+  const panel = new LogsPanel({} as App, context as PanelContext, deviceApps);
+  let logSubscribers = 0;
+  const subscribe = panel.list.subscribe;
+  panel.list.subscribe = listener => {
+    logSubscribers++;
+    const unsubscribe = subscribe(listener);
+    return () => { logSubscribers--; unsubscribe(); };
+  };
+
   const performance = new PerformancePanel(performanceApp as unknown as App, deviceApps);
   const recordingController = new RecordingController(performanceApp as unknown as App);
   deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
   performance.setAvailable(true);
   deviceApps.setAvailable(true);
   const root = createRoot(dom.window.document.getElementById("root")!);
-  cleanupView = async () => { deviceApps.dispose(); recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); await performance.dispose(); }); };
+  cleanupView = async () => { recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); deviceApps.dispose(); await performance.dispose(); }); };
   const layouts: string[] = [];
   let commits = 0;
   const workspace = createElement(Workspace, { logs: panel, performance, recordingController, onLayout(layout: string) { layouts.push(layout); } });
@@ -171,8 +172,8 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const errorMessage = '<script>alert("log")</script>\nCannot read property id of undefined';
   const embeddedStack = "    at recordLike (http://localhost:8081/recordLike.bundle:21:38)\n    at anonymous (App.tsx:268:50)";
   await act(async () => { panel.list.setFollow(false); panel.list.append([
-    { sequence: 1, timestamp: "2026-09-30T12:00:00Z", message: `${errorMessage}\n${embeddedStack}`, stack: "at loadProfile", level: "error", source: "js", origin: "metro" },
-    { sequence: 2, timestamp: "2026-09-30T12:00:01Z", message: "Native output", level: "info", source: "native", origin: "ios" },
+    { sequence: 1, timestamp: "2026-09-30T12:00:00Z", message: `${errorMessage}\n${embeddedStack}`, stack: "at loadProfile", level: "error", source: "js", origin: "metro", appId: "com.example.app" },
+    { sequence: 2, timestamp: "2026-09-30T12:00:01Z", message: "Native output", level: "info", source: "native", origin: "ios", pid: 123 },
   ], 0); });
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
   assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 2);
@@ -200,6 +201,18 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(dom.window.document.querySelector('[data-element="screenshot"] svg')?.getAttribute("viewBox"), "0 0 24 24");
   await act(async () => { (dom.window.document.querySelector('[aria-label="Log sources"]') as HTMLButtonElement).click(); });
   assert.ok(dom.window.document.getElementById("logs-native"));
+  const systemNoise = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Hide iOS system noise"]');
+  assert.ok(systemNoise);
+  const initialNoiseChecked = systemNoise.getAttribute("aria-checked");
+  assert.equal(initialNoiseChecked, "true");
+  await act(async () => { systemNoise.click(); });
+  const noiseDisabled = panel.getSnapshot();
+  assert.equal(noiseDisabled.hideSystemLogs, false);
+  const disabledNoiseChecked = systemNoise.getAttribute("aria-checked");
+  assert.equal(disabledNoiseChecked, "false");
+  await act(async () => { systemNoise.click(); });
+  const noiseEnabled = panel.getSnapshot();
+  assert.equal(noiseEnabled.hideSystemLogs, true);
   const sourceFilter = dom.window.document.querySelector('[aria-label="Filter log sources"]') as HTMLElement;
   assert.ok(dom.window.document.getElementById("logs-settings")?.contains(sourceFilter));
   const nativeFilter = [...sourceFilter.querySelectorAll('button')].find(option => option.textContent === "Native") as HTMLButtonElement;
@@ -208,6 +221,40 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.ok(dom.window.document.getElementById("logs-settings"));
   await act(async () => { (dom.window.document.querySelector('[aria-label="Log sources"]') as HTMLButtonElement).click(); });
   assert.equal(panel.getSnapshot().settings, false);
+  await act(async () => {
+    const sources = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Log sources"]');
+    assert.ok(sources);
+    sources.click();
+  });
+  const followApp = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Follow foreground app"]');
+  const appFilter = dom.window.document.querySelector<HTMLInputElement>('[aria-label="Search logs"]');
+  assert.ok(followApp && appFilter);
+  assert.equal(followApp.getAttribute("aria-checked"), "true");
+  assert.equal(appFilter.readOnly, false);
+  assert.equal(appFilter.value, 'app:"com.example.app"');
+  await act(async () => { followApp.click(); });
+  assert.equal(panel.getSnapshot().followApp, false);
+  assert.equal(appFilter.readOnly, false);
+  await act(async () => { followApp.click(); });
+  assert.equal(panel.getSnapshot().followApp, true);
+  const descriptor = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value");
+  const setValue = descriptor?.set;
+  assert.ok(setValue);
+  await act(async () => {
+    setValue.call(appFilter, "");
+    const event = new dom.window.Event("input", { bubbles: true });
+    appFilter.dispatchEvent(event);
+  });
+  assert.equal(appFilter.value, "");
+  const clearedSearch = panel.getSnapshot();
+  assert.equal(clearedSearch.followApp, false, "Clearing the rendered search input disables automatic following.");
+  await act(async () => { followApp.click(); });
+  assert.equal(appFilter.value, 'app:"com.example.app"');
+  await act(async () => {
+    const sources = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Log sources"]');
+    assert.ok(sources);
+    sources.click();
+  });
   await selectTool("performance");
   assert.equal(performance.getSnapshot().open, true);
   assert.ok(dom.window.document.getElementById("performance-drawer"));

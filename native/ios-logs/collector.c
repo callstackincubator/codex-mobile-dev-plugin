@@ -204,6 +204,7 @@ static int emit_record(const char *bytes, uint32_t length, const char *process_f
     fprintf(stdout, "{\"timestamp\":\"%s\",\"messageType\":\"%s\",\"processID\":%u", timestamp, level, header.pid);
     json_field("process", name, 1024);
     json_field("eventMessage", fields[2], MAX_MESSAGE);
+    if (lengths[1] > 0) json_field("senderImagePath", fields[1], 4096);
     if (has_label) {
         json_field("subsystem", fields[3], 1024);
         json_field("category", fields[4], 1024);

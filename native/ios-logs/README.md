@@ -7,8 +7,9 @@ to 1 MiB and released after processing; stdout is a stream of NDJSON records,
 with no native queue. Diagnostics go to stderr.
 
 The first line is `{"ready":true}`, emitted after the phone accepts StartActivity.
-Records use the same field names as simulator unified logs. Messages are capped
-at 16 KiB and subsystem/category values at 1 KiB. Timestamps include the device's
+Records use the same field names as simulator unified logs, including
+`senderImagePath` for the plugin's optional default framework exclusions. Messages
+are capped at 16 KiB, sender paths at 4 KiB, and subsystem/category values at 1 KiB. Timestamps include the device's
 UTC date and microseconds. An optional exact executable-name filter operates
 before JSON serialization and survives PID changes across app restarts.
 

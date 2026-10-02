@@ -2,6 +2,7 @@ import { access, chmod, copyFile, cp, mkdir, readFile, readdir, rm, stat, writeF
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { assertBuildEnvironment, telemetryBuildEnvironment } from "./telemetry-build.mjs";
+import { pluginMarketplace } from "./plugin-marketplace.mjs";
 
 const telemetryEnvironment = telemetryBuildEnvironment();
 await assertBuildEnvironment("dist", telemetryEnvironment);
@@ -31,16 +32,9 @@ for (const path of ["assets", "dist", "skills/mobile-dev", "skills/mobile-dev-se
 await chmod(`${plugin}/dist/baguette/Baguette`, 0o755);
 await chmod(`${plugin}/dist/ios-logs/mobile-dev-ios-logs`, 0o755);
 await mkdir(`${marketplace}/.agents/plugins`, { recursive: true });
-await writeFile(`${marketplace}/.agents/plugins/marketplace.json`, JSON.stringify({
-  name: "mobile-dev-local",
-  interface: { displayName: "Mobile Dev local" },
-  plugins: [{
-    name: manifest.name,
-    source: { source: "local", path: `./plugins/${manifest.name}` },
-    policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
-    category: "Developer Tools",
-  }],
-}, null, 2) + "\n");
+const catalog = pluginMarketplace(manifest.name);
+const catalogText = JSON.stringify(catalog, null, 2);
+await writeFile(`${marketplace}/.agents/plugins/marketplace.json`, catalogText + "\n");
 const archive = resolve(`release/${manifest.name}-${manifest.version}-darwin-arm64.zip`);
 await rm(archive, { force: true });
 const files = await readdir(plugin);

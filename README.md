@@ -1,5 +1,27 @@
 # Mobile Dev for Codex
 
+## Install
+
+Install the prebuilt plugin from the release marketplace:
+
+```sh
+codex plugin marketplace add https://github.com/callstackincubator/codex-mobile-dev-plugin.git --ref release/latest
+codex plugin add mobile-dev@mobile-dev
+```
+
+Open a new chat after installing. To update an existing installation:
+
+```sh
+codex plugin marketplace upgrade mobile-dev
+```
+
+Open a new chat after updating. The package includes the built plugin and bundled
+runtimes; no plugin build or `npm install` is needed. You need GitHub read access
+and working Git authentication while the repository is private. See
+[Requirements](#requirements) for the required local tools.
+
+## Overview
+
 An iOS and Android simulator panel for Codex desktop. Baguette 0.2.1 provides iOS streaming; serve-emu 0.0.6 and scrcpy 4.0 provide Android streaming. Android needs Bun 1.3.13 or later and an installed Android SDK.
 
 Agent Device is temporarily disabled in 0.1.83 while iterating on inline performance charts. The package registers only the `mobile-dev` MCP server and omits the Agent Device skill. Its implementation and bundled runtime are retained for later reactivation.
@@ -44,7 +66,7 @@ Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile
 
 Use Select in the simulator toolbar to pause the screen. Hover to outline a component, then click to add a note. React Native development apps can supply runtime elements when accessibility omits a view. Drag to mark a region when neither source exposes it. Saved notes leave numbered blue bubbles. Notes attach text and available element details to your next chat message. The captured screen stays local for editing; annotations never attach screenshots. Click a bubble to edit or remove a note, or use Send to chat to send all notes for that device. If chat is unavailable, the panel keeps the notes and retries when you return. A sent or cleared batch starts again at 1.
 
-`npm run package` writes the local ZIP to `release/mobile-dev-0.1.101-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+`npm run package` writes the local ZIP to `release/mobile-dev-<version>-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 The iOS dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Simulators**. It refreshes every three seconds while the iOS panel is visible, and when opening the dropdown. Selecting a physical device opens interactive screen mirroring through its paired developer connection. The phone sends HEVC video; a bundled native Node-API addon assembles compressed frames and transfers them into Node without copying the frame payload, then the panel decodes them through WebCodecs. MCP serializes the compressed bytes as base64, so the full path is not zero copy. The capture queue is limited to eight frames or 4 MiB and requests a keyframe after overflow. Physical iOS supports pointer taps, long presses, and drags through CoreDevice UniversalHID on the same developer tunnel. Input starts after a fresh video frame, uses normalized touchscreen coordinates, and releases held touches when the stream closes or resets. Screenshot captures the displayed mirrored frame as a PNG, attaches it to chat, and copies the same image to the macOS clipboard. Select annotates screen regions using the mirrored frame's pixel coordinates; native accessibility component names are unavailable. Both controls require a connected device and a ready video frame. Keyboard and hardware-button controls remain disabled. CPU and memory monitoring can attach to an already running development app on a paired iOS 17.4+ device. Mirroring requires Developer Mode and a host with HEVC WebCodecs support. `mobile_list_ios_devices` also returns remembered disconnected devices with their connection state; the picker shows connected devices only. Discovery errors remain visible while available simulators continue to work.
 
@@ -72,13 +94,15 @@ Click the camera button in either simulator toolbar to add a PNG to the chat inp
 
 ## App logs
 
-The fullscreen plugin view has a full-width tool bar above the logs and device panels. Each panel has its own controls. Logs sit on the left and both simulators on the right above 800px; smaller views place both simulators above logs. The Logs tab reopens the logs panel. Click Logs to collapse the left panel to a tab, then click it again to reopen. The panel beside a chat keeps the collapsible drawer below the simulator. Each view has its own UI resource, so the layout does not depend on the host's display-mode flag. A booted simulator or connected physical iPhone streams its unified logs. Click Sources to enter the app's executable name and press Connect to filter the native stream. Leave the app filter empty to include all device processes.
+The fullscreen plugin view has a full-width tool bar above the logs and device panels. Each panel has its own controls. Logs sit on the left and both simulators on the right above 800px; smaller views place both simulators above logs. The Logs tab reopens the logs panel. Click Logs to collapse the left panel to a tab, then click it again to reopen. The panel beside a chat keeps the collapsible drawer below the simulator. Each view has its own UI resource, so the layout does not depend on the host's display-mode flag. Logs follow the foreground app on the selected device by default through an editable `app:"com.example.app"` clause in the search bar. The shared device-app store checks every three seconds and replaces that clause on app switches while preserving other search terms. An unnamed iOS foreground process uses an exact `pid:123` clause. Collection includes all device processes; app switches filter existing rows and keep the same stream and buffer. Edit or clear the app clause to stop automatic following and control the visible apps yourself. Clearing the search shows other apps' buffered logs, subject to the source, level, and system-noise settings. If discovery fails or reports no foreground app, the automatic clause is removed and collection continues. Follow foreground app in Log sources enables automatic following again. Choosing another Android log device disables automatic following. No app launch, restart, or debugger attachment is needed.
 
-For Metro, enter its local URL and click Find sources. Select the app and device in Metro app. For Android, choose a connected device in Native source and enter its package name to follow the app across restarts. Native source follows the device selected in the panel. You can also choose another connected Android device for logs. You can read native and Metro logs together.
+For Metro, enter its local URL and click Find sources. Select the app and device in Metro app. Native source follows the device selected in the panel. You can also choose another connected Android device for logs. You can read native and Metro logs together. An explicitly chosen Metro target stays connected; its app metadata participates in the same visible search query as native logs. Metro target selection remains explicit.
+
+**Hide iOS system noise** in Log settings is enabled by default for simulators and physical iPhones. It applies DevSuite's 25 subsystem/framework exclusions before buffering: routine Apple network, window management, security, and related system logs are hidden, while errors and faults stay visible. Rules use DevSuite's ordering `debug < default/notice < info < error < fault`; UIKit, CFBundle, UIKitCore, CoreFoundation, MobileGestalt, container-manager and CoreAnalytics rules stop at `default/notice`, so their `info` records remain visible. Subsystems match exactly without regard to case; sender image paths use case-sensitive substrings. Switching the setting restarts collection and clears current logs. Previously excluded records cannot be recovered. Android and Metro logs are unaffected. MCP callers can set `options.native.hideSystemLogs: false` to disable these exclusions.
 
 JS and Native toggle each source. Info, Warn, Error, and Debug toggle each level.
 
-The search field supports DevSuite-style keyword filters. Plain keywords match log text, stack traces, and metadata; spaces mean AND and quotes keep phrases together. Use `level:error message:network`, `level:error level:warn` (repeated fields mean OR without explicit operators or groups), `age:5m`, `-message:noise`, or `network & (timeout | failed)`. Regex uses `message~:"error.*timeout"`; quote patterns containing spaces or parentheses. Supported fields are `level`, `message`, `age`, `source`, `origin`, `process`, `tag`, `subsystem`, `category`, `stack`, and `timestamp`. Level aliases include `warning`, `err`, and `verbose`; age accepts seconds, minutes, hours, and days (`s`, `m`, `h`, `d`). Age filters refresh once per second while Logs is visible, including when collection is paused. Filtering runs before repeat grouping so counts reflect matching occurrences. Open the help button beside the field for examples. Invalid syntax shows an inline error until corrected.
+The search field supports DevSuite-style keyword filters. Plain keywords match log text, stack traces, and metadata; spaces mean AND and quotes keep phrases together. Use `app:com.example.app`, `pid:123`, `level:error message:network`, `level:error level:warn` (repeated fields mean OR without explicit operators or groups), `age:5m`, `-message:noise`, or `network & (timeout | failed)`. App IDs and PIDs match exactly; native app IDs come from local process discovery, while Metro supplies its selected target's app ID. Regex uses `message~:"error.*timeout"`; quote patterns containing spaces or parentheses. Supported fields are `app`, `pid`, `level`, `message`, `age`, `source`, `origin`, `process`, `tag`, `subsystem`, `category`, `stack`, and `timestamp`. Level aliases include `warning`, `err`, and `verbose`; age accepts seconds, minutes, hours, and days (`s`, `m`, `h`, `d`). Age filters refresh once per second while Logs is visible, including when collection is paused. Filtering runs before repeat grouping so counts reflect matching occurrences. Open the help button beside the field for examples. Invalid syntax shows an inline error until corrected.
 
 Stack groups exact repeats by source, level, device, and process and shows the count on the right. Follow keeps the latest rows in view. Scrolling away from the bottom turns Follow off; scrolling back to the bottom turns it on. Pause stops log readers; Resume opens a new session. Closing the drawer also stops its readers. Clear removes the buffered rows while the stream runs.
 
@@ -86,7 +110,9 @@ While Performance is visible, the log view is unmounted and the browser stops
 reading, filtering, and rendering log batches. Collection continues in the
 plugin's separate Node process, bounded to 2,000 records and 4 MiB per session.
 Returning to Logs immediately restores cached rows, filters, selection, and
-scroll position, then catches up from the same cursor. A small keep-alive once
+scroll position, then catches up from the same cursor when the app is unchanged.
+If the foreground app changed while Logs was hidden, reopening applies the latest
+search clause over the retained buffer and continues the same session. A small keep-alive once
 per minute retains the session without transferring logs. Closing the tools
 panel still stops collection.
 
@@ -96,7 +122,7 @@ Right-click a log and choose Fix in chat or Ask in chat to attach the full log a
 
 Expired log sessions reconnect without an error banner. Existing rows, filters, selection and scroll position remain available during recovery. Pause or closing Logs cancels the retry.
 
-iOS simulators use `xcrun simctl spawn <UDID> log stream --style ndjson --level debug`. Physical iPhones use the bundled libimobiledevice OS trace relay reader over the existing paired USB or Wi-Fi connection. Select the phone in the device picker; no app launch, restart, debugger attachment, or app SDK is required. An executable-name filter continues across app PID changes. Unified logs exclude ordinary `print`/`printf` stdout/stderr output and may redact private values. Metro reads console events and exceptions through the inspector. Each log reader retries dropped connections. Metro keeps the chosen target ID; refresh its targets if an app restart assigns a new ID. Buffers hold at most 2,000 records and cap their byte size. The UI shares this capacity between JS and native logs, removing older rows from the busier source first. Native bursts no longer erase JS history. Legend List renders the visible rows and lets you scroll through all buffered matches.
+iOS simulators use `xcrun simctl spawn <UDID> log stream --style ndjson --level debug`. Physical iPhones use the bundled libimobiledevice OS trace relay reader over the existing paired USB or Wi-Fi connection. Select the phone in the device picker; no app launch, restart, debugger attachment, or app SDK is required. App ID searches continue across main-process PID changes. MCP callers can explicitly scope collection with an iOS executable name or PID, or an Android package. Unified logs exclude ordinary `print`/`printf` stdout/stderr output and may redact private values. Metro reads console events and exceptions through the inspector. Each log reader retries dropped connections. Metro keeps the chosen target ID; refresh its targets if an app restart assigns a new ID. Buffers hold at most 2,000 records and cap their byte size. The UI shares this capacity between JS and native logs, removing older rows from the busier source first. Native bursts no longer erase JS history. Legend List renders the visible rows and lets you scroll through all buffered matches.
 
 `npm run test:logs` reads logs from an already booted simulator through the built MCP server. `npm run test:ios-logs -- --device <hardware-UDID>` reads a connected physical iPhone, with optional `--process <executable-name>`. Both print counts, close the log reader, and leave the device and app running. For tool-only physical logs, pass `{ platform: "ios", kind: "physical", deviceId: "<hardware-UDID>" }` to `mobile_logs_session`; use the `udid` returned by `mobile_list_ios_devices`, rather than its `coreDeviceId`.
 
@@ -117,7 +143,8 @@ absence: consumers should check `ready` before interpreting `foregroundApp: null
 iOS simulators read the frontmost accessibility translation's PID without walking
 the UI tree; paired iPhones retain their accessibility-audit PID query. Foreground
 identity is separate from the eligible monitoring list: an iOS PID outside that
-list has `bundleId: null`; an Android package outside it has `pid: null`. No sole
+list has `bundleId: null`; Android resolves the resumed package's main PID with ADB
+`pidof`, including packages outside the monitoring list. No sole
 background process is guessed to be foreground. Performance consumes this store
 and preserves its chosen recording target across foreground changes.
 
@@ -239,6 +266,62 @@ result and collector.
 already running development app through the built MCP server, then detaches and
 verifies its PID stayed unchanged. Add `--with-fps` to check concurrent Display FPS.
 It does not launch or restart the app.
+
+## GitHub releases
+
+The `Release plugin` workflow in `.github/workflows/release.yml` runs when you push
+an existing commit with a `v<version>` tag. The tag must match `plugin.json`,
+`package.json`, both root versions in `package-lock.json`, and
+`src/shared/version.ts`. After committing your changes, run from the repository root:
+
+```sh
+npm run public-release
+```
+
+This command checks that the working tree is clean and the release versions agree,
+creates `v<version>` at the current commit, and pushes that tag to `origin`. It
+uses the current plugin version (for example, `v0.1.100`) without bumping it.
+Existing tags are preserved. If the push fails after tag creation, the command
+prints the exact Git command to retry the push.
+
+You can also run the workflow from GitHub Actions with an existing version tag.
+The workflow checks out that tag, uses the Apple Silicon `xcode-27` runner and
+Xcode 27 / Swift 6.4, installs the locked JavaScript runtimes, and rebuilds every
+native helper with Android NDK 27.2.12479018 and Rust 1.98.1. It runs the tests,
+builds and packages with the explicit `release` environment, then smoke-tests a
+fresh extraction of the actual ZIP.
+
+Configure the repository's Actions secrets `SENTRY_AUTH_TOKEN` and `SENTRY_ORG`.
+Both are required. The workflow uploads matching UI/server source maps and native
+symbols to the existing three Sentry projects before saving the artifact and
+creating a draft GitHub release. Upload failures stop the release. Credentials
+and debug artifacts stay outside the plugin ZIP.
+
+Download `mobile-dev-<version>-darwin-arm64.zip` directly from the draft release's
+assets for manual store upload. The same ZIP is also retained as an Actions
+artifact for 30 days; extract the Actions artifact wrapper before uploading the
+plugin ZIP. Creating a draft release does not submit or publish it to the OpenAI
+plugin directory. A tag that already has a GitHub release will fail release
+creation rather than replace existing assets; download the ZIP from the completed
+build job or use a new version for a new release.
+
+After the build, ZIP smoke test, and Sentry upload succeed, the workflow also
+publishes the extracted ZIP and a marketplace catalog to `release/latest` in this
+repository. The branch contains only the prebuilt marketplace; its first commit
+is independent of the source history, so development ignore rules do not exclude
+`dist/` or bundled runtime dependencies. Later releases advance the branch without
+force pushes. Older or repeated versions leave the latest payload unchanged.
+
+Use the [installation and update commands](#install) at the top of this README.
+The prebuilt marketplace is named `mobile-dev`, separate from the
+`mobile-dev-local` development marketplace. A release branch does not change
+repository visibility.
+
+The configured `release/latest` ref stays attached to the marketplace. Codex
+refreshes its Git snapshot and installed plugin cache; start a new session after
+updating so its MCP process uses the refreshed files. This is an explicit refresh,
+not a promise of immediate automatic background updates. The first successful
+release with this workflow creates the branch.
 
 ## Develop and package
 
@@ -473,6 +556,8 @@ illustrations, not captured app screens.
 
 ## Sentry
 
+Since 0.1.101, `logs.ios.parse` measures Node-side iOS record parsing, default system-noise filtering, and conversion in milliseconds before buffering. Bounded 30-second windows report sample count, mean, P95, and maximum; shutdown flushes the remaining window and stops its timer. Measurements use the `logs` surface and iOS simulator/physical kind, with no log content, subsystem names, sender paths, device IDs, or filter text. Existing UI query/filter timings, Node runtime coverage, and physical helper `native.logs.process` timings retain their boundaries. The rebuilt physical helper emits sender image paths locally for framework filtering and retains matching native symbols.
+
 Since 0.1.94, shared selected-device discovery retains the frequent-tool trace
 exclusion and handled server-error coverage, now under `device_apps.discover`.
 `ui.device_apps.discovery` measures the discovery round trip in milliseconds with
@@ -524,7 +609,9 @@ Since 0.1.93, `ui.video.paint` and the platform frame counters also cover frames
 
 `ui.annotations.send` measures the host send round trip, including composer retries. Outcome counters distinguish success, a missing composer, timeout and other failures. Unexpected send failures use a fixed error message. No message content goes to Sentry. A timeout keeps notes for a manual retry; it never triggers an automatic resend, since delivery may have succeeded without acknowledgement.
 
-Since 0.1.99, `ui.logs.query_parse` measures query compilation in milliseconds once per edit. Existing `ui.logs.filter`, buffered/filtered row gauges, and search counts cover keyword filtering and visible age refreshes; filtering time still covers snapshot derivation and grouping. Query text, field values, regex patterns, and validation messages remain local. Age refresh timers stop when Logs closes, unmounts, or the document becomes hidden.
+Since 0.1.99, `ui.logs.foreground_change` counts automatic app-filter changes applied while Logs is active, including selected-device and process-lifetime changes. From 0.1.103, these changes update the visible query and local process identity mapping instead of restarting a scoped collector. `ui.logs.app_identity` measures batch insertion with native PID-to-app joins and discovery updates in milliseconds, using bounded aggregate windows. Hidden or closed log views defer row processing until reopened. Shared `ui.device_apps.discovery` timing and handled discovery-error coverage remain in place, including Android's foreground PID lookup; native session operations retain MCP tracing, Node runtime coverage, and `logs.ios.parse` timings. No app IDs, PIDs, package names, device IDs, or query text are attached to these measurements. Native helper telemetry and symbols are unchanged.
+
+Since 0.1.99, `ui.logs.query_parse` measures query compilation in milliseconds once per edit, including automatic app-clause edits from 0.1.103. Existing `ui.logs.filter`, buffered/filtered row gauges, and search counts cover keyword filtering and visible age refreshes; filtering time still covers snapshot derivation and grouping. Query text, field values, regex patterns, and validation messages remain local. Age refresh timers stop when Logs closes, unmounts, or the document becomes hidden.
 
 `ui.logs.send` measures log attachment and chat delivery in milliseconds, including queued context writes and composer retries. The existing log send counter and error coverage remain in place. No log text, stack traces or device IDs go to Sentry.
 

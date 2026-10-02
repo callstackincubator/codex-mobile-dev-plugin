@@ -68,7 +68,7 @@ test("browser errors use the served environment regardless of live-reload marker
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts"; export { LogList } from "./src/ui/log-list.ts"; export { LogsPanel } from "./src/ui/logs-panel.ts";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts"; export { LogList } from "./src/ui/log-list.ts"; export { LogsPanel } from "./src/ui/logs-panel.ts"; export { DeviceAppsStore } from "./src/ui/device-apps.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -138,12 +138,15 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   api.countUiEvent("ui.annotations.runtime_available");
   api.countUiEvent("ui.annotations.inspection_fallback");
   api.setUiSurface("logs");
-  const expiredLogs = new api.LogsPanel({
+  const expiredClient = {
     async callServerTool() { return { content: [], _meta: { sessionId: "PRIVATE_SESSION", logsUri: "logs://mobile-dev/PRIVATE_SESSION/batch?after=0" } }; },
     async readServerResource() { throw new window.Error("MCP error -32603: This log session expired or closed. Reopen the log panel."); },
-  }, { canAttach: true });
-  t.after(() => expiredLogs.dispose());
-  expiredLogs.selectSimulator({ udid: "PRIVATE_DEVICE", name: "PRIVATE_NAME", state: "Booted", runtime: "iOS" });
+  };
+  const expiredApps = new api.DeviceAppsStore(expiredClient, window.document);
+  const expiredLogs = new api.LogsPanel(expiredClient, { canAttach: true }, expiredApps);
+  expiredLogs.configure({ followApp: false });
+  t.after(() => { expiredApps.dispose(); return expiredLogs.dispose(); });
+  expiredApps.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_NAME", state: "Booted", runtime: "iOS" });
   expiredLogs.setAvailable(true);
   expiredLogs.show();
   await new Promise(resolve => window.setTimeout(resolve, 0));
@@ -157,6 +160,35 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   assert.ok(logList.getSnapshot().queryError);
   logList.search("age:5m");
   logList.refreshAge();
+  let foreground = { bundleId: "PRIVATE_FOREGROUND_APP", pid: 123 };
+  const logsClient = {
+    async callServerTool(input: { name: string }) {
+      if (input.name === "mobile_performance_sources") return { content: [], structuredContent: { apps: [], foregroundApp: foreground } };
+      if (input.name === "mobile_logs_session") return { content: [], _meta: { sessionId: "PRIVATE_LOG_SESSION", logsUri: "logs://mobile-dev/PRIVATE_LOG_SESSION/batch?after=0" } };
+      return { content: [] };
+    },
+    readServerResource(_input: unknown, options: { signal: AbortSignal }) {
+      return new Promise((_, reject) => {
+        options.signal.addEventListener("abort", () => reject(new Error("Read cancelled")), { once: true });
+      });
+    },
+  };
+  const logApps = new api.DeviceAppsStore(logsClient, window.document);
+  const logPanel = new api.LogsPanel(logsClient, context, logApps);
+  logApps.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_DEVICE_NAME", state: "Booted", platform: "ios" });
+  logPanel.setAvailable(true);
+  logPanel.show();
+  logApps.setAvailable(true);
+  await logApps.refresh();
+  foreground = { bundleId: "PRIVATE_NEXT_APP", pid: 456 };
+  await logApps.refresh();
+  const foregroundBeforeHide = logPanel.list.getSnapshot();
+  logPanel.hide();
+  foreground = { bundleId: "PRIVATE_HIDDEN_APP", pid: 789 };
+  await logApps.refresh();
+  assert.equal(logPanel.list.getSnapshot(), foregroundBeforeHide);
+  await logPanel.dispose();
+  logApps.dispose();
   await context.sendLogToChat({
     timestamp: "2026-10-02T10:00:00Z", lastTimestamp: "2026-10-02T10:00:00Z", count: 1, sequence: 1,
     origin: "metro", source: "js", level: "error", deviceId: "PRIVATE_DEVICE",
@@ -239,10 +271,12 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, "ui.logs.session_expired");
   contains(encoded, "This log session expired or closed", false);
   contains(encoded, "ui.logs.query_parse.mean");
+  contains(encoded, "ui.logs.app_identity.mean");
   contains(encoded, "ui.logs.filter.mean");
   contains(encoded, "ui.logs.buffered_rows");
   contains(encoded, "ui.logs.filtered_rows");
   contains(encoded, "ui.logs.search");
+  contains(encoded, "ui.logs.foreground_change");
   contains(encoded, "ui.annotations.tree_processing.mean");
   contains(encoded, "ui.annotations.inspection.mean");
   contains(encoded, "ui.annotations.message_build.mean");

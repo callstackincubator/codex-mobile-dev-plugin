@@ -25,7 +25,7 @@ const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
 const deviceApps = new DeviceAppsStore(app, document);
 const performancePanel = new PerformancePanel(app, deviceApps);
-const logsPanel = new LogsPanel(app, panelContext);
+const logsPanel = new LogsPanel(app, panelContext, deviceApps);
 const recordingController = new RecordingController(app, extensions);
 const reactRoot = createRoot(document.getElementById("root")!);
 const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
@@ -44,14 +44,13 @@ const panels = (["ios", "android"] as const).map(platform => {
 const [ios, android] = panels;
 logsPanel.setLayout(document.documentElement.dataset.view === "workspace");
 
-function updateSelection(updateToolSource = true) {
+function updateSelection() {
   const visible = panels.filter(panel => !panel.root.hidden);
   const active = visible.find(panel => panel.platform === activePlatform) ?? visible[0];
   const selected = active?.selected;
   if (selected) setUiTelemetryContext({ device_platform: selected.platform, device_kind: selected.kind ?? "simulator" });
   panelContext.selectSimulators(visible.flatMap(panel => panel.selected ? [panel.selected] : []), selected);
   deviceApps.selectDevice(selected);
-  if (updateToolSource) logsPanel.selectSimulator(selected);
   for (const panel of panels) panel.root.dataset.active = String(panel === active);
 }
 
@@ -62,7 +61,7 @@ function changeLayout(layout: DeviceLayout) {
     panel.root.hidden = layout !== "both" && layout !== panel.platform;
   }
   requestAnimationFrame(() => { for (const panel of panels) if (!panel.root.hidden) panel.fitScreen(); });
-  updateSelection(false);
+  updateSelection();
 }
 
 let stopLiveReload = () => {};

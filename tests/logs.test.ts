@@ -124,6 +124,7 @@ test("Metro connects only the chosen target, enables Runtime, and cleans up its 
   stop = startMetroLogs({ url: origin, targetId: "selected" }, { status() {}, log: received });
   const entry = await log;
   assert.equal(entry.message, "Metro failure"); assert.equal(entry.process, "com.example.app");
+  assert.equal(entry.appId, "com.example.app");
   assert.deepEqual(paths, ["/selected"]); assert.deepEqual(commands, [{ id: 1, method: "Runtime.enable" }]);
   await stop();
   await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(sockets.clients.size, 0);

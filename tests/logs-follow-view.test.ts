@@ -5,6 +5,7 @@ import { JSDOM } from "jsdom";
 import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createDeviceApps } from "./device-apps-fixtures.ts";
 import { LogsPanel } from "../src/ui/logs-panel.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { PanelContext } from "../src/ui/model-context.ts";
@@ -89,7 +90,9 @@ test("the rendered log list follows batches, pauses for user scrolling, and resu
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
   const context = { onChange() {} };
-  const panel = new LogsPanel({} as App, context as PanelContext);
+  const deviceApps = createDeviceApps({} as App);
+  const panel = new LogsPanel({} as App, context as PanelContext, deviceApps);
+  t.after(() => deviceApps.dispose());
   panel.show();
   let sequence = 0;
   const append = (count: number) => {

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compileLogQuery } from "../src/ui/log-query.ts";
+import { compileLogQuery, composeAppLogQuery, quoteLogQueryValue } from "../src/ui/log-query.ts";
 import type { LogRecord } from "../src/shared/logs.ts";
 
 const now = Date.parse("2026-10-02T12:00:00Z");
@@ -28,6 +28,71 @@ test("keywords, quoted phrases, and field filters match case insensitively", () 
   assert.equal(matches('"https://example.com"', { message: "https://example.com" }), true);
   assert.equal(matches("level:warning", { level: "warn" }), true);
   assert.equal(matches("level:verbose", { level: "debug" }), true);
+});
+
+test("PID filters match exact process identities and reject invalid values", () => {
+  const exact = matches("pid:123", { pid: 123 });
+  assert.equal(exact, true);
+  const different = matches("pid:123", { pid: 1234 });
+  assert.equal(different, false);
+  const missing = matches("pid:123");
+  assert.equal(missing, false);
+  const alternatives = matches("pid:123 pid:456", { pid: 456 });
+  assert.equal(alternatives, true);
+  const excluded = matches("-pid:123", { pid: 456 });
+  assert.equal(excluded, true);
+  for (const query of ["pid:0", "pid:-1", "pid:1.5", "pid:2147483648", "pid:text", "pid~:123"]) {
+    const compiled = compileLogQuery(query);
+    assert.ok(compiled.error, query);
+  }
+});
+
+test("app filters match exact app identities, support regex, and search metadata", () => {
+  const identity = { appId: "com.example.app" };
+  const exact = matches('app:"COM.EXAMPLE.APP"', identity);
+  assert.equal(exact, true);
+  const partial = matches("app:com.example", identity);
+  assert.equal(partial, false);
+  const missing = matches("app:com.example.app", { process: "com.example.app" });
+  assert.equal(missing, false);
+  const pattern = matches('app~:"^com\\.example\\."', identity);
+  assert.equal(pattern, true);
+  const keyword = matches("com.example.app", identity);
+  assert.equal(keyword, true);
+});
+
+test("automatic app clauses preserve user-query precedence and repeated-field alternatives", () => {
+  const clause = 'app:"com.example.app"';
+  const identity = { appId: "com.example.app" };
+  for (const query of ["level:warn level:error message:network", "missing | network", 'message~:"(failed|timeout) \\d+" -message:noise', "level:error -message:noise", "age:5m"]) {
+    const composed = composeAppLogQuery(clause, query);
+    const included = matches(composed, identity);
+    assert.equal(included, true, composed);
+    const otherApp = matches(composed, { appId: "com.other.app" });
+    assert.equal(otherApp, false, composed);
+  }
+  const repeated = composeAppLogQuery(clause, "level:warn level:error message:network");
+  const warning = matches(repeated, { ...identity, level: "warn" });
+  assert.equal(warning, true);
+  const wrongLevel = matches(repeated, { ...identity, level: "info" });
+  assert.equal(wrongLevel, false);
+  const age = composeAppLogQuery(clause, "age:5m");
+  const compiledAge = compileLogQuery(age);
+  assert.equal(compiledAge.usesAge, true);
+  const invalid = composeAppLogQuery(clause, "level:");
+  const compiledInvalid = compileLogQuery(invalid);
+  assert.ok(compiledInvalid.error);
+  const emptyClause = composeAppLogQuery("", "level:error level:warn");
+  assert.equal(emptyClause, "level:error level:warn");
+  const emptyQuery = composeAppLogQuery(clause, "");
+  assert.equal(emptyQuery, clause);
+});
+
+test("quoted app identities retain punctuation, quotes, and backslashes", () => {
+  const appId = 'example\\folder"name:app';
+  const quoted = quoteLogQueryValue(appId);
+  const exact = matches(`app:${quoted}`, { appId });
+  assert.equal(exact, true);
 });
 
 test("repeated fields use OR and different fields and keywords use AND", () => {
