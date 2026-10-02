@@ -76,6 +76,7 @@ export function scrubErrorEvent(event: ErrorEvent): ErrorEvent {
     delete event.contexts.device;
     delete event.contexts.app;
     delete event.contexts.culture;
+    delete event.contexts.node_system_error;
     if (event.contexts.trace) delete event.contexts.trace.data;
   }
   return event;

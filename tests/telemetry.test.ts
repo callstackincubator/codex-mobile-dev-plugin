@@ -147,6 +147,29 @@ test("error and streamed-span filters remove app payloads and local identifiers"
   assert.deepEqual(span.attributes, { surface: "logs" });
 });
 
+test("Node system error integration cannot send command arguments or output", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false,
+    integrations: [Sentry.systemErrorIntegration()], beforeSend: scrubErrorEvent,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  const error = new Error("Command failed: PRIVATE_COMMAND PRIVATE_ARGUMENT");
+  Object.assign(error, {
+    errno: -2, code: "ENOENT", path: "/Users/private/helper", dest: "/Users/private/output",
+    cmd: "PRIVATE_COMMAND PRIVATE_ARGUMENT", spawnargs: ["PRIVATE_DEVICE", "PRIVATE_TOKEN"],
+    syscall: "spawn PRIVATE_COMMAND", stdout: "PRIVATE_APP_OUTPUT", stderr: "PRIVATE_ERROR_OUTPUT",
+  });
+  Sentry.captureException(error);
+  await Sentry.flush();
+  const encoded = JSON.stringify(envelopes);
+  contains(encoded, "Child process command failed");
+  contains(encoded, "node_system_error", false);
+  contains(encoded, "PRIVATE_", false);
+  contains(encoded, "/Users/private", false);
+});
+
 test("UI trace context crosses the MCP bridge and handled server errors exclude tool payloads", async t => {
   const envelopes: Envelope[] = [];
   Sentry.init({

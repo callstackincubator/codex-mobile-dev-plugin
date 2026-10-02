@@ -2,6 +2,12 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Since 0.1.110, JavaScript error scrubbing removes the automatic Node system-error
+context. This prevents child-process command arguments, device identifiers, local
+paths, and command output from bypassing exception-text scrubbing. Error messages,
+source locations, anonymous attribution, and existing performance measurements
+retain their collection boundaries.
+
 Version 0.1.108 corrects the compatibility manifest's working directory so the
 launcher and existing server telemetry can start. It changes no telemetry
 boundaries or collection. The Codex installation smoke check verifies the
