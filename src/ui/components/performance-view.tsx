@@ -43,7 +43,7 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
         <PopoverTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Performance settings" title="Performance settings"><SlidersHorizontalIcon /></Button></PopoverTrigger>
         <PopoverContent align="end" className="w-[min(340px,calc(100vw-24px))] p-3">
           <Field className="gap-2">
-            <div className="flex items-center justify-between gap-2"><FieldLabel htmlFor="performance-app" className="text-xs">{state.selectedLabel}</FieldLabel><Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" disabled={state.available === false || state.discovering} onClick={() => void panel.discover()}><RefreshCwIcon />Refresh</Button></div>
+            <div className="flex items-center justify-between gap-2"><FieldLabel htmlFor="performance-app" className="text-xs">{state.selectedLabel}</FieldLabel><Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" aria-label="Refresh running apps" disabled={state.available === false || state.discovering} onClick={() => void panel.refreshApps()}><RefreshCwIcon />Refresh</Button></div>
             <NativeSelect id="performance-app" className="w-full" value={state.bundleId} onChange={event => panel.selectApp(event.target.value)}>
               <NativeSelectOption value="">Choose an app</NativeSelectOption>
               {state.bundleId && selectedRunning === false && <NativeSelectOption value={state.bundleId}>{state.bundleId} · Waiting for app</NativeSelectOption>}

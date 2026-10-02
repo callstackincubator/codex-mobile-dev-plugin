@@ -27,6 +27,8 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
   }
   const globals = { window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
     HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node,
+    Event: dom.window.Event, CustomEvent: dom.window.CustomEvent,
+    NodeFilter: dom.window.NodeFilter, HTMLInputElement: dom.window.HTMLInputElement,
     MutationObserver: dom.window.MutationObserver, getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
     requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window), cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window),
     ResizeObserver, IS_REACT_ACT_ENVIRONMENT: true };
@@ -97,7 +99,9 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
     selectedLabel: "Test device", platform: "ios", bundleId: "test.app", apps: [{ bundleId: "test.app", pid: 1 }], samples: initialSamples,
     threadHistory: new Map([["worker", { number: 1, peakCpuPercent: 20 }]]), threadOrder: "first-seen", phase: "recording", error: "", sourceError: "" };
   const listeners = new Set<() => void>();
-  const panel = { subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+  let refreshes = 0;
+  const panel = { refreshApps() { refreshes++; return Promise.resolve(); },
+    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     getSnapshot: () => snapshot };
   const rootElement = dom.window.document.getElementById("root");
   assert.ok(rootElement);
@@ -130,6 +134,10 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
     assert.ok(button);
     await act(async () => button.click());
   };
+  await click('[aria-label="Performance settings"]');
+  await click('[aria-label="Refresh running apps"]');
+  assert.equal(refreshes, 1, "Refresh uses the shared app discovery action");
+  await click('[aria-label="Performance settings"]');
   const publish = async (samples: CpuSample[]) => {
     snapshot = { ...snapshot, samples };
     await act(async () => { for (const listener of listeners) listener(); });

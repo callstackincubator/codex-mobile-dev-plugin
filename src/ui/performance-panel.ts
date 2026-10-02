@@ -101,6 +101,8 @@ export class PerformancePanel {
 
   hide() { this.update({ open: false }); }
 
+  refreshApps() { return this.deviceApps.refresh(); }
+
   setThreadOrder(threadOrder: ThreadOrder) { this.update({ threadOrder }); }
 
   async disconnect() {

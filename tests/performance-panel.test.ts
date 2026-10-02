@@ -71,7 +71,7 @@ test("CPU collection defaults to the foreground app, persists across tabs, and r
   assert.equal(panel.getSnapshot().open, false);
   assert.equal(fake.events.length, 1);
   fake.setApps([{ bundleId: "com.example.app", pid: 456 }]);
-  await deviceApps.refresh();
+  await panel.refreshApps();
   await tick();
   const names = fake.events.map(event => event.split(":")[0]);
   assert.deepEqual(names, ["open", "close", "open"]);
