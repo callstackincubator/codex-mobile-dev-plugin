@@ -14,7 +14,7 @@ function parse(fields: Record<string, unknown>, hideSystemLogs = true) {
   return parseIOSLog(line, hideSystemLogs);
 }
 
-test("default exclusions retain DevSuite's severity thresholds and matching semantics", () => {
+test("default exclusions retain DevSuite's severity thresholds across subsystem families", () => {
   for (const messageType of ["Debug", "Default", "Notice", "Info"]) {
     const record = parse({ messageType, subsystem: "COM.APPLE.CFNetwork" });
     assert.equal(record, undefined, messageType);
@@ -33,11 +33,58 @@ test("default exclusions retain DevSuite's severity thresholds and matching sema
   const appRecord = parse({ messageType: "Debug", subsystem: "com.example.app" });
   assert.ok(appRecord);
   const partialSubsystem = parse({ messageType: "Debug", subsystem: "com.apple.network.extension" });
-  assert.ok(partialSubsystem, "Subsystem rules match exactly, not by prefix.");
+  assert.equal(partialSubsystem, undefined, "Dot-separated child subsystems inherit their family's threshold.");
   const missingMetadata = parse({ messageType: "Debug" });
   assert.ok(missingMetadata);
   const logType = parse({ logType: "notice", subsystem: "com.apple.CFBundle" });
   assert.equal(logType, undefined);
+});
+
+test("observed iOS system families hide routine logs and preserve diagnostics", () => {
+  const families = [
+    "com.apple.SystemConfiguration", "com.apple.coreaudio", "com.apple.launchservices",
+    "com.apple.apsd", "com.apple.symptomsd", "com.apple.RemoteServiceDiscovery",
+    "com.apple.locationd", "com.apple.mDNSResponder", "com.apple.xnu.net",
+    "com.apple.dt.coredevice", "com.apple.WiFiManager", "com.apple.bluetooth",
+    "com.apple.uaps", "com.apple.CoreBrightness", "com.apple.WirelessRadioManager",
+    "com.apple.WiFiPolicy", "com.apple.xpc",
+  ];
+  for (const family of families) {
+    for (const subsystem of [family, `${family}.child.nested`]) {
+      for (const messageType of ["Debug", "Default", "Notice", "Info"]) {
+        const record = parse({ messageType, subsystem });
+        assert.equal(record, undefined, `${subsystem}: ${messageType}`);
+        const unfiltered = parse({ messageType, subsystem }, false);
+        assert.ok(unfiltered, `${subsystem}: filtering disabled`);
+      }
+      for (const messageType of ["Error", "Fault", "warning", "unknown", undefined]) {
+        const record = parse({ messageType, subsystem });
+        assert.ok(record, `${subsystem}: ${messageType}`);
+      }
+    }
+  }
+});
+
+test("family matching respects dot boundaries, custom subsystems, and severity thresholds", () => {
+  for (const subsystem of [
+    "com.apple.networking", "com.apple.xpcustom", "com.apple.coreaudioapp",
+    "com.apple.xnu.network", "com.example.com.apple.network", "com.example.app",
+  ]) {
+    const record = parse({ messageType: "Debug", subsystem });
+    assert.ok(record, subsystem);
+  }
+  for (const subsystem of ["COM.APPLE.XPC.TRANSACTION", "com.apple.locationd.Motion", "com.apple.CoreBrightness.AABC.1"]) {
+    const record = parse({ messageType: "Info", subsystem });
+    assert.equal(record, undefined, subsystem);
+  }
+  for (const subsystem of ["com.apple.UIKit.child", "com.apple.CFBundle.child"]) {
+    const debug = parse({ messageType: "Debug", subsystem });
+    assert.equal(debug, undefined, subsystem);
+    const info = parse({ messageType: "Info", subsystem });
+    assert.ok(info, subsystem);
+  }
+  const javascript = parse({ messageType: "Debug", category: "JavaScript", subsystem: "com.example.app" });
+  assert.equal(javascript?.source, "js");
 });
 
 test("framework rules match sender image paths without hiding errors or changing path case", () => {
@@ -93,7 +140,10 @@ test("simulator and physical streams apply the setting before delivering records
   const records = [
     { eventMessage: "network noise", messageType: "Info", subsystem: "com.apple.network" },
     { eventMessage: "framework noise", messageType: "Notice", senderImagePath: "/System/Library/CoreFoundation.framework/CoreFoundation" },
+    { eventMessage: "audio noise", messageType: "Info", subsystem: "com.apple.coreaudio" },
+    { eventMessage: "transaction noise", messageType: "Debug", subsystem: "com.apple.xpc.transaction" },
     { eventMessage: "system error", messageType: "Error", subsystem: "com.apple.network" },
+    { eventMessage: "audio fault", messageType: "Fault", subsystem: "com.apple.coreaudio.queue" },
     { eventMessage: "done", messageType: "Debug", subsystem: "com.example.app" },
   ];
   const encoded = JSON.stringify(records);
@@ -129,8 +179,8 @@ test("simulator and physical streams apply the setting before delivering records
         await stop();
         const messages = entries.map(record => record.message);
         const expected = hideSystemLogs === false
-          ? ["network noise", "framework noise", "system error", "done"]
-          : ["system error", "done"];
+          ? ["network noise", "framework noise", "audio noise", "transaction noise", "system error", "audio fault", "done"]
+          : ["system error", "audio fault", "done"];
         assert.deepEqual(messages, expected);
       });
     }

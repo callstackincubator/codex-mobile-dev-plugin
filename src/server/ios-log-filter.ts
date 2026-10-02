@@ -18,6 +18,22 @@ const subsystemThresholds = new Map<string, number>([
   ["com.apple.dt.xctest", 2],
   ["com.apple.accessibility", 2],
   ["com.apple.boardservices", 2],
+  ["com.apple.systemconfiguration", 2],
+  ["com.apple.coreaudio", 2],
+  ["com.apple.launchservices", 2],
+  ["com.apple.apsd", 2],
+  ["com.apple.symptomsd", 2],
+  ["com.apple.remoteservicediscovery", 2],
+  ["com.apple.locationd", 2],
+  ["com.apple.mdnsresponder", 2],
+  ["com.apple.xnu.net", 2],
+  ["com.apple.dt.coredevice", 2],
+  ["com.apple.wifimanager", 2],
+  ["com.apple.bluetooth", 2],
+  ["com.apple.uaps", 2],
+  ["com.apple.corebrightness", 2],
+  ["com.apple.wirelessradiomanager", 2],
+  ["com.apple.wifipolicy", 2],
 ]);
 
 const imageThresholds: readonly { path: string; threshold: number }[] = [
@@ -46,9 +62,14 @@ export function shouldExcludeIOSLog(level: unknown, subsystem: unknown, senderIm
   const index = levelIndex(level);
   if (index === undefined || index > 2) return false;
   if (typeof subsystem === "string") {
-    const normalized = subsystem.toLowerCase();
-    const threshold = subsystemThresholds.get(normalized);
-    if (threshold !== undefined && index <= threshold) return true;
+    let family = subsystem.toLowerCase();
+    while (family.length > 0) {
+      const threshold = subsystemThresholds.get(family);
+      if (threshold !== undefined && index <= threshold) return true;
+      const separator = family.lastIndexOf(".");
+      if (separator === -1) break;
+      family = family.slice(0, separator);
+    }
   }
   if (typeof senderImagePath === "string") {
     for (const rule of imageThresholds) {
