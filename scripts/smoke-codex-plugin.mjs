@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { createLaunchShell } from "./mcp-launch-fixture.mjs";
+import { createLaunchHome } from "./mcp-launch-fixture.mjs";
 
 const source = resolve(process.argv[2] ?? "release/marketplace/plugins/mobile-dev");
 const parent = tmpdir();
@@ -30,8 +30,8 @@ try {
   const catalogText = JSON.stringify(catalog);
   const catalogPath = join(catalogDirectory, "marketplace.json");
   await writeFile(catalogPath, catalogText);
-  const shell = await createLaunchShell(temporary, process.execPath);
-  const env = { ...process.env, CODEX_HOME: profile, SHELL: shell, MOBILE_DEV_TELEMETRY: "off" };
+  const fixtureHome = await createLaunchHome(temporary, process.execPath);
+  const env = { ...process.env, CODEX_HOME: profile, HOME: fixtureHome, MOBILE_DEV_TELEMETRY: "off" };
   function codex(args) {
     const output = execFileSync(codexCli, args, { env, encoding: "utf8", timeout: 30000 });
     return JSON.parse(output);

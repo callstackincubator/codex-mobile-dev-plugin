@@ -4,7 +4,7 @@ import { access, cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import assert from "node:assert/strict";
-import { createLaunchShell } from "./mcp-launch-fixture.mjs";
+import { createLaunchHome } from "./mcp-launch-fixture.mjs";
 
 const source = resolve(process.argv[2] ?? "release/marketplace/plugins/mobile-dev");
 const temporary = await mkdtemp(join(tmpdir(), "mobile-dev-agent-device-package-test-"));
@@ -25,11 +25,11 @@ try {
   await access(join(plugin, "dist/agent-device/node_modules/agent-device/dist/apple/runner/AgentDeviceRunner/AgentDeviceRunner.xcodeproj/project.pbxproj"));
   const workflow = await readFile(join(plugin, "skills/agent-device/references/workflow.md"), "utf8");
   assert.ok(workflow.startsWith("agent-device 0.20.9"));
-  const shell = await createLaunchShell(temporary, process.execPath);
+  const fixtureHome = await createLaunchHome(temporary, process.execPath);
   transport = new StdioClientTransport({
     command: config.command, args: config.args, cwd: plugin, stderr: "pipe",
     env: {
-      SHELL: shell,
+      HOME: fixtureHome,
       PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
       AGENT_DEVICE_CONFIG: "/nonexistent-global-agent-device-config.json",
       AGENT_DEVICE_STATE_DIR: join(temporary, "unrelated-global-state"),

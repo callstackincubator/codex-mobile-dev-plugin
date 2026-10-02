@@ -4,7 +4,7 @@
 
 ## Platform setup
 
-The plugin needs Node.js 22.18 or later. iOS needs an Apple Silicon Mac with Xcode 26 or later and an installed simulator runtime. Baguette uses Apple's simulator frameworks. agent-device builds its bundled XCTest runner with Xcode on its first interaction and caches it under `~/.agent-device/apple-runner`. The plugin carries all three runtimes, their npm dependencies, and the Apple runner source. It does not download code at runtime.
+The plugin uses Codex's bundled Node runtime. iOS needs an Apple Silicon Mac with Xcode 26 or later and an installed simulator runtime. Baguette uses Apple's simulator frameworks. agent-device builds its bundled XCTest runner with Xcode on its first interaction and caches it under `~/.agent-device/apple-runner`. The plugin carries all three runtimes, their npm dependencies, and the Apple runner source. It does not download code at runtime.
 
 Physical iOS discovery requires Xcode 27 or later. It uses the selected Xcode installation's `xcrun devicectl` JSON output and needs no additional native library. Pair the phone with Xcode and enable wireless connectivity there to discover it over Wi-Fi.
 
@@ -30,7 +30,7 @@ You can request fullscreen or a tool-only workflow. Planning, docs, code review,
 
 ## Android
 
-Install Node.js 22.18 or later and Android SDK platform-tools and emulator. Create an AVD in Android Studio or connect an Android device and authorize adb access. The Android panel lists devices without booting one. Selecting an AVD boots it if needed, then starts the bundled Node.js serve-emu CLI on a private loopback port. Home, Back, Recents, Lock, pointer gestures, and typing use scrcpy's control socket. Closing the panel leaves the emulator running. AVDs start without a separate emulator window. A failed emulator process reports its exit right away instead of waiting for the boot timeout.
+Install Android SDK platform-tools and emulator. Create an AVD in Android Studio or connect an Android device and authorize adb access. The Android panel lists devices without booting one. Selecting an AVD boots it if needed, then starts the bundled Node.js serve-emu CLI on a private loopback port. Home, Back, Recents, Lock, pointer gestures, and typing use scrcpy's control socket. Closing the panel leaves the emulator running. AVDs start without a separate emulator window. A failed emulator process reports its exit right away instead of waiting for the boot timeout.
 
 The Android dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Emulators**. It refreshes every three seconds while the Android panel is visible, and when opening the dropdown. Physical devices use ADB discovery: enable USB debugging and authorize the computer, or pair the device for wireless debugging. Offline and unauthorized devices remain visible with their state. Selecting an authorized phone connects its screen and shares its serial and transport with the chat. Bundled scrcpy mirrors and controls the phone without installing a companion app. Physical Android devices support the existing screen, input, screenshot, native log, and performance tools; emulator boot and stop controls do not apply to them.
 

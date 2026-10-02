@@ -1,11 +1,11 @@
-import { writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, symlink } from "node:fs/promises";
+import { join } from "node:path";
 
-export async function createLaunchShell(directory, executable) {
-  const nodeDirectory = dirname(executable);
-  const escaped = nodeDirectory.replaceAll("'", "'\\''");
-  const path = join(directory, "configured shell");
-  const script = `#!/bin/sh\nexport PATH='${escaped}':/usr/bin:/bin:/usr/sbin:/sbin\nexec /bin/zsh -f "$@"\n`;
-  await writeFile(path, script, { mode: 0o755 });
-  return path;
+export async function createLaunchHome(directory, executable) {
+  const fixtureHome = join(directory, "Codex home");
+  const runtimeDirectory = join(fixtureHome, ".cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin");
+  await mkdir(runtimeDirectory, { recursive: true });
+  const runtime = join(runtimeDirectory, "node");
+  await symlink(executable, runtime);
+  return fixtureHome;
 }

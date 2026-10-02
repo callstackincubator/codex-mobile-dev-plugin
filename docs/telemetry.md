@@ -36,14 +36,14 @@ launcher and existing server telemetry can start. It changes no telemetry
 boundaries or collection. The Codex installation smoke check verifies the
 resolved launch configuration and telemetry opt-out in the sidebar resource.
 
-Since 0.1.107, MCP discovery and runtime use Node discovered in the user’s
-configured login shell. The existing centralized Sentry initialization,
+Since 0.1.121, MCP discovery and runtime directly use Codex's bundled Node from
+its workspace dependency cache. The existing centralized Sentry initialization,
 anonymous attribution, build environment, opt-out, runtime metrics, and MCP
-traces remain on the same server
-path, with telemetry opt-out explicitly forwarded by the MCP manifest. Launcher
-failures occur before the server SDK starts and are available in desktop startup
-logs; the Mobile Dev and setup skills check for missing tools and report a setup
-problem. No host logs, paths, or tool inventories are sent to Sentry by that check.
+traces remain on the same server path, with telemetry opt-out explicitly
+forwarded by the MCP manifest. Launcher failures occur before the server SDK
+starts and are available in desktop startup logs. The Mobile Dev and setup
+skills inspect startup failures when tools are missing; those diagnostics stay
+local and do not send host logs, paths, or tool inventories to Sentry.
 
 Since 0.1.101, `logs.ios.parse` measures Node-side iOS record parsing, default system-noise filtering, and conversion in milliseconds before buffering. Bounded 30-second windows report sample count, mean, P95, and maximum; shutdown flushes the remaining window and stops its timer. Measurements use the `logs` surface and iOS simulator/physical kind, with no log content, subsystem names, sender paths, device IDs, or filter text. Existing UI query/filter timings, Node runtime coverage, and physical helper `native.logs.process` timings retain their boundaries. The rebuilt physical helper emits sender image paths locally for framework filtering and retains matching native symbols. The expanded subsystem families and dot-separated child matching in 0.1.114 remain inside this same measurement boundary; metric names, units, attribution, and cleanup are unchanged.
 

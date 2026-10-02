@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { createLaunchShell } from "./mcp-launch-fixture.mjs";
+import { createLaunchHome } from "./mcp-launch-fixture.mjs";
 
 const source = resolve(process.argv[2] ?? "release/marketplace/plugins/mobile-dev");
 const temporary = await mkdtemp(join(tmpdir(), "mobile-dev-package-test-"));
@@ -39,13 +39,12 @@ try {
   assert.equal(serverConfig.command, "/bin/sh");
   assert.deepEqual(serverConfig.args, ["./scripts/launch-mcp.sh", "./dist/server.mjs"]);
   assert.equal(serverConfig.cwd, ".");
-  assert.ok(serverConfig.env_vars.includes("SHELL"));
+  assert.ok(serverConfig.env_vars.includes("HOME"));
   assert.ok(serverConfig.env_vars.includes("MOBILE_DEV_TELEMETRY"));
   const serverCwd = resolve(plugin, serverConfig.cwd);
-  // Give the copied package a configured shell with the test runtime available.
-  // The MCP environment itself still has no Node on PATH.
-  const shell = await createLaunchShell(temporary, process.execPath);
-  const serverEnv = { ...process.env, SHELL: shell, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" };
+  // Supply the Codex runtime cache layout with no Node on MCP PATH.
+  const fixtureHome = await createLaunchHome(temporary, process.execPath);
+  const serverEnv = { ...process.env, HOME: fixtureHome, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" };
   const launcher = serverConfig.args[0];
   const nodeVersion = spawnSync(serverConfig.command, [launcher, "--version"], { cwd: serverCwd, env: serverEnv, encoding: "utf8" });
   assert.equal(nodeVersion.error, undefined);

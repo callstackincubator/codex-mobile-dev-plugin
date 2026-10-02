@@ -50,17 +50,15 @@ Track app CPU and memory, expand individual thread charts, and view device-wide 
 
 ## Requirements
 
-The prebuilt plugin targets Codex desktop on an Apple Silicon Mac. It requires
-Node.js 22.18 or later available as `node` in your configured login shell. The
-launcher discovers that executable even when the desktop’s PATH omits it, and
-reports a setup error when it is missing or too old. Install the tools for the
-platforms you use:
+The prebuilt plugin targets Codex desktop on an Apple Silicon Mac and uses
+Codex's bundled Node runtime from its workspace dependency cache. Install the
+tools for the platforms you use:
 
 | Platform or feature | Requirements |
 | --- | --- |
 | iOS simulators | Xcode 26 or later with an installed simulator runtime. |
 | Physical iPhones and iPads | Xcode 27 or later, a paired device with Developer Mode enabled, and USB or Wi-Fi connectivity. Screen mirroring requires HEVC WebCodecs support in the host. |
-| Android | Node.js 22.18 or later, Android SDK platform-tools and emulator, and an AVD or a physical device with authorized USB or wireless debugging. Screen streaming requires H.264 WebCodecs support in the host. |
+| Android | Android SDK platform-tools and emulator, and an AVD or a physical device with authorized USB or wireless debugging. Screen streaming requires H.264 WebCodecs support in the host. |
 | Metro logs and React Native inspection | An existing local Metro server with a compatible app inspector target. |
 | Physical iOS CPU and memory | iOS 17.4 or later, a running development-signed app with `get-task-allow`, a mounted developer disk image, and Xcode/LLDB detached. |
 | Display FPS | Android 12 or later with FrameTimeline support, or a physical iOS device running iOS 17.4 or later. iOS simulators do not support Display FPS. |

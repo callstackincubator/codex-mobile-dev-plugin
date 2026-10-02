@@ -26,10 +26,9 @@ builds and packages with the explicit `release` environment, then smoke-tests a
 fresh extraction of the actual ZIP. CI also validates the tagged commit message,
 including when the tag was pushed directly.
 
-The package uses Codex's compatibility manifest and forwards the desktop's
-`SHELL` to a checked launcher that discovers Node in the user’s interactive login
-shell. No Node executable is bundled. Discovery uses one shell lookup and fails
-clearly when its result is absent, unusable, ambiguous, or below Node 22.18.
+The package uses Codex's compatibility manifest and forwards `HOME` to a launcher
+that directly executes Codex's bundled Node at
+`$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node`.
 The extracted-ZIP smoke test launches that manifest with Node absent from PATH,
 including both sidebar and chat entrypoints. Publishing compares the version at
 the end of the previous marketplace commit title, so the manifest relocation

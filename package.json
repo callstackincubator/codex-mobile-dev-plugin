@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.119",
+  "version": "0.1.121",
   "private": true,
   "type": "module",
   "engines": {
@@ -17,7 +17,7 @@
     "rebuild:android-fps": "node scripts/build-fps.mjs android",
     "rebuild:android-cpu": "node scripts/build-android-cpu.mjs",
     "rebuild:ios-logs": "node scripts/build-ios-logs.mjs",
-    "start": "node dist/server.mjs",
+    "start": "/bin/sh scripts/launch-mcp.sh dist/server.mjs",
     "test": "node --test tests/*.test.ts",
     "test:package": "node scripts/smoke-package.mjs",
     "test:cpu-cache": "node scripts/smoke-cpu-cache.mjs",
