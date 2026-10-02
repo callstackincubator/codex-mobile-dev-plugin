@@ -182,7 +182,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.match(recordingResource.contents[0].text as string, /data-view="recording"/);
   assert.equal(recordingResource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.deepEqual(recordingResource.contents[0]._meta?.["openai/ui"], { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] });
-  assert.deepEqual(recordingResource.contents[0]._meta?.ui, { prefersBorder: false, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
+  assert.deepEqual(recordingResource.contents[0]._meta?.ui, { prefersBorder: true, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
   const renderRecording = tools.tools.find(tool => tool.name === "mobile_render_performance_recording");
   assert.deepEqual(renderRecording?._meta?.ui, { resourceUri: RECORDING_URI, visibility: ["app", "model"] });
   assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);

@@ -276,7 +276,7 @@ Performance findings and historical measurements are documented in [the profilin
 
 The inline preview places charts beside a range overview, the busiest threads and chat actions. CPU peak and memory change appear with their chart titles. Drag a chart to select a range; Clear in the overview restores the entire recording. Info buttons explain each metric. FPS and display frame details appear only when recorded. Narrow cards stack the charts above the summary and actions.
 
-Inline previews fill the available app width without an outer card border or margin. Borders above and below the header separate the title from the host and charts. The resource requests no host border; the host controls spacing outside the app.
+Inline previews fill the available app width without an inner card border or margin. Borders above and below the header separate the title from the host and charts. The resource requests the host's outer border; the host controls spacing outside the app.
 
 For a request such as “Record CPU and memory for 30 seconds while I scroll checkout”,
 call `mobile_record_performance` with the running app's `target`, a descriptive
