@@ -37,7 +37,7 @@
   "openssl": "OpenSSL 3.6.4 25 Aug 2026 (Library: OpenSSL 3.6.4 25 Aug 2026)",
   "binaries": {
     "mobile-dev-ios-logs": {
-      "sha256": "b1288342bcfa3444721c41f91677a5169a40a5f55e38f4477ca0782a316309d6",
+      "sha256": "64a3d19e3af5beaacbff4d3f7e3999ab369855241e487ceb5d681fb779c372a5",
       "bytes": 384944
     },
     "libimobiledevice-1.0.6.dylib": {

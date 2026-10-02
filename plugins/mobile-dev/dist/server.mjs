@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="be108cf3-976e-5722-a807-49fad17c29ba")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="ea13c068-27dc-50d1-8945-84b9d6d3959a")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -4577,8 +4577,8 @@ function isRecursive(inst, stack, resolve5) {
       result4 = answer;
   };
   const def = inst._zod.def;
-  const kind2 = def.type;
-  switch (kind2) {
+  const kind3 = def.type;
+  switch (kind3) {
     case "object": {
       const raw = rawShape(def);
       merge4(raw ? shape(raw, true) : ASSUMED);
@@ -4658,7 +4658,7 @@ function isRecursive(inst, stack, resolve5) {
     case "custom":
       break;
     default: {
-      kind2;
+      kind3;
       for (const key in def) {
         const desc = Object.getOwnPropertyDescriptor(def, key);
         if (!desc || desc.get)
@@ -19895,8 +19895,8 @@ function visit2(schema2, fnOrHandlers) {
   }
   function mapInner(s3) {
     const def = s3._zod.def;
-    const kind2 = def.type;
-    switch (kind2) {
+    const kind3 = def.type;
+    switch (kind3) {
       case "object": {
         const oldShape = def.shape;
         const keys = Object.keys(oldShape);
@@ -20016,7 +20016,7 @@ function visit2(schema2, fnOrHandlers) {
       case "custom":
         return s3;
       default: {
-        kind2;
+        kind3;
         return s3;
       }
     }
@@ -38300,18 +38300,18 @@ function getUrlQuery(query) {
 function getUrlFragment(fragment) {
   return fragment?.replace(/^#/, "") || void 0;
 }
-function getHttpSpanNameFromUrlObject(urlObject, kind2, request2, routeName) {
+function getHttpSpanNameFromUrlObject(urlObject, kind3, request2, routeName) {
   const method = request2?.method?.toUpperCase() ?? "GET";
-  const route = routeName ? routeName : urlObject ? kind2 === "client" ? getSanitizedUrlStringFromUrlObject(urlObject) : urlObject.pathname : "/";
+  const route = routeName ? routeName : urlObject ? kind3 === "client" ? getSanitizedUrlStringFromUrlObject(urlObject) : urlObject.pathname : "/";
   return `${method} ${route}`;
 }
-function getHttpSpanDetailsFromUrlObject(urlObject, kind2, spanOrigin, request2, routeName, client2) {
+function getHttpSpanDetailsFromUrlObject(urlObject, kind3, spanOrigin, request2, routeName, client2) {
   const attributes = {
     [SEMANTIC_ATTRIBUTE_SENTRY_ORIGIN]: spanOrigin
   };
   let nameSource = "url";
   if (routeName) {
-    attributes[kind2 === "server" ? Yo : Ib] = routeName;
+    attributes[kind3 === "server" ? Yo : Ib] = routeName;
     nameSource = "route";
   }
   if (request2?.method) {
@@ -38338,14 +38338,14 @@ function getHttpSpanDetailsFromUrlObject(urlObject, kind2, spanOrigin, request2,
         attributes[Ob] = urlObject.protocol;
       }
       if (urlObject.hostname) {
-        attributes[kind2 === "server" ? mg : bb] = urlObject.hostname;
+        attributes[kind3 === "server" ? mg : bb] = urlObject.hostname;
       }
     }
   }
-  if (kind2 === "server") {
+  if (kind3 === "server") {
     attributes[Wd] = nameSource;
   }
-  return [getHttpSpanNameFromUrlObject(urlObject, kind2, request2, routeName), attributes];
+  return [getHttpSpanNameFromUrlObject(urlObject, kind3, request2, routeName), attributes];
 }
 function parseUrl(url3) {
   if (!url3) {
@@ -38650,8 +38650,8 @@ var SPAN_KIND_NUMBER_TO_NAME = {
   [3]: "producer",
   [4]: "consumer"
 };
-function spanKindToName(kind2) {
-  return SPAN_KIND_NUMBER_TO_NAME[kind2];
+function spanKindToName(kind3) {
+  return SPAN_KIND_NUMBER_TO_NAME[kind3];
 }
 
 // node_modules/@sentry/core/build/esm/breadcrumbs.js
@@ -47716,11 +47716,11 @@ var PRISMA_ASYNC_TERMINALS = [
   "deleteAndCount"
 ];
 var PRISMA_LAZY_TERMINALS = ["all", "createAll", "updateAll", "deleteAll"];
-function terminalConfig(methodName, kind2) {
+function terminalConfig(methodName, kind3) {
   return {
     channelName: methodName,
     module: { name: MODULE_NAME2, versionRange: VERSION_RANGE, filePath: ORM_CLIENT_FILE },
-    functionQuery: { className: "CollectionImpl", methodName, kind: kind2 }
+    functionQuery: { className: "CollectionImpl", methodName, kind: kind3 }
   };
 }
 var prismaConfig = [
@@ -47966,11 +47966,11 @@ var vercelAiChannels = {
   VERCEL_AI_EXECUTE_TOOL_CALL: "orchestrion:ai:executeToolCall",
   VERCEL_AI_RESOLVE_LANGUAGE_MODEL: "orchestrion:ai:resolveLanguageModel"
 };
-function vercelAiEntries(versionRange, channelName, functionName, kind2) {
+function vercelAiEntries(versionRange, channelName, functionName, kind3) {
   return ["dist/index.js", "dist/index.mjs"].map((filePath) => ({
     channelName,
     module: { name: "ai", versionRange, filePath },
-    functionQuery: { functionName, kind: kind2 }
+    functionQuery: { functionName, kind: kind3 }
   }));
 }
 var vercelAiModuleNames = getModuleNames(vercelAiConfig);
@@ -50739,8 +50739,8 @@ function redactGraphqlDocument(document2) {
     }
     let out = body;
     for (let i2 = ranges.length - 1; i2 >= 0; i2--) {
-      const { start, end, kind: kind2 } = ranges[i2];
-      const replacement = kind2 === "String" || kind2 === "BlockString" ? '"*"' : "*";
+      const { start, end, kind: kind3 } = ranges[i2];
+      const replacement = kind3 === "String" || kind3 === "BlockString" ? '"*"' : "*";
       out = out.slice(0, start) + replacement + out.slice(end);
     }
     return out;
@@ -60278,7 +60278,7 @@ function traceInstanceMethod(state2, node5, program) {
   if (!methodName) return;
   const classBody = node5.body;
   if (classBody.body.some(({ key }) => key?.name === methodName)) return;
-  let ctor = classBody.body.find(({ kind: kind2 }) => kind2 === "constructor");
+  let ctor = classBody.body.find(({ kind: kind3 }) => kind3 === "constructor");
   const savedBinding = `${formatChannelVariable(channelName)}$${methodName}`;
   if (ctor && constructorPatchesMethod(ctor, savedBinding)) return;
   state2.transforms.tracingChannelDeclaration(state2, program);
@@ -60757,9 +60757,9 @@ visit_fn = function(state2, ...args) {
   }
   transform3(state2, ...args);
 };
-getOperator_fn = function({ transform: transform3, functionQuery: { kind: kind2 } }) {
+getOperator_fn = function({ transform: transform3, functionQuery: { kind: kind3 } }) {
   if (transform3) return transform3;
-  switch (kind2) {
+  switch (kind3) {
     case "Async":
       return "tracePromise";
     case "Auto":
@@ -62470,7 +62470,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // src/shared/version.ts
-var PLUGIN_VERSION = "0.1.106";
+var PLUGIN_VERSION = "0.1.113";
 
 // src/shared/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -62555,6 +62555,7 @@ function scrubErrorEvent(event) {
     delete event.contexts.device;
     delete event.contexts.app;
     delete event.contexts.culture;
+    delete event.contexts.node_system_error;
     if (event.contexts.trace) delete event.contexts.trace.data;
   }
   return event;
@@ -65967,13 +65968,13 @@ var ZodNumber2 = class _ZodNumber extends ZodType2 {
   lt(value, message2) {
     return this.setLimit("max", value, false, errorUtil.toString(message2));
   }
-  setLimit(kind2, value, inclusive, message2) {
+  setLimit(kind3, value, inclusive, message2) {
     return new _ZodNumber({
       ...this._def,
       checks: [
         ...this._def.checks,
         {
-          kind: kind2,
+          kind: kind3,
           value,
           inclusive,
           message: errorUtil.toString(message2)
@@ -66183,13 +66184,13 @@ var ZodBigInt2 = class _ZodBigInt extends ZodType2 {
   lt(value, message2) {
     return this.setLimit("max", value, false, errorUtil.toString(message2));
   }
-  setLimit(kind2, value, inclusive, message2) {
+  setLimit(kind3, value, inclusive, message2) {
     return new _ZodBigInt({
       ...this._def,
       checks: [
         ...this._def.checks,
         {
-          kind: kind2,
+          kind: kind3,
           value,
           inclusive,
           message: errorUtil.toString(message2)
@@ -72739,14 +72740,137 @@ async function closeNativeTelemetry() {
   if (transport !== void 0) await transport.flush(2e3);
 }
 
+// src/shared/protocol.ts
+var udidSchema = external_exports.uuid();
+var point = external_exports.number().finite().min(0).max(1e4);
+var size = external_exports.number().finite().positive().max(1e4);
+var duration3 = external_exports.number().finite().min(0).max(5);
+var dimensions = { width: size, height: size };
+var edge = external_exports.enum(["left", "top", "right", "bottom"]).optional();
+var touchInputSchema = external_exports.object({
+  type: external_exports.enum(["touch1-down", "touch1-move", "touch1-up"]),
+  x: point,
+  y: point,
+  ...dimensions,
+  edge
+}).strict();
+var inputSchema = external_exports.discriminatedUnion("type", [
+  external_exports.object({ type: external_exports.literal("tap"), x: point, y: point, ...dimensions, duration: duration3.optional() }).strict(),
+  external_exports.object({ type: external_exports.literal("swipe"), startX: point, startY: point, endX: point, endY: point, ...dimensions, duration: duration3.optional() }).strict(),
+  touchInputSchema,
+  external_exports.object({
+    type: external_exports.literal("button"),
+    button: external_exports.enum(["home", "back", "power", "lock", "volume-up", "volume-down", "action", "app-switcher"]),
+    duration: duration3.optional()
+  }).strict(),
+  external_exports.object({ type: external_exports.literal("type"), text: external_exports.string().max(4096).regex(/^[\x20-\x7e]*$/, "Use printable US-ASCII text.") }).strict(),
+  external_exports.object({
+    type: external_exports.literal("key"),
+    code: external_exports.string().regex(/^(Key[A-Z]|Digit[0-9]|Enter|Escape|Backspace|Tab|Space|Arrow(Up|Down|Left|Right))$/),
+    modifiers: external_exports.array(external_exports.enum(["shift", "control", "option", "command"])).max(4).optional()
+  }).strict()
+]);
+var streamMessageSchema = external_exports.union([
+  inputSchema,
+  external_exports.object({ type: external_exports.literal("set_fps"), fps: external_exports.number().int().min(1).max(60) }).strict(),
+  external_exports.object({ type: external_exports.literal("set_scale"), scale: external_exports.number().int().min(1).max(4) }).strict()
+]);
+function normalizeDevices(payload) {
+  const parsed = external_exports.object({ running: external_exports.array(external_exports.unknown()), available: external_exports.array(external_exports.unknown()) }).parse(payload);
+  const devices3 = /* @__PURE__ */ new Map();
+  for (const [list, fallback] of [[parsed.available, "Shutdown"], [parsed.running, "Booted"]]) {
+    for (const item of list) {
+      const device2 = external_exports.object({ udid: udidSchema, name: external_exports.string(), state: external_exports.string().optional(), runtime: external_exports.string().optional() }).parse(item);
+      devices3.set(device2.udid, { ...device2, state: device2.state ?? fallback, runtime: device2.runtime ?? "" });
+    }
+  }
+  return [...devices3.values()].sort((a2, b2) => Number(b2.state === "Booted") - Number(a2.state === "Booted") || a2.name.localeCompare(b2.name));
+}
+function parseBaseUrl(value, label = "BAGUETTE_URL") {
+  const url3 = new URL(value);
+  if (url3.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url3.hostname) || url3.username || url3.password || url3.pathname !== "/" || url3.search || url3.hash) {
+    throw new Error(`${label} must be a loopback HTTP origin, such as http://127.0.0.1:8421.`);
+  }
+  return url3;
+}
+function errorMessage(error113) {
+  return error113 instanceof Error ? error113.message : String(error113);
+}
+
+// src/shared/device-apps-diagnostics.ts
+var DEVICE_APPS_DIAGNOSTIC_META = "mobile-dev/device-apps-diagnostic";
+var stage = external_exports.enum(["device_validation", "running_apps", "foreground", "discovery", "transport", "response"]);
+var failure2 = external_exports.enum(["missing_executable", "timeout", "command_failed", "invalid_response", "cancelled", "unknown"]);
+var platform2 = external_exports.enum(["ios", "android"]);
+var kind = external_exports.enum(["physical", "simulator", "unknown"]);
+var diagnosticObject = external_exports.object({ stage, failure: failure2, platform: platform2, kind });
+var deviceAppsDiagnosticSchema = diagnosticObject.strict();
+var diagnostics2 = /* @__PURE__ */ new WeakMap();
+function classifyFailure(error113) {
+  if (error113 === null || typeof error113 !== "object") return "unknown";
+  if ("name" in error113 && error113.name === "AbortError") return "cancelled";
+  if ("code" in error113 && error113.code === "ENOENT") return "missing_executable";
+  if ("code" in error113 && (error113.code === "ETIMEDOUT" || error113.code === -32001)) return "timeout";
+  if ("name" in error113 && error113.name === "TimeoutError") return "timeout";
+  if ("killed" in error113 && error113.killed === true) return "timeout";
+  if ("name" in error113 && (error113.name === "ZodError" || error113.name === "SyntaxError")) return "invalid_response";
+  if ("code" in error113 && typeof error113.code === "number" && error113.code > 0) return "command_failed";
+  if ("signal" in error113 && typeof error113.signal === "string") return "command_failed";
+  return "unknown";
+}
+function deviceAppsDiagnostic(error113, stage2, platform5, kind3) {
+  const failure3 = classifyFailure(error113);
+  let deviceKind2 = "unknown";
+  if (platform5 === "ios") deviceKind2 = kind3 === "physical" ? "physical" : "simulator";
+  return { stage: stage2, failure: failure3, platform: platform5, kind: deviceKind2 };
+}
+function setDeviceAppsDiagnostic(error113, diagnostic) {
+  diagnostics2.set(error113, diagnostic);
+}
+function getDeviceAppsDiagnostic(error113) {
+  if (error113 === null || typeof error113 !== "object") return;
+  return diagnostics2.get(error113);
+}
+function deviceAppsDiagnosticTags(error113) {
+  const diagnostic = getDeviceAppsDiagnostic(error113);
+  if (diagnostic === void 0) return {};
+  return {
+    discovery_stage: diagnostic.stage,
+    discovery_failure: diagnostic.failure,
+    device_platform: diagnostic.platform,
+    device_kind: diagnostic.kind
+  };
+}
+function annotateDeviceAppsError(error113, stage2, platform5, kind3) {
+  const previous = getDeviceAppsDiagnostic(error113);
+  if (previous) return error113;
+  let annotated;
+  if (error113 !== null && typeof error113 === "object") annotated = error113;
+  else {
+    const message2 = errorMessage(error113);
+    annotated = new Error(message2);
+  }
+  const diagnostic = deviceAppsDiagnostic(error113, stage2, platform5, kind3);
+  setDeviceAppsDiagnostic(annotated, diagnostic);
+  return annotated;
+}
+async function withDeviceAppsDiagnostic(operation, stage2, platform5, kind3) {
+  try {
+    return await operation();
+  } catch (error113) {
+    const annotated = annotateDeviceAppsError(error113, stage2, platform5, kind3);
+    throw annotated;
+  }
+}
+
 // src/server/telemetry.ts
 var IOSLogProcessingTelemetry = class {
   window = new MeasurementWindow();
   attributes;
   timer;
   closed = false;
-  constructor(kind2) {
-    this.attributes = { surface: "logs", device_platform: "ios", device_kind: kind2 };
+  constructor(kind3) {
+    this.attributes = { surface: "logs", device_platform: "ios", device_kind: kind3 };
     if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
     this.timer = setInterval(() => this.flush(), TELEMETRY_INTERVAL_MS);
     this.timer.unref();
@@ -72774,7 +72898,8 @@ var IOSLogProcessingTelemetry = class {
 function captureServerError(error113, operation) {
   if (error113 instanceof SimulatorUnavailableError) return;
   if (error113 instanceof Error && error113.name === "AbortError") return;
-  captureException(error113, { tags: { operation } });
+  const diagnosticTags = deviceAppsDiagnosticTags(error113);
+  captureException(error113, { tags: { ...diagnosticTags, operation } });
 }
 function installTracePropagation(transport3) {
   const start = transport3.start.bind(transport3);
@@ -74450,7 +74575,7 @@ __export(regexes_exports2, {
   date: () => date5,
   datetime: () => datetime3,
   domain: () => domain2,
-  duration: () => duration3,
+  duration: () => duration4,
   e164: () => e1643,
   email: () => email3,
   emoji: () => emoji3,
@@ -74504,7 +74629,7 @@ var ulid3 = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$/;
 var xid3 = /^[0-9a-vA-V]{20}$/;
 var ksuid3 = /^[A-Za-z0-9]{27}$/;
 var nanoid3 = /^[a-zA-Z0-9_-]{21}$/;
-var duration3 = /^P(?:(\d+W)|(?!.*W)(?=\d|T\d)(\d+Y)?(\d+M)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+([.,]\d+)?S)?)?)$/;
+var duration4 = /^P(?:(\d+W)|(?!.*W)(?=\d|T\d)(\d+Y)?(\d+M)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+([.,]\d+)?S)?)?)$/;
 var extendedDuration2 = /^[-+]?P(?!$)(?:(?:[-+]?\d+Y)|(?:[-+]?\d+[.,]\d+Y$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:(?:[-+]?\d+W)|(?:[-+]?\d+[.,]\d+W$))?(?:(?:[-+]?\d+D)|(?:[-+]?\d+[.,]\d+D$))?(?:T(?=[\d+-])(?:(?:[-+]?\d+H)|(?:[-+]?\d+[.,]\d+H$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:[-+]?\d+(?:[.,]\d+)?S)?)??$/;
 var guid3 = /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
 var uuid3 = (version3) => {
@@ -75454,7 +75579,7 @@ var $ZodISOTime2 = /* @__PURE__ */ $constructor2("$ZodISOTime", (inst, def) => {
   $ZodStringFormat2.init(inst, def);
 });
 var $ZodISODuration2 = /* @__PURE__ */ $constructor2("$ZodISODuration", (inst, def) => {
-  def.pattern ?? (def.pattern = duration3);
+  def.pattern ?? (def.pattern = duration4);
   $ZodStringFormat2.init(inst, def);
 });
 var $ZodIPv42 = /* @__PURE__ */ $constructor2("$ZodIPv4", (inst, def) => {
@@ -85517,7 +85642,7 @@ __export(iso_exports3, {
   ZodISOTime: () => ZodISOTime2,
   date: () => date6,
   datetime: () => datetime4,
-  duration: () => duration4,
+  duration: () => duration5,
   time: () => time4
 });
 var ZodISODateTime2 = /* @__PURE__ */ $constructor2("ZodISODateTime", (inst, def) => {
@@ -85545,7 +85670,7 @@ var ZodISODuration2 = /* @__PURE__ */ $constructor2("ZodISODuration", (inst, def
   $ZodISODuration2.init(inst, def);
   ZodStringFormat2.init(inst, def);
 });
-function duration4(params) {
+function duration5(params) {
   return _isoDuration2(ZodISODuration2, params);
 }
 
@@ -85855,7 +85980,7 @@ var ZodString3 = /* @__PURE__ */ $constructor2("ZodString", (inst, def) => {
   inst.datetime = (params) => inst.check(datetime4(params));
   inst.date = (params) => inst.check(date6(params));
   inst.time = (params) => inst.check(time4(params));
-  inst.duration = (params) => inst.check(duration4(params));
+  inst.duration = (params) => inst.check(duration5(params));
 });
 function string5(params) {
   return _string2(ZodString3, params);
@@ -88981,63 +89106,6 @@ import { access as access2 } from "node:fs/promises";
 import { join as join10 } from "node:path";
 import { homedir as homedir3 } from "node:os";
 
-// src/shared/protocol.ts
-var udidSchema = external_exports.uuid();
-var point = external_exports.number().finite().min(0).max(1e4);
-var size = external_exports.number().finite().positive().max(1e4);
-var duration5 = external_exports.number().finite().min(0).max(5);
-var dimensions = { width: size, height: size };
-var edge = external_exports.enum(["left", "top", "right", "bottom"]).optional();
-var touchInputSchema = external_exports.object({
-  type: external_exports.enum(["touch1-down", "touch1-move", "touch1-up"]),
-  x: point,
-  y: point,
-  ...dimensions,
-  edge
-}).strict();
-var inputSchema = external_exports.discriminatedUnion("type", [
-  external_exports.object({ type: external_exports.literal("tap"), x: point, y: point, ...dimensions, duration: duration5.optional() }).strict(),
-  external_exports.object({ type: external_exports.literal("swipe"), startX: point, startY: point, endX: point, endY: point, ...dimensions, duration: duration5.optional() }).strict(),
-  touchInputSchema,
-  external_exports.object({
-    type: external_exports.literal("button"),
-    button: external_exports.enum(["home", "back", "power", "lock", "volume-up", "volume-down", "action", "app-switcher"]),
-    duration: duration5.optional()
-  }).strict(),
-  external_exports.object({ type: external_exports.literal("type"), text: external_exports.string().max(4096).regex(/^[\x20-\x7e]*$/, "Use printable US-ASCII text.") }).strict(),
-  external_exports.object({
-    type: external_exports.literal("key"),
-    code: external_exports.string().regex(/^(Key[A-Z]|Digit[0-9]|Enter|Escape|Backspace|Tab|Space|Arrow(Up|Down|Left|Right))$/),
-    modifiers: external_exports.array(external_exports.enum(["shift", "control", "option", "command"])).max(4).optional()
-  }).strict()
-]);
-var streamMessageSchema = external_exports.union([
-  inputSchema,
-  external_exports.object({ type: external_exports.literal("set_fps"), fps: external_exports.number().int().min(1).max(60) }).strict(),
-  external_exports.object({ type: external_exports.literal("set_scale"), scale: external_exports.number().int().min(1).max(4) }).strict()
-]);
-function normalizeDevices(payload) {
-  const parsed = external_exports.object({ running: external_exports.array(external_exports.unknown()), available: external_exports.array(external_exports.unknown()) }).parse(payload);
-  const devices3 = /* @__PURE__ */ new Map();
-  for (const [list, fallback] of [[parsed.available, "Shutdown"], [parsed.running, "Booted"]]) {
-    for (const item of list) {
-      const device2 = external_exports.object({ udid: udidSchema, name: external_exports.string(), state: external_exports.string().optional(), runtime: external_exports.string().optional() }).parse(item);
-      devices3.set(device2.udid, { ...device2, state: device2.state ?? fallback, runtime: device2.runtime ?? "" });
-    }
-  }
-  return [...devices3.values()].sort((a2, b2) => Number(b2.state === "Booted") - Number(a2.state === "Booted") || a2.name.localeCompare(b2.name));
-}
-function parseBaseUrl(value, label = "BAGUETTE_URL") {
-  const url3 = new URL(value);
-  if (url3.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url3.hostname) || url3.username || url3.password || url3.pathname !== "/" || url3.search || url3.hash) {
-    throw new Error(`${label} must be a loopback HTTP origin, such as http://127.0.0.1:8421.`);
-  }
-  return url3;
-}
-function errorMessage(error113) {
-  return error113 instanceof Error ? error113.message : String(error113);
-}
-
 // src/server/ios-log-filter.ts
 var subsystemThresholds = /* @__PURE__ */ new Map([
   ["com.apple.network", 2],
@@ -89216,8 +89284,8 @@ import { promisify as promisify2 } from "node:util";
 // src/shared/ios-devices.ts
 var text = external_exports.string();
 var identifier = external_exports.uuid();
-var platform2 = external_exports.literal("ios");
-var kind = external_exports.literal("physical");
+var platform3 = external_exports.literal("ios");
+var kind2 = external_exports.literal("physical");
 var physicalIosDeviceSchema = external_exports.object({
   udid: text,
   coreDeviceId: identifier,
@@ -89226,8 +89294,8 @@ var physicalIosDeviceSchema = external_exports.object({
   productType: text,
   state: text,
   runtime: text,
-  platform: platform2,
-  kind,
+  platform: platform3,
+  kind: kind2,
   transportType: text,
   pairingState: text
 });
@@ -89252,7 +89320,8 @@ var devices = external_exports.array(device);
 var info = external_exports.object({ jsonVersion, outcome: success3 });
 var result = external_exports.object({ devices });
 var response = external_exports.object({ info, result });
-async function listIosDevices(run = execute) {
+async function listIosDevices(signal, run = execute) {
+  signal?.throwIfAborted();
   const args = [
     "devicectl",
     "list",
@@ -89266,7 +89335,8 @@ async function listIosDevices(run = execute) {
     "--json-output",
     "-"
   ];
-  const output2 = await run("/usr/bin/xcrun", args, { encoding: "utf8", timeout: 15e3, maxBuffer: 4 * 1024 * 1024 });
+  const output2 = await run("/usr/bin/xcrun", args, { encoding: "utf8", timeout: 15e3, maxBuffer: 4 * 1024 * 1024, signal });
+  signal?.throwIfAborted();
   const payload = JSON.parse(output2.stdout);
   const parsed = response.safeParse(payload);
   if (parsed.success === false) throw new Error("devicectl returned unsupported device discovery JSON. Physical iOS discovery requires Xcode 27 or later.");
@@ -89305,23 +89375,26 @@ function registerIosDeviceTools(server, discover = listIosDevices) {
 }
 
 // src/server/physical-ios-logs.ts
-async function physicalIosLogDevice(udid, discover = listIosDevices) {
-  const devices3 = await discover();
+async function physicalIosLogDevice(udid, discover = listIosDevices, signal) {
+  signal?.throwIfAborted();
+  const devices3 = await discover(signal);
+  signal?.throwIfAborted();
   const device2 = devices3.find((device3) => device3.udid === udid);
   if (device2 === void 0 || device2.state !== "connected") throw new Error("The selected physical iOS device is no longer connected. Refresh the device list.");
   if (device2.pairingState !== "paired") throw new Error("The selected iPhone is not paired. Unlock it and trust this Mac.");
   if (device2.transportType !== "wired" && device2.transportType !== "localNetwork") throw new Error("The selected iPhone has no supported USB or Wi-Fi connection.");
   return device2;
 }
-async function physicalIosLogCommand(target2, discover = listIosDevices, helper = new URL("./ios-logs/mobile-dev-ios-logs", import.meta.url)) {
+async function physicalIosLogCommand(target2, signal, discover = listIosDevices, helper = new URL("./ios-logs/mobile-dev-ios-logs", import.meta.url)) {
   if (process.platform !== "darwin") throw new Error("Physical iOS logs require macOS.");
-  const device2 = await physicalIosLogDevice(target2.deviceId, discover);
+  const device2 = await physicalIosLogDevice(target2.deviceId, discover, signal);
   const command2 = fileURLToPath4(helper);
   try {
     await access(command2, constants.X_OK);
   } catch {
     throw new Error("The bundled physical iOS log reader is missing. Rebuild and package the plugin.");
   }
+  signal?.throwIfAborted();
   const transport3 = device2.transportType === "localNetwork" ? "network" : "usb";
   const args = ["--device", device2.udid, transport3];
   if (target2.process) args.push(target2.process);
@@ -89356,7 +89429,7 @@ function runLogProcess(command2, args, parse11, sink, signal, readyLine) {
     const decoder = new StringDecoder("utf8");
     let pending = "";
     let discarding = false;
-    let diagnostics2 = "";
+    let diagnostics3 = "";
     let stopping = false;
     let ready = readyLine === void 0;
     let killTimer;
@@ -89368,7 +89441,7 @@ function runLogProcess(command2, args, parse11, sink, signal, readyLine) {
       killTimer.unref();
     };
     const startupTimer = readyLine === void 0 ? void 0 : setTimeout(() => {
-      diagnostics2 = "The iPhone did not accept log streaming within 15 seconds. Unlock it and check the connection.";
+      diagnostics3 = "The iPhone did not accept log streaming within 15 seconds. Unlock it and check the connection.";
       stop();
     }, 15e3);
     signal.addEventListener("abort", stop, { once: true });
@@ -89403,7 +89476,7 @@ function runLogProcess(command2, args, parse11, sink, signal, readyLine) {
       }
     });
     child.stderr.on("data", (chunk) => {
-      diagnostics2 = (diagnostics2 + chunk.toString()).slice(-2048);
+      diagnostics3 = (diagnostics3 + chunk.toString()).slice(-2048);
     });
     const cleanup = () => {
       signal.removeEventListener("abort", stop);
@@ -89417,7 +89490,7 @@ function runLogProcess(command2, args, parse11, sink, signal, readyLine) {
     child.once("close", (code, exitSignal) => {
       cleanup();
       if (signal.aborted) resolve5();
-      else reject(new Error(diagnostics2.trim() || `Log reader exited: ${code ?? exitSignal}.`));
+      else reject(new Error(diagnostics3.trim() || `Log reader exited: ${code ?? exitSignal}.`));
     });
   });
 }
@@ -89448,7 +89521,7 @@ function startNativeLogs(target2, sink, physicalCommand = physicalIosLogCommand)
         if (target2.platform === "ios") {
           if (process.platform !== "darwin") throw new Error("iOS logs require macOS and Xcode.");
           if (target2.kind === "physical") {
-            const reader = await physicalCommand(target2);
+            const reader = await physicalCommand(target2, signal);
             await runLogProcess(reader.command, reader.args, parseIOS, scopedSink, signal, '{"ready":true}');
           } else {
             const processFilter = target2.pid === void 0 ? target2.process : String(target2.pid);
@@ -89490,10 +89563,10 @@ async function streamAndroidPackage(adb, target2, sink, signal) {
   let currentPid = "";
   let reader;
   let reading3;
-  let failure2;
+  let failure3;
   try {
     while (!signal.aborted) {
-      if (failure2) throw failure2;
+      if (failure3) throw failure3;
       const { stdout } = await execute2(adb, ["-s", target2.deviceId, "shell", "pidof", target2.packageName], { timeout: 4e3, signal }).catch((error113) => {
         if (error113.code === 1) return { stdout: "" };
         throw error113;
@@ -89507,7 +89580,7 @@ async function streamAndroidPackage(adb, target2, sink, signal) {
         if (pid3) {
           reader = new AbortController();
           reading3 = runLogProcess(adb, ["-s", target2.deviceId, "logcat", "-v", "threadtime", "-T", "1", `--pid=${pid3}`, "*:V"], parseLogcat, sink, AbortSignal.any([signal, reader.signal])).catch((error113) => {
-            failure2 = error113;
+            failure3 = error113;
           });
         }
       }
@@ -89734,7 +89807,7 @@ var ServeEmu = class {
     const backend = { url: url3, child };
     this.backends.set(id, backend);
     let launchError;
-    let diagnostics2 = "";
+    let diagnostics3 = "";
     child.on("error", (error113) => {
       launchError = error113;
     });
@@ -89742,21 +89815,21 @@ var ServeEmu = class {
       if (this.backends.get(id) === backend) this.backends.delete(id);
     });
     for (const output2 of [child.stdout, child.stderr]) output2?.on("data", (chunk) => {
-      diagnostics2 = (diagnostics2 + chunk).slice(-4e3);
+      diagnostics3 = (diagnostics3 + chunk).slice(-4e3);
       process.stderr.write(chunk);
     });
     try {
       const deadline = Date.now() + 3e4;
       while (Date.now() < deadline && !this.disposed) {
         if (launchError) throw new Error(`Cannot start serve-emu. Install Bun 1.3.13 or later. ${launchError.message}`);
-        if (child.exitCode !== null || child.signalCode !== null) throw new Error(`serve-emu exited before it became ready. ${diagnostics2.trim()}`);
+        if (child.exitCode !== null || child.signalCode !== null) throw new Error(`serve-emu exited before it became ready. ${diagnostics3.trim()}`);
         try {
           if ((await this.health(url3)).serial === id) return backend;
         } catch {
         }
         await delay3(250);
       }
-      throw new Error(`serve-emu did not become ready within 30 seconds. ${diagnostics2.trim()}`);
+      throw new Error(`serve-emu did not become ready within 30 seconds. ${diagnostics3.trim()}`);
     } catch (error113) {
       child.kill("SIGTERM");
       this.backends.delete(id);
@@ -90988,10 +91061,10 @@ var deviceChoiceThumbnails = {
 // src/server/device-choice-tools.ts
 function deviceChoiceForm(input2, devices3) {
   const options = devices3.map((device2, index) => {
-    const platform4 = device2.platform === "ios" ? "iOS" : "Android";
-    const kind2 = device2.kind === "physical" ? "device" : device2.kind;
-    const details = [`${platform4} ${kind2}`];
-    if (device2.runtime && device2.runtime !== platform4) details.push(device2.runtime);
+    const platform5 = device2.platform === "ios" ? "iOS" : "Android";
+    const kind3 = device2.kind === "physical" ? "device" : device2.kind;
+    const details = [`${platform5} ${kind3}`];
+    if (device2.runtime && device2.runtime !== platform5) details.push(device2.runtime);
     if (device2.appName) details.push(device2.appName);
     if (device2.state === "Shutdown") details.push("Stopped");
     const description = details.join(" \xB7 ");
@@ -91044,9 +91117,9 @@ async function resolveDeviceChoices(references, sources) {
   const discovered = lists.flat();
   return references.map((reference) => {
     const device2 = discovered.find((candidate) => {
-      const platform4 = candidate.platform ?? "ios";
-      const kind2 = candidate.kind ?? "simulator";
-      return platform4 === reference.platform && kind2 === reference.kind && candidate.udid === reference.deviceId;
+      const platform5 = candidate.platform ?? "ios";
+      const kind3 = candidate.kind ?? "simulator";
+      return platform5 === reference.platform && kind3 === reference.kind && candidate.udid === reference.deviceId;
     });
     if (device2 === void 0) throw new SimulatorUnavailableError("A candidate device is no longer available. Refresh discovery before requesting a selection.");
     if (device2.kind === "physical" && device2.platform === "ios") {
@@ -91065,7 +91138,7 @@ function registerDeviceChoiceTools(server, extensions, sources) {
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
   }, async (input2, extra) => {
     const attributes = { selection_mode: input2.selectionMode };
-    let stage = "prepare";
+    let stage2 = "prepare";
     try {
       const capabilities = server.server.getClientCapabilities();
       const formCapability = capabilities?.extensions?.["openai/elicitation"];
@@ -91083,13 +91156,13 @@ function registerDeviceChoiceTools(server, extensions, sources) {
       }
       extra.signal.throwIfAborted();
       const requestedSchema = deviceChoiceForm(input2, devices3);
-      stage = "request";
+      stage2 = "request";
       const answer = await extensions.elicitInput({ mode: "form", message: input2.message, requestedSchema }, { signal: extra.signal, timeout: 6e5 });
       if (answer.action !== "accept") {
         public_api_exports.count("device_picker.result", 1, { attributes: { ...attributes, outcome: answer.action } });
         return { content: [{ type: "text", text: "Device selection cancelled. Do not start the pending task." }], structuredContent: { action: answer.action, devices: [] } };
       }
-      stage = "validate";
+      stage2 = "validate";
       const submitted = input2.selectionMode === "multiple" ? answer.content.devices : [answer.content.device];
       if (Array.isArray(submitted) === false || submitted.length === 0 || submitted.length > devices3.length) throw new SimulatorUnavailableError("The device selection is invalid. Request a new selection.");
       const selected = [];
@@ -91111,7 +91184,7 @@ function registerDeviceChoiceTools(server, extensions, sources) {
     } catch (error113) {
       public_api_exports.count("device_picker.result", 1, { attributes: { ...attributes, outcome: extra.signal.aborted ? "cancel" : "failed" } });
       if (extra.signal.aborted === false && error113 instanceof SimulatorUnavailableError === false) {
-        const report = new Error(`Device picker ${stage} failed.`);
+        const report = new Error(`Device picker ${stage2} failed.`);
         captureServerError(report, "device_picker.tool");
       }
       const message2 = errorMessage(error113);
@@ -92180,11 +92253,11 @@ function registerInspectionTools(server, baguette, android2) {
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     _meta: { ui: { visibility: ["app", "model"] } }
-  }, async ({ platform: platform4, deviceId: deviceId3, deviceName, screenWidth, metroUrl, targetId }) => {
+  }, async ({ platform: platform5, deviceId: deviceId3, deviceName, screenWidth, metroUrl, targetId }) => {
     try {
       let deviceAliases = [];
       let native, appName2, appId;
-      if (platform4 === "ios") {
+      if (platform5 === "ios") {
         const device2 = await baguette.device(udidSchema.parse(deviceId3), true);
         deviceName = device2.name;
         const response3 = await baguette.json(`/simulators/${deviceId3}/describe-ui.json`);
@@ -92204,7 +92277,7 @@ function registerInspectionTools(server, baguette, android2) {
       }
       let runtime;
       try {
-        runtime = await inspectReactNative({ url: metroUrl, targetId, deviceName, deviceAliases, appName: appName2, appId, platform: platform4, screenWidth }, controller.signal);
+        runtime = await inspectReactNative({ url: metroUrl, targetId, deviceName, deviceAliases, appName: appName2, appId, platform: platform5, screenWidth }, controller.signal);
       } catch {
         runtime = { available: false, reason: "inspector-unavailable" };
       }
@@ -92338,9 +92411,9 @@ function parseAndroidApps(packages2, processes2) {
   return apps;
 }
 var packageLists = /* @__PURE__ */ new Map();
-async function runningDeviceApps(deviceId3, signal, platform4 = "ios", kind2) {
-  if (platform4 === "ios" && kind2 === "physical") return runningPhysicalApps(deviceId3, signal);
-  if (platform4 === "ios") return runningSimulatorApps(deviceId3, signal);
+async function runningDeviceApps(deviceId3, signal, platform5 = "ios", kind3) {
+  if (platform5 === "ios" && kind3 === "physical") return runningPhysicalApps(deviceId3, signal);
+  if (platform5 === "ios") return runningSimulatorApps(deviceId3, signal);
   const adb = await adbPath();
   let packages2 = packageLists.get(deviceId3);
   if (packages2 === void 0 || packages2.expires < Date.now()) {
@@ -92501,8 +92574,8 @@ var GdbConnection = class {
         const packets = this.decoder.push(chunk);
         for (const packet of packets) this.receive(packet);
       } catch (error113) {
-        const failure2 = error113 instanceof Error ? error113 : new Error("Invalid debugger response.");
-        socket.destroy(failure2);
+        const failure3 = error113 instanceof Error ? error113 : new Error("Invalid debugger response.");
+        socket.destroy(failure3);
       }
     });
     socket.on("error", (error113) => this.fail(error113));
@@ -92631,7 +92704,7 @@ async function launchLocalDebugserver(binary2, signal) {
   let child;
   let exited;
   let closing2;
-  let diagnostics2 = "";
+  let diagnostics3 = "";
   const close3 = () => {
     if (closing2) return closing2;
     closing2 = (async () => {
@@ -92681,7 +92754,7 @@ async function launchLocalDebugserver(binary2, signal) {
     child = spawn5(binary2, ["--native-regs", "--setsid", "--reverse-connect", destination], { stdio: ["ignore", "pipe", "pipe"] });
     const drain = (chunk) => {
       const text6 = chunk.toString();
-      diagnostics2 = (diagnostics2 + text6).slice(-4e3);
+      diagnostics3 = (diagnostics3 + text6).slice(-4e3);
     };
     child.stdout?.on("data", drain);
     child.stderr?.on("data", drain);
@@ -92690,7 +92763,7 @@ async function launchLocalDebugserver(binary2, signal) {
       child.once("close", done);
     });
     const prematureExit = exited.then((code) => {
-      const details = diagnostics2.trim();
+      const details = diagnostics3.trim();
       throw new Error(`Simulator debugserver exited before connecting (${code}). ${details}`);
     });
     const aborted3 = new Promise((_2, reject) => {
@@ -92964,7 +93037,7 @@ async function openPhysicalDebugserver(deviceId3, signal, helper = new URL("./io
   const child = spawn6(path, ["debugserver", deviceId3], { stdio: "pipe", shell: false });
   let socket;
   let closing2;
-  let diagnostics2 = "";
+  let diagnostics3 = "";
   let pending = "";
   let accept;
   let fail;
@@ -92974,7 +93047,7 @@ async function openPhysicalDebugserver(deviceId3, signal, helper = new URL("./io
   });
   const exited = new Promise((resolve5) => {
     child.once("close", (code, exitSignal) => {
-      const message2 = diagnostics2.trim() || `The iPhone debugserver helper exited (${code ?? exitSignal}).`;
+      const message2 = diagnostics3.trim() || `The iPhone debugserver helper exited (${code ?? exitSignal}).`;
       const error113 = new Error(message2);
       fail(error113);
       if (closing2 === void 0) socket?.destroy(error113);
@@ -93007,7 +93080,7 @@ async function openPhysicalDebugserver(deviceId3, signal, helper = new URL("./io
   child.once("error", fail);
   child.stderr.on("data", (chunk) => {
     const text6 = chunk.toString("utf8");
-    diagnostics2 = (diagnostics2 + text6).slice(-4096);
+    diagnostics3 = (diagnostics3 + text6).slice(-4096);
   });
   child.stdout.on("data", (chunk) => {
     if (closing2 || socket) return;
@@ -93021,8 +93094,8 @@ async function openPhysicalDebugserver(deviceId3, signal, helper = new URL("./io
       const ready2 = readySchema.parse(decoded);
       accept(ready2.port);
     } catch (error113) {
-      const failure2 = error113 instanceof Error ? error113 : new Error("Invalid iPhone debugserver address.");
-      fail(failure2);
+      const failure3 = error113 instanceof Error ? error113 : new Error("Invalid iPhone debugserver address.");
+      fail(failure3);
     }
   });
   const timeout = setTimeout(() => {
@@ -93205,11 +93278,11 @@ async function startAndroidCpuMonitor(options, dependencies) {
   });
   let sampler;
   let stopping;
-  let diagnostics2 = "";
+  let diagnostics3 = "";
   let pending = "";
   const decoder = new StringDecoder2("utf8");
   const telemetry = new NativeTelemetryRelay((text6) => {
-    diagnostics2 = (diagnostics2 + text6).slice(-4096);
+    diagnostics3 = (diagnostics3 + text6).slice(-4096);
   });
   let watchdog;
   const deadline = () => {
@@ -93250,7 +93323,7 @@ async function startAndroidCpuMonitor(options, dependencies) {
     exited();
     clearTimeout(watchdog);
     options.signal.removeEventListener("abort", abort);
-    finish(new Error(diagnostics2.trim() || `Android CPU collector exited (${code ?? signal}). The app may have stopped.`));
+    finish(new Error(diagnostics3.trim() || `Android CPU collector exited (${code ?? signal}). The app may have stopped.`));
   });
   child.stderr?.on("data", (chunk) => {
     telemetry.write(chunk);
@@ -93518,15 +93591,16 @@ var defaultSources = {
   simulator: foregroundSimulatorPid,
   android: foregroundAndroidApp
 };
-async function readDeviceApps(deviceId3, signal, platform4 = "ios", kind2, sources = defaultSources) {
-  const running = sources.apps(deviceId3, signal, platform4, kind2);
-  if (platform4 === "android") {
-    const detection2 = sources.android(deviceId3, signal);
+async function readDeviceApps(deviceId3, signal, platform5 = "ios", kind3, sources = defaultSources) {
+  const running = withDeviceAppsDiagnostic(() => sources.apps(deviceId3, signal, platform5, kind3), "running_apps", platform5, kind3);
+  if (platform5 === "android") {
+    const detection2 = withDeviceAppsDiagnostic(() => sources.android(deviceId3, signal), "foreground", platform5, kind3);
     const [apps2, foregroundApp2] = await Promise.all([running, detection2]);
     const marked2 = apps2.map((candidate) => ({ ...candidate, foreground: candidate.pid === foregroundApp2?.pid }));
     return { apps: marked2, foregroundApp: foregroundApp2 };
   }
-  const detection = kind2 === "physical" ? sources.physical(deviceId3, signal) : sources.simulator(deviceId3, signal);
+  const detect = () => kind3 === "physical" ? sources.physical(deviceId3, signal) : sources.simulator(deviceId3, signal);
+  const detection = withDeviceAppsDiagnostic(detect, "foreground", platform5, kind3);
   const [apps, pid3] = await Promise.all([running, detection]);
   const app = apps.find((candidate) => candidate.pid === pid3);
   const foregroundApp = pid3 === null ? null : { bundleId: app?.bundleId ?? null, pid: pid3 };
@@ -93548,9 +93622,15 @@ function registerDeviceAppsTool(server, discover) {
       const text6 = JSON.stringify(data);
       return { content: [{ type: "text", text: text6 }], structuredContent: data };
     } catch (error113) {
-      captureServerError(error113, "device_apps.discover");
+      const annotated = annotateDeviceAppsError(error113, "discovery", device2.platform, device2.kind);
+      captureServerError(annotated, "device_apps.discover");
+      const diagnostic = getDeviceAppsDiagnostic(annotated);
       const message2 = errorMessage(error113);
-      return { isError: true, content: [{ type: "text", text: message2 }] };
+      return {
+        isError: true,
+        content: [{ type: "text", text: message2 }],
+        _meta: { [DEVICE_APPS_DIAGNOSTIC_META]: diagnostic }
+      };
     }
   });
 }
@@ -93601,7 +93681,7 @@ function registerCpuTools(server, cpu, baguette, sources = { apps: readDeviceApp
     return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text6 }] };
   });
   registerDeviceAppsTool(server, async (device2, signal) => {
-    await validateDevice(device2);
+    await withDeviceAppsDiagnostic(() => validateDevice(device2), "device_validation", device2.platform, device2.kind);
     return sources.apps(device2.deviceId, signal, device2.platform, device2.kind);
   });
   K3(server, "mobile_cpu_session", {
@@ -93685,12 +93765,12 @@ function displayFrameTime(frame2, intervalEndNs, intervalEndTime) {
   const elapsed = Number(elapsedNs) / 1e9;
   return intervalEndTime + elapsed;
 }
-var platform3 = external_exports.enum(["ios", "android"]);
+var platform4 = external_exports.enum(["ios", "android"]);
 var deviceString = external_exports.string();
 var nonemptyDevice = deviceString.min(1);
 var boundedDevice = nonemptyDevice.max(256);
 var deviceId2 = boundedDevice.regex(/^[a-zA-Z0-9_.:-]+$/);
-var target = external_exports.object({ platform: platform3, deviceId: deviceId2 });
+var target = external_exports.object({ platform: platform4, deviceId: deviceId2 });
 var displayFpsTargetSchema = target.strict();
 
 // src/shared/frame-statistics.ts
@@ -94522,10 +94602,10 @@ function startStorageMetrics(directories) {
     if (collecting || stopped) return;
     collecting = true;
     try {
-      for (const [kind2, directory] of Object.entries(directories)) {
+      for (const [kind3, directory] of Object.entries(directories)) {
         const bytes = await directoryBytes(directory);
         if (stopped) return;
-        public_api_exports.gauge("storage.bytes", bytes, { unit: "byte", attributes: { kind: kind2 } });
+        public_api_exports.gauge("storage.bytes", bytes, { unit: "byte", attributes: { kind: kind3 } });
       }
     } catch (error113) {
       captureException(error113, { tags: { operation: "storage.measure" } });
@@ -94558,8 +94638,8 @@ import { spawn as spawn9 } from "node:child_process";
 async function collectorProcess(command2, args, options) {
   options.signal.throwIfAborted();
   const child = spawn9(command2, args, { stdio: "pipe", shell: false });
-  let diagnostics2 = "";
-  let failure2;
+  let diagnostics3 = "";
+  let failure3;
   let stopping;
   let end;
   let exited;
@@ -94596,14 +94676,14 @@ async function collectorProcess(command2, args, options) {
   };
   options.signal.addEventListener("abort", abort, { once: true });
   const telemetry = new NativeTelemetryRelay((text6) => {
-    diagnostics2 = (diagnostics2 + text6).slice(-4096);
+    diagnostics3 = (diagnostics3 + text6).slice(-4096);
     options.diagnostic?.(text6);
   });
   child.stderr.on("data", (chunk) => {
     telemetry.write(chunk);
   });
   child.stdout.on("data", (chunk) => {
-    if (stopping || failure2) return;
+    if (stopping || failure3) return;
     const accept = () => {
       startedSuccessfully = true;
       ready();
@@ -94613,19 +94693,19 @@ async function collectorProcess(command2, args, options) {
       if (startedSuccessfully) {
         clearTimeout(watchdog);
         watchdog = setTimeout(() => {
-          failure2 = new Error("The device stopped sending Display FPS data. Reconnect and retry.");
-          end(failure2);
+          failure3 = new Error("The device stopped sending Display FPS data. Reconnect and retry.");
+          end(failure3);
           void stop().catch(() => {
           });
         }, 6e3);
       }
     } catch (error113) {
-      if (error113 instanceof Error) failure2 = error113;
+      if (error113 instanceof Error) failure3 = error113;
       else {
         const message2 = String(error113);
-        failure2 = new Error(message2);
+        failure3 = new Error(message2);
       }
-      end(failure2);
+      end(failure3);
       void stop().catch(() => {
       });
     }
@@ -94633,7 +94713,7 @@ async function collectorProcess(command2, args, options) {
   child.stdin.on("error", () => {
   });
   child.once("error", (error113) => {
-    failure2 = error113;
+    failure3 = error113;
     end(error113);
   });
   child.once("close", (code, signal) => {
@@ -94641,8 +94721,8 @@ async function collectorProcess(command2, args, options) {
     options.signal.removeEventListener("abort", abort);
     clearTimeout(watchdog);
     exited();
-    const message2 = diagnostics2.trim() || `Display FPS collector exited (${code ?? signal}).`;
-    const error113 = failure2 ?? new Error(message2);
+    const message2 = diagnostics3.trim() || `Display FPS collector exited (${code ?? signal}).`;
+    const error113 = failure3 ?? new Error(message2);
     end(error113);
   });
   let timer;
@@ -95839,4 +95919,4 @@ process.on("unhandledRejection", (error113) => {
 });
 await plugin.server.connect(transport2);
 
-//# debugId=be108cf3-976e-5722-a807-49fad17c29ba
+//# debugId=ea13c068-27dc-50d1-8945-84b9d6d3959a
