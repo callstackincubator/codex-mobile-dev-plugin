@@ -20,11 +20,35 @@ prints the exact Git command to retry the push.
 
 You can also run the workflow from GitHub Actions with an existing version tag.
 The workflow checks out that tag, uses the Apple Silicon `xcode-27` runner and
-Xcode 27 / Swift 6.4, installs the locked JavaScript runtimes, and rebuilds every
-native helper with Android NDK 27.2.12479018 and Rust 1.98.1. It runs the tests,
+Xcode 27 / Swift 6.4, installs the locked JavaScript runtimes, and prepares the
+native helpers with Android NDK 27.2.12479018 and Rust 1.98.1. It runs the tests,
 builds and packages with the explicit `release` environment, then smoke-tests a
 fresh extraction of the actual ZIP. CI also validates the tagged commit message,
 including when the tag was pushed directly.
+
+Each native helper has a reusable Actions artifact containing its complete vendor
+directory and matching Sentry symbols. `scripts/release-native.mjs` fingerprints
+the helper's tracked native sources, shared telemetry, build scripts, pinned
+dependencies, npm build command, and relevant installed toolchain versions.
+Plugin version bumps and UI/server edits do not change these fingerprints.
+Artifacts are reused only on an exact match from a successful `Release plugin`
+push or manual run in this repository. Missing or expired artifacts cause that
+helper to be built; lookup, download, or integrity failures stop the release.
+There is no reuse of partially matching builds.
+
+Artifacts use tar archives to preserve executable permissions and dSYM structure.
+Downloads are checked against GitHub's SHA-256 digest, then every packaged binary,
+symbol and support file is verified against the archive's manifest before
+installation. Existing package integrity checks, tests and extracted-ZIP smoke
+tests still run. All six artifacts are saved again after validation and Sentry
+upload, refreshing their 30-day retention even when restored. The native step's
+Actions summary reports the duration and whether each helper was built or reused.
+
+This uses cross-run artifacts because GitHub's dependency caches cannot be shared
+between different release tags. The first release using this workflow builds all
+helpers; subsequent releases reuse the matching outputs. Native build tools are
+still prepared on every run so changes to installed compilers, SDKs or native
+dependencies invalidate the affected artifacts.
 
 The package uses Codex's compatibility manifest and forwards `HOME` to a launcher
 that directly executes Codex's bundled Node at

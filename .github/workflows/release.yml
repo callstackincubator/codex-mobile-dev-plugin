@@ -22,6 +22,9 @@ jobs:
   build:
     runs-on: xcode-27
     timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
@@ -81,14 +84,11 @@ jobs:
           npm run vendor:agent-device
           npm run vendor:serve-emu
 
-      - name: Rebuild native helpers and retain matching symbols
-        run: |
-          npm run vendor:baguette
-          npm run rebuild:ios-fps
-          npm run rebuild:ios-mirror
-          npm run rebuild:ios-logs
-          npm run rebuild:android-fps
-          npm run rebuild:android-cpu
+      - name: Restore or build native helpers with matching symbols
+        id: native
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-native.mjs
 
       - name: Run tests
         run: |
@@ -120,6 +120,60 @@ jobs:
         with:
           name: mobile-dev-${{ steps.release.outputs.version }}-darwin-arm64
           path: ${{ steps.release.outputs.archive }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Save reusable Baguette build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.native.outputs.baguette }}
+          path: release/native-artifacts/baguette.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Save reusable iOS FPS build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.native.outputs['ios-fps'] }}
+          path: release/native-artifacts/ios-fps.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Save reusable iOS mirror build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.native.outputs['ios-mirror'] }}
+          path: release/native-artifacts/ios-mirror.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Save reusable iOS logs build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.native.outputs['ios-logs'] }}
+          path: release/native-artifacts/ios-logs.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Save reusable Android FPS build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.native.outputs['android-fps'] }}
+          path: release/native-artifacts/android-fps.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Save reusable Android CPU build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.native.outputs['android-cpu'] }}
+          path: release/native-artifacts/android-cpu.tar.gz
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
