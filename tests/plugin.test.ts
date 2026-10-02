@@ -139,7 +139,7 @@ test("cached side tabs load the current UI through old resource addresses", asyn
   t.after(async () => { await client.close(); await plugin.close(); });
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
-  assert.equal(APP_URI, "ui://mobile-dev/0.1.95/simulator.html");
+  assert.equal(APP_URI, "ui://mobile-dev/0.1.97/simulator.html");
   const previousPanel = await client.readResource({ uri: "ui://mobile-dev/0.1.52/simulator.html" });
   assert.equal(previousPanel.contents[0].text, html);
   for (const uri of [APP_URI, "ui://mobile-dev/0.1.44/simulator.html", "ui://mobile-dev/0.1.43/simulator.html", "ui://mobile-dev/0.1.42/simulator.html", "ui://mobile-dev/0.1.41/simulator.html", "ui://mobile-dev/0.1.40/simulator.html", "ui://mobile-dev/0.1.39/simulator.html", "ui://mobile-dev/0.1.38/simulator.html", "ui://mobile-dev/0.1.37/simulator.html", "ui://mobile-dev/0.1.36/simulator.html", "ui://mobile-dev/0.1.35/simulator.html", "ui://mobile-dev/0.1.34/simulator.html", "ui://mobile-dev/0.1.33/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html", "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/simulator.html", ...[1, 2, 3, 4, 5, 6].map(version => `ui://mobile-dev/v${version}/simulator.html`)]) {
@@ -190,7 +190,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.match(comparisonResource.contents[0].text as string, /data-view="comparison"/);
   assert.deepEqual(comparisonResource.contents[0]._meta, recordingResource.contents[0]._meta);
   assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);
-  assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.95/workspace.html");
+  assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.97/workspace.html");
   const previousWorkspace = await client.readResource({ uri: "ui://mobile-dev/0.1.52/workspace.html" });
   assert.equal(previousWorkspace.contents[0].text, workspaceResource.contents[0].text);
   for (const uri of ["ui://mobile-dev/0.1.44/workspace.html", "ui://mobile-dev/0.1.43/workspace.html", "ui://mobile-dev/0.1.42/workspace.html", "ui://mobile-dev/0.1.41/workspace.html", "ui://mobile-dev/0.1.40/workspace.html", "ui://mobile-dev/0.1.39/workspace.html", "ui://mobile-dev/0.1.38/workspace.html", "ui://mobile-dev/0.1.37/workspace.html", "ui://mobile-dev/0.1.36/workspace.html", "ui://mobile-dev/0.1.35/workspace.html", "ui://mobile-dev/0.1.34/workspace.html", "ui://mobile-dev/0.1.33/workspace.html", "ui://mobile-dev/0.1.24/mcp-stream/workspace.html", "ui://mobile-dev/0.1.21/workspace.html", "ui://mobile-dev/0.1.20/workspace.html", "ui://mobile-dev/workspace.html"]) {

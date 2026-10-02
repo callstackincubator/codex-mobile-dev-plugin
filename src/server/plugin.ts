@@ -266,7 +266,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   }, openPanel);
 
   registerAppTool(server, "mobile_open_simulator", {
-    title: "Mobile simulator",
+    title: "Mobile Dev",
     description: "Open the Mobile Dev simulator beside the chat when building, running, changing, or debugging a local iOS, Android, Expo, React Native, or SwiftUI app. Call before the first device launch unless a panel is already open or the user requests a tool-only workflow. Starts the bundled Baguette backend without booting devices.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {
