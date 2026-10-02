@@ -32,10 +32,10 @@ export class LogsPanel {
   private readonly unsubscribeApps: () => void;
   private snapshot = {
     open: false, paused: false, available: false, settings: false, discovering: false,
-    status: "Closed", statusMessage: "", error: "", sourceNotice: "", selectedLabel: "Selected device",
+    status: "Closed", statusMessage: "", error: "", sourceNotice: "", selectedLabel: "Selected device", selectedPlatform: "ios",
     native: "ios", process: "", metroUrl: "http://127.0.0.1:8081", target: "",
     android: [] as { id: string; name: string }[], metro: [] as MetroTarget[],
-    followApp: true, foregroundApp: null as ForegroundApp | null, appDiscoveryError: "",
+    followApp: true, hideSystemLogs: true, foregroundApp: null as ForegroundApp | null, appDiscoveryError: "",
   };
 
   private readonly app: App;
@@ -71,13 +71,14 @@ export class LogsPanel {
   hide() { this.visible = false; this.reading?.abort(); }
   toggleSettings() { this.update({ settings: !this.snapshot.settings }); }
   togglePause() { this.paused = !this.paused; this.controls(); if (this.paused) void this.stop(); else this.restart(); }
-  configure(value: Partial<Pick<typeof this.snapshot, "native" | "process" | "metroUrl" | "target" | "followApp">>) {
+  configure(value: Partial<Pick<typeof this.snapshot, "native" | "process" | "metroUrl" | "target" | "followApp" | "hideSystemLogs">>) {
     const native = value.native ?? this.snapshot.native;
     const manual = value.process !== undefined || native !== "ios";
     const followApp = manual ? false : value.followApp ?? this.snapshot.followApp;
     const changedMode = followApp !== this.snapshot.followApp;
+    const changedSystemLogs = value.hideSystemLogs !== undefined && value.hideSystemLogs !== this.snapshot.hideSystemLogs;
     this.update({ ...value, followApp });
-    if (changedMode || value.native !== undefined || value.target !== undefined) this.restart();
+    if (changedMode || changedSystemLogs || value.native !== undefined || value.target !== undefined) this.restart();
   }
   connect() { this.restart(); }
   setAvailable(available: boolean) { this.available = available; this.controls(); if (this.open) this.restart(); }
@@ -98,6 +99,7 @@ export class LogsPanel {
     const previous = this.snapshot.foregroundApp;
     const appChanged = foregroundApp?.pid !== previous?.pid || foregroundApp?.bundleId !== previous?.bundleId;
     this.update({ foregroundApp, appDiscoveryError: source.error,
+      selectedPlatform: simulator?.platform ?? "ios",
       selectedLabel: simulator ? `${simulator.platform === "android" ? "Android" : "iOS"} · ${simulator.name}` : "Selected device" });
     if (this.snapshot.native !== "ios") return;
     if (changed || (this.snapshot.followApp && appChanged)) {
@@ -136,6 +138,7 @@ export class LogsPanel {
           : { platform: "ios", deviceId: selected.udid };
         if (followApp && pid != null) nativeTarget.pid = pid;
         else if (process) nativeTarget.process = process;
+        nativeTarget.hideSystemLogs = this.snapshot.hideSystemLogs;
         options.native = nativeTarget;
       }
     } else if (native.startsWith("android:")) {

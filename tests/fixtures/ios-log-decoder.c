@@ -8,6 +8,7 @@ void mobile_dev_telemetry_timing(enum mobile_dev_timing kind, double duration) {
 
 int main(void) {
     const char path[] = "/Applications/Example.app/Example";
+    const char image[] = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
     const char message[] = "line\n\"quoted\" and C:\\\\folder\\\"file\" 🌍";
     const char subsystem[] = "com.example.app";
     const char category[] = "javascript";
@@ -21,11 +22,13 @@ int main(void) {
     header.time_usec = 123456;
     header.level = 0x10;
     header.procpath_len = sizeof(path);
+    header.imagepath_len = sizeof(image);
     header.message_len = sizeof(message);
     header.subsystem_len = sizeof(subsystem);
     header.category_len = sizeof(category);
     size_t offset = sizeof(header);
     memcpy(packet + offset, path, sizeof(path)); offset += sizeof(path);
+    memcpy(packet + offset, image, sizeof(image)); offset += sizeof(image);
     memcpy(packet + offset, message, sizeof(message)); offset += sizeof(message);
     memcpy(packet + offset, subsystem, sizeof(subsystem)); offset += sizeof(subsystem);
     memcpy(packet + offset, category, sizeof(category)); offset += sizeof(category);
@@ -40,7 +43,7 @@ int main(void) {
     header.subsystem_len = 0;
     header.category_len = 3;
     memcpy(packet, &header, sizeof(header));
-    uint32_t unlabeled_length = sizeof(header) + sizeof(path) + sizeof(message);
+    uint32_t unlabeled_length = sizeof(header) + sizeof(path) + sizeof(image) + sizeof(message);
     result = emit_record(packet, unlabeled_length, "Example");
     assert(result == 0);
 

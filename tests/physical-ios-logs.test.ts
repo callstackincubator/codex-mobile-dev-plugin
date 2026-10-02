@@ -191,7 +191,10 @@ test("the native decoder handles missing labels, escapes arbitrary messages, and
     `${root}/libplist-2.0.12.dylib`, "-o", binary]);
   const result = await execute(binary, [], { env: { ...process.env, DYLD_LIBRARY_PATH: root } });
   const lines = result.stdout.trim().split("\n");
-  const records = lines.map(parseIOSLog);
+  const decoded = lines.map(line => JSON.parse(line));
+  assert.equal(decoded[0].senderImagePath, "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation");
+  assert.equal(decoded[1].senderImagePath, decoded[0].senderImagePath);
+  const records = lines.map(line => parseIOSLog(line));
   assert.equal(records.length, 2);
   assert.equal(records[0]?.message, 'line\n"quoted" and C:\\\\folder\\"file" 🌍');
   assert.equal(records[0]?.timestamp, "1970-01-01T00:00:42.123Z");
@@ -199,4 +202,10 @@ test("the native decoder handles missing labels, escapes arbitrary messages, and
   assert.equal(records[1]?.pid, 456);
   assert.equal(records[1]?.category, undefined);
   assert.equal(records[1]?.subsystem, undefined);
+  const notice = { ...decoded[1], messageType: "Notice" };
+  const noticeLine = JSON.stringify(notice);
+  const hidden = parseIOSLog(noticeLine);
+  assert.equal(hidden, undefined, "Framework filtering works on physical records without subsystem labels.");
+  const unfiltered = parseIOSLog(noticeLine, false);
+  assert.ok(unfiltered);
 });

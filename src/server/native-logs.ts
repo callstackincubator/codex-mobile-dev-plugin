@@ -9,6 +9,7 @@ import type { LogRecord, LogSourceStatus, NativeLogTarget } from "../shared/logs
 import { errorMessage } from "../shared/protocol.ts";
 import { parseIOSLog, parseLogcat } from "./log-parsers.ts";
 import { physicalIosLogCommand } from "./physical-ios-logs.ts";
+import { IOSLogProcessingTelemetry } from "./telemetry.ts";
 
 const execute = promisify(execFile);
 export type LogSink = { log: (log: LogRecord) => void; status: (status: LogSourceStatus) => void };
@@ -85,6 +86,15 @@ export function runLogProcess(command: string, args: string[], parse: (line: str
 export function startNativeLogs(target: NativeLogTarget, sink: LogSink, physicalCommand = physicalIosLogCommand): StopLogSource {
   const controller = new AbortController();
   const signal = controller.signal;
+  const hideSystemLogs = target.platform === "ios" && target.hideSystemLogs !== false;
+  const telemetry = target.platform === "ios" ? new IOSLogProcessingTelemetry(target.kind ?? "simulator") : undefined;
+  const parseIOS = (line: string) => {
+    const started = performance.now();
+    const record = parseIOSLog(line, hideSystemLogs);
+    const duration = performance.now() - started;
+    telemetry?.record(duration);
+    return record;
+  };
   const scopedSink: LogSink = { status: sink.status, log: log => {
     if (target.platform === "ios" && target.pid !== undefined && log.pid !== target.pid) return;
     const process = log.process ?? (target.platform === "android" ? target.packageName : target.process);
@@ -101,11 +111,11 @@ export function startNativeLogs(target: NativeLogTarget, sink: LogSink, physical
           if (process.platform !== "darwin") throw new Error("iOS logs require macOS and Xcode.");
           if (target.kind === "physical") {
             const reader = await physicalCommand(target);
-            await runLogProcess(reader.command, reader.args, parseIOSLog, scopedSink, signal, '{"ready":true}');
+            await runLogProcess(reader.command, reader.args, parseIOS, scopedSink, signal, '{"ready":true}');
           } else {
             const processFilter = target.pid === undefined ? target.process : String(target.pid);
             await runLogProcess("xcrun", ["simctl", "spawn", target.deviceId, "log", "stream", "--style", "ndjson", "--level", "debug",
-              ...(processFilter ? ["--process", processFilter] : [])], parseIOSLog, scopedSink, signal);
+              ...(processFilter ? ["--process", processFilter] : [])], parseIOS, scopedSink, signal);
           }
         } else if (!target.packageName) {
           await runLogProcess(adb, ["-s", target.deviceId, "logcat", "-v", "threadtime", "-T", "1", "*:V"], parseLogcat, scopedSink, signal);
@@ -119,7 +129,8 @@ export function startNativeLogs(target: NativeLogTarget, sink: LogSink, physical
       }
       await delay(Math.min(500 * 2 ** Math.min(failures, 4), 10000), undefined, { signal }).catch(() => {});
     }
-  })().catch(error => { if (!signal.aborted) sink.status({ source: "native", state: "error", message: errorMessage(error) }); });
+  })().catch(error => { if (!signal.aborted) sink.status({ source: "native", state: "error", message: errorMessage(error) }); })
+    .finally(() => telemetry?.close());
   return async () => { controller.abort(); await running; };
 }
 

@@ -10,7 +10,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, TELEMETRY_META_KEY } from "../src/shared/telemetry.ts";
-import { captureServerError, installTracePropagation } from "../src/server/telemetry.ts";
+import { captureServerError, installTracePropagation, IOSLogProcessingTelemetry } from "../src/server/telemetry.ts";
 import { directoryBytes } from "../src/server/storage-metrics.ts";
 import { SimulatorUnavailableError } from "../src/server/simulator-unavailable.ts";
 import { registerDeviceChoiceTools } from "../src/server/device-choice-tools.ts";
@@ -48,6 +48,40 @@ test("high frequency reads and input avoid trace sampling even with a sampled pa
   assert.equal(rate, 0.1);
   const screenshotRate = sampleTrace("tools/call mobile_ios_mirror_capture_screenshot", inherit);
   assert.equal(screenshotRate, 0.1);
+});
+
+test("iOS parser telemetry aggregates bounded timings and flushes once on stream cleanup", async t => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  const telemetry = new IOSLogProcessingTelemetry("physical");
+  t.after(() => telemetry.close());
+  for (let index = 0; index < 1000; index++) telemetry.record(2);
+  await Sentry.flush();
+  const before = JSON.stringify(envelopes);
+  contains(before, "logs.ios.parse", false);
+  t.mock.timers.tick(30000);
+  await Sentry.flush();
+  const periodic = JSON.stringify(envelopes);
+  for (const name of ["samples", "mean", "p95", "max"]) contains(periodic, `logs.ios.parse.${name}`);
+  contains(periodic, "millisecond");
+  contains(periodic, '"surface":{"value":"logs"');
+  contains(periodic, '"device_kind":{"value":"physical"');
+  contains(periodic, '"device_platform":{"value":"ios"');
+  telemetry.record(3);
+  telemetry.close();
+  await Sentry.flush();
+  const closed = JSON.stringify(envelopes);
+  telemetry.record(4);
+  telemetry.close();
+  t.mock.timers.tick(60000);
+  await Sentry.flush();
+  const after = JSON.stringify(envelopes);
+  assert.equal(after, closed, "Closing stops the timer and ignores late measurements.");
 });
 
 test("Agent Device adapter continues traces and reports failures without native tool payloads", async t => {

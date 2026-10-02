@@ -192,6 +192,18 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(dom.window.document.querySelector('[data-element="screenshot"] svg')?.getAttribute("viewBox"), "0 0 24 24");
   await act(async () => { (dom.window.document.querySelector('[aria-label="Log sources"]') as HTMLButtonElement).click(); });
   assert.ok(dom.window.document.getElementById("logs-native"));
+  const systemNoise = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Hide iOS system noise"]');
+  assert.ok(systemNoise);
+  const initialNoiseChecked = systemNoise.getAttribute("aria-checked");
+  assert.equal(initialNoiseChecked, "true");
+  await act(async () => { systemNoise.click(); });
+  const noiseDisabled = panel.getSnapshot();
+  assert.equal(noiseDisabled.hideSystemLogs, false);
+  const disabledNoiseChecked = systemNoise.getAttribute("aria-checked");
+  assert.equal(disabledNoiseChecked, "false");
+  await act(async () => { systemNoise.click(); });
+  const noiseEnabled = panel.getSnapshot();
+  assert.equal(noiseEnabled.hideSystemLogs, true);
   const sourceFilter = dom.window.document.querySelector('[aria-label="Filter log sources"]') as HTMLElement;
   assert.ok(dom.window.document.getElementById("logs-settings")?.contains(sourceFilter));
   const nativeFilter = [...sourceFilter.querySelectorAll('button')].find(option => option.textContent === "Native") as HTMLButtonElement;

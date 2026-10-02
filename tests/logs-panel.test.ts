@@ -44,7 +44,7 @@ test("the selected connected iPhone opens physical logs and a disconnected phone
   panel.setAvailable(true);
   panel.show();
   await waitFor(() => opened.length === 1);
-  assert.deepEqual(opened[0], { native: { platform: "ios", kind: "physical", deviceId: phone.udid, process: "Example" } });
+  assert.deepEqual(opened[0], { native: { platform: "ios", kind: "physical", deviceId: phone.udid, process: "Example", hideSystemLogs: true } });
   deviceApps.selectDevice({ ...phone, state: "disconnected" });
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(opened.length, 1);

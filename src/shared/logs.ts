@@ -8,10 +8,13 @@ const pidInteger = pidNumber.int();
 const pidPositive = pidInteger.positive();
 const pidBounded = pidPositive.max(2147483647);
 const iosPid = pidBounded.optional();
+const hideSystemLogsBoolean = z.boolean();
+const hideSystemLogsDescription = hideSystemLogsBoolean.describe("Hide default iOS system-log noise before buffering. Enabled unless false; errors and faults remain visible.");
+const hideSystemLogs = hideSystemLogsDescription.optional();
 const physicalUdid = z.string().regex(/^(?:[a-fA-F0-9]{8}-[a-fA-F0-9]{16}|[a-fA-F0-9]{40})$/);
 const nativeLogTargets = z.union([
-  z.object({ platform: z.literal("ios"), kind: z.literal("simulator").optional(), deviceId: udidSchema, process: iosProcess, pid: iosPid }).strict(),
-  z.object({ platform: z.literal("ios"), kind: z.literal("physical"), deviceId: physicalUdid, process: iosProcess, pid: iosPid }).strict(),
+  z.object({ platform: z.literal("ios"), kind: z.literal("simulator").optional(), deviceId: udidSchema, process: iosProcess, pid: iosPid, hideSystemLogs }).strict(),
+  z.object({ platform: z.literal("ios"), kind: z.literal("physical"), deviceId: physicalUdid, process: iosProcess, pid: iosPid, hideSystemLogs }).strict(),
   z.object({ platform: z.literal("android"), deviceId: z.string().regex(/^[a-zA-Z0-9._:-]{1,128}$/), packageName: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)+$/).optional() }).strict(),
 ]);
 export const nativeLogTargetSchema = nativeLogTargets.refine(target => target.platform === "android" || target.process === undefined || target.pid === undefined, "Choose an iOS process name or PID.");

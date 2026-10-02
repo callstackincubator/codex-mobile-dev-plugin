@@ -1,8 +1,44 @@
 import * as Sentry from "@sentry/node";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { TELEMETRY_META_KEY } from "../shared/telemetry.ts";
+import { MeasurementWindow, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY } from "../shared/telemetry.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
+
+export class IOSLogProcessingTelemetry {
+  private readonly window = new MeasurementWindow();
+  private readonly attributes: { surface: string; device_platform: string; device_kind: string };
+  private readonly timer?: NodeJS.Timeout;
+  private closed = false;
+
+  constructor(kind: "physical" | "simulator") {
+    this.attributes = { surface: "logs", device_platform: "ios", device_kind: kind };
+    if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+    this.timer = setInterval(() => this.flush(), TELEMETRY_INTERVAL_MS);
+    this.timer.unref();
+  }
+
+  record(duration: number) {
+    if (this.closed || process.env.MOBILE_DEV_TELEMETRY === "off") return;
+    this.window.record(duration);
+  }
+
+  private flush() {
+    const summary = this.window.take();
+    if (summary === undefined || process.env.MOBILE_DEV_TELEMETRY === "off") return;
+    const attributes = this.attributes;
+    Sentry.metrics.count("logs.ios.parse.samples", summary.count, { attributes });
+    Sentry.metrics.gauge("logs.ios.parse.mean", summary.mean, { unit: "millisecond", attributes });
+    Sentry.metrics.gauge("logs.ios.parse.p95", summary.p95, { unit: "millisecond", attributes });
+    Sentry.metrics.gauge("logs.ios.parse.max", summary.max, { unit: "millisecond", attributes });
+  }
+
+  close() {
+    if (this.closed) return;
+    this.closed = true;
+    clearInterval(this.timer);
+    this.flush();
+  }
+}
 
 export function captureServerError(error: unknown, operation: string) {
   if (error instanceof SimulatorUnavailableError) return;

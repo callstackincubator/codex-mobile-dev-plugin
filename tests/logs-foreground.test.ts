@@ -80,7 +80,7 @@ test("native logs follow foreground app changes and PID restarts through the sha
   assert.equal(panel.getSnapshot().status, "Waiting for foreground app");
   deviceApps.setAvailable(true);
   await refresh(first);
-  assert.deepEqual(opened, [{ native: { platform: "ios", deviceId: UDID, pid: 123 } }]);
+  assert.deepEqual(opened, [{ native: { platform: "ios", deviceId: UDID, pid: 123, hideSystemLogs: true } }]);
   const initialRead = readings[0];
   initialRead.resolve([record]);
   await setImmediate();
@@ -93,17 +93,17 @@ test("native logs follow foreground app changes and PID restarts through the sha
   assert.equal(initialRead.signal.aborted, true);
   assert.equal(lateRead.signal.aborted, true);
   assert.deepEqual(closed, ["session-1"]);
-  assert.deepEqual(opened[1], { native: { platform: "ios", deviceId: UDID, pid: 456 } });
+  assert.deepEqual(opened[1], { native: { platform: "ios", deviceId: UDID, pid: 456, hideSystemLogs: true } });
   lateRead.resolve([record]);
   await setImmediate();
   assert.equal(panel.list.getSnapshot().buffered, 0, "Late rows from the old app are ignored.");
   assert.equal(panel.list.getSnapshot().query, "fixture");
   await refresh({ ...second, pid: 789 });
-  assert.deepEqual(opened[2], { native: { platform: "ios", deviceId: UDID, pid: 789 } });
+  assert.deepEqual(opened[2], { native: { platform: "ios", deviceId: UDID, pid: 789, hideSystemLogs: true } });
   setForeground(first);
   deviceApps.selectDevice({ ...ios, udid: OTHER_UDID });
   await refresh(first);
-  assert.deepEqual(opened[3], { native: { platform: "ios", deviceId: OTHER_UDID, pid: 123 } });
+  assert.deepEqual(opened[3], { native: { platform: "ios", deviceId: OTHER_UDID, pid: 123, hideSystemLogs: true } });
 });
 
 test("Android follows the foreground package even when it is outside the monitoring list", async t => {
@@ -118,6 +118,46 @@ test("Android follows the foreground package even when it is outside the monitor
   assert.deepEqual(opened[1], { native: { platform: "android", deviceId: android.udid, packageName: second.bundleId } });
 });
 
+test("system-noise changes reopen iOS streams and survive pause and device changes", async t => {
+  const { panel, deviceApps, opened, closed, refresh } = fixture(t);
+  deviceApps.selectDevice(ios);
+  panel.setAvailable(true);
+  panel.show();
+  deviceApps.setAvailable(true);
+  await refresh(first);
+  const initial = panel.getSnapshot();
+  assert.equal(initial.hideSystemLogs, true);
+  panel.configure({ hideSystemLogs: false });
+  await setImmediate();
+  assert.deepEqual(closed, ["session-1"]);
+  assert.deepEqual(opened[1], { native: { platform: "ios", deviceId: UDID, pid: 123, hideSystemLogs: false } });
+  const disabled = panel.getSnapshot();
+  assert.equal(disabled.followApp, true);
+  panel.configure({ hideSystemLogs: false });
+  await setImmediate();
+  assert.equal(opened.length, 2, "An unchanged setting does not restart collection.");
+  panel.togglePause();
+  panel.configure({ hideSystemLogs: true });
+  await setImmediate();
+  assert.equal(opened.length, 2, "Changing the setting does not resume paused logs.");
+  panel.togglePause();
+  await setImmediate();
+  const resumed = opened.at(-1);
+  assert.equal(resumed?.native?.platform, "ios");
+  if (resumed?.native?.platform === "ios") assert.equal(resumed.native.hideSystemLogs, true);
+  panel.configure({ hideSystemLogs: false });
+  await setImmediate();
+  const phone = { ...ios, udid: "00008110-000A0B1C2D3E4000", state: "connected", kind: "physical" as const };
+  deviceApps.selectDevice(phone);
+  await refresh(first);
+  const physical = opened.at(-1);
+  assert.deepEqual(physical, { native: { platform: "ios", kind: "physical", deviceId: phone.udid, pid: 123, hideSystemLogs: false } });
+  deviceApps.selectDevice(android);
+  await refresh(first);
+  const androidOptions = opened.at(-1);
+  assert.deepEqual(androidOptions, { native: { platform: "android", deviceId: android.udid, packageName: first.bundleId } });
+});
+
 test("physical iOS uses the screen-owning PID without guessing a process name or monitoring app", async t => {
   const { panel, deviceApps, opened, refresh } = fixture(t);
   const phone = { ...ios, udid: "00008110-000A0B1C2D3E4000", state: "connected", kind: "physical" as const };
@@ -126,7 +166,7 @@ test("physical iOS uses the screen-owning PID without guessing a process name or
   panel.show();
   deviceApps.setAvailable(true);
   await refresh({ bundleId: null, pid: 123 });
-  assert.deepEqual(opened[0], { native: { platform: "ios", kind: "physical", deviceId: phone.udid, pid: 123 } });
+  assert.deepEqual(opened[0], { native: { platform: "ios", kind: "physical", deviceId: phone.udid, pid: 123, hideSystemLogs: true } });
   deviceApps.selectDevice({ ...phone, state: "disconnected" });
   await setImmediate();
   assert.equal(opened.length, 1);
@@ -167,7 +207,7 @@ test("manual filtering, pause, hidden logs, and closed logs preserve their inten
   const manualCount = opened.length;
   await refresh(second);
   assert.equal(opened.length, manualCount);
-  assert.deepEqual(opened.at(-1), { native: { platform: "ios", deviceId: UDID, process: "Manual" } });
+  assert.deepEqual(opened.at(-1), { native: { platform: "ios", deviceId: UDID, process: "Manual", hideSystemLogs: true } });
   panel.configure({ followApp: true });
   await setImmediate();
   panel.togglePause();
@@ -176,7 +216,7 @@ test("manual filtering, pause, hidden logs, and closed logs preserve their inten
   assert.equal(opened.length, pausedCount);
   panel.togglePause();
   await setImmediate();
-  assert.deepEqual(opened.at(-1), { native: { platform: "ios", deviceId: UDID, pid: 123 } });
+  assert.deepEqual(opened.at(-1), { native: { platform: "ios", deviceId: UDID, pid: 123, hideSystemLogs: true } });
   panel.list.append([record], 0);
   panel.hide();
   const cached = panel.list.getSnapshot();
@@ -187,7 +227,7 @@ test("manual filtering, pause, hidden logs, and closed logs preserve their inten
   panel.show();
   await setImmediate();
   assert.equal(panel.list.getSnapshot().buffered, 0);
-  assert.deepEqual(opened.at(-1), { native: { platform: "ios", deviceId: UDID, pid: 456 } });
+  assert.deepEqual(opened.at(-1), { native: { platform: "ios", deviceId: UDID, pid: 456, hideSystemLogs: true } });
   panel.list.append([record], 0);
   panel.toggle();
   await refresh(null);

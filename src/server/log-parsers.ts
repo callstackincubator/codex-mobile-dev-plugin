@@ -1,4 +1,5 @@
 import type { LogRecord } from "../shared/logs.ts";
+import { shouldExcludeIOSLog } from "./ios-log-filter.ts";
 
 function level(value: unknown): LogRecord["level"] {
   switch (String(value).toLowerCase()) {
@@ -14,14 +15,16 @@ function timestamp(value: unknown): string {
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
-export function parseIOSLog(line: string): LogRecord | undefined {
+export function parseIOSLog(line: string, hideSystemLogs = true): LogRecord | undefined {
   try {
     const data = JSON.parse(line);
     const message = data.eventMessage ?? data.message ?? data.composedMessage;
     if (typeof message !== "string" || !message) return;
+    const messageType = data.messageType ?? data.logType;
+    if (hideSystemLogs && shouldExcludeIOSLog(messageType, data.subsystem, data.senderImagePath)) return;
     const category = typeof data.category === "string" ? data.category : undefined;
     return {
-      timestamp: timestamp(data.timestamp ?? data.time), level: level(data.messageType ?? data.logType),
+      timestamp: timestamp(data.timestamp ?? data.time), level: level(messageType),
       source: category?.toLowerCase() === "javascript" ? "js" : "native", origin: "ios", message,
       process: typeof data.process === "string" ? data.process : typeof data.processImagePath === "string" ? data.processImagePath.split("/").at(-1) : undefined,
       pid: Number.isSafeInteger(data.processID) ? data.processID : undefined,
