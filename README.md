@@ -44,7 +44,7 @@ Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile
 
 Use Select in the simulator toolbar to pause the screen. Hover to outline a component, then click to add a note. React Native development apps can supply runtime elements when accessibility omits a view. Drag to mark a region when neither source exposes it. Saved notes leave numbered blue bubbles. Notes attach text and available element details to your next chat message. The captured screen stays local for editing; annotations never attach screenshots. Click a bubble to edit or remove a note, or use Send to chat to send all notes for that device. If chat is unavailable, the panel keeps the notes and retries when you return. A sent or cleared batch starts again at 1.
 
-`npm run package` writes the local ZIP to `release/mobile-dev-0.1.99-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+`npm run package` writes the local ZIP to `release/mobile-dev-0.1.100-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 The iOS dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Simulators**. It refreshes every three seconds while the iOS panel is visible, and when opening the dropdown. Selecting a physical device opens interactive screen mirroring through its paired developer connection. The phone sends HEVC video; a bundled native Node-API addon assembles compressed frames and transfers them into Node without copying the frame payload, then the panel decodes them through WebCodecs. MCP serializes the compressed bytes as base64, so the full path is not zero copy. The capture queue is limited to eight frames or 4 MiB and requests a keyframe after overflow. Physical iOS supports pointer taps, long presses, and drags through CoreDevice UniversalHID on the same developer tunnel. Input starts after a fresh video frame, uses normalized touchscreen coordinates, and releases held touches when the stream closes or resets. Screenshot captures the displayed mirrored frame as a PNG, attaches it to chat, and copies the same image to the macOS clipboard. Select annotates screen regions using the mirrored frame's pixel coordinates; native accessibility component names are unavailable. Both controls require a connected device and a ready video frame. Keyboard and hardware-button controls remain disabled. CPU and memory monitoring can attach to an already running development app on a paired iOS 17.4+ device. Mirroring requires Developer Mode and a host with HEVC WebCodecs support. `mobile_list_ios_devices` also returns remembered disconnected devices with their connection state; the picker shows connected devices only. Discovery errors remain visible while available simulators continue to work.
 
@@ -239,6 +239,44 @@ result and collector.
 already running development app through the built MCP server, then detaches and
 verifies its PID stayed unchanged. Add `--with-fps` to check concurrent Display FPS.
 It does not launch or restart the app.
+
+## GitHub releases
+
+The `Release plugin` workflow in `.github/workflows/release.yml` runs when you push
+an existing commit with a `v<version>` tag. The tag must match `plugin.json`,
+`package.json`, both root versions in `package-lock.json`, and
+`src/shared/version.ts`. After committing your changes, run from the repository root:
+
+```sh
+npm run public-release
+```
+
+This command checks that the working tree is clean and the release versions agree,
+creates `v<version>` at the current commit, and pushes that tag to `origin`. It
+uses the current plugin version (for example, `v0.1.100`) without bumping it.
+Existing tags are preserved. If the push fails after tag creation, the command
+prints the exact Git command to retry the push.
+
+You can also run the workflow from GitHub Actions with an existing version tag.
+The workflow checks out that tag, uses the Apple Silicon `xcode-27` runner and
+Xcode 27 / Swift 6.4, installs the locked JavaScript runtimes, and rebuilds every
+native helper with Android NDK 27.2.12479018 and Rust 1.98.1. It runs the tests,
+builds and packages with the explicit `release` environment, then smoke-tests a
+fresh extraction of the actual ZIP.
+
+Configure the repository's Actions secrets `SENTRY_AUTH_TOKEN` and `SENTRY_ORG`.
+Both are required. The workflow uploads matching UI/server source maps and native
+symbols to the existing three Sentry projects before saving the artifact and
+creating a draft GitHub release. Upload failures stop the release. Credentials
+and debug artifacts stay outside the plugin ZIP.
+
+Download `mobile-dev-<version>-darwin-arm64.zip` directly from the draft release's
+assets for manual store upload. The same ZIP is also retained as an Actions
+artifact for 30 days; extract the Actions artifact wrapper before uploading the
+plugin ZIP. Creating a draft release does not submit or publish it to the OpenAI
+plugin directory. A tag that already has a GitHub release will fail release
+creation rather than replace existing assets; download the ZIP from the completed
+build job or use a new version for a new release.
 
 ## Develop and package
 

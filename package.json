@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.99",
+  "version": "0.1.100",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,6 +9,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "build:release": "node scripts/build.mjs --release",
+    "public-release": "node scripts/public-release.mjs",
     "vendor:baguette": "node scripts/vendor-baguette.mjs",
     "vendor:agent-device": "npm ci --prefix runtimes/agent-device --ignore-scripts --no-audit --no-fund",
     "rebuild:baguette": "node scripts/rebuild-baguette.mjs",
