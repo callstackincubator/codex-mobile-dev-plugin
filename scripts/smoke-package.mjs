@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createLaunchShell } from "./mcp-launch-fixture.mjs";
 
 const source = resolve(process.argv[2] ?? "release/marketplace/plugins/mobile-dev");
@@ -110,18 +110,29 @@ try {
   for (const name of ["mobile_list_ios_devices", "mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_android_screenshot", "mobile_ios_mirror_session", "mobile_ios_mirror_reset", "mobile_ios_mirror_close"]) assert.ok(tools.tools.some(tool => tool.name === name));
   const physicalMirror = tools.tools.find(tool => tool.name === "mobile_ios_mirror_session");
   assert.deepEqual(physicalMirror._meta.ui.visibility, ["app"]);
-  await access(join(plugin, "dist/serve-emu/node_modules/serve-emu/src/cli.ts"));
-  await access(join(plugin, "dist/serve-emu/node_modules/serve-emu/vendor/scrcpy-server-v4.0"));
-  const scrcpyClientPath = join(plugin, "dist/serve-emu/node_modules/serve-emu/src/scrcpy.ts");
+  await access(join(plugin, "dist/serve-emu/src/cli.mjs"));
+  await access(join(plugin, "dist/serve-emu/vendor/scrcpy-server-v4.0"));
+  const scrcpyClientPath = join(plugin, "dist/serve-emu/src/scrcpy.ts");
   const scrcpyClient = await readFile(scrcpyClientPath);
   const scrcpyClientHash = createHash("sha256");
   scrcpyClientHash.update(scrcpyClient);
   const scrcpyClientSHA256 = scrcpyClientHash.digest("hex");
-  assert.equal(scrcpyClientSHA256, "5ca62e5fdf3f71144178bbd4251b82c4d7e944301399477a9b8595a68d58098f");
+  assert.match(scrcpyClient.toString(), /Modified for Mobile Dev/);
   const androidReleasePath = join(plugin, "dist/serve-emu/release.json");
   const androidReleaseText = await readFile(androidReleasePath, "utf8");
   const androidRelease = JSON.parse(androidReleaseText);
   assert.equal(androidRelease.scrcpyClientSHA256, scrcpyClientSHA256);
+  assert.equal(androidRelease.runtime, "node");
+  assert.equal(androidRelease.entryPoint, "src/cli.mjs");
+  const androidCliPath = join(plugin, "dist/serve-emu", androidRelease.entryPoint);
+  const androidCli = await readFile(androidCliPath);
+  const androidCliHash = createHash("sha256");
+  androidCliHash.update(androidCli);
+  assert.equal(androidRelease.cliSHA256, androidCliHash.digest("hex"));
+  const androidHelp = execFileSync(process.execPath, [androidCliPath, "--help"], {
+    encoding: "utf8", env: { ...serverEnv, PATH: "/usr/bin:/bin", BUN_PATH: "/missing/bun" },
+  });
+  assert.match(androidHelp, /host an Android device/);
   const patchToolPath = join(plugin, "dist/serve-emu/node_modules/patch-package");
   const patchToolAccess = access(patchToolPath);
   await assert.rejects(patchToolAccess, { code: "ENOENT" });

@@ -5,6 +5,13 @@ import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
 import { deviceAppsDiagnosticTags } from "../shared/device-apps-diagnostics.ts";
 
+export function recordAndroidBackendStartup(duration: number, outcome: "ready" | "failed") {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };
+  Sentry.metrics.count("android.backend.startup.samples", 1, { attributes });
+  Sentry.metrics.gauge("android.backend.startup.duration", duration, { unit: "millisecond", attributes });
+}
+
 export class IOSLogProcessingTelemetry {
   private readonly window = new MeasurementWindow();
   private readonly attributes: { surface: string; device_platform: string; device_kind: string };

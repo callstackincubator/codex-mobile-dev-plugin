@@ -14,6 +14,7 @@ import { adbPath } from "./native-logs.ts";
 import { errorMessage, parseBaseUrl } from "../shared/protocol.ts";
 import type { SimulatorDevice, Status } from "../shared/protocol.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { recordAndroidBackendStartup } from "./telemetry.ts";
 
 const execute = promisify(execFile);
 export const androidIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/);
@@ -204,10 +205,9 @@ export class ServeEmu {
       if (health.serial === id) { const backend = { url: candidate }; this.backends.set(id, backend); return backend; }
       if (this.external) throw new SimulatorUnavailableError(`SERVE_EMU_URL streams ${health.serial}, not the selected device ${id}.`);
     } catch (error) { if (this.external) throw error; }
-    const cli = fileURLToPath(new URL("./serve-emu/node_modules/serve-emu/src/cli.ts", import.meta.url));
+    const cliUrl = new URL("./serve-emu/src/cli.mjs", import.meta.url);
+    const cli = fileURLToPath(cliUrl);
     await access(cli).catch(() => { throw new Error("The plugin is missing its bundled serve-emu runtime. Run npm run vendor:serve-emu and npm run build, then package it again."); });
-    const bunPath = process.env.BUN_PATH ?? join(homedir(), ".bun/bin/bun");
-    const bun = await access(bunPath, constants.X_OK).then(() => bunPath, () => "bun");
     const listener = createServer();
     await new Promise<void>((resolve, reject) => { listener.once("error", reject); listener.listen(0, "127.0.0.1", resolve); });
     const address = listener.address();
@@ -215,7 +215,8 @@ export class ServeEmu {
     if (!address || typeof address === "string") throw new Error("Cannot allocate an Android stream port.");
     if (this.disposed) throw new Error("The plugin server has closed.");
     const url = new URL(`http://127.0.0.1:${address.port}`);
-    const child = spawn(bun, [cli, "--host", "127.0.0.1", "--port", url.port, "--serial", id, "--max-fps", "30"], {
+    const startedAt = performance.now();
+    const child = spawn(process.execPath, [cli, "--host", "127.0.0.1", "--port", url.port, "--serial", id, "--max-fps", "30"], {
       stdio: ["ignore", "pipe", "pipe"], shell: false,
       env: { ...process.env, PATH: `${dirname(await adbPath())}:${process.env.PATH ?? ""}`, SERVE_EMU_UPDATE_CHECK: "0" },
     });
@@ -231,13 +232,26 @@ export class ServeEmu {
     try {
       const deadline = Date.now() + 30000;
       while (Date.now() < deadline && !this.disposed) {
-        if (launchError) throw new Error(`Cannot start serve-emu. Install Bun 1.3.13 or later. ${launchError.message}`);
+        if (launchError) throw new Error(`Cannot start the bundled Node.js serve-emu runtime. ${launchError.message}`);
         if (child.exitCode !== null || child.signalCode !== null) throw new Error(`serve-emu exited before it became ready. ${diagnostics.trim()}`);
-        try { if ((await this.health(url)).serial === id) return backend; } catch { /* Wait for scrcpy startup. */ }
+        try {
+          const health = await this.health(url);
+          if (health.serial === id) {
+            const duration = performance.now() - startedAt;
+            recordAndroidBackendStartup(duration, "ready");
+            return backend;
+          }
+        } catch { /* Wait for scrcpy startup. */ }
         await delay(250);
       }
       throw new Error(`serve-emu did not become ready within 30 seconds. ${diagnostics.trim()}`);
-    } catch (error) { child.kill("SIGTERM"); this.backends.delete(id); throw error; }
+    } catch (error) {
+      const duration = performance.now() - startedAt;
+      recordAndroidBackendStartup(duration, "failed");
+      child.kill("SIGTERM");
+      this.backends.delete(id);
+      throw error;
+    }
   }
 
   async definition(id: string) {

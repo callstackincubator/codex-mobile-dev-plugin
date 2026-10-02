@@ -4,6 +4,7 @@ import { iosLogsSourceHash } from "./build-ios-logs.mjs";
 import { androidCpuSourceHash } from "./build-android-cpu.mjs";
 import { baguetteTelemetrySourceHash } from "./rebuild-baguette.mjs";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
+import { buildServeEmu } from "./build-serve-emu.mjs";
 import { build } from "esbuild";
 import { sentryEsbuildPlugin } from "@sentry/node/esbuild";
 import SentryCli from "@sentry/cli";
@@ -106,26 +107,7 @@ const workflow = execFileSync(process.execPath, [resolve(`${runtime}/node_module
   encoding: "utf8", env: { ...process.env, AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1" },
 });
 await writeFile("skills/agent-device/references/workflow.md", workflow);
-const androidRuntime = "runtimes/serve-emu";
-const androidLock = await readFile(`${androidRuntime}/package-lock.json`, "utf8");
-const androidPinned = JSON.parse(androidLock).packages["node_modules/serve-emu"];
-const androidInstalled = JSON.parse(await readFile(`${androidRuntime}/node_modules/serve-emu/package.json`, "utf8"));
-if (androidInstalled.version !== "0.0.6" || androidPinned.version !== androidInstalled.version) throw new Error("Run npm run vendor:serve-emu to install the pinned Android runtime.");
-const scrcpy = await readFile(`${androidRuntime}/node_modules/serve-emu/vendor/scrcpy-server-v4.0`);
-const scrcpySHA256 = createHash("sha256").update(scrcpy).digest("hex");
-if (scrcpySHA256 !== "84924bd564a1eb6089c872c7521f968058977f91f5ff02514a8c74aff3210f3a") throw new Error("The scrcpy 4.0 server does not match its pinned SHA-256.");
-const scrcpyClient = await readFile(`${androidRuntime}/node_modules/serve-emu/src/scrcpy.ts`);
-const scrcpyClientHash = createHash("sha256");
-scrcpyClientHash.update(scrcpyClient);
-const scrcpyClientSHA256 = scrcpyClientHash.digest("hex");
-if (scrcpyClientSHA256 !== "5ca62e5fdf3f71144178bbd4251b82c4d7e944301399477a9b8595a68d58098f") throw new Error("Run npm run vendor:serve-emu to apply the physical Android scrcpy launch fix.");
-await rm("dist/serve-emu", { recursive: true, force: true });
-await cp(`${androidRuntime}/node_modules`, "dist/serve-emu/node_modules", { recursive: true, verbatimSymlinks: true });
-await copyFile(`${androidRuntime}/package-lock.json`, "dist/serve-emu/package-lock.json");
-await writeFile("dist/serve-emu/release.json", JSON.stringify({
-  name: androidInstalled.name, version: androidInstalled.version, url: androidPinned.resolved, integrity: androidPinned.integrity,
-  lockfileSHA256: createHash("sha256").update(androidLock).digest("hex"), scrcpyVersion: "4.0", scrcpySHA256, scrcpyClientSHA256,
-}, null, 2) + "\n");
+await buildServeEmu("dist/serve-emu");
 const app = await build({
   entryPoints: ["src/ui/app.tsx"], jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
   loader: { ".woff2": "dataurl", ".woff": "dataurl" },

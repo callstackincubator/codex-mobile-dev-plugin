@@ -32,8 +32,8 @@ For source development, `npm run vendor:baguette` downloads the pinned official 
 
 ## Android setup
 
-The package also contains serve-emu 0.0.6, its npm dependencies, and scrcpy 4.0. Android needs Bun 1.3.13 or later, Android SDK platform-tools and emulator, and an AVD or authorized attached device. Check `bun --version` and `mobile_list_android_devices`. The SDK lookup checks `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk`, then PATH. `BUN_PATH` can point to Bun when it is outside `~/.bun/bin` and PATH.
+The package also contains a checked-in Node.js fork of serve-emu 0.0.6, its Node dependencies, and scrcpy 4.0. Android uses the plugin’s Node.js 22.18 or later runtime and needs Android SDK platform-tools and emulator, and an AVD or authorized attached device. Check `node --version` and `mobile_list_android_devices`. The SDK lookup checks `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk`, then PATH.
 
 Open or reuse the panel for Android work. Call `mobile_list_android_devices` to discover devices; listing does not boot them. Follow the user's choice or reuse a compatible device shared by the panel. For app development, reuse a suitable running emulator or choose an installed AVD and call `mobile_boot_android_emulator` if needed. Pick among equivalent AVDs yourself; ask only when the choice changes what the task needs. The user can also enable Android in the panel toolbar and select an AVD to boot and stream it. Use the returned running serial with the Mobile Dev Android tools. The panel needs WebCodecs H.264 support. Do not install a global serve-emu package or start a second app dev server.
 
-For source development, run `npm run vendor:serve-emu` before building. It installs pinned packages with scripts disabled and checks the scrcpy server hash. The build copies the runtime to `dist/serve-emu`; the installed package needs no npm download.
+For source development, run `npm run vendor:serve-emu` before building. It installs the fork’s pinned Node dependencies with scripts disabled and checks the scrcpy server hash. The build copies the runtime to `dist/serve-emu`; the installed package needs no npm download.

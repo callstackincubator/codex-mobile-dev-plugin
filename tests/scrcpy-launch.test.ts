@@ -12,7 +12,7 @@ test("bundled scrcpy stays below Samsung's command limit while preserving encode
   t.after(() => rm(directory, { recursive: true, force: true }));
   const output = join(directory, "scrcpy.mjs");
   await build({
-    entryPoints: ["runtimes/serve-emu/node_modules/serve-emu/src/scrcpy.ts"],
+    entryPoints: ["runtimes/serve-emu/src/scrcpy.ts"],
     outfile: output, bundle: true, format: "esm", platform: "node", target: "node22",
   });
   const moduleUrl = pathToFileURL(output);

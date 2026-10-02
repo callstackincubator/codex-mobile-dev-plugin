@@ -10,7 +10,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, TELEMETRY_META_KEY } from "../src/shared/telemetry.ts";
-import { captureServerError, installTracePropagation, IOSLogProcessingTelemetry } from "../src/server/telemetry.ts";
+import { captureServerError, installTracePropagation, IOSLogProcessingTelemetry, recordAndroidBackendStartup } from "../src/server/telemetry.ts";
 import { directoryBytes } from "../src/server/storage-metrics.ts";
 import { SimulatorUnavailableError } from "../src/server/simulator-unavailable.ts";
 import { registerDeviceChoiceTools } from "../src/server/device-choice-tools.ts";
@@ -82,6 +82,32 @@ test("iOS parser telemetry aggregates bounded timings and flushes once on stream
   await Sentry.flush();
   const after = JSON.stringify(envelopes);
   assert.equal(after, closed, "Closing stops the timer and ignores late measurements.");
+});
+
+test("Android backend startup metrics retain product attribution and honor opt-out", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  recordAndroidBackendStartup(150, "ready");
+  recordAndroidBackendStartup(300, "failed");
+  await Sentry.flush();
+  const sent = JSON.stringify(envelopes);
+  for (const fragment of ["android.backend.startup.samples", "android.backend.startup.duration", "millisecond", '"surface":{"value":"simulator"', '"device_platform":{"value":"android"', '"outcome":{"value":"ready"', '"outcome":{"value":"failed"']) {
+    contains(sent, fragment);
+  }
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  t.after(() => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+  });
+  recordAndroidBackendStartup(999, "failed");
+  await Sentry.flush();
+  const afterOptOut = JSON.stringify(envelopes);
+  assert.equal(afterOptOut, sent);
 });
 
 test("Agent Device adapter continues traces and reports failures without native tool payloads", async t => {

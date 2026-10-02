@@ -18,7 +18,7 @@ and native helpers. To use the prebuilt plugin, see the [README](README.md#insta
 
 - An installed Android NDK for rebuilding Android collectors. The release workflow
   uses NDK 27.2.12479018. Set `ANDROID_NDK_HOME` to its installation directory.
-- Bun 1.3.13 or later and Android SDK platform-tools and emulator to run Android
+- Android SDK platform-tools and emulator to run Android
   features, plus an AVD or an authorized physical device.
 
 The physical iOS log build expects OpenSSL at `/opt/homebrew/opt/openssl@3`.

@@ -1,11 +1,14 @@
 {
   "name": "mobile-dev-serve-emu-runtime",
+  "version": "0.0.6",
   "private": true,
   "type": "module",
-  "dependencies": {
-    "serve-emu": "0.0.6"
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.18"
   },
-  "devDependencies": {
-    "patch-package": "8.0.1"
+  "dependencies": {
+    "@fastify/busboy": "3.2.0",
+    "ws": "8.22.0"
   }
 }
