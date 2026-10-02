@@ -2,9 +2,11 @@
 html[data-theme="dark"] { color-scheme: dark; }
 html, body, #root { height: 100%; overflow: hidden; }
 body { font-size: 12px; }
-html[data-view="recording"], html[data-view="recording"] body, html[data-view="recording"] #root { height: auto; overflow: visible; }
+html[data-view="recording"], html[data-view="recording"] body, html[data-view="recording"] #root { height: auto; margin: 0; padding: 0; overflow: visible; }
 .recording-card { container-type: inline-size; margin: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--background); color: var(--foreground); font-size: 13px; overflow: hidden; }
 .recording-header { display: flex; align-items: center; gap: 16px; padding: 18px 22px; border-bottom: 1px solid var(--border); }
+html[data-view="recording"] .recording-card { width: 100%; margin: 0; border: 0; border-radius: 0; background: transparent; }
+html[data-view="recording"] .recording-header { border-top: 1px solid var(--border); }
 .recording-heading { flex: 1; min-width: 0; }
 .recording-heading h2 { font-size: 18px; line-height: 1.35; font-weight: 600; overflow-wrap: anywhere; }
 .recording-heading p, .recording-actions p, .recording-footnote { color: var(--muted-foreground); font-size: 12px; line-height: 1.5; }
