@@ -59,11 +59,11 @@ test("scrolling away from the bottom pauses following until the list reaches the
   const { list } = fixture();
   const first = entry(1);
   list.append([first], 0);
-  list.updateScroll(800, 1200, 400);
+  list.updateScroll(800, 1200, 400, false);
   const initial = list.getSnapshot();
   assert.equal(initial.follow, true);
 
-  list.updateScroll(780, 1200, 400);
+  list.updateScroll(780, 1200, 400, true);
   const scrolledUp = list.getSnapshot();
   assert.equal(scrolledUp.follow, false);
   assert.equal(list.scrollOffset, 780);
@@ -74,31 +74,64 @@ test("scrolling away from the bottom pauses following until the list reaches the
   assert.equal(list.scrollOffset, 780);
 
   const paused = list.getSnapshot();
-  list.updateScroll(900, 1400, 400);
+  list.updateScroll(900, 1400, 400, true);
   const scrolledDown = list.getSnapshot();
   assert.equal(scrolledDown, paused, "Scrolling within history does not refilter logs.");
-  list.updateScroll(998, 1400, 400);
+  list.updateScroll(998, 1400, 400, true);
   const nearBottom = list.getSnapshot();
   assert.equal(nearBottom.follow, false);
-  list.updateScroll(999.5, 1400, 400);
+  list.updateScroll(999.5, 1400, 400, true);
   const atBottom = list.getSnapshot();
   assert.equal(atBottom.follow, true, "Fractional scroll offsets count as reaching the bottom.");
 });
 
 test("unchanged scroll offsets preserve manual follow choices across content and layout changes", () => {
   const { list } = fixture();
-  list.updateScroll(800, 1200, 400);
-  list.updateScroll(800, 1400, 400);
+  list.updateScroll(800, 1200, 400, false);
+  list.updateScroll(800, 1400, 400, false);
   const following = list.getSnapshot();
   assert.equal(following.follow, true, "New content does not pause following before scrolling to it.");
 
   list.setFollow(false);
   const paused = list.getSnapshot();
-  list.updateScroll(800, 1200, 400);
+  list.updateScroll(800, 1200, 400, false);
   list.setFollow(false);
   const repeated = list.getSnapshot();
   assert.equal(repeated, paused, "Repeated bottom events do not undo a manual pause or republish.");
-  list.updateScroll(800, 1200, 500);
+  list.updateScroll(800, 1200, 500, false);
   const resized = list.getSnapshot();
   assert.equal(resized.follow, false, "Resizing alone does not reactivate following.");
+});
+
+test("automatic scroll adjustments preserve following while new rows are being measured", () => {
+  const { list } = fixture();
+  list.updateScroll(800, 1200, 400, false);
+  const following = list.getSnapshot();
+  list.updateScroll(828, 1260, 400, false);
+  const measured = list.getSnapshot();
+  assert.equal(measured, following);
+  assert.equal(list.scrollOffset, 828);
+  list.updateScroll(810, 1260, 400, false);
+  const adjusted = list.getSnapshot();
+  assert.equal(adjusted, following, "Automatic upward adjustments do not count as user scrolling.");
+
+  list.setFollow(false);
+  const paused = list.getSnapshot();
+  list.updateScroll(860, 1260, 400, false);
+  const atBottom = list.getSnapshot();
+  assert.equal(atBottom, paused, "Automatic bottom adjustments do not undo a manual pause.");
+  list.updateScroll(860, 1260, 400, true);
+  const resumed = list.getSnapshot();
+  assert.equal(resumed.follow, true, "User input at the bottom resumes following.");
+});
+
+test("downward scrolling short of the bottom does not interrupt an active follow request", () => {
+  const { list } = fixture();
+  list.updateScroll(800, 1200, 400, false);
+  list.updateScroll(828, 1260, 400, true);
+  const following = list.getSnapshot();
+  assert.equal(following.follow, true);
+  list.updateScroll(820, 1260, 400, true);
+  const paused = list.getSnapshot();
+  assert.equal(paused.follow, false);
 });

@@ -23,6 +23,8 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./ui/resiz
 import { useMediaQuery } from "./use-media-query";
 
 const rowKey = (log: StackedLog) => String(log.sequence);
+// User input controls following; estimated row heights must not gate it.
+const followScrollThreshold = Number.POSITIVE_INFINITY;
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
 export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) {
@@ -32,6 +34,22 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
   const narrow = useMediaQuery("(max-width: 600px)");
   const detailVertical = narrow || (wide && document.documentElement.dataset.view === "workspace");
   const listRef = useRef<LegendListRef>(null);
+  const userScrolling = useRef(false);
+  const scrollbarDragging = useRef(false);
+  const touchY = useRef<number | undefined>(undefined);
+  const beginUserScroll = useCallback((up: boolean) => {
+    userScrolling.current = true;
+    if (up) panel.list.setFollow(false);
+  }, [panel]);
+  const updateScroll = useCallback(() => {
+    const scroller = listRef.current?.getScrollableNode();
+    if (scroller) panel.list.updateScroll(scroller.scrollTop, scroller.scrollHeight, scroller.clientHeight, userScrolling.current);
+  }, [panel]);
+  const endUserScroll = useCallback(() => {
+    updateScroll();
+    userScrolling.current = false;
+    scrollbarDragging.current = false;
+  }, [updateScroll]);
   const selectedSequence = logs.selected?.sequence;
   const [copyStatus, setCopyStatus] = useState("");
   const copyLog = useCallback(async (log: StackedLog) => {
@@ -63,8 +81,14 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
   }, [panel, selectedSequence, logs.sending, logs.canSendMessage, copyLog]);
 
   useEffect(() => {
-    if (logs.follow && state.open && logs.filtered.length) void listRef.current?.scrollToEnd({ animated: false });
-  }, [logs.filtered, logs.follow, state.open]);
+    if (logs.follow) userScrolling.current = scrollbarDragging.current;
+    if (!state.open) {
+      userScrolling.current = false;
+      scrollbarDragging.current = false;
+      touchY.current = undefined;
+    }
+    if (logs.follow && state.open) void listRef.current?.scrollToEnd({ animated: false });
+  }, [logs.follow, state.open]);
 
   return <Collapsible open={state.open} onOpenChange={() => panel.toggle()} asChild>
     <section id="logs-drawer" data-open={state.open} className="@container flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-label="Logs">
@@ -75,7 +99,7 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
           <InputGroup className="h-7 min-w-16 flex-1"><InputGroupInput className="text-xs" aria-label="Search logs" type="search" placeholder="Search..." maxLength={512} value={logs.query} onChange={event => panel.list.search(event.target.value)} /><InputGroupAddon className="pl-2"><SearchIcon className="size-3.5" /></InputGroupAddon></InputGroup>
 
           <Toggle size="sm" className="size-7 shrink-0 p-0" pressed={logs.stacked} onPressedChange={value => panel.list.setStacked(value)} title="Group identical logs" aria-label="Group identical logs"><LayersIcon /></Toggle>
-          <Toggle size="sm" className="size-7 shrink-0 p-0" pressed={logs.follow} onPressedChange={value => panel.list.setFollow(value)} title="Follow new logs" aria-label="Follow new logs"><ArrowDownToLineIcon /></Toggle>
+          <Toggle size="sm" className="size-7 shrink-0 p-0" pressed={logs.follow} onPressedChange={value => { userScrolling.current = false; panel.list.setFollow(value); }} title="Follow new logs" aria-label="Follow new logs"><ArrowDownToLineIcon /></Toggle>
           <Toggle id="logs-pause" size="sm" className="size-7 shrink-0 p-0" title={state.paused ? "Resume logs" : "Pause logs"} aria-label={state.paused ? "Resume logs" : "Pause logs"} pressed={state.paused} onPressedChange={() => panel.togglePause()}>{state.paused ? <PlayIcon /> : <PauseIcon />}</Toggle>
           <Button variant="ghost" size="icon-sm" className="shrink-0" title="Clear logs" aria-label="Clear logs" onClick={() => panel.list.clear()}><ListXIcon /></Button>
           <Popover open={state.settings} onOpenChange={open => { if (open !== state.settings) panel.toggleSettings(); }}>
@@ -111,13 +135,42 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
         {state.error && <Alert id="logs-error" variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription className="wrap-anywhere">{state.error}</AlertDescription></Alert>}
         <ResizablePanelGroup className="logs-content min-h-0 flex-1" orientation={detailVertical ? "vertical" : "horizontal"}>
           <ResizablePanel id="log-list-resizable" defaultSize="58%" minSize="30%">
-          <div id="logs-list" className="h-full min-h-0 min-w-0 overflow-hidden" aria-label="Log entries">
-            {logs.filtered.length ? <LegendList ref={listRef} data={logs.filtered} keyExtractor={rowKey} renderItem={renderItem} extraData={selectedSequence} estimatedItemSize={28} recycleItems
-              initialScrollAtEnd={logs.follow} initialScrollOffset={panel.list.scrollOffset} onScroll={event => {
-                const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-                panel.list.updateScroll(contentOffset.y, contentSize.height, layoutMeasurement.height);
-              }}
-              maintainScrollAtEnd={logs.follow} maintainScrollAtEndThreshold={0} maintainVisibleContentPosition={{ data: !logs.follow, size: true }} style={{ height: "100%" }} /> : <Empty><EmptyHeader><EmptyMedia variant="icon">{logs.query ? <SearchIcon /> : <TerminalIcon />}</EmptyMedia><EmptyTitle>{logs.buffered ? "No logs match these filters." : "Waiting for logs"}</EmptyTitle>{!logs.buffered && <EmptyDescription>Start an app or choose a source.</EmptyDescription>}</EmptyHeader></Empty>}
+          <div id="logs-list" className="h-full min-h-0 min-w-0 overflow-hidden" aria-label="Log entries"
+            onScrollCapture={updateScroll} onScrollEndCapture={() => {
+              if (scrollbarDragging.current) return;
+              endUserScroll();
+            }}
+            onWheelCapture={event => {
+              if (event.ctrlKey || event.shiftKey || event.deltaY === 0) return;
+              beginUserScroll(event.deltaY < 0);
+            }}
+            onTouchStartCapture={event => { touchY.current = event.touches[0]?.clientY; }}
+            onTouchMoveCapture={event => {
+              const nextY = event.touches[0]?.clientY;
+              if (nextY !== undefined && touchY.current !== undefined && nextY !== touchY.current) beginUserScroll(nextY > touchY.current);
+              touchY.current = nextY;
+            }}
+            onTouchEndCapture={() => { touchY.current = undefined; }}
+            onTouchCancelCapture={endUserScroll}
+            onKeyDownCapture={event => {
+              if (event.ctrlKey || event.metaKey || event.altKey) return;
+              const scroller = listRef.current?.getScrollableNode();
+              const space = event.key === " " && event.target === scroller;
+              const up = event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home" || (space && event.shiftKey);
+              const down = event.key === "ArrowDown" || event.key === "PageDown" || event.key === "End" || (space && !event.shiftKey);
+              if (up || down) beginUserScroll(up);
+            }}
+            onPointerDownCapture={event => {
+              const scroller = listRef.current?.getScrollableNode();
+              if (event.target !== scroller) return;
+              scrollbarDragging.current = true;
+              userScrolling.current = true;
+            }}
+            onPointerUpCapture={() => { if (scrollbarDragging.current) endUserScroll(); }}
+            onPointerCancelCapture={endUserScroll}>
+            {logs.filtered.length ? <LegendList ref={listRef} tabIndex={0} data={logs.filtered} keyExtractor={rowKey} renderItem={renderItem} extraData={selectedSequence} estimatedItemSize={28} recycleItems
+              initialScrollAtEnd={logs.follow} initialScrollOffset={panel.list.scrollOffset}
+              maintainScrollAtEnd={logs.follow} maintainScrollAtEndThreshold={followScrollThreshold} maintainVisibleContentPosition={{ data: !logs.follow, size: true }} style={{ height: "100%" }} /> : <Empty><EmptyHeader><EmptyMedia variant="icon">{logs.query ? <SearchIcon /> : <TerminalIcon />}</EmptyMedia><EmptyTitle>{logs.buffered ? "No logs match these filters." : "Waiting for logs"}</EmptyTitle>{!logs.buffered && <EmptyDescription>Start an app or choose a source.</EmptyDescription>}</EmptyHeader></Empty>}
           </div>
           </ResizablePanel>
           {logs.selected && <><ResizableHandle aria-label="Resize log list and details" /><ResizablePanel id="log-detail-resizable" defaultSize="42%" minSize="25%" maxSize="70%"><LogDetails key={logs.selected.sequence} log={logs.selected} onClose={() => panel.list.select()}>

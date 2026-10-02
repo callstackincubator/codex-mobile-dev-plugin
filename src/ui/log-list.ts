@@ -83,12 +83,13 @@ export class LogList {
     this.follow = value;
     this.publish();
   }
-  updateScroll(offset: number, contentHeight: number, viewportHeight: number) {
+  updateScroll(offset: number, contentHeight: number, viewportHeight: number, userInitiated: boolean) {
     const previousOffset = this.scrollOffset;
     this.scrollOffset = offset;
-    if (offset === previousOffset) return;
+    if (!userInitiated) return;
     const distanceFromBottom = contentHeight - viewportHeight - offset;
-    this.setFollow(distanceFromBottom <= 1);
+    if (distanceFromBottom <= 1) this.setFollow(true);
+    else if (offset < previousOffset) this.setFollow(false);
   }
   select(sequence?: number) {
     this.selectedSequence = sequence;
