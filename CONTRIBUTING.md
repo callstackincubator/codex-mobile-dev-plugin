@@ -70,6 +70,14 @@ relevant checks, and packaging steps again.
 
 The host installs a cache copy. After changing source, rebuild and package, then run `codex plugin add mobile-dev@mobile-dev-local` to update it. Reopen Mobile Dev from a new chat to load the new copy.
 
+## Native iOS test app
+
+The repo includes a small [SwiftUI test app](examples/ios-test-app/README.md) for
+repeatable checks of simulator input, accessibility, navigation, scrolling, native
+logs, and CPU/memory monitoring. Open its Xcode project or use its build-and-run
+script with a booted simulator UDID. It needs no external app dependencies and is
+not included in the plugin package.
+
 ## Install the local build
 
 From this project directory, after packaging:
