@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="bd46f755-4a32-53e6-bbc1-2dbb65ea30a2")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="be108cf3-976e-5722-a807-49fad17c29ba")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -62470,7 +62470,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // src/shared/version.ts
-var PLUGIN_VERSION = "0.1.105";
+var PLUGIN_VERSION = "0.1.106";
 
 // src/shared/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -89524,6 +89524,15 @@ async function streamAndroidPackage(adb, target2, sink, signal) {
 var execute3 = promisify4(execFile4);
 var androidIdSchema = external_exports.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/);
 var healthSchema = external_exports.object({ serial: androidIdSchema, codec: external_exports.string(), size: external_exports.object({ width: external_exports.number().positive(), height: external_exports.number().positive() }) });
+function androidDisplaySize(output2, video) {
+  const matches = [...output2.matchAll(/(?:Physical|Override) size:\s*(\d+)x(\d+)/g)];
+  const match2 = matches.at(-1);
+  if (!match2) throw new Error("Android did not return its display size.");
+  let width = Number(match2[1]), height = Number(match2[2]);
+  if (!width || !height || width > 16384 || height > 16384) throw new Error("Android returned an invalid display size.");
+  if (width > height !== video.width > video.height) [width, height] = [height, width];
+  return { width, height };
+}
 var ServeEmu = class {
   avdNames = /* @__PURE__ */ new Map();
   backends = /* @__PURE__ */ new Map();
@@ -89758,6 +89767,16 @@ var ServeEmu = class {
     const backend = await this.start(id);
     const health = await this.health(backend.url);
     return { identity: { udid: id, name: (await this.device(id)).name, model: "Android" }, screen: { rect: health.size } };
+  }
+  async accessibility(id) {
+    const backend = await this.start(id);
+    const adb = await adbPath();
+    const [tree, health, display] = await Promise.all([
+      this.json(backend.url, "/api/accessibility"),
+      this.health(backend.url),
+      execute3(adb, ["-s", id, "shell", "wm", "size"], { timeout: 3e3, maxBuffer: 4096 })
+    ]);
+    return { tree, screen: androidDisplaySize(display.stdout, health.size) };
   }
   dispose() {
     this.disposed = true;
@@ -90257,13 +90276,12 @@ function registerAndroidTools(server, android2, appUri, copyScreenshot, closeCpu
   }));
   server.registerTool("mobile_android_describe_ui", {
     title: "Read Android UI",
-    description: "Read the selected running Android device's accessibility tree.",
+    description: "Read the selected running Android device's accessibility tree. Bounds use full-resolution display pixels; screen gives the active display width and height.",
     inputSchema: deviceInput,
     annotations: read
   }, guarded(async ({ deviceId: deviceId3 }) => {
-    const backend = await android2.start(deviceId3);
-    const tree = await android2.json(backend.url, "/api/accessibility");
-    return result2({ deviceId: deviceId3, tree }, JSON.stringify(tree));
+    const { tree, screen } = await android2.accessibility(deviceId3);
+    return result2({ deviceId: deviceId3, tree, screen }, JSON.stringify({ tree, screen }));
   }));
   server.registerTool("mobile_android_send_input", {
     title: "Send Android input",
@@ -92113,7 +92131,7 @@ function bounds(value) {
   if ([x2, y3, width, height].every((item) => typeof item === "number" && Number.isFinite(item)) && width > 0 && height > 0)
     return { x: x2, y: y3, width, height };
 }
-function screenComponents(tree) {
+function screenComponents(tree, scale = 1) {
   const components = [];
   function visit3(value, depth, parentId) {
     if (depth > 160 || components.length >= 1e4) return;
@@ -92131,7 +92149,12 @@ function screenComponents(tree) {
       const nodeId = text4(node5.nodeId) ?? `node-${components.length}`;
       const nodeDepth = typeof node5.depth === "number" && Number.isInteger(node5.depth) && node5.depth >= 0 && node5.depth <= 1e4 ? node5.depth : depth;
       const react2 = node5.source === "react-native" ? reactContext(node5.react) : void 0;
-      components.push({ name: text4(node5.name) ?? label ?? identifier3 ?? role ?? "Element", bounds: frame2, label, identifier: identifier3, role, value: text4(node5.value), depth: nodeDepth, source: node5.source === "react-native" ? "react-native" : node5.source === "screen" ? "screen" : "accessibility", nodeId, parentId: text4(node5.parentId) ?? parentId, ...react2 ? { react: react2 } : {} });
+      components.push({ name: text4(node5.name) ?? label ?? identifier3 ?? role ?? "Element", bounds: {
+        x: frame2.x * scale,
+        y: frame2.y * scale,
+        width: frame2.width * scale,
+        height: frame2.height * scale
+      }, label, identifier: identifier3, role, value: text4(node5.value), depth: nodeDepth, source: node5.source === "react-native" ? "react-native" : node5.source === "screen" ? "screen" : "accessibility", nodeId, parentId: text4(node5.parentId) ?? parentId, ...react2 ? { react: react2 } : {} });
       parentId = nodeId;
     }
     for (const key of ["children", "elements", "nodes", "tree", "root"]) if (node5[key]) visit3(node5[key], depth + 1, parentId);
@@ -92168,13 +92191,13 @@ function registerInspectionTools(server, baguette, android2) {
         native = response3;
         appName2 = typeof response3.tree?.label === "string" ? response3.tree.label : void 0;
       } else {
-        const backend = await android2.start(deviceId3);
-        const response3 = await android2.json(backend.url, "/api/accessibility");
-        native = response3;
-        const packages2 = new Set((response3.nodes ?? []).map((item) => item.packageName).filter((name) => typeof name === "string" && !name.startsWith("com.android.") && name !== "android"));
+        const response3 = await android2.accessibility(deviceId3);
+        native = screenComponents(response3.tree, screenWidth / response3.screen.width);
+        const packages2 = new Set((response3.tree.nodes ?? []).map((item) => item.packageName).filter((name) => typeof name === "string" && !name.startsWith("com.android.") && name !== "android"));
         if (packages2.size === 1) appId = [...packages2][0];
         try {
-          const properties2 = await Promise.all(["ro.product.model", "ro.build.version.release", "ro.build.version.sdk"].map((property) => execute6("adb", ["-s", deviceId3, "shell", "getprop", property], { timeout: 3e3, maxBuffer: 4096 }).then((result4) => result4.stdout.trim())));
+          const adb = await adbPath();
+          const properties2 = await Promise.all(["ro.product.model", "ro.build.version.release", "ro.build.version.sdk"].map((property) => execute6(adb, ["-s", deviceId3, "shell", "getprop", property], { timeout: 3e3, maxBuffer: 4096 }).then((result4) => result4.stdout.trim())));
           if (properties2.every(Boolean)) deviceAliases = [properties2[0], `${properties2[0]} - ${properties2[1]} - API ${properties2[2]}`];
         } catch {
         }
@@ -95816,4 +95839,4 @@ process.on("unhandledRejection", (error113) => {
 });
 await plugin.server.connect(transport2);
 
-//# debugId=bd46f755-4a32-53e6-bbc1-2dbb65ea30a2
+//# debugId=be108cf3-976e-5722-a807-49fad17c29ba
