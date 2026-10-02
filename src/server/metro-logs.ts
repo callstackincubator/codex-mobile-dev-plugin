@@ -9,7 +9,12 @@ type InspectorTarget = MetroTarget & { webSocketDebuggerUrl: string; supportsMul
 
 export async function metroTargets(origin: string, signal?: AbortSignal): Promise<InspectorTarget[]> {
   const base = parseBaseUrl(origin, "Metro URL");
-  const response = await fetch(new URL("/json/list", base), { redirect: "error", signal: AbortSignal.any([AbortSignal.timeout(5000), ...(signal ? [signal] : [])]) });
+  let response: Response;
+  try { response = await fetch(new URL("/json/list", base), { redirect: "error", signal: AbortSignal.any([AbortSignal.timeout(5000), ...(signal ? [signal] : [])]) }); }
+  catch (error) {
+    if (signal?.aborted) throw error;
+    throw new Error(`Cannot reach Metro at ${base.origin}. Start Metro for your project or choose its running server.`, { cause: error });
+  }
   if (!response.ok) throw new Error(`Metro returned HTTP ${response.status}.`);
   const body = await response.text();
   if (body.length > 1024 * 1024) throw new Error("Metro returned too many targets.");

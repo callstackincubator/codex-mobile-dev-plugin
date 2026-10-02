@@ -425,3 +425,30 @@ async function assertClosed(client: Client, uri: string) {
   assert.equal(message.state, "failed");
   assert.match(message.error, /expired or closed/);
 }
+
+test("App Flow discovery uses the host project root and records only a bounded operation metric", async t => {
+  const { ListRootsRequestSchema } = await import("@modelcontextprotocol/sdk/types.js");
+  const { pathToFileURL } = await import("node:url");
+  const { realpath } = await import("node:fs/promises");
+  const Sentry = await import("@sentry/node");
+  const envelopes: unknown[] = [];
+  Sentry.init({ dsn: "https://public@example.com/1", defaultIntegrations: false,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return {statusCode:200}; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  const plugin = await createTestPlugin(async () => ({ html: '<html/>' }));
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "flow-project-test", version: "1" }, { capabilities: { roots: {} } });
+  client.setRequestHandler(ListRootsRequestSchema, async () => ({ roots: [{uri:pathToFileURL(process.cwd()).href}] }));
+  t.after(async () => { await client.close(); await plugin.close(); });
+  await plugin.server.connect(serverTransport); await client.connect(clientTransport);
+  const result = await client.callTool({name:"mobile_app_flow",arguments:{action:"discover"}});
+  assert.equal(result.isError,undefined);
+  assert.equal(result.structuredContent?.projectRoot,await realpath(process.cwd()));
+  await Sentry.flush();
+  const sent = JSON.stringify(envelopes);
+  assert.match(sent,/app_flow.discovery/);
+  assert.match(sent,/millisecond/);
+  assert.match(sent,/"surface":\{"value":"app-flow"/);
+  assert.equal(sent.includes(process.cwd()),false);
+});

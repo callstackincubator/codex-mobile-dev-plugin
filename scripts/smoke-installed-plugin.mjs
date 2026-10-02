@@ -19,6 +19,10 @@ const client = new Client({ name: "mobile-dev-installed-smoke", version: "1" });
 try {
   await client.connect(transport);
   const { tools } = await client.listTools();
+  const setup = await client.callTool({ name: "mobile_app_flow", arguments: { action: "discover" } });
+  assert.ok(!setup.isError && Array.isArray(setup.structuredContent?.servers));
+  assert.ok(Array.isArray(setup.structuredContent.targets));
+  console.log("App Flow automatic setup discovery responded.");
   for (const name of ["mobile_open_simulator", "mobile_open_workspace"]) {
     const tool = tools.find(item => item.name === name);
     assert.ok(tool, `Missing installed entrypoint: ${name}`);

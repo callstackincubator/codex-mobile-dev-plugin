@@ -4,6 +4,8 @@ import { z } from "zod";
 import { readFile, realpath } from "node:fs/promises";
 import { resolve, relative, isAbsolute } from "node:path";
 import { AppFlowRuns, type FlowStart } from "./runs.ts";
+import { discoverFlowSetup } from "./discovery.ts";
+import * as Sentry from "@sentry/node";
 import { FlowConnection } from "./connection.ts";
 import { metroTargets } from "../metro-logs.ts";
 import type { Baguette } from "../baguette.ts";
@@ -74,10 +76,20 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
   };
   registerAppTool(server, "mobile_app_flow", {
     title: "Map React Native app screens",
-    description: "Discover React Navigation and Expo Router screens, show their hierarchy in App Flow, and capture them until all queued screens have been attempted. App must already be running and user logged in. targets lists Metro apps. start needs options with the source folder and selected device/target. context returns unresolved routes and observed params for one AI batch. resolve supplies real params, never invented IDs. stop restores the starting navigation state. Read progress with mobile_read_app_flow. No app-specific adapters or source edits.",
-    inputSchema: { action: z.enum(["targets", "start", "context", "resolve", "stop"]), options: startSchema.optional(), runId: z.uuid().optional(), metroUrl: z.string().max(2048).optional(), resolutions: resolutionSchema.optional() },
+    description: "Discover React Navigation and Expo Router screens, show their hierarchy in App Flow, and capture them until all queued screens have been attempted. App must already be running and user logged in. discover finds the selected project from MCP roots and running Metro servers; targets lists apps at one URL. start needs options with the source folder and selected device/target. context returns unresolved routes and observed params for one AI batch. resolve supplies real params, never invented IDs. stop restores the starting navigation state. Read progress with mobile_read_app_flow. No app-specific adapters or source edits.",
+    inputSchema: { action: z.enum(["discover", "targets", "start", "context", "resolve", "stop"]), discovery: z.object({ projectRoot: z.string().max(2048).optional(), metroUrl: z.string().max(2048).optional(), deviceId: z.string().max(256).optional(), deviceName: z.string().max(256).optional(), appId: z.string().max(512).optional() }).optional(), options: startSchema.optional(), runId: z.uuid().optional(), metroUrl: z.string().max(2048).optional(), resolutions: resolutionSchema.optional() },
     annotations: write, _meta: { ui: { visibility: ["app", "model"] } },
-  }, safe(async ({ action, options, runId, metroUrl, resolutions }) => {
+  }, safe(async ({ action, discovery, options, runId, metroUrl, resolutions }) => {
+    if (action === "discover") {
+      const started = performance.now();
+      try {
+        const roots = server.server.getClientCapabilities()?.roots
+          ? (await server.server.listRoots({}, { timeout: 1500 }).catch(() => ({ roots: [] }))).roots : [];
+        return await discoverFlowSetup(discovery ?? {}, roots);
+      } finally {
+        if (process.env.MOBILE_DEV_TELEMETRY !== "off") Sentry.metrics.distribution("app_flow.discovery", performance.now() - started, { unit: "millisecond", attributes: { surface: "app-flow" } });
+      }
+    }
     if (action === "targets") return { targets: (await metroTargets(metroUrl ?? "http://127.0.0.1:8081")).map(({ webSocketDebuggerUrl, ...target }) => target) };
     if (action === "start") {
       const input: FlowStart = startSchema.parse(options); parseBaseUrl(input.metroUrl, "Metro URL");

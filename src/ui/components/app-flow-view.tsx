@@ -10,17 +10,13 @@ import { recordUiTiming } from "../telemetry.ts";
 export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const devices = useSyncExternalStore(panel.devices.subscribe, panel.devices.getSnapshot);
-  const [project, setProject] = useState(panel.settings.project);
-  const [metro, setMetro] = useState(panel.settings.metro);
-  const [target, setTarget] = useState(panel.settings.target);
-  const [useAi, setUseAi] = useState(panel.settings.useAi);
+  const { project, metro, target, useAi } = panel.settings;
   const [scale, setScale] = useState(0.75);
   const [configOpen, setConfigOpen] = useState(!state.run);
   const [selected, setSelected] = useState<string>();
   const [now, setNow] = useState(Date.now());
   const viewport = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; left: number; top: number } | undefined>(undefined);
-  useEffect(() => { panel.settings = { project, metro, target, useAi }; }, [panel, project, metro, target, useAi]);
   const run = state.run, running = flowRunning(run);
   useEffect(() => { if (run) setConfigOpen(false); }, [run?.id]);
   useEffect(() => { if (!running) return; const timer = setInterval(() => setNow(Date.now()), 100); return () => clearInterval(timer); }, [running]);
@@ -43,13 +39,15 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
       <div><Button variant="ghost" size="sm" aria-expanded={configOpen} onClick={() => setConfigOpen(value => !value)}>Setup</Button><Button variant="ghost" size="icon-sm" aria-label="Zoom out" onClick={() => setScale(value => Math.max(.15, value - .15))}><ZoomOutIcon /></Button><span>{Math.round(scale * 100)}%</span><Button variant="ghost" size="icon-sm" aria-label="Zoom in" onClick={() => setScale(value => Math.min(1.5, value + .15))}><ZoomInIcon /></Button><Button variant="ghost" size="icon-sm" aria-label="Fit map width" onClick={fit}><ExpandIcon /></Button></div>
     </header>
     {configOpen && <form className="app-flow-setup" onSubmit={event => { event.preventDefault(); void panel.start(project.trim(), metro.trim(), target, useAi); }}>
-      <label>App source folder<Input aria-label="App source folder" placeholder="/path/to/your/app" value={project} onChange={event => setProject(event.target.value)} disabled={running} required /></label>
-      <div className="app-flow-connection"><label>Metro URL<Input aria-label="Metro URL" value={metro} onChange={event => setMetro(event.target.value)} disabled={running} /></label><Button type="button" variant="outline" size="sm" disabled={running || state.busy} onClick={() => { void panel.targets(metro.trim()); }}><RefreshCwIcon />Find apps</Button></div>
-      <div className="app-flow-connection"><label>Running app<NativeSelect aria-label="Running app" value={target} onChange={event => setTarget(event.target.value)} disabled={running}><NativeSelectOption value="">Choose a Metro app</NativeSelectOption>{state.targets.map(item => <NativeSelectOption key={item.id} value={item.id} disabled={!item.supportsMultipleDebuggers}>{item.appId ?? item.title} · {item.deviceName ?? "Unknown device"}</NativeSelectOption>)}</NativeSelect></label>
+      <label>App source folder<Input aria-label="App source folder" placeholder="/path/to/your/app" value={project} onChange={event => panel.setSetting("project", event.target.value)} disabled={running} required /></label>
+      <div className="app-flow-connection"><label>Metro URL<Input aria-label="Metro URL" placeholder="Detected from your project" list="app-flow-metro-servers" value={metro} onChange={event => panel.setSetting("metro", event.target.value)} disabled={running} /></label><Button type="button" variant="outline" size="sm" disabled={running || state.busy} onClick={() => { void panel.discover(); }}><RefreshCwIcon />{state.busy ? "Finding apps…" : "Find apps"}</Button></div>
+      <datalist id="app-flow-metro-servers">{state.servers.map(server => <option key={server.url} value={server.url}>{server.projectRoot ?? "Metro"}</option>)}</datalist>
+      <div className="app-flow-connection"><label>Running app<NativeSelect aria-label="Running app" value={target} onChange={event => panel.setSetting("target", event.target.value)} disabled={running}><NativeSelectOption value="">Choose a Metro app</NativeSelectOption>{state.targets.map(item => <NativeSelectOption key={item.id} value={item.id} disabled={!item.supportsMultipleDebuggers}>{item.appId ?? item.title} · {item.deviceName ?? "Unknown device"}</NativeSelectOption>)}</NativeSelect></label>
         {running ? <Button type="button" variant="outline" size="sm" onClick={() => { void panel.stop(); }}><SquareIcon />Stop</Button> : <Button type="submit" size="sm" disabled={state.busy || !project.trim() || !target || !devices.device}><PlayIcon />{run ? "Map again" : "Map app"}</Button>}
       </div>
-      <div className="app-flow-hint"><span>Open your development build and log in if needed. Mapping continues until all queued screens have been attempted. Stop any time.</span><label><input type="checkbox" checked={useAi} disabled={running} onChange={event => setUseAi(event.target.checked)} />Use AI for missing params</label></div>
+      <div className="app-flow-hint"><span>Open your development build and log in if needed. Mapping continues until all queued screens have been attempted. Stop any time.</span><label><input type="checkbox" checked={useAi} disabled={running} onChange={event => panel.setSetting("useAi", event.target.checked)} />Use AI for missing params</label></div>
     </form>}
+    {state.message && <p className="app-flow-hint" role="status">{state.message}</p>}
     {(state.error || run?.error) && <p className="app-flow-error" role="alert">{state.error || run?.error}</p>}
     <div className="app-flow-progress" role="status"><span className={running ? "app-flow-live" : ""}>{status}</span><span>{run ? `${captured}/${screens.length} previews · ${unique} screenshots · ${elapsed.toFixed(1)}s${missing ? ` · ${missing} need data` : ""}` : "React Navigation and Expo Router"}</span>
       {!configOpen && (running ? <Button variant="ghost" size="sm" onClick={() => { void panel.stop(); }}><SquareIcon />Stop</Button> : <Button variant="ghost" size="sm" disabled={state.busy || !project || !target || !devices.device} onClick={() => { void panel.start(project.trim(), metro.trim(), target, useAi); }}><PlayIcon />Map again</Button>)}

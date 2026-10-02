@@ -125,7 +125,11 @@ That file is also listed in `.worktreeinclude` for local worktrees. Use the orga
 ### App Flow
 
 App Flow uses the `app-flow` surface in UI and server context. The UI records
-`ui.app_flow.layout` and `ui.app_flow.update` through bounded timing windows.
+`ui.app_flow.layout`, `ui.app_flow.update`, and `ui.app_flow.discovery` through bounded timing windows.
+`app_flow.discovery` measures server setup discovery in milliseconds. It includes
+reading host roots and probing local Metro servers, with no paths, ports, process
+IDs, or app identifiers in its attributes. Cancelled or hidden UI discovery does
+not add a UI timing.
 Hidden tabs stop polling, and responses from an earlier surface do not add timings
 to the current one. `mobile_read_app_flow` is excluded from frequent-tool traces.
 

@@ -3,10 +3,10 @@ import type { DeviceAppsStore } from "./device-apps.ts";
 import { flowRunning, type FlowRun } from "../shared/app-flow.ts";
 import { captureUiError, recordUiTiming, getUiTelemetryAttributes } from "./telemetry.ts";
 
-type Target = { id: string; title: string; appId?: string; deviceName?: string; supportsMultipleDebuggers: boolean };
-export type AppFlowState = { open: boolean; busy: boolean; error: string; targets: Target[]; run?: FlowRun; images: Record<string, string>; resolving: boolean };
+type Target = { deviceId?: string; id: string; title: string; appId?: string; deviceName?: string; supportsMultipleDebuggers: boolean };
+export type AppFlowState = { open: boolean; busy: boolean; error: string; targets: Target[]; servers: { url: string; projectRoot?: string }[]; message: string; run?: FlowRun; images: Record<string, string>; resolving: boolean };
 export class AppFlowPanel {
-  private state: AppFlowState = { open: false, busy: false, error: "", targets: [], images: {}, resolving: false };
+  private state: AppFlowState = { open: false, busy: false, error: "", targets: [], servers: [], message: "", images: {}, resolving: false };
   private listeners = new Set<() => void>();
   private timer?: ReturnType<typeof setTimeout>;
   private disposed = false;
@@ -15,32 +15,93 @@ export class AppFlowPanel {
   private failedImages = new Set<string>();
   private controller = new AbortController();
   private imageBytes = 0;
-  settings = { project: "", metro: "http://127.0.0.1:8081", target: "", useAi: true };
+  private manualProject = false;
+  private manualMetro = false;
+  private manualTarget = false;
+  private setupGeneration = 0;
+  private setupAbort?: AbortController;
+  private unsubscribeDevice: () => void;
+  private deviceKey = "";
+  settings = { project: "", metro: "", target: "", useAi: true };
   readonly app: App;
   readonly devices: DeviceAppsStore;
-  constructor(app: App, devices: DeviceAppsStore) { this.app = app; this.devices = devices; document.addEventListener("visibilitychange", this.visibility); }
+  constructor(app: App, devices: DeviceAppsStore) {
+    this.app = app; this.devices = devices;
+    document.addEventListener("visibilitychange", this.visibility);
+    this.unsubscribeDevice = devices.subscribe(() => {
+      const { device, foregroundApp } = devices.getSnapshot();
+      const key = JSON.stringify([device?.udid, device?.platform, foregroundApp?.bundleId]);
+      if (key === this.deviceKey) return;
+      this.deviceKey = key;
+      this.manualTarget = false;
+      if (this.state.open && document.visibilityState !== "hidden" && !flowRunning(this.state.run)) void this.discover();
+    });
+  }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.state;
   private update(patch: Partial<AppFlowState>) { if (this.disposed) return; this.state = { ...this.state, ...patch }; for (const listener of this.listeners) listener(); }
-  show() { this.update({ open: true }); this.visibility(); }
-  hide() { this.update({ open: false }); clearTimeout(this.timer); }
-  private visibility = () => { clearTimeout(this.timer); if (this.state.open && document.visibilityState !== "hidden") void this.poll(); };
-  private async call(name: string, args: Record<string, unknown>) {
-    const result = await this.app.callServerTool({ name, arguments: args }, { signal: this.controller.signal, timeout: 10000 });
+  show() { this.update({ open: true }); this.visibility(); if (!flowRunning(this.state.run)) void this.discover(); }
+  hide() { this.cancelSetup(); this.update({ open: false }); clearTimeout(this.timer); }
+  private visibility = () => {
+    clearTimeout(this.timer);
+    if (document.visibilityState === "hidden") { this.cancelSetup(); return; }
+    if (this.state.open) void this.poll();
+  };
+  private async call(name: string, args: Record<string, unknown>, signal = this.controller.signal) {
+    const result = await this.app.callServerTool({ name, arguments: args }, { signal, timeout: 10000 });
     if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n"));
     return result.structuredContent as Record<string, any>;
   }
-  async targets(metroUrl: string) {
-    this.update({ busy: true, error: "" });
-    try { const result = await this.call("mobile_app_flow", { action: "targets", metroUrl }); this.update({ targets: result.targets }); }
-    catch (error) { this.failure(error); }
-    finally { this.update({ busy: false }); }
+  private cancelSetup() {
+    this.setupGeneration++; this.setupAbort?.abort(); this.setupAbort = undefined;
+    this.update({ busy: false });
+  }
+  setSetting<K extends keyof AppFlowPanel["settings"]>(key: K, value: AppFlowPanel["settings"][K]) {
+    if (key !== "useAi") this.cancelSetup();
+    this.settings = { ...this.settings, [key]: value };
+    if (key === "target") this.manualTarget = !!value;
+    if (key === "project") {
+      this.manualProject = !!value; this.manualMetro = false; this.manualTarget = false;
+      this.settings.metro = ""; this.settings.target = "";
+      this.update({ targets: [], servers: [], message: "", error: "" });
+    }
+    if (key === "metro") {
+      this.manualMetro = !!value; this.manualTarget = false; this.settings.target = "";
+      const server = this.state.servers.find(server => server.url === value);
+      if (!this.manualProject && server?.projectRoot) this.settings.project = server.projectRoot;
+      this.update({ targets: [], message: "", error: "" });
+    }
+    this.update({});
+  }
+  hostChanged() { if (this.state.open && document.visibilityState !== "hidden" && !flowRunning(this.state.run)) void this.discover(); }
+  async discover() {
+    if (this.disposed || document.visibilityState === "hidden" || flowRunning(this.state.run)) return;
+    this.cancelSetup();
+    const generation = this.setupGeneration, started = performance.now(), telemetryContext = getUiTelemetryAttributes();
+    const abort = new AbortController(); this.setupAbort = abort;
+    const { device, foregroundApp } = this.devices.getSnapshot();
+    this.update({ busy: true, error: "", message: "Finding project and Metro…" });
+    try {
+      const result = await this.call("mobile_app_flow", { action: "discover", discovery: {
+        projectRoot: this.manualProject ? this.settings.project.trim() : undefined,
+        metroUrl: this.manualMetro ? this.settings.metro.trim() : undefined,
+        deviceId: device?.udid, deviceName: device?.name, appId: foregroundApp?.bundleId ?? undefined,
+      } }, abort.signal);
+      if (generation !== this.setupGeneration || this.disposed) return;
+      const keepTarget = this.manualTarget && result.metroUrl === this.settings.metro && result.targets.some((target: Target) => target.id === this.settings.target);
+      this.manualTarget = !!keepTarget;
+      this.settings = { ...this.settings, project: result.projectRoot ?? (this.manualProject ? this.settings.project : ""), metro: result.metroUrl ?? (this.manualMetro ? this.settings.metro : ""), target: keepTarget ? this.settings.target : result.targetId ?? "" };
+      this.update({ targets: result.targets, servers: result.servers, message: result.message });
+      if (this.state.open && getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.app_flow.discovery", performance.now() - started);
+    } catch (error) { if (!abort.signal.aborted && generation === this.setupGeneration) { this.update({ targets: [], message: "" }); this.failure(error); } }
+    finally { if (generation === this.setupGeneration) { this.setupAbort = undefined; this.update({ busy: false }); } }
   }
   async start(projectRoot: string, metroUrl: string, targetId: string, useAi: boolean) {
     const device = this.devices.getSnapshot().device;
     if (!device) { this.update({ error: "Select the device running your app first." }); return; }
     if (device.platform !== "android" && device.kind === "physical") { this.update({ error: "App Flow currently captures iOS simulators and Android devices." }); return; }
-    this.update({ busy: true, error: "" });
+    this.cancelSetup();
+    this.update({ busy: true, error: "", message: "" });
     try {
       const result = await this.call("mobile_app_flow", { action: "start", options: { projectRoot, metroUrl, targetId, useAi, deviceId: device.udid, platform: device.platform ?? "ios" } });
       for (const url of Object.values(this.state.images)) URL.revokeObjectURL(url);
@@ -103,7 +164,7 @@ export class AppFlowPanel {
   }
   private failure(error: unknown) { if (this.disposed) return; this.update({ error: error instanceof Error ? error.message : "App Flow failed." }); captureUiError(new Error("App Flow UI operation failed."), "app_flow.ui"); }
   dispose() {
-    this.disposed = true; this.controller.abort(); clearTimeout(this.timer); document.removeEventListener("visibilitychange", this.visibility);
+    this.cancelSetup(); this.unsubscribeDevice(); this.disposed = true; this.controller.abort(); clearTimeout(this.timer); document.removeEventListener("visibilitychange", this.visibility);
     if (flowRunning(this.state.run)) void this.app.callServerTool({ name: "mobile_app_flow", arguments: { action: "stop", runId: this.state.run!.id } }, { timeout: 2000 }).catch(() => {});
     for (const url of Object.values(this.state.images)) URL.revokeObjectURL(url);
     this.listeners.clear();

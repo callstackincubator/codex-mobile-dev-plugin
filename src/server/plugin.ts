@@ -44,6 +44,7 @@ export const APP_URI = `ui://mobile-dev/${PLUGIN_VERSION}/simulator.html`;
 export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
 // Codex can retain entrypoint metadata after updating the installed plugin.
 const legacyAppUris = [
+  "ui://mobile-dev/0.1.110/simulator.html",
   "ui://mobile-dev/0.1.109/simulator.html",
   "ui://mobile-dev/0.1.108/simulator.html",
   "ui://mobile-dev/0.1.107/simulator.html", "ui://mobile-dev/0.1.106/simulator.html",
@@ -68,6 +69,7 @@ const legacyAppUris = [
   "ui://mobile-dev/0.1.30/simulator.html",
   "ui://mobile-dev/0.1.29/simulator.html", "ui://mobile-dev/0.1.28/simulator.html", "ui://mobile-dev/0.1.27/simulator.html", "ui://mobile-dev/0.1.26/simulator.html", "ui://mobile-dev/0.1.25/simulator.html", "ui://mobile-dev/0.1.24/simulator.html", "ui://mobile-dev/0.1.23/simulator.html", "ui://mobile-dev/0.1.22/simulator.html", "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/0.1.19/simulator.html", "ui://mobile-dev/0.1.18/simulator.html", "ui://mobile-dev/0.1.17/simulator.html", "ui://mobile-dev/0.1.16/simulator.html", "ui://mobile-dev/0.1.15/simulator.html", "ui://mobile-dev/0.1.14/simulator.html", "ui://mobile-dev/0.1.13/simulator.html", "ui://mobile-dev/0.1.12/simulator.html", "ui://mobile-dev/0.1.11/simulator.html", "ui://mobile-dev/simulator.html", ...Array.from({ length: 6 }, (_, index) => `ui://mobile-dev/v${index + 1}/simulator.html`)];
 const legacyWorkspaceUris = [
+  "ui://mobile-dev/0.1.110/workspace.html",
   "ui://mobile-dev/0.1.109/workspace.html",
   "ui://mobile-dev/0.1.108/workspace.html",
   "ui://mobile-dev/0.1.107/workspace.html", "ui://mobile-dev/0.1.106/workspace.html",

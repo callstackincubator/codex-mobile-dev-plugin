@@ -93,6 +93,7 @@ function hostContext() {
   document.documentElement.style.setProperty("--font-sans", '"Inter Variable", sans-serif');
   panelContext.hostChanged();
   recordingController.hostChanged();
+  appFlow.hostChanged();
   panelContext.resume();
   for (const panel of panels) { panel.fitScreen(); panel.controls(); }
 }

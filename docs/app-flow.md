@@ -1,9 +1,17 @@
 # App Flow
 
-Open **Tools → App Flow** in Mobile Dev. Select the device running the app, enter
-its source folder and Metro URL, then choose **Find apps**. Select the matching
-Metro app and choose **Map app**. Open the app and log in first if it requires an
-account. No source injection or app-specific adapter is needed.
+Open **Tools → App Flow** in Mobile Dev. Setup reads the current project from the
+host's MCP roots, finds running local Metro servers, and selects a matching app on
+the selected device. Choose **Map app** when the fields are ready. Open the app and
+log in first if it requires an account. No source injection or app-specific adapter
+is needed.
+
+Discovery checks listening Node processes on any port and confirms Metro through
+its status endpoint. It uses the server process's working folder to match the
+project. When the host supplies no project, a single Metro server supplies its
+folder. Multiple matches require a choice. You can edit the folder or Metro URL
+and choose **Find apps** to refresh. If Metro is not running, the tab explains how
+to connect; it does not launch another server.
 
 Runs have no total time limit. Mapping finishes after all queued screens have
 been attempted and the background AI batch has returned. Choose **Stop** to end a
