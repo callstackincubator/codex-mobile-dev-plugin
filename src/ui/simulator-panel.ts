@@ -97,7 +97,9 @@ export function createSimulatorPanel(
     const screenshotReady = physicalIos ? ready && stream?.physicalIos === true : status?.connected;
     screenshotButton.disabled = busy || !toolsAvailable || !connected || !screenshotReady || !panelContext.canAttachScreenshots || disposed;
     screenshotButton.title = panelContext.canAttachScreenshots ? "Screenshot to chat and clipboard" : "This host does not support screenshot attachments";
-    annotations.configure(selected, !ready || busy || !toolsAvailable || !connected || !panelContext.canAttach || disposed);
+    const annotationState = annotations.getSnapshot();
+    const frozenSelection = stream != null && annotationState.selecting && annotationState.capture != null;
+    annotations.configure(selected, (!ready && !frozenSelection) || busy || !toolsAvailable || !connected || !panelContext.canAttach || disposed);
     deviceButtons();
   }
 
@@ -586,18 +588,19 @@ export function createSimulatorPanel(
 
   function drawFrame(image: CanvasImageSource, width: number, height: number) {
     const paintStartedAt = performance.now();
-    if (annotations.getSnapshot().selecting && ready) {
+    const frozenSelection = annotations.getSnapshot().selecting;
+    let resized = false;
+    if (frozenSelection) {
       pausedFrame ??= document.createElement("canvas");
       if (pausedFrame.width !== width || pausedFrame.height !== height) { pausedFrame.width = width; pausedFrame.height = height; }
       pausedFrame.getContext("2d")?.drawImage(image, 0, 0);
-      seenFrames++;
-      return;
+    } else {
+      stoppedDisplay = false;
+      element("stopped").hidden = true;
+      resized = canvas.width !== width || canvas.height !== height;
+      if (resized) { canvas.width = width; canvas.height = height; }
+      context.drawImage(image, 0, 0);
     }
-    stoppedDisplay = false;
-    element("stopped").hidden = true;
-    const resized = canvas.width !== width || canvas.height !== height;
-    if (resized) { canvas.width = width; canvas.height = height; }
-    context.drawImage(image, 0, 0);
     if (firstFrameStartedAt !== undefined) {
       const firstFrameElapsed = performance.now() - firstFrameStartedAt;
       recordUiTiming("ui.video.first_frame", firstFrameElapsed);
@@ -609,7 +612,7 @@ export function createSimulatorPanel(
     countUiEvent(frameMetric);
     frame.hidden = false; element("empty").hidden = true;
     if (!ready) { ready = true; reconnect.connected(); notice(); controls(); }
-    if (!seenFrames || resized) fitScreen();
+    if (!frozenSelection && (!seenFrames || resized)) fitScreen();
     seenFrames++;
   }
 

@@ -76,15 +76,22 @@ function fixture(t: TestContext) {
   let androidAccessibility: { tree: unknown; screen: { width: number; height: number } } | undefined;
   let observeFrames = true;
   let invalidFrame = false;
+  let androidGeneration = 1;
+  let emptyAndroidFrame = false;
+  let failAndroidDecode = false;
   const document = Object.assign(new EventTarget(), { visibilityState: "visible", createElement: () => new Element() });
   class Decoder {
     state = "configured";
     decodeQueueSize = 0;
     output: (frame: object) => void;
-    constructor(options: { output: (frame: object) => void }) { this.output = options.output; }
+    error: (error: Error) => void;
+    constructor(options: { output: (frame: object) => void; error: (error: Error) => void }) { this.output = options.output; this.error = options.error; }
     static async isConfigSupported() { return { supported: true }; }
     configure() {}
-    decode() { this.output({ displayWidth: 400, displayHeight: 800, close() {} }); }
+    decode() {
+      if (failAndroidDecode) { failAndroidDecode = false; this.error(new Error("Decoder recovery")); return; }
+      this.output({ displayWidth: 400, displayHeight: 800, close() {} });
+    }
     close() { this.state = "closed"; }
   }
   const globals = {
@@ -110,8 +117,9 @@ function fixture(t: TestContext) {
       ? [{ uri, mimeType: "application/json", text: JSON.stringify({ generation: 1, sequence, dropped: 0, configuration: { revision: 1, width: 400, height: 800, codec: "hvc1.1.6.L150.B0", description: "AQ==" }, frames: [{ sequence, data: "AA==", timestamp: 0, key: true }] }) }]
       : id.startsWith("ios")
       ? [{ uri, mimeType: "image/jpeg", blob: "AA==", _meta: { sequence: invalidFrame ? 0 : sequence, receivedAt: Date.now(), bytes: 1, serverWaitMs: 0, serverStartedAt: serverPreparedAt, serverPreparedAt } }]
-      : [{ uri, mimeType: "application/json", text: JSON.stringify({ sequence, generation: 1, packets: [{ sequence, data: Buffer.from([0, 0, 0, 1, 0x67, 0x64, 0, 0x28, 0, 0, 0, 1, 0x65, 1]).toString("base64") }] }) }] };
+      : [{ uri, mimeType: "application/json", text: JSON.stringify({ sequence, generation: androidGeneration, packets: emptyAndroidFrame ? [] : [{ sequence, data: Buffer.from([0, 0, 0, 1, 0x67, 0x64, 0, 0x28, 0, 0, 0, 1, 0x65, 1]).toString("base64") }] }) }] };
     invalidFrame = false;
+    emptyAndroidFrame = false;
     if (observeFrames) window.dispatchEvent(Object.assign(new Event("message"), { data: { jsonrpc: "2.0", result }, source: undefined }));
     return result;
   }
@@ -200,7 +208,14 @@ function fixture(t: TestContext) {
   t.after(async () => { await Promise.all(panels.map(({ panel }) => panel.dispose())); for (const reset of restore) reset(); });
   return { calls, closed, selections, failInspection() { inspectionFailure = true; }, setAndroidAccessibility(value: NonNullable<typeof androidAccessibility>) { androidAccessibility = value; }, screenshots, attachedAnnotations, ios: panels[0], android: panels[1], failClipboard() { screenshotCopied = false; }, setAndroidDevices(devices: SimulatorDevice[]) { androidDevices = devices; }, setPhysicalDevices(devices: PhysicalIosDevice[]) { physicalDevices = devices; }, failDiscovery(message: string) { physicalError = message; }, failSimulators(message: string) { simulatorError = message; }, delayDiscovery(value: Promise<void>) { delayedDiscovery = value; }, failInput(platform: "ios" | "android") { failedInputPlatform = platform; }, delayOpen(value: Promise<void>) { delayedOpen = value; }, blockIos() { blockedIos = true; }, stopDevices() { stopped = true; },
     visibility(value: string) { document.visibilityState = value; document.dispatchEvent(new Event("visibilitychange")); },
-    frame(platform: "ios" | "android", sequence: number) { const id = [...pendingReads.keys()].find(id => id.startsWith(platform)); assert.ok(id); pendingReads.get(id)!(sequence); },
+    frame(platform: "ios" | "android", sequence: number, options: { generation?: number; empty?: boolean } = {}) {
+      const id = [...pendingReads.keys()].find(id => id.startsWith(platform)); assert.ok(id);
+      if (options.generation !== undefined) androidGeneration = options.generation;
+      emptyAndroidFrame = options.empty ?? false;
+      pendingReads.get(id)!(sequence);
+    },
+    waitingForFrame(platform: "ios" | "android") { return [...pendingReads.keys()].some(id => id.startsWith(platform)); },
+    failAndroidDecode() { failAndroidDecode = true; },
     missTiming() { observeFrames = false; }, invalidFrame() { invalidFrame = true; },
     failPhysicalCapture(message: string) { physicalCaptureError = message; },
   };
@@ -837,6 +852,45 @@ for (const platform of ["ios", "android"] as const) test(`select mode on ${platf
   dispatch(panel.element("screen"), "keydown", { key: "Escape", code: "Escape" });
   assert.equal(store.getSnapshot().selecting, false); assert.equal(store.getSnapshot().draft, undefined);
   assert.equal(panel.root.buttons[0].disabled, false);
+});
+
+for (const recovery of ["generation", "decoder"] as const) test(`Android ${recovery} recovery keeps Select and its frozen capture active`, async t => {
+  const f = fixture(t), panel = f.android;
+  await panel.panel.load();
+  const store = getScreenAnnotations(panel.element("stage") as unknown as HTMLElement);
+  await waitFor(() => !store.getSnapshot().disabled && f.waitingForFrame("android"));
+  await store.toggle();
+  const capture = store.getSnapshot().capture;
+  const screen = panel.element("screen"), draws = screen.draws;
+  dispatch(screen, "pointermove", { pointerId: 1, clientX: 20, clientY: 30 });
+  assert.equal(store.getSnapshot().hovered?.name, "Continue");
+  if (recovery === "generation") f.frame("android", 2, { generation: 2, empty: true });
+  else { f.failAndroidDecode(); f.frame("android", 2); }
+  await waitFor(() => f.waitingForFrame("android"));
+  assert.equal(store.getSnapshot().selecting, true);
+  assert.equal(store.getSnapshot().disabled, false);
+  assert.equal(store.getSnapshot().capture, capture);
+  assert.equal(screen.draws, draws);
+  dispatch(screen, "pointerdown", { button: 0, pointerId: 1, clientX: 20, clientY: 30 });
+  dispatch(screen, "pointerup", { button: 0, pointerId: 1, clientX: 20, clientY: 30 });
+  const draft = store.getSnapshot().draft;
+  assert.equal(draft?.component.name, "Continue");
+  store.setText("Keep this element");
+  f.frame("android", 3);
+  await waitFor(() => f.waitingForFrame("android"));
+  assert.equal(store.getSnapshot().selecting, true);
+  assert.equal(store.getSnapshot().draft?.id, draft?.id);
+  assert.equal(store.getSnapshot().draft?.text, "Keep this element");
+  assert.equal(screen.draws, draws);
+  assert.equal(f.calls.some(call => call.name === "mobile_android_stream_input"), false);
+  dispatch(screen, "keydown", { key: "Escape", code: "Escape" });
+  assert.equal(store.getSnapshot().selecting, false);
+  assert.ok(screen.draws > draws, "Leaving Select displays the latest recovered frame.");
+  assert.equal(panel.root.buttons[0].disabled, false);
+  await store.toggle();
+  f.visibility("hidden");
+  assert.equal(store.getSnapshot().selecting, false);
+  assert.equal(store.getSnapshot().disabled, true);
 });
 
 for (const platform of ["ios", "android"] as const) test(`failed inspection on ${platform} falls back to native elements and accepts clicks`, async t => {
