@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { cpuTargetSchema } from "./cpu.ts";
 import { PLUGIN_VERSION } from "./version.ts";
+import { frameTimelineSchema } from "./display-fps.ts";
+import { summarizeDisplayFrames } from "./frame-statistics.ts";
+import type { DisplayFrameStats } from "./frame-statistics.ts";
 
 export const RECORDING_URI = `ui://mobile-dev/${PLUGIN_VERSION}/recording.html`;
 export const recordingIdSchema = z.uuid();
@@ -16,10 +19,12 @@ export const recordingSampleSchema = z.object({
   memoryBytes: reading,
   threads: z.array(z.object({ id: z.string(), name: z.string(), cpuPercent: reading })).max(4096),
 });
+const recordingFrameTimelineSchema = frameTimelineSchema.optional();
 export const recordingFpsSampleSchema = z.object({
   time: z.number().finite().nonnegative(),
   interval: z.number().finite().nonnegative(),
   fps: reading,
+  frameTimeline: recordingFrameTimelineSchema,
 });
 const recordingFpsSchema = z.object({
   status: z.enum(["connecting", "recording", "finished", "unavailable"]),
@@ -54,6 +59,7 @@ export type RecordingSummary = {
   minimumFps: number | null;
   peakFps: number | null;
   fpsSampleCount: number;
+  frameStats: DisplayFrameStats | null;
   threads: Array<{ id: string; name: string; averageCpuPercent: number; peakCpuPercent: number }>;
 };
 
@@ -121,7 +127,8 @@ export function summarizeRecording(recording: PerformanceRecording, range?: Reco
     peakFps = Math.max(peakFps ?? sample.fps, sample.fps);
   }
   const memoryChangeBytes = firstMemoryBytes !== null && lastMemoryBytes !== null ? lastMemoryBytes - firstMemoryBytes : null;
+  const frameStats = recording.target.platform === "android" ? summarizeDisplayFrames(recording.fps.samples, recording.durationSeconds, range) : null;
   return { peakCpuPercent, averageCpuPercent: cpuWeight > 0 ? cpuTotal / cpuWeight : null,
     firstMemoryBytes, lastMemoryBytes, memoryChangeBytes, sampleCount, threads: ranked,
-    averageFps: fpsWeight > 0 ? fpsTotal / fpsWeight : null, minimumFps, peakFps, fpsSampleCount };
+    averageFps: fpsWeight > 0 ? fpsTotal / fpsWeight : null, minimumFps, peakFps, fpsSampleCount, frameStats };
 }

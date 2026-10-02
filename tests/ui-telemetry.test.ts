@@ -167,6 +167,11 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   const recording = recordingFixture();
   recording.title = "PRIVATE_RECORDING_TITLE";
   recording.deviceName = "PRIVATE_RECORDING_DEVICE";
+  recording.fps.samples[0].frameTimeline = {
+    clock: "boottime", intervalEndNs: "9007200254740993", frames: [
+      { token: "9007199254740995", startTimeNs: "9007199744741116", endTimeNs: "9007199754741116", presentType: 2, jankType: 48 },
+    ],
+  };
   controller.accept({ content: [], structuredContent: { recording } });
   assert.equal(api.getUiTelemetryAttributes().surface, "recording");
   assert.equal(api.getUiTelemetryAttributes().device_platform, "android");
@@ -213,6 +218,12 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, '"surface":{"value":"simulator"');
   contains(encoded, "ui.performance.batch.mean");
   contains(encoded, "ui.recording.process.mean");
+  contains(encoded, "ui.recording.display_frames");
+  assert.equal(encoded.includes("9007199254740995"), false, "Display frame tokens remain local.");
+  assert.equal(encoded.includes("9007199754741116"), false, "Device frame timestamps remain local.");
+  assert.equal(encoded.includes("jankType"), false, "Device jank measurements remain local.");
+  assert.equal(encoded.includes("jankRatePercent"), false, "Derived device jank statistics remain local.");
+  assert.equal(encoded.includes("p95FrameIntervalMs"), false, "Device frame pacing remains local.");
   contains(encoded, "ui.recording.derive.mean");
   contains(encoded, "ui.screenshot.capture.mean");
   contains(encoded, "ui.annotations.inspection_truncated");

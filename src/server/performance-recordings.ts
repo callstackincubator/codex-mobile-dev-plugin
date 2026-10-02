@@ -10,6 +10,7 @@ import { captureServerError } from "./telemetry.ts";
 import type { CpuSessions } from "./cpu/sessions.ts";
 import type { DisplayFpsSessions } from "./fps/sessions.ts";
 import type { DisplayFpsSample } from "../shared/display-fps.ts";
+import { displayFrameTime } from "../shared/display-fps.ts";
 
 export const RECORDINGS_DIRECTORY = join(homedir(), "Library/Application Support/mobile-dev/recordings");
 
@@ -107,6 +108,14 @@ export class PerformanceRecordings {
       if (time < 0 || time - sample.interval >= end) continue;
       const existing = recording.fps.samples.findIndex(reading => reading.time === time);
       const reading = { ...sample, time };
+      if (sample.frameTimeline !== undefined) {
+        const timeline = sample.frameTimeline;
+        const frames = timeline.frames.filter(frame => {
+          const frameTime = displayFrameTime(frame, timeline.intervalEndNs, time);
+          return frameTime >= 0 && frameTime < end;
+        });
+        reading.frameTimeline = { ...timeline, frames };
+      }
       if (existing >= 0) recording.fps.samples[existing] = reading;
       else {
         if (recording.fps.samples.length >= 1800) throw new Error("This recording exceeded its FPS sample limit.");

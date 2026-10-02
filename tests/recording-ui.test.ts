@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
-import { recordingFixture } from "./recording-fixtures.ts";
+import { recordingFixture, recordingWithFramesFixture } from "./recording-fixtures.ts";
 
 for (const reducedMotion of [false, true]) {
   const description = reducedMotion
@@ -70,17 +70,20 @@ for (const reducedMotion of [false, true]) {
       async callServerTool() { throw new Error("Finished recordings must not poll"); },
     };
     window.eval(built.outputFiles[0].text);
-    const recording = recordingFixture();
+    const recording = recordingWithFramesFixture();
     const mounted = window.RecordingTest.mount(app, { content: [], structuredContent: { recording } });
     t.after(async () => {
       await mounted.close();
       dom.window.close();
       const captured = telemetry.join("\n");
       const hasDensityTiming = captured.includes("ui.recording.change_density.mean");
+      const hasDeriveTiming = captured.includes("ui.recording.derive.mean");
       const hasRecordingSurface = captured.includes('"surface":{"value":"recording"');
       const hasRecordingView = captured.includes('"view":{"value":"recording"');
       const hasFpsGauge = captured.includes("ui.recording.fps_samples");
       const hasMeasuredFps = captured.includes("averageFps");
+      const hasMeasuredJank = captured.includes("jankRatePercent");
+      const hasMeasuredPacing = captured.includes("p95FrameIntervalMs");
       const hasRecordingId = captured.includes(recording.id);
       const hasBundleId = captured.includes("com.example.shop");
       const hasRevealTiming = captured.includes("ui.recording.reveal.mean");
@@ -99,7 +102,10 @@ for (const reducedMotion of [false, true]) {
       }
       assert.ok(hasFpsGauge, "Recording telemetry counts FPS samples on the active surface.");
       assert.equal(hasMeasuredFps, false, "Device FPS values stay local.");
+      assert.equal(hasMeasuredJank, false, "Device jank statistics stay local.");
+      assert.equal(hasMeasuredPacing, false, "Device pacing statistics stay local.");
       assert.ok(hasDensityTiming, "The actual chart path records highlight processing duration.");
+      assert.ok(hasDeriveTiming, "The active chart path records whole-run and range-statistics derivation.");
       assert.ok(hasRecordingSurface);
       assert.ok(hasRecordingView);
       assert.equal(hasRecordingId, false, "Highlight telemetry excludes recording data.");
@@ -108,6 +114,9 @@ for (const reducedMotion of [false, true]) {
     const settle = async () => { await new Promise(resolve => window.setTimeout(resolve, 30)); };
     await settle();
     assert.ok(window.document.body.textContent?.includes("+6 MiB"));
+    const metrics = window.document.querySelector(".recording-metrics");
+    assert.ok(metrics?.textContent?.includes("Jank rate33.3%"));
+    assert.ok(metrics?.textContent?.includes("Dropped frames1"));
     const charts = window.document.querySelectorAll<HTMLElement>(".recording-chart");
     assert.equal(charts.length, 3);
     await settle();
@@ -197,7 +206,7 @@ for (const reducedMotion of [false, true]) {
     assert.equal(pathAfterDrag, completedPath, "Selecting a range does not replay the entrance animation.");
     assert.equal(revealState(), "settled", "Selection ends the highlight entrance so user interaction stays immediate.");
     assert.equal(highlightOpacity(), "1");
-    const refreshed = recordingFixture();
+    const refreshed = recordingWithFramesFixture();
     mounted.controller.accept({ content: [], structuredContent: { recording: refreshed } });
     await settle();
     const pathAfterRefresh = curvePath();
@@ -212,6 +221,12 @@ for (const reducedMotion of [false, true]) {
     assert.deepEqual(JSON.parse(JSON.stringify(mounted.controller.getSnapshot().range)), { start: 12, end: 18 });
     assert.ok(window.document.body.textContent?.includes("Selected range: 12.0s–18.0s"));
     assert.ok(window.document.body.textContent?.includes("41.0%"));
+    const frameStats = window.document.querySelector(".recording-frame-stats");
+    assert.ok(frameStats?.textContent?.includes("Jank rate: 50.0%"));
+    assert.ok(frameStats?.textContent?.includes("Janky presented frames: 1/2"));
+    assert.ok(frameStats?.textContent?.includes("Classification coverage: 66.7%"));
+    assert.ok(frameStats?.textContent?.includes("Dropped frames: 1 (25.0%)"));
+    assert.ok(frameStats?.textContent?.includes("P95: 250.00 ms"));
     assert.equal(messages.length, 0, "Selecting a range does not send a chat message.");
     const buttons = Array.from(window.document.querySelectorAll<HTMLButtonElement>("button"));
     const ask = buttons.find(button => button.textContent?.includes("Ask about this range"));
@@ -222,6 +237,9 @@ for (const reducedMotion of [false, true]) {
     assert.equal(messages[0].role, "user");
     assert.ok(messages[0].content[0].text.includes(recordingFixture().id));
     assert.ok(messages[0].content[0].text.includes("device-wide Display FPS"));
+    assert.ok(messages[0].content[0].text.includes("summary.frameStats"));
+    assert.ok(messages[0].content[0].text.includes("mobile_read_performance_frames"));
+    assert.ok(messages[0].content[0].text.includes("mobile_render_performance_recording"));
     assert.ok(messages[0].content[0].text.includes('"range":{"start":12,"end":18}'));
     const open = buttons.find(button => button.textContent?.includes("Open in Mobile Dev"));
     assert.ok(open);
@@ -261,6 +279,8 @@ for (const reducedMotion of [false, true]) {
     assert.equal(partialCharts.length, 2);
     const partialText = window.document.body.textContent ?? "";
     assert.equal(partialText.includes("FPS"), false, "Unrecorded FPS is omitted entirely.");
+    const partialFrameStats = window.document.querySelector(".recording-frame-stats");
+    assert.equal(partialFrameStats, null, "Unavailable per-frame capture omits Android jank statistics.");
     for (const sample of partial.samples) sample.memoryBytes = null;
     mounted.controller.accept({ content: [], structuredContent: { recording: partial } });
     await settle();

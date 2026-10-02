@@ -78,7 +78,7 @@ export function registerDisplayFpsTools(server: McpServer, sessions: DisplayFpsS
     return { content: [{ type: "text", text }], structuredContent: { ...batch } };
   });
   registerAppTool(server, "mobile_read_display_fps", {
-    title: "Read Display FPS", description: "Read complete device-wide FPS sampling intervals. Pass the previous cursor as after. Zero is a valid idle reading; null means no complete measurement. Startup returns connecting until the first measurement.",
+    title: "Read Display FPS", description: "Read complete device-wide FPS sampling intervals. Android intervals include frameTimeline with exact CLOCK_BOOTTIME start/end nanoseconds and tokens as decimal strings, presentation status, and available jank/composition metadata. Dropped frames are retained in frameTimeline but excluded from FPS. Pass the previous cursor as after; revisions replace the entire original interval, including its frames. Zero is a valid idle reading; null means no complete measurement. Startup returns connecting until the first measurement.",
     inputSchema: { sessionId, after: afterSchema }, annotations: read, _meta: metadata,
   }, readSession);
   const closeSession = safe(async ({ sessionId: id }: { sessionId: string }) => {

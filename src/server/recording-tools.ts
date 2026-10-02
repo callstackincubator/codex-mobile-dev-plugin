@@ -8,6 +8,9 @@ import { RECORDING_URI, recordingIdSchema, recordingRangeSchema, recordingSchema
 import { errorMessage } from "../shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import type { PerformanceRecordings } from "./performance-recordings.ts";
+import { displayFrameSchema } from "../shared/display-fps.ts";
+import { readRecordingFrames } from "./recording-frames.ts";
+import { nullableDisplayFrameStatsSchema } from "../shared/frame-statistics.ts";
 
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const visibility: ("app" | "model")[] = ["app", "model"];
@@ -16,9 +19,30 @@ const summarySchema = z.object({
   peakCpuPercent: z.number().nullable(), averageCpuPercent: z.number().nullable(),
   firstMemoryBytes: z.number().nullable(), lastMemoryBytes: z.number().nullable(), memoryChangeBytes: z.number().nullable(),
   averageFps: z.number().nullable(), minimumFps: z.number().nullable(), peakFps: z.number().nullable(), fpsSampleCount: z.number(),
+  frameStats: nullableDisplayFrameStatsSchema,
   sampleCount: z.number(), threads: z.array(z.object({ id: z.string(), name: z.string(), averageCpuPercent: z.number(), peakCpuPercent: z.number() })),
 });
 const outputSchema = { recording: recordingSchema, summary: summarySchema, range: recordingRangeSchema.optional() };
+const pageNumber = z.number();
+const pageInteger = pageNumber.int();
+const nonnegativePageInteger = pageInteger.nonnegative();
+const boundedCursor = nonnegativePageInteger.max(Number.MAX_SAFE_INTEGER);
+const frameCursor = boundedCursor.default(0);
+const positivePageInteger = pageInteger.min(1);
+const boundedFrameLimit = positivePageInteger.max(1000);
+const frameLimit = boundedFrameLimit.default(200);
+const framePageRange = recordingRangeSchema.optional();
+const framePageInput = {
+  recordingId: recordingIdSchema, range: framePageRange,
+  after: frameCursor, limit: frameLimit,
+};
+const frameTime = pageNumber.finite();
+const recordingDisplayFrameSchema = displayFrameSchema.extend({ time: frameTime });
+const recordingDisplayFrames = z.array(recordingDisplayFrameSchema);
+const recordingDisplayFramePage = recordingDisplayFrames.max(1000);
+const framePageAvailable = z.boolean();
+const framePageClock = z.literal("boottime");
+const optionalFrameCursor = boundedCursor.optional();
 
 function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
   return async (input: T): Promise<CallToolResult> => {
@@ -53,12 +77,30 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
   });
   registerAppTool(server, "mobile_read_performance_recording", {
     title: "Read a saved performance recording or range",
-    description: "Read original CPU, memory, device-wide FPS, and per-thread samples, recording status, and summary for a recording ID. Optional range uses seconds from recording start; summary CPU, FPS, and thread averages weight measured interval overlap. Original samples remain available for analysis. CPU 100% means one core. Missing readings stay null. Reading finished runs works after live sessions close or the plugin restarts.",
+    description: "Read original CPU, memory, FPS and thread samples, status, and summary for a recording ID. Android summary.frameStats includes jankRatePercent over classified presented display frames, classification coverage, separate dropped-frame count/rate, and frame-interval P50/P95/P99 in ms. Unknown jank classifications are excluded from the jank denominator; null means unavailable. Stats cover the entire requested range, not a frame page. Optional range uses recording-relative seconds; CPU/FPS/thread averages weight interval overlap. Android intervals retain exact frameTimeline data; mobile_read_performance_frames provides bounded frame pages. Show mobile_render_performance_recording when reporting jank so the user sees the chart. Device-wide frames cannot attribute a slowdown to one app. Works after plugin restarts.",
     inputSchema, outputSchema, annotations: read, _meta: { ui: { visibility } },
   }, readRecording);
+  const readFrames = safe(async ({ recordingId, range, after, limit }: z.infer<z.ZodObject<typeof framePageInput>>) => {
+    const recording = await recordings.read(recordingId);
+    const data = readRecordingFrames(recording, range, after, limit);
+    const text = JSON.stringify(data);
+    return { content: [{ type: "text", text }], structuredContent: data };
+  });
+  registerAppTool(server, "mobile_read_performance_frames", {
+    title: "Read Android display frames from a saved recording",
+    description: "Read saved Android SurfaceFlinger display frames and frameStats after a run finishes or fails. Stats cover the whole requested range on every page: jankRatePercent over classified presented frames, classification coverage, dropped count/rate, and frame-interval P50/P95/P99 in ms. Unknown classifications are excluded from the jank denominator. Original startTimeNs/endTimeNs and token are decimal strings; device clock is CLOCK_BOOTTIME. presentType: 1 on-time, 2 late, 3 early, 4 dropped, 5 unknown. time aligns to recording-relative seconds through the host readback anchor. range is start-inclusive/end-exclusive; pass nextCursor as after with the same range, limit defaults to 200 and is at most 1000. available=false and frameStats=null mean no per-frame capture, including iOS/older recordings. Show mobile_render_performance_recording with the same range when reporting jank to keep the interactive chart visible. Device-wide data cannot attribute jank to an app.",
+    inputSchema: framePageInput,
+    outputSchema: {
+      recordingId: recordingIdSchema, available: framePageAvailable, clock: framePageClock,
+      frameCount: nonnegativePageInteger, frames: recordingDisplayFramePage,
+      frameStats: nullableDisplayFrameStatsSchema,
+      nextCursor: optionalFrameCursor,
+    },
+    annotations: read, _meta: { ui: { visibility } },
+  }, readFrames);
   registerAppTool(server, "mobile_render_performance_recording", {
     title: "Show an interactive performance chart in chat",
-    description: "Render a saved CPU, memory, and device-wide FPS recording as an inline interactive chart card with rapid-change highlights, shared drag selection, per-thread breakdown, Ask, and Open in Mobile Dev. Only metrics with recorded readings are shown. The full timeline stays visible; automatic highlights do not select or limit a range. Omit range unless the user requested a selection. Pass recording.id from mobile_record_performance or mobile_list_performance_recordings. An active run updates until finished. Only call when the user would benefit from the chart; data tools do not render it automatically.",
+    description: "Show a saved CPU/memory/FPS recording as an inline interactive chart with shared drag selection, thread breakdown, Ask and Open in Mobile Dev. Android frame data adds jank rate, classification coverage, dropped frames and frame-interval P50/P95/P99, updating with the selected range. Call this when reporting scrolling FPS/jank or comparing implementations so the user sees the chart alongside the analysis. The full timeline stays visible; automatic change highlights do not select or limit a range. Omit range unless the user requested a selection. Pass recording.id from mobile_record_performance or mobile_list_performance_recordings. Active runs update until finished. Data tools return measurements without rendering a chart.",
     inputSchema, outputSchema, annotations: read, _meta: { ui: { resourceUri: RECORDING_URI, visibility } },
   }, readRecording);
   registerAppTool(server, "mobile_open_performance_recording", {

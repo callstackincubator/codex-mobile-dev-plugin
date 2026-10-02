@@ -73,14 +73,14 @@ try {
   assert.ok(recordingCard);
   assert.deepEqual(recordingCard._meta.ui.visibility, ["app", "model"]);
   const recordingUri = recordingCard._meta.ui.resourceUri;
-  assert.equal(recordingUri, "ui://mobile-dev/0.1.88/recording.html");
+  assert.equal(recordingUri, "ui://mobile-dev/0.1.89/recording.html");
   const recordingResource = await client.readResource({ uri: recordingUri });
   const recordingHtml = recordingResource.contents[0].text;
   assert.match(recordingHtml, /data-view="recording"/);
   await access(join(plugin, "dist/ios-fps/mobile-dev-ios-fps"));
   await access(join(plugin, "dist/ios-fps/third-party-licenses.txt"));
   for (const abi of ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]) await access(join(plugin, `dist/android-fps/${abi}/mobile-dev-fps`));
-  for (const name of ["mobile_display_fps_session", "mobile_read_display_fps", "mobile_display_fps_close"]) assert.ok(tools.tools.some(tool => tool.name === name));
+  for (const name of ["mobile_display_fps_session", "mobile_read_display_fps", "mobile_display_fps_close", "mobile_read_performance_frames"]) assert.ok(tools.tools.some(tool => tool.name === name));
   for (const name of ["mobile_list_ios_devices", "mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_android_screenshot", "mobile_ios_mirror_session", "mobile_ios_mirror_reset", "mobile_ios_mirror_close"]) assert.ok(tools.tools.some(tool => tool.name === name));
   const physicalMirror = tools.tools.find(tool => tool.name === "mobile_ios_mirror_session");
   assert.deepEqual(physicalMirror._meta.ui.visibility, ["app"]);
@@ -131,7 +131,7 @@ try {
   }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.88/simulator.html");
+  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.89/simulator.html");
   const telemetryEnvironment = process.env.MOBILE_DEV_ENVIRONMENT ?? telemetryConfig.environment;
   const telemetryMarker = `name="mobile-dev-environment" content="${telemetryEnvironment}"`;
   assert.ok(resource.contents[0].text.includes(telemetryMarker));
@@ -142,7 +142,7 @@ try {
   assert.ok(resource.contents[0].text.includes('workspace-panels'));
   assert.ok(resource.contents[0].text.includes('tool-logs'));
   assert.ok(resource.contents[0].text.includes('Memory usage'), 'The packaged Performance view must include the live memory track.');
-  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.88/workspace.html");
+  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.89/workspace.html");
   assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, ["https://o4512180958068736.ingest.de.sentry.io"]);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
   runtimeTransport = new StdioClientTransport({ command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe" });

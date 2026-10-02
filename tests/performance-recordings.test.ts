@@ -38,6 +38,12 @@ test("recordings persist original samples across store restarts with private fil
   t.after(async () => { await rm(directory, { recursive: true, force: true }); });
   const store = new RecordingStore(directory);
   const recording = recordingFixture();
+  recording.fps.samples[0].frameTimeline = {
+    clock: "boottime", intervalEndNs: "9007200254740993", frames: [
+      { token: "9007199254740995", startTimeNs: "9007199744741116", endTimeNs: "9007199754741116", presentType: 2,
+        onTimeFinish: false, gpuComposition: true, jankType: 48, predictionType: 2, jankSeverityType: 3 },
+    ],
+  };
   await store.save(recording);
   const reopened = new RecordingStore(directory);
   assert.deepEqual(await reopened.read(recording.id), recording);
@@ -115,6 +121,7 @@ test("FPS summaries clip interval overlap, retain idle zero, and exclude missing
   assert.equal(whole.minimumFps, 0);
   assert.equal(whole.peakFps, 60);
   assert.equal(whole.fpsSampleCount, 3);
+  assert.equal(whole.frameStats, null, "Historical aggregate FPS cannot supply a jank rate.");
   const selected = summarizeRecording(recording, { start: 0.5, end: 2 });
   assert.equal(selected.averageFps, 40);
   assert.equal(selected.fpsSampleCount, 2);
@@ -154,11 +161,23 @@ test("timed recordings align FPS, wait for Android readback, replace revised int
     const first = origin + 0.5;
     options.onSample({ recordedAt: origin, interval: 0, fps: null });
     const initial = globalThis.setTimeout(() => {
-      options.onSample({ recordedAt: first, interval: 0.5, fps: 0 });
+      options.onSample({ recordedAt: first, interval: 0.5, fps: 0,
+        frameTimeline: { clock: "boottime", intervalEndNs: "2000000000", frames: [] } });
     }, 500);
     const late = globalThis.setTimeout(() => {
-      options.onSample({ recordedAt: first, interval: 0.5, fps: 30 });
-      options.onSample({ recordedAt: origin + 1.5, interval: 1, fps: 60 });
+      options.onSample({ recordedAt: first, interval: 0.5, fps: 30, frameTimeline: {
+        clock: "boottime", intervalEndNs: "2000000000", frames: [
+          { token: "0", startTimeNs: "1290000000", endTimeNs: "1300000000", presentType: 1 },
+          { token: "1", startTimeNs: "1690000001", endTimeNs: "1700000001", presentType: 1 },
+          { token: "2", startTimeNs: "1890000000", endTimeNs: "1900000000", presentType: 4 },
+        ],
+      } });
+      options.onSample({ recordedAt: origin + 1.5, interval: 1, fps: 60, frameTimeline: {
+        clock: "boottime", intervalEndNs: "3000000000", frames: [
+          { token: "3", startTimeNs: "2290000000", endTimeNs: "2300000000", presentType: 2, jankType: 16 },
+          { token: "4", startTimeNs: "2890000000", endTimeNs: "2900000000", presentType: 1 },
+        ],
+      } });
       options.onSample({ recordedAt: origin + 4, interval: 1, fps: 10 });
     }, 2000);
     return { closed: new Promise(() => {}), async stop() { clearTimeout(initial); clearTimeout(late); fpsStopped++; } };
@@ -184,6 +203,11 @@ test("timed recordings align FPS, wait for Android readback, replace revised int
   assert.ok(measured[0].time > 0.4 && measured[0].time < 0.6, "FPS uses the CPU recording's origin.");
   assert.equal(measured[1].fps, 60);
   assert.ok(measured[1].time > 1, "The original interval endpoint is retained for range-weighted summaries.");
+  const firstTokens = measured[0].frameTimeline?.frames.map(frame => frame.token);
+  const secondTokens = measured[1].frameTimeline?.frames.map(frame => frame.token);
+  assert.deepEqual(firstTokens, ["1", "2"], "Frames before the recording origin are excluded; dropped frames are retained.");
+  assert.deepEqual(secondTokens, ["3"], "The overlapping final bucket excludes frames after the recording deadline.");
+  assert.equal(measured[0].frameTimeline?.frames[0].endTimeNs, "1700000001");
   assert.equal(cpuStopped, 1);
   assert.equal(fpsStopped, 1);
   const reopened = await store.read(started.id);
