@@ -8,17 +8,15 @@ description: Set up the Mobile Dev plugin's bundled iOS and Android backends and
 The installed plugin contains Baguette 0.2.1, its resource bundle, agent-device 0.20.9 with its dependencies and Apple runner source, and the built MCP servers and panel. Do not install Baguette with Homebrew, install a global agent-device CLI, or start separate servers.
 
 First resolve Mobile Dev tools through the host's tool discovery when available.
-If `mobile_open_simulator` and the device-list tools are unavailable, report that
-Mobile Dev setup is incomplete because its MCP tools did not load. Check plugin
-enablement, the installed MCP manifest, and desktop MCP startup/discovery logs when
-accessible. Report the exact error and stop device setup until the tools are
-available. Do not claim that the chat was created too early without evidence or
-work around the failure with another device backend. Packages from 0.1.107 forward
-`SHELL` in `.mcp.json` and discover Node in the configured interactive login shell.
-The launcher reports missing or unusable executables, ambiguous shell output, and
-versions below 22.18 as `Mobile Dev setup failed` in desktop MCP startup logs.
-Packages through 0.1.106 relied on bare `node` in the desktop PATH; terminal
-`which node` alone did not establish that executable lookup.
+If `mobile_open_simulator` and the device-list tools are unavailable, tell the user:
+"Mobile Dev could not start. I'll check its setup." Follow
+[missing-tools recovery](references/missing-tools.md) before stopping: run the
+installed launcher's version check yourself, explain its result, and offer a
+repair through the user's existing Node manager. Do not leave the user with
+terminal commands to diagnose the problem when you can run the checks. A generic
+startup timeout alone does not justify increasing the timeout. Stop device setup
+until the tools are available; do not claim that the chat was created too early
+without evidence or work around the failure with another device backend.
 
 1. Call `mobile_open_simulator` to open the panel beside the chat, or reuse an open Mobile Dev panel. Use `mobile_open_workspace` if the user asks for fullscreen. For an explicit tool-only workflow or a host without panels, use the device-list tools instead. The iOS tools start the bundled backend on a private loopback port and list simulators.
 2. If the backend fails, read the returned error. Check that this is an Apple Silicon Mac and that `xcode-select -p` points to Xcode 26 or later. Use `xcodebuild -version` when needed. Check that the configured user login shell resolves Node.js 22.18 or later. The shell launcher reports discovery and version failures in MCP startup logs; use that exact error to explain the setup requirement.
