@@ -1,11 +1,12 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "mobile-dev",
-  "version": "0.1.102",
+  "version": "0.1.103",
   "description": "Keep a simulator beside the chat while building, running, or debugging iOS and Android apps. Stream devices, read native and Metro logs, render interactive CPU, memory, and FPS recordings, and control apps with Mobile Dev tools.",
   "author": {
-    "name": "Laurids"
+    "name": "Callstack"
   },
+  "homepage": "https://callstack.com",
   "extensions": {
     "com.openai": {
       "onboardingSkill": "./skills/mobile-dev-setup/SKILL.md",
@@ -13,7 +14,8 @@
         "displayName": "Mobile Dev",
         "shortDescription": "Devices, logs, and performance",
         "longDescription": "Keep an iOS simulator or Android device beside your chat while building, running, or debugging Expo, React Native, SwiftUI, and other mobile apps. Monitor native CPU, memory, and device-wide Display FPS, render interactive performance recordings in chat, read native and Metro logs, and inspect and control apps with Mobile Dev tools.",
-        "developerName": "Laurids",
+        "developerName": "Callstack",
+        "websiteURL": "https://callstack.com",
         "category": "Developer Tools",
         "capabilities": [
           "Read",
