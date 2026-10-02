@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { CpuApp, CpuBatch, CpuSample, CpuTarget } from "../src/shared/cpu.ts";
+import type { DeviceApp } from "../src/shared/device-apps.ts";
+import type { CpuBatch, CpuSample, CpuTarget } from "../src/shared/cpu.ts";
 import type { SimulatorDevice } from "../src/shared/protocol.ts";
+import { createDeviceApps } from "./device-apps-fixtures.ts";
 import { PerformancePanel } from "../src/ui/performance-panel.ts";
 import { UDID, OTHER_UDID } from "./fixtures.ts";
 
@@ -14,15 +16,17 @@ function host() {
   const events: string[] = [];
   const sources: string[] = [];
   const targets: CpuTarget[] = [];
-  let apps: CpuApp[] = [{ bundleId: "com.example.app", pid: 123 }];
+  let apps: DeviceApp[] = [{ bundleId: "com.example.app", pid: 123, foreground: true }];
   let sequence = 0;
   let opening: Promise<void> | undefined;
   let emit: ((batch: CpuBatch) => void) | undefined;
   const app = {
-    async callServerTool(input: { name: string; arguments: { sessionId?: string; deviceId?: string; target?: CpuTarget } }) {
+    async callServerTool(input: { name: string; arguments: { sessionId?: string; deviceId?: string; target?: CpuTarget; kind?: string } }) {
       if (input.name === "mobile_performance_sources") {
         sources.push(input.arguments.deviceId!);
-        return { content: [], structuredContent: { apps } };
+        const foreground = apps.find(app => app.foreground === true);
+        const marked = apps.map(app => ({ ...app, foreground: app === foreground }));
+        return { content: [], structuredContent: { apps: marked, foregroundApp: foreground ?? null } };
       }
       if (input.name === "mobile_display_fps_session") return { isError: true, content: [{ type: "text", text: "FPS not provided by this CPU fixture" }] };
       if (input.name === "mobile_cpu_close") { events.push(`close:${input.arguments.sessionId}`); return { content: [] }; }
@@ -45,15 +49,17 @@ function host() {
     },
   };
   return { app: app as unknown as App, events, sources, targets, emit(batch: CpuBatch) { emit?.(batch); },
-    setApps(next: CpuApp[]) { apps = next; }, delayOpen(promise: Promise<void>) { opening = promise; } };
+    setApps(next: DeviceApp[]) { apps = next; }, delayOpen(promise: Promise<void>) { opening = promise; } };
 }
 
-test("CPU collection defaults to the sole app, persists across tabs, and resets on PID changes", async t => {
+test("CPU collection defaults to the foreground app, persists across tabs, and resets on PID changes", async t => {
   const fake = host();
-  const panel = new PerformancePanel(fake.app);
-  t.after(() => panel.dispose());
-  panel.selectSimulator(device);
+  const deviceApps = createDeviceApps(fake.app);
+  const panel = new PerformancePanel(fake.app, deviceApps);
+  t.after(() => { deviceApps.dispose(); return panel.dispose(); });
+  deviceApps.selectDevice(device);
   panel.setAvailable(true);
+  deviceApps.setAvailable(true);
   panel.show();
   await tick();
   assert.equal(panel.getSnapshot().bundleId, "com.example.app");
@@ -65,7 +71,7 @@ test("CPU collection defaults to the sole app, persists across tabs, and resets 
   assert.equal(panel.getSnapshot().open, false);
   assert.equal(fake.events.length, 1);
   fake.setApps([{ bundleId: "com.example.app", pid: 456 }]);
-  await panel.discover();
+  await deviceApps.refresh();
   await tick();
   const names = fake.events.map(event => event.split(":")[0]);
   assert.deepEqual(names, ["open", "close", "open"]);
@@ -77,10 +83,12 @@ test("CPU collection defaults to the sole app, persists across tabs, and resets 
 
 test("thread identity and recorded activity survive history expiry; sort choice survives tabs and process changes", async t => {
   const fake = host();
-  const panel = new PerformancePanel(fake.app);
-  t.after(() => panel.dispose());
-  panel.selectSimulator(device);
+  const deviceApps = createDeviceApps(fake.app);
+  const panel = new PerformancePanel(fake.app, deviceApps);
+  t.after(() => { deviceApps.dispose(); return panel.dispose(); });
+  deviceApps.selectDevice(device);
   panel.setAvailable(true);
+  deviceApps.setAvailable(true);
   panel.show();
   await tick();
   const send = async (time: number, threads: CpuSample["threads"]) => {
@@ -130,7 +138,7 @@ test("thread identity and recorded activity survive history expiry; sort choice 
   assert.deepEqual(inactiveKept, { number: 2, peakCpuPercent: 10 }, "The thread retains its activity after every active sample expires.");
 
   fake.setApps([{ bundleId: "com.example.app", pid: 456 }]);
-  await panel.discover();
+  await deviceApps.refresh();
   await tick();
   const restarting = panel.getSnapshot();
   assert.equal(restarting.threadHistory.size, 0);
@@ -145,14 +153,17 @@ test("closing during session creation closes the late session before disposal co
   const fake = host();
   let resolveOpen!: () => void;
   fake.delayOpen(new Promise(resolve => { resolveOpen = resolve; }));
-  const panel = new PerformancePanel(fake.app);
-  panel.selectSimulator(device);
+  const deviceApps = createDeviceApps(fake.app);
+  const panel = new PerformancePanel(fake.app, deviceApps);
+  deviceApps.selectDevice(device);
   panel.setAvailable(true);
+  deviceApps.setAvailable(true);
   panel.show();
   await tick();
   const disposing = panel.dispose();
   resolveOpen();
   await disposing;
+  deviceApps.dispose();
   const names = fake.events.map(event => event.split(":")[0]);
   assert.deepEqual(names, ["open", "close"]);
   assert.equal(panel.getSnapshot().open, false);
@@ -160,16 +171,18 @@ test("closing during session creation closes the late session before disposal co
 
 test("switching between iOS and Android closes the previous monitor and selects the active device", async t => {
   const fake = host();
-  const panel = new PerformancePanel(fake.app);
-  t.after(() => panel.dispose());
-  panel.selectSimulator(device);
+  const deviceApps = createDeviceApps(fake.app);
+  const panel = new PerformancePanel(fake.app, deviceApps);
+  t.after(() => { deviceApps.dispose(); return panel.dispose(); });
+  deviceApps.selectDevice(device);
   panel.setAvailable(true);
+  deviceApps.setAvailable(true);
   panel.show();
   await tick();
   fake.emit({ cursor: 1, phase: "recording", memoryMetric: "physical-footprint", samples: [{ time: 1, interval: 1, cpuPercent: 60, memoryBytes: 104857600, threads: [] }] });
   await tick();
   panel.setThreadOrder("first-seen");
-  panel.selectSimulator({ ...device, udid: "emulator-5554", name: "Pixel", platform: "android" });
+  deviceApps.selectDevice({ ...device, udid: "emulator-5554", name: "Pixel", platform: "android" });
   await tick();
   const android = panel.getSnapshot();
   assert.equal(android.threadOrder, "first-seen");
@@ -181,7 +194,7 @@ test("switching between iOS and Android closes the previous monitor and selects 
   assert.deepEqual(fake.sources, [UDID, "emulator-5554"]);
   assert.deepEqual(fake.targets.at(-1), { platform: "android", deviceId: "emulator-5554", bundleId: "com.example.app" });
 
-  panel.selectSimulator(device);
+  deviceApps.selectDevice(device);
   await tick();
   const ios = panel.getSnapshot();
   assert.equal(ios.threadOrder, "first-seen");
@@ -198,21 +211,23 @@ test("switching between iOS and Android closes the previous monitor and selects 
 test("the default app is selected when it starts after the Performance tab opens", async t => {
   const fake = host();
   fake.setApps([]);
-  const panel = new PerformancePanel(fake.app);
-  t.after(() => panel.dispose());
-  panel.selectSimulator(device);
+  const deviceApps = createDeviceApps(fake.app);
+  const panel = new PerformancePanel(fake.app, deviceApps);
+  t.after(() => { deviceApps.dispose(); return panel.dispose(); });
+  deviceApps.selectDevice(device);
   panel.setAvailable(true);
+  deviceApps.setAvailable(true);
   panel.show();
   await tick();
   assert.equal(panel.getSnapshot().bundleId, "");
   assert.deepEqual(fake.events, []);
 
-  fake.setApps([{ bundleId: "com.example.app", pid: 123 }]);
-  await panel.discover();
+  fake.setApps([{ bundleId: "com.example.app", pid: 123, foreground: true }]);
+  await deviceApps.refresh();
   await tick();
   assert.equal(panel.getSnapshot().bundleId, "com.example.app");
   assert.equal(fake.events.length, 1);
-  await panel.discover();
+  await deviceApps.refresh();
   await tick();
   assert.equal(fake.events.length, 1, "Refreshing the same app keeps its CPU session.");
 });
@@ -222,10 +237,12 @@ test("multiple apps require a choice and discovery preserves that choice when it
   const first = { bundleId: "com.example.app", pid: 123 };
   const second = { bundleId: "com.example.other", pid: 456 };
   fake.setApps([first, second]);
-  const panel = new PerformancePanel(fake.app);
-  t.after(() => panel.dispose());
-  panel.selectSimulator(device);
+  const deviceApps = createDeviceApps(fake.app);
+  const panel = new PerformancePanel(fake.app, deviceApps);
+  t.after(() => { deviceApps.dispose(); return panel.dispose(); });
+  deviceApps.selectDevice(device);
   panel.setAvailable(true);
+  deviceApps.setAvailable(true);
   panel.show();
   await tick();
   assert.equal(panel.getSnapshot().bundleId, "");
@@ -233,13 +250,13 @@ test("multiple apps require a choice and discovery preserves that choice when it
 
   panel.selectApp(second.bundleId);
   await tick();
-  await panel.discover();
+  await deviceApps.refresh();
   await tick();
   assert.equal(panel.getSnapshot().bundleId, second.bundleId);
   assert.equal(fake.events.length, 1);
 
-  fake.setApps([first]);
-  await panel.discover();
+  fake.setApps([{ ...first, foreground: true }]);
+  await deviceApps.refresh();
   await tick();
   assert.equal(panel.getSnapshot().bundleId, second.bundleId);
   const names = fake.events.map(event => event.split(":")[0]);
@@ -251,23 +268,25 @@ test("switching devices closes the old monitor and restores each device's select
   const first = { bundleId: "com.example.app", pid: 123 };
   const second = { bundleId: "com.example.other", pid: 456 };
   fake.setApps([first, second]);
-  const panel = new PerformancePanel(fake.app);
-  t.after(() => panel.dispose());
-  panel.selectSimulator(device);
+  const deviceApps = createDeviceApps(fake.app);
+  const panel = new PerformancePanel(fake.app, deviceApps);
+  t.after(() => { deviceApps.dispose(); return panel.dispose(); });
+  deviceApps.selectDevice(device);
   panel.setAvailable(true);
+  deviceApps.setAvailable(true);
   panel.show();
   await tick();
   panel.selectApp(second.bundleId);
   await tick();
 
-  fake.setApps([first]);
-  panel.selectSimulator({ ...device, udid: OTHER_UDID, name: "Other iPhone" });
+  fake.setApps([{ ...first, foreground: true }]);
+  deviceApps.selectDevice({ ...device, udid: OTHER_UDID, name: "Other iPhone" });
   await tick();
   assert.equal(panel.getSnapshot().bundleId, first.bundleId);
   assert.equal(panel.getSnapshot().selectedLabel, "Other iPhone");
 
   fake.setApps([first, second]);
-  panel.selectSimulator(device);
+  deviceApps.selectDevice(device);
   await tick();
   assert.equal(panel.getSnapshot().bundleId, second.bundleId);
   assert.equal(panel.getSnapshot().selectedLabel, "iPhone");
@@ -278,12 +297,14 @@ test("switching devices closes the old monitor and restores each device's select
 test("a physical iPhone discovers apps, selects CPU monitoring and closes on disconnect", async t => {
   const fake = host();
   fake.setApps([{ bundleId: "com.example.app", pid: 123, foreground: true }]);
-  const panel = new PerformancePanel(fake.app);
-  t.after(() => panel.dispose());
+  const deviceApps = createDeviceApps(fake.app);
+  const panel = new PerformancePanel(fake.app, deviceApps);
+  t.after(() => { deviceApps.dispose(); return panel.dispose(); });
   const physical: SimulatorDevice = { platform: "ios", kind: "physical", udid: "00008150-001068280AE8C01C", coreDeviceId: OTHER_UDID,
     name: "Paired iPhone", model: "iPhone", productType: "iPhone18,1", runtime: "iOS 27", state: "connected", pairingState: "paired", transportType: "wired" };
-  panel.selectSimulator(physical);
+  deviceApps.selectDevice(physical);
   panel.setAvailable(true);
+  deviceApps.setAvailable(true);
   panel.show();
   await tick();
   assert.deepEqual(fake.sources, [physical.udid]);
@@ -292,7 +313,7 @@ test("a physical iPhone discovers apps, selects CPU monitoring and closes on dis
   assert.equal(snapshot.physical, true);
   assert.equal(snapshot.monitoring, true);
   assert.deepEqual(fake.targets, [{ platform: "ios", kind: "physical", deviceId: physical.udid, bundleId: "com.example.app" }]);
-  panel.selectSimulator({ ...physical, state: "disconnected" });
+  deviceApps.selectDevice({ ...physical, state: "disconnected" });
   await tick();
   const disconnected = panel.getSnapshot();
   assert.equal(disconnected.monitoring, false);
@@ -307,17 +328,19 @@ test("physical iOS selects the foreground app among several candidates and prese
   const first = { bundleId: "app.a", pid: 123 };
   const second = { bundleId: "app.b", pid: 456 };
   fake.setApps([first, { ...second, foreground: true }]);
-  const panel = new PerformancePanel(fake.app);
-  t.after(() => panel.dispose());
-  panel.selectSimulator(physical);
+  const deviceApps = createDeviceApps(fake.app);
+  const panel = new PerformancePanel(fake.app, deviceApps);
+  t.after(() => { deviceApps.dispose(); return panel.dispose(); });
+  deviceApps.selectDevice(physical);
   panel.setAvailable(true);
+  deviceApps.setAvailable(true);
   panel.show();
   await tick();
   assert.equal(panel.getSnapshot().bundleId, second.bundleId);
   assert.equal(fake.targets[0].bundleId, second.bundleId);
 
   fake.setApps([{ ...first, foreground: true }, second]);
-  await panel.discover();
+  await deviceApps.refresh();
   await tick();
   assert.equal(panel.getSnapshot().bundleId, second.bundleId);
   assert.equal(fake.events.length, 1, "A foreground change does not replace an active recording.");
@@ -325,7 +348,7 @@ test("physical iOS selects the foreground app among several candidates and prese
   panel.selectApp(first.bundleId);
   await tick();
   fake.setApps([first, { ...second, foreground: true }]);
-  await panel.discover();
+  await deviceApps.refresh();
   await tick();
   assert.equal(panel.getSnapshot().bundleId, first.bundleId);
   assert.equal(fake.targets.at(-1)?.bundleId, first.bundleId);
@@ -335,16 +358,18 @@ test("physical iOS leaves background apps unselected and detects an app opened a
   const fake = host();
   const app = { bundleId: "app.a", pid: 123 };
   fake.setApps([app]);
-  const panel = new PerformancePanel(fake.app);
-  t.after(() => panel.dispose());
-  panel.selectSimulator(physical);
+  const deviceApps = createDeviceApps(fake.app);
+  const panel = new PerformancePanel(fake.app, deviceApps);
+  t.after(() => { deviceApps.dispose(); return panel.dispose(); });
+  deviceApps.selectDevice(physical);
   panel.setAvailable(true);
+  deviceApps.setAvailable(true);
   panel.show();
   await tick();
   assert.equal(panel.getSnapshot().bundleId, "");
   assert.deepEqual(fake.events, [], "A sole background app is not a foreground match.");
   fake.setApps([{ ...app, foreground: true }]);
-  await panel.discover();
+  await deviceApps.refresh();
   await tick();
   assert.equal(panel.getSnapshot().bundleId, app.bundleId);
   assert.equal(fake.events.length, 1);

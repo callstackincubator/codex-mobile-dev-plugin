@@ -76,7 +76,11 @@ The fullscreen plugin view has a full-width tool bar above the logs and device p
 
 For Metro, enter its local URL and click Find sources. Select the app and device in Metro app. For Android, choose a connected device in Native source and enter its package name to follow the app across restarts. Native source follows the device selected in the panel. You can also choose another connected Android device for logs. You can read native and Metro logs together.
 
-JS and Native toggle each source. Info, Warn, Error, and Debug toggle each level. Search matches log text, stack traces, and process details. Stack groups exact repeats by source, level, device, and process and shows the count on the right. Follow keeps the latest rows in view. Scrolling away from the bottom turns Follow off; scrolling back to the bottom turns it on. Pause stops log readers; Resume opens a new session. Closing the drawer also stops its readers. Clear removes the buffered rows while the stream runs.
+JS and Native toggle each source. Info, Warn, Error, and Debug toggle each level.
+
+The search field supports DevSuite-style keyword filters. Plain keywords match log text, stack traces, and metadata; spaces mean AND and quotes keep phrases together. Use `level:error message:network`, `level:error level:warn` (repeated fields mean OR without explicit operators or groups), `age:5m`, `-message:noise`, or `network & (timeout | failed)`. Regex uses `message~:"error.*timeout"`; quote patterns containing spaces or parentheses. Supported fields are `level`, `message`, `age`, `source`, `origin`, `process`, `tag`, `subsystem`, `category`, `stack`, and `timestamp`. Level aliases include `warning`, `err`, and `verbose`; age accepts seconds, minutes, hours, and days (`s`, `m`, `h`, `d`). Age filters refresh once per second while Logs is visible, including when collection is paused. Filtering runs before repeat grouping so counts reflect matching occurrences. Open the help button beside the field for examples. Invalid syntax shows an inline error until corrected.
+
+Stack groups exact repeats by source, level, device, and process and shows the count on the right. Follow keeps the latest rows in view. Scrolling away from the bottom turns Follow off; scrolling back to the bottom turns it on. Pause stops log readers; Resume opens a new session. Closing the drawer also stops its readers. Clear removes the buffered rows while the stream runs.
 
 While Performance is visible, the log view is unmounted and the browser stops
 reading, filtering, and rendering log batches. Collection continues in the
@@ -94,10 +98,32 @@ iOS simulators use `xcrun simctl spawn <UDID> log stream --style ndjson --level 
 
 `npm run test:logs` reads logs from an already booted simulator through the built MCP server. `npm run test:ios-logs -- --device <hardware-UDID>` reads a connected physical iPhone, with optional `--process <executable-name>`. Both print counts, close the log reader, and leave the device and app running. For tool-only physical logs, pass `{ platform: "ios", kind: "physical", deviceId: "<hardware-UDID>" }` to `mobile_logs_session`; use the `udid` returned by `mobile_list_ios_devices`, rather than its `coreDeviceId`.
 
+## Shared app discovery
+
+`src/ui/device-apps.ts` owns one `DeviceAppsStore` per workspace. Device selection
+feeds this store; it polls every three seconds while the panel is visible and the
+selected device is connected, including before Performance opens. Consumers share
+`subscribe` and `getSnapshot` (also usable with React's `useSyncExternalStore`).
+Snapshots contain the selected device, eligible running `apps`, `foregroundApp`,
+and `ready`, `discovering`, and `error`. `refresh` coalesces concurrent requests.
+Device changes, hidden panels, disconnection, and disposal cancel pending work,
+clear foreground state, and ignore late results. A failed query is not a confirmed
+absence: consumers should check `ready` before interpreting `foregroundApp: null`.
+
+`src/server/device-apps/` contains platform discovery, exposed through the existing
+`mobile_performance_sources` tool. Android reads the top resumed activity from ADB;
+iOS simulators read the frontmost accessibility translation's PID without walking
+the UI tree; paired iPhones retain their accessibility-audit PID query. Foreground
+identity is separate from the eligible monitoring list: an iOS PID outside that
+list has `bundleId: null`; an Android package outside it has `pid: null`. No sole
+background process is guessed to be foreground. Performance consumes this store
+and preserves its chosen recording target across foreground changes.
+
 ## Performance
 
-Open Performance beside Logs. When one app is running, CPU and memory monitoring start
-automatically. When several apps are running, choose one in Performance settings.
+Open Performance beside Logs. CPU and memory monitoring start automatically for
+the foreground app when it is eligible for monitoring. Choose another running app
+in Performance settings to monitor it explicitly.
 Performance follows the device the user clicks or focuses, and switches to the
 remaining device when the iOS/Android visibility toggles hide the active one.
 The tab shows the device's name and remembers each device's chosen app. Switching
@@ -252,7 +278,7 @@ The retained, currently inactive Agent Device entry point is `dist/agent-device-
 
 The wrapper uses an explicit empty package config and a private temporary state directory. Default platform and form selectors would bypass the native session's device binding, so those are set only through device setup commands. It clears inherited agent-device settings so a global or cloud daemon cannot take over this connection. Commands start its local daemon as needed. On MCP shutdown, the wrapper runs the bundled `daemon stop --state-dir <own-directory> --clean` command, which checks the daemon's PID identity and releases its runner leases. It keeps logs and artifacts in that state directory for later reads. Call agent-device `session` with `action: "state-dir"` to find it.
 
-`npm run check:mcp-budget` reads the packaged servers' catalogs and estimates their model-visible specifications, including repeated namespace instructions and plugin attribution, before the host applies lossy schema compaction. With Agent Device deactivated, the current estimate is 33,997 bytes for 35 model-visible tools, below [Codex's shared 64,000-byte plugin budget](https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_exposure.rs). The schema cleanup in 0.1.68 reduced the combined catalog from 238,784 to 99,568 bytes; temporarily removing its Agent Device entry makes room for the recording tools. Other enabled plugins also consume the shared budget. Splitting the same tools into more enabled MCP servers does not avoid it.
+`npm run check:mcp-budget` reads the packaged servers' catalogs and estimates their model-visible specifications, including repeated namespace instructions and plugin attribution, before the host applies lossy schema compaction. With Agent Device deactivated, the current estimate is 45,315 bytes for 38 model-visible tools, below [Codex's shared 64,000-byte plugin budget](https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_exposure.rs). The schema cleanup in 0.1.68 reduced the combined catalog from 238,784 to 99,568 bytes; temporarily removing its Agent Device entry makes room for the recording tools. Other enabled plugins also consume the shared budget. Splitting the same tools into more enabled MCP servers does not avoid it.
 
 Use the panel's UDID and a named agent-device session for agent work. Refs belong to the latest snapshot or settled diff in that session. `press` and `fill` take a target such as `{ "kind": "ref", "ref": "@e12" }` or `{ "kind": "selector", "selector": "label=\"Search\"" }`. Use actual refs from the current result. Closing a session can close its app; leave `shutdown` unset to keep the simulator running. Another live agent-device daemon can own a runner lease. End that owner's work or choose another simulator instead of releasing its live claim.
 
@@ -375,6 +401,24 @@ host's text-message capability. Opening a saved run does not start a collector.
 `mobile_finish_performance_recording` stops and saves a run early;
 `mobile_list_performance_recordings` finds recent saved or active runs.
 
+Use `mobile_compare_performance_recordings` with `recordingIds` containing 2–6
+distinct finished or failed runs to show an inline comparison card. An optional
+`title` names the comparison and `range` selects a shared interval in seconds.
+Runs align at recording start without stretching their timelines. CPU, memory,
+and device-wide FPS overlay with a consistent color per run; toggle run labels
+to hide curves. Hover values use the same elapsed time across sampling cadences.
+Missing readings remain gaps and shorter runs stop at their own duration.
+Android RSS and iOS physical footprint use separate memory tracks.
+
+Drag any comparison chart to select the same time range across all tracks. The
+table shows per-run CPU, memory change, FPS, jank and frame pacing summaries,
+clipped to each run's duration; selections beyond a run show **Outside run**.
+Whole-run averages may cover different durations. **Ask about this comparison**
+or **Ask about this range** sends all original recording IDs and the shared
+selection to chat. Finish active recordings before comparing; failed runs retain
+their available samples and are labeled as partial. For meaningful before/after
+results, repeat the same interaction on the same device and app configuration.
+
 Completed and failed runs retain their original process, memory, FPS, Android display frames, and thread samples
 in private JSON files under `~/Library/Application Support/mobile-dev/recordings`.
 They survive plugin restarts and live-session expiry. Graceful server shutdown saves
@@ -427,6 +471,16 @@ illustrations, not captured app screens.
 
 ## Sentry
 
+Since 0.1.94, shared selected-device discovery retains the frequent-tool trace
+exclusion and handled server-error coverage, now under `device_apps.discover`.
+`ui.device_apps.discovery` measures the discovery round trip in milliseconds with
+bounded aggregate windows; `ui.device_apps.discovery_failure` counts current-query
+failures. Queries cancelled by selection or visibility changes do not report
+measurements. Results crossing a surface or telemetry-context change are excluded
+so their duration is not attributed to the next surface or device. No bundle IDs,
+PIDs, device IDs, app lists, or query output are sent. Existing CPU batch-processing
+coverage and native Baguette crash/resource telemetry are preserved.
+
 Saved chart cards use the `recording` surface and view. Existing readiness,
 interaction and frame-pacing coverage is preserved. `ui.recording.process` and
 `ui.recording.derive` measure result validation and chart/summary processing;
@@ -444,6 +498,18 @@ counts record range selections and Ask/Open actions. `storage.bytes` with
 from trace sampling, and hidden cards stop polling. None of these measurements
 contains device CPU/memory values, recording IDs, titles or selected intervals.
 
+Comparison cards use the `comparison` surface and view, preserving shared
+readiness, interaction, browser frame pacing and teardown coverage. Bounded
+`ui.comparison.process` measures result validation, `ui.comparison.derive` covers
+overlay series and whole-run summaries, and `ui.comparison.summary` covers shared
+selection summaries. `ui.comparison.commit` measures the card render through its
+DOM commit in milliseconds; it does not measure paint or device rendering.
+`ui.comparison.message_ack` ends at host acknowledgement. Numeric gauges count
+runs, CPU/memory samples, FPS samples, retained display frames and overlay rows.
+Counters record range selection, run toggles and Ask actions. No recording IDs,
+titles, selections or device measurements enter this telemetry. The comparison
+MCP operation retains the existing sampled server trace and handled-error path.
+
 `ui.annotations.tree_processing` measures local element processing in milliseconds, including React Native nodes when available. Since 0.1.66, normal inspection validates flat records here; server-side tree flattening falls within `ui.annotations.inspection`, which measures the MCP inspection round trip, including native accessibility and optional Metro work. `ui.annotations.runtime_available` counts snapshots with runtime elements. `ui.annotations.inspection_fallback` counts native-tool retries. `ui.annotations.inspection_truncated` counts snapshots that reach the collector's work or measurement limits. Inspection timing includes failed calls and retries. It uses the current simulator surface and the same bounded timing windows as other UI measurements. Tree contents and selected regions are not sent to Sentry.
 
 Since 0.1.69, inspection timing also includes the bounded Metro source-map lookup. `ui.annotations.source_available` counts snapshots with at least one resolved source location; `ui.annotations.message_build` measures text construction for Send to chat. Source-map transport failures use the existing server error handler with a fixed message. Source paths, component names, creation stacks, note text and images are never sent to Sentry.
@@ -455,6 +521,8 @@ Since 0.1.92, Android inspection timing also includes the full-resolution displa
 Since 0.1.93, `ui.video.paint` and the platform frame counters also cover frames drawn to the local buffer while Select freezes the visible screen. These remain bounded plugin processing measurements, not device FPS. Recovery uses the same surface attribution and timing units; screenshots and element details remain local.
 
 `ui.annotations.send` measures the host send round trip, including composer retries. Outcome counters distinguish success, a missing composer, timeout and other failures. Unexpected send failures use a fixed error message. No message content goes to Sentry. A timeout keeps notes for a manual retry; it never triggers an automatic resend, since delivery may have succeeded without acknowledgement.
+
+Since 0.1.98, `ui.logs.query_parse` measures query compilation in milliseconds once per edit. Existing `ui.logs.filter`, buffered/filtered row gauges, and search counts cover keyword filtering and visible age refreshes; filtering time still covers snapshot derivation and grouping. Query text, field values, regex patterns, and validation messages remain local. Age refresh timers stop when Logs closes, unmounts, or the document becomes hidden.
 
 `ui.logs.send` measures log attachment and chat delivery in milliseconds, including queued context writes and composer retries. The existing log send counter and error coverage remain in place. No log text, stack traces or device IDs go to Sentry.
 
@@ -486,7 +554,7 @@ Agent Device telemetry is inactive while its MCP entry is disabled; the active M
 | Native operations | Bounded timing windows for connection, physical iOS input acknowledgement and video packet processing, iOS log processing, Android CPU sampling, and FPS read/processing. Filter by `component`, `runtime_platform` and `surface` to identify the responsible helper. Baguette currently records resources and crashes. |
 | Node responsiveness | Automatic event-loop delay, utilization and process uptime. |
 | UI responsiveness | Browser tracing captures available web vitals. Custom metrics record visible animation-frame intervals, intervals over 50 ms, Event Timing interaction durations, long tasks and long animation frames where supported. |
-| Product surfaces | Metrics carry `surface=simulator`, `logs`, `performance` or `recording`, plus view, visible device layout and monitoring state. Log filter time, buffered/filtered rows, performance batch processing, canvas draw time and time to first video frame help explain slow surfaces. |
+| Product surfaces | Metrics carry `surface=simulator`, `logs`, `performance`, `recording` or `comparison`, plus view, visible device layout and monitoring state. Log filter time, buffered/filtered rows, performance batch processing, canvas draw time and time to first video frame help explain slow surfaces. |
 | Frame capture | `ui.screenshot.capture` measures synchronous canvas PNG encoding and base64 extraction in milliseconds for Select captures and physical iOS screenshots. Screenshot tools retain sampled MCP traces and report handled capture, attachment, and clipboard failures without image content. |
 | Storage | Every five minutes, the agent-device launcher measures its own session state directory and the shared Apple runner cache in bytes. It skips symlinks and sends only the storage kind and size. |
 | Usage | Surface views and visible time, tool action outcomes, log searches, attachments and send-to-chat actions are counted without their content. |
@@ -534,13 +602,14 @@ That file is also listed in `.worktreeinclude` for local worktrees. Use the orga
 | `mobile_read_logs` | Read a log batch and source status |
 | `mobile_logs_keep_alive` | Keep background collection alive without sending logs (app only) |
 | `mobile_logs_close` | Stop a session's log readers |
-| `mobile_performance_sources` | List running apps on iOS simulators, paired iPhones, or Android devices |
+| `mobile_performance_sources` | Read running apps and foreground identity on the selected iOS or Android device |
 | `mobile_cpu_session` | Connect a native process and thread CPU plus memory monitor |
 | `mobile_read_cpu` | Read live CPU and memory samples and connection status |
 | `mobile_cpu_close` | Stop one CPU and memory monitor while leaving its app running |
 | `mobile_record_performance` | Start a timed CPU and memory recording that saves automatically |
 | `mobile_read_performance_recording` | Read original samples and a selected interval's summary |
 | `mobile_render_performance_recording` | Show an interactive chart card in chat |
+| `mobile_compare_performance_recordings` | Overlay 2–6 completed runs in an interactive comparison card |
 | `mobile_open_performance_recording` | Open a saved run and selection in the workspace |
 | `mobile_finish_performance_recording` | Stop and save a recording early |
 | `mobile_list_performance_recordings` | Find recent saved and active runs |

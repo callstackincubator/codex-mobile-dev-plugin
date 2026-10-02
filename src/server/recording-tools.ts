@@ -11,6 +11,7 @@ import type { PerformanceRecordings } from "./performance-recordings.ts";
 import { displayFrameSchema } from "../shared/display-fps.ts";
 import { readRecordingFrames } from "./recording-frames.ts";
 import { nullableDisplayFrameStatsSchema } from "../shared/frame-statistics.ts";
+import { COMPARISON_URI, comparisonIdsSchema, comparisonSchema, comparisonTitleSchema, summarizeComparison } from "../shared/performance-comparison.ts";
 
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const visibility: ("app" | "model")[] = ["app", "model"];
@@ -108,6 +109,41 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
     description: "Open the saved recording and selected time range in the Mobile Dev workspace. Does not start a live performance collector or boot a device.",
     inputSchema, outputSchema, annotations: read, _meta: { ui: { resourceUri: workspaceUri, visibility } },
   }, readRecording);
+  const comparisonTitle = comparisonTitleSchema.default("Performance comparison");
+  const optionalComparisonRange = recordingRangeSchema.optional();
+  const comparisonRecordings = z.array(recordingSchema);
+  const nullableComparisonRange = recordingRangeSchema.nullable();
+  const nullableComparisonSummary = summarySchema.nullable();
+  const comparisonSummary = z.object({ recordingId: recordingIdSchema, range: nullableComparisonRange, summary: nullableComparisonSummary });
+  const comparisonSummaries = z.array(comparisonSummary);
+  const comparisonInput = {
+    recordingIds: comparisonIdsSchema,
+    title: comparisonTitle,
+    range: optionalComparisonRange,
+  };
+  registerAppTool(server, "mobile_compare_performance_recordings", {
+    title: "Compare performance runs in an inline overlay chart",
+    description: "Overlay 2–6 distinct completed CPU, memory and FPS recordings in chat, aligned at recording start in elapsed seconds. Pass recordingIds from mobile_list_performance_recordings, an optional title and shared range. Finish active runs first. The interactive card has a color per run, visibility toggles, shared range selection and per-run summaries. Different durations retain their original time scale; missing data stays gaps. Android RSS and iOS physical footprint use separate memory tracks. Device-wide FPS cannot attribute changes to one app. Returns original recordings and interval-weighted summaries, clipped to each run's duration; a run outside the range has a null summary. Use this tool when comparing runs or implementations so the user sees their timelines together.",
+    inputSchema: comparisonInput,
+    outputSchema: {
+      title: comparisonTitleSchema,
+      recordings: comparisonRecordings,
+      range: optionalComparisonRange,
+      summaries: comparisonSummaries,
+    },
+    annotations: read, _meta: { ui: { resourceUri: COMPARISON_URI, visibility } },
+  }, safe(async ({ recordingIds, title, range }: z.infer<z.ZodObject<typeof comparisonInput>>) => {
+    const reads = recordingIds.map(id => {
+      const recording = recordings.read(id);
+      return recording;
+    });
+    const runs = await Promise.all(reads);
+    const comparison = comparisonSchema.parse({ title, recordings: runs, range });
+    const summaries = summarizeComparison(comparison.recordings, comparison.range);
+    const structuredContent = { ...comparison, summaries };
+    const text = JSON.stringify(structuredContent);
+    return { content: [{ type: "text", text }], structuredContent };
+  }));
   registerAppTool(server, "mobile_finish_performance_recording", {
     title: "Finish and save a performance recording early",
     description: "Stop the recording and save its CPU, memory, and FPS samples after delayed FPS readback finishes. Leaves the monitored app running. Timed recordings finish automatically; use this to stop early.",

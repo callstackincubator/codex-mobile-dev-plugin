@@ -30,12 +30,12 @@ export function deviceChoiceForm(input: DeviceChoiceInput, devices: DeviceChoice
   });
   if (input.selectionMode === "multiple") return {
     type: "object", required: ["devices"], properties: {
-      devices: { type: "array", title: "Choose devices", description: input.context, minItems: 1, maxItems: devices.length, items: { anyOf: options } },
+      devices: { type: "array", description: input.context, minItems: 1, maxItems: devices.length, items: { anyOf: options } },
     },
   };
   return {
     type: "object", required: ["device"], properties: {
-      device: { type: "string", title: "Choose a device", description: input.context, oneOf: options },
+      device: { type: "string", description: input.context, oneOf: options },
     },
   };
 }

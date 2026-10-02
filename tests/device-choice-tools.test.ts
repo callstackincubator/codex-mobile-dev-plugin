@@ -47,7 +47,8 @@ test("the native request waits for a single answer and returns verified device I
   client.setRequestHandler(requestSchema, async request => {
     assert.equal(request.params.message, input.message);
     const field = request.params.requestedSchema.properties.device;
-    assert.equal(field.title, "Choose a device");
+    assert.equal(field.title, undefined);
+    assert.equal(field.description, input.context);
     assert.ok("oneOf" in field && Array.isArray(field.oneOf));
     assert.equal(field.oneOf[0].title, "Pixel 9");
     assert.equal(field.oneOf[0].description, "Android emulator · ShopDemo");
@@ -96,6 +97,9 @@ for (const action of ["accept", "cancel", "decline", "invalid", "duplicate", "em
     client.setRequestHandler(requestSchema, async request => {
       const field = request.params.requestedSchema.properties.devices;
       assert.equal(field.type, "array");
+      assert.equal(request.params.message, input.message);
+      assert.equal(field.title, undefined);
+      assert.equal(field.description, input.context);
       if (action === "cancel" || action === "decline") return { action };
       if (action === "stale") discovery.android = async () => ({ ...status });
       let devices = ["device-2", "device-1"];

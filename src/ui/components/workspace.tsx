@@ -89,8 +89,8 @@ export function Workspace({ logs, performance, recordingController, onLayout }: 
       const next: DeviceLayout = values.length === 0 ? "none" : values.length === 2 ? "both" : values[0] === "ios" ? "ios" : "android";
       setLayout(next); onLayout(next);
     }}>
-      <SelectTrigger id="platform-select" size="sm" className="shrink-0" aria-label="Visible platforms"><SelectValue>{layout === "both" ? "Both" : layout === "none" ? "Platforms" : layout === "ios" ? "iOS" : "Android"}</SelectValue></SelectTrigger>
-      <SelectContent align="start" alignItemWithTrigger={false}><SelectGroup>
+      <SelectTrigger id="platform-select" size="sm" className={fullscreen || layout === "none" ? "ml-auto shrink-0" : "shrink-0"} aria-label="Visible platforms"><SelectValue>{layout === "both" ? "Both" : layout === "none" ? "Platforms" : layout === "ios" ? "iOS" : "Android"}</SelectValue></SelectTrigger>
+      <SelectContent align={fullscreen || layout === "none" ? "end" : "start"} alignItemWithTrigger={false}><SelectGroup>
         <SelectItem id="platform-ios" value="ios">iOS</SelectItem>
         <SelectItem id="platform-android" value="android">Android</SelectItem>
       </SelectGroup></SelectContent>

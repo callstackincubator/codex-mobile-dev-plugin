@@ -3,7 +3,7 @@ import type { z } from "zod";
 import type { CpuBatch, CpuTarget, MemoryMetric } from "../../shared/cpu.ts";
 import { cpuTargetSchema } from "../../shared/cpu.ts";
 import { errorMessage } from "../../shared/protocol.ts";
-import { runningCpuApps } from "./apps.ts";
+import { runningDeviceApps } from "../device-apps/apps.ts";
 import { CpuBuffer } from "./buffer.ts";
 import { startCpuMonitor } from "./source.ts";
 import type { CpuMonitorOptions } from "./source.ts";
@@ -19,12 +19,12 @@ type Session = {
   monitor?: CpuMonitor;
   stopping?: Promise<void>;
 };
-type CpuSources = { apps: typeof runningCpuApps; monitor: (options: CpuMonitorOptions) => Promise<CpuMonitor> };
+type CpuSources = { apps: typeof runningDeviceApps; monitor: (options: CpuMonitorOptions) => Promise<CpuMonitor> };
 
 export async function createCpuSessions(root = new URL("./android-cpu/", import.meta.url)): Promise<CpuSessions> {
   const collector = await loadAndroidCollector(root);
   const monitor = (options: CpuMonitorOptions) => startCpuMonitor(options, collector);
-  const sessions = new CpuSessions({ apps: runningCpuApps, monitor });
+  const sessions = new CpuSessions({ apps: runningDeviceApps, monitor });
   return sessions;
 }
 

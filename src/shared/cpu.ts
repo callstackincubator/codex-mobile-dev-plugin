@@ -19,7 +19,6 @@ export type CpuBatch = {
   error?: string;
 };
 
-export type CpuApp = { bundleId: string; pid: number; foreground?: boolean };
 const deviceKinds = z.enum(["simulator", "physical"]);
 const deviceKind = deviceKinds.optional();
 const simulatorId = z.uuid();

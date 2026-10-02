@@ -138,6 +138,13 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   api.countUiEvent("ui.annotations.runtime_available");
   api.countUiEvent("ui.annotations.inspection_fallback");
   api.setUiSurface("logs");
+  const logList = new api.LogList(context);
+  logList.append([{ sequence: 1, timestamp: "2026-10-02T10:00:00Z", level: "error", source: "js", origin: "metro", message: "PRIVATE_LOG_MESSAGE", stack: "PRIVATE_LOG_STACK" }], 0);
+  logList.search('level:error message:"PRIVATE_LOG_MESSAGE"');
+  logList.search('message~:"[PRIVATE_INVALID_PATTERN"');
+  assert.ok(logList.getSnapshot().queryError);
+  logList.search("age:5m");
+  logList.refreshAge();
   await context.sendLogToChat({
     timestamp: "2026-10-02T10:00:00Z", lastTimestamp: "2026-10-02T10:00:00Z", count: 1, sequence: 1,
     origin: "metro", source: "js", level: "error", deviceId: "PRIVATE_DEVICE",
@@ -217,6 +224,11 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, "ui.logs.send.mean");
   contains(encoded, "ui.logs.retention.mean");
   contains(encoded, "ui.logs.evicted");
+  contains(encoded, "ui.logs.query_parse.mean");
+  contains(encoded, "ui.logs.filter.mean");
+  contains(encoded, "ui.logs.buffered_rows");
+  contains(encoded, "ui.logs.filtered_rows");
+  contains(encoded, "ui.logs.search");
   contains(encoded, "ui.annotations.tree_processing.mean");
   contains(encoded, "ui.annotations.inspection.mean");
   contains(encoded, "ui.annotations.message_build.mean");
@@ -254,4 +266,81 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, "PRIVATE_", false);
   contains(encoded, "alice", false);
   contains(encoded, '"value":999', false);
+});
+
+test("shared app discovery measures the active context and excludes cancelled or cross-surface work", async t => {
+  const root = process.cwd();
+  const built = await build({
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { DeviceAppsStore } from "./src/ui/device-apps.ts";', resolveDir: root, loader: "ts" },
+    bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
+    define: { "process.env.NODE_ENV": '"production"' },
+  });
+  const html = `<html><head><meta name="mobile-dev-environment" content="development">${identityMeta}</head></html>`;
+  const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
+  t.after(() => dom.window.close());
+  const window = dom.window;
+  let now = 100;
+  let visibility = "visible";
+  Object.defineProperty(window.performance, "now", { value: () => now });
+  Object.defineProperty(window.performance, "getEntriesByType", { value: () => [] });
+  Object.defineProperty(window.performance, "getEntries", { value: () => [] });
+  Object.defineProperty(window.document, "visibilityState", { get: () => visibility });
+  const bodies: string[] = [];
+  window.fetch = async (_url, options) => {
+    bodies.push(String(options?.body ?? ""));
+    return new Response("", { status: 200 });
+  };
+  window.eval(built.outputFiles[0].text);
+  const api = window.Telemetry;
+  let resolve!: (result: unknown) => void;
+  const app = { callServerTool() { return new Promise(done => { resolve = done; }); } };
+  api.startUiTelemetry(app);
+  api.setUiSurface("logs");
+  api.setUiTelemetryContext({ device_platform: "ios", device_kind: "simulator" });
+  const store = new api.DeviceAppsStore(app, window.document);
+  t.after(() => store.dispose());
+  store.selectDevice({ udid: "PRIVATE_DEVICE", name: "PRIVATE_NAME", state: "Booted", runtime: "iOS" });
+  store.setAvailable(true);
+  const initial = store.refresh();
+  now = 130;
+  resolve({ content: [], structuredContent: { apps: [{ bundleId: "PRIVATE_BUNDLE", pid: 123, foreground: true }], foregroundApp: { bundleId: "PRIVATE_BUNDLE", pid: 123 } } });
+  await initial;
+  api.flushUiMeasurements();
+  const crossSurface = store.refresh();
+  api.setUiSurface("performance");
+  now = 160;
+  resolve({ content: [], structuredContent: { apps: [], foregroundApp: null } });
+  await crossSurface;
+  const crossDevice = store.refresh();
+  api.setUiTelemetryContext({ device_platform: "android" });
+  now = 190;
+  resolve({ content: [], structuredContent: { apps: [], foregroundApp: null } });
+  await crossDevice;
+  const hidden = store.refresh();
+  visibility = "hidden";
+  const hiddenEvent = new window.Event("visibilitychange");
+  window.document.dispatchEvent(hiddenEvent);
+  now = 220;
+  resolve({ content: [], structuredContent: { apps: [], foregroundApp: null } });
+  await hidden;
+  store.dispose();
+  await api.stopUiTelemetry();
+  const captured = bodies.join("\n");
+  contains(captured, "ui.device_apps.discovery.samples");
+  contains(captured, "ui.device_apps.discovery.mean");
+  contains(captured, "PRIVATE_DEVICE", false);
+  contains(captured, "PRIVATE_NAME", false);
+  contains(captured, "PRIVATE_BUNDLE", false);
+  const metricLines = captured.split("\n").filter(line => line.includes("ui.device_apps.discovery.mean"));
+  const metrics = [];
+  for (const line of metricLines) {
+    const payload = JSON.parse(line);
+    for (const metric of payload.items) {
+      if (metric.name === "ui.device_apps.discovery.mean") metrics.push(metric);
+    }
+  }
+  assert.equal(metrics.length, 1);
+  assert.equal(metrics[0].attributes.surface.value, "logs");
+  assert.equal(metrics[0].attributes.device_platform.value, "ios");
+  assert.equal(metrics[0].value, 30);
 });

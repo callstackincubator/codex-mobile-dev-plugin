@@ -28,6 +28,7 @@ import { registerCpuTools } from "./cpu/tools.ts";
 import { PerformanceRecordings } from "./performance-recordings.ts";
 import { registerRecordingTools } from "./recording-tools.ts";
 import { RECORDING_URI } from "../shared/recordings.ts";
+import { COMPARISON_URI } from "../shared/performance-comparison.ts";
 import { startStorageMetrics } from "./storage-metrics.ts";
 import { DisplayFpsSessions } from "./fps/sessions.ts";
 import { registerDisplayFpsTools } from "./fps/tools.ts";
@@ -208,10 +209,13 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   });
   registerAppResource(server, "mobile-dev-simulator", APP_URI, {}, readApp);
   registerAppResource(server, "mobile-dev-workspace", WORKSPACE_URI, {}, readApp);
-  registerAppResource(server, "mobile-dev-recording", RECORDING_URI, {}, async uri => {
+  for (const [name, resourceUri, view] of [
+    ["mobile-dev-recording", RECORDING_URI, "recording"],
+    ["mobile-dev-comparison", COMPARISON_URI, "comparison"],
+  ]) registerAppResource(server, name, resourceUri, {}, async uri => {
     const resource = typeof html === "string" ? { html } : await html();
     const configured = configureUI(resource.html);
-    const content = configured.replace('data-view="panel"', 'data-view="recording"');
+    const content = configured.replace('data-view="panel"', `data-view="${view}"`);
     return { contents: [{ uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: content, _meta: {
       ui: { prefersBorder: true, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
       "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] },
@@ -262,7 +266,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   }, openPanel);
 
   registerAppTool(server, "mobile_open_simulator", {
-    title: "Mobile simulator",
+    title: "Mobile Dev",
     description: "Open the Mobile Dev simulator beside the chat when building, running, changing, or debugging a local iOS, Android, Expo, React Native, or SwiftUI app. Call before the first device launch unless a panel is already open or the user requests a tool-only workflow. Starts the bundled Baguette backend without booting devices.",
     inputSchema: {}, outputSchema: statusOutput, annotations: write,
     _meta: {

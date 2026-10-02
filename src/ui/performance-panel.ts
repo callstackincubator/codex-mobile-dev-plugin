@@ -1,16 +1,18 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
 import { recordUiTiming, setUiGauge } from "./telemetry.ts";
 import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES } from "../shared/cpu.ts";
-import type { CpuApp, CpuBatch, CpuPhase, CpuSample, CpuTarget } from "../shared/cpu.ts";
+import type { DeviceApp } from "../shared/device-apps.ts";
+import type { CpuBatch, CpuPhase, CpuSample, CpuTarget } from "../shared/cpu.ts";
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import { errorMessage } from "../shared/protocol.ts";
 import type { ThreadHistory, ThreadOrder } from "./performance/types.ts";
 import { DisplayFpsPanel, initialFpsState } from "./display-fps-panel.ts";
 import type { DisplayFpsState } from "./display-fps-panel.ts";
+import type { DeviceAppsStore } from "./device-apps.ts";
 
 type Snapshot = DisplayFpsState & {
   open: boolean; available: boolean; discovering: boolean; monitoring: boolean;
-  selectedLabel: string; platform: "ios" | "android"; bundleId: string; apps: CpuApp[]; samples: CpuSample[];
+  selectedLabel: string; platform: "ios" | "android"; bundleId: string; apps: DeviceApp[]; samples: CpuSample[];
   threadHistory: ReadonlyMap<string, ThreadHistory>;
   threadOrder: ThreadOrder;
   phase: CpuPhase; error: string; sourceError: string;
@@ -27,19 +29,20 @@ export class PerformancePanel {
   private enabled = false;
   private disposed = false;
   private epoch = 0;
-  private discovery = 0;
+  private readonly deviceApps: DeviceAppsStore;
+  private readonly unsubscribeApps: () => void;
   private nextThreadNumber = 1;
   private cleanup: Promise<void> = Promise.resolve();
   private running?: Promise<void>;
-  private refresh?: ReturnType<typeof setInterval>;
   private selections = new Map<string, string>();
   private listeners = new Set<() => void>();
   private snapshot: Snapshot = { ...initialFpsState, physical: false, open: false, available: false, discovering: false, monitoring: false,
     selectedLabel: "Selected device", platform: "ios", bundleId: "", apps: [], samples: [], threadHistory: new Map(), threadOrder: "activity",
     phase: "idle", error: "", sourceError: "" };
 
-  constructor(app: App) {
+  constructor(app: App, deviceApps: DeviceAppsStore) {
     this.app = app;
+    this.deviceApps = deviceApps;
     this.fps = new DisplayFpsPanel(app, (fields, origin) => {
       if (origin !== undefined && this.timeOrigin === undefined) this.timeOrigin = origin;
       const samples = fields.fpsSamples;
@@ -49,6 +52,8 @@ export class PerformancePanel {
         this.update({ ...fields, fpsSamples });
       } else this.update(fields);
     });
+    this.unsubscribeApps = deviceApps.subscribe(() => this.appsChanged());
+    this.appsChanged();
   }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.snapshot;
@@ -64,18 +69,17 @@ export class PerformancePanel {
   setAvailable(available: boolean) {
     this.fps.setAvailable(available);
     this.update({ available });
-    if (available && this.enabled) { void this.discover(); }
+    if (available && this.enabled) this.appsChanged();
     if (available === false) void this.stop().catch(error => this.failed(error));
   }
 
-  selectSimulator(simulator?: SimulatorDevice) {
-    const changed = simulator?.udid !== this.simulator?.udid || simulator?.state !== this.simulator?.state || simulator?.platform !== this.simulator?.platform;
+  private selectSimulator(simulator?: SimulatorDevice) {
+    const changed = simulator?.udid !== this.simulator?.udid || simulator?.state !== this.simulator?.state || simulator?.platform !== this.simulator?.platform || simulator?.kind !== this.simulator?.kind;
     this.simulator = simulator;
     this.update({ selectedLabel: simulator?.name ?? "Selected device", platform: simulator?.platform ?? "ios", physical: simulator?.kind === "physical" });
     if (changed === false) return;
     this.timeOrigin = undefined;
     this.fps.select(simulator);
-    this.discovery++;
     let bundleId = "";
     if (simulator) {
       const key = this.deviceKey(simulator);
@@ -84,7 +88,6 @@ export class PerformancePanel {
     this.resetHistory({ apps: [], bundleId, discovering: false, monitoring: false, sourceError: "", error: "",
       phase: "idle" });
     void this.stop().catch(error => this.failed(error));
-    if (this.enabled) void this.discover();
   }
 
   show() {
@@ -92,8 +95,7 @@ export class PerformancePanel {
     this.enabled = true;
     this.fps.show();
     this.update({ open: true });
-    if (this.refresh === undefined) this.refresh = setInterval(() => { void this.discover(); }, 3000);
-    void this.discover();
+    this.appsChanged();
     if (this.snapshot.bundleId && this.running === undefined) this.restart();
   }
 
@@ -103,10 +105,7 @@ export class PerformancePanel {
 
   async disconnect() {
     this.enabled = false;
-    this.discovery++;
     this.update({ discovering: false });
-    clearInterval(this.refresh);
-    this.refresh = undefined;
     try {
       const cpu = this.stop();
       const fps = this.fps.disconnect();
@@ -139,42 +138,32 @@ export class PerformancePanel {
     return result;
   }
 
-  async discover() {
-    if (this.disposed || this.snapshot.available === false || this.snapshot.discovering || this.enabled === false) return;
-    const device = this.simulator;
-    if (device === undefined || (device.state !== "Booted" && device.state !== "connected")) { this.update({ phase: "idle" }); return; }
-    const discovery = ++this.discovery;
-    this.update({ discovering: true });
-    try {
-      const platform = device.platform ?? "ios";
-      const parameters: { deviceId: string; platform: string; kind?: "physical" } = { deviceId: device.udid, platform };
-      if (platform === "ios" && device.kind === "physical") parameters.kind = "physical";
-      const result = await this.call("mobile_performance_sources", parameters);
-      if (this.disposed || discovery !== this.discovery) return;
-      const running = result.structuredContent?.apps;
-      if (Array.isArray(running) === false) throw new Error("The plugin did not return running apps.");
-      const apps: CpuApp[] = running;
-      const previous = this.snapshot.apps.find(app => app.bundleId === this.snapshot.bundleId);
-      let bundleId = this.snapshot.bundleId;
-      if (bundleId === "") {
-        if (platform === "ios" && device.kind === "physical") {
-          const foreground = apps.find(app => app.foreground === true);
-          if (foreground) bundleId = foreground.bundleId;
-        } else if (apps.length === 1) bundleId = apps[0].bundleId;
-      }
-      const key = this.deviceKey(device);
-      this.selections.set(key, bundleId);
-      const selected = apps.find(app => app.bundleId === bundleId);
-      this.update({ apps, bundleId, sourceError: "" });
-      if (selected && previous?.pid !== selected.pid) this.restart();
-      if (bundleId && selected === undefined) {
-        await this.stop();
-        if (discovery === this.discovery) this.update({ phase: "idle", error: "", monitoring: false });
-      }
-    } catch (error) {
-      if (this.disposed === false && discovery === this.discovery) this.update({ sourceError: errorMessage(error) });
-    } finally {
-      if (this.disposed === false && discovery === this.discovery) this.update({ discovering: false });
+  private appsChanged() {
+    if (this.disposed) return;
+    const source = this.deviceApps.getSnapshot();
+    this.selectSimulator(source.device);
+    if (this.enabled === false || this.snapshot.available === false) return;
+    this.update({ discovering: source.discovering, sourceError: source.error });
+    if (source.ready === false || source.discovering) return;
+    const device = source.device;
+    if (device === undefined) return;
+    const apps = source.apps;
+    const previous = this.snapshot.apps.find(app => app.bundleId === this.snapshot.bundleId);
+    let bundleId = this.snapshot.bundleId;
+    if (bundleId === "") {
+      const foreground = apps.find(app => app.foreground === true);
+      if (foreground) bundleId = foreground.bundleId;
+    }
+    const key = this.deviceKey(device);
+    this.selections.set(key, bundleId);
+    const selected = apps.find(app => app.bundleId === bundleId);
+    this.update({ apps, bundleId });
+    if (selected && previous?.pid !== selected.pid) this.restart();
+    if (bundleId && selected === undefined) {
+      const epoch = this.epoch + 1;
+      void this.stop().then(() => {
+        if (this.disposed === false && epoch === this.epoch) this.update({ phase: "idle", error: "", monitoring: false });
+      }).catch(error => this.failed(error));
     }
   }
 
@@ -271,7 +260,7 @@ export class PerformancePanel {
 
   async dispose() {
     this.disposed = true;
-    this.discovery++;
+    this.unsubscribeApps();
     this.hide();
     await this.disconnect();
   }

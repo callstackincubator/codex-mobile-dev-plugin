@@ -77,6 +77,12 @@ try {
   const recordingResource = await client.readResource({ uri: recordingUri });
   const recordingHtml = recordingResource.contents[0].text;
   assert.match(recordingHtml, /data-view="recording"/);
+  const comparisonCard = tools.tools.find(tool => tool.name === "mobile_compare_performance_recordings");
+  assert.ok(comparisonCard);
+  const comparisonUri = comparisonCard._meta.ui.resourceUri;
+  assert.equal(comparisonUri, "ui://mobile-dev/0.1.98/comparison.html");
+  const comparisonResource = await client.readResource({ uri: comparisonUri });
+  assert.match(comparisonResource.contents[0].text, /data-view="comparison"/);
   await access(join(plugin, "dist/ios-fps/mobile-dev-ios-fps"));
   await access(join(plugin, "dist/ios-fps/third-party-licenses.txt"));
   for (const abi of ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]) await access(join(plugin, `dist/android-fps/${abi}/mobile-dev-fps`));

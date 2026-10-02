@@ -48,6 +48,58 @@ test("buffer eviction removes stale selection, and host removal clears the attac
   assert.equal(list.getSnapshot().selected, undefined);
 });
 
+test("keyword queries combine with source and level controls and apply to new batches", () => {
+  const { list } = fixture();
+  list.search("level:error level:warn message:network -tag:noise");
+  list.append([
+    entry(1, { message: "Network failed", level: "error", source: "native", origin: "ios" }),
+    entry(2, { message: "Network retry", level: "warn" }),
+    entry(3, { message: "Network noise", level: "error", tag: "noise" }),
+    entry(4, { message: "Network ready" }),
+  ], 0);
+  let snapshot = list.getSnapshot();
+  assert.equal(snapshot.queryError, "");
+  assert.deepEqual(snapshot.filtered.map(log => log.message), ["Network failed", "Network retry"]);
+  list.setFilters("sources", ["js"]);
+  snapshot = list.getSnapshot();
+  assert.deepEqual(snapshot.filtered.map(log => log.message), ["Network retry"]);
+  list.setFilters("levels", ["error"]);
+  snapshot = list.getSnapshot();
+  assert.equal(snapshot.filtered.length, 0);
+  list.search("level:");
+  snapshot = list.getSnapshot();
+  assert.ok(snapshot.queryError);
+  list.search("");
+  snapshot = list.getSnapshot();
+  assert.equal(snapshot.queryError, "");
+  assert.equal(snapshot.filtered.length, 1);
+});
+
+test("age filters count matching repeats and expire even without new logs", t => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-09-30T12:01:00Z") });
+  const { list } = fixture();
+  list.append([entry(1), entry(2, { message: "Log 1", timestamp: "2026-09-30T12:00:50Z" })], 0);
+  list.select(1);
+  list.search("age:30s");
+  let snapshot = list.getSnapshot();
+  assert.equal(snapshot.filtered[0].count, 1);
+  assert.equal(snapshot.filtered[0].sequence, 2);
+  assert.equal(snapshot.selected?.count, 2, "Filtering preserves the selected full log.");
+  list.select(2);
+  snapshot = list.getSnapshot();
+  assert.equal(snapshot.selected?.sequence, 2, "A matching recent occurrence can be selected after its older repeat is filtered out.");
+  assert.equal(snapshot.selected?.count, 2);
+  t.mock.timers.tick(21000);
+  list.refreshAge();
+  snapshot = list.getSnapshot();
+  assert.equal(snapshot.filtered.length, 0);
+  list.search("");
+  snapshot = list.getSnapshot();
+  assert.equal(snapshot.filtered[0].count, 2);
+  list.refreshAge();
+  assert.equal(list.getSnapshot(), snapshot);
+});
+
 test("the message budget limits retained logs even before the row limit", () => {
   const { list } = fixture();
   list.append([entry(1, { message: "a".repeat(1200000) }), entry(2, { message: "b".repeat(1200000) })], 0);
@@ -116,11 +168,11 @@ test("scrolling away from the bottom pauses following until the list reaches the
   const { list } = fixture();
   const first = entry(1);
   list.append([first], 0);
-  list.updateScroll(800, 1200, 400);
+  list.updateScroll(800, 1200, 400, false);
   const initial = list.getSnapshot();
   assert.equal(initial.follow, true);
 
-  list.updateScroll(780, 1200, 400);
+  list.updateScroll(780, 1200, 400, true);
   const scrolledUp = list.getSnapshot();
   assert.equal(scrolledUp.follow, false);
   assert.equal(list.scrollOffset, 780);
@@ -131,31 +183,64 @@ test("scrolling away from the bottom pauses following until the list reaches the
   assert.equal(list.scrollOffset, 780);
 
   const paused = list.getSnapshot();
-  list.updateScroll(900, 1400, 400);
+  list.updateScroll(900, 1400, 400, true);
   const scrolledDown = list.getSnapshot();
   assert.equal(scrolledDown, paused, "Scrolling within history does not refilter logs.");
-  list.updateScroll(998, 1400, 400);
+  list.updateScroll(998, 1400, 400, true);
   const nearBottom = list.getSnapshot();
   assert.equal(nearBottom.follow, false);
-  list.updateScroll(999.5, 1400, 400);
+  list.updateScroll(999.5, 1400, 400, true);
   const atBottom = list.getSnapshot();
   assert.equal(atBottom.follow, true, "Fractional scroll offsets count as reaching the bottom.");
 });
 
 test("unchanged scroll offsets preserve manual follow choices across content and layout changes", () => {
   const { list } = fixture();
-  list.updateScroll(800, 1200, 400);
-  list.updateScroll(800, 1400, 400);
+  list.updateScroll(800, 1200, 400, false);
+  list.updateScroll(800, 1400, 400, false);
   const following = list.getSnapshot();
   assert.equal(following.follow, true, "New content does not pause following before scrolling to it.");
 
   list.setFollow(false);
   const paused = list.getSnapshot();
-  list.updateScroll(800, 1200, 400);
+  list.updateScroll(800, 1200, 400, false);
   list.setFollow(false);
   const repeated = list.getSnapshot();
   assert.equal(repeated, paused, "Repeated bottom events do not undo a manual pause or republish.");
-  list.updateScroll(800, 1200, 500);
+  list.updateScroll(800, 1200, 500, false);
   const resized = list.getSnapshot();
   assert.equal(resized.follow, false, "Resizing alone does not reactivate following.");
+});
+
+test("automatic scroll adjustments preserve following while new rows are being measured", () => {
+  const { list } = fixture();
+  list.updateScroll(800, 1200, 400, false);
+  const following = list.getSnapshot();
+  list.updateScroll(828, 1260, 400, false);
+  const measured = list.getSnapshot();
+  assert.equal(measured, following);
+  assert.equal(list.scrollOffset, 828);
+  list.updateScroll(810, 1260, 400, false);
+  const adjusted = list.getSnapshot();
+  assert.equal(adjusted, following, "Automatic upward adjustments do not count as user scrolling.");
+
+  list.setFollow(false);
+  const paused = list.getSnapshot();
+  list.updateScroll(860, 1260, 400, false);
+  const atBottom = list.getSnapshot();
+  assert.equal(atBottom, paused, "Automatic bottom adjustments do not undo a manual pause.");
+  list.updateScroll(860, 1260, 400, true);
+  const resumed = list.getSnapshot();
+  assert.equal(resumed.follow, true, "User input at the bottom resumes following.");
+});
+
+test("downward scrolling short of the bottom does not interrupt an active follow request", () => {
+  const { list } = fixture();
+  list.updateScroll(800, 1200, 400, false);
+  list.updateScroll(828, 1260, 400, true);
+  const following = list.getSnapshot();
+  assert.equal(following.follow, true);
+  list.updateScroll(820, 1260, 400, true);
+  const paused = list.getSnapshot();
+  assert.equal(paused.follow, false);
 });

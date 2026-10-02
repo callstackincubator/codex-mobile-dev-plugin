@@ -8,6 +8,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { OpenAIUiToolMetadataSchema, OpenAIUiResourceMetadataSchema } from "@openai/mcp-extensions/server";
 import { APP_URI, WORKSPACE_URI } from "../src/server/plugin.ts";
 import { RECORDING_URI } from "../src/shared/recordings.ts";
+import { COMPARISON_URI } from "../src/shared/performance-comparison.ts";
 import { Baguette } from "../src/server/baguette.ts";
 import { parseBaseUrl } from "../src/shared/protocol.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "./fixtures.ts";
@@ -102,7 +103,7 @@ test("UI surfaces and live reload receive the server's anonymous identity and op
   assert.ok(identity);
   const userMarker = `name="mobile-dev-user-id" content="${identity.userId}"`;
   const sessionMarker = `name="mobile-dev-session-id" content="${identity.sessionId}"`;
-  for (const uri of [APP_URI, WORKSPACE_URI, RECORDING_URI]) {
+  for (const uri of [APP_URI, WORKSPACE_URI, RECORDING_URI, COMPARISON_URI]) {
     const resource = await client.readResource({ uri });
     const content = resource.contents[0].text;
     assert.ok(typeof content === "string");
@@ -185,6 +186,9 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.deepEqual(recordingResource.contents[0]._meta?.ui, { prefersBorder: true, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
   const renderRecording = tools.tools.find(tool => tool.name === "mobile_render_performance_recording");
   assert.deepEqual(renderRecording?._meta?.ui, { resourceUri: RECORDING_URI, visibility: ["app", "model"] });
+  const comparisonResource = await client.readResource({ uri: COMPARISON_URI });
+  assert.match(comparisonResource.contents[0].text as string, /data-view="comparison"/);
+  assert.deepEqual(comparisonResource.contents[0]._meta, recordingResource.contents[0]._meta);
   assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);
   assert.equal(WORKSPACE_URI, "ui://mobile-dev/0.1.98/workspace.html");
   const previousWorkspace = await client.readResource({ uri: "ui://mobile-dev/0.1.52/workspace.html" });
