@@ -2,6 +2,11 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Version 0.1.108 corrects the compatibility manifest's working directory so the
+launcher and existing server telemetry can start. It changes no telemetry
+boundaries or collection. The Codex installation smoke check verifies the
+resolved launch configuration and telemetry opt-out in the sidebar resource.
+
 Since 0.1.107, MCP discovery and runtime use Node discovered in the user’s
 configured login shell. The existing centralized Sentry initialization,
 anonymous attribution, build environment, opt-out, runtime metrics, and MCP

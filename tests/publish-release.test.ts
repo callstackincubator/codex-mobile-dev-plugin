@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { test, type TestContext } from "node:test";
 import { publishRelease } from "../scripts/publish-release.mjs";
 
@@ -28,7 +28,7 @@ async function fixture(t: TestContext) {
   await chmod(`${plugin}/dist/server.mjs`, 0o755);
   await writeFile(`${plugin}/dist/telemetry-environment.json`, '{"environment":"release"}');
   await writeFile(`${plugin}/dist/app.html`, '<meta name="mobile-dev-environment" content="release">');
-  await writeFile(`${plugin}/.mcp.json`, '{"mcpServers":{"mobile-dev":{"command":"/bin/sh","args":["./scripts/launch-mcp.sh","./dist/server.mjs"],"cwd":"${PLUGIN_ROOT}","env_vars":["SHELL"]}}}');
+  await writeFile(`${plugin}/.mcp.json`, '{"mcpServers":{"mobile-dev":{"command":"/bin/sh","args":["./scripts/launch-mcp.sh","./dist/server.mjs"],"cwd":".","env_vars":["SHELL"]}}}');
   await mkdir(`${plugin}/.codex-plugin`, { recursive: true });
   async function version(value: string) {
     const manifest = {
@@ -187,6 +187,10 @@ test("Codex installs and refreshes the tracked branch in an isolated profile", {
   codex(["plugin", "marketplace", "add", "https://example.test/mobile-dev.git", "--ref", "release/latest", "--json"]);
   const installed = codex(["plugin", "add", "mobile-dev@mobile-dev", "--json"]);
   assert.equal(installed.version, "1.2.3");
+  const server = codex(["mcp", "get", "mobile-dev", "--json"]);
+  const expectedCwd = join(installed.installedPath, ".");
+  const resolvedCwd = resolve(server.transport.cwd);
+  assert.equal(resolvedCwd, expectedCwd);
   const payloadPath = join(installed.installedPath, "payload.txt");
   const initial = await readFile(payloadPath, "utf8");
   assert.equal(initial, "1.2.3");

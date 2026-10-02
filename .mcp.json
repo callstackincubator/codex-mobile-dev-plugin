@@ -6,7 +6,7 @@
         "./scripts/launch-mcp.sh",
         "./dist/server.mjs"
       ],
-      "cwd": "${PLUGIN_ROOT}",
+      "cwd": ".",
       "env_vars": [
         "SHELL",
         "MOBILE_DEV_TELEMETRY",

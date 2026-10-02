@@ -43,6 +43,7 @@ npm run build
 npm test
 npm run package
 npm run test:package
+npm run test:codex-plugin
 npm run check:mcp-budget
 ```
 
@@ -60,6 +61,8 @@ relevant checks, and packaging steps again.
 `package` copies built files into `release/marketplace/plugins/mobile-dev` and creates the ZIP. It includes agent-device's runtime `node_modules`, licenses, and Apple runner source. The Codex compatibility manifest lives at `.codex-plugin/plugin.json` and declares `.mcp.json`. The MCP entry invokes `scripts/launch-mcp.sh` through `/bin/sh` and explicitly forwards `SHELL` and the telemetry settings. That launcher resolves `node` in the configured interactive login shell, validates the returned executable and minimum Node version, and reports setup failures on stderr. It does not try other runtimes, download Node, or assume an installation path. Shell startup output is captured separately from MCP stdout. The source repo's existing build-codex-native-plugins skill stays outside that release package.
 
 `test` checks MCP contracts, frame reads, input validation, and capture cleanup against a local fixture, plus launch success and setup failures with Node absent from PATH. `test:package` copies the release package into a temporary directory and uses its actual MCP launch configuration with a system-only PATH. The smoke-test caller supplies a controlled login-shell fixture whose PATH contains its test Node executable; the MCP process itself has a system-only PATH. It checks native addon loading, sidebar/chat entrypoints, UI resources, and telemetry attribution, starts bundled Baguette, reads the real device list, and checks shutdown. It does not boot or change a simulator. Run it on an Apple Silicon Mac with Xcode.
+
+`test:codex-plugin` requires the Codex CLI (`codex` on PATH or `CODEX_CLI_PATH`). It installs the package into a temporary Codex profile, asks Codex to resolve the installed MCP configuration, then starts that exact command and working directory with no Node on MCP PATH. It checks the sidebar resource and telemetry opt-out without changing the user's plugins or devices. Pass an extracted ZIP directory to test the shipped artifact. The compatibility manifest uses `cwd: "."`; `${PLUGIN_ROOT}` is not expanded in this format and would become a nonexistent subdirectory of the installed cache.
 
 `test:agent-device` requires reactivating the Agent Device MCP entry first. It starts the retained MCP server from a copied package with no global CLI on its PATH. It checks the control tools, pinned runtime, isolated state directory, real iOS device list, and daemon cleanup. It does not open an app, take screenshots, or send input.
 
