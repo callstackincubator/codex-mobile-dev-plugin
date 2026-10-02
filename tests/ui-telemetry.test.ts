@@ -68,7 +68,7 @@ test("browser errors use the served environment regardless of live-reload marker
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts"; export { LogList } from "./src/ui/log-list.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -143,6 +143,11 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
     origin: "metro", source: "js", level: "error", deviceId: "PRIVATE_DEVICE",
     message: "PRIVATE_LOG_MESSAGE", stack: "PRIVATE_LOG_STACK",
   });
+  const logs = new api.LogList(context);
+  logs.append(Array.from({ length: 2100 }, (_, sequence) => ({
+    timestamp: "2026-10-02T10:00:00Z", sequence, source: "native", origin: "ios", level: "info",
+    message: "PRIVATE_LOG_MESSAGE", stack: "PRIVATE_LOG_STACK", deviceId: "PRIVATE_DEVICE",
+  })), 0);
   frame(116);
   frame(132);
   api.flushUiMeasurements();
@@ -210,6 +215,8 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, '"environment":"development"');
   contains(encoded, "ui.logs.publish.mean");
   contains(encoded, "ui.logs.send.mean");
+  contains(encoded, "ui.logs.retention.mean");
+  contains(encoded, "ui.logs.evicted");
   contains(encoded, "ui.annotations.tree_processing.mean");
   contains(encoded, "ui.annotations.inspection.mean");
   contains(encoded, "ui.annotations.message_build.mean");

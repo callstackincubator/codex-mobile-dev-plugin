@@ -55,6 +55,63 @@ test("the message budget limits retained logs even before the row limit", () => 
   assert.ok(list.getSnapshot().filtered[0].message.startsWith("b"));
 });
 
+test("native bursts cannot evict filtered JS history or its selection", () => {
+  const { list } = fixture();
+  list.append([entry(1, { message: "JS warning", level: "warn", stack: "at load (App.tsx:9:3)" })], 0);
+  const selected = list.getSnapshot().filtered[0].sequence;
+  list.select(selected); list.setFilters("sources", ["js"]);
+  for (let batch = 0; batch < 30; batch++) {
+    list.append(Array.from({ length: 100 }, (_, i) => entry(batch * 100 + i + 2, { source: "native", origin: "ios" })), 0);
+    assert.equal(list.getSnapshot().filtered.length, 1);
+    assert.equal(list.getSnapshot().selected?.sequence, selected);
+  }
+  assert.equal(list.getSnapshot().buffered, 2000);
+  assert.equal(list.getSnapshot().filtered[0].stack, "at load (App.tsx:9:3)");
+  list.setFilters("sources", ["js", "native"]);
+  assert.equal(list.getSnapshot().filtered.length, 2000);
+  const sequences = list.getSnapshot().filtered.map(log => log.sequence);
+  assert.deepEqual(sequences, [...sequences].sort((a, b) => a - b));
+});
+
+test("both sources share a bounded row budget and retain their newest entries", () => {
+  const { list } = fixture();
+  list.append(Array.from({ length: 1500 }, (_, i) => entry(i)), 0);
+  list.append(Array.from({ length: 2500 }, (_, i) => entry(i + 1500, { source: "native", origin: "ios" })), 0);
+  const logs = list.getSnapshot().filtered;
+  assert.equal(logs.filter(log => log.source === "js").length, 1000);
+  assert.equal(logs.filter(log => log.source === "native").length, 1000);
+  assert.equal(logs[0].message, "Log 500");
+  assert.equal(logs.at(-1)?.message, "Log 3999");
+  list.clear();
+  assert.equal(list.getSnapshot().buffered, 0);
+});
+
+test("native message and stack bursts cannot consume the JS text budget", () => {
+  const { list } = fixture();
+  list.append([entry(1, { message: "Keep this JS log" })], 0);
+  list.setFilters("sources", ["js"]);
+  list.append(Array.from({ length: 100 }, (_, i) => entry(i + 2, {
+    source: "native", origin: "ios", message: "a".repeat(16384), stack: "b".repeat(16384),
+  })), 0);
+  assert.equal(list.getSnapshot().filtered[0].message, "Keep this JS log");
+  list.setFilters("sources", ["js", "native"]);
+  const logs = list.getSnapshot().filtered;
+  const size = logs.reduce((total, log) => total + log.message.length + (log.stack?.length ?? 0), 0);
+  assert.ok(size <= 2 * 1024 * 1024);
+  assert.ok(logs.length < 101);
+});
+
+test("JS bursts cannot evict native history and one source can use all spare capacity", () => {
+  const { list } = fixture();
+  list.append([entry(1, { source: "native", origin: "ios", message: "Keep native" })], 0);
+  list.append(Array.from({ length: 3000 }, (_, i) => entry(i + 2)), 0);
+  list.setFilters("sources", ["native"]);
+  assert.equal(list.getSnapshot().filtered[0].message, "Keep native");
+  list.clear();
+  list.append(Array.from({ length: 2000 }, (_, i) => entry(i, { source: "native", origin: "ios" })), 0);
+  assert.equal(list.getSnapshot().filtered.length, 2000);
+});
+
 test("scrolling away from the bottom pauses following until the list reaches the bottom again", () => {
   const { list } = fixture();
   const first = entry(1);

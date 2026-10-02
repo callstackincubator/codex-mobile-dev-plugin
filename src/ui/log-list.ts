@@ -60,17 +60,38 @@ export class LogList {
     countUiEvent("ui.logs.received", entries.length);
     countUiEvent("ui.logs.dropped", dropped);
     this.dropped += dropped;
+    const startedAt = performance.now();
     this.entries.push(...entries.map(entry => ({ ...entry, sequence: ++this.sequence })));
-    if (this.entries.length > 2000) this.entries.splice(0, this.entries.length - 2000);
+    // Share spare capacity, but evict from the busier source first.
+    const histories = {
+      js: { entries: [] as LogEntry[], first: 0, bytes: 0 },
+      native: { entries: [] as LogEntry[], first: 0, bytes: 0 },
+    };
     let bytes = 0;
-    let first = this.entries.length;
-    while (first > 0) {
-      const entry = this.entries[first - 1];
-      bytes += entry.message.length + (entry.stack?.length ?? 0);
-      if (bytes > 2 * 1024 * 1024) break;
-      first--;
+    for (const entry of this.entries) {
+      const history = histories[entry.source];
+      const size = entry.message.length + (entry.stack?.length ?? 0);
+      history.entries.push(entry); history.bytes += size; bytes += size;
     }
-    if (first) this.entries.splice(0, first);
+    let retained = this.entries.length;
+    while (retained > 2000 || bytes > 2 * 1024 * 1024) {
+      const { js, native } = histories;
+      const difference = retained > 2000
+        ? (js.entries.length - js.first) - (native.entries.length - native.first)
+        : js.bytes - native.bytes;
+      const evictJs = difference > 0 || (difference === 0
+        && (js.entries[js.first]?.sequence ?? Infinity) < (native.entries[native.first]?.sequence ?? Infinity));
+      const history = evictJs ? js : native;
+      const entry = history.entries[history.first++];
+      const size = entry.message.length + (entry.stack?.length ?? 0);
+      history.bytes -= size; bytes -= size; retained--;
+    }
+    const evicted = this.entries.length - retained;
+    if (evicted) {
+      this.entries = this.entries.filter(entry => entry.sequence >= (histories[entry.source].entries[histories[entry.source].first]?.sequence ?? Infinity));
+      countUiEvent("ui.logs.evicted", evicted);
+    }
+    recordUiTiming("ui.logs.retention", performance.now() - startedAt);
     this.publish();
   }
 
