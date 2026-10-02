@@ -202,3 +202,129 @@ test("a hidden log panel sends only keep-alives and cancels its hidden timer on 
   await setImmediate();
   assert.deepEqual(calls, ["mobile_logs_session", "mobile_logs_keep_alive", "mobile_logs_close"]);
 });
+
+test("expired resource reads reconnect quietly and preserve rows, filters, selection and scroll", async t => {
+  const opened: LogOptions[] = [];
+  const closed: string[] = [];
+  const cursors: Array<{ id: string; after: string | null }> = [];
+  let expire!: (error: Error) => void;
+  const app = {
+    async callServerTool(input: { name: string; arguments: { options?: LogOptions; sessionId?: string } }) {
+      if (input.name === "mobile_logs_session") {
+        opened.push(input.arguments.options!);
+        const id = `session-${opened.length}`;
+        return { content: [], _meta: { sessionId: id, logsUri: `logs://mobile-dev/${id}/batch?after=0` } };
+      }
+      closed.push(input.arguments.sessionId!);
+      return { content: [] };
+    },
+    async readServerResource(input: { uri: string }, options: { signal: AbortSignal }) {
+      const uri = new URL(input.uri);
+      const id = uri.pathname.split("/")[1];
+      const after = uri.searchParams.get("after");
+      cursors.push({ id, after });
+      if (after === "0") {
+        const entry = { sequence: 1, timestamp: "2026-10-02T12:00:00Z", source: "js", origin: "metro", level: "error", message: `${id} message` };
+        return { contents: [{ uri: input.uri, mimeType: "application/json", text: JSON.stringify({ entries: [entry], cursor: 1, dropped: 0, statuses: [] }) }] };
+      }
+      return new Promise((_, reject) => {
+        if (id === "session-1") expire = reject;
+        options.signal.addEventListener("abort", () => reject(new Error("Read cancelled")), { once: true });
+      });
+    },
+  } as unknown as App;
+  const panel = new LogsPanel(app, { canAttach: true } as PanelContext);
+  t.after(() => panel.dispose());
+  const errors: string[] = [];
+  panel.subscribe(() => errors.push(panel.getSnapshot().error));
+  panel.selectSimulator(device); panel.setAvailable(true); panel.show();
+  await waitFor(() => expire !== undefined);
+  panel.list.search("message"); panel.list.select(1); panel.list.setFollow(false); panel.list.scrollOffset = 145;
+  const saved = panel.list.getSnapshot();
+  expire(Object.assign(new Error("MCP error -32603: This log session expired or closed. Reopen the log panel."), { code: -32603 }));
+  await waitFor(() => panel.getSnapshot().status === "Reconnecting...");
+  assert.equal(panel.getSnapshot().error, "");
+  assert.equal(panel.list.getSnapshot(), saved);
+  await waitFor(() => panel.list.getSnapshot().buffered === 2);
+  assert.equal(opened.length, 2);
+  assert.deepEqual(opened[1], opened[0]);
+  assert.deepEqual(closed, ["session-1"]);
+  assert.deepEqual(cursors.find(cursor => cursor.id === "session-2"), { id: "session-2", after: "0" });
+  assert.equal(panel.list.getSnapshot().query, "message");
+  assert.equal(panel.list.getSnapshot().selected?.sequence, 1);
+  assert.equal(panel.list.getSnapshot().follow, false);
+  assert.equal(panel.list.scrollOffset, 145);
+  assert.deepEqual(panel.list.getSnapshot().filtered.map(log => log.message), ["session-1 message", "session-2 message"]);
+  assert.ok(errors.every(error => error === ""));
+});
+
+test("expired hidden keep-alives recover without reading hidden logs, and Pause cancels recovery", async t => {
+  for (const pause of [false, true]) await t.test(pause ? "pause during retry" : "resume a new session", async t => {
+    let opens = 0;
+    let reads = 0;
+    const closed: string[] = [];
+    const app = {
+      async callServerTool(input: { name: string; arguments: { sessionId?: string } }) {
+        if (input.name === "mobile_logs_session") {
+          const id = `session-${++opens}`;
+          return { content: [], _meta: { sessionId: id, logsUri: `logs://mobile-dev/${id}/batch?after=0` } };
+        }
+        if (input.name === "mobile_logs_keep_alive") return { isError: true, content: [{ type: "text", text: "This log session expired or closed. Reopen the log panel." }] };
+        closed.push(input.arguments.sessionId!);
+        return { content: [] };
+      },
+      readServerResource(_input: unknown, options: { signal: AbortSignal }) {
+        reads++;
+        return new Promise((_, reject) => options.signal.addEventListener("abort", () => reject(new Error("Read cancelled")), { once: true }));
+      },
+    } as unknown as App;
+    const panel = new LogsPanel(app, { canAttach: true } as PanelContext);
+    t.after(() => panel.dispose());
+    panel.selectSimulator(device); panel.setAvailable(true); panel.show();
+    await setImmediate();
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    panel.hide();
+    await setImmediate();
+    t.mock.timers.tick(60000);
+    await setImmediate();
+    assert.equal(panel.getSnapshot().error, "");
+    assert.equal(panel.getSnapshot().status, "Reconnecting...");
+    assert.deepEqual(closed, ["session-1"]);
+    if (pause) panel.togglePause();
+    t.mock.timers.tick(500);
+    await setImmediate();
+    assert.equal(reads, 1, "Recovery does not transfer hidden log batches.");
+    if (pause) {
+      assert.equal(opens, 1);
+      assert.equal(panel.getSnapshot().status, "Paused");
+    } else {
+      assert.equal(opens, 2);
+      panel.show();
+      await setImmediate();
+      assert.equal(reads, 2);
+      assert.equal(panel.getSnapshot().error, "");
+    }
+  });
+});
+
+test("unrelated MCP failures remain visible and invalid source options still stop retries", async t => {
+  for (const kind of ["read", "session"]) await t.test(kind, async t => {
+    let opens = 0;
+    const app = {
+      async callServerTool(input: { name: string }) {
+        if (input.name !== "mobile_logs_session") return { content: [] };
+        opens++;
+        if (kind === "session") return { isError: true, content: [{ type: "text", text: "Selected device is unauthorized." }] };
+        return { content: [], _meta: { sessionId: "session", logsUri: "logs://mobile-dev/session/batch?after=0" } };
+      },
+      async readServerResource() { throw new Error("MCP error -32603: Log reader failed."); },
+    } as unknown as App;
+    const panel = new LogsPanel(app, { canAttach: true } as PanelContext);
+    t.after(() => panel.dispose());
+    panel.selectSimulator(device); panel.setAvailable(true); panel.show();
+    await setImmediate();
+    assert.equal(panel.getSnapshot().status, kind === "session" ? "Stopped" : "Reconnecting...");
+    assert.match(panel.getSnapshot().error, kind === "session" ? /unauthorized/ : /Log reader failed/);
+    assert.equal(opens, 1);
+  });
+});

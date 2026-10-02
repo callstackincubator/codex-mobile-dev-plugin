@@ -94,6 +94,8 @@ The list shows messages without embedded JavaScript stack traces. Click a row to
 
 Right-click a log and choose Fix in chat or Ask in chat to attach the full log and stack trace as a context pill and send a short request. These actions wait for the attachment before sending and keep the log available if delivery fails. Hosts without context pills receive the full log in the message.
 
+Expired log sessions reconnect without an error banner. Existing rows, filters, selection and scroll position remain available during recovery. Pause or closing Logs cancels the retry.
+
 iOS simulators use `xcrun simctl spawn <UDID> log stream --style ndjson --level debug`. Physical iPhones use the bundled libimobiledevice OS trace relay reader over the existing paired USB or Wi-Fi connection. Select the phone in the device picker; no app launch, restart, debugger attachment, or app SDK is required. An executable-name filter continues across app PID changes. Unified logs exclude ordinary `print`/`printf` stdout/stderr output and may redact private values. Metro reads console events and exceptions through the inspector. Each log reader retries dropped connections. Metro keeps the chosen target ID; refresh its targets if an app restart assigns a new ID. Buffers hold at most 2,000 records and cap their byte size. The UI shares this capacity between JS and native logs, removing older rows from the busier source first. Native bursts no longer erase JS history. Legend List renders the visible rows and lets you scroll through all buffered matches.
 
 `npm run test:logs` reads logs from an already booted simulator through the built MCP server. `npm run test:ios-logs -- --device <hardware-UDID>` reads a connected physical iPhone, with optional `--process <executable-name>`. Both print counts, close the log reader, and leave the device and app running. For tool-only physical logs, pass `{ platform: "ios", kind: "physical", deviceId: "<hardware-UDID>" }` to `mobile_logs_session`; use the `udid` returned by `mobile_list_ios_devices`, rather than its `coreDeviceId`.
@@ -525,6 +527,8 @@ Since 0.1.93, `ui.video.paint` and the platform frame counters also cover frames
 Since 0.1.99, `ui.logs.query_parse` measures query compilation in milliseconds once per edit. Existing `ui.logs.filter`, buffered/filtered row gauges, and search counts cover keyword filtering and visible age refreshes; filtering time still covers snapshot derivation and grouping. Query text, field values, regex patterns, and validation messages remain local. Age refresh timers stop when Logs closes, unmounts, or the document becomes hidden.
 
 `ui.logs.send` measures log attachment and chat delivery in milliseconds, including queued context writes and composer retries. The existing log send counter and error coverage remain in place. No log text, stack traces or device IDs go to Sentry.
+
+`ui.logs.session_expired` counts expired sessions that trigger automatic recovery. It uses the active Logs context without sending session IDs, error text or log content.
 
 `ui.logs.retention` measures bounded buffer updates in milliseconds. `ui.logs.evicted` counts rows removed locally to meet the shared row and text limits; `ui.logs.dropped` still counts only rows lost from the server buffer. Existing filter timing and row gauges cover the resulting list. These measurements contain no log text or source metadata.
 

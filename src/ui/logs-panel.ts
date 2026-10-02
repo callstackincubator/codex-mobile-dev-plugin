@@ -4,8 +4,13 @@ import type { LogBatch, LogOptions, MetroTarget } from "../shared/logs.ts";
 import { LogList } from "./log-list.ts";
 import type { PanelContext } from "./model-context.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
+import { countUiEvent } from "./telemetry.ts";
 
 type Call = App["callServerTool"];
+
+function expiredSession(error: unknown) {
+  return error instanceof Error && error.message.includes("This log session expired or closed.");
+}
 
 export class LogsPanel {
   private simulator?: SimulatorDevice;
@@ -110,13 +115,21 @@ export class LogsPanel {
     const epoch = this.epoch;
     this.update({ status: "Connecting..." });
     this.loop.start(signal => this.receive(options!, epoch, signal), error => {
-      this.update({ status: "Reconnecting..." }); this.error(error instanceof Error ? error.message : String(error));
+      this.update({ status: "Reconnecting..." });
+      if (expiredSession(error)) {
+        countUiEvent("ui.logs.session_expired");
+        this.error();
+      } else this.error(error instanceof Error ? error.message : String(error));
     }, error => { this.update({ status: "Stopped" }); this.error(String(error)); });
   }
 
   private async call(...args: Parameters<Call>) {
     const result = await this.app.callServerTool(...args);
-    if (result.isError) throw new StopReconnectError(result.content.filter(item => item.type === "text").map(item => item.text).join("\n"));
+    if (result.isError) {
+      const error = new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n"));
+      if (args[0].name === "mobile_logs_keep_alive" && expiredSession(error)) throw error;
+      throw new StopReconnectError(error.message);
+    }
     return result;
   }
 
