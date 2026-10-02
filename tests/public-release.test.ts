@@ -27,7 +27,8 @@ async function fixture(t: TestContext) {
   git(repository, ["config", "commit.gpgsign", "false"]);
   git(repository, ["remote", "add", "origin", remote]);
   await mkdir(`${repository}/src/shared`, { recursive: true });
-  await writeFile(`${repository}/plugin.json`, '{"name":"mobile-dev","version":"1.2.3"}');
+  await mkdir(`${repository}/.codex-plugin`, { recursive: true });
+  await writeFile(`${repository}/.codex-plugin/plugin.json`, '{"name":"mobile-dev","version":"1.2.3"}');
   await writeFile(`${repository}/package.json`, '{"version":"1.2.3"}');
   await writeFile(`${repository}/package-lock.json`, '{"version":"1.2.3","packages":{"":{"version":"1.2.3"}}}');
   await writeFile(`${repository}/src/shared/version.ts`, 'export const PLUGIN_VERSION = "1.2.3";\n');

@@ -3,7 +3,7 @@
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
 The `Release plugin` workflow in `.github/workflows/release.yml` runs when you push
-an existing commit with a `v<version>` tag. The tag must match `plugin.json`,
+an existing commit with a `v<version>` tag. The tag must match `.codex-plugin/plugin.json`,
 `package.json`, both root versions in `package-lock.json`, and
 `src/shared/version.ts`. After committing your changes, run from the repository root:
 
@@ -23,6 +23,15 @@ Xcode 27 / Swift 6.4, installs the locked JavaScript runtimes, and rebuilds ever
 native helper with Android NDK 27.2.12479018 and Rust 1.98.1. It runs the tests,
 builds and packages with the explicit `release` environment, then smoke-tests a
 fresh extraction of the actual ZIP.
+
+The package uses Codex's compatibility manifest and forwards the desktop's
+`SHELL` to a checked launcher that discovers Node in the user’s interactive login
+shell. No Node executable is bundled. Discovery uses one shell lookup and fails
+clearly when its result is absent, unusable, ambiguous, or below Node 22.18.
+The extracted-ZIP smoke test launches that manifest with Node absent from PATH,
+including both sidebar and chat entrypoints. Publishing compares the version in
+the previous `Release Mobile Dev <version>` commit, so the manifest relocation
+also works when advancing an existing portable release on `release/latest`.
 
 Configure the repository's Actions secrets `SENTRY_AUTH_TOKEN` and `SENTRY_ORG`.
 Both are required. The workflow uploads matching UI/server source maps and native

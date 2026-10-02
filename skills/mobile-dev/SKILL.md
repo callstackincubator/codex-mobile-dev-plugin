@@ -7,6 +7,27 @@ description: Use when building, running, changing, or debugging local iOS, Andro
 
 Use the Mobile Dev MCP tools for local iOS and Android work. The plugin includes Baguette and starts it when you open the panel or list devices. Do not ask the user to install Baguette or run a separate server.
 
+Before device work, resolve the Mobile Dev tools through the host's tool discovery
+when available and confirm `mobile_open_simulator` and the relevant device-list
+tools are callable. If they are missing, tell the user: "Mobile Dev setup is
+incomplete: its MCP tools did not load, so I cannot open the live panel or control
+devices through the plugin." Inspect the enabled plugin configuration and desktop
+MCP startup/discovery logs when accessible, and report the exact failure. Do not
+assume the chat predates installation or continue device work through a substitute
+backend. Source edits or compilation can continue when they need no device tools.
+
+Current packages forward `SHELL` and use a checked launcher to discover `node`
+in the user's configured interactive login shell. A missing or unusable Node,
+ambiguous shell output, or a version below 22.18 produces a `Mobile Dev setup
+failed` diagnostic in desktop MCP startup logs. Report the discovered version
+when that error supplies it, and explain the setup requirement. Do not guess
+other Node installation paths or change the user's shell configuration without
+being asked. Older packages through 0.1.106 launched bare `node` using the desktop
+PATH, so terminal `which node` alone did not establish their executable lookup.
+Inspect the installed MCP manifest (`.mcp.json` in current packages) and startup
+error before recommending an update. Launcher failures cannot reach the plugin's
+Sentry SDK because the server never starts; keep those diagnostic logs local.
+
 1. Open the panel beside the chat with `mobile_open_simulator` by default. For an existing app, open it when starting device work; for a new app, open it before the first device launch. Reuse an open Mobile Dev panel. Use `mobile_open_workspace` when the user asks for fullscreen. Use device-list tools without opening the panel when the user requests a tool-only workflow or the host cannot show panels. A request limited to planning, docs, code review, or compilation does not need a panel or a device launch.
 2. Use the task and app project to choose the platform. Follow the user's device choice; otherwise reuse a compatible device shared by the panel, then a suitable running simulator or emulator. If no suitable device runs, choose a compatible installed simulator or AVD. Pick among equivalent devices yourself for routine app development. When the intended target is ambiguous (for example, the app is open on several devices for a performance run), use `mobile_choose_devices` to ask through the native request form. Read device IDs from tool results or panel context; never invent them.
 3. Boot a chosen stopped iOS simulator with `mobile_boot_simulator`, or an Android AVD with `mobile_boot_android_emulator`. A mobile app development request permits choosing and booting a suitable installed simulator without a separate device-choice question. Reuse running devices without rebooting them. Follow the Android section below for device discovery and serials. Opening the panel alone does not boot a device.

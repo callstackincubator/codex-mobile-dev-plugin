@@ -57,9 +57,9 @@ relevant checks, and packaging steps again.
 
 `build` also bundles JavaScript and CSS with esbuild and copies Baguette into `dist/baguette`. It does not run TypeScript, lint, Biome, visual checks, or React Doctor.
 
-`package` copies built files into `release/marketplace/plugins/mobile-dev` and creates the ZIP. It includes agent-device's runtime `node_modules`, licenses, and Apple runner source. It does not need this development checkout or a global agent-device install to run. The source repo's existing build-codex-native-plugins skill stays outside that release package.
+`package` copies built files into `release/marketplace/plugins/mobile-dev` and creates the ZIP. It includes agent-device's runtime `node_modules`, licenses, and Apple runner source. The Codex compatibility manifest lives at `.codex-plugin/plugin.json` and declares `.mcp.json`. The MCP entry invokes `scripts/launch-mcp.sh` through `/bin/sh` and explicitly forwards `SHELL` and the telemetry settings. That launcher resolves `node` in the configured interactive login shell, validates the returned executable and minimum Node version, and reports setup failures on stderr. It does not try other runtimes, download Node, or assume an installation path. Shell startup output is captured separately from MCP stdout. The source repo's existing build-codex-native-plugins skill stays outside that release package.
 
-`test` checks MCP contracts, frame reads, input validation, and capture cleanup against a local fixture. `test:package` copies the release package into a temporary directory, starts its bundled Baguette, reads the real device list, and checks shutdown. It does not boot or change a simulator. Run it on an Apple Silicon Mac with Xcode.
+`test` checks MCP contracts, frame reads, input validation, and capture cleanup against a local fixture, plus launch success and setup failures with Node absent from PATH. `test:package` copies the release package into a temporary directory and uses its actual MCP launch configuration with a system-only PATH. The smoke-test caller supplies a controlled login-shell fixture whose PATH contains its test Node executable; the MCP process itself has a system-only PATH. It checks native addon loading, sidebar/chat entrypoints, UI resources, and telemetry attribution, starts bundled Baguette, reads the real device list, and checks shutdown. It does not boot or change a simulator. Run it on an Apple Silicon Mac with Xcode.
 
 `test:agent-device` requires reactivating the Agent Device MCP entry first. It starts the retained MCP server from a copied package with no global CLI on its PATH. It checks the control tools, pinned runtime, isolated state directory, real iOS device list, and daemon cleanup. It does not open an app, take screenshots, or send input.
 
@@ -112,7 +112,7 @@ helpers. Local builds use the `development` environment; public packages require
 `npm run build:release` and `npm run package:release`. Keep credentials, source maps,
 and native symbols outside the package.
 
-Bump the plugin version for plugin changes and keep `plugin.json`, `package.json`,
+Bump the plugin version for plugin changes and keep `.codex-plugin/plugin.json`, `package.json`,
 both root versions in `package-lock.json`, and `src/shared/version.ts` in sync.
 See [GitHub releases](docs/releases.md) for tagging, CI packaging, symbol uploads,
 and marketplace publishing.

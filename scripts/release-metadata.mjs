@@ -2,7 +2,7 @@ import { appendFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 export async function releaseMetadata(tag, directory = ".") {
-  const manifestText = await readFile(`${directory}/plugin.json`, "utf8");
+  const manifestText = await readFile(`${directory}/.codex-plugin/plugin.json`, "utf8");
   const manifest = JSON.parse(manifestText);
   const version = manifest.version;
   const validVersion = typeof version === "string" && /^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?$/.test(version);
@@ -12,14 +12,14 @@ export async function releaseMetadata(tag, directory = ".") {
   for (const file of ["package.json", "package-lock.json"]) {
     const contents = await readFile(`${directory}/${file}`, "utf8");
     const metadata = JSON.parse(contents);
-    if (metadata.version !== version) throw new Error(`${file} version does not match plugin.json.`);
+    if (metadata.version !== version) throw new Error(`${file} version does not match .codex-plugin/plugin.json.`);
     if (file === "package-lock.json" && metadata.packages[""].version !== version) {
-      throw new Error("The package-lock.json root package version does not match plugin.json.");
+      throw new Error("The package-lock.json root package version does not match .codex-plugin/plugin.json.");
     }
   }
   const source = await readFile(`${directory}/src/shared/version.ts`, "utf8");
   const expectedSource = `export const PLUGIN_VERSION = "${version}";`;
-  if (source.trim() !== expectedSource) throw new Error("src/shared/version.ts does not match plugin.json.");
+  if (source.trim() !== expectedSource) throw new Error("src/shared/version.ts does not match .codex-plugin/plugin.json.");
   return { tag, version, archive: `release/mobile-dev-${version}-darwin-arm64.zip` };
 }
 

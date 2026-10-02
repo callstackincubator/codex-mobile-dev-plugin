@@ -64,7 +64,7 @@ function gitEnvironment(remote, token) {
 }
 
 export async function publishRelease(pluginDirectory, tag, remote, token) {
-  const manifestText = await readFile(`${pluginDirectory}/plugin.json`, "utf8");
+  const manifestText = await readFile(`${pluginDirectory}/.codex-plugin/plugin.json`, "utf8");
   const manifest = JSON.parse(manifestText);
   const version = manifest.version;
   const validVersion = typeof version === "string" && /^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?$/.test(version);
@@ -73,7 +73,8 @@ export async function publishRelease(pluginDirectory, tag, remote, token) {
   }
   await assertBuildEnvironment(`${pluginDirectory}/dist`, "release");
   await access(`${pluginDirectory}/dist/server.mjs`);
-  await access(`${pluginDirectory}/mcp.json`);
+  await access(`${pluginDirectory}/scripts/launch-mcp.sh`);
+  await access(`${pluginDirectory}/.mcp.json`);
   const env = gitEnvironment(remote, token);
   const parent = tmpdir();
   const prefix = join(parent, "mobile-dev-publish-");
@@ -99,10 +100,13 @@ export async function publishRelease(pluginDirectory, tag, remote, token) {
       const previousCatalogText = await readFile(`${directory}/.agents/plugins/marketplace.json`, "utf8");
       const previousCatalog = JSON.parse(previousCatalogText);
       if (previousCatalog.name !== "mobile-dev") throw new Error("release/latest must contain the mobile-dev marketplace.");
-      const previousText = await readFile(`${directory}/plugins/mobile-dev/plugin.json`, "utf8");
-      const previous = JSON.parse(previousText);
-      const comparison = compareVersions(version, previous.version);
-      if (comparison <= 0) return { published: false, version, latest: previous.version };
+      const previousSubject = git(["log", "-1", "--format=%s"]);
+      const subject = previousSubject.trim();
+      const previousRelease = subject.match(/^Release Mobile Dev (\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?)$/);
+      if (previousRelease === null) throw new Error("release/latest must point to a Mobile Dev release commit.");
+      const previousVersion = previousRelease[1];
+      const comparison = compareVersions(version, previousVersion);
+      if (comparison <= 0) return { published: false, version, latest: previousVersion };
     } else if (existing.status !== 2) {
       throw new Error(`Cannot inspect release/latest: ${existing.stderr}`);
     }
