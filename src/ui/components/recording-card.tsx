@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { PointerEvent } from "react";
+import type { PointerEvent, ReactNode } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ChartColumnIcon, ExternalLinkIcon, MessageCircleIcon } from "lucide-react";
+import { ExternalLinkIcon, InfoIcon, MessageCircleIcon } from "lucide-react";
 import type { RecordingController } from "../recording-controller.ts";
 import type { RecordingRange } from "../../shared/recordings.ts";
 import { summarizeRecording } from "../../shared/recordings.ts";
@@ -9,6 +9,7 @@ import { recordUiTiming } from "../telemetry.ts";
 import { createRecordingCpuSeries, createRecordingFpsSeries, findRecordingChangeRanges } from "../recording-series.ts";
 import type { RecordingPoint } from "../recording-series.ts";
 import { Button } from "./ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { RecordingChartShape, recordingChartPoints } from "./recording-chart-shape";
 import { useMediaQuery } from "./use-media-query";
 
@@ -24,8 +25,28 @@ function seconds(value: number) { return `${value.toFixed(1)}s`; }
 function fpsReading(value: number | null) { return value === null ? "—" : value.toFixed(1); }
 function milliseconds(value: number | null) { return value === null ? "—" : `${value.toFixed(2)} ms`; }
 
-function RecordingChart({ label, data, duration, range, changes, color, unit, onDrag, onSelect }: {
-  label: string; data: RecordingPoint[]; duration: number; range?: RecordingRange; changes: RecordingRange[]; color: string; unit: string;
+function RecordingInfo({ label, children }: { label: string; children: ReactNode }) {
+  return <Popover><PopoverTrigger asChild><Button variant="ghost" size="icon-xs" className="recording-info" aria-label={`About ${label}`} title={`About ${label}`}><InfoIcon /></Button></PopoverTrigger>
+    <PopoverContent className="recording-info-content" side="bottom" align="start" aria-label={`About ${label}`}>{children}</PopoverContent>
+  </Popover>;
+}
+
+function RecordingOverview({ duration, range, changes, onClear }: { duration: number; range?: RecordingRange; changes: RecordingRange[]; onClear: () => void }) {
+  const position = (time: number) => Math.max(0, Math.min(100, time / duration * 100));
+  return <section className="recording-overview" aria-label="Recording range overview">
+    <div className="recording-section-heading"><h3>{range ? "Selected range" : "Entire recording"}</h3><RecordingInfo label="recording range">Drag across any chart to select a range; click a chart to clear it. Purple marks show the most rapid changes. Missing readings remain gaps.</RecordingInfo>
+      {range && <button type="button" className="recording-clear-range" onClick={onClear}>Clear</button>}
+    </div>
+    <div className="recording-overview-bar" role="img" aria-label={range ? `Selected range: ${seconds(range.start)}–${seconds(range.end)}` : `Entire recording: 0.0s–${seconds(duration)}`}>
+      {changes.map((change, index) => <span key={index} className="recording-overview-change" style={{ left: `${position(change.start)}%`, width: `${position(change.end) - position(change.start)}%` }} />)}
+      {range && <span className="recording-overview-range" style={{ left: `${position(range.start)}%`, width: `${position(range.end) - position(range.start)}%` }} />}
+    </div>
+    <div className="recording-overview-labels"><span>{seconds(range?.start ?? 0)}</span><span>{seconds(range?.end ?? duration)}</span></div>
+  </section>;
+}
+
+function RecordingChart({ label, info, metricLabel, metric, data, duration, range, changes, color, unit, onDrag, onSelect }: {
+  label: string; info: string; metricLabel: string; metric: string; data: RecordingPoint[]; duration: number; range?: RecordingRange; changes: RecordingRange[]; color: string; unit: string;
   onDrag: (range?: RecordingRange) => void; onSelect: (range?: RecordingRange) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
@@ -81,7 +102,7 @@ function RecordingChart({ label, data, duration, range, changes, color, unit, on
     return `${formatted} ${unit}`;
   }
   return <section className="recording-track" aria-label={label} data-reveal={reveal}>
-    <div className="recording-track-heading"><h3>{label}</h3>{changes.length > 0 && <span className="recording-change-legend">Most rapid changes</span>}</div>
+    <div className="recording-track-heading"><h3>{label}</h3><RecordingInfo label={label}>{info}</RecordingInfo><span className="recording-track-metric"><span aria-hidden="true">·</span><span>{metricLabel} <strong>{metric}</strong></span></span></div>
     <div ref={root} className="recording-chart" onPointerDown={event => {
       if (event.button !== 0) return;
       setReveal("settled");
@@ -99,9 +120,9 @@ function RecordingChart({ label, data, duration, range, changes, color, unit, on
       <ResponsiveContainer width="100%" height={170}>
         <AreaChart data={data} margin={{ left: 0, right: 12, top: 12, bottom: 0 }}>
           <CartesianGrid stroke="var(--border)" />
-          <XAxis dataKey="time" type="number" domain={[0, duration]} tickFormatter={seconds} tick={{ fontSize: 11 }} />
-          <YAxis width={52} domain={[low, high]} allowDecimals={unit === "%"} tick={{ fontSize: 11 }} tickFormatter={value => unit === "%" ? `${value}%` : value.toFixed(0)} />
-          <Tooltip formatter={formatReading} labelFormatter={value => `${value}s`} contentStyle={{ background: "var(--popover)", borderColor: "var(--border)", borderRadius: 8 }} />
+          <XAxis dataKey="time" type="number" domain={[0, duration]} tickFormatter={seconds} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
+          <YAxis width={52} domain={[low, high]} allowDecimals={unit === "%"} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickFormatter={value => unit === "%" ? `${value}%` : value.toFixed(0)} />
+          <Tooltip formatter={formatReading} labelFormatter={value => `${value}s`} contentStyle={{ background: "var(--popover)", borderColor: "var(--border)", borderRadius: 8, color: "var(--foreground)" }} />
           {changes.map(change => <ReferenceArea key={change.start} className="recording-change-highlight" x1={change.start} x2={change.end} fill="#9873e6" fillOpacity={0.16} strokeOpacity={0} />)}
           <Area type="linear" dataKey="value" name={label} stroke={color} fill={color} fillOpacity={0.07} strokeWidth={2} dot={false} shape={RecordingChartShape} animationInterpolateFn={recordingChartPoints} isAnimationActive={reveal === "pending" ? "auto" : false} animationBegin={REVEAL_DELAY} animationDuration={700} animationEasing="ease-out" onAnimationStart={startReveal} onAnimationEnd={finishReveal} connectNulls={false} />
           {range && <ReferenceArea className="recording-range-highlight" x1={range.start} x2={range.end} fill="#2583ff" fillOpacity={0.12} stroke="#2583ff" strokeOpacity={0.5} />}
@@ -167,39 +188,44 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
   const hasReadings = hasCpu || hasMemory || hasFps || hasFrames;
   return <article className="recording-card" aria-label="Saved performance recording">
     <header className="recording-header">
-      <span className="recording-icon"><ChartColumnIcon size={24} /></span>
-      <div className="recording-heading"><h2>{recording.title}</h2><p>{recording.deviceName} · {recording.target.bundleId} · {recording.durationSeconds}s · {recording.completedAt ? "Saved" : "Started"} {savedAt}</p></div>
+      <div className="recording-heading"><h2>{recording.title}</h2><p title={recording.target.bundleId}>{recording.deviceName} · {recording.durationSeconds}s · {savedAt}</p></div>
       <span className="recording-status" role="status">{status}</span>
     </header>
     <div className="recording-body">
-      {hasReadings === false && <p role="status">No performance readings recorded yet.</p>}
-      <dl className="recording-metrics">{hasCpu && <div><dt>Peak CPU</dt><dd>{percent(derived.total.peakCpuPercent)}</dd></div>}{hasMemory && <div><dt>Memory change</dt><dd>{memoryChange(derived.total.memoryChangeBytes)}</dd></div>}{hasFps && <div><dt>Average FPS</dt><dd>{fpsReading(derived.total.averageFps)}</dd></div>}{frameStats !== null && <><div><dt>Jank rate</dt><dd>{percent(frameStats.jankRatePercent)}</dd></div><div><dt>P95 frame interval</dt><dd>{milliseconds(frameStats.p95FrameIntervalMs)}</dd></div><div><dt>Dropped frames</dt><dd>{frameStats.droppedFrameCount}</dd></div></>}</dl>
-      {hasCpu && <RecordingChart key={`${recording.id}:cpu`} label="CPU" data={derived.cpu} duration={recording.durationSeconds} range={range} changes={changes.cpu} color="#2583ff" unit="%" onDrag={setDrag} onSelect={controller.select} />}
-      {hasMemory && <RecordingChart key={`${recording.id}:memory`} label={`Memory · ${memoryMetric} · MiB`} data={derived.memory} duration={recording.durationSeconds} range={range} changes={changes.memory} color="#f57b28" unit="MiB" onDrag={setDrag} onSelect={controller.select} />}
-      {hasFps && <RecordingChart key={`${recording.id}:fps`} label="Display FPS · device-wide" data={derived.fps} duration={recording.durationSeconds} range={range} changes={changes.fps} color="#36a269" unit="fps" onDrag={setDrag} onSelect={controller.select} />}
-      {hasDisplayData && <p className="recording-footnote">{displayScope}</p>}
-      {recording.status === "finishing" && <p className="recording-footnote" role="status">Finishing the recording…</p>}
-      <div className="recording-selection">
-        <div className="recording-breakdown"><h3>{range ? `Selected range: ${seconds(range.start)}–${seconds(range.end)}` : "Entire recording"}</h3>{hasFps && <p>Average FPS: {fpsReading(selected.averageFps)} · Minimum FPS: {fpsReading(selected.minimumFps)}</p>}
-          {selectedFrameStats !== null && <div className="recording-frame-stats">
+      <div className="recording-charts">
+        {hasReadings === false && <p role="status">No performance readings recorded yet.</p>}
+        {hasCpu && <RecordingChart key={`${recording.id}:cpu`} label="CPU" info="100% CPU is one core. Peak shows the highest CPU reading across the recording." metricLabel="Peak" metric={percent(derived.total.peakCpuPercent)} data={derived.cpu} duration={recording.durationSeconds} range={range} changes={changes.cpu} color="#2583ff" unit="%" onDrag={setDrag} onSelect={controller.select} />}
+        {hasMemory && <RecordingChart key={`${recording.id}:memory`} label="Memory (MiB)" info={`${memoryMetric} in mebibytes. Change compares the first and last memory readings across the recording.`} metricLabel="Δ" metric={memoryChange(derived.total.memoryChangeBytes)} data={derived.memory} duration={recording.durationSeconds} range={range} changes={changes.memory} color="#f57b28" unit="MiB" onDrag={setDrag} onSelect={controller.select} />}
+        {hasFps && <RecordingChart key={`${recording.id}:fps`} label="Display FPS" info={displayScope} metricLabel="Average" metric={fpsReading(derived.total.averageFps)} data={derived.fps} duration={recording.durationSeconds} range={range} changes={changes.fps} color="#36a269" unit="fps" onDrag={setDrag} onSelect={controller.select} />}
+        {hasDisplayData && <p className="recording-footnote">{displayScope}</p>}
+        {recording.status === "finishing" && <p className="recording-footnote" role="status">Finishing the recording…</p>}
+      </div>
+      <aside className="recording-sidebar" aria-label="Recording summary and actions">
+        <RecordingOverview duration={recording.durationSeconds} range={range} changes={[...changes.cpu, ...changes.memory, ...changes.fps]} onClear={() => { setDrag(undefined); controller.select(undefined); }} />
+        {hasCpu && <section className="recording-breakdown" aria-label="Thread CPU usage">
+          <div className="recording-section-heading"><h3>Threads</h3><RecordingInfo label="threads">Busiest recorded threads, ordered by average CPU usage in the {range ? "selected range" : "entire recording"}. 100% CPU is one core.</RecordingInfo></div>
+          {shownThreads.length > 0 ? <dl>{shownThreads.map(thread => <div key={thread.id}><dt title={thread.id}>{thread.name || `Thread ${thread.id}`}</dt><dd>{percent(thread.averageCpuPercent)}</dd></div>)}</dl> : <p>No thread CPU measurements in this range.</p>}
+        </section>}
+        {(hasFps || selectedFrameStats !== null) && <section className="recording-display-summary" aria-label="Display statistics">
+          <div className="recording-section-heading"><h3>Display</h3><RecordingInfo label="display statistics">{displayScope} Statistics use the {range ? "selected range" : "entire recording"}.</RecordingInfo></div>
+          <dl className="recording-metrics">{hasFps && <><div><dt>Average FPS</dt><dd>{fpsReading(selected.averageFps)}</dd></div><div><dt>Minimum FPS</dt><dd>{fpsReading(selected.minimumFps)}</dd></div></>}{selectedFrameStats !== null && <><div><dt>Jank rate</dt><dd>{percent(selectedFrameStats.jankRatePercent)}</dd></div><div><dt>P95 interval</dt><dd>{milliseconds(selectedFrameStats.p95FrameIntervalMs)}</dd></div><div><dt>Dropped frames</dt><dd>{selectedFrameStats.droppedFrameCount}</dd></div></>}</dl>
+          {selectedFrameStats !== null && <details className="recording-frame-stats">
+            <summary>Frame details</summary>
             <p>Jank rate: {percent(selectedFrameStats.jankRatePercent)} · Janky presented frames: {selectedFrameStats.jankyPresentedFrameCount}/{selectedFrameStats.classifiedPresentedFrameCount}</p>
             <p>Classification coverage: {percent(selectedFrameStats.classificationCoveragePercent)} · Unclassified presented frames: {selectedFrameStats.unclassifiedPresentedFrameCount}</p>
             <p>Dropped frames: {selectedFrameStats.droppedFrameCount} ({percent(selectedFrameStats.droppedFrameRatePercent)}) · Unknown presentation: {selectedFrameStats.unknownPresentationFrameCount}</p>
             <p>Frame intervals · P50: {milliseconds(selectedFrameStats.p50FrameIntervalMs)} · P95: {milliseconds(selectedFrameStats.p95FrameIntervalMs)} · P99: {milliseconds(selectedFrameStats.p99FrameIntervalMs)}</p>
             <p>Jank rate uses classified presented display frames. Dropped frames are counted separately.</p>
-          </div>}
-          {hasCpu && <p>Busiest recorded threads · average CPU</p>}
-          {hasCpu && (shownThreads.length > 0 ? <dl>{shownThreads.map(thread => <div key={thread.id}><dt title={thread.id}>{thread.name || `Thread ${thread.id}`}</dt><dd>{percent(thread.averageCpuPercent)}</dd></div>)}</dl> : <p>No thread CPU measurements in this range.</p>)}
-        </div>
+          </details>}
+        </section>}
         <div className="recording-actions">
-          <Button disabled={state.canMessage === false || state.busy || hasReadings === false} onClick={() => { void controller.send("ask"); }}><MessageCircleIcon />{range ? "Ask about this range" : "Ask about this recording"}</Button>
+          <Button disabled={state.canMessage === false || state.busy || hasReadings === false} onClick={() => { void controller.send("ask"); }}><MessageCircleIcon />{range ? "Ask about this range" : "Ask about recording"}</Button>
           {detailed === false && <Button variant="outline" disabled={state.canMessage === false || state.busy} onClick={() => { void controller.send("open"); }}><ExternalLinkIcon />Open in Mobile Dev</Button>}
-          <p>{state.canMessage ? "Ask sends a new message with this range." : "This host does not support sending chart selections to chat."}</p>
+          {state.canMessage === false && <p>This host does not support sending chart selections to chat.</p>}
         </div>
-      </div>
-      {hasReadings && <p className="recording-footnote">Drag across any chart to select a range; click to clear it. {hasCpu && "100% CPU is one core. "}Missing readings remain gaps.</p>}
-      {state.error && <p role="alert" className="recording-error">{state.error}</p>}
-      {detailed && <p className="recording-footnote">{recording.samples.length} CPU/memory samples · {hasFps && `${recording.fps.samples.length} FPS samples · `}Recording {recording.id} · {time.toLocaleDateString()}</p>}
+        {state.error && <p role="alert" className="recording-error">{state.error}</p>}
+        {detailed && <p className="recording-footnote">{recording.samples.length} CPU/memory samples · {hasFps && `${recording.fps.samples.length} FPS samples · `}Recording {recording.id} · {time.toLocaleDateString()}</p>}
+      </aside>
     </div>
   </article>;
 }

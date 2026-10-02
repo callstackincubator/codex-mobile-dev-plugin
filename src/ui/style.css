@@ -3,41 +3,65 @@ html[data-theme="dark"] { color-scheme: dark; }
 html, body, #root { height: 100%; overflow: hidden; }
 body { font-size: 12px; }
 html[data-view="recording"], html[data-view="recording"] body, html[data-view="recording"] #root { height: auto; overflow: visible; }
-.recording-card { margin: 12px; border: 1px solid var(--border); border-radius: 16px; background: var(--background); color: var(--foreground); font-size: 13px; overflow: hidden; }
-.recording-header { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
-.recording-icon { display: grid; place-items: center; width: 42px; height: 42px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 10px; color: #2583ff; }
+.recording-card { container-type: inline-size; margin: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--background); color: var(--foreground); font-size: 13px; overflow: hidden; }
+.recording-header { display: flex; align-items: center; gap: 16px; padding: 18px 22px; border-bottom: 1px solid var(--border); }
 .recording-heading { flex: 1; min-width: 0; }
-.recording-heading h2 { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
-.recording-heading p, .recording-actions p, .recording-footnote { color: var(--muted-foreground); font-size: 12px; }
-.recording-heading p { margin-top: 4px; overflow-wrap: anywhere; }
-.recording-status { border-radius: 20px; padding: 4px 10px; background: var(--muted); font-size: 12px; }
-.recording-body { padding: 20px; }
-.recording-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 12px; margin-bottom: 20px; }
-.recording-metrics > div + div { border-left: 1px solid var(--border); padding-left: 20px; }
-.recording-metrics > div:nth-child(3n + 1) { border-left: 0; padding-left: 0; }
-.recording-metrics dt { font-weight: 500; }
-.recording-metrics dd { font-size: 28px; font-weight: 600; margin-top: 4px; }
-.recording-track { margin-top: 18px; }
-.recording-track h3, .recording-breakdown h3 { font-weight: 600; }
-.recording-track-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.recording-change-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted-foreground); }
-.recording-change-legend::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: #9873e629; border: 1px solid #9873e6; }
+.recording-heading h2 { font-size: 18px; line-height: 1.35; font-weight: 600; overflow-wrap: anywhere; }
+.recording-heading p, .recording-actions p, .recording-footnote { color: var(--muted-foreground); font-size: 12px; line-height: 1.5; }
+.recording-heading p { margin-top: 3px; overflow-wrap: anywhere; }
+.recording-status { flex-shrink: 0; border-radius: 999px; padding: 5px 12px; background: var(--muted); font-size: 12px; }
+.recording-body { display: grid; grid-template-columns: minmax(0, 1fr); }
+.recording-charts { min-width: 0; padding: 16px 20px 12px; }
+.recording-track + .recording-track { margin-top: 22px; }
+.recording-track h3, .recording-section-heading h3 { font-size: 14px; font-weight: 600; line-height: 1.4; }
+.recording-track-heading, .recording-section-heading { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.recording-track-heading { flex-wrap: wrap; margin-bottom: 2px; }
+.recording-track-metric { display: inline-flex; align-items: baseline; gap: 14px; color: var(--muted-foreground); font-size: 14px; }
+.recording-track-metric strong { color: var(--foreground); font-weight: 600; font-variant-numeric: tabular-nums; }
+.recording-info { width: 22px; height: 22px; border-radius: 50%; color: var(--muted-foreground); }
+.recording-info-content { width: min(280px, calc(100vw - 24px)); font-size: 12px; line-height: 1.5; }
 .recording-chart { width: 100%; touch-action: pan-y; user-select: none; cursor: crosshair; }
 .recording-track[data-reveal="pending"] .recording-change-highlight { opacity: 0; }
 .recording-track[data-reveal="finished"] .recording-change-highlight { animation: recording-highlight-reveal 150ms ease-out 250ms both; }
 @keyframes recording-highlight-reveal { from { opacity: 0; } to { opacity: 1; } }
-.recording-selection { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 16px; margin-top: 20px; border: 1px solid var(--border); border-radius: 12px; }
-.recording-breakdown p { margin: 8px 0; color: var(--muted-foreground); }
-.recording-breakdown dl > div { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; }
-.recording-breakdown dt { overflow-wrap: anywhere; }
-.recording-breakdown dd { font-variant-numeric: tabular-nums; }
-.recording-frame-stats { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-.recording-frame-stats p:last-child { font-size: 12px; }
-.recording-actions { display: flex; flex-direction: column; gap: 10px; justify-content: center; border-left: 1px solid var(--border); padding-left: 20px; }
+.recording-sidebar { display: flex; flex-direction: column; min-width: 0; padding: 16px; border-top: 1px solid var(--border); gap: 16px; }
+.recording-overview { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.recording-overview-bar { position: relative; height: 18px; margin-top: 14px; border-radius: 5px; background: var(--muted); overflow: hidden; }
+.recording-overview-change, .recording-overview-range { position: absolute; top: 0; bottom: 0; min-width: 2px; }
+.recording-overview-change { border-inline: 2px solid #9873e6; background: #9873e629; }
+.recording-overview-range { border-inline: 2px solid #2583ff; background: #2583ff29; }
+.recording-overview-labels { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; font-size: 12px; }
+.recording-clear-range { margin-left: auto; color: var(--muted-foreground); font-size: 11px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.recording-clear-range:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 2px; }
+.recording-breakdown, .recording-display-summary { border-top: 1px solid var(--border); padding-top: 14px; }
+.recording-breakdown p { margin-top: 10px; color: var(--muted-foreground); font-size: 12px; }
+.recording-breakdown dl { margin-top: 10px; }
+.recording-breakdown dl > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 0; }
+.recording-breakdown dl > div + div { border-top: 1px solid var(--border); }
+.recording-breakdown dt { min-width: 0; overflow-wrap: anywhere; }
+.recording-breakdown dd { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.recording-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
+.recording-metrics dt { font-size: 11px; color: var(--muted-foreground); }
+.recording-metrics dd { margin-top: 3px; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.recording-frame-stats { margin-top: 14px; font-size: 12px; color: var(--muted-foreground); }
+.recording-frame-stats summary { color: var(--foreground); cursor: pointer; }
+.recording-frame-stats p { margin-top: 8px; line-height: 1.5; }
+.recording-actions { display: flex; flex-direction: column; gap: 9px; margin-top: auto; border-top: 1px solid var(--border); padding-top: 16px; }
+.recording-actions > button { width: 100%; height: 38px; gap: 10px; font-size: 13px; white-space: normal; }
 .recording-footnote { margin-top: 10px; }
-.recording-error { color: var(--destructive); margin-top: 12px; }
+.recording-error { color: var(--destructive); font-size: 12px; overflow-wrap: anywhere; }
 .recording-workspace { height: 100%; overflow: auto; padding: 12px; }
-@media (max-width: 480px) { .recording-metrics { grid-auto-flow: row; grid-template-columns: 1fr; } .recording-metrics > div + div { border-left: 0; padding-left: 0; } .recording-header, .recording-body { padding: 14px; } .recording-icon { display: none; } .recording-selection { grid-template-columns: 1fr; } .recording-actions { border-left: 0; padding-left: 0; border-top: 1px solid var(--border); padding-top: 14px; } }
+@container (min-width: 640px) {
+  .recording-body { grid-template-columns: minmax(0, 2.1fr) minmax(220px, 1fr); }
+  .recording-sidebar { border-top: 0; border-left: 1px solid var(--border); }
+}
+@container (max-width: 380px) {
+  .recording-header { padding: 14px; gap: 10px; }
+  .recording-heading h2 { font-size: 16px; }
+  .recording-charts { padding: 14px 10px 10px; }
+  .recording-sidebar { padding: 14px; }
+  .recording-track-metric { gap: 8px; font-size: 12px; }
+}
 [hidden] { display: none !important; }
 
 /* The controller fits the canvas to each device's frame and screen mask. */

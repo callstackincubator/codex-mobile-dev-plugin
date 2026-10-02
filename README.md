@@ -274,6 +274,8 @@ Performance findings and historical measurements are documented in [the profilin
 
 ### Saved recordings in chat
 
+The inline preview places charts beside a range overview, the busiest threads and chat actions. CPU peak and memory change appear with their chart titles. Drag a chart to select a range; Clear in the overview restores the entire recording. Info buttons explain each metric. FPS and display frame details appear only when recorded. Narrow cards stack the charts above the summary and actions.
+
 For a request such as “Record CPU and memory for 30 seconds while I scroll checkout”,
 call `mobile_record_performance` with the running app's `target`, a descriptive
 `title`, and `durationSeconds` (default 30, maximum 300). This returns immediately.
