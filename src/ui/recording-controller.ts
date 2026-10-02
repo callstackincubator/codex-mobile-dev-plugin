@@ -1,6 +1,6 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { OpenAIMessageParams } from "@openai/mcp-extensions/app";
+import type { OpenAIExtensions, OpenAIMessageParams } from "@openai/mcp-extensions/app";
 import { recordingRangeSchema, recordingSchema, summarizeRecording } from "../shared/recordings.ts";
 import type { PerformanceRecording, RecordingRange } from "../shared/recordings.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
@@ -15,6 +15,7 @@ type RecordingState = {
 
 export class RecordingController {
   private readonly app: App;
+  private readonly extensions?: OpenAIExtensions;
   private state: RecordingState = { canMessage: false, busy: false, error: "" };
   private listeners = new Set<() => void>();
   private timer?: ReturnType<typeof setTimeout>;
@@ -24,8 +25,9 @@ export class RecordingController {
   private readyAt = performance.now();
   private abort = new AbortController();
 
-  constructor(app: App) {
+  constructor(app: App, extensions?: OpenAIExtensions) {
     this.app = app;
+    this.extensions = extensions;
     document.addEventListener("visibilitychange", this.visibilityChanged);
   }
   subscribe = (listener: () => void) => {
@@ -128,17 +130,36 @@ export class RecordingController {
     const prompt = action === "ask"
       ? `Explain ${metricNames} during ${selected.start}–${selected.end}s of “${recording.title}”. Read the original samples with mobile_read_performance_recording using ${reference}. Distinguish measurements from hypotheses about their cause${displayContext}${frameContext}.`
       : `Open “${recording.title}” in Mobile Dev with ${selected.start}–${selected.end}s selected. Use mobile_open_performance_recording with ${reference}.`;
-    const startedAt = performance.now();
+    let sending = false;
     try {
-      const message: OpenAIMessageParams = { role: "user", content: [{ type: "text", text: prompt }], _meta: { "openai/message": { target: "active", send: true } } };
-      const result = await this.app.sendMessage(message);
+      const modelContext = this.extensions?.modelContext;
+      if (modelContext) {
+        const current = modelContext.getCurrent();
+        const contextStartedAt = performance.now();
+        try {
+          await modelContext.update({
+            content: [...(current?.content ?? []).filter(item => item._meta?.["mobile-dev/recordingReference"] !== true), {
+              type: "text", text: prompt,
+              _meta: { "openai/title": `${recording.title.replace(/\s+/g, " ").trim()} · ${selected.start}–${selected.end}s`, "mobile-dev/recordingReference": true },
+            }],
+            structuredContent: { ...current?.structuredContent, selectedRecording: { recordingId: recording.id, range: selected } },
+          }, { timeout: 5000 });
+        } finally { recordUiTiming("ui.recording.context_attach", performance.now() - contextStartedAt); }
+      }
+      if (this.disposed) return;
+      const text = modelContext ? (action === "ask" ? (range ? "Explain this selected range." : "Explain this recording.") : "Open this recording in Mobile Dev.") : prompt;
+      const message: OpenAIMessageParams = { role: "user", content: [{ type: "text", text }], _meta: { "openai/message": { target: "active", send: true } } };
+      const startedAt = performance.now();
+      sending = true;
+      const result = await this.app.sendMessage(message, { timeout: 5000, maxTotalTimeout: 5000 });
       if (result.isError) throw new Error("The host could not send this recording to chat.");
       countUiEvent(`ui.recording.${action}`);
       const elapsed = performance.now() - startedAt;
       recordUiTiming("ui.recording.message_ack", elapsed);
     } catch (error) {
-      captureUiError(error, `recording.${action}`);
-      const message = error instanceof Error ? error.message : "Could not send this recording to chat.";
+      captureUiError(new Error("Recording chat action failed."), `recording.${action}`);
+      const timedOut = sending && typeof error === "object" && error !== null && "code" in error && error.code === -32001;
+      const message = timedOut ? "Codex did not confirm delivery. Check the chat before retrying to avoid sending the question twice." : error instanceof Error ? error.message : "Could not send this recording to chat.";
       this.update({ error: message });
     } finally { this.update({ busy: false }); }
   }

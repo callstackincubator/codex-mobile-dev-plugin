@@ -24,7 +24,7 @@ const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
 const performancePanel = new PerformancePanel(app);
 const logsPanel = new LogsPanel(app, panelContext);
-const recordingController = new RecordingController(app);
+const recordingController = new RecordingController(app, extensions);
 const reactRoot = createRoot(document.getElementById("root")!);
 const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
   <Workspace performance={performancePanel} logs={logsPanel} recordingController={recordingController} onLayout={changeLayout} />

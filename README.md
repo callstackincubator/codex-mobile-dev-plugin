@@ -276,6 +276,8 @@ Performance findings and historical measurements are documented in [the profilin
 
 The inline preview places charts beside a range overview, the busiest threads and chat actions. CPU peak and memory change appear with their chart titles. Drag a chart to select a range; Clear in the overview restores the entire recording. Info buttons explain each metric. FPS and display frame details appear only when recorded. Narrow cards stack the charts above the summary and actions.
 
+Ask sends “Explain this recording.” or “Explain this selected range.” The recording ID, exact range, tool instructions and measurement guidance attach as a context pill labeled with the recording title and time range. Open uses the same pill with a short message. Existing context pills stay attached. Hosts without context support receive the full reference in the message; an attachment failure stops the short message from sending.
+
 Inline previews fill the available app width without an inner card border or margin. Borders above and below the header separate the title from the host and charts. The resource requests the host's outer border; the host controls spacing outside the app.
 
 For a request such as “Record CPU and memory for 30 seconds while I scroll checkout”,
@@ -435,7 +437,7 @@ using the existing bounded timing windows. Since 0.1.84, the line traces its
 measured curve with the fill following it. Since 0.1.85, the entrance pause is
 550 ms and change highlights fade in after drawing finishes. The intentional
 pause and highlight fade are excluded from the reveal timing;
-`ui.recording.message_ack` ends when the host acknowledges a button's message.
+`ui.recording.message_ack` ends when the host acknowledges a button's message. Since 0.1.98, `ui.recording.context_attach` measures the preceding context attachment round trip in milliseconds, including failed writes. Both use the active recording surface. Recording IDs, titles, ranges and context text remain local. Handled action errors use a fixed telemetry message.
 `ui.recording.samples` counts samples held by the visible card, and bounded event
 counts record range selections and Ask/Open actions. `storage.bytes` with
 `kind: recordings` measures local saved-file storage. Recording polling is excluded

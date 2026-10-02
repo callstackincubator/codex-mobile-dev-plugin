@@ -1,4 +1,5 @@
 import { App, applyDocumentTheme, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
+import { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import { createRoot } from "react-dom/client";
 import { RecordingController } from "./recording-controller.ts";
 import { RecordingCard } from "./components/recording-card";
@@ -9,7 +10,7 @@ export function startRecordingApp() {
   const app = new App({ name: "mobile-dev-recording", version: PLUGIN_VERSION });
   startUiTelemetry(app);
   setUiSurface("recording");
-  const controller = new RecordingController(app);
+  const controller = new RecordingController(app, new OpenAIExtensions(app));
   const root = createRoot(document.getElementById("root")!);
   root.render(<ErrorBoundary fallback={<p role="alert">This recording could not render. Reopen it to try again.</p>}><RecordingCard controller={controller} /></ErrorBoundary>);
   function hostChanged() {

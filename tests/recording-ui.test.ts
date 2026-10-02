@@ -17,9 +17,9 @@ for (const reducedMotion of [false, true]) {
         import { RecordingCard } from "./src/ui/components/recording-card.tsx";
         import { RecordingController } from "./src/ui/recording-controller.ts";
         import { startUiTelemetry, stopUiTelemetry } from "./src/ui/telemetry.ts";
-        export function mount(app, result) {
+        export function mount(app, result, extensions) {
           startUiTelemetry(app);
-          const controller = new RecordingController(app);
+          const controller = new RecordingController(app, extensions);
           controller.hostChanged();
           controller.accept(result);
           const root = createRoot(document.getElementById("root"));
@@ -65,13 +65,18 @@ for (const reducedMotion of [false, true]) {
     window.HTMLElement.prototype.setPointerCapture = () => {};
     window.HTMLElement.prototype.releasePointerCapture = () => {};
     const messages: Array<{ role: string; content: Array<{ type: string; text: string }> }> = [];
+    const contextUpdates: Array<{ content: Array<{ type: string; text: string; _meta?: Record<string, unknown> }>; structuredContent?: Record<string, unknown> }> = [];
+    const extensions = { modelContext: {
+      getCurrent() { return contextUpdates.at(-1); },
+      async update(params: typeof contextUpdates[number]) { contextUpdates.push(params); return { updateId: String(contextUpdates.length) }; },
+    } };
     const app = { getHostCapabilities() { return { message: { text: {} }, serverTools: {} }; },
       async sendMessage(message: typeof messages[number]) { messages.push(message); return {}; },
       async callServerTool() { throw new Error("Finished recordings must not poll"); },
     };
     window.eval(built.outputFiles[0].text);
     const recording = recordingWithFramesFixture();
-    const mounted = window.RecordingTest.mount(app, { content: [], structuredContent: { recording } });
+    const mounted = window.RecordingTest.mount(app, { content: [], structuredContent: { recording } }, extensions);
     t.after(async () => {
       await mounted.close();
       dom.window.close();
@@ -106,6 +111,8 @@ for (const reducedMotion of [false, true]) {
       assert.equal(hasMeasuredPacing, false, "Device pacing statistics stay local.");
       assert.ok(hasDensityTiming, "The actual chart path records highlight processing duration.");
       assert.ok(hasDeriveTiming, "The active chart path records whole-run and range-statistics derivation.");
+      assert.ok(captured.includes("ui.recording.context_attach.mean"), "The actual Ask/Open path measures attachment acknowledgement without recording its contents.");
+      assert.ok(captured.includes("ui.recording.message_ack.mean"), "Message acknowledgement remains measured after the attachment finishes.");
       assert.ok(hasRecordingSurface);
       assert.ok(hasRecordingView);
       assert.equal(hasRecordingId, false, "Highlight telemetry excludes recording data.");
@@ -239,19 +246,23 @@ for (const reducedMotion of [false, true]) {
     await settle();
     assert.equal(messages.length, 1);
     assert.equal(messages[0].role, "user");
-    assert.ok(messages[0].content[0].text.includes(recordingFixture().id));
-    assert.ok(messages[0].content[0].text.includes("device-wide Display FPS"));
-    assert.ok(messages[0].content[0].text.includes("summary.frameStats"));
-    assert.ok(messages[0].content[0].text.includes("mobile_read_performance_frames"));
-    assert.ok(messages[0].content[0].text.includes("mobile_render_performance_recording"));
-    assert.ok(messages[0].content[0].text.includes('"range":{"start":12,"end":18}'));
+    assert.equal(messages[0].content[0].text, "Explain this selected range.");
+    const recordingContext = contextUpdates.at(-1)!.content[0];
+    assert.ok(recordingContext._meta?.["openai/title"]);
+    assert.ok(recordingContext.text.includes(recordingFixture().id));
+    assert.ok(recordingContext.text.includes("device-wide Display FPS"));
+    assert.ok(recordingContext.text.includes("summary.frameStats"));
+    assert.ok(recordingContext.text.includes("mobile_read_performance_frames"));
+    assert.ok(recordingContext.text.includes("mobile_render_performance_recording"));
+    assert.ok(recordingContext.text.includes('"range":{"start":12,"end":18}'));
     const open = buttons.find(button => button.textContent?.includes("Open in Mobile Dev"));
     assert.ok(open);
     open.click();
     await settle();
     assert.equal(messages.length, 2);
-    assert.ok(messages[1].content[0].text.includes("mobile_open_performance_recording"));
-    assert.ok(messages[1].content[0].text.includes('"range":{"start":12,"end":18}'));
+    assert.equal(messages[1].content[0].text, "Open this recording in Mobile Dev.");
+    assert.ok(contextUpdates.at(-1)!.content[0].text.includes("mobile_open_performance_recording"));
+    assert.ok(contextUpdates.at(-1)!.content[0].text.includes('"range":{"start":12,"end":18}'));
     pointer("pointerup", 5);
     await settle();
     const unchangedRange = mounted.controller.getSnapshot().range;
@@ -284,7 +295,8 @@ for (const reducedMotion of [false, true]) {
     fullAsk.click();
     await settle();
     assert.equal(messages.length, 3);
-    const asksFullRange = messages[2].content[0].text.includes('"range":{"start":0,"end":30}');
+    assert.equal(messages[2].content[0].text, "Explain this recording.");
+    const asksFullRange = contextUpdates.at(-1)!.content[0].text.includes('"range":{"start":0,"end":30}');
     assert.ok(asksFullRange, "Automatic highlights do not narrow the chat question.");
     const partial = recordingFixture();
     partial.fps = { status: "unavailable", samples: [], error: "Unsupported device" };
