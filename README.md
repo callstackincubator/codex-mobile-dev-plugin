@@ -44,7 +44,7 @@ Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile
 
 Use Select in the simulator toolbar to pause the screen. Hover to outline a component, then click to add a note. React Native development apps can supply runtime elements when accessibility omits a view. Drag to mark a region when neither source exposes it. Saved notes leave numbered blue bubbles. Notes attach text and available element details to your next chat message. The captured screen stays local for editing; annotations never attach screenshots. Click a bubble to edit or remove a note, or use Send to chat to send all notes for that device. If chat is unavailable, the panel keeps the notes and retries when you return. A sent or cleared batch starts again at 1.
 
-`npm run package` writes the local ZIP to `release/mobile-dev-0.1.85-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+`npm run package` writes the local ZIP to `release/mobile-dev-0.1.88-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 The iOS dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Simulators**. It refreshes every three seconds while the iOS panel is visible, and when opening the dropdown. Selecting a physical device opens interactive screen mirroring through its paired developer connection. The phone sends HEVC video; a bundled native Node-API addon assembles compressed frames and transfers them into Node without copying the frame payload, then the panel decodes them through WebCodecs. MCP serializes the compressed bytes as base64, so the full path is not zero copy. The capture queue is limited to eight frames or 4 MiB and requests a keyframe after overflow. Physical iOS supports pointer taps, long presses, and drags through CoreDevice UniversalHID on the same developer tunnel. Input starts after a fresh video frame, uses normalized touchscreen coordinates, and releases held touches when the stream closes or resets. Screenshot captures the displayed mirrored frame as a PNG, attaches it to chat, and copies the same image to the macOS clipboard. Select annotates screen regions using the mirrored frame's pixel coordinates; native accessibility component names are unavailable. Both controls require a connected device and a ready video frame. Keyboard and hardware-button controls remain disabled. CPU and memory monitoring can attach to an already running development app on a paired iOS 17.4+ device. Mirroring requires Developer Mode and a host with HEVC WebCodecs support. `mobile_list_ios_devices` also returns remembered disconnected devices with their connection state; the picker shows connected devices only. Discovery errors remain visible while available simulators continue to work.
 
@@ -331,6 +331,29 @@ The MCP server returns a flat element list with `nodeId`, `parentId` and `depth`
 
 Annotations send text only. Each note includes the user request, element label, test ID when present, React component and owner names when available, and nearby text. React debug creation stacks resolve through one bounded request to the matching Metro server's `/symbolicate` endpoint. Source maps supply an app file, line, column and function so the agent can open the element's JSX directly. This is the element creation site, not necessarily the component definition. Library frames and unresolved bundle locations never become edit locations. Missing source maps leave selection working and mark the source location unavailable. Coordinates remain a fallback. The paused image stays local for editing; use Screenshot separately to attach an image.
 
+## Native device requests
+
+When a mobile task has ambiguous targets, `mobile_choose_devices` asks the user
+through Codex's native inline request form. The agent discovers suitable devices
+first, then supplies their IDs, platform and kind, a task-specific question, and
+optional operation details. The form shows canonical device names, platform/type,
+runtime, optional verified app labels, and platform phone illustrations. Use
+`selectionMode: "multiple"` to let the user choose several devices. No device is
+preselected.
+
+The tool waits for an answer and returns `action` and selected `devices`, checking
+their availability both before opening the form and after acceptance. Cancellation
+or decline returns no selection. Device selection does not boot devices, launch
+apps, open streams or start recordings. Stopped simulators/AVDs can be offered for
+build tasks; profiling candidates should already be running. Physical iOS uses
+the hardware UDID and requires a connected paired device.
+
+This local MCP connection uses the OpenAI Extensions SDK's native form elicitation.
+The host must advertise `extensions["openai/elicitation"].form`; unsupported hosts
+return an explicit error. Codex owns layout and button labels, so the native form
+does not reproduce custom footer buttons from a design mockup. Thumbnails are
+illustrations, not captured app screens.
+
 ## Sentry
 
 Saved chart cards use the `recording` surface and view. Existing readiness,
@@ -361,6 +384,15 @@ The React UI reports to `codex-mobile-dev-ui` (project `4512181027471440`). The 
 The environments are `development` and `release`. `npm run build` and `npm run package` default to `development`, including local installed packages. For a public release, run `npm run build:release` followed by `npm run package:release`. Packaging rejects a build from the other environment. The package stores its environment in `dist/telemetry-environment.json`; Node telemetry, native helpers and the served UI use that setting. Live reload does not determine the environment. Set `MOBILE_DEV_ENVIRONMENT=development` or `MOBILE_DEV_ENVIRONMENT=release` in the MCP launch environment to override explicitly, then restart the MCP processes and reopen the panel.
 
 Unhandled JavaScript errors and rejected promises, React render errors, and handled MCP tool failures produce issues. Expected stopped-device errors and cancelled operations are excluded. Sentry traces 10% of ordinary tool actions, continuing the UI trace through the MCP bridge. Frame reads, polling, discovery and pointer input are excluded from trace sampling. The SDK does not record MCP arguments or results.
+
+Native device requests retain the ordinary sampled MCP trace. `device_picker.prepare`
+measures candidate discovery/validation in milliseconds, excluding time spent waiting
+for the user. `device_picker.result` counts accept, cancel, decline, unsupported and
+failed outcomes; `device_picker.selected` records only the number of selected devices.
+Attributes contain only the selection mode and outcome. Unexpected handled failures
+use fixed messages. Device IDs/names, app labels, questions, operation details and
+thumbnails are never sent to Sentry. The form is rendered by the host, so plugin UI
+readiness/render timing cannot measure that surface.
 
 Physical iOS display rejections, including an active phone or VoIP call, appear in the panel's Screen unavailable state while it retries. These expected device responses preserve native connection timing, sampled MCP traces and `ui.action.result` outcomes on the simulator surface. Their localized descriptions remain local and do not produce separate Sentry issues.
 
@@ -402,6 +434,7 @@ That file is also listed in `.worktreeinclude` for local worktrees. Use the orga
 | `mobile_open_simulator` | Open the native panel and start the bundled backend |
 | `mobile_open_workspace` | Open fullscreen with logs on the left and the simulator on the right |
 | `mobile_list_simulators` | Start the bundled backend if needed and list devices |
+| `mobile_choose_devices` | Ask through the native inline form for one or several verified task targets |
 | `mobile_list_ios_devices` | Discover physical iPhones and iPads with USB/Wi-Fi, pairing state, UDID, and CoreDevice ID |
 | `mobile_start_baguette` | Retry or reconnect the bundled backend |
 | `mobile_boot_simulator` | Boot one listed device |

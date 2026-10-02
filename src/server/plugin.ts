@@ -17,7 +17,8 @@ import { ServeEmu } from "./serve-emu.ts";
 import { registerAndroidTools } from "./android-tools.ts";
 import { Baguette } from "./baguette.ts";
 import { registerIosMirrorTools } from "./ios-mirror-tools.ts";
-import { registerIosDeviceTools } from "./ios-devices.ts";
+import { listIosDevices, registerIosDeviceTools } from "./ios-devices.ts";
+import { registerDeviceChoiceTools } from "./device-choice-tools.ts";
 import { StreamSessions } from "./stream-sessions.ts";
 import { LogSessions } from "./log-sessions.ts";
 import { registerLogTools } from "./log-tools.ts";
@@ -113,11 +114,14 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   const cpu = selectedCpu;
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
-    instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. See the Mobile Dev skill for device control, logs, and performance workflows.",
+    instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. See the Mobile Dev skill for device control, logs, and performance workflows.",
   });
   wrapMcpServerWithSentry(server, { recordInputs: false, recordOutputs: false });
-  addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS });
-  new OpenAIExtensions(server);
+  addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
+  const extensions = new OpenAIExtensions(server);
+  registerDeviceChoiceTools(server, extensions, {
+    simulators: () => baguette.start(), android: () => android.list(), physicalIos: listIosDevices,
+  });
   registerIosDeviceTools(server);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   registerLogTools(server, logs, baguette);
