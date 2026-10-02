@@ -2,6 +2,12 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Since 0.1.113, failed screenshot attachments display a panel notice instead of
+failing silently. Existing `screenshot.attach` error capture retains the original
+exception and operation, and screenshot-capture measurements keep their current
+boundaries. Image data and host error details are not added to telemetry. This
+changes failure feedback; it does not resolve the host image-validator overflow.
+
 Since 0.1.112, discovery errors carry bounded `discovery_stage` and
 `discovery_failure` tags alongside device platform and kind. Stages distinguish
 device validation, running-app enumeration, foreground lookup, generic discovery,

@@ -60,6 +60,7 @@ function fixture(t: TestContext) {
   const screenshots: ScreenshotAttachment[] = [];
   const attachedAnnotations: ScreenAnnotation[] = [];
   let screenshotCopied = true;
+  let screenshotAttachmentError = "";
   let sessionNumber = 0;
   let delayedOpen: Promise<void> | undefined;
   let blockedIos = false;
@@ -198,7 +199,11 @@ function fixture(t: TestContext) {
     for (const button of ["home", "app-switcher"]) { const element = new Element(); element.dataset.button = button; root.buttons.push(element); }
     const panelContext = {
       canAttach: true, canAttachScreenshots: true, screenAnnotations: attachedAnnotations, subscribe: () => () => {},
-      async attachScreenshot(screenshot: ScreenshotAttachment) { screenshots.push(screenshot); return true; },
+      async attachScreenshot(screenshot: ScreenshotAttachment) {
+        if (screenshotAttachmentError) throw new Error(screenshotAttachmentError);
+        screenshots.push(screenshot);
+        return true;
+      },
       async attachAnnotation(annotation: ScreenAnnotation) { attachedAnnotations.push(annotation); return true; },
     } as unknown as PanelContext;
     const panel = createSimulatorPanel(app, root as unknown as HTMLElement, platform, panelContext, (_device, active) => selections.push({ platform, active }));
@@ -218,6 +223,7 @@ function fixture(t: TestContext) {
     failAndroidDecode() { failAndroidDecode = true; },
     missTiming() { observeFrames = false; }, invalidFrame() { invalidFrame = true; },
     failPhysicalCapture(message: string) { physicalCaptureError = message; },
+    failScreenshotAttachment(message: string) { screenshotAttachmentError = message; },
   };
 }
 
@@ -476,6 +482,27 @@ test("physical iOS capture errors stay visible and clear when mirroring recovers
   assert.equal(f.ios.element("empty").hidden, true);
   assert.equal(f.ios.element("notice").hidden, true);
   assert.equal(f.ios.element("screenshot").disabled, false);
+});
+
+test("screenshot attachment failures remain visible until the next action on both platforms", async t => {
+  const f = fixture(t);
+  for (const platform of [f.ios, f.android]) {
+    await platform.panel.load();
+    const screenshot = platform.element("screenshot");
+    const notice = platform.element("notice");
+    const message = platform.element("notice-message");
+    await waitFor(() => screenshot.disabled === false);
+    const attached = f.screenshots.length;
+    f.failScreenshotAttachment("MCP error -32000: Maximum call stack size exceeded");
+    dispatch(screenshot, "click");
+    await waitFor(() => notice.hidden === false && screenshot.disabled === false);
+    assert.match(message.textContent, /screenshot.*not.*attached.*chat/i);
+    assert.equal(f.screenshots.length, attached);
+    f.failScreenshotAttachment("");
+    dispatch(screenshot, "click");
+    await waitFor(() => f.screenshots.length === attached + 1 && screenshot.disabled === false);
+    assert.equal(notice.hidden, true);
+  }
 });
 
 test("physical iOS screenshots capture the displayed frame without a simulator backend", async t => {

@@ -891,6 +891,7 @@ export function createSimulatorPanel(
       try { await panelContext.attachScreenshot({ id: crypto.randomUUID(), data: image.data, simulator }); }
       catch (error) {
         captureUiError(error, "screenshot.attach");
+        notice("The screenshot could not be attached to chat.");
         return;
       }
     } catch (error) {
