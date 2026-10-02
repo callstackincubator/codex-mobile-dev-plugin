@@ -121,7 +121,7 @@ function RecordingChart({ label, info, metricLabel, metric, data, duration, rang
         <AreaChart data={data} margin={{ left: 0, right: 12, top: 12, bottom: 0 }}>
           <CartesianGrid stroke="var(--border)" />
           <XAxis dataKey="time" type="number" domain={[0, duration]} tickFormatter={seconds} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
-          <YAxis width={52} domain={[low, high]} allowDecimals={unit === "%"} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickFormatter={value => unit === "%" ? `${value}%` : value.toFixed(0)} />
+          <YAxis width={52} domain={[low, high]} allowDecimals={unit === "%"} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickFormatter={value => unit === "%" ? `${value.toFixed(0)}%` : value.toFixed(0)} />
           <Tooltip formatter={formatReading} labelFormatter={value => `${value}s`} contentStyle={{ background: "var(--popover)", borderColor: "var(--border)", borderRadius: 8, color: "var(--foreground)" }} />
           {changes.map(change => <ReferenceArea key={change.start} className="recording-change-highlight" x1={change.start} x2={change.end} fill="#9873e6" fillOpacity={0.16} strokeOpacity={0} />)}
           <Area type="linear" dataKey="value" name={label} stroke={color} fill={color} fillOpacity={0.07} strokeWidth={2} dot={false} shape={RecordingChartShape} animationInterpolateFn={recordingChartPoints} isAnimationActive={reveal === "pending" ? "auto" : false} animationBegin={REVEAL_DELAY} animationDuration={700} animationEasing="ease-out" onAnimationStart={startReveal} onAnimationEnd={finishReveal} connectNulls={false} />
