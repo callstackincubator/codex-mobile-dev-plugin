@@ -2,6 +2,7 @@ import type { LogEntry, StackedLog } from "../shared/logs.ts";
 import { logKey, stackLogs } from "../shared/logs.ts";
 import type { PanelContext } from "./model-context.ts";
 import { countUiEvent, recordUiTiming, setUiGauge, captureUiError } from "./telemetry.ts";
+import { compileLogQuery } from "./log-query.ts";
 
 export class LogList {
   scrollOffset = 0;
@@ -13,6 +14,7 @@ export class LogList {
   private sources = new Set(["js", "native"]);
   private levels = new Set(["info", "warn", "error", "debug"]);
   private query = "";
+  private compiledQuery = compileLogQuery("");
   private stacked = true;
   private follow = true;
   private attaching = false;
@@ -33,13 +35,20 @@ export class LogList {
   getSnapshot = () => this.snapshot;
 
   private makeSnapshot() {
-    const groups: StackedLog[] = this.stacked ? stackLogs(this.entries) : this.entries.map(log => ({ ...log, count: 1, lastTimestamp: log.timestamp }));
-    const query = this.query.toLowerCase();
-    const filtered = groups.filter(log => this.sources.has(log.source) && this.levels.has(log.level)
-      && [log.message, log.stack, log.process, log.tag, log.subsystem, log.category, log.origin].filter(Boolean).join(" ").toLowerCase().includes(query));
-    const selected = groups.find(log => log.sequence === this.selectedSequence);
+    const now = Date.now();
+    const matches = this.entries.filter(log => this.sources.has(log.source) && this.levels.has(log.level) && this.compiledQuery.match(log, now));
+    const filtered: StackedLog[] = this.stacked ? stackLogs(matches) : matches.map(log => ({ ...log, count: 1, lastTimestamp: log.timestamp }));
+    const selectedEntry = this.entries.find(log => log.sequence === this.selectedSequence);
+    let selected: StackedLog | undefined;
+    if (selectedEntry) {
+      const selectedKey = logKey(selectedEntry);
+      const occurrences = this.stacked ? this.entries.filter(log => logKey(log) === selectedKey) : [selectedEntry];
+      const [group] = stackLogs(occurrences);
+      selected = { ...group, sequence: selectedEntry.sequence };
+    }
     return { filtered, selected, buffered: this.entries.length, dropped: this.dropped, sources: this.sources, levels: this.levels,
-      query: this.query, stacked: this.stacked, follow: this.follow, attaching: this.attaching, attachmentStatus: this.attachmentStatus,
+      query: this.query, queryError: this.compiledQuery.error, usesAge: this.compiledQuery.usesAge,
+      stacked: this.stacked, follow: this.follow, attaching: this.attaching, attachmentStatus: this.attachmentStatus,
       attachedKey: this.context.attachedKey, canAttach: this.context.canAttach,
       sending: this.sending, chatError: this.chatError, canSendMessage: this.context.canSendMessage,
       selectedAttached: !!selected && this.context.attachedKey === logKey(selected) };
@@ -75,7 +84,16 @@ export class LogList {
   }
 
   clear() { this.entries = []; this.selectedSequence = undefined; this.dropped = 0; this.scrollOffset = 0; this.publish(); }
-  search(query: string) { countUiEvent("ui.logs.search"); this.query = query; this.publish(); }
+  search(query: string) {
+    countUiEvent("ui.logs.search");
+    this.query = query;
+    const startedAt = performance.now();
+    this.compiledQuery = compileLogQuery(query);
+    const elapsed = performance.now() - startedAt;
+    recordUiTiming("ui.logs.query_parse", elapsed);
+    this.publish();
+  }
+  refreshAge() { if (this.compiledQuery.usesAge) this.publish(); }
   setFilters(kind: "sources" | "levels", values: string[]) { this[kind] = new Set(values); this.publish(); }
   setStacked(value: boolean) { this.stacked = value; this.publish(); }
   setFollow(value: boolean) {

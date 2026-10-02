@@ -48,6 +48,58 @@ test("buffer eviction removes stale selection, and host removal clears the attac
   assert.equal(list.getSnapshot().selected, undefined);
 });
 
+test("keyword queries combine with source and level controls and apply to new batches", () => {
+  const { list } = fixture();
+  list.search("level:error level:warn message:network -tag:noise");
+  list.append([
+    entry(1, { message: "Network failed", level: "error", source: "native", origin: "ios" }),
+    entry(2, { message: "Network retry", level: "warn" }),
+    entry(3, { message: "Network noise", level: "error", tag: "noise" }),
+    entry(4, { message: "Network ready" }),
+  ], 0);
+  let snapshot = list.getSnapshot();
+  assert.equal(snapshot.queryError, "");
+  assert.deepEqual(snapshot.filtered.map(log => log.message), ["Network failed", "Network retry"]);
+  list.setFilters("sources", ["js"]);
+  snapshot = list.getSnapshot();
+  assert.deepEqual(snapshot.filtered.map(log => log.message), ["Network retry"]);
+  list.setFilters("levels", ["error"]);
+  snapshot = list.getSnapshot();
+  assert.equal(snapshot.filtered.length, 0);
+  list.search("level:");
+  snapshot = list.getSnapshot();
+  assert.ok(snapshot.queryError);
+  list.search("");
+  snapshot = list.getSnapshot();
+  assert.equal(snapshot.queryError, "");
+  assert.equal(snapshot.filtered.length, 1);
+});
+
+test("age filters count matching repeats and expire even without new logs", t => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-09-30T12:01:00Z") });
+  const { list } = fixture();
+  list.append([entry(1), entry(2, { message: "Log 1", timestamp: "2026-09-30T12:00:50Z" })], 0);
+  list.select(1);
+  list.search("age:30s");
+  let snapshot = list.getSnapshot();
+  assert.equal(snapshot.filtered[0].count, 1);
+  assert.equal(snapshot.filtered[0].sequence, 2);
+  assert.equal(snapshot.selected?.count, 2, "Filtering preserves the selected full log.");
+  list.select(2);
+  snapshot = list.getSnapshot();
+  assert.equal(snapshot.selected?.sequence, 2, "A matching recent occurrence can be selected after its older repeat is filtered out.");
+  assert.equal(snapshot.selected?.count, 2);
+  t.mock.timers.tick(21000);
+  list.refreshAge();
+  snapshot = list.getSnapshot();
+  assert.equal(snapshot.filtered.length, 0);
+  list.search("");
+  snapshot = list.getSnapshot();
+  assert.equal(snapshot.filtered[0].count, 2);
+  list.refreshAge();
+  assert.equal(list.getSnapshot(), snapshot);
+});
+
 test("the message budget limits retained logs even before the row limit", () => {
   const { list } = fixture();
   list.append([entry(1, { message: "a".repeat(1200000) }), entry(2, { message: "b".repeat(1200000) })], 0);

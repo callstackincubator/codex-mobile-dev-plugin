@@ -32,6 +32,8 @@ test("the rendered log list follows batches, pauses for user scrolling, and resu
   }
   const globals = { window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
     HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node,
+    Event: dom.window.Event, CustomEvent: dom.window.CustomEvent, HTMLInputElement: dom.window.HTMLInputElement,
+    NodeFilter: dom.window.NodeFilter, DocumentFragment: dom.window.DocumentFragment,
     MutationObserver: dom.window.MutationObserver, getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
     requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window), cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window),
     ResizeObserver, IS_REACT_ACT_ENVIRONMENT: true };
@@ -197,4 +199,57 @@ test("the rendered log list follows batches, pauses for user scrolling, and resu
     dispatch("scrollend");
   });
   assertFollowing(false, "Touch scrolling toward older logs pauses following.");
+
+  const input = dom.window.document.querySelector<HTMLInputElement>('[aria-label="Search logs"]');
+  const help = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Log filter help"]');
+  assert.ok(input && help);
+  await act(async () => { help.click(); });
+  const helpContent = dom.window.document.querySelector('[data-slot="popover-content"][aria-label="Log filter help"]');
+  assert.ok(helpContent);
+  assert.match(helpContent.textContent ?? "", /level:error level:warn/);
+  const query = `level:info message:"Log ${sequence}"`;
+  await act(async () => {
+    help.click();
+    // JSDOM does not clamp scroll offsets when filtering shrinks the content.
+    scroller.scrollTo({ top: 0 });
+    panel.list.search(query);
+  });
+  await settle();
+  const filteredRows = dom.window.document.querySelectorAll("[data-log-row]");
+  assert.equal(filteredRows.length, 1);
+  assert.ok(filteredRows[0].textContent?.includes(`Log ${sequence}`));
+  assert.equal(input.value, query);
+  await act(async () => { panel.list.search("level:"); });
+  assert.equal(input.getAttribute("aria-invalid"), "true");
+  const error = dom.window.document.getElementById("logs-query-error");
+  assert.ok(error);
+  assert.equal(input.getAttribute("aria-describedby"), error.id);
+  assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 0);
+
+  const initialTime = Date.parse("2026-10-02T12:00:00Z");
+  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: initialTime });
+  await act(async () => { panel.list.search("age:1s"); });
+  let snapshot = panel.list.getSnapshot();
+  assert.equal(snapshot.filtered.length, sequence);
+  await act(async () => { t.mock.timers.tick(2000); });
+  snapshot = panel.list.getSnapshot();
+  assert.equal(snapshot.filtered.length, 0, "Age updates without an incoming batch.");
+  const visibility = (value: "visible" | "hidden") => {
+    Object.defineProperty(dom.window.document, "visibilityState", { configurable: true, value });
+    const event = new dom.window.Event("visibilitychange");
+    dom.window.document.dispatchEvent(event);
+  };
+  await act(async () => { visibility("hidden"); t.mock.timers.tick(5000); });
+  assert.equal(panel.list.getSnapshot(), snapshot, "Hidden documents stop age filtering.");
+  await act(async () => { visibility("visible"); });
+  snapshot = panel.list.getSnapshot();
+  await act(async () => { panel.toggle(); });
+  await act(async () => { t.mock.timers.tick(5000); });
+  assert.equal(panel.list.getSnapshot(), snapshot, "Closing Logs clears the refresh timer.");
+  await act(async () => { panel.show(); });
+  snapshot = panel.list.getSnapshot();
+  await act(async () => { root.unmount(); });
+  await act(async () => { t.mock.timers.tick(5000); });
+  assert.equal(panel.list.getSnapshot(), snapshot, "Unmounting Logs clears the refresh timer.");
+  t.mock.timers.reset();
 });

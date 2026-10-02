@@ -68,7 +68,7 @@ test("browser errors use the served environment regardless of live-reload marker
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts"; export { LogList } from "./src/ui/log-list.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -138,6 +138,13 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   api.countUiEvent("ui.annotations.runtime_available");
   api.countUiEvent("ui.annotations.inspection_fallback");
   api.setUiSurface("logs");
+  const logList = new api.LogList(context);
+  logList.append([{ sequence: 1, timestamp: "2026-10-02T10:00:00Z", level: "error", source: "js", origin: "metro", message: "PRIVATE_LOG_MESSAGE", stack: "PRIVATE_LOG_STACK" }], 0);
+  logList.search('level:error message:"PRIVATE_LOG_MESSAGE"');
+  logList.search('message~:"[PRIVATE_INVALID_PATTERN"');
+  assert.ok(logList.getSnapshot().queryError);
+  logList.search("age:5m");
+  logList.refreshAge();
   await context.sendLogToChat({
     timestamp: "2026-10-02T10:00:00Z", lastTimestamp: "2026-10-02T10:00:00Z", count: 1, sequence: 1,
     origin: "metro", source: "js", level: "error", deviceId: "PRIVATE_DEVICE",
@@ -210,6 +217,11 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, '"environment":"development"');
   contains(encoded, "ui.logs.publish.mean");
   contains(encoded, "ui.logs.send.mean");
+  contains(encoded, "ui.logs.query_parse.mean");
+  contains(encoded, "ui.logs.filter.mean");
+  contains(encoded, "ui.logs.buffered_rows");
+  contains(encoded, "ui.logs.filtered_rows");
+  contains(encoded, "ui.logs.search");
   contains(encoded, "ui.annotations.tree_processing.mean");
   contains(encoded, "ui.annotations.inspection.mean");
   contains(encoded, "ui.annotations.message_build.mean");

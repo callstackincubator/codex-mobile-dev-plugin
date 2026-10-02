@@ -1,4 +1,4 @@
-import { CopyIcon, MessageCircleIcon, ArrowDownToLineIcon, CircleAlertIcon, InfoIcon, TriangleAlertIcon, CheckIcon, LayersIcon, ListXIcon, PauseIcon, PlayIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, TerminalIcon, UnlinkIcon, XIcon } from "lucide-react";
+import { CopyIcon, MessageCircleIcon, ArrowDownToLineIcon, CircleAlertIcon, InfoIcon, TriangleAlertIcon, CheckIcon, LayersIcon, ListXIcon, PauseIcon, PlayIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, TerminalIcon, UnlinkIcon, XIcon, CircleHelpIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { LegendList, type LegendListRef, type LegendListRenderItemProps } from "@legendapp/list/react";
 import type { StackedLog } from "../../shared/logs.ts";
@@ -90,13 +90,47 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
     if (logs.follow && state.open) void listRef.current?.scrollToEnd({ animated: false });
   }, [logs.follow, state.open]);
 
+  useEffect(() => {
+    if (state.open === false || logs.usesAge === false) return;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const updateVisibility = () => {
+      clearInterval(timer);
+      timer = undefined;
+      if (document.visibilityState === "hidden") return;
+      panel.list.refreshAge();
+      timer = setInterval(() => panel.list.refreshAge(), 1000);
+    };
+    updateVisibility();
+    document.addEventListener("visibilitychange", updateVisibility);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", updateVisibility);
+    };
+  }, [panel, state.open, logs.usesAge]);
+
   return <Collapsible open={state.open} onOpenChange={() => panel.toggle()} asChild>
     <section id="logs-drawer" data-open={state.open} className="@container flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-label="Logs">
       <span className="sr-only" role="status">{copyStatus}</span>
       {copyStatus === "Could not copy log" && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription>{copyStatus}</AlertDescription></Alert>}
       {state.open && <header className="logs-toolbar flex h-[49px] shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
         <span id="logs-status" className="sr-only" role="status">{state.status} · {logs.filtered.length} shown · {logs.buffered} buffered{logs.dropped > 0 ? ` · ${logs.dropped} older logs dropped` : ""}</span>
-          <InputGroup className="h-7 min-w-16 flex-1"><InputGroupInput className="text-xs" aria-label="Search logs" type="search" placeholder="Search..." maxLength={512} value={logs.query} onChange={event => panel.list.search(event.target.value)} /><InputGroupAddon className="pl-2"><SearchIcon className="size-3.5" /></InputGroupAddon></InputGroup>
+          <InputGroup className="h-7 min-w-16 flex-1"><InputGroupInput className="text-xs" aria-label="Search logs" type="search" placeholder="Filter logs..." maxLength={512} autoComplete="off" spellCheck={false} aria-invalid={Boolean(logs.queryError)} aria-describedby={logs.queryError ? "logs-query-error" : undefined} value={logs.query} onChange={event => panel.list.search(event.target.value)} /><InputGroupAddon className="pl-2"><SearchIcon className="size-3.5" /></InputGroupAddon></InputGroup>
+          <Popover>
+            <PopoverTrigger asChild><Button variant="ghost" size="icon-sm" className="shrink-0" title="Log filter help" aria-label="Log filter help"><CircleHelpIcon /></Button></PopoverTrigger>
+            <PopoverContent align="start" className="w-[min(360px,calc(100vw-24px))] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto p-3 text-xs" aria-label="Log filter help">
+              <p className="mb-2 font-medium">Filter logs</p>
+              <p className="mb-2 text-muted-foreground">Keywords match text and metadata. Use quotes for phrases. Without explicit operators or groups, repeated fields match any value.</p>
+              <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
+                <code>level:error level:warn</code><span>Errors or warnings</span>
+                <code>message:"request failed"</code><span>Message phrase</span>
+                <code>age:5m</code><span>Last five minutes</span>
+                <code>-message:noise</code><span>Exclude matches</span>
+                <code>network &amp; (timeout | failed)</code><span>AND, OR, grouping</span>
+                <code>message~:"error.*timeout"</code><span>Regex, case insensitive</span>
+              </div>
+              <p className="mt-3 text-muted-foreground">Fields: level, message, age, source, origin, process, tag, subsystem, category, stack, timestamp. Age units: s, m, h, d. Spaces mean AND.</p>
+            </PopoverContent>
+          </Popover>
 
           <Toggle size="sm" className="size-7 shrink-0 p-0" pressed={logs.stacked} onPressedChange={value => panel.list.setStacked(value)} title="Group identical logs" aria-label="Group identical logs"><LayersIcon /></Toggle>
           <Toggle size="sm" className="size-7 shrink-0 p-0" pressed={logs.follow} onPressedChange={value => { userScrolling.current = false; panel.list.setFollow(value); }} title="Follow new logs" aria-label="Follow new logs"><ArrowDownToLineIcon /></Toggle>
@@ -131,6 +165,7 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
           {logs.attachedKey && <Button variant="ghost" size="icon-sm" className="shrink-0" title="Remove attached log" aria-label="Remove attached log" disabled={logs.attaching} onClick={() => void panel.list.attach(true)}><UnlinkIcon /></Button>}
       </header>}
       <CollapsibleContent id="logs-body" className="flex min-h-0 flex-1 flex-col">
+        {logs.queryError && <Alert id="logs-query-error" variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription>{logs.queryError}</AlertDescription></Alert>}
         {logs.chatError && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription>{logs.chatError}</AlertDescription></Alert>}
         {state.error && <Alert id="logs-error" variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription className="wrap-anywhere">{state.error}</AlertDescription></Alert>}
         <ResizablePanelGroup className="logs-content min-h-0 flex-1" orientation={detailVertical ? "vertical" : "horizontal"}>
