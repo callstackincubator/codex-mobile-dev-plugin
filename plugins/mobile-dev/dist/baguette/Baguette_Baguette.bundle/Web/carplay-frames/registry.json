@@ -1,0 +1,12 @@
+[
+  {
+    "id": "plain",
+    "displayName": "Plain",
+    "definition": "plain/definition.json"
+  },
+  {
+    "id": "cupra",
+    "displayName": "Cupra",
+    "definition": "cupra/definition.json"
+  }
+]

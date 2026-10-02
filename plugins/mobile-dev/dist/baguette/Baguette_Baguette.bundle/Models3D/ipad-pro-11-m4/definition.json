@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "ipad-pro-11-m4",
+  "displayName": "iPad Pro 11-inch (M4)",
+  "matches": {
+    "simulatorDeviceTypes": [
+      "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4-8GB",
+      "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4-16GB"
+    ],
+    "deviceNames": ["iPad Pro 11-inch (M4)"]
+  },
+  "asset": {"file": "device.usdz", "downloadURL": null, "sha256": null},
+  "scene": {
+    "rootNode": "yrrptFBLjzYeQkq",
+    "screenNode": null,
+    "screenMaterial": "ScreenMaterial",
+    "nativeOrientation": "portrait",
+    "textureSize": {"width": 1668, "height": 2420},
+    "usesScreenOverlay": false
+  },
+  "variantSets": []
+}

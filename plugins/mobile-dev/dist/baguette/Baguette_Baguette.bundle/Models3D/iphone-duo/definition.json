@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "iphone-duo",
+  "displayName": "iPhone Duo",
+  "matches": {
+    "simulatorDeviceTypes": ["com.apple.CoreSimulator.SimDeviceType.iPhone-Duo"],
+    "deviceNames": ["iPhone Duo"]
+  },
+  "asset": {
+    "file": null,
+    "downloadURL": null,
+    "sha256": null,
+    "xcodeResource": "SharedFrameworks/DeviceKit.framework/Versions/A/PlugIns/CoreDevicePopDeviceKitExtension.devicekitplugin/Contents/Resources/V68.usdz"
+  },
+  "scene": {
+    "rootNode": "root",
+    "screenNode": null,
+    "screenMaterial": "CvyXbAGXoolRUYl",
+    "nativeOrientation": "landscape",
+    "textureSize": {"width": 2007, "height": 2853},
+    "usesScreenOverlay": false,
+    "textureRotation": 270,
+    "restRotation": {"x": 90, "y": 0, "z": 0},
+    "buttons": [
+      {"id": "power", "joint": "oknVLIOxyFKJJzk"},
+      {"id": "action", "joint": "mblzAmIUcCyEAJi"},
+      {"id": "volume-up", "joint": "xsdEUgktlZKTjeM"},
+      {"id": "volume-down", "joint": "oRVcvMIHfnBuWqp"}
+    ],
+    "fold": {
+      "clip": "l_over_r",
+      "shutTime": 5.0,
+      "coverMaterial": "YqugYDOqMSOpqyA",
+      "coverTextureSize": {"width": 1398, "height": 2034},
+      "coverTextureRotation": 0,
+      "openPoseDegrees": 130
+    }
+  },
+  "variantSets": []
+}

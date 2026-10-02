@@ -1,0 +1,10 @@
+{
+  "name": "serve-emu",
+  "version": "0.0.6",
+  "url": "https://registry.npmjs.org/serve-emu/-/serve-emu-0.0.6.tgz",
+  "integrity": "sha512-A0Z9n08qEKEpz8Mv4CK0CKPQMN7SKc4OG6LFocK2vdk7KTjpAtONw7HNHSKPzo9jMziZfhuVlgwHZEjq1x6NMA==",
+  "lockfileSHA256": "ec97fbf58010385b2f50691bd138ee65c8c8ef2528518ec31edcc1821e5adfd3",
+  "scrcpyVersion": "4.0",
+  "scrcpySHA256": "84924bd564a1eb6089c872c7521f968058977f91f5ff02514a8c74aff3210f3a",
+  "scrcpyClientSHA256": "5ca62e5fdf3f71144178bbd4251b82c4d7e944301399477a9b8595a68d58098f"
+}

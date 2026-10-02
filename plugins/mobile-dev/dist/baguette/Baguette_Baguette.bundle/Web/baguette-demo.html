@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Baguette SDK demo</title>
+  <style>
+    body  { font-family: ui-sans-serif, system-ui; padding: 20px; background: #f5f5f7; color: #1d1d1f; }
+    h1    { margin: 0 0 6px; font-size: 18px; }
+    p     { margin: 0 0 16px; color: #6e6e73; }
+    label { display: block; font-size: 13px; margin: 12px 0 4px; }
+    input { padding: 6px 8px; width: 320px; border: 1px solid #d1d1d6; border-radius: 6px; }
+    button.go { padding: 6px 14px; border-radius: 6px; border: 0; background: #0071e3; color: white; cursor: pointer; }
+    #host { margin-top: 16px; min-height: 300px; padding: 12px; background: white; border: 1px solid #d1d1d6; border-radius: 8px; }
+    #log  { margin-top: 12px; padding: 8px 12px; background: #1d1d1f; color: #f5f5f7;
+            font: 12px ui-monospace, Menlo, monospace; border-radius: 8px;
+            height: 160px; overflow-y: auto; white-space: pre-wrap; }
+    .err  { color: #ff453a; }
+  </style>
+</head>
+<body>
+  <h1>Baguette SDK demo</h1>
+  <p>Loads the SDK end-to-end: fetches <code>/simulators/&lt;udid&gt;/definition.json</code>,
+     constructs <code>Baguette.use({...})</code>, mounts the simulator in the box below.
+     Open <code>/simulators</code> in another tab to pick a UDID; baguette must be running.</p>
+
+  <label for="udid">UDID</label>
+  <input id="udid" placeholder="paste a simulator UDID">
+  <button class="go" id="go">Mount</button>
+
+  <div id="host"></div>
+  <div id="log"></div>
+
+  <script src="/baguette/transport.js"></script>
+  <script src="/baguette/gestures/pinch-overlay.js"></script>
+  <script src="/baguette/gestures/pointer-interpreter.js"></script>
+  <script src="/baguette/parts/bezel.js"></script>
+  <script src="/baguette/parts/screen.js"></script>
+  <script src="/baguette/parts/button.js"></script>
+  <script src="/baguette/parts/keyboard.js"></script>
+  <script src="/baguette/simulator.js"></script>
+  <script src="/baguette/baguette.js"></script>
+  <script>
+    const logEl = document.getElementById('log');
+    const log = (m, isErr) => {
+      const ts = new Date().toLocaleTimeString();
+      const line = document.createElement('div');
+      line.textContent = `[${ts}] ${m}`;
+      if (isErr) line.className = 'err';
+      logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+    };
+
+    let sim = null;
+    let ws = null;
+
+    document.getElementById('go').addEventListener('click', async () => {
+      const udid = document.getElementById('udid').value.trim();
+      if (!udid) return log('udid required', true);
+      try {
+        if (sim) sim.detach();
+        if (ws) ws.close();
+
+        // Open the stream WS just to get `send` — frames are
+        // ignored in this demo; only input dispatch is exercised.
+        const wsUrl = location.origin.replace(/^http/, 'ws')
+          + `/simulators/${encodeURIComponent(udid)}/stream?format=mjpeg&version=v2`;
+        ws = new WebSocket(wsUrl);
+        ws.binaryType = 'arraybuffer';
+        ws.onopen   = () => log('WS open');
+        ws.onclose  = () => log('WS closed');
+        ws.onerror  = () => log('WS error', true);
+
+        const send = (payload) => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
+        };
+
+        sim = await Baguette.use({ host: location.origin, udid, send, log });
+        sim.mount(document.getElementById('host'));
+        log(`mounted ${sim.identity.name} (${sim.buttons.length} buttons)`);
+      } catch (e) {
+        log(e.message, true);
+      }
+    });
+  </script>
+</body>
+</html>

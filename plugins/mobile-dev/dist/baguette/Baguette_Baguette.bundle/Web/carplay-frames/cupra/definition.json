@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "cupra",
+  "displayName": "Cupra",
+  "viewport": { "width": 1920, "height": 842 },
+  "screen": { "x": 0, "y": 0, "width": 1920, "height": 752, "clipRadius": 0 },
+  "layers": [
+    {
+      "id": "climate",
+      "image": "climate-bar.png",
+      "rect": { "x": 0, "y": 752, "width": 1920, "height": 90 },
+      "z": "above"
+    }
+  ],
+  "stream": {
+    "defaultSize": { "width": 800, "height": 450 },
+    "fit": "contain"
+  }
+}

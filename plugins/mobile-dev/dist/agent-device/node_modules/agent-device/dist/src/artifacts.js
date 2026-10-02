@@ -1,0 +1,1 @@
+import{t as e}from"./manifest.js";export{e as resolveAndroidArchivePackageName};

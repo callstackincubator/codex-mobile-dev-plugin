@@ -1,0 +1,1 @@
+const e=[`medium`,`high`],t=`medium`;function n(t){return e.includes(t)}function r(e){let t=typeof e==`number`?e:i(e);return t!==void 0&&Number.isInteger(t)&&t>=5&&t<=10?t:void 0}function i(e){return typeof e==`string`&&/^\d+$/.test(e)?Number(e):void 0}function a(e){if(n(e))return e;let t=r(e);if(t!==void 0)return t<=7?`medium`:`high`}export{e as n,a as r,t};

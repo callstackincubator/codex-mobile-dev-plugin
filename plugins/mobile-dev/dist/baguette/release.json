@@ -1,0 +1,19 @@
+{
+  "version": "0.2.1",
+  "platform": "darwin-arm64",
+  "url": "https://github.com/tddworks/baguette/releases/download/v0.2.1/baguette_v0.2.1_macOS_arm64.tar.gz",
+  "sha256": "27196ca07dd3aa1f0f96d12100953e75ebd2059a145dfced7c88b229580e4b25",
+  "source": "https://github.com/tddworks/baguette/tree/v0.2.1",
+  "license": "Apache-2.0",
+  "rebuild": {
+    "sourceCommit": "db17446e25059247879dba7941e4de641c2f31e2",
+    "minimumSwiftVersion": "6.4",
+    "reason": "The official binary crashes in Swift task allocation on macOS 27. Rebuild the same source with Swift 6.4."
+  },
+  "build": {
+    "sourceCommit": "db17446e25059247879dba7941e4de641c2f31e2",
+    "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+    "binarySha256": "4c386bc79cf8e95ed57825496acda32694b491d6e1cd910270dc2d8344730264",
+    "telemetrySourceSHA256": "7a86dabe72cbff4a5a57c476f0b975a647b93bfaf284c976c34716944f935c2c"
+  }
+}

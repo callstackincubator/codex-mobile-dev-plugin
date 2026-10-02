@@ -1,0 +1,1 @@
+import{n as e,r as t}from"../update-check.js";const n=e(process.argv.slice(2));n&&t(n).catch(()=>{process.exitCode=0});export{};
