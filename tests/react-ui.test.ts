@@ -6,6 +6,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { LogsPanel } from "../src/ui/logs-panel.ts";
+import { createDeviceApps } from "./device-apps-fixtures.ts";
 import { PerformancePanel } from "../src/ui/performance-panel.ts";
 import { RecordingController } from "../src/ui/recording-controller.ts";
 import { recordingFixture } from "./recording-fixtures.ts";
@@ -72,7 +73,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   let cpuSessionsOpened = 0;
   const performanceApp = {
     async callServerTool({ name }: { name: string }) {
-      if (name === "mobile_performance_sources") return { content: [], structuredContent: { apps: [{ bundleId: "com.example.app", pid: 123 }] } };
+      if (name === "mobile_performance_sources") return { content: [], structuredContent: { apps: [{ bundleId: "com.example.app", pid: 123, foreground: true }], foregroundApp: { bundleId: "com.example.app", pid: 123 } } };
       if (name === "mobile_cpu_close") return { content: [] };
       if (name === "mobile_cpu_session") cpuSessionsOpened++;
       const sessionId = "1".repeat(64);
@@ -90,12 +91,14 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
       });
     },
   };
-  const performance = new PerformancePanel(performanceApp as unknown as App);
+  const deviceApps = createDeviceApps(performanceApp as unknown as App);
+  const performance = new PerformancePanel(performanceApp as unknown as App, deviceApps);
   const recordingController = new RecordingController(performanceApp as unknown as App);
-  performance.selectSimulator({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
+  deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
   performance.setAvailable(true);
+  deviceApps.setAvailable(true);
   const root = createRoot(dom.window.document.getElementById("root")!);
-  cleanupView = async () => { recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); await performance.dispose(); }); };
+  cleanupView = async () => { deviceApps.dispose(); recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); await performance.dispose(); }); };
   const layouts: string[] = [];
   let commits = 0;
   const workspace = createElement(Workspace, { logs: panel, performance, recordingController, onLayout(layout: string) { layouts.push(layout); } });

@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import type { CpuApp } from "../../shared/cpu.ts";
+import type { DeviceApp } from "../../shared/device-apps.ts";
 import { adbPath } from "../native-logs.ts";
 
 const execute = promisify(execFile);
@@ -32,7 +32,7 @@ function devicePath(url: string): string {
   return path.replace(/\/$/, "");
 }
 
-export function parsePhysicalApps(apps: string, processes: string): CpuApp[] {
+export function parsePhysicalApps(apps: string, processes: string): DeviceApp[] {
   const appJson: unknown = JSON.parse(apps);
   const processJson: unknown = JSON.parse(processes);
   const installed = appResponse.parse(appJson);
@@ -43,7 +43,7 @@ export function parsePhysicalApps(apps: string, processes: string): CpuApp[] {
     const path = devicePath(app.url);
     bundles.set(path, app.bundleIdentifier);
   }
-  const result: CpuApp[] = [];
+  const result: DeviceApp[] = [];
   for (const process of running.result.runningProcesses) {
     if (process.executable === undefined) continue;
     const path = devicePath(process.executable);
@@ -54,7 +54,7 @@ export function parsePhysicalApps(apps: string, processes: string): CpuApp[] {
   return result;
 }
 
-export async function runningPhysicalApps(deviceId: string, signal?: AbortSignal, run: DeviceCommand = execute): Promise<CpuApp[]> {
+export async function runningPhysicalApps(deviceId: string, signal?: AbortSignal, run: DeviceCommand = execute): Promise<DeviceApp[]> {
   const prefix = ["devicectl", "device", "info"];
   const options = ["--device", deviceId, "--quiet", "--timeout", "10", "--omit-deprecated-fields-in-json", "--json-output", "-"];
   const settings: Parameters<DeviceCommand>[2] = { encoding: "utf8", timeout: 15000, maxBuffer: 4 * 1024 * 1024, signal };
@@ -64,8 +64,8 @@ export async function runningPhysicalApps(deviceId: string, signal?: AbortSignal
   return parsePhysicalApps(results[0].stdout, results[1].stdout);
 }
 
-export function parseRunningApps(output: string): CpuApp[] {
-  const apps: CpuApp[] = [];
+export function parseRunningApps(output: string): DeviceApp[] {
+  const apps: DeviceApp[] = [];
   for (const line of output.split("\n")) {
     const match = /^\s*(\d+)\s+-?\d+\s+UIKitApplication:([^\[\s]+)\[/.exec(line);
     if (match === null || match[2].startsWith("com.apple.")) continue;
@@ -75,19 +75,19 @@ export function parseRunningApps(output: string): CpuApp[] {
   return apps;
 }
 
-export async function runningSimulatorApps(deviceId: string, signal?: AbortSignal): Promise<CpuApp[]> {
+export async function runningSimulatorApps(deviceId: string, signal?: AbortSignal): Promise<DeviceApp[]> {
   if (process.platform !== "darwin") throw new Error("iOS CPU monitoring requires macOS and Xcode.");
   const result = await execute("xcrun", ["simctl", "spawn", deviceId, "launchctl", "list"], { timeout: 5000, maxBuffer: 1024 * 1024, signal });
   return parseRunningApps(result.stdout);
 }
 
-export function parseAndroidApps(packages: string, processes: string): CpuApp[] {
+export function parseAndroidApps(packages: string, processes: string): DeviceApp[] {
   const installed = new Set<string>();
   for (const line of packages.split("\n")) {
     const match = /^package:([a-zA-Z0-9._-]+)\s*$/.exec(line);
     if (match) installed.add(match[1]);
   }
-  const apps: CpuApp[] = [];
+  const apps: DeviceApp[] = [];
   for (const line of processes.split("\n")) {
     const match = /^\s*(\d+)\s+([a-zA-Z0-9._-]+)\s*$/.exec(line);
     if (match === null || installed.has(match[2]) === false) continue;
@@ -98,7 +98,7 @@ export function parseAndroidApps(packages: string, processes: string): CpuApp[] 
 }
 
 const packageLists = new Map<string, { expires: number; output: string }>();
-export async function runningCpuApps(deviceId: string, signal?: AbortSignal, platform: "ios" | "android" = "ios", kind?: "simulator" | "physical"): Promise<CpuApp[]> {
+export async function runningDeviceApps(deviceId: string, signal?: AbortSignal, platform: "ios" | "android" = "ios", kind?: "simulator" | "physical"): Promise<DeviceApp[]> {
   if (platform === "ios" && kind === "physical") return runningPhysicalApps(deviceId, signal);
   if (platform === "ios") return runningSimulatorApps(deviceId, signal);
   const adb = await adbPath();

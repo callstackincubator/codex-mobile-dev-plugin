@@ -94,10 +94,32 @@ iOS simulators use `xcrun simctl spawn <UDID> log stream --style ndjson --level 
 
 `npm run test:logs` reads logs from an already booted simulator through the built MCP server. `npm run test:ios-logs -- --device <hardware-UDID>` reads a connected physical iPhone, with optional `--process <executable-name>`. Both print counts, close the log reader, and leave the device and app running. For tool-only physical logs, pass `{ platform: "ios", kind: "physical", deviceId: "<hardware-UDID>" }` to `mobile_logs_session`; use the `udid` returned by `mobile_list_ios_devices`, rather than its `coreDeviceId`.
 
+## Shared app discovery
+
+`src/ui/device-apps.ts` owns one `DeviceAppsStore` per workspace. Device selection
+feeds this store; it polls every three seconds while the panel is visible and the
+selected device is connected, including before Performance opens. Consumers share
+`subscribe` and `getSnapshot` (also usable with React's `useSyncExternalStore`).
+Snapshots contain the selected device, eligible running `apps`, `foregroundApp`,
+and `ready`, `discovering`, and `error`. `refresh` coalesces concurrent requests.
+Device changes, hidden panels, disconnection, and disposal cancel pending work,
+clear foreground state, and ignore late results. A failed query is not a confirmed
+absence: consumers should check `ready` before interpreting `foregroundApp: null`.
+
+`src/server/device-apps/` contains platform discovery, exposed through the existing
+`mobile_performance_sources` tool. Android reads the top resumed activity from ADB;
+iOS simulators read the frontmost accessibility translation's PID without walking
+the UI tree; paired iPhones retain their accessibility-audit PID query. Foreground
+identity is separate from the eligible monitoring list: an iOS PID outside that
+list has `bundleId: null`; an Android package outside it has `pid: null`. No sole
+background process is guessed to be foreground. Performance consumes this store
+and preserves its chosen recording target across foreground changes.
+
 ## Performance
 
-Open Performance beside Logs. When one app is running, CPU and memory monitoring start
-automatically. When several apps are running, choose one in Performance settings.
+Open Performance beside Logs. CPU and memory monitoring start automatically for
+the foreground app when it is eligible for monitoring. Choose another running app
+in Performance settings to monitor it explicitly.
 Performance follows the device the user clicks or focuses, and switches to the
 remaining device when the iOS/Android visibility toggles hide the active one.
 The tab shows the device's name and remembers each device's chosen app. Switching
@@ -435,6 +457,16 @@ illustrations, not captured app screens.
 
 ## Sentry
 
+Since 0.1.94, shared selected-device discovery retains the frequent-tool trace
+exclusion and handled server-error coverage, now under `device_apps.discover`.
+`ui.device_apps.discovery` measures the discovery round trip in milliseconds with
+bounded aggregate windows; `ui.device_apps.discovery_failure` counts current-query
+failures. Queries cancelled by selection or visibility changes do not report
+measurements. Results crossing a surface or telemetry-context change are excluded
+so their duration is not attributed to the next surface or device. No bundle IDs,
+PIDs, device IDs, app lists, or query output are sent. Existing CPU batch-processing
+coverage and native Baguette crash/resource telemetry are preserved.
+
 Saved chart cards use the `recording` surface and view. Existing readiness,
 interaction and frame-pacing coverage is preserved. `ui.recording.process` and
 `ui.recording.derive` measure result validation and chart/summary processing;
@@ -548,7 +580,7 @@ That file is also listed in `.worktreeinclude` for local worktrees. Use the orga
 | `mobile_read_logs` | Read a log batch and source status |
 | `mobile_logs_keep_alive` | Keep background collection alive without sending logs (app only) |
 | `mobile_logs_close` | Stop a session's log readers |
-| `mobile_performance_sources` | List running apps on iOS simulators, paired iPhones, or Android devices |
+| `mobile_performance_sources` | Read running apps and foreground identity on the selected iOS or Android device |
 | `mobile_cpu_session` | Connect a native process and thread CPU plus memory monitor |
 | `mobile_read_cpu` | Read live CPU and memory samples and connection status |
 | `mobile_cpu_close` | Stop one CPU and memory monitor while leaving its app running |

@@ -10,7 +10,7 @@ import { AndroidCpuSampler, androidSampleSchema } from "../src/server/cpu/androi
 import { startAndroidCpuMonitor, deployAndroidCollector, loadAndroidCollector } from "../src/server/cpu/android.ts";
 import { createCpuSessions } from "../src/server/cpu/sessions.ts";
 import type { CpuSessions } from "../src/server/cpu/sessions.ts";
-import { parseAndroidApps } from "../src/server/cpu/apps.ts";
+import { parseAndroidApps } from "../src/server/device-apps/apps.ts";
 import { cpuTargetSchema } from "../src/shared/cpu.ts";
 import type { CpuTarget } from "../src/shared/cpu.ts";
 

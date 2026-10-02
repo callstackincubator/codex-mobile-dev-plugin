@@ -11,6 +11,7 @@ import type { DeviceLayout } from "./components/workspace";
 import type { Status } from "../shared/protocol.ts";
 import { PanelContext } from "./model-context.ts";
 import { LogsPanel } from "./logs-panel.ts";
+import { DeviceAppsStore } from "./device-apps.ts";
 import { PerformancePanel } from "./performance-panel.ts";
 import { createSimulatorPanel } from "./simulator-panel.ts";
 import { startLiveReload } from "./live-reload.ts";
@@ -22,7 +23,8 @@ const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, {}, { au
 startUiTelemetry(app);
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
-const performancePanel = new PerformancePanel(app);
+const deviceApps = new DeviceAppsStore(app, document);
+const performancePanel = new PerformancePanel(app, deviceApps);
 const logsPanel = new LogsPanel(app, panelContext);
 const recordingController = new RecordingController(app);
 const reactRoot = createRoot(document.getElementById("root")!);
@@ -48,12 +50,8 @@ function updateSelection(updateToolSource = true) {
   const selected = active?.selected;
   if (selected) setUiTelemetryContext({ device_platform: selected.platform, device_kind: selected.kind ?? "simulator" });
   panelContext.selectSimulators(visible.flatMap(panel => panel.selected ? [panel.selected] : []), selected);
-  if (updateToolSource) {
-    logsPanel.selectSimulator(selected);
-    performancePanel.selectSimulator(selected);
-  } else if (active) {
-    performancePanel.selectSimulator(selected);
-  }
+  deviceApps.selectDevice(selected);
+  if (updateToolSource) logsPanel.selectSimulator(selected);
   for (const panel of panels) panel.root.dataset.active = String(panel === active);
 }
 
@@ -75,6 +73,7 @@ function disposeUI() {
     window.removeEventListener("focus", resumeContext);
     window.removeEventListener("pageshow", resumeContext);
     document.removeEventListener("visibilitychange", resumeContext);
+    deviceApps.dispose();
     recordingController.dispose();
     await Promise.allSettled([...panels.map(panel => panel.dispose()), logsPanel.dispose(), performancePanel.dispose()]);
     reactRoot.unmount();
@@ -123,6 +122,7 @@ void (async () => {
     const available = !!capabilities?.serverTools && !!capabilities?.serverResources;
     logsPanel.setAvailable(available);
     performancePanel.setAvailable(available);
+    deviceApps.setAvailable(available);
     for (const panel of panels) {
       panel.setAvailable(available);
       if (!available) panel.notice("This host cannot call the plugin's simulator tools.");

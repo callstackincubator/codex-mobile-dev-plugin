@@ -4,11 +4,12 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { captureServerError } from "../telemetry.ts";
 import { z } from "zod";
-import { cpuDeviceSchema, cpuTargetSchema } from "../../shared/cpu.ts";
+import { cpuTargetSchema } from "../../shared/cpu.ts";
 import type { CpuTarget } from "../../shared/cpu.ts";
 import { errorMessage } from "../../shared/protocol.ts";
 import type { Baguette } from "../baguette.ts";
-import { runningPerformanceApps } from "./sources.ts";
+import { readDeviceApps } from "../device-apps/sources.ts";
+import { registerDeviceAppsTool } from "../device-apps/tools.ts";
 import { listAndroidLogDevices } from "../native-logs.ts";
 import { listIosDevices } from "../ios-devices.ts";
 import type { CpuSessions } from "./sessions.ts";
@@ -30,7 +31,7 @@ function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
 }
 
 export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: Baguette,
-  sources = { apps: runningPerformanceApps, androidDevices: listAndroidLogDevices, iosDevices: listIosDevices }) {
+  sources = { apps: readDeviceApps, androidDevices: listAndroidLogDevices, iosDevices: listIosDevices }) {
   async function validateDevice(device: { platform: "ios" | "android"; deviceId: string; kind?: "simulator" | "physical" }) {
     if (device.platform === "ios" && device.kind === "physical") {
       const devices = await sources.iosDevices();
@@ -59,16 +60,10 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: 
     return { contents: [{ uri: uri.href, mimeType: "application/json", text }] };
   });
 
-  registerAppTool(server, "mobile_performance_sources", {
-    title: "Find running apps for CPU and memory monitoring", description: "List running user apps on a booted iOS simulator or connected Android device, or running development apps on a paired physical iPhone. Physical iOS marks the currently open development app with foreground: true when its main process owns the current screen. For physical iOS pass kind: physical and the hardware UDID from mobile_list_ios_devices. Does not launch apps or attach a debugger.",
-    inputSchema: cpuDeviceSchema, annotations: read, _meta: metadata,
-  }, safe(async (device: z.infer<typeof cpuDeviceSchema>) => {
+  registerDeviceAppsTool(server, async (device, signal) => {
     await validateDevice(device);
-    const running = await sources.apps(device.deviceId, undefined, device.platform, device.kind);
-    const data = { apps: running };
-    const text = JSON.stringify(data);
-    return { content: [{ type: "text", text }], structuredContent: data };
-  }));
+    return sources.apps(device.deviceId, signal, device.platform, device.kind);
+  });
 
   registerAppTool(server, "mobile_cpu_session", {
     title: "Monitor native app CPU and memory", description: "Monitor process and per-thread CPU plus main-process memory once per second without an app SDK, app launch or restart. Returns sessionId and cpuUri in the tool result. Poll mobile_read_cpu with sessionId and the previous cursor as after; close with mobile_cpu_close when finished. Android uses a small external native /proc collector over ADB, without root or debugger attachment; the device must permit ADB shell to read app counters. iOS uses debugserver and requires a development-signed build with get-task-allow and no existing Xcode/LLDB attachment. Physical iOS 17.4+ also requires pairing, Developer Mode and a mounted developer disk image; pass target.kind: physical and the hardware UDID from mobile_list_ios_devices. Attach and detach briefly pause the app. 100% is one occupied device CPU core. Memory is RSS on Android and physical footprint on iOS, reported in bytes. Idle sessions expire after five minutes.",

@@ -14,6 +14,10 @@ export async function baguetteTelemetrySourceHash() {
   await nativeTelemetrySourceHash(hash);
   const script = await readFile("scripts/rebuild-baguette.mjs");
   hash.update(script);
+  for (const file of ["ForegroundCommand.swift", "foreground-method.swift"]) {
+    const contents = await readFile(`native/baguette/${file}`);
+    hash.update(contents);
+  }
   return hash.digest("hex");
 }
 
@@ -53,6 +57,24 @@ async function addBaguetteTelemetry(source, sdk) {
   await writeFile(wrapperPath, wrapper);
 }
 
+async function addForegroundDetection(source) {
+  const entrypoint = join(source, "Sources/Baguette/App/RootCommand.swift");
+  const entry = await readFile(entrypoint, "utf8");
+  const commandMarker = "            DescribeUICommand.self,";
+  if (entry.includes(commandMarker) === false) throw new Error("The pinned Baguette command registration changed.");
+  const updated = entry.replace(commandMarker, commandMarker + "\n            ForegroundCommand.self,");
+  await writeFile(entrypoint, updated);
+  const commandPath = join(source, "Sources/Baguette/App/Commands/ForegroundCommand.swift");
+  await copyFile("native/baguette/ForegroundCommand.swift", commandPath);
+  const adapterPath = join(source, "Sources/Baguette/Infrastructure/Accessibility/AXPTranslatorAccessibility.swift");
+  const adapter = await readFile(adapterPath, "utf8");
+  const adapterMarker = "    // MARK: - Accessibility";
+  if (adapter.includes(adapterMarker) === false) throw new Error("The pinned Baguette accessibility adapter changed.");
+  const method = await readFile("native/baguette/foreground-method.swift", "utf8");
+  const withForeground = adapter.replace(adapterMarker, method + adapterMarker);
+  await writeFile(adapterPath, withForeground);
+}
+
 export async function rebuildBaguette(sourceDirectory) {
   const release = JSON.parse(await readFile("vendor/baguette-release.json", "utf8"));
   if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("Rebuilding Baguette requires an Apple Silicon Mac.");
@@ -76,6 +98,7 @@ export async function rebuildBaguette(sourceDirectory) {
     if (changes.trim()) throw new Error("Baguette source has changes. Rebuild from the pinned source.");
     const sdk = await buildNativeSentry();
     await addBaguetteTelemetry(source, sdk);
+    await addForegroundDetection(source);
     console.log(`Rebuilding Baguette ${release.version} with ${swift.trim().split("\n")[0]}…`);
     try {
       await execute("xcrun", ["swift", "build", "-c", "release", "--product", "Baguette"], {

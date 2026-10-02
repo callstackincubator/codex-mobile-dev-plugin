@@ -26,7 +26,10 @@ test("iOS text agents discover, start, read and stop CPU monitoring using only t
   } });
   const baguette = new Baguette(fake.url);
   const server = new McpServer({ name: "cpu-test", version: "1" });
-  registerCpuTools(server, cpu, baguette, { apps, androidDevices: async () => [], iosDevices: async () => [] });
+  registerCpuTools(server, cpu, baguette, { apps: async () => {
+    const running = await apps();
+    return { apps: running, foregroundApp: null };
+  }, androidDevices: async () => [], iosDevices: async () => [] });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "cpu-test-client", version: "1" });
   t.after(async () => { await client.close(); await cpu.close(); await server.close(); baguette.dispose(); await fake.close(); });
@@ -96,7 +99,10 @@ test("Android text agents discover, start, read and stop CPU monitoring without 
   } });
   const baguette = new Baguette(fake.url);
   const server = new McpServer({ name: "android-cpu-test", version: "1" });
-  registerCpuTools(server, cpu, baguette, { apps, androidDevices: async () => online ? [{ id: "emulator-5554", name: "Pixel" }] : [], iosDevices: async () => [] });
+  registerCpuTools(server, cpu, baguette, { apps: async (deviceId, signal, platform) => {
+    const running = await apps(deviceId, signal, platform);
+    return { apps: running, foregroundApp: null };
+  }, androidDevices: async () => online ? [{ id: "emulator-5554", name: "Pixel" }] : [], iosDevices: async () => [] });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "android-cpu-test-client", version: "1" });
   t.after(async () => { await client.close(); await cpu.close(); await server.close(); baguette.dispose(); await fake.close(); });

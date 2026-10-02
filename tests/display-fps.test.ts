@@ -14,6 +14,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { registerDisplayFpsTools } from "../src/server/fps/tools.ts";
+import { createDeviceApps } from "./device-apps-fixtures.ts";
 import { PerformancePanel } from "../src/ui/performance-panel.ts";
 import type { CpuBatch } from "../src/shared/cpu.ts";
 
@@ -412,7 +413,7 @@ test("CPU and display samples share a clock and selecting another app preserves 
       calls.push(input.name);
       if (input.name === "mobile_performance_sources") return { content: [], structuredContent: { apps: [
         { bundleId: "app.a", pid: 1 }, { bundleId: "app.b", pid: 2 },
-      ] } };
+      ] , foregroundApp: null } };
       if (input.name === "mobile_display_fps_session") return { content: [], structuredContent: {
         sessionId: "fps", fpsUri: "display-fps://mobile-dev/fps/batch?after=0", timeOrigin: 100,
       } };
@@ -438,10 +439,12 @@ test("CPU and display samples share a clock and selecting another app preserves 
       });
     },
   };
-  const panel = new PerformancePanel(app as unknown as App);
-  t.after(() => panel.dispose());
-  panel.selectSimulator({ platform: "android", udid: "phone", name: "Android", state: "Booted", runtime: "Android" });
+  const deviceApps = createDeviceApps(app as unknown as App);
+  const panel = new PerformancePanel(app as unknown as App, deviceApps);
+  t.after(() => { deviceApps.dispose(); return panel.dispose(); });
+  deviceApps.selectDevice({ platform: "android", udid: "phone", name: "Android", state: "Booted", runtime: "Android" });
   panel.setAvailable(true);
+  deviceApps.setAvailable(true);
   panel.show();
   await setImmediate();
   panel.selectApp("app.a");

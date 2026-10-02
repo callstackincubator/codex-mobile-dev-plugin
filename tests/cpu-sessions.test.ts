@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import { CpuSessions } from "../src/server/cpu/sessions.ts";
 import { CpuBuffer } from "../src/server/cpu/buffer.ts";
-import { parseRunningApps } from "../src/server/cpu/apps.ts";
+import { parseRunningApps } from "../src/server/device-apps/apps.ts";
 import type { CpuMonitor } from "../src/server/cpu/monitor.ts";
 import type { CpuReading } from "../src/server/cpu/counters.ts";
 import { UDID } from "./fixtures.ts";

@@ -12,7 +12,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { cpuDeviceSchema } from "../src/shared/cpu.ts";
 import type { CpuTarget } from "../src/shared/cpu.ts";
-import { parsePhysicalApps, runningPhysicalApps } from "../src/server/cpu/apps.ts";
+import { parsePhysicalApps, runningPhysicalApps } from "../src/server/device-apps/apps.ts";
 import { openPhysicalDebugserver } from "../src/server/cpu/physical.ts";
 import { CpuSessions } from "../src/server/cpu/sessions.ts";
 import { registerCpuTools } from "../src/server/cpu/tools.ts";
@@ -164,7 +164,10 @@ test("physical CPU MCP sessions use device discovery, stream samples and leave t
     return { closed: new Promise(() => {}), async stop() { stops++; } };
   } });
   const server = new McpServer({ name: "physical-cpu-test", version: "1" });
-  registerCpuTools(server, cpu, baguette, { apps, androidDevices: async () => [],
+  registerCpuTools(server, cpu, baguette, { apps: async (deviceId, signal, platform, kind) => {
+    const running = await apps(deviceId, signal, platform, kind);
+    return { apps: running, foregroundApp: null };
+  }, androidDevices: async () => [],
     iosDevices: async () => [{ ...device, state: online ? "connected" : "disconnected", pairingState: paired ? "paired" : "unpaired" }] });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "physical-cpu-client", version: "1" });
