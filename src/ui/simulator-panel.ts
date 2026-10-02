@@ -464,15 +464,14 @@ export function createSimulatorPanel(
     if (frame.hidden) empty("Connecting…", "Opening the device screen.");
     const sessionEpoch = epoch;
     const udid = selected.udid;
-    reconnect.start(signal => openAndReceive(udid, sessionEpoch, signal), () => {
+    const showStreamError = (error: unknown) => {
       ready = false;
-      notice("Reconnecting…");
+      const message = error instanceof Error ? error.message : String(error);
+      if (selected?.kind === "physical" && selected.platform === "ios") empty("Screen unavailable", message);
+      notice(message);
       controls();
-    }, error => {
-      ready = false;
-      notice(error instanceof Error ? error.message : String(error));
-      controls();
-    });
+    };
+    reconnect.start(signal => openAndReceive(udid, sessionEpoch, signal), showStreamError, showStreamError);
     controls();
   }
 

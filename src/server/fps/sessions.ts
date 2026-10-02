@@ -56,7 +56,8 @@ export class DisplayFpsSessions {
     try {
       session.monitor = await this.monitor({ target: session.target, signal, onSample: reading => {
         if (signal.aborted || session.stopping) return;
-        const sample = { time: reading.recordedAt, interval: reading.interval, fps: reading.fps };
+        const sample: DisplayFpsSample = { time: reading.recordedAt, interval: reading.interval, fps: reading.fps };
+        if (reading.frameTimeline !== undefined) sample.frameTimeline = reading.frameTimeline;
         const last = session.samples.at(-1);
         const latest = Math.max(sample.time, last?.sample.time ?? sample.time);
         session.samples = session.samples.filter(entry => entry.sample.time >= latest - CPU_HISTORY_SECONDS && entry.sample.time !== sample.time);

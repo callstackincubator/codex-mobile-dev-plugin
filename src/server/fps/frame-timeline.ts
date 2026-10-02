@@ -1,18 +1,19 @@
 import { fields, TraceStream } from "./protobuf.ts";
+import { MAX_DISPLAY_FRAMES_PER_INTERVAL } from "../../shared/display-fps.ts";
+import type { DisplayFrame, DisplayFrameTimeline } from "../../shared/display-fps.ts";
 
 const SECOND = 1_000_000_000n;
 const PRESENTED = new Set([1, 2, 3]);
-type DisplayFrame = { token: bigint; present: number };
-export type FrameReading = { fps: number | null; interval: number; recordedAt: number };
+type PendingDisplayFrame = Omit<DisplayFrame, "token" | "startTimeNs" | "endTimeNs"> & { token: bigint; startTimeNs: bigint };
+export type FrameReading = { fps: number | null; interval: number; recordedAt: number; frameTimeline?: DisplayFrameTimeline };
 
 // DisplayFrame is the compositor's frame. SurfaceFrames belong to individual
 // layers and would count the same display update several times.
 export class FrameTimeline {
   private stream: TraceStream;
-  private pending = new Map<bigint, DisplayFrame>();
+  private pending = new Map<bigint, PendingDisplayFrame>();
   private tokens = new Map<bigint, bigint>();
-  private counts = new Map<bigint, number>();
-  private invalid = new Set<bigint>();
+  private frames = new Map<bigint, DisplayFrame[]>();
   private start?: bigint;
   private window = 0n;
   private anchor?: { device: bigint; host: number };
@@ -109,15 +110,21 @@ export class FrameTimeline {
       let cookie: bigint | undefined;
       let token: bigint | undefined;
       let present = 0;
+      const metadata: Pick<DisplayFrame, "onTimeFinish" | "gpuComposition" | "jankType" | "predictionType" | "jankSeverityType"> = {};
       for (const detail of fields(field.bytes)) {
         if (detail.id === 1) cookie = detail.integer;
         else if (detail.id === 2) token = detail.integer;
         else if (detail.id === 4) present = Number(detail.integer);
+        else if (detail.id === 5) metadata.onTimeFinish = detail.integer === 1n;
+        else if (detail.id === 6) metadata.gpuComposition = detail.integer === 1n;
+        else if (detail.id === 7) metadata.jankType = Number(detail.integer);
+        else if (detail.id === 8) metadata.predictionType = Number(detail.integer);
+        else if (detail.id === 9) metadata.jankSeverityType = Number(detail.integer);
       }
       if (cookie === undefined) throw new Error("FrameTimeline omitted a frame identity.");
       if (field.id === 2) {
         if (token === undefined) throw new Error("FrameTimeline omitted a display token.");
-        this.pending.set(cookie, { token, present });
+        this.pending.set(cookie, { token, presentType: present, startTimeNs: timestamp, ...metadata });
         if (this.pending.size > 4096) throw new Error("FrameTimeline did not finish its display frames.");
       } else {
         const frame = this.pending.get(cookie);
@@ -128,10 +135,13 @@ export class FrameTimeline {
         if (index + 150n < this.window) continue;
         if (this.tokens.has(frame.token)) continue;
         this.tokens.set(frame.token, timestamp);
-        if (PRESENTED.has(frame.present)) {
-          const count = this.counts.get(index) ?? 0;
-          this.counts.set(index, count + 1);
-        } else if (frame.present !== 4) this.invalid.add(index);
+        const frames = this.frames.get(index) ?? [];
+        if (frames.length >= MAX_DISPLAY_FRAMES_PER_INTERVAL) throw new Error("FrameTimeline exceeded its display frame limit.");
+        const endTimeNs = timestamp.toString();
+        const startTimeNs = frame.startTimeNs.toString();
+        const token = frame.token.toString();
+        frames.push({ ...frame, token, startTimeNs, endTimeNs });
+        this.frames.set(index, frames);
         // SurfaceFlinger can resolve a present fence on a later display update.
         // Correct the original interval when a delayed frame reaches Perfetto.
         if (index < this.window) this.publish(index);
@@ -144,8 +154,23 @@ export class FrameTimeline {
     const end = this.start + (index + 1n) * SECOND;
     const elapsed = Number(end - this.anchor.device) / 1e9;
     const recordedAt = this.anchor.host + elapsed;
-    const fps = this.invalid.has(index) ? null : this.counts.get(index) ?? 0;
-    this.sample({ fps, interval: 1, recordedAt });
+    const frames = this.frames.get(index) ?? [];
+    const ordered = frames.slice();
+    ordered.sort((left, right) => {
+      const leftTime = BigInt(left.endTimeNs);
+      const rightTime = BigInt(right.endTimeNs);
+      if (leftTime === rightTime) return 0;
+      return leftTime < rightTime ? -1 : 1;
+    });
+    let count = 0;
+    let invalid = false;
+    for (const frame of ordered) {
+      if (PRESENTED.has(frame.presentType)) count++;
+      else if (frame.presentType !== 4) invalid = true;
+    }
+    const fps = invalid ? null : count;
+    const intervalEndNs = end.toString();
+    this.sample({ fps, interval: 1, recordedAt, frameTimeline: { clock: "boottime", intervalEndNs, frames: ordered } });
   }
 
   private complete(timestamp: bigint) {
@@ -160,8 +185,7 @@ export class FrameTimeline {
       this.publish(this.window);
       this.window++;
     }
-    for (const index of this.counts.keys()) if (index + 150n < this.window) this.counts.delete(index);
-    for (const index of this.invalid) if (index + 150n < this.window) this.invalid.delete(index);
+    for (const index of this.frames.keys()) if (index + 150n < this.window) this.frames.delete(index);
     for (const [token, time] of this.tokens) if (time < until - 150n * SECOND) this.tokens.delete(token);
   }
 }

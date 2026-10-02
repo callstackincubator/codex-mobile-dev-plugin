@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { cpuTargetSchema } from "./cpu.ts";
 import { PLUGIN_VERSION } from "./version.ts";
+import { frameTimelineSchema } from "./display-fps.ts";
+import { summarizeDisplayFrames } from "./frame-statistics.ts";
+import type { DisplayFrameStats } from "./frame-statistics.ts";
 
 export const RECORDING_URI = `ui://mobile-dev/${PLUGIN_VERSION}/recording.html`;
 export const recordingIdSchema = z.uuid();
@@ -16,6 +19,18 @@ export const recordingSampleSchema = z.object({
   memoryBytes: reading,
   threads: z.array(z.object({ id: z.string(), name: z.string(), cpuPercent: reading })).max(4096),
 });
+const recordingFrameTimelineSchema = frameTimelineSchema.optional();
+export const recordingFpsSampleSchema = z.object({
+  time: z.number().finite().nonnegative(),
+  interval: z.number().finite().nonnegative(),
+  fps: reading,
+  frameTimeline: recordingFrameTimelineSchema,
+});
+const recordingFpsSchema = z.object({
+  status: z.enum(["connecting", "recording", "finished", "unavailable"]),
+  samples: z.array(recordingFpsSampleSchema).max(1800),
+  error: z.string().optional(),
+});
 export const recordingSchema = z.object({
   schemaVersion: z.literal(1),
   id: recordingIdSchema,
@@ -25,9 +40,10 @@ export const recordingSchema = z.object({
   durationSeconds: z.number().int().min(1).max(300),
   startedAt: z.iso.datetime(),
   completedAt: z.iso.datetime().optional(),
-  status: z.enum(["connecting", "recording", "finished", "failed"]),
+  status: z.enum(["connecting", "recording", "finishing", "finished", "failed"]),
   memoryMetric: z.enum(["rss", "physical-footprint"]),
   samples: z.array(recordingSampleSchema).max(1800),
+  fps: recordingFpsSchema.default({ status: "unavailable", samples: [], error: "FPS was not captured in this recording." }),
   error: z.string().optional(),
 });
 export type PerformanceRecording = z.infer<typeof recordingSchema>;
@@ -39,6 +55,11 @@ export type RecordingSummary = {
   lastMemoryBytes: number | null;
   memoryChangeBytes: number | null;
   sampleCount: number;
+  averageFps: number | null;
+  minimumFps: number | null;
+  peakFps: number | null;
+  fpsSampleCount: number;
+  frameStats: DisplayFrameStats | null;
   threads: Array<{ id: string; name: string; averageCpuPercent: number; peakCpuPercent: number }>;
 };
 
@@ -88,7 +109,26 @@ export function summarizeRecording(recording: PerformanceRecording, range?: Reco
     id: thread.id, name: thread.name, averageCpuPercent: thread.total / thread.weight, peakCpuPercent: thread.peakCpuPercent,
   }));
   ranked.sort((left, right) => right.averageCpuPercent - left.averageCpuPercent);
+  let fpsTotal = 0;
+  let fpsWeight = 0;
+  let minimumFps: number | null = null;
+  let peakFps: number | null = null;
+  let fpsSampleCount = 0;
+  for (const sample of recording.fps.samples) {
+    const intervalStart = Math.max(start, sample.time - sample.interval);
+    const intervalEnd = Math.min(end, sample.time);
+    const weight = Math.max(0, intervalEnd - intervalStart);
+    if (weight === 0) continue;
+    fpsSampleCount++;
+    if (sample.fps === null) continue;
+    fpsTotal += sample.fps * weight;
+    fpsWeight += weight;
+    minimumFps = Math.min(minimumFps ?? sample.fps, sample.fps);
+    peakFps = Math.max(peakFps ?? sample.fps, sample.fps);
+  }
   const memoryChangeBytes = firstMemoryBytes !== null && lastMemoryBytes !== null ? lastMemoryBytes - firstMemoryBytes : null;
+  const frameStats = recording.target.platform === "android" ? summarizeDisplayFrames(recording.fps.samples, recording.durationSeconds, range) : null;
   return { peakCpuPercent, averageCpuPercent: cpuWeight > 0 ? cpuTotal / cpuWeight : null,
-    firstMemoryBytes, lastMemoryBytes, memoryChangeBytes, sampleCount, threads: ranked };
+    firstMemoryBytes, lastMemoryBytes, memoryChangeBytes, sampleCount, threads: ranked,
+    averageFps: fpsWeight > 0 ? fpsTotal / fpsWeight : null, minimumFps, peakFps, fpsSampleCount, frameStats };
 }

@@ -8,6 +8,32 @@ async fn await_reply<T>(operation: impl Future<Output = Result<T, idevice::Idevi
     result.map_err(|_| "The iPhone display service did not respond.".to_string())?.map_err(|error| error.to_string())
 }
 
+fn display_output(response: &plist::Value) -> Result<plist::Value, String> {
+    let dictionary = response.as_dictionary();
+    let response = dictionary.ok_or("The device returned an invalid display-service response.")?;
+    if let Some(error) = response.get("CoreDevice.error") {
+        let invalid = "The device returned a display-service error without a description.";
+        let dictionary = error.as_dictionary();
+        let error = dictionary.ok_or(invalid)?;
+        let info = error.get("userInfo").ok_or(invalid)?;
+        let dictionary = info.as_dictionary();
+        let info = dictionary.ok_or(invalid)?;
+        let value = info.get("NSLocalizedDescription").ok_or(invalid)?;
+        let text = value.as_string();
+        let description = text.ok_or(invalid)?;
+        let trimmed = description.trim();
+        if trimmed.is_empty() {
+            let message = invalid.to_owned();
+            return Err(message);
+        }
+        let message = description.to_owned();
+        return Err(message);
+    }
+    let output = response.get("CoreDevice.output");
+    let output = output.cloned();
+    output.ok_or_else(|| "The device returned no display-service output or error.".to_owned())
+}
+
 pub fn sender_port(response: &plist::Value) -> Result<u16, String> {
     let port = response.as_dictionary()
         .and_then(|output| output.get("connection"))
@@ -57,7 +83,7 @@ impl<R: ReadWrite> Control<R> {
         result.map_err(|_| "The iPhone display request timed out.")?.map_err(|error| error.to_string())?;
         let receive = self.client.recv();
         let response = await_reply(receive).await?;
-        response.as_dictionary().and_then(|d| d.get("CoreDevice.output")).cloned().ok_or_else(|| "The device rejected the display request. Unlock the device and enable Developer Mode.".into())
+        display_output(&response)
     }
 
     pub async fn stop(&mut self, ids: &[u64]) -> Result<(), String> {
@@ -74,6 +100,55 @@ impl<R: ReadWrite> Control<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preserves_the_devices_call_in_progress_error() {
+        let message = "A phone or VoIP call is currently in progress on the device.";
+        let mut info = plist::Dictionary::new();
+        let description = plist::Value::from(message);
+        let description_key = "NSLocalizedDescription".to_owned();
+        info.insert(description_key, description);
+        let mut error = plist::Dictionary::new();
+        let info = plist::Value::Dictionary(info);
+        let info_key = "userInfo".to_owned();
+        error.insert(info_key, info);
+        let code = plist::Value::from(9022i64);
+        let code_key = "code".to_owned();
+        error.insert(code_key, code);
+        let mut response = plist::Dictionary::new();
+        let error = plist::Value::Dictionary(error);
+        let error_key = "CoreDevice.error".to_owned();
+        response.insert(error_key, error);
+        let response = plist::Value::Dictionary(response);
+        let result = display_output(&response);
+        let expected_message = message.to_owned();
+        let expected = Err(expected_message);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn returns_successful_display_output() {
+        let dictionary = plist::Dictionary::new();
+        let output = plist::Value::Dictionary(dictionary);
+        let mut response = plist::Dictionary::new();
+        let output_key = "CoreDevice.output".to_owned();
+        let copied = output.clone();
+        response.insert(output_key, copied);
+        let response = plist::Value::Dictionary(response);
+        let result = display_output(&response);
+        let expected = Ok(output);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn rejects_missing_display_output_without_guessing_a_device_state() {
+        let dictionary = plist::Dictionary::new();
+        let response = plist::Value::Dictionary(dictionary);
+        let result = display_output(&response);
+        let message = "The device returned no display-service output or error.".to_owned();
+        let expected = Err(message);
+        assert_eq!(result, expected);
+    }
 
     fn response(port: plist::Value) -> plist::Value {
         let mut sender = plist::Dictionary::new();

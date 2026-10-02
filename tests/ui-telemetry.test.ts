@@ -4,6 +4,10 @@ import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 import { recordingFixture } from "./recording-fixtures.ts";
 
+const userId = "anon_0123456789abcdef0123456789abcdef";
+const sessionId = "run_1234567890abcdef1234567890abcdef";
+const identityMeta = `<meta name="mobile-dev-user-id" content="${userId}"><meta name="mobile-dev-session-id" content="${sessionId}">`;
+
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
   assert.equal(included, expected, `Telemetry fragment: ${fragment}`);
@@ -17,7 +21,7 @@ test("browser errors use the served environment regardless of live-reload marker
     define: { "process.env.NODE_ENV": '"production"' },
   });
   for (const environment of ["development", "release"]) {
-    const html = `<html><head><meta name="mobile-dev-environment" content="${environment}"><meta name="mobile-dev-live-revision" content="test"></head></html>`;
+    const html = `<html><head><meta name="mobile-dev-environment" content="${environment}"><meta name="mobile-dev-live-revision" content="test">${identityMeta}</head></html>`;
     const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
     t.after(() => dom.window.close());
     Object.defineProperty(dom.window.performance, "getEntriesByType", { value: () => [] });
@@ -36,6 +40,8 @@ test("browser errors use the served environment regardless of live-reload marker
     await api.stopUiTelemetry();
     const captured = bodies.join("\n");
     contains(captured, `"environment":"${environment}"`);
+    contains(captured, `"user":{"id":"${userId}"}`);
+    contains(captured, `"telemetry_session":"${sessionId}"`);
     const other = environment === "development" ? "release" : "development";
     contains(captured, `"environment":"${other}"`, false);
   }
@@ -43,6 +49,20 @@ test("browser errors use the served environment regardless of live-reload marker
   t.after(() => invalid.window.close());
   invalid.window.eval(built.outputFiles[0].text);
   assert.throws(() => invalid.window.Telemetry.startUiTelemetry({}), /Sentry environment must be/);
+  const missingIdentity = new JSDOM('<head><meta name="mobile-dev-environment" content="development"></head>', { runScripts: "outside-only" });
+  t.after(() => missingIdentity.window.close());
+  missingIdentity.window.eval(built.outputFiles[0].text);
+  assert.throws(() => missingIdentity.window.Telemetry.startUiTelemetry({}), /generated anonymous/);
+  const disabled = new JSDOM('<head><meta name="mobile-dev-environment" content="development"><meta name="mobile-dev-telemetry" content="off"></head>', { runScripts: "outside-only" });
+  t.after(() => disabled.window.close());
+  let disabledRequests = 0;
+  disabled.window.fetch = async () => { disabledRequests++; return new Response("", { status: 200 }); };
+  disabled.window.eval(built.outputFiles[0].text);
+  disabled.window.Telemetry.startUiTelemetry({});
+  const disabledError = new disabled.window.Error("Disabled telemetry");
+  disabled.window.Telemetry.captureUiError(disabledError, "test");
+  await disabled.window.Telemetry.stopUiTelemetry();
+  assert.equal(disabledRequests, 0);
 });
 
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
@@ -52,7 +72,8 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
-  const dom = new JSDOM('<html data-view="workspace"><head><meta name="mobile-dev-environment" content="development"></head><body></body></html>', {
+  const html = `<html data-view="workspace"><head><meta name="mobile-dev-environment" content="development">${identityMeta}</head><body></body></html>`;
+  const dom = new JSDOM(html, {
     pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/",
   });
   t.after(() => { dom.window.close(); });
@@ -81,7 +102,12 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   window.eval(built.outputFiles[0].text);
   const api = window.Telemetry;
   const calls: Record<string, unknown>[] = [];
-  const app = { async callServerTool(params: Record<string, unknown>) { calls.push(params); return { content: [{ type: "text", text: "PRIVATE_TOOL_RESULT" }] }; } };
+  const callRestriction = "A phone or VoIP call is currently in progress on the device.";
+  const app = { async callServerTool(params: Record<string, unknown>) {
+    calls.push(params);
+    if (params.name === "mobile_ios_mirror_session") return { isError: true, content: [{ type: "text", text: callRestriction }] };
+    return { content: [{ type: "text", text: "PRIVATE_TOOL_RESULT" }] };
+  } };
   api.startUiTelemetry(app);
   api.setUiSurface("logs");
   api.setUiTelemetryContext({ layout: "both", device_platform: "ios", device_kind: "physical" });
@@ -146,6 +172,11 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   const recording = recordingFixture();
   recording.title = "PRIVATE_RECORDING_TITLE";
   recording.deviceName = "PRIVATE_RECORDING_DEVICE";
+  recording.fps.samples[0].frameTimeline = {
+    clock: "boottime", intervalEndNs: "9007200254740993", frames: [
+      { token: "9007199254740995", startTimeNs: "9007199744741116", endTimeNs: "9007199754741116", presentType: 2, jankType: 48 },
+    ],
+  };
   controller.accept({ content: [], structuredContent: { recording } });
   assert.equal(api.getUiTelemetryAttributes().surface, "recording");
   assert.equal(api.getUiTelemetryAttributes().device_platform, "android");
@@ -153,6 +184,14 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   api.recordUiTiming("ui.recording.derive", 3);
   await app.callServerTool({ name: "mobile_read_performance_recording", arguments: { recordingId: "PRIVATE_RECORDING_ID" } });
   assert.equal(calls[3]._meta, undefined, "Recording polling does not create a trace per refresh.");
+  api.setUiSurface("simulator");
+  api.setUiTelemetryContext({ device_platform: "ios", device_kind: "physical" });
+  const restricted = await app.callServerTool({ name: "mobile_ios_mirror_session", arguments: { udid: "PRIVATE_PHONE" } });
+  assert.equal(restricted.isError, true);
+  const mirrorContext = calls[4]._meta["mobile-dev/telemetry"];
+  assert.equal(mirrorContext.surface, "simulator");
+  assert.equal(mirrorContext.device_platform, "ios");
+  assert.equal(mirrorContext.device_kind, "physical");
   Object.defineProperty(window.document, "visibilityState", { configurable: true, value: "hidden" });
   const visibilityChange = new window.Event("visibilitychange");
   window.document.dispatchEvent(visibilityChange);
@@ -187,6 +226,12 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, '"surface":{"value":"simulator"');
   contains(encoded, "ui.performance.batch.mean");
   contains(encoded, "ui.recording.process.mean");
+  contains(encoded, "ui.recording.display_frames");
+  assert.equal(encoded.includes("9007199254740995"), false, "Display frame tokens remain local.");
+  assert.equal(encoded.includes("9007199754741116"), false, "Device frame timestamps remain local.");
+  assert.equal(encoded.includes("jankType"), false, "Device jank measurements remain local.");
+  assert.equal(encoded.includes("jankRatePercent"), false, "Derived device jank statistics remain local.");
+  assert.equal(encoded.includes("p95FrameIntervalMs"), false, "Device frame pacing remains local.");
   contains(encoded, "ui.recording.derive.mean");
   contains(encoded, "ui.screenshot.capture.mean");
   contains(encoded, "ui.annotations.inspection_truncated");
@@ -196,6 +241,9 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, '"surface":{"value":"recording"');
   contains(encoded, "ui.frame_interval.mean");
   contains(encoded, "UI failure");
+  contains(encoded, '"action":{"value":"mobile_ios_mirror_session"');
+  contains(encoded, '"outcome":{"value":"error"');
+  contains(encoded, callRestriction, false);
   contains(encoded, "PRIVATE_", false);
   contains(encoded, "alice", false);
   contains(encoded, '"value":999', false);

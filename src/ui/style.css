@@ -12,8 +12,9 @@ html[data-view="recording"], html[data-view="recording"] body, html[data-view="r
 .recording-heading p { margin-top: 4px; overflow-wrap: anywhere; }
 .recording-status { border-radius: 20px; padding: 4px 10px; background: var(--muted); font-size: 12px; }
 .recording-body { padding: 20px; }
-.recording-metrics { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 20px; }
+.recording-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 12px; margin-bottom: 20px; }
 .recording-metrics > div + div { border-left: 1px solid var(--border); padding-left: 20px; }
+.recording-metrics > div:nth-child(3n + 1) { border-left: 0; padding-left: 0; }
 .recording-metrics dt { font-weight: 500; }
 .recording-metrics dd { font-size: 28px; font-weight: 600; margin-top: 4px; }
 .recording-track { margin-top: 18px; }
@@ -22,16 +23,21 @@ html[data-view="recording"], html[data-view="recording"] body, html[data-view="r
 .recording-change-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted-foreground); }
 .recording-change-legend::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: #9873e629; border: 1px solid #9873e6; }
 .recording-chart { width: 100%; touch-action: pan-y; user-select: none; cursor: crosshair; }
+.recording-track[data-reveal="pending"] .recording-change-highlight { opacity: 0; }
+.recording-track[data-reveal="finished"] .recording-change-highlight { animation: recording-highlight-reveal 150ms ease-out 250ms both; }
+@keyframes recording-highlight-reveal { from { opacity: 0; } to { opacity: 1; } }
 .recording-selection { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 16px; margin-top: 20px; border: 1px solid var(--border); border-radius: 12px; }
 .recording-breakdown p { margin: 8px 0; color: var(--muted-foreground); }
 .recording-breakdown dl > div { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; }
 .recording-breakdown dt { overflow-wrap: anywhere; }
 .recording-breakdown dd { font-variant-numeric: tabular-nums; }
+.recording-frame-stats { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.recording-frame-stats p:last-child { font-size: 12px; }
 .recording-actions { display: flex; flex-direction: column; gap: 10px; justify-content: center; border-left: 1px solid var(--border); padding-left: 20px; }
 .recording-footnote { margin-top: 10px; }
 .recording-error { color: var(--destructive); margin-top: 12px; }
 .recording-workspace { height: 100%; overflow: auto; padding: 12px; }
-@media (max-width: 480px) { .recording-header, .recording-body { padding: 14px; } .recording-icon { display: none; } .recording-selection { grid-template-columns: 1fr; } .recording-actions { border-left: 0; padding-left: 0; border-top: 1px solid var(--border); padding-top: 14px; } }
+@media (max-width: 480px) { .recording-metrics { grid-auto-flow: row; grid-template-columns: 1fr; } .recording-metrics > div + div { border-left: 0; padding-left: 0; } .recording-header, .recording-body { padding: 14px; } .recording-icon { display: none; } .recording-selection { grid-template-columns: 1fr; } .recording-actions { border-left: 0; padding-left: 0; border-top: 1px solid var(--border); padding-top: 14px; } }
 [hidden] { display: none !important; }
 
 /* The controller fits the canvas to each device's frame and screen mask. */
@@ -41,7 +47,10 @@ html[data-view="recording"], html[data-view="recording"] body, html[data-view="r
 [data-element="device-frame"][data-bezel="true"] { isolation: isolate; position: relative; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
 [data-element="device-frame"][data-bezel="true"] [data-element="screen"] { z-index: 2; position: absolute; }
 /* Split sizes come from Resizable rather than fixed grid tracks. */
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
+  .recording-track .recording-change-highlight { opacity: 1 !important; animation: none !important; }
+}
 
 /* Severity colors match compact console rows while keeping timestamps neutral. */
 .log-row { --log-color: var(--foreground); --log-tint: transparent; color: var(--log-color); background: var(--log-tint); }

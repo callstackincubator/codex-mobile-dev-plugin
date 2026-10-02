@@ -2,6 +2,7 @@ import { makeNodeTransport } from "@sentry/node";
 import type { ErrorEvent } from "@sentry/node";
 import { SENTRY_NATIVE_DSN, SENTRY_RELEASE } from "../shared/telemetry.ts";
 import { TELEMETRY_ENVIRONMENT } from "./telemetry-environment.ts";
+import { getTelemetryIdentity } from "./telemetry-identity.ts";
 
 type Transport = ReturnType<typeof makeNodeTransport>;
 type Envelope = Parameters<Transport["send"]>[0];
@@ -134,7 +135,14 @@ export function nativeCollectorCommand(binary: string, args: string[] = []) {
   const command = shellQuote(binary);
   const quotedArguments = args.map(shellQuote);
   const argumentsText = quotedArguments.join(" ");
-  return `MOBILE_DEV_NATIVE_RELEASE=${release} MOBILE_DEV_NATIVE_ENVIRONMENT=${environment} MOBILE_DEV_TELEMETRY=${enabled} exec ${command} ${argumentsText}`;
+  const identity = getTelemetryIdentity();
+  let identityEnvironment = "";
+  if (identity) {
+    const userId = shellQuote(identity.userId);
+    const sessionId = shellQuote(identity.sessionId);
+    identityEnvironment = ` MOBILE_DEV_NATIVE_USER_ID=${userId} MOBILE_DEV_NATIVE_SESSION_ID=${sessionId}`;
+  }
+  return `MOBILE_DEV_NATIVE_RELEASE=${release} MOBILE_DEV_NATIVE_ENVIRONMENT=${environment} MOBILE_DEV_TELEMETRY=${enabled}${identityEnvironment} exec ${command} ${argumentsText}`;
 }
 
 export async function closeNativeTelemetry() {

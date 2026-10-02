@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createRecordingCpuSeries, findRecordingChangeRanges } from "../src/ui/recording-series.ts";
+import { createRecordingCpuSeries, createRecordingFpsSeries, findRecordingChangeRanges } from "../src/ui/recording-series.ts";
 import { recordingFixture } from "./recording-fixtures.ts";
 
 test("CPU readings cover their preceding measured intervals starting at zero", () => {
@@ -90,4 +90,21 @@ test("change density weights elapsed time rather than the number of samples", ()
   for (const sample of recording.samples) sample.cpuPercent = 42;
   const flat = findRecordingChangeRanges(recording, "cpuPercent");
   assert.deepEqual(flat, []);
+});
+
+test("FPS interval charts clip boundary intervals while preserving zero and missing readings", () => {
+  const recording = recordingFixture();
+  recording.durationSeconds = 3;
+  recording.fps.samples = [
+    { time: 0.5, interval: 1, fps: 0 },
+    { time: 1.5, interval: 1, fps: null },
+    { time: 3.5, interval: 1, fps: 60 },
+  ];
+  const points = createRecordingFpsSeries(recording);
+  assert.deepEqual(points, [
+    { time: 0, value: 0 }, { time: 0.5, value: 0 },
+    { time: 0.5, value: null }, { time: 1.5, value: null },
+    { time: 1.5, value: null }, { time: 2.5, value: null },
+    { time: 2.5, value: 60 }, { time: 3, value: 60 },
+  ]);
 });

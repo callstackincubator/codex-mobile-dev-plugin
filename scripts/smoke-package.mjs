@@ -13,6 +13,18 @@ const temporary = await mkdtemp(join(tmpdir(), "mobile-dev-package-test-"));
 const plugin = join(temporary, "mobile-dev");
 let transport;
 let runtimeTransport;
+
+function uiIdentity(text) {
+  const user = text.match(/name="mobile-dev-user-id" content="(anon_[a-f0-9]{32})"/);
+  const session = text.match(/name="mobile-dev-session-id" content="(run_[a-f0-9]{32})"/);
+  assert.ok(user);
+  assert.ok(session);
+  return { userId: user[1], sessionId: session[1] };
+}
+
+function withoutSession(text) {
+  return text.replace(/name="mobile-dev-session-id" content="run_[a-f0-9]{32}"/, 'name="mobile-dev-session-id" content="[session]"');
+}
 try {
   await cp(source, plugin, { recursive: true, verbatimSymlinks: true });
   const telemetryConfigText = await readFile(join(plugin, "dist/telemetry-environment.json"), "utf8");
@@ -61,14 +73,14 @@ try {
   assert.ok(recordingCard);
   assert.deepEqual(recordingCard._meta.ui.visibility, ["app", "model"]);
   const recordingUri = recordingCard._meta.ui.resourceUri;
-  assert.equal(recordingUri, "ui://mobile-dev/0.1.80/recording.html");
+  assert.equal(recordingUri, "ui://mobile-dev/0.1.90/recording.html");
   const recordingResource = await client.readResource({ uri: recordingUri });
   const recordingHtml = recordingResource.contents[0].text;
   assert.match(recordingHtml, /data-view="recording"/);
   await access(join(plugin, "dist/ios-fps/mobile-dev-ios-fps"));
   await access(join(plugin, "dist/ios-fps/third-party-licenses.txt"));
   for (const abi of ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]) await access(join(plugin, `dist/android-fps/${abi}/mobile-dev-fps`));
-  for (const name of ["mobile_display_fps_session", "mobile_read_display_fps", "mobile_display_fps_close"]) assert.ok(tools.tools.some(tool => tool.name === name));
+  for (const name of ["mobile_display_fps_session", "mobile_read_display_fps", "mobile_display_fps_close", "mobile_read_performance_frames"]) assert.ok(tools.tools.some(tool => tool.name === name));
   for (const name of ["mobile_list_ios_devices", "mobile_list_android_devices", "mobile_boot_android_emulator", "mobile_android_stream_session", "mobile_android_screenshot", "mobile_ios_mirror_session", "mobile_ios_mirror_reset", "mobile_ios_mirror_close"]) assert.ok(tools.tools.some(tool => tool.name === name));
   const physicalMirror = tools.tools.find(tool => tool.name === "mobile_ios_mirror_session");
   assert.deepEqual(physicalMirror._meta.ui.visibility, ["app"]);
@@ -119,24 +131,42 @@ try {
   }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.80/simulator.html");
+  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.90/simulator.html");
   const telemetryEnvironment = process.env.MOBILE_DEV_ENVIRONMENT ?? telemetryConfig.environment;
   const telemetryMarker = `name="mobile-dev-environment" content="${telemetryEnvironment}"`;
   assert.ok(resource.contents[0].text.includes(telemetryMarker));
+  const rawHtml = await readFile(join(plugin, "dist/app.html"), "utf8");
+  const bakedIdentity = /<meta name="mobile-dev-(?:user|session)-id"/.test(rawHtml);
+  assert.equal(bakedIdentity, false, "Packages must contain no installation or session identity.");
   assert.ok(resource.contents[0].text.includes('workspace-toolbar'));
   assert.ok(resource.contents[0].text.includes('workspace-panels'));
   assert.ok(resource.contents[0].text.includes('tool-logs'));
   assert.ok(resource.contents[0].text.includes('Memory usage'), 'The packaged Performance view must include the live memory track.');
-  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.80/workspace.html");
+  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.90/workspace.html");
   assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, ["https://o4512180958068736.ingest.de.sentry.io"]);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
   runtimeTransport = new StdioClientTransport({ command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe" });
   const runtime = new Client({ name: "mobile-dev-package-runtime", version: "1" });
   await runtime.connect(runtimeTransport);
   const runtimeResource = await runtime.readResource({ uri: entrypoint._meta.ui.resourceUri });
-  assert.deepEqual(runtimeResource.contents[0], resource.contents[0]);
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") {
+    assert.deepEqual(runtimeResource.contents[0], resource.contents[0]);
+    assert.match(resource.contents[0].text, /mobile-dev-telemetry" content="off"/);
+  } else {
+    const initialIdentity = uiIdentity(resource.contents[0].text);
+    const runtimeIdentity = uiIdentity(runtimeResource.contents[0].text);
+    const recordingIdentity = uiIdentity(recordingHtml);
+    const workspaceIdentity = uiIdentity(workspaceResource.contents[0].text);
+    assert.equal(runtimeIdentity.userId, initialIdentity.userId);
+    assert.notEqual(runtimeIdentity.sessionId, initialIdentity.sessionId);
+    assert.deepEqual(recordingIdentity, initialIdentity);
+    assert.deepEqual(workspaceIdentity, initialIdentity);
+    const initialHtml = withoutSession(resource.contents[0].text);
+    const runtimeHtml = withoutSession(runtimeResource.contents[0].text);
+    assert.deepEqual({ ...runtimeResource.contents[0], text: runtimeHtml }, { ...resource.contents[0], text: initialHtml });
+  }
   await runtime.close();
-  console.log("Discovery/runtime processes agree on UI addresses, HTML, and Sentry-only browser connections.");
+  console.log("Discovery/runtime processes share anonymous users, separate sessions, UI addresses, and Sentry-only browser connections.");
   assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
   const oldWorkspace = await client.readResource({ uri: "ui://mobile-dev/workspace.html" });
   assert.equal(oldWorkspace.contents[0].text, workspaceResource.contents[0].text);

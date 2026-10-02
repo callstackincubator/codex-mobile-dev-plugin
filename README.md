@@ -2,7 +2,7 @@
 
 An iOS and Android simulator panel for Codex desktop. Baguette 0.2.1 provides iOS streaming; serve-emu 0.0.6 and scrcpy 4.0 provide Android streaming. Android needs Bun 1.3.13 or later and an installed Android SDK.
 
-Agent Device is temporarily disabled in 0.1.79 while iterating on inline performance charts. The package registers only the `mobile-dev` MCP server and omits the Agent Device skill. Its implementation and bundled runtime are retained for later reactivation.
+Agent Device is temporarily disabled in 0.1.83 while iterating on inline performance charts. The package registers only the `mobile-dev` MCP server and omits the Agent Device skill. Its implementation and bundled runtime are retained for later reactivation.
 
 The first version supports:
 
@@ -44,7 +44,7 @@ Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile
 
 Use Select in the simulator toolbar to pause the screen. Hover to outline a component, then click to add a note. React Native development apps can supply runtime elements when accessibility omits a view. Drag to mark a region when neither source exposes it. Saved notes leave numbered blue bubbles. Notes attach text and available element details to your next chat message. The captured screen stays local for editing; annotations never attach screenshots. Click a bubble to edit or remove a note, or use Send to chat to send all notes for that device. If chat is unavailable, the panel keeps the notes and retries when you return. A sent or cleared batch starts again at 1.
 
-The local ZIP at `release/mobile-dev-0.1.80-darwin-arm64.zip` holds the same plugin. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+`npm run package` writes the local ZIP to `release/mobile-dev-0.1.90-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 The iOS dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Simulators**. It refreshes every three seconds while the iOS panel is visible, and when opening the dropdown. Selecting a physical device opens interactive screen mirroring through its paired developer connection. The phone sends HEVC video; a bundled native Node-API addon assembles compressed frames and transfers them into Node without copying the frame payload, then the panel decodes them through WebCodecs. MCP serializes the compressed bytes as base64, so the full path is not zero copy. The capture queue is limited to eight frames or 4 MiB and requests a keyframe after overflow. Physical iOS supports pointer taps, long presses, and drags through CoreDevice UniversalHID on the same developer tunnel. Input starts after a fresh video frame, uses normalized touchscreen coordinates, and releases held touches when the stream closes or resets. Screenshot captures the displayed mirrored frame as a PNG, attaches it to chat, and copies the same image to the macOS clipboard. Select annotates screen regions using the mirrored frame's pixel coordinates; native accessibility component names are unavailable. Both controls require a connected device and a ready video frame. Keyboard and hardware-button controls remain disabled. CPU and memory monitoring can attach to an already running development app on a paired iOS 17.4+ device. Mirroring requires Developer Mode and a host with HEVC WebCodecs support. `mobile_list_ios_devices` also returns remembered disconnected devices with their connection state; the picker shows connected devices only. Discovery errors remain visible while available simulators continue to work.
 
@@ -176,6 +176,20 @@ The green **Display FPS** track shares the CPU and memory timeline, cursor, zoom
 
 Android 12+ uses only Perfetto FrameTimeline's presented actual display frames, excluding dropped frames and individual app/layer frames. A bundled external native consumer reads a bounded 4 MiB trace buffer once per second over ADB without creating a trace file, attaching a debugger, requiring root or installing an app SDK. Readback adds roughly three seconds of delay. SurfaceFlinger can report a frame later; the chart updates that frame's original interval. Devices without FrameTimeline and Android versions below 12 report an explicit limitation.
 
+Android FPS intervals also retain `frameTimeline`: its `clock` is `boottime`,
+`intervalEndNs` identifies the device interval endpoint, and `frames` contains
+each actual display frame's `token`, `startTimeNs`, `endTimeNs`, `presentType`,
+and available `onTimeFinish`, `gpuComposition`, `jankType`, `predictionType`, and
+`jankSeverityType` metadata. Timestamps are normalized to Android `CLOCK_BOOTTIME`
+using Perfetto clock snapshots; timestamps and tokens use decimal strings to
+preserve every nanosecond and the full integer identity through JSON.
+Presented frames have `presentType` 1 (on-time), 2 (late), or 3 (early).
+Dropped (4) and unknown/unspecified frames remain in the detailed data, while
+FPS counts only presented frames. Late revisions replace the complete interval
+and its frame list. Retention stays bounded to the live history, with an explicit
+error above 4096 frames per interval. iOS supplies an aggregate counter and has no
+per-frame data.
+
 Physical iOS 17.4+ devices use the global Instruments `CoreAnimationFramesPerSecond` counter through a bundled native helper and the paired developer connection over USB or Wi-Fi. Developer Mode is required. There is no Instruments GUI, Python installation, app SDK or LLDB attachment. iOS simulators do not support this FPS collector. CPU and memory are available on iOS simulators, paired iOS 17.4+ devices with a running development app, and connected Android devices.
 
 Text agents can call `mobile_display_fps_session` with `platform` and `deviceId`, read `mobile_read_display_fps` or the returned `fpsUri`, then finish with `mobile_display_fps_close`. FPS sample times use the server's monotonic clock in seconds; the session returns `timeOrigin`. CPU batches expose their own `timeOrigin` so consumers can align app-relative CPU times with device FPS. FPS sessions expire after five minutes without reads and release their tracing connection on shutdown or device switching.
@@ -265,14 +279,23 @@ call `mobile_record_performance` with the running app's `target`, a descriptive
 `title`, and `durationSeconds` (default 30, maximum 300). This returns immediately.
 Read `mobile_read_performance_recording` with `recording.id` until its status is
 `recording` before asking the user to perform the interaction. Collection starts
-its duration clock at the first sample, continues without an open panel, stops
-automatically, and detaches the existing native CPU collector. An app cannot have
-two simultaneous CPU collectors; stop its live monitor before recording a run.
+its duration clock when the collectors are ready, continues without an open panel,
+stops automatically, and detaches the CPU and FPS collectors. Every timed run
+attempts CPU, memory, and device-wide Display FPS together, even for a request
+about only one metric. Stop existing CPU and FPS monitors before recording a run.
+FPS requires Android 12+ or physical iOS 17.4+; iOS simulators cannot collect it.
+Unsupported or failed FPS does not discard the CPU/memory recording. Only metrics
+with recorded readings appear in the charts and summaries. A `finishing` phase
+waits up to five seconds on Android or 1.5 seconds on iOS for delayed FPS readback,
+including revisions to earlier intervals, before saving. All samples share the
+CPU collector's monotonic timeline origin.
 
 Call `mobile_render_performance_recording` with that recording ID to display a
 compact MCP Apps chart card. Its UI resource prefers inline presentation; final
-placement depends on the host's MCP Apps support. Charts reveal from left to right
-over 700 ms when first shown, honoring reduced motion preferences. Selecting a
+placement depends on the host's MCP Apps support. Charts wait 550 ms when first
+shown, then draw along the measured curve over 700 ms with the fill following,
+honoring reduced motion preferences. Purple change highlights wait another 250 ms
+after drawing finishes, then fade in over 150 ms. Selecting a
 range ends the reveal; later updates do not replay it. Active cards refresh once
 per second while visible. Purple shading marks the regions with the most rapid
 changes in each chart independently, without selecting or zooming the recording. Density
@@ -280,15 +303,63 @@ is absolute variation per second in a rolling window of 10% of the recording
 duration (1–10 seconds); changing intervals within 80% of the highest density are
 highlighted. Flat or uniformly changing series have no distinct highlights, and
 missing readings and large delivery gaps are excluded. These regions describe
-changes, not their cause or absolute CPU/memory levels.
-Drag across either chart to select the same interval on CPU and memory; click
+changes, not their cause or absolute CPU/memory/FPS levels.
+Drag across any chart to select the same interval on CPU, memory, and FPS; click
 a chart to clear the selection. The selected thread list shows average
-CPU weighted by measured interval overlap. CPU chart readings span their measured
+CPU weighted by measured interval overlap. CPU and FPS chart readings span their measured
 intervals, so the first complete interval begins at zero; missing readings remain
 gaps. Memory labels, tooltips and changes use whole MiB, while saved samples retain
 their original byte precision.
 CPU can exceed 100%, because 100% represents one occupied core. Memory is RSS on
 Android and physical footprint on iOS, so cross-platform values are not equivalent.
+Display FPS measures the whole device and cannot attribute a slowdown to one app.
+FPS range averages weight measured interval overlap; zero is valid, and missing
+readings remain gaps.
+
+Android recordings save the exact display frames in each FPS interval's
+`frameTimeline`, retaining only frames ending within the recorded run. The
+one-second chart remains an overview. After a run finishes or fails, use
+`mobile_read_performance_frames` with `recordingId`, an optional `range`, and
+`limit` (default 200, maximum 1000) for a detailed page; pass `nextCursor` as
+`after` with the same range to continue. Ranges include their start and exclude
+their end. `available=false` identifies iOS and older recordings without frame
+data; an idle captured interval has an empty frame list and `available=true`.
+Failed runs can expose their captured partial frames.
+
+Android reports expose the same `frameStats` calculation in
+`mobile_read_performance_recording`'s summary, every frame-read page, and the existing
+interactive chart card. Statistics cover the whole requested range, independent of
+the current frame page. The card shows jank rate, P95 frame interval and dropped
+frames beside CPU/memory/FPS, with classification coverage and P50/P95/P99 in the
+range breakdown. Profiling instructions require rendering the card when reporting
+scrolling FPS/jank, including comparisons with the original implementation.
+
+`jankRatePercent` is janky presented frames divided by classified presented frames,
+times 100. On-time, late and early presentations (`presentType` 1/2/3) are eligible;
+a known non-`NONE` FrameTimeline jank bit counts once, including buffer stuffing.
+Missing, unspecified (0), `UNKNOWN` (256) or future bits are unclassified, including
+when mixed with known reasons. `classificationCoveragePercent` reports classified
+frames divided by all presented frames. Dropped frames (`presentType` 4) have a
+separate count and rate over presented plus dropped frames; unknown presentation
+has its own count. Rates are null without an eligible denominator. `frameStats` is
+null without per-frame capture, including iOS and older recordings. A low reported
+rate with incomplete classification coverage cannot establish a smooth run.
+These statistics describe compositor classifications, including states that may
+increase latency without an obvious hitch; they are not Android Vitals app metrics.
+
+For presented frames, differences between successive `endTimeNs` values give
+exact display pacing, and `endTimeNs - startTimeNs` measures SurfaceFlinger's
+work through display presentation. Pacing percentiles use nearest rank over positive
+intervals between presented frames within the selected range, in milliseconds.
+Dropped frames are skipped while retaining the gap between presentations; unknown
+presentation and missing capture intervals break continuity. Captured idle
+intervals preserve continuity. `jankType` retains the
+[FrameTimeline bitmask](https://android.googlesource.com/platform/external/perfetto/+/refs/heads/main/protos/perfetto/trace/android/frame_timeline_event.proto).
+Each frame page also includes `time` in seconds from recording start, aligned
+through the collector's host readback anchor. Device timestamps and their
+differences retain nanosecond precision; alignment to the CPU timeline includes
+host/device transport uncertainty. These are device-wide compositor frames;
+the recording does not capture individual app/layer FrameTimeline tracks.
 
 **Ask about this range** sends a user message containing the recording ID and exact
 interval. The agent retrieves the original samples to answer. **Open in Mobile Dev**
@@ -298,12 +369,12 @@ host's text-message capability. Opening a saved run does not start a collector.
 `mobile_finish_performance_recording` stops and saves a run early;
 `mobile_list_performance_recordings` finds recent saved or active runs.
 
-Completed and failed runs retain their original process, memory, and thread samples
+Completed and failed runs retain their original process, memory, FPS, Android display frames, and thread samples
 in private JSON files under `~/Library/Application Support/mobile-dev/recordings`.
 They survive plugin restarts and live-session expiry. Graceful server shutdown saves
 an interrupted run as failed; a forcibly killed process can lose an unfinished run.
 Saved runs are not automatically deleted. Recording samples, device IDs, app IDs,
-titles and selected ranges are not sent to Sentry.
+titles, display frame timestamps/tokens/jank data, and selected ranges are not sent to Sentry.
 
 ## Screen annotations
 
@@ -321,6 +392,29 @@ The MCP server returns a flat element list with `nodeId`, `parentId` and `depth`
 
 Annotations send text only. Each note includes the user request, element label, test ID when present, React component and owner names when available, and nearby text. React debug creation stacks resolve through one bounded request to the matching Metro server's `/symbolicate` endpoint. Source maps supply an app file, line, column and function so the agent can open the element's JSX directly. This is the element creation site, not necessarily the component definition. Library frames and unresolved bundle locations never become edit locations. Missing source maps leave selection working and mark the source location unavailable. Coordinates remain a fallback. The paused image stays local for editing; use Screenshot separately to attach an image.
 
+## Native device requests
+
+When a mobile task has ambiguous targets, `mobile_choose_devices` asks the user
+through Codex's native inline request form. The agent discovers suitable devices
+first, then supplies their IDs, platform and kind, a task-specific question, and
+optional operation details. The form shows canonical device names, platform/type,
+runtime, optional verified app labels, and platform phone illustrations. Use
+`selectionMode: "multiple"` to let the user choose several devices. No device is
+preselected.
+
+The tool waits for an answer and returns `action` and selected `devices`, checking
+their availability both before opening the form and after acceptance. Cancellation
+or decline returns no selection. Device selection does not boot devices, launch
+apps, open streams or start recordings. Stopped simulators/AVDs can be offered for
+build tasks; profiling candidates should already be running. Physical iOS uses
+the hardware UDID and requires a connected paired device.
+
+This local MCP connection uses the OpenAI Extensions SDK's native form elicitation.
+The host must advertise `extensions["openai/elicitation"].form`; unsupported hosts
+return an explicit error. Codex owns layout and button labels, so the native form
+does not reproduce custom footer buttons from a design mockup. Thumbnails are
+illustrations, not captured app screens.
+
 ## Sentry
 
 Saved chart cards use the `recording` surface and view. Existing readiness,
@@ -328,8 +422,11 @@ interaction and frame-pacing coverage is preserved. `ui.recording.process` and
 `ui.recording.derive` measure result validation and chart/summary processing;
 `ui.recording.change_density` measures highlight calculation on sample updates
 and is cached across range selection changes;
-`ui.recording.reveal` measures completed entrance animations in milliseconds,
-using the existing bounded timing windows;
+`ui.recording.reveal` measures completed entrance drawing in milliseconds,
+using the existing bounded timing windows. Since 0.1.84, the line traces its
+measured curve with the fill following it. Since 0.1.85, the entrance pause is
+550 ms and change highlights fade in after drawing finishes. The intentional
+pause and highlight fade are excluded from the reveal timing;
 `ui.recording.message_ack` ends when the host acknowledges a button's message.
 `ui.recording.samples` counts samples held by the visible card, and bounded event
 counts record range selections and Ask/Open actions. `storage.bytes` with
@@ -353,6 +450,17 @@ The environments are `development` and `release`. `npm run build` and `npm run p
 
 Unhandled JavaScript errors and rejected promises, React render errors, and handled MCP tool failures produce issues. Expected stopped-device errors and cancelled operations are excluded. Sentry traces 10% of ordinary tool actions, continuing the UI trace through the MCP bridge. Frame reads, polling, discovery and pointer input are excluded from trace sampling. The SDK does not record MCP arguments or results.
 
+Native device requests retain the ordinary sampled MCP trace. `device_picker.prepare`
+measures candidate discovery/validation in milliseconds, excluding time spent waiting
+for the user. `device_picker.result` counts accept, cancel, decline, unsupported and
+failed outcomes; `device_picker.selected` records only the number of selected devices.
+Attributes contain only the selection mode and outcome. Unexpected handled failures
+use fixed messages. Device IDs/names, app labels, questions, operation details and
+thumbnails are never sent to Sentry. The form is rendered by the host, so plugin UI
+readiness/render timing cannot measure that surface.
+
+Physical iOS display rejections, including an active phone or VoIP call, appear in the panel's Screen unavailable state while it retries. These expected device responses preserve native connection timing, sampled MCP traces and `ui.action.result` outcomes on the simulator surface. Their localized descriptions remain local and do not produce separate Sentry issues.
+
 Agent Device telemetry is inactive while its MCP entry is disabled; the active Mobile Dev server and recording UI retain their existing coverage. When enabled, the Agent Device adapter measures ordinary `tools/call <command>` operations with sampled traces and continues incoming trace metadata through to the native MCP request. Discovery and session lookup are excluded from sampling. `agent_device.catalog.ready` measures catalog loading and validator compilation in milliseconds at startup. Handled native failures use static error messages so app content and tool payloads cannot enter telemetry. Node runtime and owned-storage measurements retain the `agent-device-wrapper` component. Unexpected backend disconnects replace the raw launcher's exit-code/signal report, since the SDK owns the child process lifecycle.
 
 | Measurement | Collection and interpretation |
@@ -367,11 +475,13 @@ Agent Device telemetry is inactive while its MCP entry is disabled; the active M
 | Storage | Every five minutes, the agent-device launcher measures its own session state directory and the shared Apple runner cache in bytes. It skips symlinks and sends only the storage kind and size. |
 | Usage | Surface views and visible time, tool action outcomes, log searches, attachments and send-to-chat actions are counted without their content. |
 
-UI timings are aggregated into bounded 30-second windows with `.samples`, `.mean`, `.p95` and `.max`; windows also close on a surface or context change. The p95 uses a reservoir of up to 256 observations and describes that window, rather than the percentile of all measurements across users. Filter by environment, release, surface and layout to compare like workloads. `ui.frame_interval` measures browser callback pacing, not actual rendered FPS. Event Timing measures interaction duration through the next paint; `ui.device_input.round_trip` measures the device input request through its MCP acknowledgement. Neither measures device touch-to-photon latency. `ui.interaction.supported` identifies whether the browser supports that API. Codex's embedded UI does not expose reliable renderer CPU, total memory or disk measurements. Device CPU/memory/FPS displayed in the Performance tab remain local and are not forwarded to Sentry.
+UI timings are aggregated into bounded 30-second windows with `.samples`, `.mean`, `.p95` and `.max`; windows also close on a surface or context change. The p95 uses a reservoir of up to 256 observations and describes that window, rather than the percentile of all measurements across users. Filter by environment, release, surface and layout to compare like workloads. `ui.frame_interval` measures browser callback pacing, not actual rendered FPS. Event Timing measures interaction duration through the next paint; `ui.device_input.round_trip` measures the device input request through its MCP acknowledgement. Neither measures device touch-to-photon latency. `ui.interaction.supported` identifies whether the browser supports that API. Codex's embedded UI does not expose reliable renderer CPU, total memory or disk measurements. Since 0.1.80, recording processing, derivation, change-density, and reveal timings include the FPS track when present. `ui.recording.fps_samples` gauges the count of saved FPS intervals, never their measured values. Since 0.1.86, `ui.recording.process` also covers parsing retained Android display frames, and `ui.recording.display_frames` gauges their count on the recording surface. Since 0.1.87, `ui.recording.derive` also includes jank classification and presentation-interval statistics. Whole-run derivation runs when recording data changes; selected-range recomputation is measured separately under the same timing name, without repeating full-run processing during a drag. Device CPU/memory/FPS and frame timestamps, tokens, jank metadata, and derived device jank/pacing values remain local and are not forwarded to Sentry. No per-frame telemetry is emitted.
 
 Native helpers use the pinned Sentry Native 0.17.1 in-process crash backend. It captures fatal signals with stack addresses and module debug IDs; the Rust wrapper also reports task panics with a static message and source location. Crash reports are retained in a private cache and sent on the helper's next start. Host caches live under `~/Library/Caches/mobile-dev/sentry`; Android caches live under `/data/local/tmp/mobile-dev-sentry`. Android collectors relay envelopes through ADB stderr to the Node transport, preserving their stdout data protocol. Native timings use the same bounded 30-second `.samples`, `.mean`, `.p95` and `.max` windows as UI timings. iOS FPS timing covers received-counter processing; Android FPS timing includes Perfetto flush/readback. Video timing covers packet assembly and queue work, not decoding or device rendering.
 
-Session Replay, minidumps, screenshots and profiling are disabled. Requests, user identity, app log content, tool payloads, automatic console breadcrumbs and exception source context are excluded. JavaScript error text redacts common tokens, identifiers, URLs, email addresses and local home paths. Native reports retain source basenames and debug IDs, omit absolute module paths, and never send Rust panic payloads. Safe product attributes and source locations remain available for diagnosis. `MOBILE_DEV_TELEMETRY=off` disables reporting across JavaScript and native helpers.
+Error and crash events carry only a generated anonymous `user.id` and a `telemetry_session` tag. The Node server creates one random installation ID per local OS account, stored with owner-only permissions in `~/Library/Application Support/mobile-dev/telemetry/anonymous-user-id`. It survives plugin updates, project changes, and app restarts, and is shared with the served UI and native helpers. Each MCP process creates a new random session ID; its UI panels and child helpers share that session. These are plugin server sessions, not chat or device sessions. Sentry's affected-user count therefore approximates affected installations: one person on two machines counts twice, while people sharing an OS account count once. No OpenAI account ID, email, name, IP address, device ID, or host identifier is used. IDs are excluded from performance metrics and span attributes. Stop the MCP processes and delete the identity file to reset it; telemetry opt-out creates no ID.
+
+Session Replay, minidumps, screenshots and profiling are disabled. Requests, account details, app log content, tool payloads, automatic console breadcrumbs and exception source context are excluded. JavaScript error text redacts common tokens, identifiers, URLs, email addresses and local home paths. Native reports retain source basenames and debug IDs, omit absolute module paths, and never send Rust panic payloads. Safe product attributes and source locations remain available for diagnosis. `MOBILE_DEV_TELEMETRY=off` disables reporting across JavaScript and native helpers.
 
 Builds generate debug IDs and source maps under the ignored `.sentry/` directory. Native rebuilds retain macOS dSYMs and unstripped Android ELF files in `.sentry/native` before stripping the bundled binaries. Symbols, source maps and the upload credential are excluded from the plugin package. Native builds require CMake and Ninja, with an Android NDK for Android collectors. The SDK source archive is pinned and checked by SHA-256. Store the organization build token in the ignored `.env.sentry-build-plugin` file at the repository root:
 
@@ -389,6 +499,7 @@ That file is also listed in `.worktreeinclude` for local worktrees. Use the orga
 | `mobile_open_simulator` | Open the native panel and start the bundled backend |
 | `mobile_open_workspace` | Open fullscreen with logs on the left and the simulator on the right |
 | `mobile_list_simulators` | Start the bundled backend if needed and list devices |
+| `mobile_choose_devices` | Ask through the native inline form for one or several verified task targets |
 | `mobile_list_ios_devices` | Discover physical iPhones and iPads with USB/Wi-Fi, pairing state, UDID, and CoreDevice ID |
 | `mobile_start_baguette` | Retry or reconnect the bundled backend |
 | `mobile_boot_simulator` | Boot one listed device |
@@ -419,6 +530,7 @@ That file is also listed in `.worktreeinclude` for local worktrees. Use the orga
 | `mobile_list_performance_recordings` | Find recent saved and active runs |
 | `mobile_display_fps_session` | Start device-wide Display FPS on Android 12+ or physical iOS 17.4+ |
 | `mobile_read_display_fps` | Read FPS intervals and connection status |
+| `mobile_read_performance_frames` | Read Android jank/pacing statistics and page through exact display frames |
 | `mobile_display_fps_close` | Stop FPS collection and release the tracing connection |
 
 When reactivated, the `agent-device` MCP server exposes the pinned runtime's official operations through compact, validated schemas, including `open`, `snapshot`, `press`, `fill`, `type`, `scroll`, `wait`, `find`, `get`, `is`, `close`, and debugging tools. Their input schemas describe each command. The source [control skill](skills/agent-device/SKILL.md), currently excluded from the package, explains session ordering and links to the version-matched guide.

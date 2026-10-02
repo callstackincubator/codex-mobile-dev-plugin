@@ -17,3 +17,5 @@ Protocol transport uses [idevice](https://github.com/jkcoxson/idevice) at `a64b8
 The live development check used an iPhone 17 Pro on iOS 27 over Wi-Fi. The display service is private and can change with iOS/Xcode releases; unsupported negotiation or HEVC decoder configurations fail explicitly.
 
 Pointer input opens CoreDevice UniversalHID on the same developer tunnel after media negotiation. It discovers the touchscreen surface and serializes normalized down/move/release reports. The panel sends bounded batches through `mobile_ios_mirror_input`, carrying the video generation; stale generations and overlapping writes are rejected. Held contacts are released on stream reset, video discontinuity, overflow, and teardown. Keyboard and hardware-button input are not implemented.
+
+Display-service rejections retain CoreDevice's localized error description through native startup and MCP. An active phone or VoIP call prevents mirroring; the panel shows the device's reason in its Screen unavailable state and retries automatically.

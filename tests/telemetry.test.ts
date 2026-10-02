@@ -9,10 +9,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
-import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubSpan, TELEMETRY_META_KEY } from "../src/shared/telemetry.ts";
+import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, TELEMETRY_META_KEY } from "../src/shared/telemetry.ts";
 import { captureServerError, installTracePropagation } from "../src/server/telemetry.ts";
 import { directoryBytes } from "../src/server/storage-metrics.ts";
 import { SimulatorUnavailableError } from "../src/server/simulator-unavailable.ts";
+import { registerDeviceChoiceTools } from "../src/server/device-choice-tools.ts";
+import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { adapterClient } from "./agent-device-fixtures.ts";
 
 function contains(text: string, fragment: string, expected = true) {
@@ -170,6 +172,91 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   const afterItems = envelopes.flatMap(envelope => envelope[1]);
   const afterErrors = afterItems.filter(item => item[0].type === "event");
   assert.equal(afterErrors.length, 2);
+});
+
+test("error filters retain only generated identity while metrics and spans omit user dimensions", async () => {
+  const userId = "anon_0123456789abcdef0123456789abcdef";
+  const sessionId = "run_1234567890abcdef1234567890abcdef";
+  const filtered = scrubErrorEvent({
+    user: { id: userId, email: "private@example.com", username: "private-name", ip_address: "127.0.0.1", extra: "private-account" },
+    tags: { telemetry_session: sessionId, surface: "logs" },
+  });
+  assert.deepEqual(filtered.user, { id: userId });
+  assert.equal(filtered.tags?.telemetry_session, sessionId);
+  const rejected = scrubErrorEvent({ user: { id: "private-account" }, tags: { telemetry_session: "private-thread" } });
+  assert.equal(rejected.user, undefined);
+  assert.equal(rejected.tags?.telemetry_session, undefined);
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false,
+    initialScope: { user: { id: userId }, tags: { telemetry_session: sessionId } },
+    beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const error = new Error("Anonymous identity test");
+  captureServerError(error, "identity.test");
+  Sentry.metrics.count("identity.test", 1, { attributes: { surface: "logs", telemetry_session: sessionId } });
+  await Sentry.close();
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const errors = items.filter(item => item[0].type === "event");
+  assert.equal(errors.length, 1);
+  const encodedError = JSON.stringify(errors[0]);
+  contains(encodedError, userId);
+  contains(encodedError, sessionId);
+  const metrics = items.filter(item => item[0].type === "trace_metric");
+  assert.ok(metrics.length > 0);
+  const encodedMetrics = JSON.stringify(metrics);
+  contains(encodedMetrics, userId, false);
+  contains(encodedMetrics, sessionId, false);
+  const span = scrubSpan({ trace_id: "1".repeat(32), span_id: "2".repeat(16), name: "identity.test", start_timestamp: 1, timestamp: 2,
+    attributes: { "user.id": userId, "user.email": "private@example.com", "session.id": sessionId, telemetry_session: sessionId, surface: "logs" } });
+  assert.deepEqual(span.attributes, { surface: "logs" });
+});
+
+test("native device picker measures preparation and outcomes without private form content", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false,
+    beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const server = new McpServer({ name: "picker-telemetry", version: "1" });
+  let answer: OpenAIFormResult = { action: "accept", content: { device: "device-1" } };
+  registerDeviceChoiceTools(server, { async elicitInput() { return answer; } }, {
+    async simulators() { throw new Error("PRIVATE unrelated discovery"); },
+    async physicalIos() { throw new Error("PRIVATE unrelated discovery"); },
+    async android() { return { connected: true, managed: false, baseUrl: "", devices: [
+      { udid: "PRIVATE_SERIAL", name: "PRIVATE_DEVICE_NAME", runtime: "Android", state: "Booted", platform: "android", kind: "physical" },
+    ] }; },
+  });
+  const client = new Client({ name: "picker-host", version: "1" }, { capabilities: { extensions: { "openai/elicitation": { form: {} } } } });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const arguments_ = { message: "PRIVATE_QUESTION", context: "PRIVATE_OPERATION", devices: [
+    { platform: "android", kind: "physical", deviceId: "PRIVATE_SERIAL", appName: "PRIVATE_APP" },
+  ] };
+  for (const action of ["accept", "cancel", "decline"] as const) {
+    answer = action === "accept" ? { action, content: { device: "device-1" } } : { action };
+    const result = await client.callTool({ name: "mobile_choose_devices", arguments: arguments_ });
+    assert.equal(result.isError, undefined);
+  }
+  answer = { action: "accept", content: { device: "not-offered" } };
+  const invalid = await client.callTool({ name: "mobile_choose_devices", arguments: arguments_ });
+  assert.equal(invalid.isError, true);
+  await Sentry.close();
+  const encoded = JSON.stringify(envelopes);
+  contains(encoded, "device_picker.prepare");
+  contains(encoded, "device_picker.result");
+  contains(encoded, "device_picker.selected");
+  contains(encoded, "PRIVATE", false);
+  contains(encoded, "device-1", false);
+  contains(encoded, "selection_mode");
+  contains(encoded, "millisecond");
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const errors = items.filter(item => item[0].type === "event");
+  assert.equal(errors.length, 0, "Expected stale/invalid device responses do not produce issues.");
 });
 
 test("storage measurements count owned files without following external symlinks", async t => {

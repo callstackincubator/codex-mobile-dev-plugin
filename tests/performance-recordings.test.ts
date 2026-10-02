@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
+import { DisplayFpsSessions } from "../src/server/fps/sessions.ts";
 import { CpuSessions } from "../src/server/cpu/sessions.ts";
 import { PerformanceRecordings, RecordingStore } from "../src/server/performance-recordings.ts";
 import { summarizeRecording } from "../src/shared/recordings.ts";
-import { recordingFixture } from "./recording-fixtures.ts";
+import { recordingFixture, unavailableFps } from "./recording-fixtures.ts";
 
 test("range summaries weight interval overlap, preserve CPU above 100%, zero memory, and missing values", () => {
   const recording = recordingFixture();
@@ -37,6 +38,12 @@ test("recordings persist original samples across store restarts with private fil
   t.after(async () => { await rm(directory, { recursive: true, force: true }); });
   const store = new RecordingStore(directory);
   const recording = recordingFixture();
+  recording.fps.samples[0].frameTimeline = {
+    clock: "boottime", intervalEndNs: "9007200254740993", frames: [
+      { token: "9007199254740995", startTimeNs: "9007199744741116", endTimeNs: "9007199754741116", presentType: 2,
+        onTimeFinish: false, gpuComposition: true, jankType: 48, predictionType: 2, jankSeverityType: 3 },
+    ],
+  };
   await store.save(recording);
   const reopened = new RecordingStore(directory);
   assert.deepEqual(await reopened.read(recording.id), recording);
@@ -60,7 +67,8 @@ test("timed recording returns immediately, collects and detaches without UI poll
     }, 100);
     return { closed: new Promise(() => {}), async stop() { clearInterval(timer); stopped++; } };
   } });
-  const recordings = new PerformanceRecordings(cpu, new RecordingStore(directory));
+  const store = new RecordingStore(directory);
+  const recordings = new PerformanceRecordings(cpu, unavailableFps, store);
   t.after(async () => { await recordings.close(); await cpu.close(); await rm(directory, { recursive: true, force: true }); });
   const target = recordingFixture().target;
   const started = recordings.start(target, "Scroll", 1, "Pixel");
@@ -84,7 +92,8 @@ test("early finish and server shutdown both detach collectors; failures persist 
     options.onSample({ timestampUs: 0n, intervalUs: 1000000, cpuPercent: 15, memoryBytes: 100, threads: [] });
     return { closed: new Promise(() => {}), async stop() { stopped++; } };
   } });
-  const recordings = new PerformanceRecordings(cpu, new RecordingStore(directory));
+  const store = new RecordingStore(directory);
+  const recordings = new PerformanceRecordings(cpu, unavailableFps, store);
   t.after(async () => { await recordings.close(); await cpu.close(); await rm(directory, { recursive: true, force: true }); });
   const first = recordings.start(recordingFixture().target, "Early", 30, "Pixel");
   await setTimeout(10);
@@ -98,4 +107,152 @@ test("early finish and server shutdown both detach collectors; failures persist 
   assert.equal(interrupted.status, "failed");
   assert.match(interrupted.error!, /server closed/);
   assert.equal(stopped, 2);
+});
+
+test("FPS summaries clip interval overlap, retain idle zero, and exclude missing readings", () => {
+  const recording = recordingFixture();
+  recording.fps.samples = [
+    { time: 1, interval: 1, fps: 0 },
+    { time: 3, interval: 2, fps: 60 },
+    { time: 4, interval: 1, fps: null },
+  ];
+  const whole = summarizeRecording(recording);
+  assert.equal(whole.averageFps, 40);
+  assert.equal(whole.minimumFps, 0);
+  assert.equal(whole.peakFps, 60);
+  assert.equal(whole.fpsSampleCount, 3);
+  assert.equal(whole.frameStats, null, "Historical aggregate FPS cannot supply a jank rate.");
+  const selected = summarizeRecording(recording, { start: 0.5, end: 2 });
+  assert.equal(selected.averageFps, 40);
+  assert.equal(selected.fpsSampleCount, 2);
+  const empty = summarizeRecording(recording, { start: 3, end: 4 });
+  assert.equal(empty.averageFps, null);
+  assert.equal(empty.minimumFps, null);
+});
+
+test("saved CPU/memory runs without historical FPS data remain readable", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "mobile-dev-historical-recording-"));
+  t.after(async () => { await rm(directory, { recursive: true, force: true }); });
+  const recording = recordingFixture();
+  const { fps, ...historical } = recording;
+  const filename = join(directory, `${recording.id}.json`);
+  const text = JSON.stringify(historical);
+  await writeFile(filename, text);
+  const store = new RecordingStore(directory);
+  const loaded = await store.read(recording.id);
+  assert.deepEqual(loaded.samples, historical.samples);
+  assert.equal(loaded.fps.status, "unavailable");
+  assert.deepEqual(loaded.fps.samples, []);
+});
+
+test("timed recordings align FPS, wait for Android readback, replace revised intervals and detach both collectors", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "mobile-dev-fps-recording-"));
+  let cpuStopped = 0;
+  let fpsStopped = 0;
+  const cpu = new CpuSessions({ apps: async () => [{ bundleId: "com.example.shop", pid: 123 }], monitor: async options => {
+    options.onSample({ timestampUs: 0n, intervalUs: 0, cpuPercent: null, memoryBytes: 1048576, threads: [] });
+    const timer = setInterval(() => {
+      options.onSample({ timestampUs: 1n, intervalUs: 100000, cpuPercent: 42, memoryBytes: 2097152, threads: [] });
+    }, 100);
+    return { closed: new Promise(() => {}), async stop() { clearInterval(timer); cpuStopped++; } };
+  } });
+  const fps = new DisplayFpsSessions(async options => {
+    const origin = performance.now() / 1000;
+    const first = origin + 0.5;
+    options.onSample({ recordedAt: origin, interval: 0, fps: null });
+    const initial = globalThis.setTimeout(() => {
+      options.onSample({ recordedAt: first, interval: 0.5, fps: 0,
+        frameTimeline: { clock: "boottime", intervalEndNs: "2000000000", frames: [] } });
+    }, 500);
+    const late = globalThis.setTimeout(() => {
+      options.onSample({ recordedAt: first, interval: 0.5, fps: 30, frameTimeline: {
+        clock: "boottime", intervalEndNs: "2000000000", frames: [
+          { token: "0", startTimeNs: "1290000000", endTimeNs: "1300000000", presentType: 1 },
+          { token: "1", startTimeNs: "1690000001", endTimeNs: "1700000001", presentType: 1 },
+          { token: "2", startTimeNs: "1890000000", endTimeNs: "1900000000", presentType: 4 },
+        ],
+      } });
+      options.onSample({ recordedAt: origin + 1.5, interval: 1, fps: 60, frameTimeline: {
+        clock: "boottime", intervalEndNs: "3000000000", frames: [
+          { token: "3", startTimeNs: "2290000000", endTimeNs: "2300000000", presentType: 2, jankType: 16 },
+          { token: "4", startTimeNs: "2890000000", endTimeNs: "2900000000", presentType: 1 },
+        ],
+      } });
+      options.onSample({ recordedAt: origin + 4, interval: 1, fps: 10 });
+    }, 2000);
+    return { closed: new Promise(() => {}), async stop() { clearTimeout(initial); clearTimeout(late); fpsStopped++; } };
+  });
+  const store = new RecordingStore(directory);
+  const recordings = new PerformanceRecordings(cpu, fps, store);
+  t.after(async () => { await recordings.close(); await cpu.close(); await fps.close(); await rm(directory, { recursive: true, force: true }); });
+  const target = recordingFixture().target;
+  const started = recordings.start(target, "Scroll with FPS", 1, "Pixel");
+  assert.equal(started.status, "connecting");
+  await setTimeout(1300);
+  const draining = await recordings.read(started.id);
+  assert.equal(draining.status, "finishing");
+  assert.equal(cpuStopped, 1, "CPU stops at the recording deadline, before delayed FPS readback.");
+  assert.equal(fpsStopped, 0);
+  await setTimeout(4900);
+  const finished = await recordings.read(started.id);
+  assert.equal(finished.status, "finished");
+  assert.equal(finished.fps.status, "finished");
+  const measured = finished.fps.samples.filter(sample => sample.fps !== null);
+  assert.equal(measured.length, 2, "A correction replaces its interval; out-of-range FPS is excluded.");
+  assert.equal(measured[0].fps, 30);
+  assert.ok(measured[0].time > 0.4 && measured[0].time < 0.6, "FPS uses the CPU recording's origin.");
+  assert.equal(measured[1].fps, 60);
+  assert.ok(measured[1].time > 1, "The original interval endpoint is retained for range-weighted summaries.");
+  const firstTokens = measured[0].frameTimeline?.frames.map(frame => frame.token);
+  const secondTokens = measured[1].frameTimeline?.frames.map(frame => frame.token);
+  assert.deepEqual(firstTokens, ["1", "2"], "Frames before the recording origin are excluded; dropped frames are retained.");
+  assert.deepEqual(secondTokens, ["3"], "The overlapping final bucket excludes frames after the recording deadline.");
+  assert.equal(measured[0].frameTimeline?.frames[0].endTimeNs, "1700000001");
+  assert.equal(cpuStopped, 1);
+  assert.equal(fpsStopped, 1);
+  const reopened = await store.read(started.id);
+  assert.deepEqual(reopened, finished);
+  const selected = summarizeRecording(reopened, { start: 0.6, end: 1 });
+  assert.equal(selected.averageFps, 60);
+});
+
+test("FPS failure saves CPU/memory, and server shutdown closes both active collectors", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "mobile-dev-fps-failure-"));
+  let cpuStopped = 0;
+  let fpsStopped = 0;
+  const cpu = new CpuSessions({ apps: async () => [{ bundleId: "com.example.shop", pid: 123 }], monitor: async options => {
+    options.onSample({ timestampUs: 0n, intervalUs: 0, cpuPercent: null, memoryBytes: 100, threads: [] });
+    const timer = setInterval(() => {
+      options.onSample({ timestampUs: 1n, intervalUs: 100000, cpuPercent: 12, memoryBytes: 100, threads: [] });
+    }, 100);
+    return { closed: new Promise(() => {}), async stop() { clearInterval(timer); cpuStopped++; } };
+  } });
+  let fail: ((error: Error) => void) | undefined;
+  const fps = new DisplayFpsSessions(async options => {
+    options.onSample({ recordedAt: performance.now() / 1000, interval: 0, fps: null });
+    const closed = new Promise<Error>(resolve => { fail = resolve; });
+    return { closed, async stop() { fpsStopped++; } };
+  });
+  const store = new RecordingStore(directory);
+  const recordings = new PerformanceRecordings(cpu, fps, store);
+  t.after(async () => { await recordings.close(); await cpu.close(); await fps.close(); await rm(directory, { recursive: true, force: true }); });
+  const first = recordings.start(recordingFixture().target, "FPS unavailable", 30, "Pixel");
+  await setTimeout(150);
+  assert.ok(fail);
+  fail(new Error("Lost FPS connection"));
+  await setTimeout(150);
+  const saved = await recordings.finish(first.id);
+  assert.equal(saved.status, "finished");
+  assert.equal(saved.fps.status, "unavailable");
+  assert.match(saved.fps.error!, /Lost FPS connection/);
+  assert.ok(saved.samples.length > 0);
+  assert.equal(cpuStopped, 1);
+  const stoppedAfterFailure = fpsStopped;
+  const second = recordings.start(recordingFixture().target, "Interrupted", 30, "Pixel");
+  await setTimeout(150);
+  await recordings.close();
+  const interrupted = await store.read(second.id);
+  assert.equal(interrupted.status, "failed");
+  assert.equal(cpuStopped, 2);
+  assert.equal(fpsStopped, stoppedAfterFailure + 1);
 });

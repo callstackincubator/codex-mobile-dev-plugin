@@ -1,5 +1,6 @@
 import type { init } from "@sentry/react";
 import { PLUGIN_VERSION } from "./version.ts";
+import { isAnonymousUserId, isTelemetrySessionId } from "./telemetry-identity.ts";
 
 export const SENTRY_UI_DSN = "https://09bfb50068dbab86252bbb5489ce38ce@o4512180958068736.ingest.de.sentry.io/4512181027471440";
 export const SENTRY_SERVER_DSN = "https://2ee03a9449e1f1b48e3e7c7606b6f562@o4512180958068736.ingest.de.sentry.io/4512181033173072";
@@ -54,7 +55,10 @@ export function scrubText(text: string): string {
 
 export function scrubErrorEvent(event: ErrorEvent): ErrorEvent {
   delete event.request;
-  delete event.user;
+  const userId = event.user?.id;
+  if (isAnonymousUserId(userId)) event.user = { id: userId };
+  else delete event.user;
+  if (event.tags && isTelemetrySessionId(event.tags.telemetry_session) === false) delete event.tags.telemetry_session;
   delete event.extra;
   delete event.server_name;
   if (event.message) event.message = scrubText(event.message);
@@ -79,7 +83,7 @@ export function scrubErrorEvent(event: ErrorEvent): ErrorEvent {
 
 export function scrubSpan(span: StreamedSpanJSON): StreamedSpanJSON {
   for (const key of Object.keys(span.attributes)) {
-    if (key.includes("argument") || key.includes("content") || key.includes("uri") || key.includes("url") || key.includes("address") || key.includes("session.id") || key.includes("command")) {
+    if (key.includes("argument") || key.includes("content") || key.includes("uri") || key.includes("url") || key.includes("address") || key.includes("session.id") || key.includes("command") || key.startsWith("user.") || key === "telemetry_session") {
       delete span.attributes[key];
     }
   }
@@ -95,6 +99,8 @@ export function scrubMetric(metric: Metric): Metric {
   delete metric.attributes["user.id"];
   delete metric.attributes["user.name"];
   delete metric.attributes["user.email"];
+  delete metric.attributes["telemetry_session"];
+  delete metric.attributes["session.id"];
   return metric;
 }
 

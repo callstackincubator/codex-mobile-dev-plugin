@@ -130,6 +130,31 @@ test("physical iOS screenshots reject invalid and oversized PNGs before copying"
   assert.equal(copies, 0);
 });
 
+test("a device's display rejection reaches the panel and leaves capture available to retry", async t => {
+  const message = "A phone or VoIP call is currently in progress on the device.";
+  let blocked = true;
+  const sessions = new IosMirrorSessions(async () => {
+    if (blocked) throw new Error(message);
+    return { async read() { return { generation: 0, dropped: 0, frames: [] }; }, async touch() {}, reset() {}, async close() {} };
+  });
+  const server = new McpServer({ name: "mirror-test", version: "1" });
+  const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone], async () => bezel);
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  t.after(async () => { await close(); await client.close(); await server.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const request = { name: "mobile_ios_mirror_session", arguments: { udid: phone.udid } };
+  const rejected = await client.callTool(request);
+  assert.equal(rejected.isError, true);
+  assert.deepEqual(rejected.content, [{ type: "text", text: message }]);
+  assert.equal(rejected._meta?.sessionId, undefined);
+  blocked = false;
+  const opened = await client.callTool(request);
+  assert.equal(opened.isError, undefined);
+  assert.equal(typeof opened._meta?.sessionId, "string");
+});
+
 test("an unavailable Apple frame reports its error before starting native capture", async t => {
   let opens = 0;
   const sessions = new IosMirrorSessions(async () => { opens++; throw new Error("Unexpected native open"); });

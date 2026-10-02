@@ -1,18 +1,28 @@
 import type { PerformanceRecording, RecordingRange } from "../shared/recordings.ts";
+import type { DisplayFpsSample } from "../shared/display-fps.ts";
 
 export type RecordingPoint = { time: number; value: number | null };
 
 export function createRecordingCpuSeries(recording: PerformanceRecording): RecordingPoint[] {
+  return createIntervalSeries(recording.samples, recording.durationSeconds);
+}
+
+export function createRecordingFpsSeries(recording: PerformanceRecording): RecordingPoint[] {
+  return createIntervalSeries(recording.fps.samples, recording.durationSeconds);
+}
+
+function createIntervalSeries(samples: Array<{ time: number; interval: number; cpuPercent: number | null }> | DisplayFpsSample[], duration: number): RecordingPoint[] {
   const points: RecordingPoint[] = [];
   let previousEnd: number | undefined;
-  for (const sample of recording.samples) {
+  for (const sample of samples) {
     const start = Math.max(0, sample.time - sample.interval, previousEnd ?? 0);
-    const end = Math.min(recording.durationSeconds, sample.time);
+    const end = Math.min(duration, sample.time);
     if (end <= start) continue;
     if (previousEnd !== undefined && start > previousEnd) {
       points.push({ time: previousEnd, value: null }, { time: start, value: null });
     }
-    points.push({ time: start, value: sample.cpuPercent }, { time: end, value: sample.cpuPercent });
+    const value = "cpuPercent" in sample ? sample.cpuPercent : sample.fps;
+    points.push({ time: start, value }, { time: end, value });
     previousEnd = end;
   }
   return points;
@@ -38,14 +48,15 @@ function variationUntil(intervals: ChangeInterval[], time: number): number {
   return interval.precedingVariation + interval.variation * fraction;
 }
 
-export function findRecordingChangeRanges(recording: PerformanceRecording, metric: "cpuPercent" | "memoryBytes"): RecordingRange[] {
+export function findRecordingChangeRanges(recording: PerformanceRecording, metric: "cpuPercent" | "memoryBytes" | "fps"): RecordingRange[] {
   const intervals: ChangeInterval[] = [];
   let previous: { time: number; value: number } | undefined;
   let precedingVariation = 0;
   let minimumRate = Infinity;
   let maximumRate = 0;
-  for (const sample of recording.samples) {
-    const value = sample[metric];
+  const samples = metric === "fps" ? recording.fps.samples : recording.samples;
+  for (const sample of samples) {
+    const value = "fps" in sample ? sample.fps : metric === "memoryBytes" ? sample.memoryBytes : sample.cpuPercent;
     if (value === null) {
       previous = undefined;
       continue;

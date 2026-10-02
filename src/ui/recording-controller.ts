@@ -65,6 +65,10 @@ export class RecordingController {
       setUiSurface("recording");
       setUiTelemetryContext({ device_platform: recording.target.platform, device_kind: recording.target.kind ?? (recording.target.platform === "android" ? "emulator" : "simulator") });
       setUiGauge("ui.recording.samples", recording.samples.length);
+      setUiGauge("ui.recording.fps_samples", recording.fps.samples.length);
+      let frameCount = 0;
+      for (const sample of recording.fps.samples) frameCount += sample.frameTimeline?.frames.length ?? 0;
+      setUiGauge("ui.recording.display_frames", frameCount);
       const elapsed = performance.now() - startedAt;
       recordUiTiming("ui.recording.process", elapsed);
       if (changedRecording) markUiSurfaceReady(this.readyAt);
@@ -87,7 +91,7 @@ export class RecordingController {
     clearTimeout(this.timer);
     const status = this.state.recording?.status;
     if (this.disposed || this.polling || this.visible === false || document.visibilityState === "hidden") return;
-    if (status !== "connecting" && status !== "recording") return;
+    if (status !== "connecting" && status !== "recording" && status !== "finishing") return;
     if (this.app.getHostCapabilities()?.serverTools === undefined) return;
     this.timer = setTimeout(() => { void this.poll(); }, 1000);
   }
@@ -111,8 +115,18 @@ export class RecordingController {
     this.update({ busy: true, error: "" });
     const selected = range ?? { start: 0, end: recording.durationSeconds };
     const reference = JSON.stringify({ recordingId: recording.id, range: selected });
+    const summary = summarizeRecording(recording);
+    const metrics: string[] = [];
+    if (summary.averageCpuPercent !== null) metrics.push("CPU and the busiest recorded threads");
+    if (summary.firstMemoryBytes !== null) metrics.push("memory");
+    if (summary.averageFps !== null) metrics.push("device-wide Display FPS");
+    if (summary.frameStats !== null) metrics.push("Android display jank rate, classification coverage, dropped frames, and frame pacing");
+    const metricNames = metrics.join(", ");
+    const hasDisplayData = summary.averageFps !== null || summary.frameStats !== null;
+    const displayContext = hasDisplayData ? "; device-wide display data cannot attribute a slowdown to this app alone" : "";
+    const frameContext = summary.frameStats !== null ? ". Use summary.frameStats for jank statistics; use mobile_read_performance_frames for original frame details. Show the chart with mobile_render_performance_recording when reporting jank" : "";
     const prompt = action === "ask"
-      ? `Explain CPU, memory, and the busiest recorded threads during ${selected.start}–${selected.end}s of “${recording.title}”. Read the original samples with mobile_read_performance_recording using ${reference}. Distinguish measurements from hypotheses about their cause.`
+      ? `Explain ${metricNames} during ${selected.start}–${selected.end}s of “${recording.title}”. Read the original samples with mobile_read_performance_recording using ${reference}. Distinguish measurements from hypotheses about their cause${displayContext}${frameContext}.`
       : `Open “${recording.title}” in Mobile Dev with ${selected.start}–${selected.end}s selected. Use mobile_open_performance_recording with ${reference}.`;
     const startedAt = performance.now();
     try {
