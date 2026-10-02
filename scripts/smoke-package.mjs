@@ -73,14 +73,14 @@ try {
   assert.ok(recordingCard);
   assert.deepEqual(recordingCard._meta.ui.visibility, ["app", "model"]);
   const recordingUri = recordingCard._meta.ui.resourceUri;
-  assert.equal(recordingUri, "ui://mobile-dev/0.1.101/recording.html");
+  assert.equal(recordingUri, "ui://mobile-dev/0.1.102/recording.html");
   const recordingResource = await client.readResource({ uri: recordingUri });
   const recordingHtml = recordingResource.contents[0].text;
   assert.match(recordingHtml, /data-view="recording"/);
   const comparisonCard = tools.tools.find(tool => tool.name === "mobile_compare_performance_recordings");
   assert.ok(comparisonCard);
   const comparisonUri = comparisonCard._meta.ui.resourceUri;
-  assert.equal(comparisonUri, "ui://mobile-dev/0.1.101/comparison.html");
+  assert.equal(comparisonUri, "ui://mobile-dev/0.1.102/comparison.html");
   const comparisonResource = await client.readResource({ uri: comparisonUri });
   assert.match(comparisonResource.contents[0].text, /data-view="comparison"/);
   await access(join(plugin, "dist/ios-fps/mobile-dev-ios-fps"));
@@ -137,7 +137,7 @@ try {
   }
   assert.ok(!resource.contents[0].text.includes("<!-- APP_SCRIPT -->"));
   assert.ok(!resource.contents[0].text.includes("<!-- APP_STYLE -->"));
-  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.101/simulator.html");
+  assert.equal(entrypoint._meta.ui.resourceUri, "ui://mobile-dev/0.1.102/simulator.html");
   const telemetryEnvironment = process.env.MOBILE_DEV_ENVIRONMENT ?? telemetryConfig.environment;
   const telemetryMarker = `name="mobile-dev-environment" content="${telemetryEnvironment}"`;
   assert.ok(resource.contents[0].text.includes(telemetryMarker));
@@ -148,7 +148,7 @@ try {
   assert.ok(resource.contents[0].text.includes('workspace-panels'));
   assert.ok(resource.contents[0].text.includes('tool-logs'));
   assert.ok(resource.contents[0].text.includes('Memory usage'), 'The packaged Performance view must include the live memory track.');
-  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.101/workspace.html");
+  assert.equal(workspace._meta.ui.resourceUri, "ui://mobile-dev/0.1.102/workspace.html");
   assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, ["https://o4512180958068736.ingest.de.sentry.io"]);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.resourceDomains, []);
   runtimeTransport = new StdioClientTransport({ command: process.execPath, args: ["dist/server.mjs"], cwd: plugin, stderr: "pipe" });

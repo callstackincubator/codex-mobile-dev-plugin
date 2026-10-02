@@ -140,3 +140,38 @@ jobs:
           gh release create "$RELEASE_TAG" \
             "release/mobile-dev-$RELEASE_VERSION-darwin-arm64.zip" \
             --verify-tag --draft --generate-notes --title "Mobile Dev $RELEASE_VERSION"
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: release-latest
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/tags/${{ needs.build.outputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22.23.2'
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: mobile-dev-${{ needs.build.outputs.version }}-darwin-arm64
+          path: release
+
+      - name: Publish the prebuilt Git marketplace
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          mkdir "$RUNNER_TEMP/mobile-dev-marketplace"
+          unzip -q "release/mobile-dev-$RELEASE_VERSION-darwin-arm64.zip" -d "$RUNNER_TEMP/mobile-dev-marketplace"
+          node scripts/publish-release.mjs "$RUNNER_TEMP/mobile-dev-marketplace"

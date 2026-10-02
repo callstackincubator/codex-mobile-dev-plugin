@@ -35,5 +35,5 @@ const scriptPath = fileURLToPath(import.meta.url);
 const executedPath = process.argv[1] ? resolve(process.argv[1]) : undefined;
 if (executedPath === scriptPath) {
   const release = await publicRelease();
-  console.log(`Pushed ${release.tag}. GitHub Actions will build the ZIP and create a draft release.`);
+  console.log(`Pushed ${release.tag}. GitHub Actions will build the ZIP, create a draft release, and publish release/latest.`);
 }
