@@ -66,7 +66,11 @@ jobs:
           brew install cmake ninja pkgconf openssl@3 autoconf automake libtool
           rustup toolchain install 1.98.1 --profile minimal
           rustup default 1.98.1
-          sdkmanager 'ndk;27.2.12479018'
+          android_sdk_manager="${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$android_sdk_manager"
+          "$android_sdk_manager" --version
+          "$android_sdk_manager" --sdk_root="$ANDROID_HOME" --install 'ndk;27.2.12479018'
+          test -x "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
 
       - name: Install JavaScript runtimes
