@@ -157,6 +157,14 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   assert.equal(observedTags?.surface, "recording");
   assert.equal(observedTags?.view, "recording");
   assert.equal(observedTags?.recordingId, undefined);
+  await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_COMPARISON_ARGUMENT" }, _meta: {
+    [TELEMETRY_META_KEY]: { surface: "comparison", view: "comparison", device_platform: "mixed", device_kind: "none", recordingIds: ["PRIVATE_RUN_A", "PRIVATE_RUN_B"] },
+  } });
+  assert.equal(observedTags?.surface, "comparison");
+  assert.equal(observedTags?.view, "comparison");
+  assert.equal(observedTags?.device_platform, "mixed");
+  assert.equal(observedTags?.device_kind, "none");
+  assert.equal(observedTags?.recordingIds, undefined);
   await Sentry.flush();
   const encoded = JSON.stringify(envelopes);
   contains(encoded, "PRIVATE_", false);
@@ -165,13 +173,13 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   contains(encoded, "Handled tool failed");
   const eventItems = envelopes.flatMap(envelope => envelope[1]);
   const errors = eventItems.filter(item => item[0].type === "event");
-  assert.equal(errors.length, 2);
+  assert.equal(errors.length, 3);
   const unavailable = new SimulatorUnavailableError("Expected stopped simulator");
   captureServerError(unavailable, "expected");
   await Sentry.flush();
   const afterItems = envelopes.flatMap(envelope => envelope[1]);
   const afterErrors = afterItems.filter(item => item[0].type === "event");
-  assert.equal(afterErrors.length, 2);
+  assert.equal(afterErrors.length, 3);
 });
 
 test("error filters retain only generated identity while metrics and spans omit user dimensions", async () => {

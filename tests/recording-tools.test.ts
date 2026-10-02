@@ -9,6 +9,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { RecordingStore, PerformanceRecordings } from "../src/server/performance-recordings.ts";
 import { registerRecordingTools } from "../src/server/recording-tools.ts";
 import { RECORDING_URI } from "../src/shared/recordings.ts";
+import { COMPARISON_URI } from "../src/shared/performance-comparison.ts";
 import { recordingFixture, unavailableFps } from "./recording-fixtures.ts";
 
 test("recording tools distinguish data, inline rendering, workspace opening and exact-range retrieval", async t => {
@@ -36,6 +37,38 @@ test("recording tools distinguish data, inline rendering, workspace opening and 
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   const { tools } = await client.listTools();
+  const comparing = tools.find(tool => tool.name === "mobile_compare_performance_recordings");
+  assert.deepEqual(comparing?._meta?.ui, { resourceUri: COMPARISON_URI, visibility: ["app", "model"] });
+  const second = recordingFixture();
+  second.id = "44b7030b-a74e-466f-aeb0-bcd3ae8af972";
+  second.title = "Checkout scroll · Run 2";
+  second.durationSeconds = 15;
+  second.samples = second.samples.slice(0, 16);
+  second.fps.samples = second.fps.samples.slice(0, 15);
+  await store.save(second);
+  const comparisonArguments = { recordingIds: [recording.id, second.id], range: { start: 12, end: 18 } };
+  const comparison = await client.callTool({ name: "mobile_compare_performance_recordings", arguments: comparisonArguments });
+  assert.equal(comparison.isError, undefined);
+  assert.deepEqual(comparison.structuredContent?.recordings, [recording, second]);
+  const summaries = comparison.structuredContent?.summaries;
+  assert.ok(Array.isArray(summaries));
+  assert.deepEqual(summaries[1].range, { start: 12, end: 15 });
+  assert.equal(summaries[1].summary.averageCpuPercent, 72);
+  assert.equal(summaries[1].summary.averageFps, 30);
+  for (const recordingIds of [[recording.id], [recording.id, recording.id], Array(7).fill(recording.id), [recording.id, "invalid"]]) {
+    const invalidComparison = await client.callTool({ name: "mobile_compare_performance_recordings", arguments: { recordingIds } });
+    assert.equal(invalidComparison.isError, true);
+  }
+  const missingComparison = await client.callTool({ name: "mobile_compare_performance_recordings", arguments: { recordingIds: [recording.id, "27cfecab-d99c-4533-90dd-e14a7cb0087b"] } });
+  assert.equal(missingComparison.isError, true);
+  const excessiveComparison = await client.callTool({ name: "mobile_compare_performance_recordings", arguments: { ...comparisonArguments, range: { start: 0, end: 31 } } });
+  assert.equal(excessiveComparison.isError, true);
+  second.status = "recording";
+  await store.save(second);
+  const activeComparison = await client.callTool({ name: "mobile_compare_performance_recordings", arguments: comparisonArguments });
+  assert.equal(activeComparison.isError, true);
+  second.status = "finished";
+  await store.save(second);
   const rendering = tools.find(tool => tool.name === "mobile_render_performance_recording");
   assert.deepEqual(rendering?._meta?.ui, { resourceUri: RECORDING_URI, visibility: ["app", "model"] });
   const reading = tools.find(tool => tool.name === "mobile_read_performance_recording");
@@ -56,10 +89,11 @@ test("recording tools distinguish data, inline rendering, workspace opening and 
   const listing = await client.callTool({ name: "mobile_list_performance_recordings", arguments: {} });
   const items = listing.structuredContent?.recordings;
   assert.ok(Array.isArray(items));
-  assert.equal(items[0].sampleCount, 31);
-  assert.equal(items[0].samples, undefined);
-  assert.equal(items[0].fps.samples, undefined);
-  assert.equal(items[0].fps.sampleCount, 30);
+  const listed = items.find(item => item.id === recording.id);
+  assert.equal(listed.sampleCount, 31);
+  assert.equal(listed.samples, undefined);
+  assert.equal(listed.fps.samples, undefined);
+  assert.equal(listed.fps.sampleCount, 30);
   const framesInput = { recordingId: recording.id, range: { start: 0.4, end: 1.3 }, limit: 1 };
   const frames = await client.callTool({ name: "mobile_read_performance_frames", arguments: framesInput });
   assert.equal(frames.isError, undefined);

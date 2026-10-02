@@ -2,7 +2,22 @@
 html[data-theme="dark"] { color-scheme: dark; }
 html, body, #root { height: 100%; overflow: hidden; }
 body { font-size: 12px; }
-html[data-view="recording"], html[data-view="recording"] body, html[data-view="recording"] #root { height: auto; overflow: visible; }
+html:is([data-view="recording"], [data-view="comparison"]), html:is([data-view="recording"], [data-view="comparison"]) body, html:is([data-view="recording"], [data-view="comparison"]) #root { height: auto; overflow: visible; }
+.comparison-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 8px; }
+.comparison-run { display: flex; align-items: flex-start; gap: 8px; text-align: left; border: 1px solid; border-radius: 8px; padding: 10px; cursor: pointer; }
+.comparison-run[aria-pressed="false"] { opacity: 0.5; }
+.comparison-run:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.comparison-run strong { font-weight: 500; overflow-wrap: anywhere; }
+.comparison-run small { display: block; color: var(--muted-foreground); margin-top: 4px; overflow-wrap: anywhere; }
+.comparison-swatch { display: inline-block; width: 10px; height: 10px; flex-shrink: 0; border-radius: 50%; margin-top: 4px; margin-right: 4px; }
+.comparison-summary-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 20px; font-weight: 600; }
+.comparison-table-scroll { overflow-x: auto; margin-top: 10px; }
+.comparison-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.comparison-table th, .comparison-table td { text-align: right; padding: 10px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.comparison-table th:first-child { text-align: left; white-space: normal; min-width: 130px; max-width: 220px; overflow-wrap: anywhere; }
+.comparison-table thead { color: var(--muted-foreground); }
+.comparison-table th { font-weight: 500; }
+.comparison-actions { margin-top: 16px; }
 .recording-card { margin: 12px; border: 1px solid var(--border); border-radius: 16px; background: var(--background); color: var(--foreground); font-size: 13px; overflow: hidden; }
 .recording-header { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
 .recording-icon { display: grid; place-items: center; width: 42px; height: 42px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 10px; color: #2583ff; }
