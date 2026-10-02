@@ -1,5 +1,27 @@
 # Mobile Dev for Codex
 
+## Install
+
+Install the prebuilt plugin from the release marketplace:
+
+```sh
+codex plugin marketplace add https://github.com/callstackincubator/codex-mobile-dev-plugin.git --ref release/latest
+codex plugin add mobile-dev@mobile-dev
+```
+
+Open a new chat after installing. To update an existing installation:
+
+```sh
+codex plugin marketplace upgrade mobile-dev
+```
+
+Open a new chat after updating. The package includes the built plugin and bundled
+runtimes; no plugin build or `npm install` is needed. You need GitHub read access
+and working Git authentication while the repository is private. See
+[Requirements](#requirements) for the required local tools.
+
+## Overview
+
 An iOS and Android simulator panel for Codex desktop. Baguette 0.2.1 provides iOS streaming; serve-emu 0.0.6 and scrcpy 4.0 provide Android streaming. Android needs Bun 1.3.13 or later and an installed Android SDK.
 
 Agent Device is temporarily disabled in 0.1.83 while iterating on inline performance charts. The package registers only the `mobile-dev` MCP server and omits the Agent Device skill. Its implementation and bundled runtime are retained for later reactivation.
@@ -44,7 +66,7 @@ Open a new chat after installing. Open Mobile Dev in the sidebar or call `mobile
 
 Use Select in the simulator toolbar to pause the screen. Hover to outline a component, then click to add a note. React Native development apps can supply runtime elements when accessibility omits a view. Drag to mark a region when neither source exposes it. Saved notes leave numbered blue bubbles. Notes attach text and available element details to your next chat message. The captured screen stays local for editing; annotations never attach screenshots. Click a bubble to edit or remove a note, or use Send to chat to send all notes for that device. If chat is unavailable, the panel keeps the notes and retries when you return. A sent or cleared batch starts again at 1.
 
-`npm run package` writes the local ZIP to `release/mobile-dev-0.1.103-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
+`npm run package` writes the local ZIP to `release/mobile-dev-<version>-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
 The iOS dropdown shows **Connected devices** first, with USB or Wi-Fi labels, then **Simulators**. It refreshes every three seconds while the iOS panel is visible, and when opening the dropdown. Selecting a physical device opens interactive screen mirroring through its paired developer connection. The phone sends HEVC video; a bundled native Node-API addon assembles compressed frames and transfers them into Node without copying the frame payload, then the panel decodes them through WebCodecs. MCP serializes the compressed bytes as base64, so the full path is not zero copy. The capture queue is limited to eight frames or 4 MiB and requests a keyframe after overflow. Physical iOS supports pointer taps, long presses, and drags through CoreDevice UniversalHID on the same developer tunnel. Input starts after a fresh video frame, uses normalized touchscreen coordinates, and releases held touches when the stream closes or resets. Screenshot captures the displayed mirrored frame as a PNG, attaches it to chat, and copies the same image to the macOS clipboard. Select annotates screen regions using the mirrored frame's pixel coordinates; native accessibility component names are unavailable. Both controls require a connected device and a ready video frame. Keyboard and hardware-button controls remain disabled. CPU and memory monitoring can attach to an already running development app on a paired iOS 17.4+ device. Mirroring requires Developer Mode and a host with HEVC WebCodecs support. `mobile_list_ios_devices` also returns remembered disconnected devices with their connection state; the picker shows connected devices only. Discovery errors remain visible while available simulators continue to work.
 
@@ -288,24 +310,10 @@ is independent of the source history, so development ignore rules do not exclude
 `dist/` or bundled runtime dependencies. Later releases advance the branch without
 force pushes. Older or repeated versions leave the latest payload unchanged.
 
-Install the prebuilt Apple Silicon macOS plugin from Git:
-
-```sh
-codex plugin marketplace add https://github.com/callstackincubator/codex-mobile-dev-plugin.git --ref release/latest
-codex plugin add mobile-dev@mobile-dev
-```
-
-This repository is currently private: installers need GitHub read access and
-working Git authentication. A release branch does not change repository visibility.
-No plugin compilation or `npm install` is needed; the platform prerequisites listed
-above still apply. This marketplace is named `mobile-dev`, separate from the
-`mobile-dev-local` development marketplace.
-
-To fetch the latest deployed release and refresh the installed plugin:
-
-```sh
-codex plugin marketplace upgrade mobile-dev
-```
+Use the [installation and update commands](#install) at the top of this README.
+The prebuilt marketplace is named `mobile-dev`, separate from the
+`mobile-dev-local` development marketplace. A release branch does not change
+repository visibility.
 
 The configured `release/latest` ref stays attached to the marketplace. Codex
 refreshes its Git snapshot and installed plugin cache; start a new session after
