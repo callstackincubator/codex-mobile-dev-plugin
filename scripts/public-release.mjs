@@ -13,7 +13,7 @@ function git(args, directory) {
 export async function publicRelease(directory = ".") {
   const status = git(["status", "--porcelain"], directory);
   if (status.trim().length > 0) throw new Error("Commit your changes before running npm run public-release.");
-  const manifestText = await readFile(`${directory}/plugin.json`, "utf8");
+  const manifestText = await readFile(`${directory}/.codex-plugin/plugin.json`, "utf8");
   const manifest = JSON.parse(manifestText);
   const release = await releaseMetadata(`v${manifest.version}`, directory);
   const existing = git(["tag", "--list", release.tag], directory);

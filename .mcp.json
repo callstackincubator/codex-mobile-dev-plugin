@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "mobile-dev": {
+      "command": "/bin/sh",
+      "args": [
+        "./scripts/launch-mcp.sh",
+        "./dist/server.mjs"
+      ],
+      "cwd": "${PLUGIN_ROOT}",
+      "env_vars": [
+        "SHELL",
+        "MOBILE_DEV_TELEMETRY",
+        "MOBILE_DEV_ENVIRONMENT"
+      ]
+    }
+  }
+}

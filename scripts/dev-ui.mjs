@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
-const { version } = JSON.parse(await readFile(new URL("../plugin.json", import.meta.url), "utf8"));
+const { version } = JSON.parse(await readFile(new URL("../.codex-plugin/plugin.json", import.meta.url), "utf8"));
 const pluginRoot = process.env.MOBILE_DEV_PLUGIN_ROOT ?? resolve(process.env.CODEX_HOME ?? resolve(homedir(), ".codex"), "plugins/cache/mobile-dev-local/mobile-dev", version);
 const configPath = resolve(pluginRoot, "ui-dev.json");
 const output = resolve(projectRoot, ".local-dev");
@@ -17,7 +17,7 @@ if (process.argv.includes("--off")) {
   console.log("Live UI disabled. Reopen the Mobile Dev panel to use the bundled UI.");
   process.exit(0);
 }
-await readFile(resolve(pluginRoot, "plugin.json"));
+await readFile(resolve(pluginRoot, ".codex-plugin/plugin.json"));
 await mkdir(output, { recursive: true });
 let running = false;
 try {

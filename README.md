@@ -50,8 +50,11 @@ Track app CPU and memory, expand individual thread charts, and view device-wide 
 
 ## Requirements
 
-The prebuilt plugin targets Codex desktop on an Apple Silicon Mac and requires
-Node.js 22.18 or later. Install the tools for the platforms you use:
+The prebuilt plugin targets Codex desktop on an Apple Silicon Mac. It requires
+Node.js 22.18 or later available as `node` in your configured login shell. The
+launcher discovers that executable even when the desktop’s PATH omits it, and
+reports a setup error when it is missing or too old. Install the tools for the
+platforms you use:
 
 | Platform or feature | Requirements |
 | --- | --- |

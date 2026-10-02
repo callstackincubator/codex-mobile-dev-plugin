@@ -21,19 +21,22 @@ async function fixture(t: TestContext) {
   const plugin = join(directory, "plugin");
   git(directory, ["init", "--bare", remote]);
   await mkdir(`${plugin}/dist/runtime/node_modules/dependency`, { recursive: true });
+  await mkdir(`${plugin}/scripts`, { recursive: true });
+  await writeFile(`${plugin}/scripts/launch-mcp.sh`, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   await writeFile(`${plugin}/dist/runtime/node_modules/dependency/index.js`, "export const bundled = true;\n");
   await writeFile(`${plugin}/dist/server.mjs`, "console.log('bundled server');\n");
   await chmod(`${plugin}/dist/server.mjs`, 0o755);
   await writeFile(`${plugin}/dist/telemetry-environment.json`, '{"environment":"release"}');
   await writeFile(`${plugin}/dist/app.html`, '<meta name="mobile-dev-environment" content="release">');
-  await writeFile(`${plugin}/mcp.json`, '{"mcpServers":{"mobile-dev":{"command":"node","args":["./dist/server.mjs"],"cwd":"./"}}}');
+  await writeFile(`${plugin}/.mcp.json`, '{"mcpServers":{"mobile-dev":{"command":"/bin/sh","args":["./scripts/launch-mcp.sh","./dist/server.mjs"],"cwd":"${PLUGIN_ROOT}","env_vars":["SHELL"]}}}');
+  await mkdir(`${plugin}/.codex-plugin`, { recursive: true });
   async function version(value: string) {
     const manifest = {
-      $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       name: "mobile-dev", version: value, description: "Prebuilt release fixture",
+      skills: "./skills/", mcpServers: "./.mcp.json",
     };
     const text = JSON.stringify(manifest);
-    await writeFile(`${plugin}/plugin.json`, text);
+    await writeFile(`${plugin}/.codex-plugin/plugin.json`, text);
     await writeFile(`${plugin}/payload.txt`, value);
   }
   await version("1.2.3");
@@ -64,6 +67,8 @@ test("publishing creates an independent branch with built files, runtime depende
   assert.doesNotMatch(filesText, /source-only|\.gitignore/);
   const executable = git(remote, ["ls-tree", "release/latest", "plugins/mobile-dev/dist/server.mjs"]);
   assert.match(executable, /^100755/);
+  const launcher = git(remote, ["ls-tree", "release/latest", "plugins/mobile-dev/scripts/launch-mcp.sh"]);
+  assert.match(launcher, /^100755/);
   const commits = git(remote, ["rev-list", "--count", "release/latest"]);
   assert.equal(commits.trim(), "1");
   const currentSourceHead = git(remote, ["rev-parse", "main"]);
@@ -84,6 +89,31 @@ test("publishing a newer release advances the branch and removes obsolete files"
   assert.equal(payload, "1.2.4");
   const files = git(remote, ["ls-tree", "-r", "--name-only", "release/latest"]);
   assert.doesNotMatch(files, /obsolete.txt/);
+});
+
+test("publishing advances an existing portable release without retaining its manifests", async t => {
+  const { directory, remote, plugin } = await fixture(t);
+  const legacy = join(directory, "legacy");
+  await mkdir(`${legacy}/.agents/plugins`, { recursive: true });
+  await mkdir(`${legacy}/plugins/mobile-dev`, { recursive: true });
+  git(legacy, ["init"]);
+  git(legacy, ["config", "user.name", "Release test"]);
+  git(legacy, ["config", "user.email", "release@example.test"]);
+  git(legacy, ["config", "commit.gpgsign", "false"]);
+  await writeFile(`${legacy}/.agents/plugins/marketplace.json`, '{"name":"mobile-dev"}');
+  await writeFile(`${legacy}/plugins/mobile-dev/plugin.json`, '{"name":"mobile-dev","version":"1.2.2"}');
+  await writeFile(`${legacy}/plugins/mobile-dev/mcp.json`, '{}');
+  git(legacy, ["add", "."]);
+  git(legacy, ["commit", "-m", "Release Mobile Dev 1.2.2"]);
+  git(legacy, ["push", remote, "HEAD:refs/heads/release/latest"]);
+  const previousHead = git(remote, ["rev-parse", "release/latest"]);
+  const result = await publishRelease(plugin, "v1.2.3", remote);
+  assert.equal(result.published, true);
+  const parent = git(remote, ["rev-parse", "release/latest^"]);
+  assert.equal(parent, previousHead);
+  const files = git(remote, ["ls-tree", "-r", "--name-only", "release/latest"]);
+  assert.match(files, /plugins\/mobile-dev\/\.codex-plugin\/plugin.json/);
+  assert.doesNotMatch(files, /plugins\/mobile-dev\/(?:plugin|mcp)\.json/);
 });
 
 test("older and repeated releases never replace the latest payload", async t => {

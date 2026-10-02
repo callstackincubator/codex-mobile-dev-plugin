@@ -13,7 +13,7 @@ import { Baguette } from "../src/server/baguette.ts";
 import { parseBaseUrl } from "../src/shared/protocol.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "./fixtures.ts";
 import { getTelemetryIdentity } from "../src/server/telemetry-identity.ts";
-import manifest from "../plugin.json" with { type: "json" };
+import manifest from "../.codex-plugin/plugin.json" with { type: "json" };
 
 test("live UI reads use MCP and allow only Sentry browser connections", async t => {
   let revision = "a".repeat(64);

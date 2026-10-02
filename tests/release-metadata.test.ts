@@ -12,7 +12,8 @@ async function fixture(t: TestContext) {
   t.after(async () => { await rm(directory, { recursive: true, force: true }); });
   const sourceDirectory = join(directory, "src/shared");
   await mkdir(sourceDirectory, { recursive: true });
-  await writeFile(`${directory}/plugin.json`, '{"name":"mobile-dev","version":"1.2.3"}');
+  await mkdir(`${directory}/.codex-plugin`, { recursive: true });
+  await writeFile(`${directory}/.codex-plugin/plugin.json`, '{"name":"mobile-dev","version":"1.2.3"}');
   await writeFile(`${directory}/package.json`, '{"version":"1.2.3"}');
   await writeFile(`${directory}/package-lock.json`, '{"version":"1.2.3","packages":{"":{"version":"1.2.3"}}}');
   await writeFile(`${sourceDirectory}/version.ts`, 'export const PLUGIN_VERSION = "1.2.3";\n');
@@ -52,7 +53,7 @@ test("release metadata rejects inconsistent package and runtime versions", async
 
 test("release metadata rejects manifest values that could escape artifact paths or outputs", async t => {
   const directory = await fixture(t);
-  await writeFile(`${directory}/plugin.json`, '{"name":"mobile-dev","version":"../1.2.3"}');
+  await writeFile(`${directory}/.codex-plugin/plugin.json`, '{"name":"mobile-dev","version":"../1.2.3"}');
   const result = releaseMetadata("v../1.2.3", directory);
   await assert.rejects(result, /semantic release version/);
 });

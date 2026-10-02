@@ -4,6 +4,7 @@ import { access, cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import assert from "node:assert/strict";
+import { createLaunchShell } from "./mcp-launch-fixture.mjs";
 
 const source = resolve(process.argv[2] ?? "release/marketplace/plugins/mobile-dev");
 const temporary = await mkdtemp(join(tmpdir(), "mobile-dev-agent-device-package-test-"));
@@ -13,10 +14,10 @@ let client;
 let stateDir;
 try {
   await cp(source, plugin, { recursive: true, verbatimSymlinks: true });
-  const manifest = JSON.parse(await readFile(join(plugin, "mcp.json"), "utf8"));
+  const manifest = JSON.parse(await readFile(join(plugin, ".mcp.json"), "utf8"));
   const config = manifest.mcpServers["agent-device"];
   assert.ok(config, "Agent Device is disabled in this package; this smoke test requires its MCP entry to be enabled.");
-  assert.deepEqual(config.args, ["./dist/agent-device-server.mjs"]);
+  assert.deepEqual(config.args, ["./scripts/launch-mcp.sh", "./dist/agent-device-server.mjs"]);
   const metadata = JSON.parse(await readFile(join(plugin, "dist/agent-device/release.json"), "utf8"));
   assert.equal(metadata.version, "0.20.9");
   assert.match(metadata.integrity, /^sha512-/);
@@ -24,9 +25,11 @@ try {
   await access(join(plugin, "dist/agent-device/node_modules/agent-device/dist/apple/runner/AgentDeviceRunner/AgentDeviceRunner.xcodeproj/project.pbxproj"));
   const workflow = await readFile(join(plugin, "skills/agent-device/references/workflow.md"), "utf8");
   assert.ok(workflow.startsWith("agent-device 0.20.9"));
+  const shell = await createLaunchShell(temporary, process.execPath);
   transport = new StdioClientTransport({
-    command: process.execPath, args: config.args, cwd: plugin, stderr: "pipe",
+    command: config.command, args: config.args, cwd: plugin, stderr: "pipe",
     env: {
+      SHELL: shell,
       PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
       AGENT_DEVICE_CONFIG: "/nonexistent-global-agent-device-config.json",
       AGENT_DEVICE_STATE_DIR: join(temporary, "unrelated-global-state"),

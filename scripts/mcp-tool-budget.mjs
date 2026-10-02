@@ -54,7 +54,7 @@ function jsonBytes(value) {
 }
 
 const plugin = resolve(process.argv[2] ?? "release/marketplace/plugins/mobile-dev");
-const manifestPath = join(plugin, "mcp.json");
+const manifestPath = join(plugin, ".mcp.json");
 const manifestText = await readFile(manifestPath, "utf8");
 const manifest = JSON.parse(manifestText);
 let total = 0;
@@ -62,7 +62,8 @@ let count = 0;
 const oversized = [];
 for (const [name, config] of Object.entries(manifest.mcpServers)) {
   const client = new Client({ name: "mobile-dev-catalog-budget", version: "1" });
-  const transport = new StdioClientTransport({ command: process.execPath, args: config.args, cwd: plugin, stderr: "pipe", env: { ...process.env, MOBILE_DEV_TELEMETRY: "off" } });
+  const cwd = plugin;
+  const transport = new StdioClientTransport({ command: process.execPath, args: [config.args[1]], cwd, stderr: "pipe", env: { ...process.env, MOBILE_DEV_TELEMETRY: "off" } });
   try {
     await client.connect(transport);
     const namespace = `mcp__${name.replaceAll("-", "_")}`;
