@@ -63,8 +63,11 @@ relevant checks, and packaging steps again.
 
 After local installation, run `npm run test:installed` to check the configuration
 returned by `codex mcp get mobile-dev --json`, launch it with the configured shell,
-and read both entrypoint resources. This catches host path resolution errors that
-a copied-package test cannot detect. The check starts the device backend without
+run the packaged App Flow scanner, and read both entrypoint resources. Pass a local
+app folder with `npm run test:installed -- /path/to/app` to scan that project. The
+scanner check uses an empty test inspector and cannot navigate a device. This
+checks host path resolution and bundled dependencies during a scan. The check
+starts the device backend without
 booting or changing a device and closes its MCP connection afterward.
 
 `test:agent-device` requires reactivating the Agent Device MCP entry first. It starts the retained MCP server from a copied package with no global CLI on its PATH. It checks the control tools, pinned runtime, isolated state directory, real iOS device list, and daemon cleanup. It does not open an app, take screenshots, or send input.

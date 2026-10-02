@@ -1,3 +1,4 @@
+import { verifyPackagedFlowScan } from "./smoke-app-flow-scan.mjs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { access, cp, mkdtemp, readFile, rm } from "node:fs/promises";
@@ -89,6 +90,7 @@ try {
   transport.stderr?.on("data", chunk => { diagnostics = (diagnostics + chunk).slice(-5000); });
   const client = new Client({ name: "mobile-dev-package-smoke", version: "1" });
   await client.connect(transport);
+  await verifyPackagedFlowScan(client);
   const tools = await client.listTools();
   const recordingCard = tools.tools.find(tool => tool.name === "mobile_render_performance_recording");
   assert.ok(recordingCard);

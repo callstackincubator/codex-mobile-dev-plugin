@@ -156,7 +156,15 @@ const server = await build({
   format: "esm", platform: "node", target: "node22", minify: false, legalComments: "eof", metafile: true,
   sourcemap: "external",
   plugins: [sentryEsbuildPlugin({ project: "codex-mobile-dev-server", telemetry: false, sourcemaps: { disable: true }, release: { inject: false, create: false, finalize: false } })],
-  banner: { js: "import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);" },
+  // CommonJS dependencies such as the TypeScript parser also read Node's file globals.
+  banner: { js: [
+    "import { createRequire as mobileDevBundleRequire } from 'node:module';",
+    "import { fileURLToPath as mobileDevBundleFileURLToPath } from 'node:url';",
+    "import { dirname as mobileDevBundleDirname } from 'node:path';",
+    "const require = mobileDevBundleRequire(import.meta.url);",
+    "const __filename = mobileDevBundleFileURLToPath(import.meta.url);",
+    "const __dirname = mobileDevBundleDirname(__filename);",
+  ].join("\n") },
 });
 await mkdir(".sentry/server", { recursive: true });
 for (const name of ["server.mjs", "agent-device-server.mjs"]) {

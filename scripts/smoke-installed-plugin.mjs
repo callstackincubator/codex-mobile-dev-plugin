@@ -1,3 +1,4 @@
+import { verifyPackagedFlowScan } from "./smoke-app-flow-scan.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { access } from "node:fs/promises";
@@ -18,6 +19,7 @@ transport.stderr?.on("data", chunk => process.stderr.write(chunk));
 const client = new Client({ name: "mobile-dev-installed-smoke", version: "1" });
 try {
   await client.connect(transport);
+  await verifyPackagedFlowScan(client, process.argv[2]);
   const { tools } = await client.listTools();
   const setup = await client.callTool({ name: "mobile_app_flow", arguments: { action: "discover" } });
   assert.ok(!setup.isError && Array.isArray(setup.structuredContent?.servers));
