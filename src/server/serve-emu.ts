@@ -20,6 +20,16 @@ export const androidIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\
 const healthSchema = z.object({ serial: androidIdSchema, codec: z.string(), size: z.object({ width: z.number().positive(), height: z.number().positive() }) });
 type Backend = { url: URL; child?: ChildProcess };
 
+export function androidDisplaySize(output: string, video: { width: number; height: number }) {
+  const matches = [...output.matchAll(/(?:Physical|Override) size:\s*(\d+)x(\d+)/g)];
+  const match = matches.at(-1);
+  if (!match) throw new Error("Android did not return its display size.");
+  let width = Number(match[1]), height = Number(match[2]);
+  if (!width || !height || width > 16384 || height > 16384) throw new Error("Android returned an invalid display size.");
+  if ((width > height) !== (video.width > video.height)) [width, height] = [height, width];
+  return { width, height };
+}
+
 export class ServeEmu {
   private readonly avdNames = new Map<string, string>();
   private readonly backends = new Map<string, Backend>();
@@ -234,6 +244,17 @@ export class ServeEmu {
     const backend = await this.start(id);
     const health = await this.health(backend.url);
     return { identity: { udid: id, name: (await this.device(id)).name, model: "Android" }, screen: { rect: health.size } };
+  }
+
+  async accessibility(id: string) {
+    const backend = await this.start(id);
+    const adb = await adbPath();
+    const [tree, health, display] = await Promise.all([
+      this.json(backend.url, "/api/accessibility"),
+      this.health(backend.url),
+      execute(adb, ["-s", id, "shell", "wm", "size"], { timeout: 3000, maxBuffer: 4096 }),
+    ]);
+    return { tree, screen: androidDisplaySize(display.stdout, health.size) };
   }
 
   dispose() {

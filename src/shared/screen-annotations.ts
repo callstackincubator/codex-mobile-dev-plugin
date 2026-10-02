@@ -47,7 +47,7 @@ function bounds(value: unknown): ScreenBounds | undefined {
 }
 
 // Accept backend trees and normalized, flat MCP snapshots with explicit parents.
-export function screenComponents(tree: unknown): ScreenComponent[] {
+export function screenComponents(tree: unknown, scale = 1): ScreenComponent[] {
   const components: ScreenComponent[] = [];
   function visit(value: unknown, depth: number, parentId?: string) {
     if (depth > 160 || components.length >= 10000) return;
@@ -62,7 +62,9 @@ export function screenComponents(tree: unknown): ScreenComponent[] {
       const nodeId = text(node.nodeId) ?? `node-${components.length}`;
       const nodeDepth = typeof node.depth === "number" && Number.isInteger(node.depth) && node.depth >= 0 && node.depth <= 10000 ? node.depth : depth;
       const react = node.source === "react-native" ? reactContext(node.react) : undefined;
-      components.push({ name: text(node.name) ?? label ?? identifier ?? role ?? "Element", bounds: frame, label, identifier, role, value: text(node.value), depth: nodeDepth, source: node.source === "react-native" ? "react-native" : node.source === "screen" ? "screen" : "accessibility", nodeId, parentId: text(node.parentId) ?? parentId, ...(react ? { react } : {}) });
+      components.push({ name: text(node.name) ?? label ?? identifier ?? role ?? "Element", bounds: {
+        x: frame.x * scale, y: frame.y * scale, width: frame.width * scale, height: frame.height * scale,
+      }, label, identifier, role, value: text(node.value), depth: nodeDepth, source: node.source === "react-native" ? "react-native" : node.source === "screen" ? "screen" : "accessibility", nodeId, parentId: text(node.parentId) ?? parentId, ...(react ? { react } : {}) });
       parentId = nodeId;
     }
     for (const key of ["children", "elements", "nodes", "tree", "root"]) if (node[key]) visit(node[key], depth + 1, parentId);

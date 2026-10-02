@@ -9,6 +9,7 @@ import { inspectReactNative } from "./react-native-inspector.ts";
 import { captureServerError } from "./telemetry.ts";
 import { errorMessage, udidSchema } from "../shared/protocol.ts";
 import { screenComponents } from "../shared/screen-annotations.ts";
+import { adbPath } from "./native-logs.ts";
 
 const execute = promisify(execFile);
 
@@ -34,14 +35,14 @@ export function registerInspectionTools(server: McpServer, baguette: Baguette, a
         native = response;
         appName = typeof response.tree?.label === "string" ? response.tree.label : undefined;
       } else {
-        const backend = await android.start(deviceId);
-        const response = await android.json(backend.url, "/api/accessibility");
-        native = response;
-        const packages = new Set<string>((response.nodes ?? []).map((item: { packageName?: string }) => item.packageName).filter((name: unknown): name is string => typeof name === "string" && !name.startsWith("com.android.") && name !== "android"));
+        const response = await android.accessibility(deviceId);
+        native = screenComponents(response.tree, screenWidth / response.screen.width);
+        const packages = new Set<string>((response.tree.nodes ?? []).map((item: { packageName?: string }) => item.packageName).filter((name: unknown): name is string => typeof name === "string" && !name.startsWith("com.android.") && name !== "android"));
         if (packages.size === 1) appId = [...packages][0];
         try {
+          const adb = await adbPath();
           const properties = await Promise.all(["ro.product.model", "ro.build.version.release", "ro.build.version.sdk"].map(property =>
-            execute("adb", ["-s", deviceId, "shell", "getprop", property], { timeout: 3000, maxBuffer: 4096 }).then(result => result.stdout.trim())));
+            execute(adb, ["-s", deviceId, "shell", "getprop", property], { timeout: 3000, maxBuffer: 4096 }).then(result => result.stdout.trim())));
           if (properties.every(Boolean)) deviceAliases = [properties[0], `${properties[0]} - ${properties[1]} - API ${properties[2]}`];
         } catch { /* The backend's device name remains available for matching. */ }
       }

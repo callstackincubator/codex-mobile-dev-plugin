@@ -4,26 +4,36 @@ import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { ServeEmu } from "../src/server/serve-emu.ts";
+import { ServeEmu, androidDisplaySize } from "../src/server/serve-emu.ts";
 import { AndroidStreams, androidInput } from "../src/server/android-streams.ts";
 import { videoPacket } from "../src/ui/android-video.ts";
 import { Baguette } from "../src/server/baguette.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, PNG } from "./fixtures.ts";
+import { fakeInspectionSdk } from "./android-inspection-fixtures.ts";
 
 const ID = "emulator-5554";
 const SCREEN = { width: 1080, height: 2400 };
 const H264 = Buffer.from([0, 0, 0, 1, 0x67, 0x64, 0, 0x28, 0, 0, 0, 1, 0x65, 1]);
+
+test("Android accessibility uses the active full-resolution display size and stream orientation", () => {
+  const physical = "Physical size: 1080x2400\n";
+  assert.deepEqual(androidDisplaySize(physical, { width: 576, height: 1280 }), SCREEN);
+  assert.deepEqual(androidDisplaySize(physical, { width: 1280, height: 576 }), { width: 2400, height: 1080 });
+  assert.deepEqual(androidDisplaySize(`${physical}Override size: 720x1600\n`, { width: 576, height: 1280 }), { width: 720, height: 1600 });
+  assert.throws(() => androidDisplaySize("No display", SCREEN), /did not return/);
+  assert.throws(() => androidDisplaySize("Physical size: 0x2400", SCREEN), /invalid display size/);
+});
 function packet() {
   const header = Buffer.alloc(24); header.write("SEMU"); header[4] = 2; header[5] = 1;
   header.writeBigUInt64BE(123456n, 8); return Buffer.concat([header, H264]);
 }
-async function fakeAndroid(deviceId = ID) {
+async function fakeAndroid(deviceId = ID, videoSize = SCREEN) {
   const inputs: unknown[] = [];
   let currentSerial = deviceId;
   const server = createServer(async (request, response) => {
     if (request.url === "/api/screenshot") { response.setHeader("Content-Type", "image/png"); response.end(PNG); return; }
     response.setHeader("Content-Type", "application/json");
-    if (request.url === "/health") { response.end(JSON.stringify({ serial: currentSerial, codec: "h264", size: SCREEN })); return; }
+    if (request.url === "/health") { response.end(JSON.stringify({ serial: currentSerial, codec: "h264", size: videoSize })); return; }
     if (request.url === "/api/accessibility") { response.end(JSON.stringify({ ok: true, nodes: [{ text: "Hello" }] })); return; }
     const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(chunk);
     inputs.push({ path: request.url, body: JSON.parse(Buffer.concat(chunks).toString()) });
@@ -55,6 +65,16 @@ async function waitFor(check: () => boolean) {
   const deadline = Date.now() + 2000;
   while (!check()) { if (Date.now() > deadline) throw new Error("Timed out waiting for Android input."); await new Promise(resolve => setTimeout(resolve, 10)); }
 }
+
+test("Android accessibility reports full device pixels even when scrcpy downscales video", async t => {
+  await fakeInspectionSdk(t);
+  const fake = await fakeAndroid(ID, { width: 576, height: 1280 });
+  t.after(async () => { fake.backend.dispose(); await fake.close(); });
+  const snapshot = await fake.backend.accessibility(ID);
+  assert.deepEqual(snapshot.screen, SCREEN);
+  assert.equal(snapshot.tree.nodes[0].text, "Hello");
+  assert.deepEqual(fake.backend.boots, []);
+});
 
 test("Android input maps device pixels, touch phases, and hardware keys", () => {
   assert.deepEqual(androidInput({ type: "tap", x: 540, y: 1200, ...SCREEN }), { type: "tap", x: .5, y: .5 });

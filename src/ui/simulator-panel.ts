@@ -14,6 +14,7 @@ import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { PanelContext } from "./model-context.ts";
 import { getScreenAnnotations } from "./screen-annotations.ts";
 import type { ScreenAnnotation } from "../shared/screen-annotations.ts";
+import { screenComponents } from "../shared/screen-annotations.ts";
 import { AndroidVideo } from "./android-video.ts";
 import { PhysicalIosVideo } from "./ios-mirror-video.ts";
 import { iosVideoBatchSchema } from "../shared/ios-video.ts";
@@ -228,10 +229,11 @@ export function createSimulatorPanel(
   annotations.capture = captureScreen;
   annotations.readTree = async simulator => {
     if (simulator.kind === "physical" && simulator.platform === "ios") return [];
+    const screenWidth = annotations.getSnapshot().capture?.screen.width ?? points.width;
     const startedAt = performance.now();
     try {
       try {
-        const result = await call("mobile_inspect_ui", { platform, deviceId: simulator.udid, deviceName: simulator.name, screenWidth: points.width }, { timeout: 10000 });
+        const result = await call("mobile_inspect_ui", { platform, deviceId: simulator.udid, deviceName: simulator.name, screenWidth }, { timeout: 10000 });
         if (!result.structuredContent?.tree) throw new Error("Component inspection returned no tree.");
         const runtime = result.structuredContent.runtime;
         if (runtime && typeof runtime === "object" && "available" in runtime && runtime.available === true) countUiEvent("ui.annotations.runtime_available");
@@ -241,6 +243,9 @@ export function createSimulatorPanel(
         // Hosts with an older tool list and failed inspectors can still read AX.
         countUiEvent("ui.annotations.inspection_fallback");
         const result = await call(platform === "android" ? "mobile_android_describe_ui" : "mobile_describe_ui", platform === "android" ? { deviceId: simulator.udid } : { udid: simulator.udid }, { timeout: 5000 });
+        const screen = result.structuredContent?.screen as { width?: number } | undefined;
+        if (platform === "android" && screen?.width && Number.isFinite(screen.width) && screen.width > 0)
+          return screenComponents(result.structuredContent?.tree, screenWidth / screen.width);
         return result.structuredContent?.tree;
       }
     } finally { recordUiTiming("ui.annotations.inspection", performance.now() - startedAt); }

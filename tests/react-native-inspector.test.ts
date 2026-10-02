@@ -9,6 +9,8 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Baguette } from "../src/server/baguette.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID } from "./fixtures.ts";
 import { screenComponents, componentAt, componentsAt } from "../src/shared/screen-annotations.ts";
+import { ServeEmu } from "../src/server/serve-emu.ts";
+import { fakeInspectionSdk } from "./android-inspection-fixtures.ts";
 
 const card = { source: "react-native", role: "Pressable", label: "Row", frame: { x: 10, y: 100, width: 350, height: 70 }, children: [
   { source: "react-native", role: "Text", label: "Title", frame: { x: 30, y: 120, width: 150, height: 20 }, children: [] },
@@ -216,6 +218,38 @@ test("the panel receives runtime and native elements through an MCP tool, with n
   assert.notEqual(fallback.isError, true);
   assert.equal(componentAt(screenComponents(fallback.structuredContent?.tree), { x: 50, y: 40 })?.name, "Continue");
   assert.equal(inspector.calls(), 1);
+});
+
+test("Android MCP inspection aligns native and React bounds with downscaled video and discovers SDK-only adb", async t => {
+  await fakeInspectionSdk(t);
+  const inspector = await backend(t);
+  inspector.setTargets([{ ...inspector.target, deviceName: "sdk_gphone64_arm64" }]);
+  const native = await fakeBaguette();
+  class Android extends ServeEmu {
+    async accessibility() {
+      return { screen: { width: 1080, height: 2400 }, tree: { nodes: [
+        { text: "Continue", packageName: "com.example.playground", resourceId: "app:id/continue", className: "android.widget.Button", bounds: { left: 270, top: 1200, right: 810, bottom: 1350 } },
+      ] } };
+    }
+  }
+  const plugin = await createTestPlugin("<canvas></canvas>", new Baguette(native.url), fakeSimulatorInput(), undefined, new Android());
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "android-inspection-test", version: "1" });
+  t.after(async () => { await client.close(); await plugin.close(); await native.close(); });
+  await plugin.server.connect(serverTransport); await client.connect(clientTransport);
+  const args = { platform: "android", deviceId: "emulator-5554", deviceName: "Pixel_8_API_36", screenWidth: 576, metroUrl: inspector.origin };
+  for (const runtimeAvailable of [true, false]) {
+    if (!runtimeAvailable) inspector.setTargets([]);
+    const result = await client.callTool({ name: "mobile_inspect_ui", arguments: args });
+    assert.notEqual(result.isError, true);
+    assert.equal((result.structuredContent?.runtime as { available: boolean }).available, runtimeAvailable);
+    const components = screenComponents(result.structuredContent?.tree);
+    const hit = componentAt(components, { x: 288, y: 680 }, { width: 576, height: 1280 });
+    assert.equal(hit?.name, "Continue");
+    assert.deepEqual(hit?.bounds, { x: 144, y: 640, width: 288, height: 80 });
+    assert.equal(hit?.identifier, "app:id/continue");
+    if (runtimeAvailable) assert.equal(componentAt(components, { x: 432, y: 187 })?.source, "react-native");
+  }
 });
 
 test("deep runtime trees cross MCP as shallow records with their parent links intact", async t => {

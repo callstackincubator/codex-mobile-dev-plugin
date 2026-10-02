@@ -41,11 +41,10 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
     return result(status, `${action === "boot" ? "Booted" : "Shut down"} ${deviceId}.`);
   }));
   server.registerTool("mobile_android_describe_ui", {
-    title: "Read Android UI", description: "Read the selected running Android device's accessibility tree.", inputSchema: deviceInput, annotations: read,
+    title: "Read Android UI", description: "Read the selected running Android device's accessibility tree. Bounds use full-resolution display pixels; screen gives the active display width and height.", inputSchema: deviceInput, annotations: read,
   }, guarded(async ({ deviceId }: { deviceId: string }) => {
-    const backend = await android.start(deviceId);
-    const tree = await android.json(backend.url, "/api/accessibility");
-    return result({ deviceId, tree }, JSON.stringify(tree));
+    const { tree, screen } = await android.accessibility(deviceId);
+    return result({ deviceId, tree, screen }, JSON.stringify({ tree, screen }));
   }));
   server.registerTool("mobile_android_send_input", {
     title: "Send Android input", description: "Send a tap, swipe, button, key, or text to the selected running Android device. Coordinates use screen pixels with matching width and height.",

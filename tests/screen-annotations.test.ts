@@ -68,6 +68,17 @@ test("Android hit testing uses pixel bounds and chooses the smallest flat node",
   assert.equal(hit?.name, "Sign in"); assert.equal(hit?.bounds.width, 220); assert.equal(hit?.identifier, "app:id/sign_in");
 });
 
+test("downscaled Android video selects full-resolution accessibility bounds without changing node identity", () => {
+  const components = screenComponents({ nodes: [
+    { className: "android.widget.FrameLayout", bounds: { left: 0, top: 0, right: 1080, bottom: 2400 } },
+    { text: "Continue", resourceId: "app:id/continue", className: "android.widget.Button", bounds: { left: 270, top: 1200, right: 810, bottom: 1350 } },
+  ] }, 576 / 1080);
+  const hit = componentAt(components, { x: 288, y: 680 }, { width: 576, height: 1280 });
+  assert.equal(hit?.name, "Continue");
+  assert.equal(hit?.identifier, "app:id/continue");
+  assert.deepEqual(hit?.bounds, { x: 144, y: 640, width: 288, height: 80 });
+});
+
 test("screen-wide containers never win and smaller controls beat deeper containers", () => {
   const screen = { width: 393, height: 852 };
   const components = screenComponents({ role: "AXApplication", frame: { x: 0, y: 0, ...screen }, children: [
