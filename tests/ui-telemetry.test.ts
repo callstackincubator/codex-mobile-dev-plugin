@@ -247,6 +247,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, "ui.logs.publish.mean");
   contains(encoded, "ui.logs.send.mean");
   contains(encoded, "ui.logs.query_parse.mean");
+  contains(encoded, "ui.logs.app_identity.mean");
   contains(encoded, "ui.logs.filter.mean");
   contains(encoded, "ui.logs.buffered_rows");
   contains(encoded, "ui.logs.filtered_rows");

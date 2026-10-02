@@ -150,6 +150,7 @@ test("Android app clauses use process identities independently of the monitoring
   panel.setAvailable(true);
   panel.show();
   deviceApps.setAvailable(true);
+  await refresh(first);
   await refresh({ bundleId: "com.android.launcher", pid: 999 });
   assert.deepEqual(opened[0], { native: { platform: "android", deviceId: android.udid } });
   readings[0].resolve([{ ...record, origin: "android", pid: 999 }, { ...record, origin: "android", pid: 123 }]);
@@ -171,6 +172,7 @@ test("unnamed physical iOS foreground processes use an exact visible PID clause"
   panel.setAvailable(true);
   panel.show();
   deviceApps.setAvailable(true);
+  await refresh(first);
   await refresh({ bundleId: null, pid: 999 });
   assert.deepEqual(opened[0], { native: { platform: "ios", kind: "physical", deviceId: phone.udid, hideSystemLogs: true } });
   readings[0].resolve([{ ...record, pid: 999 }, { ...record, pid: 123 }]);

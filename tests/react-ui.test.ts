@@ -228,6 +228,19 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(appFilter.readOnly, false);
   await act(async () => { followApp.click(); });
   assert.equal(panel.getSnapshot().followApp, true);
+  const descriptor = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value");
+  const setValue = descriptor?.set;
+  assert.ok(setValue);
+  await act(async () => {
+    setValue.call(appFilter, "");
+    const event = new dom.window.Event("input", { bubbles: true });
+    appFilter.dispatchEvent(event);
+  });
+  assert.equal(appFilter.value, "");
+  const clearedSearch = panel.getSnapshot();
+  assert.equal(clearedSearch.followApp, false, "Clearing the rendered search input disables automatic following.");
+  await act(async () => { followApp.click(); });
+  assert.equal(appFilter.value, 'app:"com.example.app"');
   await act(async () => {
     const sources = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Log sources"]');
     assert.ok(sources);

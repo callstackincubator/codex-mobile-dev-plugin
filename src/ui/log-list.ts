@@ -96,8 +96,11 @@ export class LogList {
     const identities = new Map<number, string>();
     for (const app of apps) identities.set(app.pid, app.bundleId);
     if (foreground?.pid != null && foreground.bundleId) identities.set(foreground.pid, foreground.bundleId);
-    const unchanged = identities.size === this.appIds.size && apps.every(app => this.appIds.get(app.pid) === app.bundleId)
-      && (foreground?.pid == null || !foreground.bundleId || this.appIds.get(foreground.pid) === foreground.bundleId);
+    let unchanged = identities.size === this.appIds.size;
+    for (const [pid, bundleId] of identities) {
+      const previous = this.appIds.get(pid);
+      if (previous !== bundleId) { unchanged = false; break; }
+    }
     if (unchanged) return;
     this.appIds = identities;
     let changed = false;

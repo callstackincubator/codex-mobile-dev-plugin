@@ -107,6 +107,37 @@ test("the message budget limits retained logs even before the row limit", () => 
   assert.ok(list.getSnapshot().filtered[0].message.startsWith("b"));
 });
 
+test("app discovery labels native rows without overwriting existing identities across PID reuse", () => {
+  const { list } = fixture();
+  const native = { source: "native" as const, origin: "ios" as const, pid: 123, message: "Same log" };
+  const beforeDiscovery = entry(1, native);
+  const metro = entry(2, { pid: 123, message: "Metro without app metadata" });
+  list.append([beforeDiscovery, metro], 0);
+  list.setApps([{ bundleId: "com.first.app", pid: 123 }], null);
+  list.search("app:com.first.app");
+  const discovered = list.getSnapshot();
+  assert.equal(discovered.filtered.length, 1);
+  assert.equal(discovered.filtered[0].appId, "com.first.app");
+  list.setApps([], { bundleId: "com.second.app", pid: 123 });
+  const reused = entry(3, native);
+  const authoritative = entry(4, { ...native, appId: "com.authoritative.app" });
+  list.append([reused, authoritative], 0);
+  list.search("app:com.second.app");
+  const second = list.getSnapshot();
+  assert.equal(second.filtered.length, 1);
+  assert.equal(second.filtered[0].appId, "com.second.app");
+  list.search("app:com.first.app");
+  const first = list.getSnapshot();
+  assert.equal(first.filtered.length, 1);
+  assert.equal(first.filtered[0].appId, "com.first.app");
+  list.search("");
+  const all = list.getSnapshot();
+  assert.equal(all.buffered, 4);
+  assert.equal(all.filtered.length, 4, "Identical logs from different apps are not grouped together.");
+  assert.equal(all.filtered[1].appId, undefined, "Metro uses target metadata, not a native PID join.");
+  assert.equal(all.filtered[3].appId, "com.authoritative.app");
+});
+
 test("scrolling away from the bottom pauses following until the list reaches the bottom again", () => {
   const { list } = fixture();
   const first = entry(1);

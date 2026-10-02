@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { foregroundPhysicalPid, parseAndroidForegroundPackage } from "../src/server/device-apps/foreground.ts";
+import { foregroundPhysicalPid, foregroundAndroidApp, parseAndroidForegroundPackage } from "../src/server/device-apps/foreground.ts";
 import { readDeviceApps } from "../src/server/device-apps/sources.ts";
 import type { DeviceApp } from "../src/shared/device-apps.ts";
 
@@ -111,4 +111,50 @@ test("Android foreground parsing uses the top resumed activity rather than backg
   assert.throws(() => parseAndroidForegroundPackage("Permission Denial"), /did not report/);
   assert.throws(() => parseAndroidForegroundPackage("topResumedActivity=broken"), /unsupported/);
   assert.throws(() => parseAndroidForegroundPackage("topResumedActivity=ActivityRecord{a u0 app.one/.Main t1}\ntopResumedActivity=ActivityRecord{b u0 app.two/.Main t2}"), /multiple foreground apps/);
+});
+
+test("Android foreground discovery resolves the package's main PID and rejects ambiguous identities", async t => {
+  const temporary = tmpdir();
+  const prefix = join(temporary, "mobile-dev-android-foreground-");
+  const root = await mkdtemp(prefix);
+  const directory = join(root, "platform-tools");
+  await mkdir(directory);
+  const adb = join(directory, "adb");
+  const script = `#!${process.execPath}
+const args = process.argv.slice(2);
+if (args[0] !== '-s' || args[2] !== 'shell') process.exit(2);
+if (args[3] === 'dumpsys') {
+  const activity = args[1] === 'absent' ? 'null' : 'ActivityRecord{a u0 com.android.launcher/.Main t1}';
+  process.stdout.write('topResumedActivity=' + activity);
+} else if (args[3] === 'pidof' && args[4] === 'com.android.launcher') {
+  if (args[1] === 'disconnected') { process.stderr.write('device disconnected'); process.exit(1); }
+  process.stdout.write(args[1]);
+} else process.exit(2);
+`;
+  await writeFile(adb, script, { mode: 0o700 });
+  const previousHome = process.env.ANDROID_HOME;
+  const previousRoot = process.env.ANDROID_SDK_ROOT;
+  process.env.ANDROID_HOME = root;
+  process.env.ANDROID_SDK_ROOT = root;
+  t.after(async () => {
+    if (previousHome === undefined) delete process.env.ANDROID_HOME;
+    else process.env.ANDROID_HOME = previousHome;
+    if (previousRoot === undefined) delete process.env.ANDROID_SDK_ROOT;
+    else process.env.ANDROID_SDK_ROOT = previousRoot;
+    await rm(root, { recursive: true, force: true });
+  });
+  const detected = await foregroundAndroidApp("123");
+  assert.deepEqual(detected, { bundleId: "com.android.launcher", pid: 123 });
+  const absent = await foregroundAndroidApp("absent");
+  assert.equal(absent, null);
+  for (const output of ["123 456", "", "0", "2147483648", "invalid"]) {
+    const pending = foregroundAndroidApp(output);
+    await assert.rejects(pending, /foreground app (process|PID)/);
+  }
+  const disconnected = foregroundAndroidApp("disconnected");
+  await assert.rejects(disconnected, /device disconnected/);
+  const abort = new AbortController();
+  abort.abort();
+  const cancelled = foregroundAndroidApp("123", abort.signal);
+  await assert.rejects(cancelled, /abort/i);
 });

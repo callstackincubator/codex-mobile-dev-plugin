@@ -101,7 +101,10 @@ export class LogsPanel {
         this.userQuery = query;
         this.appClause = "";
         this.update({ followApp: false });
-      } else this.userQuery = suffix.startsWith("&") ? suffix.slice(1).trimStart() : suffix;
+      } else {
+        const expression = suffix.startsWith("&") ? suffix.slice(1) : suffix;
+        this.userQuery = expression.trimStart();
+      }
     } else {
       this.userQuery = query;
       this.appClause = "";
@@ -198,7 +201,11 @@ export class LogsPanel {
     if (this.open && this.visible === false) { this.pendingSourceChange = true; return; }
     void this.stop();
     this.controls();
-    if (this.disposed || !this.open || !this.available) return;
+    if (this.disposed || !this.open) return;
+    if (this.available === false) {
+      if (this.pendingAppChange) this.applyAppChange();
+      return;
+    }
     this.pendingSourceChange = false;
     this.appliedForeground = null;
     this.list.clear();
