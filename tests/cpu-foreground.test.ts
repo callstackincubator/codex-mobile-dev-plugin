@@ -48,13 +48,13 @@ test("shared app discovery queries the selected platform and preserves identitie
     async apps() { return [{ bundleId: "app.a", pid: 123 }]; },
     async physical() { detections.push("physical"); return 999; },
     async simulator() { detections.push("simulator"); return 123; },
-    async android() { detections.push("android"); return "com.android.launcher"; },
+    async android() { detections.push("android"); return { bundleId: "com.android.launcher", pid: 999 }; },
   };
   const simulator = await readDeviceApps("simulator", undefined, "ios", "simulator", sources);
   assert.deepEqual(simulator.foregroundApp, { bundleId: "app.a", pid: 123 });
   assert.equal(simulator.apps[0].foreground, true);
   const android = await readDeviceApps("emulator-5554", undefined, "android", undefined, sources);
-  assert.deepEqual(android.foregroundApp, { bundleId: "com.android.launcher", pid: null });
+  assert.deepEqual(android.foregroundApp, { bundleId: "com.android.launcher", pid: 999 });
   assert.equal(android.apps[0].foreground, false);
   const physical = await readDeviceApps(udid, undefined, "ios", "physical", sources);
   assert.deepEqual(physical.foregroundApp, { bundleId: null, pid: 999 });

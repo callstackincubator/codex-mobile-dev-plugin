@@ -32,6 +32,7 @@ export type LogRecord = {
   deviceId?: string;
   message: string;
   process?: string;
+  appId?: string;
   pid?: number;
   tag?: string;
   subsystem?: string;
@@ -45,7 +46,7 @@ export type StackedLog = LogEntry & { count: number; lastTimestamp: string };
 export type MetroTarget = { id: string; title: string; appId?: string; deviceName?: string; deviceId?: string };
 
 export function logKey(log: LogRecord): string {
-  return JSON.stringify([log.origin, log.deviceId, log.source, log.level, log.process, log.pid, log.tag, log.subsystem, log.category, log.message, log.stack]);
+  return JSON.stringify([log.origin, log.deviceId, log.source, log.level, log.process, log.appId, log.pid, log.tag, log.subsystem, log.category, log.message, log.stack]);
 }
 
 export function stackLogs(logs: readonly LogEntry[]): StackedLog[] {
@@ -65,6 +66,7 @@ export function formatLogContext(log: StackedLog): string {
     `Source: ${log.origin} / ${log.source}. Level: ${log.level}.`,
     log.deviceId && `Device: ${log.deviceId}.`,
     log.process && `Process: ${log.process}${log.pid ? ` (${log.pid})` : ""}.`,
+    log.appId && `App: ${log.appId}.`,
     log.tag && `Tag: ${log.tag}.`,
     log.subsystem && `Subsystem: ${log.subsystem}.`,
     log.category && `Category: ${log.category}.`,

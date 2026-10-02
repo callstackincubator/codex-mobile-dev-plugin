@@ -5,7 +5,8 @@ import { LogList } from "./log-list.ts";
 import type { PanelContext } from "./model-context.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
-import type { ForegroundApp } from "../shared/device-apps.ts";
+import type { DeviceApp, ForegroundApp } from "../shared/device-apps.ts";
+import { composeAppLogQuery, quoteLogQueryValue } from "./log-query.ts";
 import { countUiEvent } from "./telemetry.ts";
 
 type Call = App["callServerTool"];
@@ -28,12 +29,17 @@ export class LogsPanel {
   private disposed = false;
   private discovery = 0;
   private pendingAppChange = false;
+  private pendingSourceChange = false;
+  private appliedApps?: readonly DeviceApp[];
+  private appliedForeground?: ForegroundApp | null;
+  private appClause = "";
+  private userQuery = "";
   private readonly deviceApps: DeviceAppsStore;
   private readonly unsubscribeApps: () => void;
   private snapshot = {
     open: false, paused: false, available: false, settings: false, discovering: false,
     status: "Closed", statusMessage: "", error: "", sourceNotice: "", selectedLabel: "Selected device", selectedPlatform: "ios",
-    native: "ios", process: "", metroUrl: "http://127.0.0.1:8081", target: "",
+    native: "ios", metroUrl: "http://127.0.0.1:8081", target: "",
     android: [] as { id: string; name: string }[], metro: [] as MetroTarget[],
     followApp: true, hideSystemLogs: true, foregroundApp: null as ForegroundApp | null, appDiscoveryError: "",
   };
@@ -57,13 +63,13 @@ export class LogsPanel {
     this.open = !this.open;
     this.controls();
     if (this.open) {
-      if (this.pendingAppChange) this.applyAppChange();
-      else this.restart();
+      this.restart();
     } else void this.stop();
   }
   show() {
     this.visible = true;
-    if (this.pendingAppChange && this.open) this.applyAppChange();
+    if (this.open && this.pendingSourceChange) this.restart();
+    else if (this.open && this.pendingAppChange) this.applyAppChange();
     for (const resolve of this.visibilityWaiters) resolve();
     if (this.open === false) this.toggle();
     else if (this.paused === false && this.loop.active === false) this.restart();
@@ -71,14 +77,37 @@ export class LogsPanel {
   hide() { this.visible = false; this.reading?.abort(); }
   toggleSettings() { this.update({ settings: !this.snapshot.settings }); }
   togglePause() { this.paused = !this.paused; this.controls(); if (this.paused) void this.stop(); else this.restart(); }
-  configure(value: Partial<Pick<typeof this.snapshot, "native" | "process" | "metroUrl" | "target" | "followApp" | "hideSystemLogs">>) {
+  configure(value: Partial<Pick<typeof this.snapshot, "native" | "metroUrl" | "target" | "followApp" | "hideSystemLogs">>) {
     const native = value.native ?? this.snapshot.native;
-    const manual = value.process !== undefined || native !== "ios";
-    const followApp = manual ? false : value.followApp ?? this.snapshot.followApp;
+    const followApp = native === "ios" ? value.followApp ?? this.snapshot.followApp : false;
     const changedMode = followApp !== this.snapshot.followApp;
     const changedSystemLogs = value.hideSystemLogs !== undefined && value.hideSystemLogs !== this.snapshot.hideSystemLogs;
     this.update({ ...value, followApp });
-    if (changedMode || changedSystemLogs || value.native !== undefined || value.target !== undefined) this.restart();
+    if (changedMode) {
+      this.pendingAppChange = true;
+      if (this.open && this.visible) this.applyAppChange();
+    }
+    if (changedSystemLogs || value.native !== undefined || value.target !== undefined) this.restart();
+  }
+  search(query: string) {
+    const prefix = `${this.appClause} & (`;
+    if (this.snapshot.followApp && this.appClause && query === this.appClause) this.userQuery = "";
+    else if (this.snapshot.followApp && this.appClause && query.startsWith(prefix) && query.endsWith(")")) {
+      this.userQuery = query.slice(prefix.length, -1);
+    } else if (this.snapshot.followApp && this.appClause && query.startsWith(`${this.appClause} `)) {
+      const rest = query.slice(this.appClause.length);
+      const suffix = rest.trimStart();
+      if (suffix.startsWith("|")) {
+        this.userQuery = query;
+        this.appClause = "";
+        this.update({ followApp: false });
+      } else this.userQuery = suffix.startsWith("&") ? suffix.slice(1).trimStart() : suffix;
+    } else {
+      this.userQuery = query;
+      this.appClause = "";
+      this.update({ followApp: false });
+    }
+    this.list.search(query);
   }
   connect() { this.restart(); }
   setAvailable(available: boolean) { this.available = available; this.controls(); if (this.open) this.restart(); }
@@ -102,14 +131,36 @@ export class LogsPanel {
       selectedPlatform: simulator?.platform ?? "ios",
       selectedLabel: simulator ? `${simulator.platform === "android" ? "Android" : "iOS"} · ${simulator.name}` : "Selected device" });
     if (this.snapshot.native !== "ios") return;
-    if (changed || (this.snapshot.followApp && appChanged)) {
+    if (changed) this.pendingSourceChange = true;
+    if (changed || appChanged || source.apps !== this.appliedApps) {
       this.pendingAppChange = true;
-      if (this.visible && this.open) this.applyAppChange();
+      if (this.visible && this.open) {
+        if (this.pendingSourceChange) this.restart();
+        else this.applyAppChange();
+      }
     }
   }
   private applyAppChange() {
-    if (this.snapshot.followApp && this.snapshot.foregroundApp) countUiEvent("ui.logs.foreground_change");
-    this.restart();
+    const source = this.deviceApps.getSnapshot();
+    const selected = this.snapshot.native === "ios";
+    const apps = selected ? source.apps : [];
+    const foreground = selected ? this.snapshot.foregroundApp : null;
+    this.list.setApps(apps, foreground);
+    this.appliedApps = source.apps;
+    let clause = "";
+    if (this.snapshot.followApp && selected && foreground) {
+      if (foreground.bundleId) {
+        const bundleId = quoteLogQueryValue(foreground.bundleId);
+        clause = `app:${bundleId}`;
+      } else if (foreground.pid != null) clause = `pid:${foreground.pid}`;
+    }
+    if (clause && (clause !== this.appClause || foreground?.pid !== this.appliedForeground?.pid)) countUiEvent("ui.logs.foreground_change");
+    this.appliedForeground = foreground;
+    this.appClause = clause;
+    const query = composeAppLogQuery(clause, this.userQuery);
+    const current = this.list.getSnapshot();
+    if (query !== current.query) this.list.search(query);
+    this.pendingAppChange = false;
   }
   private controls() {
     this.update({ open: this.open, paused: this.paused, available: this.available,
@@ -119,55 +170,45 @@ export class LogsPanel {
 
   private options(): LogOptions | undefined {
     const options: LogOptions = {};
-    const { native, target, metroUrl, followApp, foregroundApp } = this.snapshot;
-    const process = this.snapshot.process.trim();
+    const { native, target, metroUrl } = this.snapshot;
     const selected = this.simulator;
     const physicalIos = selected?.kind === "physical" && selected.platform === "ios";
     const ready = physicalIos ? selected.state === "connected" : selected?.state === "Booted";
-    if (followApp && native === "ios" && foregroundApp === null) return;
     if (native === "ios" && selected && ready) {
       if (selected.platform === "android") {
-        const packageName = followApp ? foregroundApp?.bundleId : process;
-        if (followApp && !packageName) return;
-        options.native = { platform: "android", deviceId: selected.udid, ...(packageName ? { packageName } : {}) };
+        options.native = { platform: "android", deviceId: selected.udid };
       } else {
-        const pid = foregroundApp?.pid;
-        if (followApp && pid == null) return;
         const nativeTarget: NativeLogTarget = physicalIos
           ? { platform: "ios", deviceId: selected.udid, kind: "physical" }
           : { platform: "ios", deviceId: selected.udid };
-        if (followApp && pid != null) nativeTarget.pid = pid;
-        else if (process) nativeTarget.process = process;
         nativeTarget.hideSystemLogs = this.snapshot.hideSystemLogs;
         options.native = nativeTarget;
       }
     } else if (native.startsWith("android:")) {
-      options.native = { platform: "android", deviceId: native.slice(8), ...(process ? { packageName: process } : {}) };
+      options.native = { platform: "android", deviceId: native.slice(8) };
     }
     if (target && this.metroUrl) {
       if (metroUrl !== this.metroUrl) throw new Error("Find sources again after changing the Metro URL.");
-      const metro = this.snapshot.metro.find(candidate => candidate.id === target);
-      if (followApp === false || (foregroundApp?.bundleId && metro?.appId === foregroundApp.bundleId)) {
-        options.metro = { url: this.metroUrl, targetId: target };
-      }
+      options.metro = { url: this.metroUrl, targetId: target };
     }
     return options.native || options.metro ? options : undefined;
   }
 
   private restart() {
-    if (this.open && this.visible === false) { this.pendingAppChange = true; return; }
+    if (this.open && this.visible === false) { this.pendingSourceChange = true; return; }
     void this.stop();
     this.controls();
     if (this.disposed || !this.open || !this.available) return;
-    this.pendingAppChange = false;
+    this.pendingSourceChange = false;
+    this.appliedForeground = null;
     this.list.clear();
+    this.applyAppChange();
     if (this.paused) return;
     this.error();
     let options: LogOptions | undefined;
     try { options = this.options(); } catch (error) { this.error(String(error)); return; }
     if (!options) {
-      const status = this.snapshot.followApp && this.snapshot.native === "ios" ? "Waiting for foreground app" : "Choose a source";
-      this.update({ status });
+      this.update({ status: "Choose a source" });
       return;
     }
     const epoch = this.epoch;

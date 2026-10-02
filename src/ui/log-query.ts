@@ -5,7 +5,7 @@ type Term = { type: "term"; value: string; field?: string; regex: boolean; negat
 type Token = Term | { type: "and" | "or" | "open" | "close" | "not" };
 export type LogQuery = { match: Match; error: string; usesAge: boolean };
 
-const textFields = ["message", "stack", "process", "tag", "subsystem", "category", "origin", "source", "level", "timestamp"] as const;
+const textFields = ["message", "stack", "process", "appId", "tag", "subsystem", "category", "origin", "source", "level", "timestamp"] as const;
 const levelAliases: Record<string, string> = { warning: "warn", err: "error", verbose: "debug" };
 const ageUnits: Record<string, number> = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
 
@@ -85,7 +85,16 @@ function groupFields(tokens: Token[]): Token[] {
 function createTerm(term: Term): Match {
   const value = term.value.toLowerCase();
   let match: Match;
-  if (term.field === "age") {
+  if (term.field === "pid") {
+    if (term.regex) throw new Error("PID does not support regex matching.");
+    const numeric = /^\d+$/.test(term.value);
+    const pid = Number(term.value);
+    const integer = Number.isSafeInteger(pid);
+    if (numeric === false || integer === false || pid < 1 || pid > 2147483647) {
+      throw new Error("Use a PID between 1 and 2147483647.");
+    }
+    match = log => log.pid === pid;
+  } else if (term.field === "age") {
     if (term.regex) throw new Error("Age does not support regex matching.");
     const duration = /^(\d+)([smhd])$/i.exec(term.value);
     if (!duration) throw new Error("Use an age such as 30s, 5m, 1h, or 1d.");
@@ -99,7 +108,8 @@ function createTerm(term: Term): Match {
       return age >= 0 && age <= milliseconds;
     };
   } else {
-    const field = textFields.find(field => field === term.field);
+    const name = term.field === "app" ? "appId" : term.field;
+    const field = textFields.find(field => field === name);
     if (term.field && field === undefined) throw new Error("Unknown field. Open filter help for supported fields.");
     let pattern: RegExp | undefined;
     if (term.regex) {
@@ -108,7 +118,7 @@ function createTerm(term: Term): Match {
     }
     const expected = field === "level" ? levelAliases[value] ?? value : value;
     const fields = field ? [field] : textFields;
-    const exact = field === "level" || field === "source" || field === "origin";
+    const exact = field === "level" || field === "source" || field === "origin" || field === "appId";
     match = log => {
       for (const key of fields) {
         const text = log[key];
@@ -185,4 +195,45 @@ export function compileLogQuery(query: string): LogQuery {
     const message = error instanceof Error ? error.message : "Invalid filter query.";
     return { match: () => false, error: message, usesAge: false };
   }
+}
+
+export function quoteLogQueryValue(value: string): string {
+  const escapedSlashes = value.replaceAll("\\", "\\\\");
+  const escapedQuotes = escapedSlashes.replaceAll('"', '\\"');
+  return `"${escapedQuotes}"`;
+}
+
+export function composeAppLogQuery(appClause: string, query: string): string {
+  if (appClause === "") return query;
+  if (query.trim() === "") return appClause;
+  // Group repeated fields before adding the app conjunction, preserving their OR semantics.
+  const compiled = compileLogQuery(query);
+  if (compiled.error) return `${appClause} & (${query})`;
+  const raw = tokenize(query);
+  const fields = new Set<string>();
+  let repeatedField = false;
+  for (const token of raw) {
+    if (token.type !== "term" || token.negated || token.field === undefined) continue;
+    if (fields.has(token.field)) repeatedField = true;
+    fields.add(token.field);
+  }
+  if (repeatedField === false) return `${appClause} & (${query})`;
+  const grouped = groupFields(raw);
+  if (raw === grouped) return `${appClause} & (${query})`;
+  const terms = grouped.map(token => {
+    if (token.type === "term") {
+      const field = token.field ? `${token.field}${token.regex ? "~" : ""}:` : "";
+      const value = quoteLogQueryValue(token.value);
+      return `${token.negated ? "-" : ""}${field}${value}`;
+    }
+    switch (token.type) {
+      case "and": return "&";
+      case "or": return "|";
+      case "open": return "(";
+      case "close": return ")";
+      case "not": return "-";
+    }
+  });
+  const expression = terms.join(" ");
+  return `${appClause} & (${expression})`;
 }

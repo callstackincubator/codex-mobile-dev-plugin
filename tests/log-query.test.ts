@@ -30,6 +30,23 @@ test("keywords, quoted phrases, and field filters match case insensitively", () 
   assert.equal(matches("level:verbose", { level: "debug" }), true);
 });
 
+test("PID filters match exact process identities and reject invalid values", () => {
+  const exact = matches("pid:123", { pid: 123 });
+  assert.equal(exact, true);
+  const different = matches("pid:123", { pid: 1234 });
+  assert.equal(different, false);
+  const missing = matches("pid:123");
+  assert.equal(missing, false);
+  const alternatives = matches("pid:123 pid:456", { pid: 456 });
+  assert.equal(alternatives, true);
+  const excluded = matches("-pid:123", { pid: 456 });
+  assert.equal(excluded, true);
+  for (const query of ["pid:0", "pid:-1", "pid:1.5", "pid:2147483648", "pid:text", "pid~:123"]) {
+    const compiled = compileLogQuery(query);
+    assert.ok(compiled.error, query);
+  }
+});
+
 test("repeated fields use OR and different fields and keywords use AND", () => {
   assert.equal(matches("level:warn level:error message:network"), true);
   assert.equal(matches("level:warn level:info message:network"), false);

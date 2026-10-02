@@ -170,8 +170,8 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
   await selectTool("logs");
   await act(async () => { panel.list.setFollow(false); panel.list.append([
-    { sequence: 1, timestamp: "2026-09-30T12:00:00Z", message: '<script>alert("log")</script>', stack: "at loadProfile", level: "error", source: "js", origin: "metro" },
-    { sequence: 2, timestamp: "2026-09-30T12:00:01Z", message: "Native output", level: "info", source: "native", origin: "ios" },
+    { sequence: 1, timestamp: "2026-09-30T12:00:00Z", message: '<script>alert("log")</script>', stack: "at loadProfile", level: "error", source: "js", origin: "metro", appId: "com.example.app" },
+    { sequence: 2, timestamp: "2026-09-30T12:00:01Z", message: "Native output", level: "info", source: "native", origin: "ios", pid: 123 },
   ], 0); });
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
   assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 2);
@@ -218,11 +218,11 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     sources.click();
   });
   const followApp = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Follow foreground app"]');
-  const appFilter = dom.window.document.getElementById("logs-process") as HTMLInputElement;
+  const appFilter = dom.window.document.querySelector<HTMLInputElement>('[aria-label="Search logs"]');
   assert.ok(followApp && appFilter);
   assert.equal(followApp.getAttribute("aria-checked"), "true");
-  assert.equal(appFilter.readOnly, true);
-  assert.equal(appFilter.value, "com.example.app");
+  assert.equal(appFilter.readOnly, false);
+  assert.equal(appFilter.value, 'app:"com.example.app"');
   await act(async () => { followApp.click(); });
   assert.equal(panel.getSnapshot().followApp, false);
   assert.equal(appFilter.readOnly, false);
