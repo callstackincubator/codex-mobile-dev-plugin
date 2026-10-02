@@ -1,0 +1,106 @@
+# Sentry observability
+
+[Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
+
+Since 0.1.101, `logs.ios.parse` measures Node-side iOS record parsing, default system-noise filtering, and conversion in milliseconds before buffering. Bounded 30-second windows report sample count, mean, P95, and maximum; shutdown flushes the remaining window and stops its timer. Measurements use the `logs` surface and iOS simulator/physical kind, with no log content, subsystem names, sender paths, device IDs, or filter text. Existing UI query/filter timings, Node runtime coverage, and physical helper `native.logs.process` timings retain their boundaries. The rebuilt physical helper emits sender image paths locally for framework filtering and retains matching native symbols.
+
+Since 0.1.94, shared selected-device discovery retains the frequent-tool trace
+exclusion and handled server-error coverage, now under `device_apps.discover`.
+`ui.device_apps.discovery` measures the discovery round trip in milliseconds with
+bounded aggregate windows; `ui.device_apps.discovery_failure` counts current-query
+failures. Queries cancelled by selection or visibility changes do not report
+measurements. Results crossing a surface or telemetry-context change are excluded
+so their duration is not attributed to the next surface or device. No bundle IDs,
+PIDs, device IDs, app lists, or query output are sent. Existing CPU batch-processing
+coverage and native Baguette crash/resource telemetry are preserved.
+
+Saved chart cards use the `recording` surface and view. Existing readiness,
+interaction and frame-pacing coverage is preserved. `ui.recording.process` and
+`ui.recording.derive` measure result validation and chart/summary processing;
+`ui.recording.change_density` measures highlight calculation on sample updates
+and is cached across range selection changes;
+`ui.recording.reveal` measures completed entrance drawing in milliseconds,
+using the existing bounded timing windows. Since 0.1.84, the line traces its
+measured curve with the fill following it. Since 0.1.85, the entrance pause is
+550 ms and change highlights fade in after drawing finishes. The intentional
+pause and highlight fade are excluded from the reveal timing;
+`ui.recording.message_ack` ends when the host acknowledges a button's message.
+`ui.recording.samples` counts samples held by the visible card, and bounded event
+counts record range selections and Ask/Open actions. `storage.bytes` with
+`kind: recordings` measures local saved-file storage. Recording polling is excluded
+from trace sampling, and hidden cards stop polling. None of these measurements
+contains device CPU/memory values, recording IDs, titles or selected intervals.
+
+Comparison cards use the `comparison` surface and view, preserving shared
+readiness, interaction, browser frame pacing and teardown coverage. Bounded
+`ui.comparison.process` measures result validation, `ui.comparison.derive` covers
+overlay series and whole-run summaries, and `ui.comparison.summary` covers shared
+selection summaries. `ui.comparison.commit` measures the card render through its
+DOM commit in milliseconds; it does not measure paint or device rendering.
+`ui.comparison.message_ack` ends at host acknowledgement. Numeric gauges count
+runs, CPU/memory samples, FPS samples, retained display frames and overlay rows.
+Counters record range selection, run toggles and Ask actions. No recording IDs,
+titles, selections or device measurements enter this telemetry. The comparison
+MCP operation retains the existing sampled server trace and handled-error path.
+
+`ui.annotations.tree_processing` measures local element processing in milliseconds, including React Native nodes when available. Since 0.1.66, normal inspection validates flat records here; server-side tree flattening falls within `ui.annotations.inspection`, which measures the MCP inspection round trip, including native accessibility and optional Metro work. `ui.annotations.runtime_available` counts snapshots with runtime elements. `ui.annotations.inspection_fallback` counts native-tool retries. `ui.annotations.inspection_truncated` counts snapshots that reach the collector's work or measurement limits. Inspection timing includes failed calls and retries. It uses the current simulator surface and the same bounded timing windows as other UI measurements. Tree contents and selected regions are not sent to Sentry.
+
+Since 0.1.69, inspection timing also includes the bounded Metro source-map lookup. `ui.annotations.source_available` counts snapshots with at least one resolved source location; `ui.annotations.message_build` measures text construction for Send to chat. Source-map transport failures use the existing server error handler with a fixed message. Source paths, component names, creation stacks, note text and images are never sent to Sentry.
+
+`ui.annotations.selection_context` measures the bounded hierarchy and instance lookup for a selection. `ui.annotations.context_build` measures annotation text construction for composer attachments. Both use milliseconds and the active simulator surface. These timings contain no selected nodes, React keys, labels, bounds or source paths.
+
+`ui.annotations.send` measures the host send round trip, including composer retries. Outcome counters distinguish success, a missing composer, timeout and other failures. Unexpected send failures use a fixed error message. No message content goes to Sentry. A timeout keeps notes for a manual retry; it never triggers an automatic resend, since delivery may have succeeded without acknowledgement.
+
+Since 0.1.99, `ui.logs.foreground_change` counts automatic app-filter changes applied while Logs is active, including selected-device and process-lifetime changes. From 0.1.103, these changes update the visible query and local process identity mapping instead of restarting a scoped collector. `ui.logs.app_identity` measures batch insertion with native PID-to-app joins and discovery updates in milliseconds, using bounded aggregate windows. Hidden or closed log views defer row processing until reopened. Shared `ui.device_apps.discovery` timing and handled discovery-error coverage remain in place, including Android's foreground PID lookup; native session operations retain MCP tracing, Node runtime coverage, and `logs.ios.parse` timings. No app IDs, PIDs, package names, device IDs, or query text are attached to these measurements. Native helper telemetry and symbols are unchanged.
+
+Since 0.1.98, `ui.logs.query_parse` measures query compilation in milliseconds once per edit, including automatic app-clause edits from 0.1.103. Existing `ui.logs.filter`, buffered/filtered row gauges, and search counts cover keyword filtering and visible age refreshes; filtering time still covers snapshot derivation and grouping. Query text, field values, regex patterns, and validation messages remain local. Age refresh timers stop when Logs closes, unmounts, or the document becomes hidden.
+
+`ui.logs.send` measures log attachment and chat delivery in milliseconds, including queued context writes and composer retries. The existing log send counter and error coverage remain in place. No log text, stack traces or device IDs go to Sentry.
+
+The React UI reports to `codex-mobile-dev-ui` (project `4512181027471440`). The main Node MCP server and the agent-device launcher report to `codex-mobile-dev-server`, distinguished by the `component` attribute. Native helpers report to `codex-mobile-dev-native`: Baguette, physical iOS mirroring, iOS FPS and logs, and Android CPU and FPS collectors. All three projects use release `mobile-dev@<plugin version>`.
+
+The environments are `development` and `release`. `npm run build` and `npm run package` default to `development`, including local installed packages. For a public release, run `npm run build:release` followed by `npm run package:release`. Packaging rejects a build from the other environment. The package stores its environment in `dist/telemetry-environment.json`; Node telemetry, native helpers and the served UI use that setting. Live reload does not determine the environment. Set `MOBILE_DEV_ENVIRONMENT=development` or `MOBILE_DEV_ENVIRONMENT=release` in the MCP launch environment to override explicitly, then restart the MCP processes and reopen the panel.
+
+Unhandled JavaScript errors and rejected promises, React render errors, and handled MCP tool failures produce issues. Expected stopped-device errors and cancelled operations are excluded. Sentry traces 10% of ordinary tool actions, continuing the UI trace through the MCP bridge. Frame reads, polling, discovery and pointer input are excluded from trace sampling. The SDK does not record MCP arguments or results.
+
+Native device requests retain the ordinary sampled MCP trace. `device_picker.prepare`
+measures candidate discovery/validation in milliseconds, excluding time spent waiting
+for the user. `device_picker.result` counts accept, cancel, decline, unsupported and
+failed outcomes; `device_picker.selected` records only the number of selected devices.
+Attributes contain only the selection mode and outcome. Unexpected handled failures
+use fixed messages. Device IDs/names, app labels, questions, operation details and
+thumbnails are never sent to Sentry. The form is rendered by the host, so plugin UI
+readiness/render timing cannot measure that surface.
+
+Physical iOS display rejections, including an active phone or VoIP call, appear in the panel's Screen unavailable state while it retries. These expected device responses preserve native connection timing, sampled MCP traces and `ui.action.result` outcomes on the simulator surface. Their localized descriptions remain local and do not produce separate Sentry issues.
+
+Agent Device telemetry is inactive while its MCP entry is disabled; the active Mobile Dev server and recording UI retain their existing coverage. When enabled, the Agent Device adapter measures ordinary `tools/call <command>` operations with sampled traces and continues incoming trace metadata through to the native MCP request. Discovery and session lookup are excluded from sampling. `agent_device.catalog.ready` measures catalog loading and validator compilation in milliseconds at startup. Handled native failures use static error messages so app content and tool payloads cannot enter telemetry. Node runtime and owned-storage measurements retain the `agent-device-wrapper` component. Unexpected backend disconnects replace the raw launcher's exit-code/signal report, since the SDK owns the child process lifecycle.
+
+| Measurement | Collection and interpretation |
+| --- | --- |
+| Node CPU and memory | Sentry runtime metrics every 30 seconds: process CPU utilization, RSS, heap, external memory and array buffers. Each Node launcher is measured separately; the agent-device daemon is outside this coverage. |
+| Native resources | `native.cpu.utilization`, `native.memory.rss` and `native.process.uptime`, sampled every 30 seconds and at startup/shutdown. CPU is a ratio where 1 is one fully occupied core. The iOS mirroring addon shares the Node process, so its resource measurements overlap Node's rather than representing another process. |
+| Native operations | Bounded timing windows for connection, physical iOS input acknowledgement and video packet processing, iOS log processing, Android CPU sampling, and FPS read/processing. Filter by `component`, `runtime_platform` and `surface` to identify the responsible helper. Baguette currently records resources and crashes. |
+| Node responsiveness | Automatic event-loop delay, utilization and process uptime. |
+| UI responsiveness | Browser tracing captures available web vitals. Custom metrics record visible animation-frame intervals, intervals over 50 ms, Event Timing interaction durations, long tasks and long animation frames where supported. |
+| Product surfaces | Metrics carry `surface=simulator`, `logs`, `performance`, `recording` or `comparison`, plus view, visible device layout and monitoring state. Log filter time, buffered/filtered rows, performance batch processing, canvas draw time and time to first video frame help explain slow surfaces. |
+| Frame capture | `ui.screenshot.capture` measures synchronous canvas PNG encoding and base64 extraction in milliseconds for Select captures and physical iOS screenshots. Screenshot tools retain sampled MCP traces and report handled capture, attachment, and clipboard failures without image content. |
+| Storage | Every five minutes, the agent-device launcher measures its own session state directory and the shared Apple runner cache in bytes. It skips symlinks and sends only the storage kind and size. |
+| Usage | Surface views and visible time, tool action outcomes, log searches, attachments and send-to-chat actions are counted without their content. |
+
+UI timings are aggregated into bounded 30-second windows with `.samples`, `.mean`, `.p95` and `.max`; windows also close on a surface or context change. The p95 uses a reservoir of up to 256 observations and describes that window, rather than the percentile of all measurements across users. Filter by environment, release, surface and layout to compare like workloads. `ui.frame_interval` measures browser callback pacing, not actual rendered FPS. Event Timing measures interaction duration through the next paint; `ui.device_input.round_trip` measures the device input request through its MCP acknowledgement. Neither measures device touch-to-photon latency. `ui.interaction.supported` identifies whether the browser supports that API. Codex's embedded UI does not expose reliable renderer CPU, total memory or disk measurements. Since 0.1.80, recording processing, derivation, change-density, and reveal timings include the FPS track when present. `ui.recording.fps_samples` gauges the count of saved FPS intervals, never their measured values. Since 0.1.86, `ui.recording.process` also covers parsing retained Android display frames, and `ui.recording.display_frames` gauges their count on the recording surface. Since 0.1.87, `ui.recording.derive` also includes jank classification and presentation-interval statistics. Whole-run derivation runs when recording data changes; selected-range recomputation is measured separately under the same timing name, without repeating full-run processing during a drag. Device CPU/memory/FPS and frame timestamps, tokens, jank metadata, and derived device jank/pacing values remain local and are not forwarded to Sentry. No per-frame telemetry is emitted.
+
+Native helpers use the pinned Sentry Native 0.17.1 in-process crash backend. It captures fatal signals with stack addresses and module debug IDs; the Rust wrapper also reports task panics with a static message and source location. Crash reports are retained in a private cache and sent on the helper's next start. Host caches live under `~/Library/Caches/mobile-dev/sentry`; Android caches live under `/data/local/tmp/mobile-dev-sentry`. Android collectors relay envelopes through ADB stderr to the Node transport, preserving their stdout data protocol. Native timings use the same bounded 30-second `.samples`, `.mean`, `.p95` and `.max` windows as UI timings. iOS FPS timing covers received-counter processing; Android FPS timing includes Perfetto flush/readback. Video timing covers packet assembly and queue work, not decoding or device rendering.
+
+Error and crash events carry only a generated anonymous `user.id` and a `telemetry_session` tag. The Node server creates one random installation ID per local OS account, stored with owner-only permissions in `~/Library/Application Support/mobile-dev/telemetry/anonymous-user-id`. It survives plugin updates, project changes, and app restarts, and is shared with the served UI and native helpers. Each MCP process creates a new random session ID; its UI panels and child helpers share that session. These are plugin server sessions, not chat or device sessions. Sentry's affected-user count therefore approximates affected installations: one person on two machines counts twice, while people sharing an OS account count once. No OpenAI account ID, email, name, IP address, device ID, or host identifier is used. IDs are excluded from performance metrics and span attributes. Stop the MCP processes and delete the identity file to reset it; telemetry opt-out creates no ID.
+
+Session Replay, minidumps, screenshots and profiling are disabled. Requests, account details, app log content, tool payloads, automatic console breadcrumbs and exception source context are excluded. JavaScript error text redacts common tokens, identifiers, URLs, email addresses and local home paths. Native reports retain source basenames and debug IDs, omit absolute module paths, and never send Rust panic payloads. Safe product attributes and source locations remain available for diagnosis. `MOBILE_DEV_TELEMETRY=off` disables reporting across JavaScript and native helpers.
+
+Builds generate debug IDs and source maps under the ignored `.sentry/` directory. Native rebuilds retain macOS dSYMs and unstripped Android ELF files in `.sentry/native` before stripping the bundled binaries. Symbols, source maps and the upload credential are excluded from the plugin package. Native builds require CMake and Ninja, with an Android NDK for Android collectors. The SDK source archive is pinned and checked by SHA-256. Store the organization build token in the ignored `.env.sentry-build-plugin` file at the repository root:
+
+```dotenv
+SENTRY_AUTH_TOKEN=your_org_token
+SENTRY_ORG=your_organization_slug
+```
+
+That file is also listed in `.worktreeinclude` for local worktrees. Use the organization slug, rather than a team slug, for `SENTRY_ORG`. `npm run sentry:upload` reads the file in preference to shell settings, creates the shared release in all three projects, uploads JavaScript maps and native debug files, and finalizes the release. Rebuild native helpers and run `npm run build` before uploading so symbols and maps match the packaged code. Runtime reporting needs only the public DSNs; it does not need this token. Build and upload are separate commands. `npm run test:native-telemetry` verifies a real isolated crash, Rust panic privacy, metrics, opt-out and the Android relay transport against a local receiver.
