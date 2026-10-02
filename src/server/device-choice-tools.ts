@@ -9,25 +9,13 @@ import type { SimulatorDevice, Status } from "../shared/protocol.ts";
 import { errorMessage } from "../shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { deviceChoiceThumbnails } from "./device-choice-thumbnails.ts";
 
 export type DeviceChoiceSources = {
   simulators: () => Promise<Status>;
   android: () => Promise<Status>;
   physicalIos: () => Promise<PhysicalIosDevice[]>;
 };
-
-function phoneThumbnail(platform: "ios" | "android") {
-  const color = platform === "ios" ? "#dbeafe" : "#dcfce7";
-  const camera = platform === "ios"
-    ? '<rect x="22" y="10" width="20" height="5" rx="2.5" fill="#18181b"/>'
-    : '<circle cx="32" cy="12" r="2" fill="#18181b"/>';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="100" viewBox="0 0 64 100"><rect x="9" y="2" width="46" height="96" rx="9" fill="#18181b"/><rect x="13" y="7" width="38" height="86" rx="5" fill="${color}"/>${camera}<rect x="18" y="28" width="28" height="22" rx="4" fill="#fff"/><rect x="18" y="56" width="20" height="4" rx="2" fill="#94a3b8"/><rect x="18" y="64" width="28" height="4" rx="2" fill="#94a3b8"/><rect x="24" y="86" width="16" height="2" rx="1" fill="#18181b"/></svg>`;
-  const bytes = Buffer.from(svg);
-  const encoded = bytes.toString("base64");
-  return { src: `data:image/svg+xml;base64,${encoded}`, mimeType: "image/svg+xml" };
-}
-
-const thumbnails = { ios: phoneThumbnail("ios"), android: phoneThumbnail("android") };
 
 export function deviceChoiceForm(input: DeviceChoiceInput, devices: DeviceChoice[]): OpenAIForm {
   const options: OpenAIFormOption[] = devices.map((device, index) => {
@@ -38,7 +26,7 @@ export function deviceChoiceForm(input: DeviceChoiceInput, devices: DeviceChoice
     if (device.appName) details.push(device.appName);
     if (device.state === "Shutdown") details.push("Stopped");
     const description = details.join(" · ");
-    return { const: `device-${index + 1}`, title: device.name, description, "x-openai-thumbnail": thumbnails[device.platform] };
+    return { const: `device-${index + 1}`, title: device.name, description, "x-openai-thumbnail": deviceChoiceThumbnails[device.platform] };
   });
   if (input.selectionMode === "multiple") return {
     type: "object", required: ["devices"], properties: {

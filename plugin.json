@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "mobile-dev",
-  "version": "0.1.89",
+  "version": "0.1.90",
   "description": "Keep a simulator beside the chat while building, running, or debugging iOS and Android apps. Stream devices, read native and Metro logs, render interactive CPU, memory, and FPS recordings, and control apps with Mobile Dev tools.",
   "author": {
     "name": "Laurids"

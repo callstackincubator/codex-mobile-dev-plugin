@@ -51,7 +51,21 @@ test("the native request waits for a single answer and returns verified device I
     assert.ok("oneOf" in field && Array.isArray(field.oneOf));
     assert.equal(field.oneOf[0].title, "Pixel 9");
     assert.equal(field.oneOf[0].description, "Android emulator · ShopDemo");
-    assert.match(field.oneOf[0]["x-openai-thumbnail"]?.src ?? "", /^data:image\/svg\+xml;base64,/);
+    for (const option of field.oneOf) {
+      const thumbnail = option["x-openai-thumbnail"];
+      assert.ok(thumbnail);
+      assert.equal(thumbnail.mimeType, "image/png");
+      assert.match(thumbnail.src, /^data:image\/png;base64,[a-z0-9+/=]+$/i);
+      const encoded = thumbnail.src.slice("data:image/png;base64,".length);
+      const bytes = Buffer.from(encoded, "base64");
+      const signature = bytes.subarray(0, 8);
+      const expectedSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+      const width = bytes.readUInt32BE(16);
+      const height = bytes.readUInt32BE(20);
+      assert.deepEqual(signature, expectedSignature);
+      assert.equal(width, 64);
+      assert.equal(height, 100);
+    }
     assert.equal(field.oneOf[1].description, "iOS simulator · iOS 27 · ShopDemo");
     const pending = new Promise<OpenAIFormResult>(resolve => { answer = resolve; });
     shown();
