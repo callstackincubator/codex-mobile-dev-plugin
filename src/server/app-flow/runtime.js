@@ -46,6 +46,7 @@ export function installFlowRuntime(key, leaseMs) {
     if (!Object.keys(value || {}).length) return;
     observed.set(JSON.stringify([name, value]), { name, params: value });
   }
+  const stopWalk = Symbol('stopWalk');
   function fibers(callback, subtree) {
     if (!hook?.renderers || typeof hook.getFiberRoots !== 'function') return;
     const stack = [];
@@ -58,8 +59,9 @@ export function installFlowRuntime(key, leaseMs) {
     while (stack.length && count++ < 16000) {
       const fiber = stack.pop(); if (!fiber) continue;
       if (fiber !== subtree && fiber.sibling) stack.push(fiber.sibling);
-      const descend = callback(fiber) !== false;
-      if (descend && fiber.child) stack.push(fiber.child);
+      const result = callback(fiber);
+      if (result === stopWalk) return;
+      if (result !== false && fiber.child) stack.push(fiber.child);
     }
   }
   function navigation(value) {
@@ -175,7 +177,7 @@ export function installFlowRuntime(key, leaseMs) {
     fibers(fiber => {
       const props = fiber.memoizedProps;
       if (hidden(props)) return false;
-      if (!screen && props?.route?.name === name && props.navigation?.isFocused?.()) { screen = fiber; return false; }
+      if (props?.route?.name === name && props.navigation?.isFocused?.()) { screen = fiber; return stopWalk; }
     });
     const inactive = props => {
       if (hidden(props)) return true;
@@ -200,9 +202,10 @@ export function installFlowRuntime(key, leaseMs) {
     const rect = fiber => {
       let result, host = false;
       fibers(child => {
-        if (result || inactive(child.memoizedProps)) return false;
+        if (inactive(child.memoizedProps)) return false;
         if (child.tag !== 5) return;
         host = true; result = nativeRect(child);
+        if (result) return stopWalk;
       }, fiber);
       return { box: result, host };
     };

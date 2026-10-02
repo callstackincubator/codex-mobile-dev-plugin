@@ -314,6 +314,14 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
     if (!group) return [];
     return [...group.screens, ...group.helpers.flatMap(helper => screens(helper, seen))];
   }
+  // Cache only complete expansions. Recursive calls share `seen`, so caching a
+  // partial expansion would change the result for cyclic or shared helpers.
+  const screenCache = new Map<string, Screen[]>();
+  const groupScreens = (key: string) => {
+    let value = screenCache.get(key);
+    if (!value) { value = screens(key); screenCache.set(key, value); }
+    return value;
+  };
   const templates = new Map([...groups].filter(([, group]) => group.screens.length));
   const helperKeys = new Set([...groups.values()].flatMap(group => group.helpers.filter(key => templates.has(key))));
   const componentKeys = new Set([...templates.values()].flatMap(group => group.screens.flatMap(screen => screen.component ? [screen.component] : [])));
@@ -322,13 +330,13 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
     if (seen.has(key) || path.length > 12 || graph.nodes.length >= 1500) return;
     seen = new Set(seen).add(key);
     const names = new Set<string>();
-    for (const screen of screens(key)) {
+    for (const screen of groupScreens(key)) {
       if (names.has(screen.name)) continue; names.add(screen.name);
       const next = [...path, screen.name], nodeId = id(`${key}:${next.join("/")}`);
-      const nested = screen.component && screens(screen.component).length > 0;
+      const nested = screen.component && groupScreens(screen.component).length > 0;
       const candidate = links.find(link => link.target === screen.name && link.params)?.params;
       const node: FlowNode = { id: nodeId, name: screen.name, kind: nested ? "navigator" : "screen", component: screen.component?.split("#").at(-1), definition: screen.component ? relative(root, screen.component) : undefined, file: screen.file, line: screen.line,
-        path: next, entry: entry && (!!groups.get(key)?.tabs || screen.name === (groups.get(key)?.initial ?? screens(key)[0]?.name)), urls: urls.get(screen.name), required: requirements.get(screen.name) ?? [], params: screen.params, status: "pending" };
+        path: next, entry: entry && (!!groups.get(key)?.tabs || screen.name === (groups.get(key)?.initial ?? groupScreens(key)[0]?.name)), urls: urls.get(screen.name), required: requirements.get(screen.name) ?? [], params: screen.params, status: "pending" };
       node.paramVariants = variants.get(screen.name);
       // A required URL segment can distinguish edit/detail routes even when the
       // component's shared TypeScript params declare that value optional.
@@ -383,19 +391,34 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
   };
   const owned = new Set<string>();
   const edges = new Set<string>();
+  const ownerCache = new Map<string, Set<string>>();
+  const targetCache = new Map<string, FlowNode[]>();
+  const targets = (name: string) => {
+    const cached = targetCache.get(name);
+    if (cached) return cached;
+    let best = -1, matches: FlowNode[] = [];
+    for (const target of graph.nodes) {
+      let rank = -1;
+      if (target.name === name) rank = 10000;
+      else for (const url of target.urls ?? []) {
+        if (sourceLinkMatches(url, name)) rank = Math.max(rank, url.split('/').filter(part => part && !/^[:[(]/.test(part)).length);
+      }
+      if (rank < 0 || rank < best) continue;
+      if (rank > best) { best = rank; matches = []; }
+      matches.push(target);
+    }
+    targetCache.set(name, matches);
+    return matches;
+  };
   for (const node of graph.nodes) {
     if (!node.definition) continue;
-    const owners = closure(resolve(root, node.definition));
+    const definition = resolve(root, node.definition);
+    let owners = ownerCache.get(definition);
+    if (!owners) { owners = closure(definition); ownerCache.set(definition, owners); }
     for (const owner of owners) owned.add(owner);
     for (const link of links) {
       if (!owners.has(link.owner)) continue;
-      const matches = graph.nodes.flatMap(target => {
-        const ranks = (target.urls ?? []).filter(url => sourceLinkMatches(url, link.target)).map(url => url.split('/').filter(part => part && !/^[:[(]/.test(part)).length);
-        return target.name === link.target ? [{ target, rank: 10000 }] : ranks.length ? [{ target, rank: Math.max(...ranks) }] : [];
-      });
-      const best = Math.max(-1, ...matches.map(match => match.rank));
-      for (const { target, rank } of matches) {
-        if (rank !== best) continue;
+      for (const target of targets(link.target)) {
         if (node.id === target.id) continue;
         const key = `${node.id}:${target.id}:${link.owner}:${link.via}:${link.guarded}`;
         if (edges.has(key)) continue; edges.add(key);

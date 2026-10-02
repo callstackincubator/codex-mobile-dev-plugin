@@ -20,14 +20,26 @@ export function blankFlowFrame(png: Buffer): boolean {
   for(let y=0;y<height;y++) {
     const offset=y*(stride+1), filter=raw[offset];
     if(filter>4) return false;
-    for(let x=0;x<stride;x++) {
-      const a=x>=channels?row[x-channels]:0,b=previous[x],c=x>=channels?previous[x-channels]:0;
-      let predictor=0;
-      if(filter===1)predictor=a;
-      else if(filter===2)predictor=b;
-      else if(filter===3)predictor=(a+b)>>>1;
-      else if(filter===4){const p=a+b-c,pa=Math.abs(p-a),pb=Math.abs(p-b),pc=Math.abs(p-c);predictor=pa<=pb&&pa<=pc?a:pb<=pc?b:c;}
-      row[x]=(raw[offset+x+1]+predictor)&255;
+    // PNG selects one filter per row. Decode it without testing all five filters
+    // and reading unused neighbors for every channel of every pixel.
+    switch(filter) {
+      case 0: raw.copy(row,0,offset+1,offset+1+stride); break;
+      case 1:
+        for(let x=0;x<stride;x++) row[x]=(raw[offset+x+1]+(x>=channels?row[x-channels]:0))&255;
+        break;
+      case 2:
+        for(let x=0;x<stride;x++) row[x]=(raw[offset+x+1]+previous[x])&255;
+        break;
+      case 3:
+        for(let x=0;x<stride;x++) row[x]=(raw[offset+x+1]+(((x>=channels?row[x-channels]:0)+previous[x])>>>1))&255;
+        break;
+      case 4:
+        for(let x=0;x<stride;x++) {
+          const a=x>=channels?row[x-channels]:0,b=previous[x],c=x>=channels?previous[x-channels]:0;
+          const p=a+b-c,pa=Math.abs(p-a),pb=Math.abs(p-b),pc=Math.abs(p-c),predictor=pa<=pb&&pa<=pc?a:pb<=pc?b:c;
+          row[x]=(raw[offset+x+1]+predictor)&255;
+        }
+        break;
     }
     // Exclude the status bar, rounded screen edges, and home indicator.
     if(y>height*.16 && y<height*.88 && y%step===0)for(let x=Math.ceil(width*.06);x<width*.94;x+=step){

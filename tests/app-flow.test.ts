@@ -58,6 +58,33 @@ test("scanner supports React Navigation static groups and Expo Router dynamic fi
   assert.equal(graph.nodes.some(node => node.name.includes('+api') || node.name.includes('+not-found')), false);
 });
 
+test("scan reuse preserves cyclic helper order, URL specificity, and fresh source on the next scan", async t => {
+  const root = await fixture(t, {
+    'App.tsx': `import {Shared} from './Shared';
+      const Tabs = createBottomTabNavigator();
+      const urls = {Item: '/item/:id', Options: '/item/options'};
+      function alpha(S) { return <><S.Screen name="Alpha" component={Shared}/>{beta(S)}</>; }
+      function beta(S) { return <><S.Screen name="Beta" component={Shared}/>{alpha(S)}</>; }
+      function Left() { return <S.Navigator>{alpha(S)}<S.Screen name="Item" component={Item}/><S.Screen name="Options" component={Options}/></S.Navigator>; }
+      function Right() { return <S.Navigator>{beta(S)}<S.Screen name="Item" component={Item}/><S.Screen name="Options" component={Options}/></S.Navigator>; }
+      function App() { return <Tabs.Navigator><Tabs.Screen name="Left" component={Left}/><Tabs.Screen name="Right" component={Right}/></Tabs.Navigator>; }`,
+    'Shared.tsx': `export function Shared() { return <><Link href="/item/options"/><Link href="/item/options"/></>; }`,
+  });
+  const graph = await scanAppFlow(root, 'ios');
+  assert.deepEqual(graph.nodes.filter(node => node.kind === 'screen').map(node => node.path), [
+    ['Left','Item'], ['Left','Options'], ['Left','Alpha'], ['Left','Beta'],
+    ['Right','Item'], ['Right','Options'], ['Right','Beta'], ['Right','Alpha'],
+  ]);
+  const edges = graph.edges.filter(edge => edge.kind === 'navigation');
+  const shared = graph.nodes.filter(node => ['Alpha','Beta'].includes(node.name));
+  const options = graph.nodes.filter(node => node.name === 'Options');
+  assert.deepEqual(edges.map(edge => [edge.from,edge.to]), shared.flatMap(node => options.map(target => [node.id,target.id])));
+  assert.ok(edges.every(edge => edge.file === 'Shared.tsx' && edge.line === 1));
+  await writeFile(join(root,'Shared.tsx'), `export function Shared() { return <Link href="/item/actual"/>; }`);
+  const updated = await scanAppFlow(root, 'ios');
+  assert.deepEqual(updated.edges.filter(edge => edge.kind === 'navigation').map(edge => updated.nodes.find(node => node.id === edge.to)?.name), Array(8).fill('Item'));
+});
+
 test("scanner does not follow symlinks and reports unresolved names", async t => {
   const root = await fixture(t, {'src/nav.tsx': `function App(){return <S.Screen name={chooseRoute()} />}`});
   await symlink(root, join(root,'src','loop'));

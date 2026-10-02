@@ -149,6 +149,11 @@ Since 0.1.115, `app_flow.scan` also covers symbolic URL reads, re-export and laz
 import resolution, and parameter alternatives within the same scan boundary.
 Source evidence stays in the local graph and audit files; it adds no telemetry
 attributes. Repeated navigation edges collapse before runtime reachability checks.
+Since 0.1.116, discovery reuses route matches and complete helper/component walks
+within each scan. PNG validation selects its filter once per row, and runtime
+lookups stop once they find the focused screen or first native bounds. Existing
+scan, capture, and readiness timings still cover these paths with the same units
+and boundaries. Loading checks, image sampling, and retries are unchanged.
 Since 0.1.114, `app_flow.readiness.mean`, `.p95`, and `.max` measure the time from
 navigation dispatch to a ready or timed-out screen. `app_flow.loading.mean`,
 `.p95`, and `.max` measure the portion spent observing visible loading signals.

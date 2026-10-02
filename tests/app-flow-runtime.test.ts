@@ -46,6 +46,29 @@ test('runtime rejects redirects and never reports a login screen as the target',
   assert.match(result.reason,/redirected/);
 });
 
+test('focused lookup keeps scanning content and links after finding the first native bounds',async t=>{
+  const app=runtime(t);
+  const box=()=>({x:0,y:0,width:100,height:200});
+  const loader:any={tag:0,type:{name:'Skeleton'},memoizedProps:{},return:app.fiber};
+  loader.child={tag:5,type:'View',memoizedProps:{},stateNode:{getBoundingClientRect:box},return:loader};
+  app.native.sibling=loader;
+  // A second matching route must not replace the first, but its links remain
+  // visible evidence. Bounds lookup must not hide a later loader in the target.
+  app.fiber.sibling={tag:0,memoizedProps:{route:{name:'Home'},navigation:app.navigation,href:'/other'},child:{tag:5,type:'Text',memoizedProps:{children:'other screen'},stateNode:{getBoundingClientRect:box}}};
+  let result=await app.invoke({type:'verify',name:'Home'});
+  assert.equal(result.found,true);
+  assert.equal(result.loading,true);
+  assert.equal(result.loadingReason,'skeleton');
+  assert.equal(result.hosts,2);
+  assert.deepEqual(Array.from(result.links),['/other']);
+  loader.memoizedProps.style={display:'none'};
+  result=await app.invoke({type:'verify',name:'Home'});
+  assert.equal(result.loading,false);
+  assert.equal(result.hosts,1);
+  assert.ok(result.signature.includes('screen'));
+  assert.ok(!result.signature.includes('other screen'));
+});
+
 test('runtime strips credentials from observed route data',async t=>{
   const app=runtime(t);
   await app.invoke({type:'open',path:['Profile'],params:{id:'real',accessToken:'secret',password:'secret',nested:{cookie:'secret',id:'safe'}},timeoutMs:300});
