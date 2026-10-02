@@ -85,8 +85,12 @@ export function runLogProcess(command: string, args: string[], parse: (line: str
 export function startNativeLogs(target: NativeLogTarget, sink: LogSink, physicalCommand = physicalIosLogCommand): StopLogSource {
   const controller = new AbortController();
   const signal = controller.signal;
-  const scopedSink: LogSink = { status: sink.status, log: log => sink.log({ ...log, deviceId: target.deviceId,
-    process: log.process ?? (target.platform === "android" ? target.packageName : target.process) }) };
+  const scopedSink: LogSink = { status: sink.status, log: log => {
+    if (target.platform === "ios" && target.pid !== undefined && log.pid !== target.pid) return;
+    const process = log.process ?? (target.platform === "android" ? target.packageName : target.process);
+    const record = { ...log, deviceId: target.deviceId, process };
+    sink.log(record);
+  } };
   const running = (async () => {
     const adb = target.platform === "android" ? await adbPath() : "";
     let failures = 0;
@@ -99,8 +103,9 @@ export function startNativeLogs(target: NativeLogTarget, sink: LogSink, physical
             const reader = await physicalCommand(target);
             await runLogProcess(reader.command, reader.args, parseIOSLog, scopedSink, signal, '{"ready":true}');
           } else {
+            const processFilter = target.pid === undefined ? target.process : String(target.pid);
             await runLogProcess("xcrun", ["simctl", "spawn", target.deviceId, "log", "stream", "--style", "ndjson", "--level", "debug",
-              ...(target.process ? ["--process", target.process] : [])], parseIOSLog, scopedSink, signal);
+              ...(processFilter ? ["--process", processFilter] : [])], parseIOSLog, scopedSink, signal);
           }
         } else if (!target.packageName) {
           await runLogProcess(adb, ["-s", target.deviceId, "logcat", "-v", "threadtime", "-T", "1", "*:V"], parseLogcat, scopedSink, signal);

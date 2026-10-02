@@ -3,12 +3,18 @@ import { udidSchema } from "./protocol.ts";
 
 export const logLevels = ["info", "warn", "error", "debug"] as const;
 const iosProcess = z.string().trim().min(1).max(256).optional();
+const pidNumber = z.number();
+const pidInteger = pidNumber.int();
+const pidPositive = pidInteger.positive();
+const pidBounded = pidPositive.max(2147483647);
+const iosPid = pidBounded.optional();
 const physicalUdid = z.string().regex(/^(?:[a-fA-F0-9]{8}-[a-fA-F0-9]{16}|[a-fA-F0-9]{40})$/);
-export const nativeLogTargetSchema = z.union([
-  z.object({ platform: z.literal("ios"), kind: z.literal("simulator").optional(), deviceId: udidSchema, process: iosProcess }).strict(),
-  z.object({ platform: z.literal("ios"), kind: z.literal("physical"), deviceId: physicalUdid, process: iosProcess }).strict(),
+const nativeLogTargets = z.union([
+  z.object({ platform: z.literal("ios"), kind: z.literal("simulator").optional(), deviceId: udidSchema, process: iosProcess, pid: iosPid }).strict(),
+  z.object({ platform: z.literal("ios"), kind: z.literal("physical"), deviceId: physicalUdid, process: iosProcess, pid: iosPid }).strict(),
   z.object({ platform: z.literal("android"), deviceId: z.string().regex(/^[a-zA-Z0-9._:-]{1,128}$/), packageName: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)+$/).optional() }).strict(),
 ]);
+export const nativeLogTargetSchema = nativeLogTargets.refine(target => target.platform === "android" || target.process === undefined || target.pid === undefined, "Choose an iOS process name or PID.");
 export const metroLogTargetSchema = z.object({ url: z.string().max(2048), targetId: z.string().min(1).max(512) }).strict();
 export const logOptionsSchema = z.object({ native: nativeLogTargetSchema.optional(), metro: metroLogTargetSchema.optional() })
   .strict().refine(value => value.native || value.metro, "Choose a native device or Metro target.");

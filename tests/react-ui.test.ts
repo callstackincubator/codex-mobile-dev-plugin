@@ -61,14 +61,6 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const { createRoot } = await import("react-dom/client");
   let sentLog: StackedLog | undefined;
   const context = { canAttach: true, canSendMessage: true, attachedKey: undefined as string | undefined, onChange() {}, async attach(log?: StackedLog) { this.attachedKey = log ? logKey(log) : undefined; this.onChange(); }, async sendLogToChat(log: StackedLog) { sentLog = log; } };
-  const panel = new LogsPanel({} as App, context as PanelContext);
-  let logSubscribers = 0;
-  const subscribe = panel.list.subscribe;
-  panel.list.subscribe = listener => {
-    logSubscribers++;
-    const unsubscribe = subscribe(listener);
-    return () => { logSubscribers--; unsubscribe(); };
-  };
   let emitCpu: ((batch: CpuBatch) => void) | undefined;
   let cpuSessionsOpened = 0;
   const performanceApp = {
@@ -92,13 +84,22 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     },
   };
   const deviceApps = createDeviceApps(performanceApp as unknown as App);
+  const panel = new LogsPanel({} as App, context as PanelContext, deviceApps);
+  let logSubscribers = 0;
+  const subscribe = panel.list.subscribe;
+  panel.list.subscribe = listener => {
+    logSubscribers++;
+    const unsubscribe = subscribe(listener);
+    return () => { logSubscribers--; unsubscribe(); };
+  };
+
   const performance = new PerformancePanel(performanceApp as unknown as App, deviceApps);
   const recordingController = new RecordingController(performanceApp as unknown as App);
   deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
   performance.setAvailable(true);
   deviceApps.setAvailable(true);
   const root = createRoot(dom.window.document.getElementById("root")!);
-  cleanupView = async () => { deviceApps.dispose(); recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); await performance.dispose(); }); };
+  cleanupView = async () => { recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); deviceApps.dispose(); await performance.dispose(); }); };
   const layouts: string[] = [];
   let commits = 0;
   const workspace = createElement(Workspace, { logs: panel, performance, recordingController, onLayout(layout: string) { layouts.push(layout); } });
@@ -199,6 +200,27 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.ok(dom.window.document.getElementById("logs-settings"));
   await act(async () => { (dom.window.document.querySelector('[aria-label="Log sources"]') as HTMLButtonElement).click(); });
   assert.equal(panel.getSnapshot().settings, false);
+  await act(async () => {
+    const sources = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Log sources"]');
+    assert.ok(sources);
+    sources.click();
+  });
+  const followApp = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Follow foreground app"]');
+  const appFilter = dom.window.document.getElementById("logs-process") as HTMLInputElement;
+  assert.ok(followApp && appFilter);
+  assert.equal(followApp.getAttribute("aria-checked"), "true");
+  assert.equal(appFilter.readOnly, true);
+  assert.equal(appFilter.value, "com.example.app");
+  await act(async () => { followApp.click(); });
+  assert.equal(panel.getSnapshot().followApp, false);
+  assert.equal(appFilter.readOnly, false);
+  await act(async () => { followApp.click(); });
+  assert.equal(panel.getSnapshot().followApp, true);
+  await act(async () => {
+    const sources = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Log sources"]');
+    assert.ok(sources);
+    sources.click();
+  });
   await selectTool("performance");
   assert.equal(performance.getSnapshot().open, true);
   assert.ok(dom.window.document.getElementById("performance-drawer"));

@@ -52,11 +52,11 @@ export function Workspace({ logs, performance, recordingController, onLayout }: 
   const showTool = (next: "logs" | "performance") => {
     const startedAt = globalThis.performance.now();
     if (next === tool && isOpen()) { closeTools(); return; }
+    setUiSurface(next);
     setTool(next);
     setSavedVisible(false);
     if (next === "logs") { performance.hide(); logs.show(); }
     else { logs.hide(); performance.show(); }
-    setUiSurface(next);
     markUiSurfaceReady(startedAt);
   };
   const logsRef = usePanelRef();

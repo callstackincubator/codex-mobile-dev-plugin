@@ -5,6 +5,41 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { startNativeLogs } from "../src/server/native-logs.ts";
 import type { LogRecord } from "../src/shared/logs.ts";
+import { UDID } from "./fixtures.ts";
+
+test("simulator foreground logs select the PID upstream and retain only that process", { skip: process.platform !== "darwin" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "mobile-dev-log-pid-"));
+  const commands = join(directory, "commands");
+  const script = `#!${process.execPath}
+const fs = require('node:fs');
+fs.writeFileSync(${JSON.stringify(commands)}, JSON.stringify(process.argv.slice(2)));
+for (const processID of [456, 123]) console.log(JSON.stringify({ eventMessage: 'fixture', processID, process: 'Example' }));
+setInterval(() => {}, 1000);
+`;
+  const command = join(directory, "xcrun");
+  await writeFile(command, script, { mode: 0o755 });
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${directory}:${previousPath ?? ""}`;
+  const entries: LogRecord[] = [];
+  let accepted!: () => void;
+  const ready = new Promise<void>(resolve => { accepted = resolve; });
+  const stop = startNativeLogs({ platform: "ios", deviceId: UDID, pid: 123 }, {
+    log(log) { entries.push(log); accepted(); }, status() {},
+  });
+  t.after(async () => {
+    await stop();
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    await rm(directory, { recursive: true, force: true });
+  });
+  await ready;
+  await stop();
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].pid, 123);
+  const text = await readFile(commands, "utf8");
+  const args = JSON.parse(text);
+  assert.deepEqual(args, ["simctl", "spawn", UDID, "log", "stream", "--style", "ndjson", "--level", "debug", "--process", "123"]);
+});
 
 test("Android waits for the chosen package and follows its new PID after a restart", async t => {
   const root = await mkdtemp(join(tmpdir(), "mobile-dev-adb-fixture-"));

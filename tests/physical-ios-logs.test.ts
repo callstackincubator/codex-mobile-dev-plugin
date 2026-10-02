@@ -62,6 +62,39 @@ test("physical readers reuse discovery UDIDs and select its current USB or Wi-Fi
   await assert.rejects(absent, /no longer connected/);
 });
 
+test("iOS log targets accept bounded PIDs and reject simultaneous name and PID filters", () => {
+  const pidTarget = { platform: "ios", kind: "physical", deviceId: phone.udid, pid: 123 };
+  const valid = nativeLogTargetSchema.safeParse(pidTarget);
+  assert.equal(valid.success, true);
+  for (const pid of [0, -1, 1.5, 2147483648, "123"]) {
+    const parsed = nativeLogTargetSchema.safeParse({ ...pidTarget, pid });
+    assert.equal(parsed.success, false);
+  }
+  const both = nativeLogTargetSchema.safeParse({ ...pidTarget, process: "Example" });
+  assert.equal(both.success, false);
+});
+
+test("physical iOS PID filters exclude other processes and records without an identity", { skip: process.platform !== "darwin" }, async t => {
+  const entries: LogRecord[] = [];
+  let accepted!: () => void;
+  const ready = new Promise<void>(resolve => { accepted = resolve; });
+  const pidTarget: PhysicalIosLogTarget = { platform: "ios", kind: "physical", deviceId: phone.udid, pid: 123 };
+  const code = `console.log('{"ready":true}');
+    for (const processID of [456, undefined, 123]) console.log(JSON.stringify({ timestamp: '2026-10-02T12:00:00Z', processID,
+      process: 'Example', eventMessage: 'fixture' }));
+    setInterval(() => {}, 1000);`;
+  const stop = startNativeLogs(pidTarget, { log: log => { entries.push(log); accepted(); }, status() {} }, async selected => {
+    assert.deepEqual(selected, pidTarget);
+    return { command: process.execPath, args: ["-e", code] };
+  });
+  t.after(stop);
+  await ready;
+  await stop();
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].pid, 123);
+  assert.equal(entries[0].deviceId, phone.udid);
+});
+
 test("physical streams wait for acceptance, preserve process metadata across PIDs, and close cleanly", { skip: process.platform !== "darwin" }, async t => {
   const entries: LogRecord[] = [];
   const statuses: LogSourceStatus[] = [];

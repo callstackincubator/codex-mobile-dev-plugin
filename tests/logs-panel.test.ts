@@ -1,4 +1,6 @@
 import test from "node:test";
+import type { TestContext } from "node:test";
+import { createDeviceApps } from "./device-apps-fixtures.ts";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import type { App } from "@modelcontextprotocol/ext-apps";
@@ -8,6 +10,14 @@ import type { LogSink } from "../src/server/native-logs.ts";
 import { LogSessions } from "../src/server/log-sessions.ts";
 import { LogsPanel } from "../src/ui/logs-panel.ts";
 import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
+
+function createPanel(app: App, t: TestContext) {
+  const deviceApps = createDeviceApps(app);
+  const panel = new LogsPanel(app, { canAttach: true } as PanelContext, deviceApps);
+  panel.configure({ followApp: false });
+  t.after(() => deviceApps.dispose());
+  return { panel, deviceApps };
+}
 
 const device = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android" as const };
 async function waitFor(predicate: () => boolean) {
@@ -27,15 +37,15 @@ test("the selected connected iPhone opens physical logs and a disconnected phone
     }
     return { content: [] };
   } } as unknown as App;
-  const panel = new LogsPanel(app, { canAttach: true } as PanelContext);
+  const { panel, deviceApps } = createPanel(app, t);
   t.after(() => panel.dispose());
   panel.configure({ process: "Example" });
-  panel.selectSimulator(phone);
+  deviceApps.selectDevice(phone);
   panel.setAvailable(true);
   panel.show();
   await waitFor(() => opened.length === 1);
   assert.deepEqual(opened[0], { native: { platform: "ios", kind: "physical", deviceId: phone.udid, process: "Example" } });
-  panel.selectSimulator({ ...phone, state: "disconnected" });
+  deviceApps.selectDevice({ ...phone, state: "disconnected" });
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(opened.length, 1);
   assert.equal(panel.getSnapshot().status, "Choose a source");
@@ -53,9 +63,9 @@ test("pausing closes a log session, and a late session cannot restore a closed p
     },
     async readServerResource() { throw new Error("A late session must not read resources"); },
   } as unknown as App;
-  const panel = new LogsPanel(app, { canAttach: true } as PanelContext);
+  const { panel, deviceApps } = createPanel(app, t);
   t.after(() => panel.dispose());
-  panel.selectSimulator(device); panel.setAvailable(true); panel.show();
+  deviceApps.selectDevice(device); panel.setAvailable(true); panel.show();
   await waitFor(() => calls.some(call => call.name === "mobile_logs_session"));
   assert.deepEqual(calls[0].arguments, { options: { native: { platform: "android", deviceId: device.udid } } });
   panel.togglePause(); assert.equal(panel.getSnapshot().status, "Paused");
@@ -73,7 +83,7 @@ test("source discovery ignores results for an old Metro URL and preserves explic
     if (hold) await gate;
     return { content: [], structuredContent: { android: [{ id: device.udid, name: device.name }], metro: [{ id: "metro-1", title: "App" }], errors: [] } };
   } } as unknown as App;
-  const panel = new LogsPanel(app, { canAttach: true } as PanelContext);
+  const { panel, deviceApps } = createPanel(app, t);
   t.after(() => panel.dispose()); panel.setAvailable(true); panel.configure({ native: "none" });
   const discovering = panel.discover();
   panel.configure({ metroUrl: "http://127.0.0.1:8082" }); release(); await discovering;
@@ -126,9 +136,9 @@ test("hiding logs leaves collection in the server and resumes the same cursor wi
       });
     },
   } as unknown as App;
-  const panel = new LogsPanel(app, { canAttach: true } as PanelContext);
+  const { panel, deviceApps } = createPanel(app, t);
   t.after(async () => { await panel.dispose(); await logs.close(); });
-  panel.selectSimulator(device);
+  deviceApps.selectDevice(device);
   panel.setAvailable(true);
   panel.show();
   await waitFor(() => sink !== undefined);
@@ -178,9 +188,9 @@ test("a hidden log panel sends only keep-alives and cancels its hidden timer on 
       });
     },
   } as unknown as App;
-  const panel = new LogsPanel(app, { canAttach: true } as PanelContext);
+  const { panel, deviceApps } = createPanel(app, t);
   t.after(() => panel.dispose());
-  panel.selectSimulator(device);
+  deviceApps.selectDevice(device);
   panel.setAvailable(true);
   panel.show();
   await setImmediate();

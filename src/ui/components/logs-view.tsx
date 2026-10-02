@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "./ui/base-sele
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./ui/resizable";
 import { useMediaQuery } from "./use-media-query";
+import { Switch } from "./ui/switch";
 
 const rowKey = (log: StackedLog) => String(log.sequence);
 // User input controls following; estimated row heights must not gate it.
@@ -33,6 +34,9 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
   const wide = useMediaQuery("(min-width: 900px)");
   const narrow = useMediaQuery("(max-width: 600px)");
   const detailVertical = narrow || (wide && document.documentElement.dataset.view === "workspace");
+  const foreground = state.foregroundApp;
+  const foregroundLabel = foreground?.bundleId ?? (foreground?.pid == null ? "" : `PID ${foreground.pid}`);
+  const appFilter = state.followApp ? foregroundLabel : state.process;
   const listRef = useRef<LegendListRef>(null);
   const userScrolling = useRef(false);
   const scrollbarDragging = useRef(false);
@@ -150,7 +154,8 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
                     <NativeSelectOption value="ios">{state.selectedLabel}</NativeSelectOption><NativeSelectOption value="none">None</NativeSelectOption>
                     {state.android.map(device => <NativeSelectOption key={device.id} value={`android:${device.id}`}>Android · {device.name}</NativeSelectOption>)}
                   </NativeSelect></Field>
-                  <Field className="gap-1"><FieldLabel htmlFor="logs-process" className="text-xs">App filter</FieldLabel><Input id="logs-process" className="h-8 text-xs" placeholder="Process or Android package" value={state.process} maxLength={256} onChange={event => panel.configure({ process: event.target.value })} /><FieldDescription className="text-[11px]">Leave empty to include all apps.</FieldDescription></Field>
+                  <Field className="gap-1"><div className="flex items-center justify-between gap-2"><FieldLabel htmlFor="logs-follow-app" className="text-xs">Follow foreground app</FieldLabel><Switch id="logs-follow-app" aria-label="Follow foreground app" checked={state.followApp} disabled={state.native !== "ios"} onCheckedChange={followApp => panel.configure({ followApp })} /></div><FieldDescription className="text-[11px]">Tracks app switches on the selected device.</FieldDescription></Field>
+                  <Field className="gap-1"><FieldLabel htmlFor="logs-process" className="text-xs">App filter</FieldLabel><Input id="logs-process" className="h-8 text-xs" placeholder={state.followApp ? "Waiting for foreground app" : "Process or Android package"} value={appFilter} readOnly={state.followApp} maxLength={256} onChange={event => panel.configure({ process: event.target.value })} /><FieldDescription className="text-[11px]">{state.followApp ? state.appDiscoveryError || "Updated automatically. Disable Follow foreground app to set a manual filter." : "Leave empty to include all apps."}</FieldDescription></Field>
                 </div>
                 <div className="flex min-w-0 flex-col gap-2">
                   <Field className="gap-1"><FieldLabel htmlFor="logs-metro-url" className="text-xs">Server URL</FieldLabel><Input id="logs-metro-url" className="h-8 text-xs" type="url" value={state.metroUrl} maxLength={2048} spellCheck={false} onChange={event => panel.configure({ metroUrl: event.target.value })} /></Field>
