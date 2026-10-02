@@ -16,7 +16,7 @@ const prefix = (a: string[], b: string[]) => { let count = 0; while (count < a.l
 
 /** Match route templates without evaluating app code. Extract only values from real links. */
 export function matchFlowLink(pattern: string, link: string): FlowParams | undefined {
-  const parts = (value: string) => value.split('?')[0].split('/').filter(part => part && part !== 'index' && !/^\(.+\)$/.test(part));
+  const parts = (value: string) => value.split(/[?#]/)[0].split('/').filter(part => part && part !== 'index' && !/^\(.+\)$/.test(part));
   const expected = parts(pattern), actual = parts(link), params: FlowParams = {};
   let offset = 0;
   for (const part of expected) {
@@ -27,7 +27,12 @@ export function matchFlowLink(pattern: string, link: string): FlowParams | undef
     else if (part !== actual[offset]) return;
     offset++;
   }
-  return offset === actual.length ? params : undefined;
+  if (offset !== actual.length) return;
+  const query = link.indexOf('?');
+  if (query >= 0) for (const [key, value] of new URLSearchParams(link.slice(query + 1).split('#')[0])) {
+    if (!/token|password|secret|authorization|cookie|^(__proto__|constructor|prototype)$/i.test(key) && !Object.hasOwn(params, key)) params[key] = value;
+  }
+  return params;
 }
 
 /** Registration is a catalog. Only entry screens and links in the mounted UI enter the run. */
@@ -54,15 +59,17 @@ export class FlowReachability {
       ids.set(source.id, node.id);
     }
     this.nodes = [...canonical.values()];
-    this.edges = graph.edges.flatMap(edge => {
+    const canonicalEdges = new Map<string, FlowEdge>();
+    for (const edge of graph.edges) {
       const from = ids.get(edge.from), to = ids.get(edge.to);
-      return edge.kind === 'navigation' && from && to && from !== to ? [{ ...edge, from, to }] : [];
-    });
+      if (edge.kind === 'navigation' && from && to && from !== to) canonicalEdges.set(JSON.stringify([from, to, edge.owner, edge.via, edge.guarded]), { ...edge, from, to });
+    }
+    this.edges = [...canonicalEdges.values()];
     graph.nodes = []; graph.edges = [];
     for (const node of this.nodes) {
       node.paths!.sort((a, b) => prefix(b, evidence.active ?? []) - prefix(a, evidence.active ?? []));
       node.path = node.paths![0];
-      const candidate = evidence.candidates?.find(item => item.name === node.name && !missingFlowParams({ required: node.required, params: item.params }).length);
+      const candidate = evidence.candidates?.find(item => item.name === node.name && !missingFlowParams({ ...node, params: item.params }).length);
       if (candidate && node.required.length) { node.params = { ...node.params, ...Object.fromEntries(node.required.filter(key => candidate.params[key] !== undefined).map(key => [key, candidate.params[key]])) }; node.status = 'pending'; }
       if (node.entry || evidence.entries?.some(path => node.paths!.some(candidate => samePath(candidate, path))) || node.paths!.some(path => samePath(path, evidence.active ?? []))) this.add(node);
     }

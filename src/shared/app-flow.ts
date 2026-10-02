@@ -14,13 +14,14 @@ export type FlowNode = {
   entry?: boolean;
   urls?: string[];
   required: string[];
+  paramVariants?: { required: string[]; literals: FlowParams }[];
   params?: FlowParams;
   status: FlowStatus;
   reason?: string;
   image?: string;
   captureMs?: number;
 };
-export type FlowEdge = { from: string; to: string; kind: "contains" | "navigation"; owner?: string; via?: "link" | "call"; guarded?: boolean };
+export type FlowEdge = { from: string; to: string; kind: "contains" | "navigation"; owner?: string; via?: "link" | "call"; guarded?: boolean; file?: string; line?: number };
 export type FlowLink = { target: string; owner: string; params?: FlowParams; guarded: boolean };
 export type FlowGraph = { links?: FlowLink[]; nodes: FlowNode[]; edges: FlowEdge[]; warnings: string[]; files: number; scanMs: number };
 export type FlowRun = FlowGraph & {
@@ -34,8 +35,12 @@ export type FlowRun = FlowGraph & {
 };
 export type FlowResolution = { nodeId: string; params: FlowParams };
 export const flowRunning = (run?: FlowRun) => !!run && ["scanning", "connecting", "capturing", "finishing"].includes(run.phase);
-export function missingFlowParams(node: Pick<FlowNode, "required" | "params">): string[] {
-  return node.required.filter(key => node.params?.[key] === undefined || node.params[key] === null || node.params[key] === "");
+export function missingFlowParams(node: Pick<FlowNode, "required" | "params" | "paramVariants">): string[] {
+  const missing = (keys: string[]) => keys.filter(key => node.params?.[key] === undefined || node.params[key] === null || node.params[key] === "");
+  if (!node.paramVariants?.length) return missing(node.required);
+  const matches = node.paramVariants.filter(variant => Object.entries(variant.literals).every(([key, value]) => node.params?.[key] === undefined || node.params[key] === value));
+  if (!matches.length) return ["$variant"];
+  return matches.map(variant => missing(variant.required)).sort((a, b) => a.length - b.length)[0];
 }
 
 export const FLOW_CARD_WIDTH = 202;

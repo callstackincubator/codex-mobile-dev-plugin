@@ -145,6 +145,10 @@ may require another read. Failed attempts include recovery time. Empty native bo
 are rejected before saving; frame validation adds no image data to telemetry.
 These measure plugin work and coverage, not device rendering performance.
 Attributes contain only the surface and device platform.
+Since 0.1.115, `app_flow.scan` also covers symbolic URL reads, re-export and lazy
+import resolution, and parameter alternatives within the same scan boundary.
+Source evidence stays in the local graph and audit files; it adds no telemetry
+attributes. Repeated navigation edges collapse before runtime reachability checks.
 Since 0.1.114, `app_flow.readiness.mean`, `.p95`, and `.max` measure the time from
 navigation dispatch to a ready or timed-out screen. `app_flow.loading.mean`,
 `.p95`, and `.max` measure the portion spent observing visible loading signals.

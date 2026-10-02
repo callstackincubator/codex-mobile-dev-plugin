@@ -59,3 +59,15 @@ test('required data excludes optional action flags and exact URLs beat dynamic s
   reach.reveal(graph.nodes[0],{links:[{pathname:'/messages/actual-id',params:{openComposer:true}}]});
   assert.deepEqual(graph.nodes[3].params,{id:'actual-id'});
 });
+
+test('query data and one complete union variant can satisfy a real navigation link',()=>{
+  const activity={...node('Activity'),urls:['/activity'],required:['posts'],status:'needs-data' as const};
+  const video={...node('Video'),required:['kind','uri','did'],paramVariants:[{required:['kind','uri'],literals:{kind:'feed'}},{required:['kind','did'],literals:{kind:'author'}}],status:'needs-data' as const};
+  const graph:FlowGraph={files:1,scanMs:0,warnings:[],nodes:[node('Home',true),activity,video],edges:[]};
+  const reach=new FlowReachability(graph,{active:['Home'],entries:[]});
+  reach.reveal(graph.nodes[0],{links:['/activity?posts=one%2Ctwo&openComposer=true&token=secret',{screen:'Video',params:{kind:'author',did:'real-did',openComposer:true}}]});
+  assert.deepEqual(graph.nodes.find(n=>n.name==='Activity')!.params,{posts:'one,two'});
+  assert.deepEqual(graph.nodes.find(n=>n.name==='Video')!.params,{kind:'author',did:'real-did'});
+  assert.equal(graph.nodes.find(n=>n.name==='Video')!.status,'pending');
+  assert.deepEqual(matchFlowLink('/users/:id','/users/actual?id=wrong&x=1'),{id:'actual',x:'1'});
+});

@@ -1,0 +1,72 @@
+{
+  "reference": "bluesky-reference.json",
+  "revision": "2d8e349afd92d2be3ff31f298bc27ab0d82c61cc",
+  "baselinePlugin": "0.1.114",
+  "updatedPlugin": "0.1.115",
+  "measurement": "One local iOS source scan per version. Scan time excludes capture. Results do not prove current flags or data availability.",
+  "before": {
+    "revision": "2d8e349afd92d2be3ff31f298bc27ab0d82c61cc",
+    "platform": "ios",
+    "meaning": "Source matches mean a reviewed parent or shared control has a static path to the route. Conditions and real data still need runtime confirmation. Registration counts are not reachability counts.",
+    "files": 2371,
+    "scanMs": 1190,
+    "registrations": 79,
+    "expectedSourceRoutes": 68,
+    "matchedSourceRoutes": 55,
+    "missingRegistrations": [],
+    "extraRegistrations": [],
+    "missingSourceRoutes": [
+      "CustomFeed",
+      "CustomFeedLikedBy",
+      "InviteScanner",
+      "MessagesConversationSettings",
+      "NotificationsActivityList",
+      "PostLikedBy",
+      "PostQuotes",
+      "PostRepostedBy",
+      "PostThread",
+      "ProfileFollowers",
+      "ProfileFollows",
+      "ProfileKnownFollowers",
+      "SharedPreferencesTester"
+    ],
+    "unexpectedSourceRoutes": [],
+    "byAccess": {
+      "ui": 33,
+      "link-only": 7,
+      "data": 21,
+      "internal": 3,
+      "feature": 6,
+      "entry": 5,
+      "redirect": 2,
+      "fallback": 1,
+      "server-link": 1
+    }
+  },
+  "after": {
+    "revision": "2d8e349afd92d2be3ff31f298bc27ab0d82c61cc",
+    "platform": "ios",
+    "meaning": "Source matches mean a reviewed parent or shared control has a static path to the route. Conditions and real data still need runtime confirmation. Registration counts are not reachability counts.",
+    "files": 2371,
+    "scanMs": 1885,
+    "registrations": 79,
+    "expectedSourceRoutes": 68,
+    "matchedSourceRoutes": 68,
+    "missingRegistrations": [],
+    "extraRegistrations": [],
+    "missingSourceRoutes": [],
+    "unexpectedSourceRoutes": [],
+    "byAccess": {
+      "ui": 33,
+      "link-only": 7,
+      "data": 21,
+      "internal": 3,
+      "feature": 6,
+      "entry": 5,
+      "redirect": 2,
+      "fallback": 1,
+      "server-link": 1
+    }
+  },
+  "remainingRuntimeGaps": "Live discovery still samples the current account, rendered data, and mounted menus. This source audit does not mean all 68 routes were captured. No full device capture was rerun for this change."
+}

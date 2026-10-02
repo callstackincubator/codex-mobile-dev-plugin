@@ -254,3 +254,51 @@ test('a stale native screenshot cannot be assigned to a different rendered scree
   assert.equal(result.nodes[1].status,'timed-out');
   assert.match(result.nodes[1].reason??'',/previous screen/);
 });
+
+test('source links follow barrels, namespaces, lazy components, helpers and lexical bindings', async t => {
+  const root = await fixture(t, {
+    'src/App.tsx': `import {Home} from './barrel'; import {lazy} from 'react'; const Deferred = lazy(() => import('./Deferred'));
+      const urls={Profile:'/people/:id', Followers:'/people/:id/followers', Detail:'/item/:id', Activity:'/activity', Inbox:'/chat/inbox', Chat:'/chat/:id', ExternalOnly:'/short/:id'};
+      function App(){return <Stack.Navigator><Stack.Screen name="Home" component={Home}/><Stack.Screen name="Profile"/><Stack.Screen name="Followers"/><Stack.Screen name="Detail"/><Stack.Screen name="Activity"/><Stack.Screen name="Deferred" component={Deferred}/><Stack.Screen name="Inbox"/><Stack.Screen name="Chat"/><Stack.Screen name="ExternalOnly"/></Stack.Navigator>}`,
+    'src/barrel.ts': `export {Main as Home} from './Home';`,
+    'src/Home/index.tsx': `export function Main(){return <Link to="/wrong-platform"/>}`,
+    'src/Home/index.ios.tsx': `import * as Controls from '../Controls'; import {personPath} from '../paths';
+      export function Main(){const href=useMemo(()=>personPath(person.id,'followers'),[person]);return <><Controls.More/><Link to={href}/><Link to={locked ? '#' : {screen:'Detail',params:{id:item.id}}}/><Link to={\`/activity?posts=\${posts}\`}/><Link to="/chat/inbox"/><Button onPress={()=>navigation.navigate('Deferred')}/></>}
+      function Unused(){const href='/never';return <Link to={href}/>}`,
+    'src/Controls.tsx': `import {normalize} from './paths'; export function More(){return <><Link to={\`/people/\${account.id}\`}/><Link to={normalize(externalUrl)}/></>} `,
+    'src/paths.ts': `export function personPath(id:string,...parts:string[]){return ['/people',id,...parts].join('/')} export function normalize(url){if(isShort(url)){return \`/short/\${key}\`}return url}`,
+    'src/Deferred.tsx': `export default function Deferred(){return <Button onPress={()=>navigation.navigate('Activity')}/>}`,
+  });
+  const graph = await scanAppFlow(root,'ios');
+  const names = new Map(graph.nodes.map(node=>[node.id,node.name]));
+  const outgoing = (name:string) => new Set(graph.edges.filter(edge=>edge.kind==='navigation'&&names.get(edge.from)===name).map(edge=>names.get(edge.to)));
+  assert.deepEqual(outgoing('Home'),new Set(['Profile','Followers','Detail','Activity','Inbox','Deferred']));
+  assert.deepEqual(outgoing('Deferred'),new Set(['Activity']));
+  assert.match(graph.nodes.find(node=>node.name==='Home')!.definition!,/index.ios.tsx#Main$/);
+  assert.ok(graph.edges.filter(edge=>edge.kind==='navigation').every(edge=>edge.file&&edge.line));
+  assert.equal(graph.nodes.find(node=>node.name==='Followers')!.params,undefined,'symbolic path segments must never become capture data');
+});
+
+test('parameter unions keep alternatives and path params prevent empty edit previews', async t => {
+  const root=await fixture(t,{'App.tsx': `
+    type Context = {kind:'feed';uri:string;source:string} | {kind:'author';did:string};
+    type RouteParams = {Home:undefined;Video:Context;Edit:{id?:string}};
+    const paths={Edit:'/edit/:id'};
+    function App(){return <Stack.Navigator><Stack.Screen name="Home"/><Stack.Screen name="Video"/><Stack.Screen name="Edit"/></Stack.Navigator>}`});
+  const graph=await scanAppFlow(root,'ios');
+  const video=graph.nodes.find(node=>node.name==='Video')!;
+  const {missingFlowParams}=await import('../src/shared/app-flow.ts');
+  assert.deepEqual(missingFlowParams({...video,params:{kind:'author',did:'actual-did'}}),[]);
+  assert.deepEqual(missingFlowParams({...video,params:{kind:'feed',uri:'actual-uri'}}),['source']);
+  assert.deepEqual(missingFlowParams({...video,params:{kind:'other',did:'actual-did'}}),['$variant']);
+  assert.deepEqual(graph.nodes.find(node=>node.name==='Edit')!.required,['id']);
+  assert.equal(graph.nodes.find(node=>node.name==='Edit')!.status,'needs-data');
+});
+
+test('equivalent navigation branches are usable but a one-sided guard stays conditional',async t=>{
+  const root=await fixture(t,{'App.tsx':`function Home(){return <><Button onPress={()=>{if(mode){navigation.navigate('Preferences')}else{navigation.push('Preferences')}}}/><Button onPress={()=>{if(admin){navigation.navigate('Admin')}}}/></>}
+    function App(){return <Stack.Navigator><Stack.Screen name="Home" component={Home}/><Stack.Screen name="Preferences"/><Stack.Screen name="Admin"/></Stack.Navigator>}`});
+  const graph=await scanAppFlow(root,'ios'), names=new Map(graph.nodes.map(n=>[n.id,n.name]));
+  assert.equal(graph.edges.find(e=>e.kind==='navigation'&&names.get(e.to)==='Preferences')!.guarded,false);
+  assert.equal(graph.edges.find(e=>e.kind==='navigation'&&names.get(e.to)==='Admin')!.guarded,true);
+});

@@ -1,0 +1,1158 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/bluesky-social/social-app",
+  "revision": "2d8e349afd92d2be3ff31f298bc27ab0d82c61cc",
+  "platform": "ios",
+  "scope": "Native registered routes after login and onboarding; source-reviewed potential access, not proof that every server flag or data state is available in one session. One route per name, not one per repeated tab registration.",
+  "method": "Manually traced entry stacks, drawer, settings links, screen controls, menu and dialog actions, guards, URL builders, redirects, and native auth wrapper. Expected rows were authored independently of extractor output. Line references apply to the pinned revision.",
+  "routes": [
+    {
+      "name": "AboutSettings",
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "name": "AccessibilitySettings",
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "name": "AccountSettings",
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "name": "ActivityNotificationSettings",
+      "access": "ui",
+      "parents": [
+        "NotificationSettings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/NotificationSettings/index.tsx",
+          "line": 221
+        }
+      ]
+    },
+    {
+      "name": "ActivityPrivacySettings",
+      "access": "ui",
+      "parents": [
+        "PrivacyAndSecuritySettings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/PrivacyAndSecuritySettings.tsx",
+          "line": 73
+        }
+      ]
+    },
+    {
+      "name": "AppIconSettings",
+      "access": "link-only",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/AppearanceSettings.tsx",
+          "line": 166
+        }
+      ],
+      "note": "Only source UI call site is commented out. Registered /settings/app-icon still allows a direct link."
+    },
+    {
+      "name": "AppPasswords",
+      "access": "ui",
+      "parents": [
+        "PrivacyAndSecuritySettings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/PrivacyAndSecuritySettings.tsx",
+          "line": 73
+        }
+      ]
+    },
+    {
+      "name": "AppearanceSettings",
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "name": "AutomationLabelSettings",
+      "access": "ui",
+      "parents": [
+        "AccountSettings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/AccountSettings.tsx",
+          "line": 154
+        }
+      ]
+    },
+    {
+      "name": "BetaFeaturesSettings",
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "name": "Bookmarks",
+      "access": "ui",
+      "parents": [
+        "Home"
+      ],
+      "evidence": [
+        {
+          "file": "src/view/shell/Drawer.tsx",
+          "line": 272
+        }
+      ],
+      "note": "Shared drawer controls, available from every tab.",
+      "sharedOwners": [
+        "DrawerContent"
+      ]
+    },
+    {
+      "name": "CommunityGuidelines",
+      "access": "link-only",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/routes.ts",
+          "line": 71
+        }
+      ],
+      "note": "Legacy registered support paths. Current Help/About/Drawer links open external websites, not these routes."
+    },
+    {
+      "name": "ContentAndMediaSettings",
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "name": "CopyrightPolicy",
+      "access": "link-only",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/routes.ts",
+          "line": 71
+        }
+      ],
+      "note": "Legacy registered support paths. Current Help/About/Drawer links open external websites, not these routes."
+    },
+    {
+      "name": "CustomFeed",
+      "access": "data",
+      "parents": [
+        "Feeds"
+      ],
+      "evidence": [
+        {
+          "file": "src/view/com/feeds/FeedSourceCard.tsx",
+          "line": 193
+        }
+      ],
+      "condition": "A feed card or profile feed tab supplies the creator and feed record key."
+    },
+    {
+      "name": "CustomFeedLikedBy",
+      "access": "data",
+      "parents": [
+        "CustomFeed"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/CustomFeed/components/CustomFeedHeader.tsx",
+          "line": 541
+        }
+      ],
+      "condition": "Open feed information dialog; likeCount > 0."
+    },
+    {
+      "name": "Debug",
+      "access": "internal",
+      "parents": [
+        "Settings",
+        "Home"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 301
+        }
+      ],
+      "condition": "IS_INTERNAL plus expanded Developer options, or Home logo in IS_DEV. These routes are reachable in a dev build; they are not ordinary release UI."
+    },
+    {
+      "name": "DebugMod",
+      "access": "internal",
+      "parents": [
+        "Settings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 481
+        }
+      ],
+      "condition": "IS_INTERNAL plus expanded Developer options."
+    },
+    {
+      "name": "Feeds",
+      "access": "ui",
+      "parents": [
+        "Home"
+      ],
+      "evidence": [
+        {
+          "file": "src/view/shell/Drawer.tsx",
+          "line": 272
+        }
+      ],
+      "note": "Shared drawer controls, available from every tab.",
+      "sharedOwners": [
+        "DrawerContent"
+      ]
+    },
+    {
+      "name": "FindContactsFlow",
+      "access": "feature",
+      "parents": [
+        "FindContactsSettings",
+        "ProfileFollows"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/FindContactsSettings.tsx",
+          "line": 155
+        }
+      ],
+      "condition": "Contacts feature is available; also exposed by eligible onboarding and NUX banners."
+    },
+    {
+      "name": "FindContactsSettings",
+      "access": "feature",
+      "parents": [
+        "Settings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 228
+        }
+      ],
+      "condition": "Native; geography permits contact import; ImportContactsSettingsDisable is false."
+    },
+    {
+      "name": "Hashtag",
+      "access": "data",
+      "parents": [
+        "Home"
+      ],
+      "evidence": [
+        {
+          "file": "src/components/RichTextTag.tsx",
+          "line": 27
+        }
+      ],
+      "condition": "A rendered rich-text tag supplies its text."
+    },
+    {
+      "name": "Home",
+      "access": "entry",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/Navigation.tsx",
+          "line": 636
+        }
+      ],
+      "note": "Five native tab stacks; MyProfile passes name=me. Native stack wrapper requires a session."
+    },
+    {
+      "name": "InterestsSettings",
+      "access": "ui",
+      "parents": [
+        "ContentAndMediaSettings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/ContentAndMediaSettings.tsx",
+          "line": 61
+        }
+      ]
+    },
+    {
+      "name": "InviteScanner",
+      "access": "ui",
+      "parents": [
+        "FindContactsSettings"
+      ],
+      "evidence": [
+        {
+          "file": "src/features/inviteFriends/InviteFriendsDialogInner.tsx",
+          "line": 113
+        }
+      ],
+      "note": "Share-profile dialog Scan action. Also reachable directly through the shared drawer share control even when contact import is disabled."
+    },
+    {
+      "name": "LanguageSettings",
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "name": "LegacyNotificationSettings",
+      "access": "redirect",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/LegacyNotificationSettings.tsx",
+          "line": 13
+        }
+      ],
+      "note": "Focus effect replaces this route with NotificationSettings; returns null."
+    },
+    {
+      "name": "Lists",
+      "access": "ui",
+      "parents": [
+        "Home"
+      ],
+      "evidence": [
+        {
+          "file": "src/view/shell/Drawer.tsx",
+          "line": 272
+        }
+      ],
+      "note": "Shared drawer controls, available from every tab.",
+      "sharedOwners": [
+        "DrawerContent"
+      ]
+    },
+    {
+      "name": "Log",
+      "access": "ui",
+      "parents": [
+        "AboutSettings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/AboutSettings.tsx",
+          "line": 117
+        }
+      ]
+    },
+    {
+      "name": "Messages",
+      "access": "entry",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/Navigation.tsx",
+          "line": 636
+        }
+      ],
+      "note": "Five native tab stacks; MyProfile passes name=me. Native stack wrapper requires a session."
+    },
+    {
+      "name": "MessagesConversation",
+      "access": "data",
+      "parents": [
+        "Messages"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Messages/components/ChatListItem.tsx",
+          "line": 494
+        }
+      ],
+      "condition": "An existing conversation supplies its ID. Profile message buttons are another entry."
+    },
+    {
+      "name": "MessagesConversationSettings",
+      "access": "data",
+      "parents": [
+        "MessagesConversation"
+      ],
+      "evidence": [
+        {
+          "file": "src/components/dms/MessagesListHeader.tsx",
+          "line": 154
+        }
+      ],
+      "condition": "Group conversation that is not permanently locked."
+    },
+    {
+      "name": "MessagesInbox",
+      "access": "ui",
+      "parents": [
+        "Messages"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Messages/components/InboxRequests.tsx",
+          "line": 44
+        }
+      ],
+      "note": "InboxRequests link in the chat list. Age assurance can gate chat screens."
+    },
+    {
+      "name": "MessagesJoinRequests",
+      "access": "data",
+      "parents": [
+        "MessagesConversationSettings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Messages/ConversationSettings/MembersAndRequests.tsx",
+          "line": 51
+        }
+      ],
+      "condition": "Group admin with join requests; needs the conversation ID."
+    },
+    {
+      "name": "MessagesSettings",
+      "access": "ui",
+      "parents": [
+        "Messages"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Messages/ChatList.tsx",
+          "line": 669
+        }
+      ],
+      "note": "Chat options menu; both navigate and push branches open the same route."
+    },
+    {
+      "name": "Moderation",
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "name": "ModerationBlockedAccounts",
+      "access": "ui",
+      "parents": [
+        "Moderation"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Moderation/index.tsx",
+          "line": 326
+        }
+      ]
+    },
+    {
+      "name": "ModerationInbox",
+      "access": "feature",
+      "parents": [
+        "Moderation"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Moderation/index.tsx",
+          "line": 202
+        }
+      ],
+      "condition": "ModerationInboxEnable feature flag. Current inbox entries are placeholders in this revision."
+    },
+    {
+      "name": "ModerationInboxNoticeDetails",
+      "access": "feature",
+      "parents": [
+        "ModerationInbox"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/ModerationInbox/index.tsx",
+          "line": 47
+        }
+      ],
+      "condition": "Parent ModerationInboxEnable flag; details currently use placeholder content."
+    },
+    {
+      "name": "ModerationInboxReportDetails",
+      "access": "feature",
+      "parents": [
+        "ModerationInbox"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/ModerationInbox/index.tsx",
+          "line": 47
+        }
+      ],
+      "condition": "Parent ModerationInboxEnable flag; details currently use placeholder content."
+    },
+    {
+      "name": "ModerationInboxSettings",
+      "access": "feature",
+      "parents": [
+        "ModerationInbox"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/ModerationInbox/index.tsx",
+          "line": 47
+        }
+      ],
+      "condition": "Parent ModerationInboxEnable flag; details currently use placeholder content."
+    },
+    {
+      "name": "ModerationInteractionSettings",
+      "access": "ui",
+      "parents": [
+        "Moderation"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Moderation/index.tsx",
+          "line": 326
+        }
+      ]
+    },
+    {
+      "name": "ModerationModlists",
+      "access": "ui",
+      "parents": [
+        "Moderation"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Moderation/index.tsx",
+          "line": 326
+        }
+      ]
+    },
+    {
+      "name": "ModerationMutedAccounts",
+      "access": "ui",
+      "parents": [
+        "Moderation"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Moderation/index.tsx",
+          "line": 326
+        }
+      ]
+    },
+    {
+      "name": "ModerationVerificationSettings",
+      "access": "ui",
+      "parents": [
+        "Moderation"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Moderation/index.tsx",
+          "line": 326
+        }
+      ]
+    },
+    {
+      "name": "MyProfile",
+      "access": "entry",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/Navigation.tsx",
+          "line": 636
+        },
+        {
+          "file": "src/view/shell/Drawer.tsx",
+          "line": 205
+        }
+      ],
+      "note": "Five native tab stacks; MyProfile passes name=me. Native stack wrapper requires a session."
+    },
+    {
+      "name": "NotFound",
+      "access": "fallback",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/lib/routes/router.ts",
+          "line": 26
+        }
+      ],
+      "note": "Unmatched URL fallback, not an ordinary navigation destination."
+    },
+    {
+      "name": "NotificationSettings",
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "access": "entry",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/Navigation.tsx",
+          "line": 636
+        }
+      ],
+      "note": "Five native tab stacks; MyProfile passes name=me. Native stack wrapper requires a session."
+    },
+    {
+      "name": "NotificationsActivityList",
+      "access": "data",
+      "parents": [
+        "Notifications"
+      ],
+      "evidence": [
+        {
+          "file": "src/view/com/notifications/NotificationFeedItem.tsx",
+          "line": 130
+        }
+      ],
+      "condition": "A subscribed-post notification supplies a posts query parameter."
+    },
+    {
+      "name": "PostLikedBy",
+      "access": "data",
+      "parents": [
+        "PostThread"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/PostThread/components/LikesStat.tsx",
+          "line": 26
+        }
+      ],
+      "condition": "A post supplies name and rkey."
+    },
+    {
+      "name": "PostQuotes",
+      "access": "data",
+      "parents": [
+        "PostThread"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/PostThread/components/ThreadItemAnchor.tsx",
+          "line": 478
+        }
+      ],
+      "condition": "Post has quotes and embedding is not disabled."
+    },
+    {
+      "name": "PostRepostedBy",
+      "access": "data",
+      "parents": [
+        "PostThread"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/PostThread/components/ThreadItemAnchor.tsx",
+          "line": 459
+        }
+      ],
+      "condition": "Post has a nonzero repost count."
+    },
+    {
+      "name": "PostThread",
+      "access": "data",
+      "parents": [
+        "Home"
+      ],
+      "evidence": [
+        {
+          "file": "src/view/com/notifications/NotificationFeedItem.tsx",
+          "line": 106
+        }
+      ],
+      "condition": "A post supplies its author and record key; feed cards are another entry."
+    },
+    {
+      "name": "PreferencesExternalEmbeds",
+      "access": "ui",
+      "parents": [
+        "ContentAndMediaSettings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/ContentAndMediaSettings.tsx",
+          "line": 61
+        }
+      ]
+    },
+    {
+      "name": "PreferencesFollowingFeed",
+      "access": "ui",
+      "parents": [
+        "ContentAndMediaSettings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/ContentAndMediaSettings.tsx",
+          "line": 61
+        }
+      ]
+    },
+    {
+      "name": "PreferencesThreads",
+      "access": "ui",
+      "parents": [
+        "ContentAndMediaSettings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/ContentAndMediaSettings.tsx",
+          "line": 61
+        }
+      ]
+    },
+    {
+      "name": "PrivacyAndSecuritySettings",
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "name": "PrivacyPolicy",
+      "access": "link-only",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/routes.ts",
+          "line": 71
+        }
+      ],
+      "note": "Legacy registered support paths. Current Help/About/Drawer links open external websites, not these routes."
+    },
+    {
+      "name": "Profile",
+      "access": "data",
+      "parents": [
+        "Home"
+      ],
+      "evidence": [
+        {
+          "file": "src/components/RichText.tsx",
+          "line": 153
+        }
+      ],
+      "condition": "A profile link supplies a real handle or DID. Many feeds, search results, and profile lists also link here."
+    },
+    {
+      "name": "ProfileFollowers",
+      "access": "data",
+      "parents": [
+        "Profile",
+        "MyProfile"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Profile/Header/Metrics.tsx",
+          "line": 38
+        }
+      ],
+      "condition": "Profile loaded; each link supplies its handle or DID."
+    },
+    {
+      "name": "ProfileFollows",
+      "access": "data",
+      "parents": [
+        "Profile",
+        "MyProfile"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Profile/Header/Metrics.tsx",
+          "line": 38
+        }
+      ],
+      "condition": "Profile loaded; each link supplies its handle or DID."
+    },
+    {
+      "name": "ProfileKnownFollowers",
+      "access": "data",
+      "parents": [
+        "Profile",
+        "MyProfile"
+      ],
+      "evidence": [
+        {
+          "file": "src/components/KnownFollowers.tsx",
+          "line": 126
+        }
+      ],
+      "condition": "Known-follower data exists."
+    },
+    {
+      "name": "ProfileLabelerLikedBy",
+      "access": "data",
+      "parents": [
+        "Profile"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Profile/Header/ProfileHeaderLabeler.tsx",
+          "line": 139
+        }
+      ],
+      "condition": "Non-default labeler profile with a numeric like count."
+    },
+    {
+      "name": "ProfileList",
+      "access": "data",
+      "parents": [
+        "Lists",
+        "ModerationModlists"
+      ],
+      "evidence": [
+        {
+          "file": "src/view/screens/Lists.tsx",
+          "line": 45
+        }
+      ],
+      "condition": "An existing list supplies name and rkey; creating a list is not required by the mapper."
+    },
+    {
+      "name": "ProfileSearch",
+      "access": "data",
+      "parents": [
+        "Profile",
+        "MyProfile"
+      ],
+      "evidence": [
+        {
+          "file": "src/view/com/profile/ProfileMenu.tsx",
+          "line": 267
+        }
+      ],
+      "condition": "Profile menu; needs the viewed profile handle."
+    },
+    {
+      "name": "SavedFeeds",
+      "access": "ui",
+      "parents": [
+        "ContentAndMediaSettings"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/Settings/ContentAndMediaSettings.tsx",
+          "line": 61
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "access": "entry",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/Navigation.tsx",
+          "line": 636
+        }
+      ],
+      "note": "Five native tab stacks; MyProfile passes name=me. Native stack wrapper requires a session."
+    },
+    {
+      "name": "Settings",
+      "access": "ui",
+      "parents": [
+        "Home"
+      ],
+      "evidence": [
+        {
+          "file": "src/view/shell/Drawer.tsx",
+          "line": 272
+        }
+      ],
+      "note": "Shared drawer controls, available from every tab.",
+      "sharedOwners": [
+        "DrawerContent"
+      ]
+    },
+    {
+      "name": "SharedPreferencesTester",
+      "access": "internal",
+      "parents": [
+        "Debug"
+      ],
+      "evidence": [
+        {
+          "file": "src/view/screens/Storybook/Storybook.tsx",
+          "line": 86
+        }
+      ],
+      "condition": "Storybook includes a navigation button; reachability inherits the internal route."
+    },
+    {
+      "name": "Start",
+      "access": "redirect",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/view/screens/Home.tsx",
+          "line": 73
+        }
+      ],
+      "note": "Shared /start/:name/:rkey links; signed-in HomeScreen navigates to StarterPack."
+    },
+    {
+      "name": "StarterPack",
+      "access": "data",
+      "parents": [
+        "MyProfile",
+        "Profile"
+      ],
+      "evidence": [
+        {
+          "file": "src/components/StarterPack/StarterPackCard.tsx",
+          "line": 155
+        }
+      ],
+      "condition": "A starter pack card supplies a creator and record key."
+    },
+    {
+      "name": "StarterPackEdit",
+      "access": "data",
+      "parents": [
+        "StarterPack"
+      ],
+      "evidence": [
+        {
+          "file": "src/screens/StarterPack/StarterPackScreen.tsx",
+          "line": 606
+        }
+      ],
+      "condition": "Own starter pack, overflow menu. rkey is optional in the type but required to preview editing rather than creation."
+    },
+    {
+      "name": "StarterPackShort",
+      "access": "link-only",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/lib/strings/url-helpers.ts",
+          "line": 412
+        }
+      ],
+      "note": "Short-link normalization resolves a code, then renders the same pack content. External entry, not an extra ordinary UI destination."
+    },
+    {
+      "name": "StarterPackWizard",
+      "access": "ui",
+      "parents": [
+        "MyProfile"
+      ],
+      "evidence": [
+        {
+          "file": "src/components/StarterPack/ProfileStarterPacks.tsx",
+          "line": 211
+        }
+      ],
+      "note": "Profile starter packs tab; opening the wizard does not require creating a pack."
+    },
+    {
+      "name": "Support",
+      "access": "link-only",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/routes.ts",
+          "line": 71
+        }
+      ],
+      "note": "Legacy registered support paths. Current Help/About/Drawer links open external websites, not these routes."
+    },
+    {
+      "name": "TermsOfService",
+      "access": "link-only",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/routes.ts",
+          "line": 71
+        }
+      ],
+      "note": "Legacy registered support paths. Current Help/About/Drawer links open external websites, not these routes."
+    },
+    {
+      "name": "Topic",
+      "access": "server-link",
+      "parents": [],
+      "evidence": [
+        {
+          "file": "src/components/TrendingTopics.tsx",
+          "line": 142
+        }
+      ],
+      "condition": "Server-provided trend link could target /topic/:topic. No fixed in-app link proves it is currently served."
+    },
+    {
+      "name": "VideoFeed",
+      "access": "data",
+      "parents": [
+        "Home"
+      ],
+      "evidence": [
+        {
+          "file": "src/components/VideoPostCard.tsx",
+          "line": 114
+        }
+      ],
+      "condition": "Rendered video card; route takes either feedgen or author context, not both. Native only."
+    }
+  ],
+  "nonRouteFlows": [
+    {
+      "file": "src/view/com/auth/LoggedOut.tsx",
+      "line": 146,
+      "states": [
+        "SplashScreen",
+        "Login",
+        "Signup",
+        "StarterPackLandingScreen",
+        "JoinRequest"
+      ],
+      "note": "Local ScreenState branches; no React Navigation route for each view."
+    },
+    {
+      "file": "src/screens/Login/index.tsx",
+      "line": 142,
+      "states": [
+        "LoginForm",
+        "ChooseAccountForm",
+        "ForgotPasswordForm",
+        "SetNewPasswordForm",
+        "PasswordUpdatedForm"
+      ],
+      "note": "Forms state; password reset needs real email/code and cannot be reached by route navigation."
+    },
+    {
+      "file": "src/screens/Signup/index.tsx",
+      "line": 201,
+      "states": [
+        "StepInfo",
+        "StepHandle",
+        "StepCaptcha"
+      ],
+      "note": "Signup state; may require submitting data or captcha."
+    },
+    {
+      "file": "src/screens/Onboarding/index.tsx",
+      "line": 74,
+      "states": [
+        "StepProfile",
+        "StepInterests",
+        "StepSuggestedAccounts",
+        "StepSuggestedStarterpacks",
+        "StepFindContactsIntro",
+        "StepFindContacts",
+        "StepFinished"
+      ],
+      "note": "Reducer steps; language, geography and experiment guards."
+    },
+    {
+      "file": "src/view/shell/index.tsx",
+      "line": 239,
+      "states": [
+        "Takendown",
+        "Deactivated",
+        "DataUnavailableScreen",
+        "NoAccessScreen"
+      ],
+      "note": "Account status and age assurance replace the entire navigator."
+    },
+    {
+      "file": "src/view/shell/createNativeStackNavigatorWithAuth.tsx",
+      "line": 127,
+      "states": [
+        "SignupQueued"
+      ],
+      "note": "Session status replaces the navigator."
+    }
+  ],
+  "limits": [
+    "This is a route audit, not a claim to enumerate every modal, local tab, error, or pagination state.",
+    "Internal routes remain conditional evidence, not a production-name blacklist.",
+    "Source guards do not prove the current server flags, permissions, account role, or dataset. Runtime confirmation is still needed."
+  ],
+  "compareCommand": "node scripts/compare-app-flow.mjs /path/to/social-app tests/fixtures/app-flow/bluesky-reference.json"
+}

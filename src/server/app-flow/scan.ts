@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import ts from "typescript";
 import type { FlowGraph, FlowNode, FlowParams } from "../../shared/app-flow.ts";
 import { missingFlowParams } from "../../shared/app-flow.ts";
+import { sourceLinkMatches, sourceLinkReader } from "./source-links.ts";
 
 const ignored = new Set(["node_modules", ".git", ".expo", ".next", "dist", "build", "ios", "android", "vendor", "coverage", "__tests__", "__mocks__"]);
 const extensions = [".tsx", ".ts", ".jsx", ".js"];
@@ -92,6 +93,7 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
           const module = node.moduleSpecifier.text, clause = node.importClause;
           if (clause?.name) unit.imports.set(clause.name.text, { module, name: "default" });
           if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings)) for (const imp of clause.namedBindings.elements) unit.imports.set(imp.name.text, { module, name: imp.propertyName?.text ?? imp.name.text });
+          if (clause?.namedBindings && ts.isNamespaceImport(clause.namedBindings)) unit.imports.set(clause.namedBindings.name.text, { module, name: "*" });
         }
         if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) unit.constants.set(node.name.text, node.initializer);
         ts.forEachChild(node, collect);
@@ -106,20 +108,51 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
     const config = ts.parseConfigFileTextToJson("tsconfig.json", await readFile(join(root, "tsconfig.json"), "utf8"));
     Object.assign(paths, config.config?.compilerOptions?.paths ?? {});
   } catch { /* Alias inference also covers common src aliases. */ }
-  function symbol(unit: Unit, name: string): string {
-    const imp = unit.imports.get(name);
-    if (!imp) return `${unit.file}#${name}`;
-    const bases = imp.module.startsWith(".") ? [resolve(dirname(unit.file), imp.module)] : Object.entries(paths).flatMap(([key, values]) => {
+  function moduleFile(unit: Unit, module: string): string | undefined {
+    const bases = module.startsWith(".") ? [resolve(dirname(unit.file), module)] : Object.entries(paths).flatMap(([key, values]) => {
       const prefix = key.replace(/\*$/, "");
-      return imp.module.startsWith(prefix) && Array.isArray(values) ? values.map(value => resolve(root, value.replace("*", imp.module.slice(prefix.length)))) : [];
+      return module.startsWith(prefix) && Array.isArray(values) ? values.map(value => resolve(root, value.replace("*", module.slice(prefix.length)))) : [];
     });
-    if (/^[#@~]\//.test(imp.module)) bases.push(resolve(root, "src", imp.module.slice(2)), resolve(root, imp.module.slice(2)));
-    for (const base of bases) for (const ext of extensions) for (const file of [`${base}.${platform}${ext}`, `${base}.native${ext}`, `${base}${ext}`, join(base, `index${ext}`)]) {
-      if (units.has(file)) return `${file}#${imp.name}`;
+    if (/^[#@~]\//.test(module)) bases.push(resolve(root, "src", module.slice(2)), resolve(root, module.slice(2)));
+    for (const base of bases) {
+      if (units.has(base)) return base;
+      for (const stem of [base, join(base, 'index')]) for (const suffix of [`.${platform}`, '.native', '']) for (const ext of extensions) {
+        if (units.has(`${stem}${suffix}${ext}`)) return `${stem}${suffix}${ext}`;
+      }
     }
-    return `${imp.module}#${imp.name}`;
   }
+  const symbolCache = new Map<string, string>();
+  function symbol(unit: Unit, name: string, seen = new Set<string>()): string {
+    const key = `${unit.file}#${name}`;
+    if (seen.has(key)) return key;
+    if (symbolCache.has(key)) return symbolCache.get(key)!;
+    seen = new Set(seen).add(key);
+    const [head, member] = name.split('.'), imp = unit.imports.get(head);
+    const follow = (module: string, exported: string) => {
+      const file = moduleFile(unit, module);
+      return file ? symbol(units.get(file)!, exported, seen) : `${module}#${exported}`;
+    };
+    let result = key;
+    if (imp) result = follow(imp.module, imp.name === '*' && member ? member : imp.name);
+    else {
+      const declaration = unit.constants.get(name);
+      if (declaration && ts.isCallExpression(declaration) && /(?:^|\.)lazy$/.test(declaration.expression.getText())) {
+        const callback = declaration.arguments[0];
+        if (callback && ts.isArrowFunction(callback) && ts.isCallExpression(callback.body) && callback.body.expression.kind === ts.SyntaxKind.ImportKeyword && callback.body.arguments[0] && ts.isStringLiteral(callback.body.arguments[0])) result = follow(callback.body.arguments[0].text, 'default');
+      }
+      for (const statement of unit.ast.statements) {
+        if (!ts.isExportDeclaration(statement)) continue;
+        if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+          const exported = statement.exportClause.elements.find(item => item.name.text === name);
+          if (exported) { const local = exported.propertyName?.text ?? name; result = statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier) ? follow(statement.moduleSpecifier.text, local) : symbol(unit, local, seen); break; }
+        }
+      }
+    }
+    symbolCache.set(key, result); return result;
+  }
+  const readLinks = sourceLinkReader(units, (unit, name) => symbol(units.get(unit.file)!, name));
   const types = new Map<string, ts.TypeNode>(), requirements = new Map<string, string[]>();
+  const variants = new Map<string, NonNullable<FlowNode["paramVariants"]>>();
   for (const unit of units.values()) {
     const visit = (node: ts.Node) => { if (ts.isTypeAliasDeclaration(node)) types.set(node.name.text, node.type); if (ts.isInterfaceDeclaration(node)) types.set(node.name.text, ts.factory.createTypeLiteralNode(node.members)); ts.forEachChild(node, visit); };
     visit(unit.ast);
@@ -139,19 +172,49 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
     }
     return [];
   }
+  function alternatives(type: ts.TypeNode, seen = new Set<string>()): NonNullable<FlowNode["paramVariants"]> {
+    if (ts.isParenthesizedTypeNode(type)) return alternatives(type.type, seen);
+    if (ts.isTypeReferenceNode(type) && types.has(type.typeName.getText()) && !seen.has(type.typeName.getText())) {
+      return alternatives(types.get(type.typeName.getText())!, new Set(seen).add(type.typeName.getText()));
+    }
+    if (ts.isUnionTypeNode(type)) return type.types.flatMap(item => alternatives(item, new Set(seen))).slice(0, 32);
+    if (ts.isIntersectionTypeNode(type)) return type.types.reduce((rows, item) => rows.flatMap(a => alternatives(item, new Set(seen)).map(b => ({ required: [...new Set([...a.required, ...b.required])], literals: { ...a.literals, ...b.literals } }))).slice(0, 32), [{ required: [] as string[], literals: {} as FlowParams }]);
+    const literals: FlowParams = {};
+    if (ts.isTypeLiteralNode(type)) for (const member of type.members) {
+      if (ts.isPropertySignature(member) && !member.questionToken && member.type && ts.isLiteralTypeNode(member.type) && propName(member.name)) {
+        const value = literal(member.type.literal, new Map());
+        if (value !== undefined) literals[propName(member.name)!] = value;
+      }
+    }
+    return [{ required: required(type), literals }];
+  }
   // Read param lists, not every object property in the project.
   for (const [name, type] of types) if (/Param(List|s)|NavigatorParams/.test(name)) {
     const visit = (node: ts.Node) => {
-      if (ts.isPropertySignature(node) && node.type && propName(node.name)) requirements.set(propName(node.name)!, required(node.type));
+      if (ts.isPropertySignature(node) && node.type && propName(node.name)) {
+        requirements.set(propName(node.name)!, required(node.type));
+        const options = alternatives(node.type);
+        if (options.length > 1) variants.set(propName(node.name)!, options);
+      }
       else ts.forEachChild(node, visit);
     }; visit(type);
   }
   const groups = new Map<string, Group>();
   const dependencies = new Map<string, Set<string>>();
-  const links: { owner: string; target: string; params?: FlowParams; via: "link" | "call"; guarded: boolean }[] = [];
+  const links: { owner: string; target: string; params?: FlowParams; via: "link" | "call"; guarded: boolean; file: string; line: number }[] = [];
   const urls = new Map<string, string[]>();
   for (const unit of units.values()) {
     signal?.throwIfAborted();
+    const branchTarget = (node: ts.Node | undefined): string | undefined => {
+      if (!node) return;
+      if (ts.isBlock(node)) return node.statements.length === 1 ? branchTarget(node.statements[0]) : undefined;
+      if (ts.isExpressionStatement(node)) return branchTarget(node.expression);
+      if (!ts.isCallExpression(node)) return;
+      const method = ts.isPropertyAccessExpression(node.expression) ? node.expression.name.text : '';
+      if (!['navigate', 'push', 'replace'].includes(method)) return;
+      const target = literal(node.arguments[0], unit.constants);
+      return typeof target === 'string' ? target : undefined;
+    };
     function visit(node: ts.Node, owner = `${unit.file}#default`, inFunction = false, guarded = false) {
       if (!inFunction && ts.isFunctionDeclaration(node) && node.name) owner = `${unit.file}#${node.modifiers?.some(mod => mod.kind === ts.SyntaxKind.DefaultKeyword) ? "default" : node.name.text}`;
       if (!inFunction && ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer) || ts.isCallExpression(node.initializer) && node.initializer.arguments.some(arg => ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)))) owner = `${unit.file}#${node.name.text}`;
@@ -163,7 +226,7 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
         if (target && typeof target === "object") {
           const value = target as FlowParams; params = value.params; target = value.screen ?? value.name ?? value.pathname;
         }
-        if (typeof target === "string" && !/^[a-z]+:/i.test(target)) links.push({ owner, target, via, guarded,
+        if (typeof target === "string" && !/^[a-z]+:/i.test(target)) links.push({ owner, target, via, guarded, file: relative(root, unit.file), line: unit.ast.getLineAndCharacterOfPosition(node.getStart()).line + 1,
           ...(params && typeof params === "object" && !Array.isArray(params) ? { params: params as FlowParams } : {}) });
       };
       if (ts.isPropertyAssignment(node) && propName(node.name)) {
@@ -174,14 +237,19 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
       }
       if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {
         const tag = node.tagName.getText();
-        if (!/\.(Screen|Navigator|Group)$/.test(tag)) depend(tag.split(".")[0]);
+        if (!/\.(Screen|Navigator|Group)$/.test(tag)) depend(tag);
         if (/\.Navigator$/.test(tag)) {
           const value = literal(attr(node, "initialRouteName"), unit.constants);
           if (typeof value === "string") group().initial = value;
           const creator = unit.constants.get(tag.split(".")[0])?.getText() ?? tag;
           group().tabs = /create\w*(Tab|Drawer)\w*Navigator/.test(creator.split("<")[0].split("(")[0]);
         }
-        for (const name of ["href", "to"]) link(literal(attr(node, name), unit.constants), undefined, "link");
+        for (const name of ["href", "to"]) {
+          const expression = attr(node, name);
+          const value = literal(expression, unit.constants);
+          const params = value && typeof value === 'object' && !Array.isArray(value) ? (value as FlowParams).params : undefined;
+          for (const target of expression ? readLinks(unit, expression) : []) link(target, params, "link");
+        }
         if (/\.Screen$/.test(node.tagName.getText())) {
           const name = literal(attr(node, "name"), unit.constants);
           if (typeof name === "string") {
@@ -205,7 +273,7 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
       }
       ts.forEachChild(node, child => visit(child, owner, inFunction || ts.isFunctionLike(node), guarded ||
         ts.isConditionalExpression(node) && child !== node.condition ||
-        ts.isIfStatement(node) && child !== node.expression ||
+        ts.isIfStatement(node) && child !== node.expression && !(branchTarget(node.thenStatement) && branchTarget(node.thenStatement) === branchTarget(node.elseStatement)) ||
         ts.isBinaryExpression(node) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken].includes(node.operatorToken.kind) && child === node.right));
     }
     visit(unit.ast);
@@ -260,7 +328,17 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
       const nested = screen.component && screens(screen.component).length > 0;
       const candidate = links.find(link => link.target === screen.name && link.params)?.params;
       const node: FlowNode = { id: nodeId, name: screen.name, kind: nested ? "navigator" : "screen", component: screen.component?.split("#").at(-1), definition: screen.component ? relative(root, screen.component) : undefined, file: screen.file, line: screen.line,
-        path: next, entry: entry && (!!groups.get(key)?.tabs || screen.name === (groups.get(key)?.initial ?? screens(key)[0]?.name)), urls: urls.get(screen.name), required: requirements.get(screen.name) ?? [], params: screen.params ?? (candidate ? Object.fromEntries((requirements.get(screen.name) ?? []).filter(name => candidate[name] !== undefined).map(name => [name, candidate[name]])) : undefined), status: "pending" };
+        path: next, entry: entry && (!!groups.get(key)?.tabs || screen.name === (groups.get(key)?.initial ?? screens(key)[0]?.name)), urls: urls.get(screen.name), required: requirements.get(screen.name) ?? [], params: screen.params, status: "pending" };
+      node.paramVariants = variants.get(screen.name);
+      // A required URL segment can distinguish edit/detail routes even when the
+      // component's shared TypeScript params declare that value optional.
+      const urlKeys = (node.urls ?? []).map(url => [...url.matchAll(/:([^/?]+)(?=\/|$)/g)].map(match => match[1]));
+      if (urlKeys.length) {
+        const common = urlKeys[0].filter(key => urlKeys.every(keys => keys.includes(key)));
+        node.required = [...new Set([...node.required, ...common])];
+        if (node.paramVariants) node.paramVariants = node.paramVariants.map(variant => ({ ...variant, required: [...new Set([...variant.required, ...common])] }));
+      }
+      if (!screen.params && candidate) node.params = Object.fromEntries(node.required.filter(name => candidate[name] !== undefined).map(name => [name, candidate[name]]));
       if (missingFlowParams(node).length) node.status = "needs-data";
       graph.nodes.push(node);
       if (parent) graph.edges.push({ from: parent, to: nodeId, kind: "contains" });
@@ -311,12 +389,17 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
     for (const owner of owners) owned.add(owner);
     for (const link of links) {
       if (!owners.has(link.owner)) continue;
-      const targets = graph.nodes.filter(target => target.name === link.target || target.urls?.includes(link.target));
-      for (const target of targets) {
+      const matches = graph.nodes.flatMap(target => {
+        const ranks = (target.urls ?? []).filter(url => sourceLinkMatches(url, link.target)).map(url => url.split('/').filter(part => part && !/^[:[(]/.test(part)).length);
+        return target.name === link.target ? [{ target, rank: 10000 }] : ranks.length ? [{ target, rank: Math.max(...ranks) }] : [];
+      });
+      const best = Math.max(-1, ...matches.map(match => match.rank));
+      for (const { target, rank } of matches) {
+        if (rank !== best) continue;
         if (node.id === target.id) continue;
-        const key = `${node.id}:${target.id}:${link.owner}:${link.via}`;
+        const key = `${node.id}:${target.id}:${link.owner}:${link.via}:${link.guarded}`;
         if (edges.has(key)) continue; edges.add(key);
-        graph.edges.push({ from: node.id, to: target.id, kind: "navigation", owner: link.owner.split("#").at(-1), via: link.via, guarded: link.guarded });
+        graph.edges.push({ from: node.id, to: target.id, kind: "navigation", owner: link.owner.split("#").at(-1), via: link.via, guarded: link.guarded, file: link.file, line: link.line });
       }
     }
   }
