@@ -38,10 +38,11 @@ try {
   const serverConfig = mcp.mcpServers["mobile-dev"];
   assert.equal(serverConfig.command, "/bin/sh");
   assert.deepEqual(serverConfig.args, ["./scripts/launch-mcp.sh", "./dist/server.mjs"]);
-  assert.equal(serverConfig.cwd, "${PLUGIN_ROOT}");
+  assert.equal(serverConfig.cwd, "./");
   assert.ok(serverConfig.env_vars.includes("SHELL"));
   assert.ok(serverConfig.env_vars.includes("MOBILE_DEV_TELEMETRY"));
-  const serverCwd = plugin;
+  const serverCwd = resolve(plugin, serverConfig.cwd);
+  await access(serverCwd);
   // Give the copied package a configured shell with the test runtime available.
   // The MCP environment itself still has no Node on PATH.
   const shell = await createLaunchShell(temporary, process.execPath);

@@ -28,7 +28,7 @@ async function fixture(t: TestContext) {
   await chmod(`${plugin}/dist/server.mjs`, 0o755);
   await writeFile(`${plugin}/dist/telemetry-environment.json`, '{"environment":"release"}');
   await writeFile(`${plugin}/dist/app.html`, '<meta name="mobile-dev-environment" content="release">');
-  await writeFile(`${plugin}/.mcp.json`, '{"mcpServers":{"mobile-dev":{"command":"/bin/sh","args":["./scripts/launch-mcp.sh","./dist/server.mjs"],"cwd":"${PLUGIN_ROOT}","env_vars":["SHELL"]}}}');
+  await writeFile(`${plugin}/.mcp.json`, '{"mcpServers":{"mobile-dev":{"command":"/bin/sh","args":["./scripts/launch-mcp.sh","./dist/server.mjs"],"cwd":"./","env_vars":["SHELL"]}}}');
   await mkdir(`${plugin}/.codex-plugin`, { recursive: true });
   async function version(value: string) {
     const manifest = {
