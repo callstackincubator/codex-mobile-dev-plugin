@@ -125,20 +125,26 @@ That file is also listed in `.worktreeinclude` for local worktrees. Use the orga
 ### App Flow
 
 App Flow uses the `app-flow` surface in UI and server context. The UI records
-`ui.app_flow.layout`, `ui.app_flow.update`, and `ui.app_flow.discovery` through bounded timing windows.
+`ui.app_flow.layout`, `ui.app_flow.viewport`, `ui.app_flow.update`, and `ui.app_flow.discovery` through bounded timing windows.
 `app_flow.discovery` measures server setup discovery in milliseconds. It includes
 reading host roots and probing local Metro servers, with no paths, ports, process
 IDs, or app identifiers in its attributes. Cancelled or hidden UI discovery does
 not add a UI timing.
+`ui.app_flow.visible_nodes` records the number of cards mounted near the viewport.
 Hidden tabs stop polling, and responses from an earlier surface do not add timings
 to the current one. `mobile_read_app_flow` is excluded from frequent-tool traces.
 
 Capture attempts use a bounded timing window and report
 `app_flow.capture.mean`, `.p95`, and `.max` in milliseconds. Each run reports `app_flow.scan` and `app_flow.run` in milliseconds and gauges for
 `app_flow.routes` and `app_flow.captured`. Run duration measures elapsed time through
-the end of capture without the former 30-second clamp. These measure plugin work and coverage,
-not device rendering performance. Shared previews count as route coverage, not
-separate screenshots. Attributes contain only the surface and device platform.
+capture, navigation restoration, and pending image writes, with no total time cap.
+Since 0.1.113, route and capture counts describe unique reachable screens; repeated
+navigator registrations no longer inflate either count. Capture timing includes
+route readiness, one native preview, and route verification. Unchanged native frames
+may require another read. Failed attempts include recovery time. Empty native bodies
+are rejected before saving; frame validation adds no image data to telemetry.
+These measure plugin work and coverage, not device rendering performance.
+Attributes contain only the surface and device platform.
 Route names, params, source paths, app data, and screenshots stay out of telemetry.
 Errors use fixed descriptions. Existing initialization, identity, sampling,
 scrubbing, release metadata, and opt-out remain in use.

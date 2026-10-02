@@ -95,7 +95,7 @@ test("capture loop acknowledges screenshots, keeps missing data, and restores na
   const result = runs.read(run.id);
   assert.equal(result.nodes[0].status,'captured');
   assert.equal(result.nodes[1].status,'needs-data');
-  assert.deepEqual(events,['inspect','open','screenshot','screenshot','verify','restore']);
+  assert.deepEqual(events,['inspect','open','screenshot','verify','restore']);
   assert.equal((await runs.image(run.id,'first')).toString(),'fixture');
 });
 
@@ -132,10 +132,10 @@ test("a redirect or changing frame cannot count as a captured target", async t =
   })});
   const run=runs.start(start);await waitForRun(runs,run.id);await runs.close();
   assert.equal(runs.read(run.id).nodes[0].status,'timed-out');
-  assert.equal(screenshotCount,4);
+  assert.equal(screenshotCount,2);
 });
 
-test("shared screens reuse a labelled preview and keep every navigator occurrence", async t => {
+test("shared screens collapse into one preview with alternate navigation paths", async t => {
   const directory=await fixture(t,{}); let shots=0;
   const repeated=graph();
   repeated.nodes=[
@@ -151,11 +151,9 @@ test("shared screens reuse a labelled preview and keep every navigator occurrenc
   })});
   const run=runs.start(start);await waitForRun(runs,run.id);await runs.close();
   const result=runs.read(run.id);
-  assert.equal(shots,2);
-  assert.equal(result.nodes.length,2);
-  assert.equal(result.nodes[1].sharedFrom,'first');
-  assert.equal(result.nodes[1].image,result.nodes[0].image);
-  assert.match(result.nodes[1].reason??'',/not captured separately/);
+  assert.equal(shots,1);
+  assert.equal(result.nodes.length,1);
+  assert.deepEqual(result.nodes[0].paths,[['TabA','Profile'],['TabB','Profile']]);
 });
 
 test("Stop cancels connection setup and closes a late connection",async t=>{
@@ -169,10 +167,10 @@ test("Stop cancels connection setup and closes a late connection",async t=>{
   await delay(110);assert.equal(closed,true);await runs.close();
 });
 
-test("changing native pixels time out instead of producing a transition screenshot",async t=>{
+test("a loading screen at verification is retried and never labelled captured",async t=>{
   const directory=await fixture(t,{});let frame=0;
   const runs=new AppFlowRuns({directory,scan:async()=>graph(),connect:async()=>({
-    runtime:{async invoke(command){return command.type==='inspect'?{available:true}:{ready:true,active:['Home'],name:'Home',signature:'same-layout'}},async close(){}},
+    runtime:{async invoke(command){return command.type==='inspect'?{available:true}:{ready:true,active:['Home'],name:'Home',found:true,loading:command.type==='verify',signature:'same-layout'}},async close(){}},
     async screenshot(){return Buffer.from(String(frame++))}
   })});
   const run=runs.start(start);await waitForRun(runs,run.id);await runs.close();
@@ -202,4 +200,57 @@ test("capture continues past 30 seconds and reports full elapsed time", async t 
   assert.ok(result.nodes.every(node => node.status === 'captured'));
   assert.equal(result.finishedAt! - result.startedAt, 62_000);
   assert.equal('deadline' in result, false);
+});
+
+test('scanner finds URL links, keeps callback ownership, and does not treat stack type names as tabs', async t => {
+  const root = await fixture(t, {
+    'App.tsx': `const Stack=createNativeStackNavigator<HomeTabParams>();
+      function App(){return <Stack.Navigator initialRouteName="Home"><Stack.Screen name="Home" component={Home}/><Stack.Screen name="Settings" component={Settings}/><Stack.Screen name="Account" component={Account}/><Stack.Screen name="TestOnly" component={TestOnly}/></Stack.Navigator>}
+      const routes={Settings:'/settings',Account:'/settings/account'};
+      function Home(){const open=useCallback(()=>navigation.navigate('Settings'),[]);return <Button onPress={open}/>}
+      function Settings(){return <Link to="/settings/account"/>}`,
+    'Test.e2e.tsx': `function Home(){return <Button onPress={()=>navigate('TestOnly')}/>}`,
+  });
+  const result = await scanAppFlow(root,'ios');
+  assert.deepEqual(result.nodes.filter(n=>n.kind==='screen'&&n.entry).map(n=>n.name),['Home']);
+  const names = new Map(result.nodes.map(n=>[n.id,n.name]));
+  assert.ok(result.edges.some(e=>names.get(e.from)==='Home'&&names.get(e.to)==='Settings'&&e.owner==='Home'));
+  assert.ok(result.edges.some(e=>names.get(e.from)==='Settings'&&names.get(e.to)==='Account'));
+  assert.equal(result.edges.some(e=>e.kind==='navigation'&&names.get(e.to)==='TestOnly'),false);
+});
+
+test('failed screens recover and the remaining queue continues; unchanged revisions omit graph copies', async t => {
+  const directory=await fixture(t,{}), events:string[]=[];
+  const routes=graph(); routes.nodes[1].required=[]; routes.nodes[1].status='pending';
+  const runs=new AppFlowRuns({directory,scan:async()=>routes,connect:async()=>({runtime:{async invoke(command){
+    events.push(String(command.type));
+    if(command.type==='inspect')return {available:true};
+    if(command.type==='open'&&(command.path as string[])[0]==='Home')return {ready:false,reason:'Loading'};
+    return {ready:true,active:['Profile'],name:'Profile',found:true};
+  },async close(){events.push('restore')}},async screenshot(){return Buffer.from('png')}})});
+  const first=runs.start(start);await waitForRun(runs,first.id);await runs.close();
+  const result=runs.read(first.id);
+  assert.equal(result.nodes[0].status,'timed-out');
+  assert.equal(result.nodes[1].status,'captured');
+  assert.equal(events.filter(e=>e==='recover').length,1);
+  assert.equal(result.phase,'complete');
+  assert.equal(events.at(-1),'restore');
+  assert.equal(runs.readUpdate(first.id,result.revision),undefined);
+  assert.equal(runs.readUpdate(first.id,result.revision-1)?.id,first.id);
+});
+
+test('a stale native screenshot cannot be assigned to a different rendered screen', async t => {
+  const directory=await fixture(t,{}), routes=graph();
+  routes.nodes[1].required=[];routes.nodes[1].status='pending';
+  let current='Home';
+  const runs=new AppFlowRuns({directory,scan:async()=>routes,connect:async()=>({runtime:{async invoke(command){
+    if(command.type==='inspect')return {available:true};
+    if(command.type==='open')current=(command.path as string[])[0];
+    return {ready:true,active:[current],name:current,found:true,signature:current};
+  },async close(){}},async screenshot(){return Buffer.from('unchanged-native-frame')}})});
+  const first=runs.start(start);await waitForRun(runs,first.id);await runs.close();
+  const result=runs.read(first.id);
+  assert.equal(result.nodes[0].status,'captured');
+  assert.equal(result.nodes[1].status,'timed-out');
+  assert.match(result.nodes[1].reason??'',/previous screen/);
 });

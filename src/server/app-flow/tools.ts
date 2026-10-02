@@ -37,6 +37,7 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
       if (target.deviceId !== input.deviceId && (!target.deviceName || normalize(target.deviceName) !== normalize(device.name))) throw new Error("The Metro app does not match the selected device. Select its device before mapping.");
       signal.throwIfAborted();
       const screenshotUrl = input.platform === "ios" ? new URL(`/simulators/${input.deviceId}/screenshot.png`, baguette.baseUrl) : new URL("/api/screenshot", (await android.start(input.deviceId)).url);
+      if (input.platform === "ios") screenshotUrl.searchParams.set("scale", "3");
       signal.throwIfAborted();
       const runtime = new FlowConnection(target.webSocketDebuggerUrl);
       const stop = () => { void runtime.close(); };
@@ -103,8 +104,8 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
   }));
   registerAppTool(server, "mobile_read_app_flow", {
     title: "Read App Flow progress", description: "Read the route map and capture progress. Screenshots are local mobile-flow resources. Poll at most twice per second.",
-    inputSchema: { runId: z.uuid() }, annotations: read, _meta: { ui: { visibility: ["app", "model"] } },
-  }, safe(async ({ runId }) => ({ run: runs.read(runId) })));
+    inputSchema: { runId: z.uuid(), revision: z.number().int().nonnegative().optional() }, annotations: read, _meta: { ui: { visibility: ["app", "model"] } },
+  }, safe(async ({ runId, revision }) => ({ run: runs.readUpdate(runId, revision) })));
   server.registerResource("app-flow-image", new ResourceTemplate("mobile-flow://{runId}/{nodeId}", { list: undefined }), { mimeType: "image/png" }, async (uri, variables) => ({
     contents: [{ uri: uri.href, mimeType: "image/png", blob: (await runs.image(String(variables.runId), String(variables.nodeId))).toString("base64") }],
   }));

@@ -9,11 +9,15 @@ import { FlowConnection } from '../src/server/app-flow/connection.ts';
 function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, clearTimeout}) {
   let state:any = {index:0,routeNames:['Home','Profile'],routes:[{name:'Home'}]};
   const original = state;
-  const navigation = { getState:()=>state, isFocused:()=>true, dispatch(action:any){state={...action.payload,routeNames:['Home','Profile']};if(redirect)state.routes=[{name:'Login'}];sync();} };
+  const navigation = { getState:()=>state, isFocused:()=>true, dispatch(action:any){
+    if(action.type==='NAVIGATE') state={...state,index:state.routes.length,routes:[...state.routes,{key:`route-${state.routes.length}`,name:action.payload.name,params:action.payload.params}]};
+    else state={...action.payload,routeNames:['Home','Profile']};
+    if(redirect){state.routes=[{name:'Login'}];state.index=0;}sync();
+  } };
   const fiber:any = { memoizedProps:{ navigation, route:state.routes[0] }, tag:0 };
   const native:any = {tag:5,type:'View',memoizedProps:{children:'screen'},stateNode:{getBoundingClientRect:()=>({x:0,y:0,width:100,height:200})},return:fiber};
   fiber.child=native;
-  function sync(){fiber.memoizedProps.route=state.routes[0]}
+  function sync(){fiber.memoizedProps.route=state.routes[state.index ?? 0]}
   const context=vm.createContext({...timers,Date,Map,Set,JSON,Math,Object,Array,String,__REACT_DEVTOOLS_GLOBAL_HOOK__:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer'}]]),getFiberRoots:()=>[{current:fiber}]}});
   vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000)`,context);
   const invoke=(command:any)=>new Promise<any>(resolve=>context.flow.invoke(command,resolve));
@@ -29,7 +33,7 @@ test('runtime finds mounted navigators, opens a target, and restores original st
   const result=await app.invoke({type:'open',path:['Profile'],params:{id:'actual'},timeoutMs:300});
   assert.equal(result.ready,true);
   assert.equal(result.active[0],'Profile');
-  assert.equal(app.getState().routes[0].params.id,'actual');
+  assert.equal(app.getState().routes[app.getState().index].params.id,'actual');
   await app.invoke({type:'restore'});
   assert.equal(app.getState().routes[0].name,'Home');
   assert.equal(app.context.flow,undefined);
@@ -103,4 +107,13 @@ test('runtime lease renews beyond 30 seconds and restores after heartbeats stop'
   assert.equal(app.context.flow, undefined);
   assert.equal(app.getState().routes[0].name, 'Home');
   assert.equal(timers.size, 0);
+});
+
+test('recovery restores the starting stack without ending the runtime session', async t => {
+  const app=runtime(t);
+  await app.invoke({type:'open',path:['Profile'],params:{id:'real'},timeoutMs:300});
+  assert.deepEqual(Array.from(app.getState().routes,(r:any)=>r.name),['Home','Profile']);
+  await app.invoke({type:'recover'});
+  assert.equal(app.getState().routes[0].name,'Home');
+  assert.equal((await app.invoke({type:'heartbeat'})).alive,true);
 });

@@ -4,13 +4,15 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import * as Sentry from "@sentry/node";
-import { flowRunning, missingFlowParams, type FlowGraph, type FlowNode, type FlowParams, type FlowResolution, type FlowRun } from "../../shared/app-flow.ts";
+import { flowRunning, missingFlowParams, type FlowParams, type FlowResolution, type FlowRun } from "../../shared/app-flow.ts";
+import { blankFlowFrame } from "./frame.ts";
+import { FlowReachability, type FlowEvidence } from "./reachability.ts";
 import type { scanAppFlow } from "./scan.ts";
 import { MeasurementWindow } from "../../shared/telemetry.ts";
 import { captureServerError } from "../telemetry.ts";
 
 export type FlowStart = { projectRoot: string; platform: "ios" | "android"; deviceId: string; targetId: string; metroUrl: string; useAi: boolean };
-export type RuntimeInfo = { available: boolean; registrations?: { name: string; path: string[] }[]; candidates?: { name: string; params: FlowParams }[]; data?: unknown[] };
+export type RuntimeInfo = FlowEvidence & { available: boolean; data?: unknown[] };
 export type FlowRuntime = { invoke(command: Record<string, unknown>, timeout?: number): Promise<any>; close(): Promise<void> };
 export type FlowBackend = { runtime: FlowRuntime; screenshot(signal: AbortSignal): Promise<Buffer> };
 export type FlowDependencies = {
@@ -52,6 +54,7 @@ export class AppFlowRuns {
     return structuredClone(run);
   }
   read(id: string): FlowRun { return structuredClone(this.get(id).run); }
+  readUpdate(id: string, revision?: number) { const run = this.get(id).run; return run.revision === revision ? undefined : structuredClone(run); }
   private get(id: string) { const session = this.sessions.get(id); if (!session) throw new Error("This App Flow run is no longer in memory. Start a new map."); return session; }
   stop(id: string) { const active = this.get(id); if (flowRunning(active.run)) { active.run.phase = "stopped"; active.abort.abort(); active.run.revision++; } return this.read(id); }
   context(id: string) {
@@ -91,7 +94,8 @@ export class AppFlowRuns {
     const { run, input, abort } = active;
     const signal = abort.signal;
     let backend: FlowBackend | undefined, ai: Promise<void> | undefined;
-    const aliases: { node: FlowNode; original: FlowNode }[] = [];
+    let discovery: FlowReachability | undefined;
+    let previousFrame: { bytes: Buffer; signature: string } | undefined;
     const captureTimings = new MeasurementWindow();
     const attributes = { surface: "app-flow", device_platform: input.platform };
     try {
@@ -109,63 +113,85 @@ export class AppFlowRuns {
       if (signal.aborted) { await backend.runtime.close(); signal.throwIfAborted(); }
       active.info = await abortable(backend.runtime.invoke({ type: "inspect" }, 2000), signal);
       if (!active.info?.available) throw new Error("No mounted React Navigation container found. Open the app in a development build and log in first.");
-      this.mergeRuntime(active);
+      discovery = new FlowReachability(run, active.info);
       run.phase = "capturing"; run.revision++;
       await mkdir(join(this.directory, run.id), { recursive: true, mode: 0o700 });
-      const unresolved = run.nodes.some(node => node.status === "needs-data");
-      if (input.useAi && unresolved && this.dependencies.resolve) {
-        run.ai = "resolving";
-        ai = abortable(this.dependencies.resolve(this.context(run.id), signal), signal).then(resolutions => {
-          if (!signal.aborted) { this.resolve(run.id, resolutions); run.ai = "done"; run.revision++; }
-        }).catch(() => { if (!signal.aborted) { run.ai = "unavailable"; run.revision++; } });
-      } else run.ai = input.useAi && unresolved ? "unavailable" : "off";
+      run.ai = input.useAi ? "waiting" : "off";
       const attempts = new Map<string, number>();
-      const captured = new Map<string, FlowNode>();
+
       while (!signal.aborted) {
         const node = run.nodes.find(item => item.kind === "screen" && item.status === "pending")
           ?? run.nodes.find(item => item.kind === "screen" && item.status === "timed-out" && (attempts.get(item.id) ?? 0) < 2);
         if (!node) {
+          if (run.ai === "waiting") {
+            const unresolved = run.nodes.some(node => node.status === "needs-data");
+            if (unresolved && this.dependencies.resolve) {
+              run.ai = "resolving";
+              ai = abortable(this.dependencies.resolve(this.context(run.id), signal), signal).then(resolutions => {
+                if (!signal.aborted) { this.resolve(run.id, resolutions); run.ai = "done"; run.revision++; }
+              }).catch(() => { if (!signal.aborted) { run.ai = "unavailable"; run.revision++; } });
+            } else run.ai = unresolved ? "unavailable" : "off";
+            run.revision++;
+          }
           if (run.ai === "resolving" || run.ai === "waiting") { await delay(50, undefined, { signal }); continue; }
           break;
         }
-        const fingerprint = JSON.stringify([node.definition ?? node.component, node.file, node.name, node.params]);
-        const duplicate = captured.get(fingerprint);
-        if (duplicate) { node.status = "capturing"; aliases.push({ node, original: duplicate }); run.revision++; continue; }
         const attempt = (attempts.get(node.id) ?? 0) + 1; attempts.set(node.id, attempt);
-        const timeoutMs = attempt === 1 ? 350 : 1000;
+        const timeoutMs = attempt === 1 ? 1000 : 2000;
         node.status = "capturing"; run.revision++;
         const started = performance.now();
         try {
-          const result = await abortable(backend.runtime.invoke({ type: "open", path: node.path, params: node.params, expo: node.component === "expo-router", timeoutMs }, timeoutMs + 150), signal);
+          const result = await abortable(backend.runtime.invoke({ type: "open", path: node.path, params: node.params, expo: node.component === "expo-router", timeoutMs }, timeoutMs + 500), signal);
           signal.throwIfAborted();
+          discovery.reveal(node, result);
           if (result.error) { node.status = "blocked"; node.reason = result.error; }
+          else if (result.redirected) {
+            node.status = "blocked"; node.reason = "This route redirects to another screen.";
+            discovery.reveal(node, { links: [{ screen: result.active.at(-1) }] });
+          }
           else if (!result.ready) { node.status = "timed-out"; node.reason = result.reason ?? "Screen did not settle in time."; }
           else {
             const captureSignal = AbortSignal.any([signal, AbortSignal.timeout(1200)]);
-            let bytes = await backend.screenshot(captureSignal), pixelsStable = false;
-            for (let sample = 0; sample < 4; sample++) {
-              await delay(32, undefined, { signal: captureSignal });
-              const next = await backend.screenshot(captureSignal);
-              pixelsStable = bytes.equals(next); bytes = next;
-              if (pixelsStable) break;
+            let bytes = await backend.screenshot(captureSignal);
+            if (previousFrame && result.signature !== previousFrame.signature && bytes.equals(previousFrame.bytes)) {
+              await delay(100, undefined, { signal: captureSignal });
+              bytes = await backend.screenshot(captureSignal);
+              if (bytes.equals(previousFrame.bytes)) throw new Error("Native frame did not change.");
+            }
+            if (blankFlowFrame(bytes)) {
+              // A committed React tree can precede the native frame during a transition.
+              // Retry in place instead of navigating away and repeating the entire route.
+              await delay(120, undefined, { signal: captureSignal });
+              bytes = await backend.screenshot(captureSignal);
+              if (blankFlowFrame(bytes)) throw new Error("Native screen is blank.");
             }
             signal.throwIfAborted();
-            if (!pixelsStable) { node.status = "timed-out"; node.reason = "Device frames were still changing."; node.captureMs = performance.now() - started; captureTimings.record(node.captureMs); run.revision++; continue; }
-            const verified = await backend.runtime.invoke({ type: "verify", name: result.name }, 400);
-            if (JSON.stringify(verified.active) !== JSON.stringify(result.active) || !verified.found || verified.loading || verified.signature !== result.signature) {
+            const verified = await backend.runtime.invoke({ type: "verify", name: result.name }, 1000);
+            if (JSON.stringify(verified.active) !== JSON.stringify(result.active) || !verified.found || verified.loading || verified.transitioning) {
               node.status = "timed-out"; node.reason = "The screen changed during capture.";
             } else {
+              discovery.reveal(node, verified);
               const file = `${node.id}.png`;
               // Disk writes do not hold up navigation. A screenshot remains labelled only after it saves.
               const writing = writeFile(join(this.directory, run.id, file), bytes, { mode: 0o600 }).then(() => {
-                node.image = `mobile-flow://${run.id}/${node.id}`; node.status = "captured"; node.reason = "Stable frame captured; content completeness is not verified."; run.revision++;
+                node.image = `mobile-flow://${run.id}/${node.id}`; node.status = "captured"; node.reason = "Focused screen captured; content completeness is not verified."; run.revision++;
               }).catch(() => { node.status = "blocked"; node.reason = "Could not save screenshot."; run.revision++; });
-              active.writing.push(writing); captured.set(fingerprint, node);
+              active.writing.push(writing);
+              previousFrame = { bytes, signature: result.signature };
             }
           }
         } catch (error) {
           if (signal.aborted) throw error;
-          node.status = "timed-out"; node.reason = "Capture or runtime acknowledgement timed out.";
+          node.status = "timed-out"; node.reason = error instanceof Error && error.message === "Native screen is blank." ? "The native screen is blank. It was not saved as a preview." : error instanceof Error && error.message === "Native frame did not change." ? "The device still shows the previous screen. Close any native overlay and try again." : "Capture or runtime acknowledgement timed out.";
+        }
+        if (node.status === "timed-out") {
+          const more = run.nodes.some(item => item.kind === "screen" && (item.status === "pending" || item.status === "timed-out" && (attempts.get(item.id) ?? 0) < 2));
+          // Final restoration belongs to close(); a last failed screen must not
+          // turn an otherwise finished map into a connection failure.
+          if (more) {
+            try { await backend.runtime.invoke({ type: "recover" }, 2500); }
+            catch { throw new Error("App Flow lost its connection to the app. The partial map was saved; reconnect and map again."); }
+          }
         }
         node.captureMs = performance.now() - started; captureTimings.record(node.captureMs); run.revision++;
       }
@@ -180,18 +206,16 @@ export class AppFlowRuns {
       if (flowRunning(run)) run.phase = "stopped";
       const finalPhase = run.phase;
       run.phase = "finishing";
-      run.finishedAt = Date.now();
+
       for (const node of run.nodes) if (node.kind === "screen" && ["pending", "capturing"].includes(node.status)) { node.status = "timed-out"; node.reason = "Run stopped."; }
       if (["waiting", "resolving"].includes(run.ai)) run.ai = "unavailable";
       run.revision++;
       await backend?.runtime.close().catch(() => {});
       await Promise.allSettled(active.writing);
-      for (const { node, original } of aliases) {
-        node.status = original.status; node.image = original.image; node.sharedFrom = original.id;
-        node.reason = original.image ? `Shared screen preview from ${original.path.join(" → ")}. This occurrence was not captured separately.` : original.reason;
-      }
+      discovery?.finish();
       run.revision++;
       await ai;
+      run.finishedAt = Date.now();
       run.phase = finalPhase; run.revision++;
       try { await mkdir(join(this.directory, run.id), { recursive: true, mode: 0o700 }); await writeFile(join(this.directory, run.id, "map.json"), JSON.stringify(run), { mode: 0o600 }); }
       catch { captureServerError(new Error("App Flow map could not be saved."), "app_flow.save"); }
@@ -203,24 +227,6 @@ export class AppFlowRuns {
         Sentry.metrics.gauge("app_flow.routes", run.nodes.filter(node => node.kind === "screen").length, { attributes });
         Sentry.metrics.gauge("app_flow.captured", run.nodes.filter(node => node.status === "captured").length, { attributes });
       }
-    }
-  }
-  private mergeRuntime(active: Active) {
-    const { run, info } = active;
-    const topRoutes = new Set(info?.registrations?.filter(route => route.path.length === 1).map(route => route.name));
-    for (const node of run.nodes) {
-      if (node.kind === "screen" && node.component !== "expo-router" && topRoutes.size && !topRoutes.has(node.path[0])) {
-        node.status = "blocked"; node.reason = "This route belongs to a navigator that is not active in this app build."; continue;
-      }
-      const candidate = info?.candidates?.find(item => item.name === node.name && !missingFlowParams({ required: node.required, params: item.params }).length);
-      if (candidate) { node.params = { ...node.params, ...candidate.params }; node.status = "pending"; }
-    }
-    for (const route of info?.registrations ?? []) {
-      if (run.nodes.some(node => JSON.stringify(node.path) === JSON.stringify(route.path))) continue;
-      const nodeId = `runtime-${run.nodes.length}`;
-      const parent = run.nodes.find(node => JSON.stringify(node.path) === JSON.stringify(route.path.slice(0, -1)));
-      run.nodes.push({ id: nodeId, name: route.name, path: route.path, kind: "screen", required: [], status: "pending" });
-      if (parent) run.edges.push({ from: parent.id, to: nodeId, kind: "contains" });
     }
   }
   async image(runId: string, nodeId: string) {

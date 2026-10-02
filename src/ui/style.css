@@ -147,8 +147,8 @@ html:not([data-theme="dark"]) :is(.log-row, .log-detail)[data-level="warn"] { --
 .app-flow-live::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: #4f9b83; }
 .app-flow-viewport { position: relative; min-height: 180px; flex: 1; overflow: auto; background-image: radial-gradient(var(--border) 1px, transparent 1px); background-size: 20px 20px; touch-action: pan-x pan-y; }
 .app-flow-canvas { position: relative; transform-origin: 0 0; }
-.app-flow-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
-.app-flow-edges path { fill: none; stroke: var(--muted-foreground); stroke-width: 1.5; opacity: .45; }
+.app-flow-edges { position: absolute; pointer-events: none; overflow: hidden; }
+.app-flow-edges > path { fill: none; stroke: var(--muted-foreground); stroke-width: 1.5; opacity: .45; }
 .app-flow-edges path[data-kind="navigation"] { stroke-dasharray: 5 5; opacity: .2; }
 .app-flow-node { position: absolute; width: 202px; display: flex; flex-direction: column; overflow: hidden; text-align: left; border: 1px solid var(--border); border-radius: 10px; background: var(--background); color: var(--foreground); box-shadow: 0 2px 8px #00000008; cursor: pointer; }
 .app-flow-node[data-selected="true"] { outline: 2px solid var(--ring); outline-offset: 2px; }

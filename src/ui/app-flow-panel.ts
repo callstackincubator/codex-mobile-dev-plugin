@@ -15,6 +15,7 @@ export class AppFlowPanel {
   private failedImages = new Set<string>();
   private controller = new AbortController();
   private imageBytes = 0;
+  private visibleImages = new Set<string>();
   private manualProject = false;
   private manualMetro = false;
   private manualTarget = false;
@@ -104,8 +105,7 @@ export class AppFlowPanel {
     this.update({ busy: true, error: "", message: "" });
     try {
       const result = await this.call("mobile_app_flow", { action: "start", options: { projectRoot, metroUrl, targetId, useAi, deviceId: device.udid, platform: device.platform ?? "ios" } });
-      for (const url of Object.values(this.state.images)) URL.revokeObjectURL(url);
-      this.failedImages.clear(); this.imageBytes = 0;
+      this.failedImages.clear(); this.visibleImages.clear(); this.imageBytes = 0;
       this.update({ run: result.run, images: {} });
       void this.poll();
     } catch (error) { this.failure(error); }
@@ -131,9 +131,9 @@ export class AppFlowPanel {
     clearTimeout(this.timer); this.polling = true;
     const runId = this.state.run.id, started = performance.now(), telemetryContext = getUiTelemetryAttributes();
     try {
-      const result = await this.call("mobile_read_app_flow", { runId });
+      const result = flowRunning(this.state.run) ? await this.call("mobile_read_app_flow", { runId, revision: this.state.run.revision }) : {};
       if (this.state.run?.id !== runId) return;
-      this.update({ run: result.run });
+      if (result.run) this.update({ run: result.run });
       if (this.state.open && getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.app_flow.update", performance.now() - started);
       await this.loadImages();
     } catch (error) { this.failure(error); }
@@ -145,28 +145,32 @@ export class AppFlowPanel {
   }
   private async loadImages() {
     const runId = this.state.run?.id;
-    const uris = [...new Set(this.state.run?.nodes.flatMap(node => node.image ? [node.image] : []))].filter(uri => !this.state.images[uri] && !this.loading.has(uri) && !this.failedImages.has(uri)).slice(0, 4);
-    await Promise.allSettled(uris.map(async uri => {
+    const available = new Set(this.state.run?.nodes.flatMap(node => node.image ? [node.image] : []));
+    const uris = [...new Set([...this.visibleImages, ...available])].filter(uri => available.has(uri) && !this.state.images[uri] && !this.loading.has(uri) && !this.failedImages.has(uri)).slice(0, 4);
+    const images: Record<string, string> = {};
+    await Promise.allSettled([...new Set(uris)].map(async uri => {
       this.loading.add(uri);
       try {
         const result = await this.app.readServerResource({ uri }, { signal: this.controller.signal, timeout: 5000 });
         const content = result.contents.find(item => "blob" in item);
         if (!content || !("blob" in content) || typeof content.blob !== "string") throw new Error("Missing screenshot.");
         if (this.state.run?.id !== runId || this.disposed) return;
-        const bytes = Uint8Array.from(atob(content.blob), char => char.charCodeAt(0));
-        if (this.imageBytes + bytes.length > 128 * 1024 * 1024) { this.failedImages.add(uri); return; }
-        this.imageBytes += bytes.length;
-        const url = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
-        this.update({ images: { ...this.state.images, [uri]: url } });
+        // MCP app frames permit data images. Blob URLs belong to a different origin
+        // in some hosts; using the resource's base64 also avoids a main-thread copy.
+        const bytes = Math.ceil(content.blob.length * 3 / 4);
+        if (this.imageBytes + bytes > 128 * 1024 * 1024) { this.failedImages.add(uri); return; }
+        this.imageBytes += bytes;
+        images[uri] = `data:image/png;base64,${content.blob}`;
       } catch { this.failedImages.add(uri); }
       finally { this.loading.delete(uri); }
     }));
+    if (Object.keys(images).length && this.state.run?.id === runId) this.update({ images: { ...this.state.images, ...images } });
   }
+  visible(uris: string[]) { this.visibleImages = new Set(uris); }
   private failure(error: unknown) { if (this.disposed) return; this.update({ error: error instanceof Error ? error.message : "App Flow failed." }); captureUiError(new Error("App Flow UI operation failed."), "app_flow.ui"); }
   dispose() {
     this.cancelSetup(); this.unsubscribeDevice(); this.disposed = true; this.controller.abort(); clearTimeout(this.timer); document.removeEventListener("visibilitychange", this.visibility);
     if (flowRunning(this.state.run)) void this.app.callServerTool({ name: "mobile_app_flow", arguments: { action: "stop", runId: this.state.run!.id } }, { timeout: 2000 }).catch(() => {});
-    for (const url of Object.values(this.state.images)) URL.revokeObjectURL(url);
     this.listeners.clear();
   }
 }

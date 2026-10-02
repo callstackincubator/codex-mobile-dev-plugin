@@ -39,3 +39,14 @@ test('refresh preserves a chosen target at the same server', async t => {
   reply = {...result,targetId:''}; await api.discover();
   assert.equal(api.settings.target,'target');
 });
+
+test('screenshots use host-compatible data URLs and publish one update per batch', async t => {
+  const api=panel(t,async()=>({structuredContent:{}}));
+  api.state={...api.state,run:{id:'run',phase:'complete',revision:1,nodes:[{image:'mobile-flow://run/a'},{image:'mobile-flow://run/b'}]},images:{}};
+  api.app.readServerResource=async()=>({contents:[{mimeType:'image/png',blob:'iVBORw0KGgo='}]});
+  let updates=0;const stop=api.subscribe(()=>updates++);
+  await api.loadImages();stop();
+  assert.equal(updates,1);
+  assert.equal(api.getSnapshot().images['mobile-flow://run/a'],'data:image/png;base64,iVBORw0KGgo=');
+  assert.equal(api.getSnapshot().images['mobile-flow://run/b'],'data:image/png;base64,iVBORw0KGgo=');
+});

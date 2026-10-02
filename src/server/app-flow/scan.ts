@@ -9,7 +9,7 @@ const ignored = new Set(["node_modules", ".git", ".expo", ".next", "dist", "buil
 const extensions = [".tsx", ".ts", ".jsx", ".js"];
 const id = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 20);
 type Screen = { name: string; component?: string; params?: FlowParams; file: string; line: number };
-type Group = { key: string; name: string; file: string; screens: Screen[]; helpers: string[] };
+type Group = { key: string; name: string; file: string; screens: Screen[]; helpers: string[]; initial?: string; tabs?: boolean };
 type Unit = { file: string; ast: ts.SourceFile; imports: Map<string, { module: string; name: string }>; constants: Map<string, ts.Expression> };
 
 function unwrap(node: ts.Node): ts.Node {
@@ -67,7 +67,7 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
       if (entry.isSymbolicLink() || entry.name.startsWith(".") || ignored.has(entry.name)) continue;
       const path = join(directory, entry.name);
       if (entry.isDirectory()) await walk(path, depth + 1);
-      else if (/\.[jt]sx?$/.test(entry.name) && !/\.(test|spec|d)\.[jt]sx?$/.test(entry.name)
+      else if (/\.[jt]sx?$/.test(entry.name) && !/\.(test|spec|e2e|stories|d)\.[jt]sx?$/.test(entry.name)
         && !entry.name.includes(".web.") && !entry.name.includes(platform === "ios" ? ".android." : ".ios.")) files.push(path);
     }
   }
@@ -147,14 +147,41 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
     }; visit(type);
   }
   const groups = new Map<string, Group>();
-  const links: { owner: string; target: string; params?: FlowParams }[] = [];
+  const dependencies = new Map<string, Set<string>>();
+  const links: { owner: string; target: string; params?: FlowParams; via: "link" | "call"; guarded: boolean }[] = [];
+  const urls = new Map<string, string[]>();
   for (const unit of units.values()) {
     signal?.throwIfAborted();
-    function visit(node: ts.Node, owner = `${unit.file}#default`) {
-      if (ts.isFunctionDeclaration(node) && node.name) owner = `${unit.file}#${node.modifiers?.some(mod => mod.kind === ts.SyntaxKind.DefaultKeyword) ? "default" : node.name.text}`;
-      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) owner = `${unit.file}#${node.name.text}`;
+    function visit(node: ts.Node, owner = `${unit.file}#default`, inFunction = false, guarded = false) {
+      if (!inFunction && ts.isFunctionDeclaration(node) && node.name) owner = `${unit.file}#${node.modifiers?.some(mod => mod.kind === ts.SyntaxKind.DefaultKeyword) ? "default" : node.name.text}`;
+      if (!inFunction && ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer) || ts.isCallExpression(node.initializer) && node.initializer.arguments.some(arg => ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)))) owner = `${unit.file}#${node.name.text}`;
       const group = () => { let value = groups.get(owner); if (!value) { value = { key: owner, name: owner.split("#").at(-1)!, file: unit.file, screens: [], helpers: [] }; groups.set(owner, value); } return value; };
+      const depend = (name: string) => {
+        const list = dependencies.get(owner) ?? new Set<string>(); list.add(symbol(unit, name)); dependencies.set(owner, list);
+      };
+      const link = (target: unknown, params: unknown, via: "link" | "call") => {
+        if (target && typeof target === "object") {
+          const value = target as FlowParams; params = value.params; target = value.screen ?? value.name ?? value.pathname;
+        }
+        if (typeof target === "string" && !/^[a-z]+:/i.test(target)) links.push({ owner, target, via, guarded,
+          ...(params && typeof params === "object" && !Array.isArray(params) ? { params: params as FlowParams } : {}) });
+      };
+      if (ts.isPropertyAssignment(node) && propName(node.name)) {
+        let value = literal(node.initializer, unit.constants);
+        if (value && typeof value === "object" && !Array.isArray(value)) value = (value as FlowParams).path;
+        const paths = (Array.isArray(value) ? value : [value]).filter((path): path is string => typeof path === "string" && !/^[a-z]+:/i.test(path));
+        if (paths.length) urls.set(propName(node.name)!, paths.map(path => `/${path.replace(/^\//, "")}`));
+      }
       if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {
+        const tag = node.tagName.getText();
+        if (!/\.(Screen|Navigator|Group)$/.test(tag)) depend(tag.split(".")[0]);
+        if (/\.Navigator$/.test(tag)) {
+          const value = literal(attr(node, "initialRouteName"), unit.constants);
+          if (typeof value === "string") group().initial = value;
+          const creator = unit.constants.get(tag.split(".")[0])?.getText() ?? tag;
+          group().tabs = /create\w*(Tab|Drawer)\w*Navigator/.test(creator.split("<")[0].split("(")[0]);
+        }
+        for (const name of ["href", "to"]) link(literal(attr(node, name), unit.constants), undefined, "link");
         if (/\.Screen$/.test(node.tagName.getText())) {
           const name = literal(attr(node, "name"), unit.constants);
           if (typeof name === "string") {
@@ -169,14 +196,17 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
         }
       }
       if (ts.isCallExpression(node)) {
-        if (ts.isIdentifier(node.expression)) group().helpers.push(symbol(unit, node.expression.text));
+        if (ts.isIdentifier(node.expression)) { group().helpers.push(symbol(unit, node.expression.text)); depend(node.expression.text); }
         const method = ts.isPropertyAccessExpression(node.expression) ? node.expression.name.text : ts.isIdentifier(node.expression) ? node.expression.text : "";
         if (["navigate", "push", "replace"].includes(method)) {
           const target = literal(node.arguments[0], unit.constants), params = literal(node.arguments[1], unit.constants);
-          if (typeof target === "string") links.push({ owner, target, ...(params && typeof params === "object" && !Array.isArray(params) ? { params: params as FlowParams } : {}) });
+          link(target, params, "call");
         }
       }
-      ts.forEachChild(node, child => visit(child, owner));
+      ts.forEachChild(node, child => visit(child, owner, inFunction || ts.isFunctionLike(node), guarded ||
+        ts.isConditionalExpression(node) && child !== node.condition ||
+        ts.isIfStatement(node) && child !== node.expression ||
+        ts.isBinaryExpression(node) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken].includes(node.operatorToken.kind) && child === node.right));
     }
     visit(unit.ast);
     const staticConfig = (node: ts.Node) => {
@@ -185,7 +215,7 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
         const creator = ts.isIdentifier(call.expression) ? unit.imports.get(call.expression.text)?.name ?? call.expression.text : call.expression.getText();
         if (/create.*Navigator$/.test(creator) && call.arguments[0] && ts.isObjectLiteralExpression(call.arguments[0])) {
           const key = `${unit.file}#${node.name.text}`;
-          const group: Group = { key, name: node.name.text, file: unit.file, screens: [], helpers: [] };
+          const group: Group = { key, name: node.name.text, file: unit.file, screens: [], helpers: [], tabs: /Tab|Drawer/.test(creator) };
           const property = (object: ts.ObjectLiteralExpression, name: string) => object.properties.find(item => ts.isPropertyAssignment(item) && propName(item.name) === name) as ts.PropertyAssignment | undefined;
           const collect = (config: ts.ObjectLiteralExpression) => {
             const declarations = property(config, "screens")?.initializer;
@@ -202,6 +232,7 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
             const nested = property(config, "groups")?.initializer;
             if (nested && ts.isObjectLiteralExpression(nested)) for (const prop of nested.properties) if (ts.isPropertyAssignment(prop) && ts.isObjectLiteralExpression(prop.initializer)) collect(prop.initializer);
           };
+          const initial = literal(property(call.arguments[0], "initialRouteName")?.initializer, unit.constants); if (typeof initial === "string") group.initial = initial;
           collect(call.arguments[0]); if (group.screens.length) groups.set(key, group);
         }
       }
@@ -219,7 +250,7 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
   const helperKeys = new Set([...groups.values()].flatMap(group => group.helpers.filter(key => templates.has(key))));
   const componentKeys = new Set([...templates.values()].flatMap(group => group.screens.flatMap(screen => screen.component ? [screen.component] : [])));
   const graph: FlowGraph = { nodes: [], edges: [], warnings, files: units.size, scanMs: 0 };
-  function expand(key: string, path: string[], parent: string | undefined, seen: Set<string>) {
+  function expand(key: string, path: string[], parent: string | undefined, seen: Set<string>, entry = true) {
     if (seen.has(key) || path.length > 12 || graph.nodes.length >= 1500) return;
     seen = new Set(seen).add(key);
     const names = new Set<string>();
@@ -229,11 +260,11 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
       const nested = screen.component && screens(screen.component).length > 0;
       const candidate = links.find(link => link.target === screen.name && link.params)?.params;
       const node: FlowNode = { id: nodeId, name: screen.name, kind: nested ? "navigator" : "screen", component: screen.component?.split("#").at(-1), definition: screen.component ? relative(root, screen.component) : undefined, file: screen.file, line: screen.line,
-        path: next, required: requirements.get(screen.name) ?? [], params: screen.params ?? candidate, status: "pending" };
+        path: next, entry: entry && (!!groups.get(key)?.tabs || screen.name === (groups.get(key)?.initial ?? screens(key)[0]?.name)), urls: urls.get(screen.name), required: requirements.get(screen.name) ?? [], params: screen.params ?? (candidate ? Object.fromEntries((requirements.get(screen.name) ?? []).filter(name => candidate[name] !== undefined).map(name => [name, candidate[name]])) : undefined), status: "pending" };
       if (missingFlowParams(node).length) node.status = "needs-data";
       graph.nodes.push(node);
       if (parent) graph.edges.push({ from: parent, to: nodeId, kind: "contains" });
-      if (nested) expand(screen.component!, next, nodeId, seen);
+      if (nested) expand(screen.component!, next, nodeId, seen, !!node.entry);
     }
   }
   for (const [key, group] of templates) if (!helperKeys.has(key) && !componentKeys.has(key)) {
@@ -261,15 +292,35 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
       const nodeId = id(`expo:${name}`);
       if (graph.nodes.some(node => node.id === nodeId)) continue;
       const required = [...name.matchAll(/\[(?:\.\.\.)?([^\]]+)\]/g)].map(match => match[1]);
-      graph.nodes.push({ id: nodeId, name: route, component: "expo-router", file: relative(root, file), line: 1, path: [route], required, status: required.length ? "needs-data" : "pending" });
+      graph.nodes.push({ id: nodeId, name: route, component: "expo-router", definition: relative(root, file) + "#default", urls: [route], entry: /(^|\/)index$/.test(name), file: relative(root, file), line: 1, path: [route], required, status: required.length ? "needs-data" : "pending" });
       graph.edges.push({ from: ensureLayout(directory), to: nodeId, kind: "contains" });
     }
   }
-  for (const link of links) {
-    const sources = graph.nodes.filter(node => node.definition === relative(root, link.owner));
-    const targets = graph.nodes.filter(node => node.name === link.target);
-    for (const from of sources) for (const to of targets) if (from.id !== to.id && graph.edges.length < 5000) graph.edges.push({ from: from.id, to: to.id, kind: "navigation" });
+  const definitions = new Set(graph.nodes.flatMap(node => node.definition ? [resolve(root, node.definition)] : []));
+  const closure = (key: string, seen = new Set<string>()): Set<string> => {
+    if (seen.has(key)) return seen;
+    seen.add(key);
+    for (const child of dependencies.get(key) ?? []) if (!definitions.has(child)) closure(child, seen);
+    return seen;
+  };
+  const owned = new Set<string>();
+  const edges = new Set<string>();
+  for (const node of graph.nodes) {
+    if (!node.definition) continue;
+    const owners = closure(resolve(root, node.definition));
+    for (const owner of owners) owned.add(owner);
+    for (const link of links) {
+      if (!owners.has(link.owner)) continue;
+      const targets = graph.nodes.filter(target => target.name === link.target || target.urls?.includes(link.target));
+      for (const target of targets) {
+        if (node.id === target.id) continue;
+        const key = `${node.id}:${target.id}:${link.owner}:${link.via}`;
+        if (edges.has(key)) continue; edges.add(key);
+        graph.edges.push({ from: node.id, to: target.id, kind: "navigation", owner: link.owner.split("#").at(-1), via: link.via, guarded: link.guarded });
+      }
+    }
   }
+  graph.links = links.filter(link => link.via === "call" && !owned.has(link.owner)).map(({ owner, target, params, guarded }) => ({ owner: owner.split("#").at(-1)!, target, params, guarded }));
   if (!graph.nodes.length) warnings.push("No supported route declarations found. Runtime discovery may still find mounted navigators.");
   if (graph.nodes.length >= 1500) warnings.push("Discovery reached the 1,500-node limit.");
   graph.warnings = [...new Set(warnings)].slice(0, 40);

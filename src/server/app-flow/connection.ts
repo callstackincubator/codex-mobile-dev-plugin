@@ -14,6 +14,7 @@ export class FlowConnection {
   private ready: Promise<void>;
   private heartbeat?: NodeJS.Timeout;
   private heartbeatPending = false;
+  private heartbeatFailures = 0;
 
   constructor(url: string) {
     const origin = new URL(url); origin.protocol = "http:";
@@ -44,7 +45,7 @@ export class FlowConnection {
         this.heartbeat = setInterval(() => {
           if (this.heartbeatPending) return;
           this.heartbeatPending = true;
-          void this.invoke({ type: "heartbeat" }).catch(() => this.close()).finally(() => { this.heartbeatPending = false; });
+          void this.invoke({ type: "heartbeat" }, 2500).then(() => { this.heartbeatFailures = 0; }).catch(() => { if (++this.heartbeatFailures >= 3) void this.close(); }).finally(() => { this.heartbeatPending = false; });
         }, 2000);
         this.heartbeat.unref();
       }
