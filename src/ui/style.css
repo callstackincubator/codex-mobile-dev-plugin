@@ -16,7 +16,7 @@ html[data-view="recording"] .recording-header { border-top: 1px solid var(--bord
 .recording-charts { min-width: 0; padding: 16px 20px 12px; }
 .recording-track + .recording-track { margin-top: 22px; }
 .recording-track h3, .recording-section-heading h3 { font-size: 14px; font-weight: 600; line-height: 1.4; }
-.recording-track-heading, .recording-section-heading { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.recording-track-heading, .recording-section-heading { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .recording-track-heading { flex-wrap: wrap; margin-bottom: 2px; }
 .recording-track-metric { display: inline-flex; align-items: baseline; gap: 14px; color: var(--muted-foreground); font-size: 14px; }
 .recording-track-metric strong { color: var(--foreground); font-weight: 600; font-variant-numeric: tabular-nums; }
