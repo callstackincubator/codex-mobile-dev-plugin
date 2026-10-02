@@ -7,6 +7,21 @@ export function installFlowRuntime(key, leaseMs) {
   let root, original, stopped = false, generation = 0, safeBudget = 2000;
   const observed = new Map();
   const transitions = new Map();
+  const waitTimers = new Set(), paintFrames = new Set();
+  const later = (callback, ms) => {
+    const timer = setTimeout(() => { waitTimers.delete(timer); callback(); }, ms);
+    waitTimers.add(timer); return timer;
+  };
+  const frame = callback => {
+    if (typeof globalThis.requestAnimationFrame !== 'function') return later(callback, 16);
+    const id = globalThis.requestAnimationFrame(() => { paintFrames.delete(id); callback(); });
+    paintFrames.add(id); return id;
+  };
+  const cancelWaits = () => {
+    for (const timer of waitTimers) clearTimeout(timer);
+    for (const id of paintFrames) globalThis.cancelAnimationFrame?.(id);
+    waitTimers.clear(); paintFrames.clear();
+  };
   let transitionAt = 0;
   const sensitive = /token|password|secret|authorization|cookie|^(__proto__|constructor|prototype)$/i;
   function safe(value, depth = 0) {
@@ -59,7 +74,7 @@ export function installFlowRuntime(key, leaseMs) {
       if (nav.getState()?.routeNames?.length && !root) { root = nav; original = nav.getRootState?.() ?? nav.getState(); }
     } catch { /* Detached navigation objects are ignored. */ }
   }
-  const hidden = props => props?.hidden === true || props?.activityState === 0 || props?.route && props.navigation?.isFocused && !props.navigation.isFocused();
+  const hidden = props => props?.hidden === true || props?.mode === 'hidden' || props?.activityState === 0 || props?.route && props.navigation?.isFocused && !props.navigation.isFocused();
   function visible() {
     const links = [], components = new Set(), destinations = new Set(), live = new Set();
     safeBudget = 2000;
@@ -155,24 +170,92 @@ export function installFlowRuntime(key, leaseMs) {
     }
   }
   function visualSignature(name) {
-    let hosts = 0, content = 0, loading = false, screen;
+    let hosts = 0, content = 0, screen, loadingReason, bounds;
     const signature = [];
     fibers(fiber => {
       const props = fiber.memoizedProps;
       if (hidden(props)) return false;
       if (!screen && props?.route?.name === name && props.navigation?.isFocused?.()) { screen = fiber; return false; }
     });
+    const inactive = props => {
+      if (hidden(props)) return true;
+      // Native pagers can keep inactive pages at the same Yoga coordinates.
+      // Honor common focus props in addition to React Navigation's focus state.
+      if (props && Object.keys(props).some(key => /^(?:is)?(?:screen|page|tab)?focused$/i.test(key) && props[key] === false)) return true;
+      const styles = [props?.style];
+      for (let index = 0; index < styles.length && index < 40; index++) {
+        const style = styles[index];
+        if (Array.isArray(style)) styles.push(...style);
+        else if (style?.display === 'none' || style?.opacity === 0) return true;
+      }
+      return false;
+    };
+    const nativeRect = fiber => {
+      try {
+        const native = fiber.stateNode?.canonical?.publicInstance ?? fiber.stateNode;
+        const value = native?.getBoundingClientRect?.();
+        if (value && value.width > 0 && value.height > 0) return value;
+      } catch { /* Older renderers do not expose native bounds. */ }
+    };
+    const rect = fiber => {
+      let result, host = false;
+      fibers(child => {
+        if (result || inactive(child.memoizedProps)) return false;
+        if (child.tag !== 5) return;
+        host = true; result = nativeRect(child);
+      }, fiber);
+      return { box: result, host };
+    };
+    if (screen) {
+      // A descendant may be a small icon in a flattened native tree. Prefer the
+      // enclosing native screen when deciding whether a loader is offscreen.
+      let parent = screen.return, count = 0;
+      while (parent && !bounds && count++ < 80) { if (parent.tag === 5) bounds = nativeRect(parent); parent = parent.return; }
+      bounds ??= rect(screen).box;
+    }
+    const visibleLoader = fiber => {
+      const { box, host } = rect(fiber);
+      if (!host) return false;
+      if (!bounds) return true;
+      // Offscreen list footers and preloaded tabs must not delay this preview.
+      return !box || box.x < bounds.x + bounds.width && box.x + box.width > bounds.x && box.y < bounds.y + bounds.height && box.y + box.height > bounds.y;
+    };
+    const pendingData = value => {
+      if (!value || typeof value !== 'object') return false;
+      try {
+        // Query observers belong to the component's hooks, so background queries
+        // elsewhere in the app do not block the focused screen.
+        if (typeof value.getCurrentResult === 'function' && typeof value.getCurrentQuery === 'function') value = value.getCurrentResult();
+        return value.data === undefined && !value.error && (value.isLoading === true || value.loading === true || (value.isPending === true || value.status === 'pending' || value.status === 'loading') && value.fetchStatus === 'fetching');
+      } catch { return false; }
+    };
     if (screen) fibers(fiber => {
       const props = fiber.memoizedProps;
-      if (hidden(props)) return false;
+      if (inactive(props)) return false;
+      if (!loadingReason && props) {
+        const type = fiber.type?.render ?? fiber.type?.type ?? fiber.type;
+        const component = typeof type === 'string' ? type : type?.displayName ?? type?.name ?? '';
+        const disabled = props.loading === false || props.isLoading === false || props.visible === false || props.enabled === false || props.animating === false;
+        let reason;
+        if (!disabled && /Skeleton|Shimmer|LoadingPlaceholder|LoadingIndicator|LoadingSpinner|LoadingView|LoadingScreen|ActivityIndicator|Spinner|^Loader$/.test(component)) reason = 'skeleton';
+        else if (props.accessibilityState?.busy === true || props['aria-busy'] === true || props.isLoading === true || props.loading === true || props.animating === true || (props.accessibilityRole === 'progressbar' || props.role === 'progressbar') && !disabled) reason = 'busy';
+        else if (fiber.tag === 13 && fiber.memoizedState !== null && fiber.memoizedState !== undefined) reason = 'suspense';
+        else {
+          let hook = fiber.memoizedState, count = 0;
+          while (hook && count++ < 40) {
+            if (pendingData(hook.memoizedState)) { reason = 'data'; break; }
+            hook = hook.next;
+          }
+        }
+        if (reason && visibleLoader(fiber)) loadingReason = reason;
+      }
       if (fiber.tag !== 5 || !props) return;
-      if (props.accessibilityRole === 'progressbar' || props.role === 'progressbar' || props.animating === true) loading = true;
       hosts++;
       const text = typeof props.children === 'string' ? props.children.slice(0, 100) : '';
       if (text || props.source || props.src || props.accessibilityLabel) content++;
       if (signature.length < 250) signature.push([typeof fiber.type === 'string' ? fiber.type : '', text, !!props.source]);
     }, screen);
-    return { found: !!screen, loading, hosts, content, signature: JSON.stringify(signature) };
+    return { found: !!screen, loading: !!loadingReason, loadingReason, hosts, content, signature: JSON.stringify(signature) };
   }
   function returnToStart() {
     const path = active(original);
@@ -184,7 +267,7 @@ export function installFlowRuntime(key, leaseMs) {
   }
   function restore() {
     if (stopped) return;
-    stopped = true; generation++; clearTimeout(watchdog);
+    stopped = true; generation++; clearTimeout(watchdog); cancelWaits();
     try { if (root && original) root.dispatch({ type: 'RESET', payload: original }); } catch {}
     for (const record of transitions.values()) for (const off of record.off) { try { off(); } catch {} }
     transitions.clear();
@@ -203,6 +286,7 @@ export function installFlowRuntime(key, leaseMs) {
         if (command.type === 'inspect') { reply(inspect()); return; }
         if (!root) inspect();
         if (command.type === 'recover') {
+          cancelWaits();
           const ticket = ++generation, started = Date.now(), path = active(original);
           returnToStart();
           // Wait for recovery to finish before dispatching another native transition.
@@ -214,13 +298,14 @@ export function installFlowRuntime(key, leaseMs) {
               if ((Date.now() - started >= 240 && JSON.stringify(actual) === JSON.stringify(path) && visual.found && visual.content && !visual.loading) || Date.now() - started >= 1200) {
                 reply({ recovered: JSON.stringify(actual) === JSON.stringify(path) }); return;
               }
-              setTimeout(check, 80);
+              later(check, 80);
             } catch { reply({ recovered: false }); }
           };
-          setTimeout(check, 80); return;
+          later(check, 80); return;
         }
         if (command.type === 'verify') { reply({ active: active(root?.getRootState?.() ?? root?.getState?.()), ...visualSignature(command.name), ...visible() }); return; }
         if (command.type !== 'open' || !root) { reply({ error: 'No mounted React Navigation container found. Open the app and log in first.' }); return; }
+        cancelWaits();
         const ticket = ++generation, path = command.path;
         let expected = path[path.length - 1];
         if (command.expo) {
@@ -249,7 +334,10 @@ export function installFlowRuntime(key, leaseMs) {
             root.dispatch({ type: 'NAVIGATE', payload: { name: path[0], params } });
           }
         }
-        const started = Date.now(); let previous, stable = 0, watched = false;
+        const started = Date.now();
+        let previous, quietSince = started, watched = false, sawLoading = false, loadingMs = 0, sampledAt = started, wasLoading = false;
+        let paintTicket = 0, painting = false, painted = false;
+        const complete = value => { cancelWaits(); reply(value); };
         function check() {
           try {
           if (ticket !== generation || stopped) return;
@@ -261,16 +349,27 @@ export function installFlowRuntime(key, leaseMs) {
           const paramsMatch = Object.entries(command.params ?? {}).every(([name, value]) => JSON.stringify(leaf?.params?.[name]) === JSON.stringify(value));
           const routeMatches = command.expo ? normalizePath(actual.join('/')) === normalizePath(path[0]) : path.every((part, index) => actual[index] === part) && actual.length === path.length;
           const matches = routeMatches && paramsMatch;
-          if (matches && visual.found && visual.hosts && !visual.loading && visual.signature === previous) stable++; else stable = 0;
+          const now = Date.now();
+          if (wasLoading) loadingMs += now - sampledAt;
+          sampledAt = now; wasLoading = visual.loading; sawLoading ||= visual.loading;
+          if (!matches || !visual.found || !visual.hosts || visual.loading || visual.signature !== previous) { quietSince = now; painted = false; painting = false; paintTicket++; }
           previous = visual.signature;
           if (matches && visual.found && !watched) { visible(); watched = true; }
           const transitioning = [...transitions.values()].some(record => record.busy);
-          if (stable >= 2 && visual.content && !transitioning && Date.now() - started >= 240 && Date.now() - transitionAt >= 32) { reply({ ready: true, active: actual, name, signature: previous, ...visible() }); return; }
-          if (Date.now() - started >= command.timeoutMs) { reply({ ready: false, active: actual, redirected: !routeMatches && visualSignature(actual[actual.length - 1]).found, reason: !matches ? 'Navigation redirected or the target did not mount.' : visual.loading ? 'Screen is still loading.' : transitioning ? 'Native transition did not finish.' : !visual.content ? 'Screen has no visible content yet.' : 'Screen did not settle in time.', ...visible() }); return; }
-          setTimeout(check, 80);
-          } catch { reply({ ready: false, reason: 'The screen detached while opening. It will be retried.' }); }
+          if (transitioning) { quietSince = now; painted = false; painting = false; paintTicket++; }
+          if (now - quietSince >= 80 && visual.content && !transitioning && now - transitionAt >= 32) {
+            if (painted) { complete({ ready: true, active: actual, name, signature: previous, readinessMs: now - started, loadingMs, ...visible() }); return; }
+            if (!painting) {
+              painting = true; const commit = ++paintTicket;
+              frame(() => { if (ticket === generation && !stopped && commit === paintTicket) frame(() => { if (commit === paintTicket) painted = true; }); });
+            }
+          }
+          const deadline = sawLoading ? Math.max(command.timeoutMs, command.loadingTimeoutMs ?? command.timeoutMs) : command.timeoutMs;
+          if (now - started >= deadline) { complete({ ready: false, active: actual, redirected: !routeMatches && visualSignature(actual[actual.length - 1]).found, reason: !matches ? 'Navigation redirected or the target did not mount.' : visual.loading ? `Screen is still loading (${visual.loadingReason}).` : transitioning ? 'Native transition did not finish.' : !visual.content ? 'Screen has no visible content yet.' : 'Screen did not settle in time.', readinessMs: now - started, loadingMs, ...visible() }); return; }
+          later(check, painting ? 16 : visual.loading ? 100 : 40);
+          } catch { complete({ ready: false, reason: 'The screen detached while opening. It will be retried.' }); }
         }
-        setTimeout(check, 0);
+        later(check, 0);
       } catch (error) { reply({ error: String(error?.message ?? 'Runtime navigation failed.').slice(0, 300) }); }
     },
   };

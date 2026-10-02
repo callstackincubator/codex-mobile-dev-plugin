@@ -16,11 +16,31 @@ import { SimulatorUnavailableError } from "../src/server/simulator-unavailable.t
 import { registerDeviceChoiceTools } from "../src/server/device-choice-tools.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { adapterClient } from "./agent-device-fixtures.ts";
+import { AppFlowRuns } from "../src/server/app-flow/runs.ts";
+import { flowRunning } from "../src/shared/app-flow.ts";
 
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
   assert.equal(included, expected, `Telemetry fragment: ${fragment}`);
 }
+
+test("App Flow reports bounded readiness and loading timings without screen data", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({ dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const directory = await mkdtemp(join(tmpdir(), "flow-metrics-"));
+  t.after(() => rm(directory, {recursive:true,force:true}));
+  const runs = new AppFlowRuns({directory, scan: async()=>({files:1,scanMs:3,warnings:[],edges:[],nodes:[{id:'screen',name:'PRIVATE_SCREEN',kind:'screen',path:['PRIVATE_SCREEN'],required:[],status:'pending'}]}),
+    connect: async()=>({runtime:{async invoke(command){return command.type==='inspect'?{available:true}:{ready:true,found:true,name:'PRIVATE_SCREEN',active:['PRIVATE_SCREEN'],readinessMs:345,loadingMs:210}},async close(){}},async screenshot(){return Buffer.from('PRIVATE_PNG')}}),
+  });
+  const run=runs.start({projectRoot:'PRIVATE_PATH',deviceId:'PRIVATE_DEVICE',platform:'ios',targetId:'PRIVATE_TARGET',metroUrl:'http://127.0.0.1:8081',useAi:false});
+  while(flowRunning(runs.read(run.id))) await new Promise(resolve=>setTimeout(resolve,5));
+  await runs.close(); await Sentry.close();
+  const metrics=JSON.stringify(envelopes.flatMap(envelope=>envelope[1]).filter(item=>item[0].type==='trace_metric'));
+  for(const name of ['app_flow.readiness.mean','app_flow.loading.p95','app_flow.capture.max','app-flow','device_platform']) contains(metrics,name);
+  for(const value of ['PRIVATE_SCREEN','PRIVATE_PNG','PRIVATE_PATH','PRIVATE_DEVICE','PRIVATE_TARGET']) contains(metrics,value,false);
+});
 
 test("UI timing windows retain exact totals, reset, and ignore invalid measurements", () => {
   const window = new MeasurementWindow();

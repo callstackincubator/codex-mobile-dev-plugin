@@ -107,7 +107,7 @@ export class FlowReachability {
         // Optional navigation flags can open dialogs or perform actions on mount.
         // Keep registered defaults, and infer only required route data.
         const provided = Object.fromEntries(node.required.filter(key => data[key] !== undefined).map(key => [key, data[key]]));
-        if (Object.keys(provided).length && node.status !== 'captured' && node.status !== 'capturing') {
+        if (Object.keys(provided).length && missingFlowParams(node).length && node.status !== 'captured' && node.status !== 'capturing') {
           node.params = { ...node.params, ...provided };
           node.status = missingFlowParams(node).length ? 'needs-data' : 'pending';
         }

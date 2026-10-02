@@ -26,6 +26,10 @@ test('dynamic live URLs supply real params and navigator duplicates use the acti
   assert.deepEqual(graph.nodes[1].params,{name:'alice.test',rkey:'real-key'});
   assert.deepEqual(graph.nodes[1].path,['SearchTab','Profile']);
   assert.equal(graph.nodes[1].status,'pending');
+  graph.nodes[1].status='timed-out';
+  reach.reveal(graph.nodes[0],{links:['/profile/someone-else.test/post/another-key']});
+  assert.equal(graph.nodes[1].status,'timed-out','new feed items must not re-queue a failed screen indefinitely');
+  assert.deepEqual(graph.nodes[1].params,{name:'alice.test',rkey:'real-key'});
   assert.equal(matchFlowLink('/profile/:name','/profile/a/post/b'),undefined);
   assert.deepEqual(matchFlowLink('/(tabs)/post/[id]','/post/real'),{id:'real'});
 });

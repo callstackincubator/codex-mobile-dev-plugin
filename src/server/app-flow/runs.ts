@@ -97,6 +97,7 @@ export class AppFlowRuns {
     let discovery: FlowReachability | undefined;
     let previousFrame: { bytes: Buffer; signature: string } | undefined;
     const captureTimings = new MeasurementWindow();
+    const readinessTimings = new MeasurementWindow(), loadingTimings = new MeasurementWindow();
     const attributes = { surface: "app-flow", device_platform: input.platform };
     try {
       const scanner = this.dependencies.scan ?? (await import("./scan.ts")).scanAppFlow;
@@ -120,7 +121,7 @@ export class AppFlowRuns {
       const attempts = new Map<string, number>();
 
       while (!signal.aborted) {
-        const node = run.nodes.find(item => item.kind === "screen" && item.status === "pending")
+        const node = run.nodes.find(item => item.kind === "screen" && item.status === "pending" && (attempts.get(item.id) ?? 0) < 2)
           ?? run.nodes.find(item => item.kind === "screen" && item.status === "timed-out" && (attempts.get(item.id) ?? 0) < 2);
         if (!node) {
           if (run.ai === "waiting") {
@@ -138,11 +139,14 @@ export class AppFlowRuns {
         }
         const attempt = (attempts.get(node.id) ?? 0) + 1; attempts.set(node.id, attempt);
         const timeoutMs = attempt === 1 ? 1000 : 2000;
+        const loadingTimeoutMs = attempt === 1 ? 6000 : 10000;
         node.status = "capturing"; run.revision++;
         const started = performance.now();
         try {
-          const result = await abortable(backend.runtime.invoke({ type: "open", path: node.path, params: node.params, expo: node.component === "expo-router", timeoutMs }, timeoutMs + 500), signal);
+          const result = await abortable(backend.runtime.invoke({ type: "open", path: node.path, params: node.params, expo: node.component === "expo-router", timeoutMs, loadingTimeoutMs }, loadingTimeoutMs + 500), signal);
           signal.throwIfAborted();
+          if (typeof result.readinessMs === "number") readinessTimings.record(result.readinessMs);
+          if (typeof result.loadingMs === "number") loadingTimings.record(result.loadingMs);
           discovery.reveal(node, result);
           if (result.error) { node.status = "blocked"; node.reason = result.error; }
           else if (result.redirected) {
@@ -222,6 +226,10 @@ export class AppFlowRuns {
       if (process.env.MOBILE_DEV_TELEMETRY !== "off") {
         const timings = captureTimings.take();
         if (timings) for (const statistic of ["mean", "p95", "max"] as const) Sentry.metrics.gauge(`app_flow.capture.${statistic}`, timings[statistic], { unit: "millisecond", attributes });
+        for (const [name, window] of [["readiness", readinessTimings], ["loading", loadingTimings]] as const) {
+          const values = window.take();
+          if (values) for (const statistic of ["mean", "p95", "max"] as const) Sentry.metrics.gauge(`app_flow.${name}.${statistic}`, values[statistic], { unit: "millisecond", attributes });
+        }
         Sentry.metrics.distribution("app_flow.scan", run.scanMs, { unit: "millisecond", attributes });
         Sentry.metrics.distribution("app_flow.run", (run.finishedAt ?? Date.now()) - run.startedAt, { unit: "millisecond", attributes });
         Sentry.metrics.gauge("app_flow.routes", run.nodes.filter(node => node.kind === "screen").length, { attributes });

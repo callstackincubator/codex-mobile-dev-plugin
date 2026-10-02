@@ -22,7 +22,7 @@ function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, cl
   vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000)`,context);
   const invoke=(command:any)=>new Promise<any>(resolve=>context.flow.invoke(command,resolve));
   t.after(async()=>{if(context.flow)await invoke({type:'restore'})});
-  return {context,invoke,getState:()=>state,original,navigation};
+  return {context,invoke,getState:()=>state,original,navigation,fiber,native};
 }
 
 test('runtime finds mounted navigators, opens a target, and restores original state',async t=>{
@@ -116,4 +116,61 @@ test('recovery restores the starting stack without ending the runtime session', 
   await app.invoke({type:'recover'});
   assert.equal(app.getState().routes[0].name,'Home');
   assert.equal((await app.invoke({type:'heartbeat'})).alive,true);
+});
+
+test('an unchanged skeleton waits beyond the fast deadline and captures as soon as content replaces it', async t => {
+  const app=runtime(t);
+  const skeleton:any={tag:0,type:function ProfileSkeleton(){},memoizedProps:{},child:{tag:5,type:'View',memoizedProps:{},stateNode:app.native.stateNode}};
+  app.native.sibling=skeleton;
+  const timer=setTimeout(()=>{app.native.sibling=undefined;app.native.memoizedProps.children='Loaded profile'},350);
+  t.after(()=>clearTimeout(timer));
+  const result=await app.invoke({type:'open',path:['Profile'],timeoutMs:150,loadingTimeoutMs:1200});
+  assert.equal(result.ready,true);
+  assert.ok(result.loadingMs>=300);
+  assert.ok(result.readinessMs<1000,'should finish when content is ready instead of waiting out the loading deadline');
+  assert.ok(result.signature.includes('Loaded profile'));
+});
+
+test('busy accessibility state and Suspense fallbacks are not saved as finished screens', async t => {
+  const app=runtime(t);
+  for (const state of ['busy','suspense']) {
+    app.native.memoizedProps.accessibilityState={busy:state==='busy'};
+    app.native.sibling=state==='suspense'?{tag:13,memoizedProps:{},memoizedState:{},child:{...app.native,sibling:undefined}}:undefined;
+    const result=await app.invoke({type:'open',path:['Profile'],timeoutMs:80,loadingTimeoutMs:140});
+    assert.equal(result.ready,false);
+    assert.match(result.reason,new RegExp(state));
+  }
+});
+
+test('only visible initial query loads block capture; cached refetches and offscreen loaders do not', async t => {
+  const app=runtime(t);
+  let data:any=undefined;
+  app.fiber.memoizedState={memoizedState:{getCurrentQuery(){return{}},getCurrentResult(){return {data,isPending:!data,fetchStatus:'fetching'}}}};
+  let result=await app.invoke({type:'open',path:['Profile'],timeoutMs:80,loadingTimeoutMs:140});
+  assert.equal(result.ready,false);assert.match(result.reason,/data/);
+  data={loaded:true};
+  app.native.sibling={tag:0,type:function Skeleton(){},memoizedProps:{},child:{tag:5,memoizedProps:{},stateNode:{getBoundingClientRect:()=>({x:0,y:500,width:100,height:50})}}};
+  result=await app.invoke({type:'open',path:['Profile'],timeoutMs:500});
+  assert.equal(result.ready,true);
+  assert.equal(result.loadingMs,0);
+  // A spinner switched off by its caller is not an active loading indicator.
+  app.native.sibling={tag:0,type:function ActivityIndicator(){},memoizedProps:{animating:false},child:{tag:5,memoizedProps:{animating:false},stateNode:app.native.stateNode}};
+  assert.equal((await app.invoke({type:'verify',name:'Profile'})).loading,false);
+  app.native.sibling={tag:0,memoizedProps:{isPageFocused:false},child:{tag:0,type:function Skeleton(){},memoizedProps:{},child:{tag:5,memoizedProps:{},stateNode:app.native.stateNode}}};
+  assert.equal((await app.invoke({type:'verify',name:'Profile'})).loading,false,'an inactive pager can report onscreen Yoga bounds');
+  app.native.sibling={tag:0,type:function LoadingPlaceholder(){},memoizedProps:{},child:null};
+  assert.equal((await app.invoke({type:'verify',name:'Profile'})).loading,false,'a loading component that returns null is not visible');
+});
+
+test('stopping during loading cancels polling and the restoration watchdog', async t => {
+  let sequence=0;const timers=new Map<number,()=>void>();
+  const app=runtime(t,false,{
+    setTimeout:((callback:()=>void)=>{const id=++sequence;timers.set(id,callback);return id}) as unknown as typeof setTimeout,
+    clearTimeout:((id:number)=>{timers.delete(id)}) as unknown as typeof clearTimeout,
+  });
+  app.native.memoizedProps.accessibilityState={busy:true};
+  void app.invoke({type:'open',path:['Profile'],timeoutMs:100,loadingTimeoutMs:6000});
+  assert.ok(timers.size>1);
+  await app.invoke({type:'restore'});
+  assert.equal(timers.size,0);
 });
