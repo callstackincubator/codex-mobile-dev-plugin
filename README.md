@@ -27,23 +27,26 @@ Open a new chat after updating.
 
 ## Features
 
-- **Live devices beside your chat.** Stream iOS simulators, Android emulators,
-  and connected iPhones, iPads, and Android devices. Show iOS and Android together
-  or use the fullscreen workspace.
-- **Device control and inspection.** Select and boot simulators or emulators,
-  interact with taps and drags, type on supported devices, and let Codex inspect
-  accessibility elements and control your app through MCP tools.
-- **Screenshots and annotations.** Attach screenshots to chat and copy them to
-  the macOS clipboard. Select an element or screen region and leave instructions
-  for Codex, with React Native component and source details when available.
-- **Native and JavaScript logs.** Read iOS unified logs, Android logcat, and Metro
-  console messages together. Follow the foreground app, search and filter logs,
-  and send an error and its stack trace to chat.
-- **Live performance monitoring.** Track app CPU and memory, expand individual
-  thread charts, and view device-wide Display FPS on supported devices.
-- **Saved performance recordings.** Ask Codex to record an interaction, inspect
-  interactive charts in chat, compare runs, and analyze selected ranges. Android
-  recordings include display frame pacing and jank statistics.
+### Live devices beside your chat
+Stream iOS simulators, Android emulators, and connected iPhones, iPads, and Android devices. Show iOS and Android together or use the fullscreen workspace.
+
+![](/img/screenshot_side_by_side.png)
+
+### Device control, inspection and annotations
+Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let Codex inspect accessibility elements and control your app through MCP tools. Select an element or screen region and leave instructions for Codex, with React Native component and source details when available.
+
+![](/img/screenshot_annotations.png)
+
+### Native and JavaScript logs
+Read iOS unified logs, Android logcat, and Metro console messages together. Follow the foreground app, search and filter logs, and send an error and its stack trace to chat.
+
+![](/img/screenshot_logs.png)
+
+### Live performance monitoring and improvements
+Track app CPU and memory, expand individual thread charts, and view device-wide Display FPS on supported devices. Ask Codex to record an interaction, inspect interactive charts in chat, compare runs, and analyze selected ranges. Android recordings include display frame pacing and jank statistics.
+
+![](/img/screenshot_performance.png)
+
 
 ## Requirements
 
