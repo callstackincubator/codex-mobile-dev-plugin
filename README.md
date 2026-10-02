@@ -90,7 +90,7 @@ scroll position, then catches up from the same cursor. A small keep-alive once
 per minute retains the session without transferring logs. Closing the tools
 panel still stops collection.
 
-Click a row to read its full text and stack trace. Attach to chat adds that log, its source, and its repeat count to the agent's next prompt, along with the selected simulator. Ask the agent to fix the error in your next message. Remove attachment clears the log. Each new attachment replaces the prior log. Removing the attachment in Codex also clears the panel's attachment state.
+The list shows messages without embedded JavaScript stack traces. Click a row to read its message and full stack in the details panel. Copy, search, and chat actions retain the original log. Attach to chat adds that log, its source, and its repeat count to the agent's next prompt, along with the selected simulator. Ask the agent to fix the error in your next message. Remove attachment clears the log. Each new attachment replaces the prior log. Removing the attachment in Codex also clears the panel's attachment state.
 
 Right-click a log and choose Fix in chat or Ask in chat to attach the full log and stack trace as a context pill and send a short request. These actions wait for the attachment before sending and keep the log available if delivery fails. Hosts without context pills receive the full log in the message.
 

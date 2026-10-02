@@ -168,17 +168,26 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await act(async () => { settingsButton.click(); });
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
   await selectTool("logs");
+  const errorMessage = '<script>alert("log")</script>\nCannot read property id of undefined';
+  const embeddedStack = "    at recordLike (http://localhost:8081/recordLike.bundle:21:38)\n    at anonymous (App.tsx:268:50)";
   await act(async () => { panel.list.setFollow(false); panel.list.append([
-    { sequence: 1, timestamp: "2026-09-30T12:00:00Z", message: '<script>alert("log")</script>', stack: "at loadProfile", level: "error", source: "js", origin: "metro" },
+    { sequence: 1, timestamp: "2026-09-30T12:00:00Z", message: `${errorMessage}\n${embeddedStack}`, stack: "at loadProfile", level: "error", source: "js", origin: "metro" },
     { sequence: 2, timestamp: "2026-09-30T12:00:01Z", message: "Native output", level: "info", source: "native", origin: "ios" },
   ], 0); });
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
   assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 2);
   const errorRow = dom.window.document.querySelector('[data-log-row][data-level="error"]') as HTMLButtonElement;
   assert.equal(errorRow.querySelector("script"), null);
+  assert.ok(errorRow.textContent?.includes(errorMessage));
+  assert.equal(errorRow.textContent?.includes("recordLike.bundle"), false);
+  assert.equal(errorRow.title.includes("recordLike.bundle"), false);
   await act(async () => { errorRow.click(); });
+  const details = dom.window.document.querySelectorAll("#log-detail pre");
+  assert.equal(details[0].textContent, errorMessage);
+  assert.equal(details[1].textContent, `${embeddedStack}\nat loadProfile`);
   await act(async () => { (dom.window.document.getElementById("log-chat") as HTMLButtonElement).click(); });
   assert.equal(sentLog?.stack, "at loadProfile");
+  assert.equal(sentLog?.message, `${errorMessage}\n${embeddedStack}`);
   assert.equal(dom.window.document.getElementById("log-chat")?.textContent, "Fix in chat");
   const levelFilter = dom.window.document.querySelector('[aria-label="Filter log levels"]') as HTMLButtonElement;
   await act(async () => { levelFilter.click(); });
