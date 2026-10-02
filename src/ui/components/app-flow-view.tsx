@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { GitForkIcon, PlayIcon, SquareIcon, RefreshCwIcon, ZoomInIcon, ZoomOutIcon, ExpandIcon, SparklesIcon } from "lucide-react";
 import type { AppFlowPanel } from "../app-flow-panel.ts";
-import { flowRunning, layoutFlow } from "../../shared/app-flow.ts";
+import { flowRunning, flowProgress, layoutFlow } from "../../shared/app-flow.ts";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
@@ -25,13 +25,11 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
     recordUiTiming("ui.app_flow.layout", performance.now() - started);
     return result;
   }, [run?.id, topology]);
-  const screens = run?.nodes.filter(node => node.kind === "screen") ?? [];
-  const captured = screens.filter(node => node.status === "captured").length;
-  const unique = new Set(screens.filter(node => node.image).map(node => node.image)).size;
-  const missing = screens.filter(node => node.status === "needs-data").length;
+  const progress = run && flowProgress(run);
+  const missing = progress?.needsData ?? 0;
   const current = run?.nodes.find(node => node.id === selected);
   const fit = () => { if (viewport.current) { setScale(Math.min(1, Math.max(.15, Math.min((viewport.current.clientWidth - 24) / graph.width, (viewport.current.clientHeight - 24) / graph.height)))); viewport.current.scrollTo(0, 0); } };
-  const status = run?.phase === "scanning" ? "Finding routes…" : run?.phase === "connecting" ? "Connecting to app…" : run?.phase === "finishing" ? "Finishing…" : running ? "Capturing screens…" : run?.phase === "failed" ? "Capture failed" : run?.phase === "stopped" ? "Stopped" : run ? "Map ready" : "Map your app";
+  const status = run?.phase === "scanning" ? "Finding routes…" : run?.phase === "connecting" ? "Connecting to app…" : run?.phase === "reconnecting" ? "Reconnecting to app… Your map is saved." : run?.phase === "finishing" ? "Finishing…" : running ? "Discovering and capturing…" : run?.phase === "failed" ? "Capture failed" : run?.phase === "stopped" ? "Stopped" : run ? "Map ready" : "Map your app";
   return <section className="app-flow" aria-label="App Flow">
     <header className="app-flow-header"><div><GitForkIcon size={17} /><strong>App Flow</strong><span>{devices.device?.name ?? "Select a device"}</span></div>
       <div><Button variant="ghost" size="sm" aria-expanded={configOpen} onClick={() => setConfigOpen(value => !value)}>Setup</Button><Button variant="ghost" size="icon-sm" aria-label="Zoom out" onClick={() => setScale(value => Math.max(.15, value - .15))}><ZoomOutIcon /></Button><span>{Math.round(scale * 100)}%</span><Button variant="ghost" size="icon-sm" aria-label="Zoom in" onClick={() => setScale(value => Math.min(1.5, value + .15))}><ZoomInIcon /></Button><Button variant="ghost" size="icon-sm" aria-label="Fit map" onClick={fit}><ExpandIcon /></Button></div>
@@ -47,7 +45,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
     </form>}
     {state.message && <p className="app-flow-hint" role="status">{state.message}</p>}
     {(state.error || run?.error) && <p className="app-flow-error" role="alert">{state.error || run?.error}</p>}
-    <div className="app-flow-progress" role="status"><span className={running ? "app-flow-live" : ""}>{status}</span><span>{run ? <>{`${captured}/${screens.length} screens · ${unique} screenshots · `}<Elapsed startedAt={run.startedAt} finishedAt={run.finishedAt} />{missing ? ` · ${missing} need data` : ""}</> : "React Navigation and Expo Router"}</span>
+    <div className="app-flow-progress" role="status"><span className={running ? "app-flow-live" : ""}>{run && progress ? <>{status} · {progress.captured} captured · {progress.queued} queued · {progress.discovered} discovered{running ? ' so far' : ''}</> : status}</span><span>{run && progress ? <><Elapsed startedAt={run.startedAt} finishedAt={run.finishedAt} />{missing ? ` · ${missing} need data` : ""}{progress.unsuccessful ? ` · ${progress.unsuccessful} not captured` : ''}</> : "React Navigation and Expo Router"}</span>
       {!configOpen && (running ? <Button variant="ghost" size="sm" onClick={() => { void panel.stop(); }}><SquareIcon />Stop</Button> : <Button variant="ghost" size="sm" disabled={state.busy || !project || !target || !devices.device} onClick={() => { void panel.start(project.trim(), metro.trim(), target, useAi); }}><PlayIcon />Map again</Button>)}
       {missing > 0 && run?.ai !== "resolving" && <Button variant="ghost" size="sm" disabled={state.resolving} onClick={() => { void panel.resolveWithAi(); }}><SparklesIcon />Resolve with AI</Button>}{run?.ai === "resolving" && <span>Resolving params…</span>}
     </div>

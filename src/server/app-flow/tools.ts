@@ -7,6 +7,7 @@ import { AppFlowRuns, type FlowStart } from "./runs.ts";
 import { discoverFlowSetup } from "./discovery.ts";
 import * as Sentry from "@sentry/node";
 import { FlowConnection } from "./connection.ts";
+import { reconnectFlowTarget } from "./target.ts";
 import { metroTargets } from "../metro-logs.ts";
 import type { Baguette } from "../baguette.ts";
 import type { ServeEmu } from "../serve-emu.ts";
@@ -26,10 +27,10 @@ const startSchema = z.object({ projectRoot: z.string().min(1).max(2048), platfor
 
 export function registerAppFlowTools(server: McpServer, baguette: Baguette, android: ServeEmu) {
   const runs = new AppFlowRuns({
-    async connect(input, signal) {
+    async connect(input, signal, resume) {
       parseBaseUrl(input.metroUrl, "Metro URL");
       const targets = await metroTargets(input.metroUrl, signal);
-      const target = targets.find(item => item.id === input.targetId);
+      const target = reconnectFlowTarget(targets, input.targetId, resume?.target);
       if (!target) throw new Error("The selected Metro app is no longer connected. Refresh apps.");
       if (!target.supportsMultipleDebuggers) throw new Error("App Flow needs a React Native runtime that supports multiple debugger connections.");
       const device = input.platform === "ios" ? await baguette.device(udidSchema.parse(input.deviceId), true) : await android.device(androidIdSchema.parse(input.deviceId), true);
@@ -39,10 +40,10 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
       const screenshotUrl = input.platform === "ios" ? new URL(`/simulators/${input.deviceId}/screenshot.png`, baguette.baseUrl) : new URL("/api/screenshot", (await android.start(input.deviceId)).url);
       if (input.platform === "ios") screenshotUrl.searchParams.set("scale", "3");
       signal.throwIfAborted();
-      const runtime = new FlowConnection(target.webSocketDebuggerUrl);
+      const runtime = new FlowConnection(target.webSocketDebuggerUrl, resume?.sessionId);
       const stop = () => { void runtime.close(); };
       signal.addEventListener("abort", stop, { once: true });
-      return { runtime: { invoke: (command, timeout) => runtime.invoke(command, timeout), close: async () => { signal.removeEventListener("abort", stop); await runtime.close(); } },
+      return { target: { appId: target.appId, deviceId: target.deviceId, deviceName: target.deviceName }, runtime: { invoke: (command, timeout) => runtime.invoke(command, timeout), close: async options => { signal.removeEventListener("abort", stop); await runtime.close(options); } },
         async screenshot(captureSignal) {
           const response = await fetch(screenshotUrl, { redirect: "error", signal: captureSignal });
           if (!response.ok) throw new Error(`Screenshot failed with HTTP ${response.status}.`);

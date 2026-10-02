@@ -26,7 +26,7 @@ export type FlowLink = { target: string; owner: string; params?: FlowParams; gua
 export type FlowGraph = { links?: FlowLink[]; nodes: FlowNode[]; edges: FlowEdge[]; warnings: string[]; files: number; scanMs: number };
 export type FlowRun = FlowGraph & {
   id: string;
-  phase: "scanning" | "connecting" | "capturing" | "finishing" | "complete" | "stopped" | "failed";
+  phase: "scanning" | "connecting" | "reconnecting" | "capturing" | "finishing" | "complete" | "stopped" | "failed";
   startedAt: number;
   finishedAt?: number;
   error?: string;
@@ -34,7 +34,17 @@ export type FlowRun = FlowGraph & {
   ai: "off" | "waiting" | "resolving" | "done" | "unavailable";
 };
 export type FlowResolution = { nodeId: string; params: FlowParams };
-export const flowRunning = (run?: FlowRun) => !!run && ["scanning", "connecting", "capturing", "finishing"].includes(run.phase);
+export const flowRunning = (run?: FlowRun) => !!run && ["scanning", "connecting", "reconnecting", "capturing", "finishing"].includes(run.phase);
+export function flowProgress(run: FlowRun) {
+  const screens = run.nodes.filter(node => node.kind === 'screen');
+  return {
+    discovered: screens.length,
+    captured: screens.filter(node => node.status === 'captured').length,
+    queued: screens.filter(node => node.status === 'pending' || node.status === 'capturing').length,
+    needsData: screens.filter(node => node.status === 'needs-data').length,
+    unsuccessful: screens.filter(node => node.status === 'blocked' || node.status === 'timed-out').length,
+  };
+}
 export function missingFlowParams(node: Pick<FlowNode, "required" | "params" | "paramVariants">): string[] {
   const missing = (keys: string[]) => keys.filter(key => node.params?.[key] === undefined || node.params[key] === null || node.params[key] === "");
   if (!node.paramVariants?.length) return missing(node.required);

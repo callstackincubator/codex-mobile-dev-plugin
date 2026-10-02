@@ -274,6 +274,7 @@ export function installFlowRuntime(key, leaseMs) {
     try { if (root && original) root.dispatch({ type: 'RESET', payload: original }); } catch {}
     for (const record of transitions.values()) for (const off of record.off) { try { off(); } catch {} }
     transitions.clear();
+    observed.clear(); root = original = undefined;
     delete globalThis[key];
   }
   let watchdog;
@@ -286,6 +287,14 @@ export function installFlowRuntime(key, leaseMs) {
         if (stopped) { reply({ error: 'Capture stopped.' }); return; }
         renewLease();
         if (command.type === 'heartbeat') { reply({ alive: true }); return; }
+        if (command.type === 'resume') {
+          cancelWaits(); generation++;
+          const saved = original;
+          root = undefined;
+          const info = inspect();
+          original = saved ?? original;
+          reply(info); return;
+        }
         if (command.type === 'inspect') { reply(inspect()); return; }
         if (!root) inspect();
         if (command.type === 'recover') {

@@ -154,6 +154,14 @@ within each scan. PNG validation selects its filter once per row, and runtime
 lookups stop once they find the focused screen or first native bounds. Existing
 scan, capture, and readiness timings still cover these paths with the same units
 and boundaries. Loading checks, image sampling, and retries are unchanged.
+Since 0.1.117, `app_flow.reconnect.mean`, `.p95`, and `.max` report elapsed
+reconnection time in milliseconds, including retry backoff and recovery.
+`app_flow.reconnects` counts reconnect episodes per run. Both use the existing
+surface/platform attributes and omit target identities and connection errors.
+Capture timing includes reconnection when an attempt loses its connection.
+The canvas renders one edge per screen pair, with both cards mounted. Layout
+and viewport timings retain their boundaries. Progress lists captured, queued,
+and discovered screens separately because live discovery can add work.
 Since 0.1.114, `app_flow.readiness.mean`, `.p95`, and `.max` measure the time from
 navigation dispatch to a ready or timed-out screen. `app_flow.loading.mean`,
 `.p95`, and `.max` measure the portion spent observing visible loading signals.

@@ -31,9 +31,12 @@ export async function verifyPackagedFlowScan(client, sourceFolder) {
     }
     assert.equal(run.phase, "failed", "The scan must finish at the empty inspector.");
     assert.match(run.error ?? "", /selected Metro app is no longer connected/, run.error);
-    assert.ok(run.files > 0 && run.nodes.length > 0, "The packaged scanner must find source files and routes.");
-    if (temporary) assert.ok(run.nodes.some(node => node.name === "PackagedScreen"));
-    console.log(`Packaged App Flow scanner: ${run.files} files, ${run.nodes.filter(node => node.kind === "screen").length} screen occurrences, ${Math.round(run.scanMs)} ms. No device navigation attempted.`);
+    assert.ok(run.files > 0 && run.scanMs > 0, "The packaged scanner must finish reading the source files.");
+    // Reachability needs a mounted app. Publishing the raw registration catalog
+    // here would expose duplicate screens and edges before that filtering runs.
+    assert.deepEqual(run.nodes, []);
+    assert.deepEqual(run.edges, []);
+    console.log(`Packaged App Flow scanner: ${run.files} files, ${Math.round(run.scanMs)} ms. Unverified routes stayed hidden; no device navigation attempted.`);
   } finally {
     inspector.closeAllConnections();
     await new Promise(resolve => inspector.close(resolve));

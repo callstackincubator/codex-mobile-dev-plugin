@@ -46,6 +46,21 @@ test('runtime rejects redirects and never reports a login screen as the target',
   assert.match(result.reason,/redirected/);
 });
 
+test('a resumed runtime cancels old work and retains the original restoration state',async t=>{
+  const app=runtime(t);
+  await app.invoke({type:'inspect'});
+  app.native.type='Skeleton';
+  void app.invoke({type:'open',path:['Profile'],timeoutMs:200,loadingTimeoutMs:2000});
+  await new Promise(resolve=>setTimeout(resolve,30));
+  const resumed=await app.invoke({type:'resume'});
+  assert.equal(resumed.available,true);
+  app.native.type='View';
+  const result=await app.invoke({type:'open',path:['Profile'],timeoutMs:300});
+  assert.equal(result.ready,true);
+  await app.invoke({type:'restore'});
+  assert.equal(app.getState().routes[0].name,'Home');
+});
+
 test('focused lookup keeps scanning content and links after finding the first native bounds',async t=>{
   const app=runtime(t);
   const box=()=>({x:0,y:0,width:100,height:200});
@@ -102,6 +117,37 @@ test('persistent CDP connection uses binding replies and renews the runtime leas
   await heartbeat;
   await connection.close();
   assert.ok(requests>=6);
+});
+
+test('reconnections isolate late replies and release debugger objects without restoring between sockets',async t=>{
+  const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
+  t.after(()=>new Promise<void>(resolve=>{for(const socket of server.clients)socket.terminate();server.close(()=>resolve())}));
+  const bindings:string[]=[],evaluations:any[]=[],released:string[]=[];
+  let restores=0;
+  server.on('connection',socket=>{
+    let binding='';
+    socket.on('message',bytes=>{
+      const message=JSON.parse(bytes.toString());
+      if(message.method==='Runtime.addBinding'){binding=message.params.name;bindings.push(binding)}
+      if(message.method==='Runtime.releaseObjectGroup')released.push(message.params.objectGroup);
+      if(message.method==='Runtime.evaluate')evaluations.push(message.params);
+      if(message.id>0)socket.send(JSON.stringify({id:message.id,result:{}}));
+      if(message.id<0){
+        if(message.params.expression.includes('"restore"'))restores++;
+        if(bindings.length>1)socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:bindings[0],payload:JSON.stringify({id:message.id,result:{stale:true}})}}));
+        socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload:JSON.stringify({id:message.id,result:{available:true}})}}));
+      }
+    });
+  });
+  const address=server.address() as {port:number},url=`ws://127.0.0.1:${address.port}`,session='same-run';
+  const first=new FlowConnection(url,session);
+  await first.invoke({type:'inspect'});await first.close({restore:false});
+  const next=new FlowConnection(url,session);
+  const result=await next.invoke({type:'resume'});
+  assert.deepEqual(result,{available:true});assert.equal(restores,0);assert.notEqual(bindings[0],bindings[1]);
+  await next.close();await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(restores,1);assert.deepEqual(released,['__mobile_flow_samerun','__mobile_flow_samerun']);
+  assert.ok(evaluations.every(params=>params.returnByValue===true));
 });
 
 

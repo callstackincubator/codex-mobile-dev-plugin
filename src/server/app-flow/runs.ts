@@ -13,15 +13,16 @@ import { captureServerError } from "../telemetry.ts";
 
 export type FlowStart = { projectRoot: string; platform: "ios" | "android"; deviceId: string; targetId: string; metroUrl: string; useAi: boolean };
 export type RuntimeInfo = FlowEvidence & { available: boolean; data?: unknown[] };
-export type FlowRuntime = { invoke(command: Record<string, unknown>, timeout?: number): Promise<any>; close(): Promise<void> };
-export type FlowBackend = { runtime: FlowRuntime; screenshot(signal: AbortSignal): Promise<Buffer> };
+export type FlowRuntime = { invoke(command: Record<string, unknown>, timeout?: number): Promise<any>; close(options?: { restore?: boolean }): Promise<void> };
+export type FlowTargetIdentity = { appId?: string; deviceId?: string; deviceName?: string };
+export type FlowBackend = { runtime: FlowRuntime; target?: FlowTargetIdentity; screenshot(signal: AbortSignal): Promise<Buffer> };
 export type FlowDependencies = {
-  connect(input: FlowStart, signal: AbortSignal): Promise<FlowBackend>;
+  connect(input: FlowStart, signal: AbortSignal, resume?: { sessionId: string; target?: FlowTargetIdentity }): Promise<FlowBackend>;
   scan?: typeof scanAppFlow;
   resolve?: (context: unknown, signal: AbortSignal) => Promise<FlowResolution[]>;
   directory?: string;
 };
-type Active = { run: FlowRun; input: FlowStart; abort: AbortController; done?: Promise<void>; runtime?: FlowRuntime; info?: RuntimeInfo; writing: Promise<void>[]; settled: boolean };
+type Active = { run: FlowRun; input: FlowStart; abort: AbortController; done?: Promise<void>; runtime?: FlowRuntime; info?: RuntimeInfo; writing: Set<Promise<void>>; settled: boolean };
 export const FLOW_DIRECTORY = join(homedir(), "Library/Application Support/mobile-dev/app-flow");
 
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -48,7 +49,7 @@ export class AppFlowRuns {
     const startedAt = Date.now();
     const run: FlowRun = { id: randomUUID(), phase: "scanning", startedAt, revision: 0,
       nodes: [], edges: [], warnings: [], files: 0, scanMs: 0, ai: input.useAi ? "waiting" : "off" };
-    const active: Active = { run, input, abort: new AbortController(), writing: [], settled: false };
+    const active: Active = { run, input, abort: new AbortController(), writing: new Set(), settled: false };
     this.sessions.set(run.id, active);
     active.done = this.execute(active).finally(() => { active.settled = true; });
     return structuredClone(run);
@@ -98,27 +99,67 @@ export class AppFlowRuns {
     let previousFrame: { bytes: Buffer; signature: string } | undefined;
     const captureTimings = new MeasurementWindow();
     const readinessTimings = new MeasurementWindow(), loadingTimings = new MeasurementWindow();
+    const reconnectTimings = new MeasurementWindow();
+    let reconnects = 0;
     const attributes = { surface: "app-flow", device_platform: input.platform };
+    const save = async () => {
+      try { await mkdir(join(this.directory, run.id), { recursive: true, mode: 0o700 }); await writeFile(join(this.directory, run.id, "map.json"), JSON.stringify(run), { mode: 0o600 }); }
+      catch { captureServerError(new Error("App Flow map could not be saved."), "app_flow.save"); }
+    };
+    const connect = () => abortable(this.dependencies.connect(input, signal, { sessionId: run.id, target: backend?.target }).then(async connected => {
+      if (signal.aborted) { await connected.runtime.close(); signal.throwIfAborted(); }
+      return connected;
+    }), signal);
+    const reconnect = async () => {
+      run.phase = "reconnecting"; run.revision++; reconnects++;
+      await Promise.allSettled(active.writing);
+      await save();
+      await backend?.runtime.close({ restore: false }).catch(() => {});
+      const started = performance.now();
+      try {
+        for (let attempt = 0; ; attempt++) {
+          signal.throwIfAborted();
+          if (attempt) await delay(Math.min(500 * 2 ** Math.min(attempt - 1, 4), 5000), undefined, { signal });
+          let next: FlowBackend | undefined;
+          try {
+            next = await connect();
+            const info = await abortable(next.runtime.invoke({ type: "resume" }, 2500), signal);
+            if (!info?.available) throw new Error("Waiting for the app's navigation container.");
+            await abortable(next.runtime.invoke({ type: "recover" }, 2500), signal);
+            signal.throwIfAborted();
+            backend = next; active.runtime = next.runtime; active.info = info;
+            previousFrame = undefined;
+            run.phase = "capturing"; run.revision++;
+            return;
+          } catch (error) {
+            await next?.runtime.close({ restore: signal.aborted }).catch(() => {});
+            if (signal.aborted) throw error;
+          }
+        }
+      } finally { reconnectTimings.record(performance.now() - started); }
+    };
     try {
       const scanner = this.dependencies.scan ?? (await import("./scan.ts")).scanAppFlow;
       const graph = await abortable(scanner(input.projectRoot, input.platform, signal), signal);
-      signal.throwIfAborted(); Object.assign(run, graph);
+      signal.throwIfAborted();
+      // Do not render the unfiltered registration catalog while connecting. It
+      // includes repeated screen instances and multiple source edges per pair.
+      Object.assign(run, { files: graph.files, scanMs: graph.scanMs, warnings: graph.warnings });
       const cached = this.resolved.get(this.cacheKey(input));
-      for (const node of run.nodes) { const params = cached?.get(node.id); if (params) { node.params = params; if (!missingFlowParams(node).length) node.status = "pending"; } }
+      for (const node of graph.nodes) { const params = cached?.get(node.id); if (params) { node.params = params; if (!missingFlowParams(node).length) node.status = "pending"; } }
       run.phase = "connecting"; run.revision++;
-      backend = await abortable(this.dependencies.connect(input, signal).then(async connected => {
-        if (signal.aborted) { await connected.runtime.close(); signal.throwIfAborted(); }
-        return connected;
-      }), signal);
+      backend = await connect();
       active.runtime = backend.runtime;
       if (signal.aborted) { await backend.runtime.close(); signal.throwIfAborted(); }
       active.info = await abortable(backend.runtime.invoke({ type: "inspect" }, 2000), signal);
       if (!active.info?.available) throw new Error("No mounted React Navigation container found. Open the app in a development build and log in first.");
-      discovery = new FlowReachability(run, active.info);
+      discovery = new FlowReachability(graph, active.info);
+      Object.assign(run, graph);
       run.phase = "capturing"; run.revision++;
       await mkdir(join(this.directory, run.id), { recursive: true, mode: 0o700 });
       run.ai = input.useAi ? "waiting" : "off";
       const attempts = new Map<string, number>();
+      const interruptions = new Map<string, number>();
 
       while (!signal.aborted) {
         const node = run.nodes.find(item => item.kind === "screen" && item.status === "pending" && (attempts.get(item.id) ?? 0) < 2)
@@ -180,7 +221,8 @@ export class AppFlowRuns {
               const writing = writeFile(join(this.directory, run.id, file), bytes, { mode: 0o600 }).then(() => {
                 node.image = `mobile-flow://${run.id}/${node.id}`; node.status = "captured"; node.reason = "Focused screen captured; content completeness is not verified."; run.revision++;
               }).catch(() => { node.status = "blocked"; node.reason = "Could not save screenshot."; run.revision++; });
-              active.writing.push(writing);
+              active.writing.add(writing);
+              void writing.finally(() => active.writing.delete(writing));
               previousFrame = { bytes, signature: result.signature };
             }
           }
@@ -194,7 +236,15 @@ export class AppFlowRuns {
           // turn an otherwise finished map into a connection failure.
           if (more) {
             try { await backend.runtime.invoke({ type: "recover" }, 2500); }
-            catch { throw new Error("App Flow lost its connection to the app. The partial map was saved; reconnect and map again."); }
+            catch {
+              const interrupted = (interruptions.get(node.id) ?? 0) + 1;
+              interruptions.set(node.id, interrupted);
+              await reconnect();
+              // A dropped connection does not consume the screen's first retry.
+              // Repeated failures on this screen must not trap the whole queue.
+              if (interrupted < 2) { node.status = "pending"; node.reason = undefined; attempts.set(node.id, attempt - 1); }
+              else { node.status = "blocked"; node.reason = "This screen repeatedly interrupted the app connection. Other screens continued."; }
+            }
           }
         }
         node.captureMs = performance.now() - started; captureTimings.record(node.captureMs); run.revision++;
@@ -219,14 +269,15 @@ export class AppFlowRuns {
       discovery?.finish();
       run.revision++;
       await ai;
+      active.runtime = undefined; active.writing.clear();
+      previousFrame = undefined;
       run.finishedAt = Date.now();
       run.phase = finalPhase; run.revision++;
-      try { await mkdir(join(this.directory, run.id), { recursive: true, mode: 0o700 }); await writeFile(join(this.directory, run.id, "map.json"), JSON.stringify(run), { mode: 0o600 }); }
-      catch { captureServerError(new Error("App Flow map could not be saved."), "app_flow.save"); }
+      await save();
       if (process.env.MOBILE_DEV_TELEMETRY !== "off") {
         const timings = captureTimings.take();
         if (timings) for (const statistic of ["mean", "p95", "max"] as const) Sentry.metrics.gauge(`app_flow.capture.${statistic}`, timings[statistic], { unit: "millisecond", attributes });
-        for (const [name, window] of [["readiness", readinessTimings], ["loading", loadingTimings]] as const) {
+        for (const [name, window] of [["readiness", readinessTimings], ["loading", loadingTimings], ["reconnect", reconnectTimings]] as const) {
           const values = window.take();
           if (values) for (const statistic of ["mean", "p95", "max"] as const) Sentry.metrics.gauge(`app_flow.${name}.${statistic}`, values[statistic], { unit: "millisecond", attributes });
         }
@@ -234,6 +285,7 @@ export class AppFlowRuns {
         Sentry.metrics.distribution("app_flow.run", (run.finishedAt ?? Date.now()) - run.startedAt, { unit: "millisecond", attributes });
         Sentry.metrics.gauge("app_flow.routes", run.nodes.filter(node => node.kind === "screen").length, { attributes });
         Sentry.metrics.gauge("app_flow.captured", run.nodes.filter(node => node.status === "captured").length, { attributes });
+        Sentry.metrics.gauge("app_flow.reconnects", reconnects, { attributes });
       }
     }
   }

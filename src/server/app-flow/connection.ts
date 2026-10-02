@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import { installFlowRuntime } from "./runtime.js";
 
-/** One debugger connection for the full run. Bindings work with Hermes without awaitPromise. */
+/** A reconnect can reuse the runtime lease and original navigation state. */
 export class FlowConnection {
   private socket: WebSocket;
-  private key = `__mobile_flow_${randomUUID().replaceAll("-", "")}`;
-  private binding = `${this.key}_reply`;
+  private key: string;
+  private binding: string;
   private sequence = 0;
   private pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private closed = false;
@@ -16,7 +16,9 @@ export class FlowConnection {
   private heartbeatPending = false;
   private heartbeatFailures = 0;
 
-  constructor(url: string) {
+  constructor(url: string, sessionId = randomUUID()) {
+    this.key = `__mobile_flow_${sessionId.replaceAll("-", "")}`;
+    this.binding = `${this.key}_reply_${randomUUID().replaceAll("-", "")}`;
     const origin = new URL(url); origin.protocol = "http:";
     this.socket = new WebSocket(url, { origin: origin.origin, handshakeTimeout: 3000, maxPayload: 2 * 1024 * 1024, followRedirects: false });
     this.ready = new Promise((resolve, reject) => {
@@ -40,7 +42,7 @@ export class FlowConnection {
     this.ready = this.ready.then(async () => {
       await this.send("Runtime.addBinding", { name: this.binding }, 2000);
       // esbuild keepNames may introduce __name inside serialized functions.
-      await this.send("Runtime.evaluate", { expression: `(()=>{const __name=(value)=>value;(${installFlowRuntime.toString()})(${JSON.stringify(this.key)},10000);})()`, silent: true }, 2000);
+      await this.send("Runtime.evaluate", { expression: `(()=>{const __name=(value)=>value;for(const name of Object.keys(globalThis))if(name.startsWith(${JSON.stringify(`${this.key}_reply_`)})&&name!==${JSON.stringify(this.binding)})delete globalThis[name];(${installFlowRuntime.toString()})(${JSON.stringify(this.key)},10000);})()`, silent: true, returnByValue: true, objectGroup: this.key }, 2000);
       if (!this.closing && !this.closed) {
         this.heartbeat = setInterval(() => {
           if (this.heartbeatPending) return;
@@ -63,23 +65,24 @@ export class FlowConnection {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => this.finish(id, undefined, new Error("App Flow runtime timed out.")), timeout);
       this.pending.set(id, { resolve, reject, timer });
-      this.socket.send(JSON.stringify({ id, method, params }));
+      this.socket.send(JSON.stringify({ id, method, params }), error => { if (error) this.finish(id, undefined, new Error("Metro disconnected.")); });
     });
   }
   async invoke(command: Record<string, unknown>, timeout = 1500): Promise<any> {
     await this.ready;
     const id = -(++this.sequence);
     const expression = `globalThis[${JSON.stringify(this.key)}]?.invoke(${JSON.stringify(command)},result=>globalThis[${JSON.stringify(this.binding)}](JSON.stringify({id:${id},result})))`;
-    return this.send("Runtime.evaluate", { expression, silent: true }, timeout, id);
+    return this.send("Runtime.evaluate", { expression, silent: true, returnByValue: true, objectGroup: this.key }, timeout, id);
   }
-  close(): Promise<void> { return this.closing ??= this.dispose(); }
-  private async dispose() {
+  close(options?: { restore?: boolean }): Promise<void> { return this.closing ??= this.dispose(options?.restore !== false); }
+  private async dispose(restore: boolean) {
     if (this.closed) return;
     clearInterval(this.heartbeat);
-    try { await Promise.race([this.invoke({ type: "restore" }, 200), new Promise<void>(resolve => { const timer = setTimeout(resolve, 250); timer.unref(); })]); } catch { /* Runtime watchdog also restores after disconnect. */ }
+    if (restore) try { await Promise.race([this.invoke({ type: "restore" }, 200), new Promise<void>(resolve => { const timer = setTimeout(resolve, 250); timer.unref(); })]); } catch { /* Runtime watchdog also restores after disconnect. */ }
     if (this.socket.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify({ id: ++this.sequence, method: "Runtime.removeBinding", params: { name: this.binding } }));
-      this.socket.send(JSON.stringify({ id: ++this.sequence, method: "Runtime.evaluate", params: { expression: `delete globalThis[${JSON.stringify(this.binding)}]`, silent: true } }));
+      this.socket.send(JSON.stringify({ id: ++this.sequence, method: "Runtime.evaluate", params: { expression: `delete globalThis[${JSON.stringify(this.binding)}]`, silent: true, returnByValue: true } }));
+      this.socket.send(JSON.stringify({ id: ++this.sequence, method: "Runtime.releaseObjectGroup", params: { objectGroup: this.key } }));
     }
     this.closed = true;
     this.fail(new Error("App Flow stopped."));
