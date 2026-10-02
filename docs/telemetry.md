@@ -131,7 +131,8 @@ to the current one. `mobile_read_app_flow` is excluded from frequent-tool traces
 
 Capture attempts use a bounded timing window and report
 `app_flow.capture.mean`, `.p95`, and `.max` in milliseconds. Each run reports `app_flow.scan` and `app_flow.run` in milliseconds and gauges for
-`app_flow.routes` and `app_flow.captured`. These measure plugin work and coverage,
+`app_flow.routes` and `app_flow.captured`. Run duration measures elapsed time through
+the end of capture without the former 30-second clamp. These measure plugin work and coverage,
 not device rendering performance. Shared previews count as route coverage, not
 separate screenshots. Attributes contain only the surface and device platform.
 Route names, params, source paths, app data, and screenshots stay out of telemetry.

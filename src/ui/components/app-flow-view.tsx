@@ -35,7 +35,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   const unique = new Set(screens.filter(node => node.image).map(node => node.image)).size;
   const missing = screens.filter(node => node.status === "needs-data").length;
   const current = run?.nodes.find(node => node.id === selected);
-  const elapsed = run ? Math.max(0, ((run.finishedAt ?? Math.min(now, run.deadline)) - run.startedAt) / 1000) : 0;
+  const elapsed = run ? Math.max(0, ((run.finishedAt ?? now) - run.startedAt) / 1000) : 0;
   const fit = () => { if (viewport.current) { setScale(Math.min(1, Math.max(.15, (viewport.current.clientWidth - 24) / graph.width))); viewport.current.scrollTo(0, 0); } };
   const status = run?.phase === "scanning" ? "Finding routes…" : run?.phase === "connecting" ? "Connecting to app…" : run?.phase === "finishing" ? "Finishing…" : running ? "Capturing screens…" : run?.phase === "failed" ? "Capture failed" : run?.phase === "stopped" ? "Stopped" : run ? "Map ready" : "Map your app";
   return <section className="app-flow" aria-label="App Flow">
@@ -48,10 +48,10 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
       <div className="app-flow-connection"><label>Running app<NativeSelect aria-label="Running app" value={target} onChange={event => setTarget(event.target.value)} disabled={running}><NativeSelectOption value="">Choose a Metro app</NativeSelectOption>{state.targets.map(item => <NativeSelectOption key={item.id} value={item.id} disabled={!item.supportsMultipleDebuggers}>{item.appId ?? item.title} · {item.deviceName ?? "Unknown device"}</NativeSelectOption>)}</NativeSelect></label>
         {running ? <Button type="button" variant="outline" size="sm" onClick={() => { void panel.stop(); }}><SquareIcon />Stop</Button> : <Button type="submit" size="sm" disabled={state.busy || !project.trim() || !target || !devices.device}><PlayIcon />{run ? "Map again" : "Map app"}</Button>}
       </div>
-      <div className="app-flow-hint"><span>Open your development build and log in if needed. Each run stops after 30 seconds.</span><label><input type="checkbox" checked={useAi} disabled={running} onChange={event => setUseAi(event.target.checked)} />Use AI for missing params</label></div>
+      <div className="app-flow-hint"><span>Open your development build and log in if needed. Mapping continues until all queued screens have been attempted. Stop any time.</span><label><input type="checkbox" checked={useAi} disabled={running} onChange={event => setUseAi(event.target.checked)} />Use AI for missing params</label></div>
     </form>}
     {(state.error || run?.error) && <p className="app-flow-error" role="alert">{state.error || run?.error}</p>}
-    <div className="app-flow-progress" role="status"><span className={running ? "app-flow-live" : ""}>{status}</span><span>{run ? `${captured}/${screens.length} previews · ${unique} screenshots · ${elapsed.toFixed(1)}s / 30s${missing ? ` · ${missing} need data` : ""}` : "React Navigation and Expo Router"}</span>
+    <div className="app-flow-progress" role="status"><span className={running ? "app-flow-live" : ""}>{status}</span><span>{run ? `${captured}/${screens.length} previews · ${unique} screenshots · ${elapsed.toFixed(1)}s${missing ? ` · ${missing} need data` : ""}` : "React Navigation and Expo Router"}</span>
       {!configOpen && (running ? <Button variant="ghost" size="sm" onClick={() => { void panel.stop(); }}><SquareIcon />Stop</Button> : <Button variant="ghost" size="sm" disabled={state.busy || !project || !target || !devices.device} onClick={() => { void panel.start(project.trim(), metro.trim(), target, useAi); }}><PlayIcon />Map again</Button>)}
       {missing > 0 && run?.ai !== "resolving" && <Button variant="ghost" size="sm" disabled={state.resolving} onClick={() => { void panel.resolveWithAi(); }}><SparklesIcon />Resolve with AI</Button>}{run?.ai === "resolving" && <span>Resolving params…</span>}
     </div>

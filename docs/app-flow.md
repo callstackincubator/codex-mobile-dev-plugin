@@ -5,8 +5,9 @@ its source folder and Metro URL, then choose **Find apps**. Select the matching
 Metro app and choose **Map app**. Open the app and log in first if it requires an
 account. No source injection or app-specific adapter is needed.
 
-The run budget is 30 seconds, including source discovery, connection setup, AI
-resolution, navigation, and capture. Build and launch the app before starting.
+Runs have no total time limit. Mapping finishes after all queued screens have
+been attempted and the background AI batch has returned. Choose **Stop** to end a
+run early. Build and launch the app before starting.
 App Flow currently supports development builds with React Navigation or Expo
 Router, a React Native DevTools hook, and a Metro target that allows multiple
 debugger connections. Capture supports iOS simulators and Android devices;
@@ -34,11 +35,12 @@ lasts up to 350 ms, followed by one deferred attempt up to 1 second. Two matchin
 comparisons fit within a 1.2-second capture limit. Screen changes during capture
 invalidate the image. Capture uses route identity and stable host
 layout across samples; a stable frame is not proof that all content has loaded.
-There is no guarantee that every screen fits within the budget.
+These per-screen timeouts let the queue move past screens that do not settle.
 
 App Flow restores the starting navigation state on completion or stop. Its runtime
-watchdog also attempts restoration if the debugger disconnects. Navigation can
-still trigger ordinary app effects, such as marking content read. It cannot undo
+watchdog renews while the debugger stays connected and attempts restoration if
+heartbeats stop for 10 seconds. Navigation can still trigger ordinary app effects,
+such as marking content read. It cannot undo
 those effects or arbitrary application state changes.
 
 ## Missing params
@@ -50,10 +52,9 @@ Credential keys are stripped. Related values must come from real records.
 
 If background sampling is unavailable, **Resolve with AI** sends a request to the
 current chat. The agent reads `mobile_app_flow` with action `context`, then supplies
-one `resolve` batch. Results arriving after the deadline are cached in server
-memory for **Map again** with the same source, device, and Metro target. The tool
-never extends the capture budget to wait for AI. It does not invent records,
-create fixtures, or bypass authentication. Params requiring callbacks or missing
+one `resolve` batch. Results arriving after the run finishes are cached in server
+memory for **Map again** with the same source, device, and Metro target. It does not
+invent records, create fixtures, or bypass authentication. Params requiring callbacks or missing
 application state may remain unresolved.
 
 ## Results

@@ -23,14 +23,12 @@ export type FlowRun = FlowGraph & {
   id: string;
   phase: "scanning" | "connecting" | "capturing" | "finishing" | "complete" | "stopped" | "failed";
   startedAt: number;
-  deadline: number;
   finishedAt?: number;
   error?: string;
   revision: number;
   ai: "off" | "waiting" | "resolving" | "done" | "unavailable";
 };
 export type FlowResolution = { nodeId: string; params: FlowParams };
-export const FLOW_BUDGET_MS = 30_000;
 export const flowRunning = (run?: FlowRun) => !!run && ["scanning", "connecting", "capturing", "finishing"].includes(run.phase);
 export function missingFlowParams(node: Pick<FlowNode, "required" | "params">): string[] {
   return node.required.filter(key => node.params?.[key] === undefined || node.params[key] === null || node.params[key] === "");

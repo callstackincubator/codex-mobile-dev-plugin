@@ -12,10 +12,12 @@ export class FlowConnection {
   private closed = false;
   private closing?: Promise<void>;
   private ready: Promise<void>;
+  private heartbeat?: NodeJS.Timeout;
+  private heartbeatPending = false;
 
-  constructor(url: string, expiresIn: number) {
+  constructor(url: string) {
     const origin = new URL(url); origin.protocol = "http:";
-    this.socket = new WebSocket(url, { origin: origin.origin, handshakeTimeout: Math.min(3000, expiresIn), maxPayload: 2 * 1024 * 1024, followRedirects: false });
+    this.socket = new WebSocket(url, { origin: origin.origin, handshakeTimeout: 3000, maxPayload: 2 * 1024 * 1024, followRedirects: false });
     this.ready = new Promise((resolve, reject) => {
       this.socket.once("open", () => { resolve(); });
       this.socket.once("error", () => reject(new Error("Cannot connect to the selected Metro runtime.")));
@@ -37,7 +39,15 @@ export class FlowConnection {
     this.ready = this.ready.then(async () => {
       await this.send("Runtime.addBinding", { name: this.binding }, 2000);
       // esbuild keepNames may introduce __name inside serialized functions.
-      await this.send("Runtime.evaluate", { expression: `(()=>{const __name=(value)=>value;(${installFlowRuntime.toString()})(${JSON.stringify(this.key)},${Math.max(1, expiresIn)});})()`, silent: true }, 2000);
+      await this.send("Runtime.evaluate", { expression: `(()=>{const __name=(value)=>value;(${installFlowRuntime.toString()})(${JSON.stringify(this.key)},10000);})()`, silent: true }, 2000);
+      if (!this.closing && !this.closed) {
+        this.heartbeat = setInterval(() => {
+          if (this.heartbeatPending) return;
+          this.heartbeatPending = true;
+          void this.invoke({ type: "heartbeat" }).catch(() => this.close()).finally(() => { this.heartbeatPending = false; });
+        }, 2000);
+        this.heartbeat.unref();
+      }
     });
     void this.ready.catch(() => {});
   }
@@ -46,7 +56,7 @@ export class FlowConnection {
     this.pending.delete(id); clearTimeout(pending.timer);
     if (error) pending.reject(error); else pending.resolve(value);
   }
-  private fail(error: Error) { for (const id of this.pending.keys()) this.finish(id, undefined, error); }
+  private fail(error: Error) { clearInterval(this.heartbeat); for (const id of this.pending.keys()) this.finish(id, undefined, error); }
   private send(method: string, params: unknown, timeout: number, id = ++this.sequence): Promise<any> {
     if (this.closed || this.socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error("Metro connection is closed."));
     return new Promise((resolve, reject) => {
@@ -64,6 +74,7 @@ export class FlowConnection {
   close(): Promise<void> { return this.closing ??= this.dispose(); }
   private async dispose() {
     if (this.closed) return;
+    clearInterval(this.heartbeat);
     try { await Promise.race([this.invoke({ type: "restore" }, 200), new Promise<void>(resolve => { const timer = setTimeout(resolve, 250); timer.unref(); })]); } catch { /* Runtime watchdog also restores after disconnect. */ }
     if (this.socket.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify({ id: ++this.sequence, method: "Runtime.removeBinding", params: { name: this.binding } }));

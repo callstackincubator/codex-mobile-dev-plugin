@@ -24,7 +24,7 @@ const startSchema = z.object({ projectRoot: z.string().min(1).max(2048), platfor
 
 export function registerAppFlowTools(server: McpServer, baguette: Baguette, android: ServeEmu) {
   const runs = new AppFlowRuns({
-    async connect(input, signal, deadline) {
+    async connect(input, signal) {
       parseBaseUrl(input.metroUrl, "Metro URL");
       const targets = await metroTargets(input.metroUrl, signal);
       const target = targets.find(item => item.id === input.targetId);
@@ -36,7 +36,7 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
       signal.throwIfAborted();
       const screenshotUrl = input.platform === "ios" ? new URL(`/simulators/${input.deviceId}/screenshot.png`, baguette.baseUrl) : new URL("/api/screenshot", (await android.start(input.deviceId)).url);
       signal.throwIfAborted();
-      const runtime = new FlowConnection(target.webSocketDebuggerUrl, Math.max(1, deadline - Date.now()));
+      const runtime = new FlowConnection(target.webSocketDebuggerUrl);
       const stop = () => { void runtime.close(); };
       signal.addEventListener("abort", stop, { once: true });
       return { runtime: { invoke: (command, timeout) => runtime.invoke(command, timeout), close: async () => { signal.removeEventListener("abort", stop); await runtime.close(); } },
@@ -74,7 +74,7 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
   };
   registerAppTool(server, "mobile_app_flow", {
     title: "Map React Native app screens",
-    description: "Discover React Navigation and Expo Router screens, show their hierarchy in App Flow, and capture them within a 30-second budget. App must already be running and user logged in. targets lists Metro apps. start needs options with the source folder and selected device/target. context returns unresolved routes and observed params for one AI batch. resolve supplies real params, never invented IDs. stop restores the starting navigation state. Read progress with mobile_read_app_flow. No app-specific adapters or source edits.",
+    description: "Discover React Navigation and Expo Router screens, show their hierarchy in App Flow, and capture them until all queued screens have been attempted. App must already be running and user logged in. targets lists Metro apps. start needs options with the source folder and selected device/target. context returns unresolved routes and observed params for one AI batch. resolve supplies real params, never invented IDs. stop restores the starting navigation state. Read progress with mobile_read_app_flow. No app-specific adapters or source edits.",
     inputSchema: { action: z.enum(["targets", "start", "context", "resolve", "stop"]), options: startSchema.optional(), runId: z.uuid().optional(), metroUrl: z.string().max(2048).optional(), resolutions: resolutionSchema.optional() },
     annotations: write, _meta: { ui: { visibility: ["app", "model"] } },
   }, safe(async ({ action, options, runId, metroUrl, resolutions }) => {

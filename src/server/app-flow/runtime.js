@@ -1,5 +1,5 @@
 // Injected into a development runtime through one CDP connection. No app-specific code.
-export function installFlowRuntime(key, expiresIn) {
+export function installFlowRuntime(key, leaseMs) {
   if (globalThis[key]) return;
   const hook = globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
   let root, original, stopped = false, generation = 0, safeBudget = 2000;
@@ -137,12 +137,16 @@ export function installFlowRuntime(key, expiresIn) {
     try { if (root && original) root.dispatch({ type: 'RESET', payload: original }); } catch {}
     delete globalThis[key];
   }
-  const watchdog = setTimeout(restore, Math.max(1, expiresIn));
+  let watchdog;
+  function renewLease() { clearTimeout(watchdog); watchdog = setTimeout(restore, Math.max(1, leaseMs)); }
+  renewLease();
   globalThis[key] = {
     invoke(command, reply) {
       try {
         if (command.type === 'restore') { restore(); reply({ restored: true }); return; }
         if (stopped) { reply({ error: 'Capture stopped.' }); return; }
+        renewLease();
+        if (command.type === 'heartbeat') { reply({ alive: true }); return; }
         const info = inspect();
         if (command.type === 'inspect') { reply(info); return; }
         if (command.type === 'verify') { reply({ active: info.active, ...visualSignature(command.name) }); return; }

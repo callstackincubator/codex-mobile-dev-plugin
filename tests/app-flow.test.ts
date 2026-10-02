@@ -99,19 +99,19 @@ test("capture loop acknowledges screenshots, keeps missing data, and restores na
   assert.equal((await runs.image(run.id,'first')).toString(),'fixture');
 });
 
-test("budget aborts capture and late AI params are reused on the next run", async t => {
+test("Stop aborts capture and late AI params are reused on the next run", async t => {
   const directory = await fixture(t, {});
   let closes=0;
-  const runs = new AppFlowRuns({ directory, budgetMs:70, scan:async()=>graph(), connect:async()=>({
+  const runs = new AppFlowRuns({ directory, scan:async()=>graph(), connect:async()=>({
     runtime:{ async invoke(command){ if(command.type==='inspect') return {available:true}; return {ready:true,active:['Home'],name:'Home',signature:'home'}; }, async close(){closes++} },
     async screenshot(signal){ await delay(1000,undefined,{signal}); return Buffer.from('fixture'); },
   }) });
   const run=runs.start(start);
   await assert.rejects(async()=>runs.start(start),/already running/);
-  const result=await waitForRun(runs,run.id);
-  assert.equal(result.phase,'complete');
+  await delay(20); runs.stop(run.id); await runs.close();
+  const result=runs.read(run.id);
+  assert.equal(result.phase,'stopped');
   assert.equal(result.nodes[0].status,'timed-out');
-  assert.ok((result.finishedAt??0)-result.startedAt<=70);
   runs.resolve(run.id,[{nodeId:'second',params:{id:'real'}}]);
   const next=runs.start(start);
   await delay(20);
@@ -158,15 +158,14 @@ test("shared screens reuse a labelled preview and keep every navigator occurrenc
   assert.match(result.nodes[1].reason??'',/not captured separately/);
 });
 
-test("deadline also bounds connection setup and closes a late connection",async t=>{
+test("Stop cancels connection setup and closes a late connection",async t=>{
   const directory=await fixture(t,{});let closed=false;
-  const runs=new AppFlowRuns({directory,budgetMs:40,scan:async()=>graph(),connect:async()=>{
+  const runs=new AppFlowRuns({directory,scan:async()=>graph(),connect:async()=>{
     await delay(100);
-    return {runtime:{async invoke(){throw Error('Must not navigate after deadline')},async close(){closed=true}},async screenshot(){throw Error('Must not capture after deadline')}};
+    return {runtime:{async invoke(){throw Error('Must not navigate after Stop')},async close(){closed=true}},async screenshot(){throw Error('Must not capture after Stop')}};
   }});
-  const run=runs.start(start);const result=await waitForRun(runs,run.id);
-  assert.equal(result.phase,'complete');
-  assert.equal(result.finishedAt,result.deadline);
+  const run=runs.start(start); await delay(10); runs.stop(run.id); await runs.close();
+  assert.equal(runs.read(run.id).phase,'stopped');
   await delay(110);assert.equal(closed,true);await runs.close();
 });
 
@@ -179,4 +178,28 @@ test("changing native pixels time out instead of producing a transition screensh
   const run=runs.start(start);await waitForRun(runs,run.id);await runs.close();
   assert.equal(runs.read(run.id).nodes[0].status,'timed-out');
   assert.equal(runs.read(run.id).nodes[0].image,undefined);
+});
+
+
+test("capture continues past 30 seconds and reports full elapsed time", async t => {
+  const directory = await fixture(t, {});
+  const startedAt = Date.now(); let now = startedAt, opens = 0;
+  t.mock.method(Date, 'now', () => now);
+  const routes = graph();
+  routes.nodes[1].required = []; routes.nodes[1].status = 'pending';
+  const runs = new AppFlowRuns({directory, scan: async () => routes, connect: async () => ({
+    runtime: {async invoke(command) {
+      if (command.type === 'inspect') return {available: true};
+      if (command.type === 'open') { opens++; now += 31_000; }
+      return {ready: true, active: ['screen'], name: 'screen', found: true, signature: 'stable'};
+    }, async close() {}},
+    async screenshot() { return Buffer.from('stable'); },
+  })});
+  const run = runs.start(start); await waitForRun(runs, run.id); await runs.close();
+  const result = runs.read(run.id);
+  assert.equal(result.phase, 'complete');
+  assert.equal(opens, 2);
+  assert.ok(result.nodes.every(node => node.status === 'captured'));
+  assert.equal(result.finishedAt! - result.startedAt, 62_000);
+  assert.equal('deadline' in result, false);
 });

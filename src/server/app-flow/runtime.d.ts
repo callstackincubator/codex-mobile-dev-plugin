@@ -1,1 +1,1 @@
-export function installFlowRuntime(key: string, expiresIn: number): void;
+export function installFlowRuntime(key: string, leaseMs: number): void;
