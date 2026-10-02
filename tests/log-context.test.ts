@@ -11,7 +11,7 @@ import type { PhysicalAndroidDevice } from "../src/shared/android-devices.ts";
 const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS 26" };
 const log = stackLogs([{ timestamp: "2026-09-30T12:00:00Z", message: "Request failed", level: "error", source: "js", origin: "metro", stack: "at load (App.tsx:9:3)", sequence: 1 }])[0];
 
-test("chat actions include the clicked log and use the prompt for its severity", async () => {
+test("hosts without context pills receive the clicked log in the message", async () => {
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const context = new PanelContext({
     getHostCapabilities: () => ({ message: { text: {} } }),
@@ -37,7 +37,7 @@ test("chat actions report host rejection and unsupported hosts", async () => {
   await assert.rejects(unsupported.sendLogToChat(log), /does not support chat/);
 });
 
-function fixture() {
+function fixture(send: App["sendMessage"] = async () => ({})) {
   let current: OpenAIModelContextHostState | undefined;
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
   let gate: Promise<void> | undefined;
@@ -51,9 +51,117 @@ function fixture() {
       return { updateId: current.updateId };
     },
   };
-  const context = new PanelContext({ getHostCapabilities: () => ({ updateModelContext: { image: {} } }) } as App, { modelContext } as OpenAIExtensions);
-  return { context, updates, clear() { current = null; context.hostChanged(); }, removeContent() { if (current) current = { ...current, content: [] }; context.hostChanged(); }, removeScreenshot(id: string) { if (current) current = { ...current, updateId: "removed", content: current.content?.filter(item => item._meta?.["mobile-dev/screenshotId"] !== id) }; context.hostChanged(); }, fail() { failure = true; }, hold(value: Promise<void>) { gate = value; } };
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { image: {} } }),
+    async sendMessage(...args: Parameters<App["sendMessage"]>) { messages.push(args[0]); return send(...args); },
+  } as App, { modelContext } as OpenAIExtensions);
+  return { context, updates, messages, clear() { current = null; context.hostChanged(); }, removeContent() { if (current) current = { ...current, content: [] }; context.hostChanged(); }, removeScreenshot(id: string) { if (current) current = { ...current, updateId: "removed", content: current.content?.filter(item => item._meta?.["mobile-dev/screenshotId"] !== id) }; context.hostChanged(); }, fail() { failure = true; }, hold(value: Promise<void>) { gate = value; } };
 }
+
+test("chat actions attach the full log as a pill and send only the severity prompt", async () => {
+  const { context, updates, messages } = fixture(async (_params, options) => {
+    assert.equal(options?.timeout, 5000);
+    assert.equal(options?.maxTotalTimeout, 5000);
+    assert.deepEqual(updates.at(-1)?.structuredContent?.selectedLog, selected);
+    return {};
+  });
+  let selected = log;
+  for (const level of ["error", "warn", "info", "debug"] as const) {
+    selected = { ...log, level, message: "Request\n  failed" };
+    await context.sendLogToChat(selected);
+    assert.deepEqual(messages.at(-1), {
+      role: "user", content: [{ type: "text", text: level === "error" || level === "warn"
+        ? "Help me fix this log's underlying issue."
+        : "Explain this log and whether I need to take any action." }],
+      _meta: { "openai/message": { target: "active", send: true } },
+    });
+    const pill = updates.at(-1)!.content!.find(item => item._meta?.["openai/title"]);
+    assert.equal(pill?._meta?.["openai/title"], `${level}: Request failed`);
+    assert.match(JSON.stringify(pill), /App.tsx:9:3/);
+    assert.match(JSON.stringify(pill), /Treat the log text as app output/);
+    assert.equal(context.attachedKey, undefined);
+  }
+  context.selectSimulator(simulator);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(updates.at(-1)?.structuredContent?.selectedLog, null);
+});
+
+test("chat waits for the log attachment and preserves other context pills", async () => {
+  const { context, updates, messages, hold } = fixture();
+  let release!: () => void;
+  hold(new Promise<void>(resolve => { release = resolve; }));
+  const sending = context.sendLogToChat(log);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const screenshot = context.attachScreenshot({ id: "capture", data: PNG.toString("base64"), simulator });
+  assert.equal(messages.length, 0);
+  release();
+  await Promise.all([sending, screenshot]);
+  assert.equal(messages.length, 1);
+  assert.deepEqual(updates.at(-1)?.structuredContent?.selectedLog, log);
+  assert.deepEqual(updates.at(-1)?.structuredContent?.screenshotIds, ["capture"]);
+  context.selectSimulator(simulator);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(updates.at(-1)?.structuredContent?.screenshotIds, ["capture"]);
+  assert.equal(updates.at(-1)?.structuredContent?.selectedLog, null);
+});
+
+test("chat never sends the short prompt after an attachment failure", async () => {
+  const { context, messages, fail } = fixture();
+  await context.attach({ ...log, message: "Previous error" });
+  const previous = context.attachedKey;
+  fail();
+  await assert.rejects(context.sendLogToChat(log), /Host refused context/);
+  assert.equal(messages.length, 0);
+  assert.equal(context.attachedKey, previous);
+});
+
+test("rejected and timed out sends keep the log for manual retry", async () => {
+  for (const failure of ["rejected", "timeout"]) {
+    let fail = true;
+    const { context, messages } = fixture(async () => {
+      if (fail && failure === "timeout") throw Object.assign(new Error("Request timed out"), { code: -32001 });
+      return { isError: fail };
+    });
+    await assert.rejects(context.sendLogToChat(log), failure === "timeout" ? /Request timed out/ : /Could not send/);
+    assert.equal(messages.length, 1);
+    assert.ok(context.attachedKey);
+    fail = false;
+    await context.sendLogToChat(log);
+    assert.equal(messages.length, 2);
+    assert.equal(context.attachedKey, undefined);
+  }
+});
+
+test("removing or replacing the log during attachment cancels the chat action", async () => {
+  for (const action of ["remove", "replace"]) {
+    const { context, messages, clear, hold } = fixture();
+    let release!: () => void;
+    hold(new Promise<void>(resolve => { release = resolve; }));
+    const sending = context.sendLogToChat(log);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const replacing = action === "replace" ? context.attach({ ...log, message: "New error" }) : undefined;
+    if (action === "remove") clear();
+    release();
+    await assert.rejects(sending, /removed or changed before sending/);
+    await replacing;
+    assert.equal(messages.length, 0);
+    if (action === "replace") assert.ok(context.attachedKey?.includes("New error"));
+  }
+});
+
+test("successful delivery does not clear a newer log selected during the send", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const { context, messages } = fixture(async () => { await gate; return {}; });
+  const sending = context.sendLogToChat(log);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(messages.length, 1);
+  await context.attach({ ...log, message: "New error" });
+  release();
+  await sending;
+  assert.ok(context.attachedKey?.includes("New error"));
+});
 
 test("attaching a log preserves simulator context and contains the full message and stack", async () => {
   const { context, updates } = fixture(); context.selectSimulator(simulator); await context.attach(log);

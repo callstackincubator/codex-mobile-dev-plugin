@@ -112,6 +112,11 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   api.countUiEvent("ui.annotations.runtime_available");
   api.countUiEvent("ui.annotations.inspection_fallback");
   api.setUiSurface("logs");
+  await context.sendLogToChat({
+    timestamp: "2026-10-02T10:00:00Z", lastTimestamp: "2026-10-02T10:00:00Z", count: 1, sequence: 1,
+    origin: "metro", source: "js", level: "error", deviceId: "PRIVATE_DEVICE",
+    message: "PRIVATE_LOG_MESSAGE", stack: "PRIVATE_LOG_STACK",
+  });
   frame(116);
   frame(132);
   api.flushUiMeasurements();
@@ -165,6 +170,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   assert.ok(allowedRequests);
   contains(encoded, '"environment":"development"');
   contains(encoded, "ui.logs.publish.mean");
+  contains(encoded, "ui.logs.send.mean");
   contains(encoded, "ui.annotations.tree_processing.mean");
   contains(encoded, "ui.annotations.inspection.mean");
   contains(encoded, "ui.annotations.message_build.mean");

@@ -126,8 +126,27 @@ export class PanelContext {
     const prompt = log.level === "error" || log.level === "warn"
       ? "Help me fix this log's underlying issue."
       : "Explain this log and whether I need to take any action.";
-    const result = await this.app.sendMessage({ role: "user", content: [{ type: "text", text: `${prompt}\n\n${formatLogContext(log)}` }] });
-    if (result.isError) throw new Error("Could not send this log to chat.");
+    const startedAt = performance.now();
+    try {
+      if (this.canAttach) {
+        await this.attach(log);
+        // Other context writes can supersede the attachment's queued update.
+        let publishing: Promise<void>;
+        do { publishing = this.queue; await publishing; } while (publishing !== this.queue);
+      }
+      const text = this.canAttach ? prompt : `${prompt}\n\n${formatLogContext(log)}`;
+      const result = await withComposer(() => {
+        if (this.canAttach && this.attached !== log) throw new Error("The selected log was removed or changed before sending.");
+        return this.app.sendMessage({ role: "user", content: [{ type: "text", text }],
+          _meta: { "openai/message": { target: "active", send: true } },
+        }, { timeout: 5000, maxTotalTimeout: 5000 });
+      });
+      if (result.isError) throw new Error("Could not send this log to chat.");
+      if (this.attached === log) {
+        this.attached = undefined;
+        this.revision++; this.changed();
+      }
+    } finally { recordUiTiming("ui.logs.send", performance.now() - startedAt); }
   }
 
   selectSimulator(simulator?: SimulatorDevice) {
@@ -213,7 +232,7 @@ export class PanelContext {
       const content = [{ type: "text" as const, annotations: { audience: ["assistant" as const] }, text: devices.length
         ? `Mobile Dev devices. Logs follow the active device.\n${devices.join("\n")}`
         : "Mobile Dev has no selected simulator." },
-      ...(log ? [{ type: "text" as const, text: formatLogContext(log), _meta: { "openai/title": `${log.level}: ${log.message.slice(0, 70)}` } }] : []),
+      ...(log ? [{ type: "text" as const, text: formatLogContext(log), _meta: { "openai/title": `${log.level}: ${log.message.replace(/\s+/g, " ").trim().slice(0, 70)}` } }] : []),
       ...this.screenshots.map(screenshot => ({
         type: "image" as const, mimeType: "image/png", data: screenshot.data,
         _meta: { "openai/title": `Screenshot of ${screenshot.simulator.name} (${screenshot.simulator.udid})`, "mobile-dev/screenshotId": screenshot.id },
