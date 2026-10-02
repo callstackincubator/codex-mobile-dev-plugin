@@ -102,7 +102,7 @@ export async function publishRelease(pluginDirectory, tag, remote, token) {
       if (previousCatalog.name !== "mobile-dev") throw new Error("release/latest must contain the mobile-dev marketplace.");
       const previousSubject = git(["log", "-1", "--format=%s"]);
       const subject = previousSubject.trim();
-      const previousRelease = subject.match(/^Release Mobile Dev (\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?)$/);
+      const previousRelease = subject.match(/ (\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?)$/);
       if (previousRelease === null) throw new Error("release/latest must point to a Mobile Dev release commit.");
       const previousVersion = previousRelease[1];
       const comparison = compareVersions(version, previousVersion);
@@ -122,7 +122,7 @@ export async function publishRelease(pluginDirectory, tag, remote, token) {
     const catalogText = JSON.stringify(catalog, null, 2);
     await writeFile(`${directory}/.agents/plugins/marketplace.json`, catalogText + "\n");
     git(["add", "--all", "--force"]);
-    git(["commit", "-m", `Release Mobile Dev ${version}`]);
+    git(["commit", "-m", `chore(release): release mobile-dev ${version}`]);
     git(["push", "origin", `HEAD:${branch}`]);
     return { published: true, version, latest: version };
   } finally {

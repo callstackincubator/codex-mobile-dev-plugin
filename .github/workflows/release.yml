@@ -31,6 +31,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -76,6 +77,7 @@ jobs:
       - name: Install JavaScript runtimes
         run: |
           npm ci --no-audit --no-fund
+          npm run lint:commits -- --last --verbose
           npm run vendor:agent-device
           npm run vendor:serve-emu
 
@@ -129,24 +131,38 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/tags/${{ needs.build.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22.23.2'
+
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: mobile-dev-${{ needs.build.outputs.version }}-darwin-arm64
           path: release
 
-      - name: Create draft GitHub release
+      - name: Publish GitHub release with linked commit titles
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.build.outputs.tag }}
           RELEASE_VERSION: ${{ needs.build.outputs.version }}
         run: |
+          gh api "repos/$GH_REPO/releases" --paginate \
+            --jq '.[] | select(.draft == false) | .tag_name' > "$RUNNER_TEMP/published-release-tags.txt"
+          node scripts/release-notes.mjs \
+            "$RUNNER_TEMP/published-release-tags.txt" "$RUNNER_TEMP/release-notes.md"
           gh release create "$RELEASE_TAG" \
             "release/mobile-dev-$RELEASE_VERSION-darwin-arm64.zip" \
-            --verify-tag --draft --generate-notes --title "Mobile Dev $RELEASE_VERSION"
+            --verify-tag --notes-file "$RUNNER_TEMP/release-notes.md" --title "Mobile Dev $RELEASE_VERSION"
 
   publish:
-    needs: build
+    needs: [build, release]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

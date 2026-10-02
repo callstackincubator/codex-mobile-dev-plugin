@@ -11,7 +11,8 @@ an existing commit with a `v<version>` tag. The tag must match `.codex-plugin/pl
 npm run public-release
 ```
 
-This command checks that the working tree is clean and the release versions agree,
+This command checks that the working tree is clean, the release versions agree,
+and the current commit follows Conventional Commits. It then
 creates `v<version>` at the current commit, and pushes that tag to `origin`. It
 uses the current plugin version (for example, `v0.1.100`) without bumping it.
 Existing tags are preserved. If the push fails after tag creation, the command
@@ -22,37 +23,45 @@ The workflow checks out that tag, uses the Apple Silicon `xcode-27` runner and
 Xcode 27 / Swift 6.4, installs the locked JavaScript runtimes, and rebuilds every
 native helper with Android NDK 27.2.12479018 and Rust 1.98.1. It runs the tests,
 builds and packages with the explicit `release` environment, then smoke-tests a
-fresh extraction of the actual ZIP.
+fresh extraction of the actual ZIP. CI also validates the tagged commit message,
+including when the tag was pushed directly.
 
 The package uses Codex's compatibility manifest and forwards the desktop's
 `SHELL` to a checked launcher that discovers Node in the user’s interactive login
 shell. No Node executable is bundled. Discovery uses one shell lookup and fails
 clearly when its result is absent, unusable, ambiguous, or below Node 22.18.
 The extracted-ZIP smoke test launches that manifest with Node absent from PATH,
-including both sidebar and chat entrypoints. Publishing compares the version in
-the previous `Release Mobile Dev <version>` commit, so the manifest relocation
+including both sidebar and chat entrypoints. Publishing compares the version at
+the end of the previous marketplace commit title, so the manifest relocation
 also works when advancing an existing portable release on `release/latest`.
 
 Configure the repository's Actions secrets `SENTRY_AUTH_TOKEN` and `SENTRY_ORG`.
 Both are required. The workflow uploads matching UI/server source maps and native
 symbols to the existing three Sentry projects before saving the artifact and
-creating a draft GitHub release. Upload failures stop the release. Credentials
+publishing a GitHub release. Upload failures stop the release. Credentials
 and debug artifacts stay outside the plugin ZIP.
 
-Download `mobile-dev-<version>-darwin-arm64.zip` directly from the draft release's
+The published release contains a chronological bullet list of every commit title,
+each linking to its GitHub commit. Commit bodies are omitted. The range starts
+after the nearest published release tag reachable from the new tag; unpublished
+tags and draft releases do not truncate the list. The first public release lists
+the full source history. Later releases also include a link to the full diff.
+
+Download `mobile-dev-<version>-darwin-arm64.zip` directly from the release's
 assets for manual store upload. The same ZIP is also retained as an Actions
 artifact for 30 days; extract the Actions artifact wrapper before uploading the
-plugin ZIP. Creating a draft release does not submit or publish it to the OpenAI
+plugin ZIP. Publishing a GitHub release does not submit or publish it to the OpenAI
 plugin directory. A tag that already has a GitHub release will fail release
 creation rather than replace existing assets; download the ZIP from the completed
 build job or use a new version for a new release.
 
-After the build, ZIP smoke test, and Sentry upload succeed, the workflow also
-publishes the extracted ZIP and a marketplace catalog to `release/latest` in this
+After the build, ZIP smoke test, Sentry upload, and GitHub release succeed, the
+workflow also publishes the extracted ZIP and a marketplace catalog to `release/latest` in this
 repository. The branch contains only the prebuilt marketplace; its first commit
 is independent of the source history, so development ignore rules do not exclude
 `dist/` or bundled runtime dependencies. Later releases advance the branch without
 force pushes. Older or repeated versions leave the latest payload unchanged.
+New marketplace commits use `chore(release): release mobile-dev <version>`.
 
 Use the [installation and update commands](../README.md#install).
 The prebuilt marketplace is named `mobile-dev`, separate from the

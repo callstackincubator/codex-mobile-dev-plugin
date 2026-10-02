@@ -33,7 +33,7 @@ async function fixture(t: TestContext) {
   await writeFile(`${repository}/package-lock.json`, '{"version":"1.2.3","packages":{"":{"version":"1.2.3"}}}');
   await writeFile(`${repository}/src/shared/version.ts`, 'export const PLUGIN_VERSION = "1.2.3";\n');
   git(repository, ["add", "."]);
-  git(repository, ["commit", "-m", "Prepare release"]);
+  git(repository, ["commit", "-m", "chore(release): prepare release"]);
   return { repository, remote };
 }
 
@@ -63,7 +63,7 @@ test("public-release refuses inconsistent committed versions before creating a t
   const { repository } = await fixture(t);
   await writeFile(`${repository}/package.json`, '{"version":"1.2.4"}');
   git(repository, ["add", "package.json"]);
-  git(repository, ["commit", "-m", "Mismatch package version"]);
+  git(repository, ["commit", "-m", "chore(release): mismatch package version"]);
   const release = publicRelease(repository);
   await assert.rejects(release, /package.json version/);
   const tags = git(repository, ["tag", "--list"]);
@@ -90,9 +90,20 @@ test("public-release never overwrites an existing remote tag and reports how to 
   git(repository, ["tag", "--delete", "v1.2.3"]);
   await writeFile(`${repository}/later.txt`, "later commit");
   git(repository, ["add", "later.txt"]);
-  git(repository, ["commit", "-m", "Later change"]);
+  git(repository, ["commit", "-m", "fix: update release payload"]);
   const release = publicRelease(repository);
   await assert.rejects(release, /push failed.*git push origin refs\/tags\/v1\.2\.3/);
   const remoteTag = git(remote, ["rev-parse", "refs/tags/v1.2.3"]);
   assert.equal(remoteTag, initialTag);
+});
+
+test("public-release rejects a nonconventional commit before creating or pushing a tag", async t => {
+  const { repository, remote } = await fixture(t);
+  git(repository, ["commit", "--amend", "-m", "Prepare release"]);
+  const release = publicRelease(repository);
+  await assert.rejects(release, /release commit must follow Conventional Commits/);
+  const localTags = git(repository, ["tag", "--list"]);
+  const remoteTags = git(remote, ["tag", "--list"]);
+  assert.equal(localTags, "");
+  assert.equal(remoteTags, "");
 });

@@ -1,0 +1,47 @@
+name: Conventional commits
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22.23.2'
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Check commit messages
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ "$BASE_SHA" = '0000000000000000000000000000000000000000' ]; then
+            npm run lint:commits -- --last --verbose
+          else
+            npm run lint:commits -- --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+          fi
+
+      - name: Check the pull request title used for squash merges
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | npm run lint:commits

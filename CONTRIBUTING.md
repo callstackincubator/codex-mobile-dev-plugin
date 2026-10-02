@@ -26,6 +26,17 @@ Set `MOBILE_DEV_OPENSSL_PREFIX` if it is installed elsewhere.
 
 ## Build and package
 
+New commits and pull request titles must use
+[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), for example
+`feat(devices): add simulator controls` or `fix(logs): handle disconnects`.
+Supported types are `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`,
+`refactor`, `revert`, `style`, and `test`; scopes are optional, and `!` marks a
+breaking change. `npm ci` installs a Husky `commit-msg` hook that runs commitlint.
+CI checks commits added by pull requests and pushes to `main`, plus pull request
+titles for squash merges. Git-generated merge messages are exempt. Existing
+history does not need rewriting. Make the `commitlint` check required in the
+repository's branch rules to block merging a failed check.
+
 From the repository root, prepare the JavaScript runtimes and native helpers,
 then build and verify the package:
 

@@ -1,5 +1,12 @@
 # Project instructions
 
+## Commit messages
+
+Use Conventional Commits for new source commits and pull request titles, for
+example `feat(devices): add simulator controls` or `fix(logs): handle disconnects`.
+Run `npm ci` to install the commit-message hook. Public releases also validate
+the tagged commit's message.
+
 ## Sentry observability
 
 Sentry coverage is part of feature implementation and maintenance. When adding a

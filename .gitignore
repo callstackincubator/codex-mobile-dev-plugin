@@ -1,4 +1,5 @@
 node_modules/
+.husky/_/
 dist/
 vendor/baguette/
 release/

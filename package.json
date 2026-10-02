@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.115",
+  "version": "0.1.116",
   "private": true,
   "type": "module",
   "engines": {
@@ -38,7 +38,9 @@
     "test:native-telemetry": "node scripts/smoke-native-telemetry.mjs",
     "sentry:upload": "node scripts/upload-sourcemaps.mjs",
     "typecheck:telemetry": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution bundler --allowImportingTsExtensions src/shared/telemetry.ts src/server/instrument.ts src/server/telemetry.ts src/server/storage-metrics.ts src/ui/telemetry.ts",
-    "test:codex-plugin": "node scripts/smoke-codex-plugin.mjs"
+    "test:codex-plugin": "node scripts/smoke-codex-plugin.mjs",
+    "prepare": "husky",
+    "lint:commits": "commitlint"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -63,6 +65,8 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@commitlint/cli": "21.2.3",
+    "@commitlint/config-conventional": "21.2.3",
     "@sentry/cli": "2.58.6",
     "@tailwindcss/node": "^4.3.3",
     "@tailwindcss/oxide": "^4.3.3",
@@ -73,6 +77,7 @@
     "@types/ws": "8.18.2",
     "@vitejs/plugin-react": "^5.2.0",
     "esbuild": "0.28.2",
+    "husky": "9.1.7",
     "jsdom": "^29.1.1",
     "shadcn": "^4.21.0",
     "tailwindcss": "^4.3.3",

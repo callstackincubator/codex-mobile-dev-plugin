@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { releaseMetadata } from "./release-metadata.mjs";
+import { lintCommit } from "./lint-commit.mjs";
 
 function git(args, directory) {
   return execFileSync("git", args, {
@@ -22,6 +23,12 @@ export async function publicRelease(directory = ".") {
   }
   const head = git(["rev-parse", "HEAD"], directory);
   const commit = head.trim();
+  const message = git(["log", "-1", "--format=%B", commit], directory);
+  try {
+    lintCommit(message);
+  } catch (error) {
+    throw new Error("The release commit must follow Conventional Commits.\n" + error.stdout, { cause: error });
+  }
   git(["tag", release.tag, commit], directory);
   try {
     git(["push", "origin", `refs/tags/${release.tag}`], directory);
@@ -35,5 +42,5 @@ const scriptPath = fileURLToPath(import.meta.url);
 const executedPath = process.argv[1] ? resolve(process.argv[1]) : undefined;
 if (executedPath === scriptPath) {
   const release = await publicRelease();
-  console.log(`Pushed ${release.tag}. GitHub Actions will build the ZIP, create a draft release, and publish release/latest.`);
+  console.log(`Pushed ${release.tag}. GitHub Actions will build the ZIP, publish a GitHub release with linked commit titles, and publish release/latest.`);
 }

@@ -73,6 +73,8 @@ test("publishing creates an independent branch with built files, runtime depende
   assert.equal(commits.trim(), "1");
   const currentSourceHead = git(remote, ["rev-parse", "main"]);
   assert.equal(currentSourceHead, sourceHead);
+  const subject = git(remote, ["log", "-1", "--format=%s", "release/latest"]);
+  assert.equal(subject.trim(), "chore(release): release mobile-dev 1.2.3");
 });
 
 test("publishing a newer release advances the branch and removes obsolete files", async t => {

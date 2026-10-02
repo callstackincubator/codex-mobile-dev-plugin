@@ -1,0 +1,1 @@
+npm run --silent lint:commits -- --edit "$1"
