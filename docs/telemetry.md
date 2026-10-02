@@ -121,3 +121,19 @@ SENTRY_ORG=your_organization_slug
 ```
 
 That file is also listed in `.worktreeinclude` for local worktrees. Use the organization slug, rather than a team slug, for `SENTRY_ORG`. `npm run sentry:upload` reads the file in preference to shell settings, creates the shared release in all three projects, uploads JavaScript maps and native debug files, and finalizes the release. Rebuild native helpers and run `npm run build` before uploading so symbols and maps match the packaged code. Runtime reporting needs only the public DSNs; it does not need this token. Build and upload are separate commands. `npm run test:native-telemetry` verifies a real isolated crash, Rust panic privacy, metrics, opt-out and the Android relay transport against a local receiver.
+
+### App Flow
+
+App Flow uses the `app-flow` surface in UI and server context. The UI records
+`ui.app_flow.layout` and `ui.app_flow.update` through bounded timing windows.
+Hidden tabs stop polling, and responses from an earlier surface do not add timings
+to the current one. `mobile_read_app_flow` is excluded from frequent-tool traces.
+
+Capture attempts use a bounded timing window and report
+`app_flow.capture.mean`, `.p95`, and `.max` in milliseconds. Each run reports `app_flow.scan` and `app_flow.run` in milliseconds and gauges for
+`app_flow.routes` and `app_flow.captured`. These measure plugin work and coverage,
+not device rendering performance. Shared previews count as route coverage, not
+separate screenshots. Attributes contain only the surface and device platform.
+Route names, params, source paths, app data, and screenshots stay out of telemetry.
+Errors use fixed descriptions. Existing initialization, identity, sampling,
+scrubbing, release metadata, and opt-out remain in use.

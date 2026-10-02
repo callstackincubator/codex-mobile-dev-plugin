@@ -1,4 +1,4 @@
-import { ActivityIcon, TerminalIcon, PanelsTopLeftIcon } from "lucide-react";
+import { ActivityIcon, TerminalIcon, PanelsTopLeftIcon, GitForkIcon } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { LogsPanel } from "../logs-panel.ts";
 import type { PerformancePanel } from "../performance-panel.ts";
@@ -15,15 +15,19 @@ import { markUiSurfaceReady, setUiSurface, setUiTelemetryContext } from "../tele
 import type { RecordingController } from "../recording-controller.ts";
 import { RecordingCard } from "./recording-card";
 
+import type { AppFlowPanel } from "../app-flow-panel.ts";
+import { AppFlowView } from "./app-flow-view";
+
 export type DeviceLayout = "both" | "ios" | "android" | "none";
 
-export function Workspace({ logs, performance, recordingController, onLayout }: { logs: LogsPanel; performance: PerformancePanel; recordingController: RecordingController; onLayout: (layout: DeviceLayout) => void }) {
-  const [tool, setTool] = useState<"logs" | "performance">("logs");
+export function Workspace({ logs, performance, recordingController, appFlow, onLayout }: { appFlow: AppFlowPanel; logs: LogsPanel; performance: PerformancePanel; recordingController: RecordingController; onLayout: (layout: DeviceLayout) => void }) {
+  const [tool, setTool] = useState<"logs" | "performance" | "app-flow">("logs");
   const [savedVisible, setSavedVisible] = useState(false);
   const [layout, setLayout] = useState<DeviceLayout>("ios");
   const recordingState = useSyncExternalStore(recordingController.subscribe, recordingController.getSnapshot);
   useEffect(() => {
     if (recordingState.recording === undefined) return;
+    appFlow.hide();
     setTool("performance");
     setSavedVisible(true);
     setLayout("none");
@@ -31,31 +35,35 @@ export function Workspace({ logs, performance, recordingController, onLayout }: 
     logs.hide();
     performance.hide();
   }, [recordingState.recording?.id]);
+  const flowState = useSyncExternalStore(appFlow.subscribe, appFlow.getSnapshot);
   const performanceState = useSyncExternalStore(performance.subscribe, performance.getSnapshot);
   const wide = useMediaQuery("(min-width: 900px)");
   const fullscreen = document.documentElement.dataset.view === "workspace";
   const split = wide && fullscreen;
   const collapsedToolSize = fullscreen ? (split ? 48 : 44) : 0;
   const logState = useSyncExternalStore(logs.subscribe, logs.getSnapshot);
-  const open = tool === "logs" ? logState.open : savedVisible || performanceState.open;
+  const open = tool === "app-flow" ? flowState.open : tool === "logs" ? logState.open : savedVisible || performanceState.open;
   useEffect(() => { setUiSurface(open ? savedVisible ? "recording" : tool : "simulator"); }, [tool, open, savedVisible]);
   useEffect(() => {
     setUiTelemetryContext({ logs_open: logState.open, logs_paused: logState.paused, performance_running: performanceState.monitoring || performanceState.fpsMonitoring });
   }, [logState.open, logState.paused, performanceState.monitoring, performanceState.fpsMonitoring]);
-  const isOpen = () => tool === "logs" ? logs.getSnapshot().open : savedVisible || performance.getSnapshot().open;
+  const isOpen = () => tool === "app-flow" ? appFlow.getSnapshot().open : tool === "logs" ? logs.getSnapshot().open : savedVisible || performance.getSnapshot().open;
   const closeTools = () => {
+    appFlow.hide();
     setSavedVisible(false);
     if (logs.getSnapshot().open) logs.toggle();
     performance.hide();
     void performance.disconnect();
   };
-  const showTool = (next: "logs" | "performance") => {
+  const showTool = (next: "logs" | "performance" | "app-flow") => {
     const startedAt = globalThis.performance.now();
     if (next === tool && isOpen()) { closeTools(); return; }
     setUiSurface(next);
     setTool(next);
     setSavedVisible(false);
-    if (next === "logs") { performance.hide(); logs.show(); }
+    if (next !== "app-flow") appFlow.hide();
+    if (next === "app-flow") { logs.hide(); performance.hide(); appFlow.show(); }
+    else if (next === "logs") { performance.hide(); logs.show(); }
     else { logs.hide(); performance.show(); }
     markUiSurfaceReady(startedAt);
   };
@@ -72,16 +80,17 @@ export function Workspace({ logs, performance, recordingController, onLayout }: 
     if (!previous) return;
     if (size.inPixels <= collapsedToolSize + 1 && isOpen()) closeTools();
     else if (size.inPixels > 80 && isOpen() === false) showTool(tool);
-  }}>{tool === "logs" && <LogsView panel={logs} />}{tool === "performance" && open && (savedVisible ? <div className="recording-workspace"><Button variant="outline" size="sm" onClick={() => { setSavedVisible(false); performance.show(); }}>Live performance</Button><RecordingCard controller={recordingController} detailed /></div> : <PerformanceView panel={performance} />)}</ResizablePanel>;
+  }}>{tool === "app-flow" && open && <AppFlowView panel={appFlow} />}{tool === "logs" && <LogsView panel={logs} />}{tool === "performance" && open && (savedVisible ? <div className="recording-workspace"><Button variant="outline" size="sm" onClick={() => { setSavedVisible(false); performance.show(); }}>Live performance</Button><RecordingCard controller={recordingController} detailed /></div> : <PerformanceView panel={performance} />)}</ResizablePanel>;
   const toolbar = <>
-    <Select items={[{ value: "none", label: "Tools" }, { value: "logs", label: "Logs" }, { value: "performance", label: "Performance" }]} value={open ? tool : "none"} onValueChange={value => {
+    <Select items={[{ value: "none", label: "Tools" }, { value: "logs", label: "Logs" }, { value: "performance", label: "Performance" }, { value: "app-flow", label: "App Flow" }]} value={open ? tool : "none"} onValueChange={value => {
       if (value === "none") closeTools();
-      else if (value === "logs" || value === "performance") showTool(value);
+      else if (value === "logs" || value === "performance" || value === "app-flow") showTool(value);
     }}>
-      <SelectTrigger id="tool-select" size="sm" className="shrink-0" aria-label="Developer tools"><SelectValue>{open ? tool === "logs" ? <TerminalIcon /> : <ActivityIcon /> : <PanelsTopLeftIcon />}<span className="@max-[600px]:sr-only">{open ? tool === "logs" ? "Logs" : "Performance" : "Tools"}</span></SelectValue></SelectTrigger>
+      <SelectTrigger id="tool-select" size="sm" className="shrink-0" aria-label="Developer tools"><SelectValue>{open ? tool === "app-flow" ? <GitForkIcon /> : tool === "logs" ? <TerminalIcon /> : <ActivityIcon /> : <PanelsTopLeftIcon />}<span className="@max-[600px]:sr-only">{open ? tool === "app-flow" ? "App Flow" : tool === "logs" ? "Logs" : "Performance" : "Tools"}</span></SelectValue></SelectTrigger>
       <SelectContent align="start" alignItemWithTrigger={false}><SelectGroup>
         <SelectItem id="tool-none" value="none">Hide tools</SelectItem>
         <SelectItem id="tool-logs" value="logs"><TerminalIcon />Logs</SelectItem>
+        <SelectItem id="tool-app-flow" value="app-flow"><GitForkIcon />App Flow</SelectItem>
         <SelectItem id="tool-performance" value="performance"><ActivityIcon />Performance</SelectItem>
       </SelectGroup></SelectContent>
     </Select>

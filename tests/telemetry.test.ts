@@ -39,7 +39,7 @@ test("UI timing windows retain exact totals, reset, and ignore invalid measureme
 test("high frequency reads and input avoid trace sampling even with a sampled parent", () => {
   let inherited = 0;
   const inherit = (rate: number) => { inherited++; return rate; };
-  for (const name of ["resources/read frame://private-session", "notifications/tools/list_changed", "tools/call mobile_stream_input", "tools/call mobile_ios_mirror_input", "tools/call mobile_read_cpu", "tools/call devices", "tools/call session", "tools/call events"]) {
+  for (const name of ["resources/read frame://private-session", "notifications/tools/list_changed", "tools/call mobile_stream_input", "tools/call mobile_ios_mirror_input", "tools/call mobile_read_cpu", "tools/call mobile_read_app_flow", "tools/call devices", "tools/call session", "tools/call events"]) {
     const rate = sampleTrace(name, inherit);
     assert.equal(rate, 0);
   }
@@ -199,6 +199,12 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   assert.equal(observedTags?.device_platform, "mixed");
   assert.equal(observedTags?.device_kind, "none");
   assert.equal(observedTags?.recordingIds, undefined);
+  await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_FLOW_PARAMS" }, _meta: {
+    [TELEMETRY_META_KEY]: { surface: "app-flow", view: "workspace", route: "PRIVATE_ROUTE", projectRoot: "PRIVATE_PATH" },
+  } });
+  assert.equal(observedTags?.surface, "app-flow");
+  assert.equal(observedTags?.route, undefined);
+  assert.equal(observedTags?.projectRoot, undefined);
   await Sentry.flush();
   const encoded = JSON.stringify(envelopes);
   contains(encoded, "PRIVATE_", false);
@@ -207,13 +213,13 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   contains(encoded, "Handled tool failed");
   const eventItems = envelopes.flatMap(envelope => envelope[1]);
   const errors = eventItems.filter(item => item[0].type === "event");
-  assert.equal(errors.length, 3);
+  assert.equal(errors.length, 4);
   const unavailable = new SimulatorUnavailableError("Expected stopped simulator");
   captureServerError(unavailable, "expected");
   await Sentry.flush();
   const afterItems = envelopes.flatMap(envelope => envelope[1]);
   const afterErrors = afterItems.filter(item => item[0].type === "event");
-  assert.equal(afterErrors.length, 3);
+  assert.equal(afterErrors.length, 4);
 });
 
 test("error filters retain only generated identity while metrics and spans omit user dimensions", async () => {

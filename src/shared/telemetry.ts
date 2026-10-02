@@ -16,7 +16,7 @@ export function validateTelemetryEnvironment(value: unknown): TelemetryEnvironme
   throw new Error("Sentry environment must be development or release.");
 }
 
-export type Surface = "logs" | "performance" | "simulator" | "recording" | "comparison";
+export type Surface = "app-flow" | "logs" | "performance" | "simulator" | "recording" | "comparison";
 export type TelemetryAttributes = Record<string, string | number | boolean>;
 type Options = NonNullable<Parameters<typeof init>[0]>;
 type ErrorEvent = Parameters<NonNullable<Options["beforeSend"]>>[0];
@@ -26,7 +26,7 @@ type Metric = Parameters<NonNullable<Options["beforeSendMetric"]>>[0];
 const frequentTools = new Set([
   "mobile_stream_input", "mobile_android_stream_input", "mobile_android_send_input", "mobile_ios_mirror_input", "mobile_read_logs", "mobile_read_cpu",
   "mobile_read_display_fps", "mobile_logs_keep_alive", "mobile_log_sources", "mobile_performance_sources",
-  "mobile_read_performance_recording",
+  "mobile_read_performance_recording", "mobile_read_app_flow",
   "mobile_list_simulators", "mobile_list_ios_devices", "mobile_list_android_devices",
   "devices", "apps", "appstate", "capabilities", "session", "events",
 ]);

@@ -17,6 +17,7 @@ import { createSimulatorPanel } from "./simulator-panel.ts";
 import { startLiveReload } from "./live-reload.ts";
 import { ErrorBoundary, captureUiError, startUiTelemetry, stopUiTelemetry, setUiTelemetryContext } from "./telemetry.ts";
 import { PLUGIN_VERSION } from "../shared/version.ts";
+import { AppFlowPanel } from "./app-flow-panel.ts";
 import { RecordingController } from "./recording-controller.ts";
 
 const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, {}, { autoResize: false });
@@ -26,10 +27,11 @@ const panelContext = new PanelContext(app, extensions);
 const deviceApps = new DeviceAppsStore(app, document);
 const performancePanel = new PerformancePanel(app, deviceApps);
 const logsPanel = new LogsPanel(app, panelContext, deviceApps);
+const appFlow = new AppFlowPanel(app, deviceApps);
 const recordingController = new RecordingController(app, extensions);
 const reactRoot = createRoot(document.getElementById("root")!);
 const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-  <Workspace performance={performancePanel} logs={logsPanel} recordingController={recordingController} onLayout={changeLayout} />
+  <Workspace appFlow={appFlow} performance={performancePanel} logs={logsPanel} recordingController={recordingController} onLayout={changeLayout} />
 </ErrorBoundary>;
 flushSync(() => { reactRoot.render(workspace); });
 
@@ -72,6 +74,7 @@ function disposeUI() {
     window.removeEventListener("focus", resumeContext);
     window.removeEventListener("pageshow", resumeContext);
     document.removeEventListener("visibilitychange", resumeContext);
+    appFlow.dispose();
     deviceApps.dispose();
     recordingController.dispose();
     await Promise.allSettled([...panels.map(panel => panel.dispose()), logsPanel.dispose(), performancePanel.dispose()]);
