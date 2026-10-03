@@ -1,1 +1,1 @@
-export function installFlowRuntime(key: string, leaseMs: number): void;
+export function installFlowRuntime(key: string, leaseMs: number, presentationFactory?: Function): void;

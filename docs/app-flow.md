@@ -3,8 +3,8 @@
 Open **Tools → App Flow** in Mobile Dev. Setup reads the current project from the
 host's MCP roots, finds running local Metro servers, and selects a matching app on
 the selected device. Choose **Map app** when the fields are ready. Open the app and
-choose the app state you want to map. Use **Record a flow** for login or other
-screens outside navigation. No source edits or app-specific adapter is needed.
+choose the app state you want to map. Mapping includes source-proven local forms
+and sheets. Use **Record a flow** for steps that need real input or unsupported controls. No source edits or app-specific adapter is needed.
 
 Discovery checks listening Node processes on any port and confirms Metro through
 its status endpoint. It uses the server process's working folder to match the
@@ -17,7 +17,8 @@ Runs have no total time limit. Mapping finishes after all queued screens have
 been attempted and the background AI batch has returned. Choose **Stop** to end a
 run early. Build and launch the app before starting.
 Route mapping supports React Navigation and Expo Router. Flow recording also
-works without a navigator. Both need a development build with a React Native
+works without a navigator. Automatic mapping can capture the current standalone
+view and its supported presentation branches without a navigator. Both need a development build with a React Native
 DevTools hook and a Metro target that allows multiple debugger connections. Capture supports iOS simulators and Android devices;
 physical iOS screenshot capture is not available.
 
@@ -28,9 +29,11 @@ code. It supports JSX screen declarations, shared screen helpers, imported
 screen components, nested navigators, static navigator configurations, and Expo
 Router layouts and route files. It reads param types and literal defaults.
 Runtime discovery adds registered routes and observed params. Conditional routes,
-custom wrappers, computed names, and screens controlled entirely by local state
-may remain unresolved by route discovery. Use flow recording for local forms
-and modals outside the routing system.
+custom wrappers and computed names may remain unresolved by route discovery.
+A second source pass finds finite `useState` transitions that select rendered
+views, including context providers and callback helpers. It also finds reversible
+`control.open()` and ref-based `present()`/`show()`/`expand()` calls paired with
+mounted sheet or dialog components. No app names or adapters enter this pass.
 
 The canvas follows confirmed navigation links. It shows one arrow per pair of
 screens, with both endpoints mounted. Repeated route definitions share a preview;
@@ -65,7 +68,42 @@ heartbeats stop for 10 seconds. Navigation can still trigger ordinary app effect
 such as marking content read. It cannot undo
 those effects or arbitrary application state changes.
 
-## Login, onboarding, and local forms
+## Automatic local forms and sheets
+
+The runner binds hook calls to source locations through Metro symbolication.
+React hook exports stay wrapped for one bounded render pass, then return to their
+original functions. It previews only presentation fields with finite source values.
+It does not change auth/session fields, create accounts, sign out, type fake input,
+or invoke submit/save/delete handlers. A whole-object presentation starts only
+when that state is empty, so mapping does not replace a user's open draft.
+These are UI previews, including branches that a UI-only guard would otherwise
+hide. They do not create the backend state needed to use or submit a form.
+
+Mounted entries, disabled props, and simple prop conditions limit which transitions
+run. A controller must have one matching live instance and a matching close method.
+Ambiguous instances and opening arguments that require unknown data stay out.
+The runner follows nested views in place, captures each once, and connects it to
+its parent. It checks visible loading, opacity, native bounds, and available native
+show/state-change events. JavaScript portals match through React element props
+identity. Each branch restores its presentation fields and closes its sheets before
+continuing. Failed previews get two automatic retries; saved plans let **Retry**
+reopen the same entry route and presentation chain later.
+
+If a native navigator keeps showing its old frame after a local guard changes,
+the runner can preview the proven component in a temporary framework modal. It
+uses the component's live props and context, preserves the enclosing modal's
+presentation style, and removes the preview before restoring the parent. Saved
+retry plans retain this step. This previews the form; it does not sign in or
+alter account state.
+
+This covers common React patterns, not every custom state store or native UI.
+Reducers, arbitrary global stores, native system pickers, and opaque third-party
+presentation APIs can need recording. Simple UI state changes can run normal app
+render effects, and controller open/close methods can run their own effects. App Flow
+cannot undo those effects. Unsupported loaders and native animations can still need
+app instrumentation. It does not claim a complete map of every app.
+
+## Record steps that need input
 
 Choose **Record a flow**, give it a name, and open its first screen in the app.
 Choose **Start recording**, then move through the flow yourself. App Flow saves

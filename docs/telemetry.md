@@ -206,3 +206,18 @@ Custom loaders without recognizable signals may still need app instrumentation.
 Route names, params, source paths, app data, and screenshots stay out of telemetry.
 Errors use fixed descriptions. Existing initialization, identity, sampling,
 scrubbing, release metadata, and opt-out remain in use.
+
+Since 0.1.125, `app_flow.scan` includes the generic presentation source pass.
+Route counts still describe routes; automatic local forms and sheets use
+`app_flow.presentations` and `app_flow.presentations_captured`.
+`app_flow.presentation.mean`, `.p95`, and `.max` measure a presentation branch in
+milliseconds, including nested capture and restoration. `app_flow.presentation_binding`
+uses the same statistics and units for hook collection and Metro symbolication.
+Both use bounded windows and the existing surface/platform attributes. Source
+locations, UI state values, event arguments, controller identities, and previews
+stay local. Native lifecycle observers and temporary React hook wrappers restore
+on cleanup; no event or span is sent per poll or animation sample.
+Readiness signatures exclude native content outside the captured viewport, so
+offscreen list batches do not extend the wait. Native motion bounds clip to that
+viewport. Existing readiness and capture timings retain their units and boundaries;
+these checks still wait for visible loaders and motion.

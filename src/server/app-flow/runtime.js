@@ -1,5 +1,5 @@
 // Injected into a development runtime through one CDP connection. No app-specific code.
-export function installFlowRuntime(key, leaseMs) {
+export function installFlowRuntime(key, leaseMs, presentationFactory) {
   if (globalThis[key]) return;
   const hook = globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
   // Expo's native developer menu can cover every captured screen while JS keeps running.
@@ -64,6 +64,9 @@ export function installFlowRuntime(key, leaseMs) {
       if (result !== false && fiber.child) stack.push(fiber.child);
     }
   }
+  const presentations = presentationFactory?.({ hook, fibers, hidden: props => hidden(props), later });
+  let presentationFocus, presentationObservation;
+  const presentationFrames = [];
   function navigation(value) {
     if (!value || typeof value !== 'object' || typeof value.getState !== 'function' || typeof value.dispatch !== 'function') return;
     try {
@@ -171,8 +174,8 @@ export function installFlowRuntime(key, leaseMs) {
       if (router && typeof router.push === 'function' && typeof router.replace === 'function' && typeof router.canGoBack === 'function') return router;
     }
   }
-  function visualSignature(name, wholeApp = false) {
-    let hosts = 0, content = 0, screen, loadingReason, bounds, title;
+  function visualSignature(name, wholeApp = false, focus) {
+    let hosts = 0, content = 0, screen = focus, loadingReason, bounds, title;
     const signature = [], motion = [], motionSources = new Set(), motionStyles = new Set(), components = new Set();
     if (!wholeApp) fibers(fiber => {
       const props = fiber.memoizedProps;
@@ -208,12 +211,16 @@ export function installFlowRuntime(key, leaseMs) {
       }
       return false;
     };
+    const rects = new WeakMap();
     const nativeRect = fiber => {
+      if (rects.has(fiber)) return rects.get(fiber);
+      let result;
       try {
         const native = fiber.stateNode?.canonical?.publicInstance ?? fiber.stateNode;
         const value = native?.getBoundingClientRect?.();
-        if (value && value.width > 0 && value.height > 0) return value;
+        if (value && value.width > 0 && value.height > 0) result = value;
       } catch { /* Older renderers do not expose native bounds. */ }
+      rects.set(fiber,result); return result;
     };
     const rect = (fiber, includeTransparent = false) => {
       let result, host = false;
@@ -225,7 +232,7 @@ export function installFlowRuntime(key, leaseMs) {
       }, fiber);
       return { box: result, host };
     };
-    if (wholeApp) fibers(fiber => {
+    if (wholeApp && !focus) fibers(fiber => {
       const props = fiber.memoizedProps;
       if (inactive(fiber)) return false;
       const type = fiber.type?.render ?? fiber.type?.type ?? fiber.type;
@@ -312,6 +319,11 @@ export function installFlowRuntime(key, leaseMs) {
         if (reason && visibleLoader(fiber)) loadingReason = reason;
       }
       if (fiber.tag !== 5 || !props) return;
+      // Virtualized lists can keep mounting rows below the viewport for many
+      // seconds. Those rows cannot change this screenshot or its readiness.
+      let box = bounds && nativeRect(fiber);
+      if (bounds && !box) for (let parent=fiber.return,count=0;parent&&count++<80&&!box;parent=parent.return) if (parent.tag===5) box=nativeRect(parent);
+      if (box && !(box.x < bounds.x + bounds.width && box.x + box.width > bounds.x && box.y < bounds.y + bounds.height && box.y + box.height > bounds.y)) return;
       hosts++;
       const text = typeof props.children === 'string' ? props.children.slice(0, 100) : '';
       if (!title && (props.accessibilityRole === 'header' || props.role === 'heading')) title = text || props.accessibilityLabel;
@@ -319,7 +331,7 @@ export function installFlowRuntime(key, leaseMs) {
       if (signature.length < 250) signature.push([typeof fiber.type === 'string' ? fiber.type : '', text, !!props.source]);
     }, screen);
     if (motion.length) signature.push(['opacity', motion]);
-    return { found: wholeApp ? hosts > 0 : !!screen, loading: !!loadingReason, loadingReason, hosts, content, motion: motion.length ? JSON.stringify(motion) : undefined, title: typeof title === 'string' ? title.slice(0, 80) : undefined, components: wholeApp ? [...components] : undefined, signature: JSON.stringify(signature) };
+    return { found: wholeApp ? hosts > 0 : !!screen, loading: !!loadingReason, loadingReason, hosts, content, bounds, motion: motion.length ? JSON.stringify(motion) : undefined, title: typeof title === 'string' ? title.slice(0, 80) : undefined, components: wholeApp ? [...components] : undefined, signature: JSON.stringify(signature) };
   }
   function observe() {
     // Recording only watches the app. Even watchdog cleanup must never reset
@@ -340,6 +352,21 @@ export function installFlowRuntime(key, leaseMs) {
     const component = visual.components.find(name => /(?:Screen|Page|Form)$/.test(name) && !/^(?:Native|RN|Animated|Screen$)/.test(name));
     return { key, ready, active: path, title: visual.title ?? component, signature: visual.signature, loading: visual.loading };
   }
+  function presentationView() {
+    if(presentationFocus){let current;fibers(fiber=>{if(fiber===presentationFocus||fiber===presentationFocus.alternate)current=fiber;});presentationFocus=current;}
+    const visualFocus=presentations?.visualFocus(presentationFocus)??presentationFocus;
+    const visual = visualSignature(undefined, true, visualFocus);
+    const live = visible(), now = Date.now();
+    const componentTree = visual.components;
+    const nativeMotion=presentations?.motion(presentationFocus,visual.bounds);
+    if(nativeMotion){visual.signature+=nativeMotion.signature;visual.motion=JSON.stringify([visual.motion,nativeMotion.signature]);}
+    const key = JSON.stringify([active(root?.getRootState?.() ?? root?.getState?.()), visual.components?.sort(), visual.title]);
+    if (!presentationObservation || presentationObservation.key !== key || presentationObservation.signature !== visual.signature || visual.loading || live.transitioning || nativeMotion?.pending) {
+      const next = presentationObservation = { key, signature: visual.signature, since: now, painted: false };
+      frame(() => frame(() => { if (presentationObservation === next) next.painted = true; }));
+    }
+    return { ...visual, key, active: active(root?.getRootState?.() ?? root?.getState?.()), ready: visual.found && visual.content > 0 && !visual.loading && !live.transitioning && !nativeMotion?.pending && presentationObservation.painted && now - presentationObservation.since >= 160, ...live, nativePending:nativeMotion?.pending, components:componentTree };
+  }
   function returnToStart() {
     const path = active(original);
     let leaf = original;
@@ -348,9 +375,14 @@ export function installFlowRuntime(key, leaseMs) {
     for (let index = path.length - 1; index > 0; index--) params = { screen: path[index], params, initial: false };
     if (path.length) root.dispatch({ type: 'NAVIGATE', payload: { name: path[0], params } });
   }
-  function restore() {
+  async function restore() {
     if (stopped) return;
     stopped = true; generation++; clearTimeout(watchdog); cancelWaits();
+    // Native sheets must dismiss before their parent modal unmounts. Dropping
+    // both at once can leave UIKit showing a detached, blank presentation.
+    if(presentations?.checkpoint())await presentations.rollback(0,true);
+    presentations?.cleanup(); presentationFrames.length=0; presentationFocus=presentationObservation=undefined;
+    cancelWaits();
     try { if (!observing && root && original) root.dispatch({ type: 'RESET', payload: original }); } catch {}
     for (const record of transitions.values()) for (const off of record.off) { try { off(); } catch {} }
     transitions.clear();
@@ -361,14 +393,37 @@ export function installFlowRuntime(key, leaseMs) {
   function renewLease() { clearTimeout(watchdog); watchdog = setTimeout(restore, Math.max(1, leaseMs)); }
   renewLease();
   globalThis[key] = {
-    invoke(command, reply) {
+      invoke(command, reply) {
       try {
-        if (command.type === 'restore') { restore(); reply({ restored: true }); return; }
+        if (command.type === 'restore') { void restore().then(() => reply({restored:true}),()=>reply({error:'App Flow restoration failed.'})); return; }
         if (stopped) { reply({ error: 'Capture stopped.' }); return; }
         renewLease();
         if (command.type === 'heartbeat') { reply({ alive: true }); return; }
         if (command.type === 'observe') { reply(observe()); return; }
         if (observing) { reply({ error: 'Recording observes screens; navigation commands are disabled.' }); return; }
+        if (command.type === 'presentation-collect') { if (!presentations) { reply({bindings:[]}); return; } void presentations.collect(command.states ?? []).then(reply, () => reply({error:'Presentation bindings could not be read.'})); return; }
+        if (command.type === 'presentation-bindings') { reply(presentations?.records(command.offset ?? 0) ?? {bindings:[]}); return; }
+        if (command.type === 'presentation-configure') { presentations?.configure(command.catalog, command.matches ?? [], command.checked ?? []); reply({}); return; }
+        if (command.type === 'presentations') { reply(presentations?.list(presentationFocus) ?? []); return; }
+        if (command.type === 'presentation-view') { reply(presentationView()); return; }
+        if (command.type === 'presentation-checkpoint') { reply({level:presentations?.checkpoint()??0}); return; }
+        if (command.type === 'presentation-rollback') { const level=command.level??0;while(presentationFrames.length>level)presentationFocus=presentationFrames.pop();presentationObservation=undefined; void (presentations?.rollback(command.level ?? 0) ?? Promise.resolve()).then(() => reply({}), () => reply({error:'Presentation restoration failed.'})); return; }
+        if (command.type === 'presentation-project') {
+          const result=presentations?.project(presentationFocus);if(!result||result.error){reply(result??{error:'Presentation projection is unavailable.'});return;}
+          presentationFrames.push(presentationFocus);presentationObservation=undefined;later(()=>reply(presentationView()),80);return;
+        }
+        if (command.type === 'presentation-open') {
+          const result = presentations?.open(command.id,presentationFocus) ?? { error: 'Presentation capture is unavailable.' };
+          if (result.error) { reply(result); return; }
+          presentationFrames.push(presentationFocus); presentationObservation = undefined;
+          later(() => {
+            presentationFocus = result.focus;
+            if (!presentationFocus) presentationFocus=presentations?.focusFor(result.name,result.scope);
+            if (!presentationFocus) { reply({ error: 'The presentation target did not mount.' }); return; }
+            presentations?.focused(presentationFocus); reply(presentationView());
+          }, 80);
+          return;
+        }
         if (command.type === 'resume') {
           cancelWaits(); generation++;
           const saved = original;

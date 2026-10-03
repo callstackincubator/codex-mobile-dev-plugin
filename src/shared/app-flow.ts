@@ -23,10 +23,21 @@ export type FlowNode = {
   captureAttempts?: number;
   groupId?: string;
   capture?: 'observed';
+  presentation?: { actions: string[]; projections?: string[]; basePath: string[]; baseParams?: FlowParams; expo?: boolean; entryKey?: string };
 };
 export type FlowEdge = { from: string; to: string; kind: "contains" | "navigation"; owner?: string; via?: "link" | "call"; guarded?: boolean; file?: string; line?: number };
 export type FlowLink = { target: string; owner: string; params?: FlowParams; guarded: boolean };
-export type FlowGraph = { links?: FlowLink[]; nodes: FlowNode[]; edges: FlowEdge[]; warnings: string[]; files: number; scanMs: number };
+export type FlowStateSite = { id: string; file: string; line: number; column: number; endLine: number; owner: string; paths: string[][] };
+export type FlowPresentationAction = {
+  id: string; file: string; line: number; owner: string; component: string; prop: string; name: string;
+  trigger?: Record<string,string|number|boolean>;
+  handler?: string;
+  guard?: FlowUiCondition;
+  effect: { kind: 'state'; site: string; path: string[]; value: unknown } | { kind: 'control'; component: string; prop: string; method: string; close: string | string[] };
+};
+export type FlowUiCondition = { prop: string[] } | { value: unknown } | { op: '!' | '&&' | '||' | '===' | '!==' | '==' | '!='; args: FlowUiCondition[] };
+export type FlowPresentations = { states: FlowStateSite[]; actions: FlowPresentationAction[] };
+export type FlowGraph = { presentations?: FlowPresentations; links?: FlowLink[]; nodes: FlowNode[]; edges: FlowEdge[]; warnings: string[]; files: number; scanMs: number };
 export type FlowRun = FlowGraph & {
   id: string;
   phase: "scanning" | "connecting" | "reconnecting" | "capturing" | "recording" | "finishing" | "complete" | "stopped" | "failed";

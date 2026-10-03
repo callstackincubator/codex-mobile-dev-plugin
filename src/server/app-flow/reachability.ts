@@ -69,7 +69,7 @@ export class FlowReachability {
     // Keep confirmed screens, completed previews, and their links when extending
     // a saved map. The fresh catalog still supplies undiscovered destinations.
     for (const saved of previous?.nodes ?? []) {
-      if (saved.capture === 'observed') { this.add({ ...saved }); continue; }
+      if (saved.capture === 'observed' || saved.presentation) { this.add({ ...saved }); continue; }
       let node = this.nodes.find(node => node.id === saved.id);
       if (node) Object.assign(node, saved);
       else { node = { ...saved, paths: saved.paths ?? [saved.path] }; this.nodes.push(node); }

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import { installFlowRuntime } from "./runtime.js";
+import { installPresentationRuntime } from './presentations-runtime.js';
+import { bindPresentationSites } from './presentations-bindings.ts';
 
 /** A reconnect can reuse the runtime lease and original navigation state. */
 export class FlowConnection {
@@ -15,11 +17,13 @@ export class FlowConnection {
   private heartbeat?: NodeJS.Timeout;
   private heartbeatPending = false;
   private heartbeatFailures = 0;
+  private metroBase: string;
 
   constructor(url: string, sessionId = randomUUID()) {
     this.key = `__mobile_flow_${sessionId.replaceAll("-", "")}`;
     this.binding = `${this.key}_reply_${randomUUID().replaceAll("-", "")}`;
     const origin = new URL(url); origin.protocol = "http:";
+    this.metroBase = origin.origin;
     this.socket = new WebSocket(url, { origin: origin.origin, handshakeTimeout: 3000, maxPayload: 2 * 1024 * 1024, followRedirects: false });
     this.ready = new Promise((resolve, reject) => {
       this.socket.once("open", () => { resolve(); });
@@ -42,7 +46,7 @@ export class FlowConnection {
     this.ready = this.ready.then(async () => {
       await this.send("Runtime.addBinding", { name: this.binding }, 2000);
       // esbuild keepNames may introduce __name inside serialized functions.
-      await this.send("Runtime.evaluate", { expression: `(()=>{const __name=(value)=>value;for(const name of Object.keys(globalThis))if(name.startsWith(${JSON.stringify(`${this.key}_reply_`)})&&name!==${JSON.stringify(this.binding)})delete globalThis[name];(${installFlowRuntime.toString()})(${JSON.stringify(this.key)},10000);})()`, silent: true, returnByValue: true, objectGroup: this.key }, 2000);
+      await this.send("Runtime.evaluate", { expression: `(()=>{const __name=(value)=>value;for(const name of Object.keys(globalThis))if(name.startsWith(${JSON.stringify(`${this.key}_reply_`)})&&name!==${JSON.stringify(this.binding)})delete globalThis[name];(${installFlowRuntime.toString()})(${JSON.stringify(this.key)},10000,${installPresentationRuntime.toString()});})()`, silent: true, returnByValue: true, objectGroup: this.key }, 2000);
       if (!this.closing && !this.closed) {
         this.heartbeat = setInterval(() => {
           if (this.heartbeatPending) return;
@@ -70,15 +74,24 @@ export class FlowConnection {
   }
   async invoke(command: Record<string, unknown>, timeout = 1500): Promise<any> {
     await this.ready;
+    if (command.type === 'presentation-setup') {
+      const catalog = command.catalog as import('../../shared/app-flow.ts').FlowPresentations;
+      let page = await this.invoke({ type: 'presentation-collect', states: catalog.states }, 2500);
+      const bindings = [];
+      for (let i=0;i<15;i++) { bindings.push(...(page.bindings ?? [])); if (page.next === undefined) break; page = await this.invoke({type:'presentation-bindings',offset:page.next},1500); }
+      const matches = await bindPresentationSites(this.metroBase, command.projectRoot as string, bindings, catalog.states);
+      await this.invoke({ type: 'presentation-configure', catalog, matches, checked: bindings.map(binding => binding.id) }, 1000);
+      return { bindings: matches.length };
+    }
     const id = -(++this.sequence);
-    const expression = `globalThis[${JSON.stringify(this.key)}]?.invoke(${JSON.stringify(command)},result=>globalThis[${JSON.stringify(this.binding)}](JSON.stringify({id:${id},result})))`;
+    const expression = `globalThis[${JSON.stringify(this.key)}]?.invoke(${JSON.stringify(command)},result=>globalThis[${JSON.stringify(this.binding)}]?.(JSON.stringify({id:${id},result})))`;
     return this.send("Runtime.evaluate", { expression, silent: true, returnByValue: true, objectGroup: this.key }, timeout, id);
   }
   close(options?: { restore?: boolean }): Promise<void> { return this.closing ??= this.dispose(options?.restore !== false); }
   private async dispose(restore: boolean) {
     if (this.closed) return;
     clearInterval(this.heartbeat);
-    if (restore) try { await Promise.race([this.invoke({ type: "restore" }, 200), new Promise<void>(resolve => { const timer = setTimeout(resolve, 250); timer.unref(); })]); } catch { /* Runtime watchdog also restores after disconnect. */ }
+    if (restore) try { await Promise.race([this.invoke({ type: "restore" }, 5000), new Promise<void>(resolve => { const timer = setTimeout(resolve, 5500); timer.unref(); })]); } catch { /* Runtime watchdog also restores after disconnect. */ }
     if (this.socket.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify({ id: ++this.sequence, method: "Runtime.removeBinding", params: { name: this.binding } }));
       this.socket.send(JSON.stringify({ id: ++this.sequence, method: "Runtime.evaluate", params: { expression: `delete globalThis[${JSON.stringify(this.binding)}]`, silent: true, returnByValue: true } }));

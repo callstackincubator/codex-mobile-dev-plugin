@@ -84,6 +84,28 @@ test('focused lookup keeps scanning content and links after finding the first na
   assert.ok(!result.signature.includes('other screen'));
 });
 
+test('offscreen list batches do not change readiness, including flattened children',async t=>{
+  const app=runtime(t);let y=500;
+  const row:any={tag:5,type:'View',memoizedProps:{},stateNode:{getBoundingClientRect:()=>({x:0,y,width:100,height:50})},return:app.fiber};
+  const text:any={tag:5,type:'Text',memoizedProps:{children:'offscreen row'},stateNode:{},return:row};row.child=text;app.native.sibling=row;
+  const timer=setInterval(()=>{text.memoizedProps.children+='.'},10);t.after(()=>clearInterval(timer));
+  const result=await app.invoke({type:'open',path:['Profile'],timeoutMs:300});
+  assert.equal(result.ready,true);assert.ok(!result.signature.includes('offscreen row'));
+  clearInterval(timer);y=100;
+  const visible=await app.invoke({type:'verify',name:'Profile'});assert.ok(visible.signature.includes('offscreen row'));
+  // Overflowing children can be visible while their parent is outside the view.
+  y=500;text.stateNode={getBoundingClientRect:()=>({x:0,y:20,width:100,height:20})};
+  assert.ok((await app.invoke({type:'verify',name:'Profile'})).signature.includes('offscreen row'));
+});
+
+test('restoration waits for child sheet dismissal before resetting parent navigation',async t=>{
+  const app=runtime(t);await app.invoke({type:'restore'});app.context.order=[];
+  const dispatch=app.navigation.dispatch;app.navigation.dispatch=action=>{app.context.order.push('navigation');dispatch(action)};
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,()=>({checkpoint:()=>1,async rollback(){order.push('dismiss');await new Promise(resolve=>setTimeout(resolve,20));order.push('dismissed')},cleanup(){order.push('cleanup')}}))`,app.context);
+  await app.invoke({type:'inspect'});await app.invoke({type:'restore'});
+  assert.deepEqual(Array.from(app.context.order),['dismiss','dismissed','cleanup','navigation']);assert.equal(app.context.flow,undefined);
+});
+
 test('runtime strips credentials from observed route data',async t=>{
   const app=runtime(t);
   await app.invoke({type:'open',path:['Profile'],params:{id:'real',accessToken:'secret',password:'secret',nested:{cookie:'secret',id:'safe'}},timeoutMs:300});

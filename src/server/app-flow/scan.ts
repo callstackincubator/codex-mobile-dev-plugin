@@ -5,6 +5,7 @@ import ts from "typescript";
 import type { FlowGraph, FlowNode, FlowParams } from "../../shared/app-flow.ts";
 import { missingFlowParams } from "../../shared/app-flow.ts";
 import { sourceLinkMatches, sourceLinkReader } from "./source-links.ts";
+import { scanPresentations } from './presentations-source.ts';
 
 const ignored = new Set(["node_modules", ".git", ".expo", ".next", "dist", "build", "ios", "android", "vendor", "coverage", "__tests__", "__mocks__"]);
 const extensions = [".tsx", ".ts", ".jsx", ".js"];
@@ -427,6 +428,7 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
     }
   }
   graph.links = links.filter(link => link.via === "call" && !owned.has(link.owner)).map(({ owner, target, params, guarded }) => ({ owner: owner.split("#").at(-1)!, target, params, guarded }));
+  graph.presentations = scanPresentations(units, root, (unit, name) => symbol(units.get(unit.file)!, name));
   if (!graph.nodes.length) warnings.push("No supported route declarations found. Runtime discovery may still find mounted navigators.");
   if (graph.nodes.length >= 1500) warnings.push("Discovery reached the 1,500-node limit.");
   graph.warnings = [...new Set(warnings)].slice(0, 40);

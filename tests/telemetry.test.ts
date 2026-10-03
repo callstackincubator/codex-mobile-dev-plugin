@@ -57,6 +57,32 @@ test("UI timing windows retain exact totals, reset, and ignore invalid measureme
   assert.deepEqual(many, { count: 100_000, mean: 16, p95: 16, max: 16 });
 });
 
+test('automatic local forms report bounded capture and binding costs without source or UI state',async t=>{
+  const envelopes:Envelope[]=[];
+  Sentry.init({dsn:'https://public@example.com/1',defaultIntegrations:false,beforeSendMetric:scrubMetric,
+    transport:()=>({async send(envelope){envelopes.push(envelope);return {statusCode:200}},async flush(){return true}})});
+  const directory=await mkdtemp(join(tmpdir(),'flow-presentation-metrics-'));let opened=false;
+  const action:any={id:'PRIVATE_ACTION',name:'PRIVATE_FORM',file:'PRIVATE_SOURCE',line:12,owner:'PRIVATE_OWNER',component:'PRIVATE_BUTTON',prop:'onPress',effect:{kind:'state',site:'PRIVATE_SITE',path:['PRIVATE_FIELD'],value:'PRIVATE_STATE'}};
+  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:3,warnings:[],nodes:[],edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>({
+    runtime:{async close(){},async invoke(command:any){
+      if(command.type==='inspect')return {available:false};
+      if(command.type==='presentation-view')return {key:opened?'PRIVATE_FORM':'PRIVATE_ENTRY',signature:'PRIVATE_CONTENT',ready:true,found:true};
+      if(command.type==='presentation-checkpoint')return {level:0};
+      if(command.type==='presentations')return opened?[]:[action];
+      if(command.type==='presentation-open')opened=true;
+      if(command.type==='presentation-rollback')opened=false;
+      return {};
+    }},async screenshot(){return Buffer.from(opened?'PRIVATE_FORM_IMAGE':'PRIVATE_ENTRY_IMAGE')},
+  })});
+  t.after(async()=>{await runs.close();await Sentry.close();await rm(directory,{recursive:true,force:true})});
+  const run=runs.start({projectRoot:'PRIVATE_PATH',deviceId:'PRIVATE_DEVICE',platform:'ios',targetId:'PRIVATE_TARGET',metroUrl:'http://127.0.0.1:8081',useAi:false});
+  while(flowRunning(runs.read(run.id)))await new Promise(resolve=>setTimeout(resolve,5));
+  await runs.close();await Sentry.close();
+  const metrics=JSON.stringify(envelopes.flatMap(envelope=>envelope[1]).filter(item=>item[0].type==='trace_metric'));
+  for(const name of ['app_flow.presentations','app_flow.presentations_captured','app_flow.presentation.mean','app_flow.presentation_binding.p95','app-flow','device_platform'])contains(metrics,name);
+  contains(metrics,'PRIVATE_',false);
+});
+
 test('flow recording reports capture and save costs without flow names or app data', async t => {
   const envelopes: Envelope[] = [];
   Sentry.init({ dsn:'https://public@example.com/1', defaultIntegrations:false, beforeSendMetric:scrubMetric,
