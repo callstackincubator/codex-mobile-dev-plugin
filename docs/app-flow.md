@@ -35,8 +35,10 @@ and modals outside the routing system.
 The canvas follows confirmed navigation links. It shows one arrow per pair of
 screens, with both endpoints mounted. Repeated route definitions share a preview;
 recorded flow steps keep their own previews. **Map more screens** adds routes from
-the current app state while keeping earlier screenshots. **New map**, in Setup,
-starts over. Pinch to zoom; preview frames use a 9:16 aspect ratio.
+the current app state while keeping earlier screenshots. **Reset**, beside Setup,
+clears the current view and keeps the project, Metro server, and app selection.
+Choose **Map app** to start a separate map. Stop an active run before resetting;
+earlier maps remain saved locally. Pinch to zoom; preview frames use a 9:16 aspect ratio.
 
 One persistent Metro debugger connection drives the run. The server requests
 screenshots directly from the existing device backend; it does not launch a

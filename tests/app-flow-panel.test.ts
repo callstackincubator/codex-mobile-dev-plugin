@@ -95,3 +95,33 @@ test('record and extend keep the current map and images, and a manual step goes 
   assert.equal(calls[2].action,'extend'); assert.equal(calls[2].runId,'saved-run');
   assert.equal(api.getSnapshot().images.old,'saved-image');
 });
+
+test('reset keeps setup, ignores late responses, and starts a separate map', async t => {
+  let rejectPoll!: (error: Error) => void, finishImage!: (value: any) => void;
+  const calls: any[] = [];
+  const api = panel(t, async args => {
+    calls.push(args);
+    if (args.name === 'mobile_read_app_flow') return new Promise((_, reject) => { rejectPoll = reject; });
+    return {structuredContent:{run:{id:'fresh-run',phase:'complete',revision:0,nodes:[]}}};
+  });
+  const uri = 'mobile-flow://old-run/screen';
+  api.settings = {...api.settings,project:'/project',metro:result.metroUrl,target:'target'};
+  const settings = {...api.settings};
+  api.state = {...api.state,open:true,run:{id:'old-run',phase:'complete',revision:1,nodes:[{image:uri}]},images:{old:'saved-image'},error:'Old error',message:'Old status'};
+  api.app.readServerResource = () => new Promise(resolve => { finishImage = resolve; });
+  const images = api.loadImages(), polling = api.poll();
+  api.reset();
+  finishImage({contents:[{mimeType:'image/png',blob:'iVBORw0KGgo='}]});
+  rejectPoll(new Error('Old polling request failed'));
+  await Promise.all([images, polling]);
+  assert.equal(api.getSnapshot().run,undefined);
+  assert.equal(Object.keys(api.getSnapshot().images).length,0);
+  assert.equal(api.getSnapshot().error,''); assert.equal(api.getSnapshot().message,'');
+  assert.equal(api.imageBytes,0); assert.equal(api.failedImages.size,0);
+  assert.deepEqual(api.settings,settings);
+  api.hide();
+  await api.start(settings.project,settings.metro,settings.target,settings.useAi);
+  assert.equal(calls.at(-1).arguments.action,'start');
+  assert.equal(calls.at(-1).arguments.runId,undefined);
+  assert.equal(api.getSnapshot().run.id,'fresh-run');
+});

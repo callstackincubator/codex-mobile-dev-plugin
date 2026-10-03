@@ -116,6 +116,12 @@ export class AppFlowPanel {
     try { const result = await this.call("mobile_app_flow", { action: "stop", runId: this.state.run.id }); this.update({ run: result.run }); }
     catch (error) { this.failure(error); }
   }
+  reset() {
+    if (this.state.busy || this.state.resolving || flowRunning(this.state.run)) return;
+    clearTimeout(this.timer);
+    this.loading.clear(); this.failedImages.clear(); this.visibleImages.clear(); this.imageBytes = 0;
+    this.update({ run: undefined, images: {}, error: "", message: "" });
+  }
   private runOptions() {
     const device = this.devices.getSnapshot().device;
     if (!device || !this.settings.project || !this.settings.metro || !this.settings.target) return undefined;
@@ -172,11 +178,11 @@ export class AppFlowPanel {
       if (result.run) this.update({ run: result.run });
       if (this.state.open && getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.app_flow.update", performance.now() - started);
       await this.loadImages();
-    } catch (error) { this.failure(error); }
+    } catch (error) { if (this.state.run?.id === runId) this.failure(error); }
     finally {
       this.polling = false;
       const pendingImages = this.state.run?.nodes.some(node => node.image && !this.state.images[node.image] && !this.failedImages.has(node.image));
-      if (!this.disposed && this.state.open && document.visibilityState !== "hidden") this.timer = setTimeout(() => { void this.poll(); }, flowRunning(this.state.run) || pendingImages ? 500 : 2000);
+      if (!this.disposed && this.state.run && this.state.open && document.visibilityState !== "hidden") this.timer = setTimeout(() => { void this.poll(); }, flowRunning(this.state.run) || pendingImages ? 500 : 2000);
     }
   }
   private async loadImages() {
@@ -197,7 +203,7 @@ export class AppFlowPanel {
         if (this.imageBytes + bytes > 128 * 1024 * 1024) { this.failedImages.add(uri); return; }
         this.imageBytes += bytes;
         images[uri] = `data:image/png;base64,${content.blob}`;
-      } catch { this.failedImages.add(uri); }
+      } catch { if (this.state.run?.id === runId && !this.disposed) this.failedImages.add(uri); }
       finally { this.loading.delete(uri); }
     }));
     if (Object.keys(images).length && this.state.run?.id === runId) this.update({ images: { ...this.state.images, ...images } });
