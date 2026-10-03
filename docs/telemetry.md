@@ -193,6 +193,9 @@ Both use bounded windows, milliseconds, and the same attributes as capture timin
 Readiness considers visible skeletons, busy states, Suspense fallbacks, initial
 query loads, transitions, a short quiet period, and two animation frames.
 Cached background fetches and inactive pager pages do not hold up capture.
+Since 0.1.122, page-level active flags also exclude hidden native pager content
+from readiness and loading checks. Both metrics retain their existing boundaries
+and units. No component names or new per-observation events are collected.
 Detected loading gets up to six seconds on the first attempt and ten on retry;
 ready screens finish as soon as the checks pass. These are per-screen limits.
 Custom loaders without recognizable signals may still need app instrumentation.

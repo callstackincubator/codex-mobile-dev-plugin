@@ -284,6 +284,63 @@ test('only visible initial query loads block capture; cached refetches and offsc
   assert.equal((await app.invoke({type:'verify',name:'Profile'})).loading,false,'a loading component that returns null is not visible');
 });
 
+function pagedContent(app: ReturnType<typeof runtime>) {
+  const pager:any = {tag:5,type:'NativePager',memoizedProps:{initialPage:0,onPageSelected(){},onPageScroll(){}},stateNode:app.native.stateNode,return:app.fiber};
+  const first:any = {tag:5,type:'View',memoizedProps:{},return:pager};
+  const second:any = {tag:5,type:'View',memoizedProps:{},return:pager};
+  const selected:any = {tag:0,memoizedProps:{active:true},return:first,child:app.native};
+  const inactive:any = {tag:0,memoizedProps:{active:false},return:second};
+  const placeholder:any = {tag:0,memoizedProps:{isLoading:true},return:inactive};
+  placeholder.child = {tag:5,type:'View',memoizedProps:{children:'Loading hidden page'},stateNode:app.native.stateNode,return:placeholder};
+  app.fiber.child=pager; pager.child=first; first.sibling=second;
+  first.child=selected; second.child=inactive; inactive.child=placeholder; app.native.return=selected;
+  return {selected,inactive,placeholder};
+}
+
+test('inactive native pager pages do not block capture at overlapping native bounds', async t => {
+  const app=runtime(t);
+  const {inactive}=pagedContent(app);
+  for (const flag of ['active','isActive','isPageActive','tabActive']) {
+    inactive.memoizedProps={[flag]:false};
+    const view=await app.invoke({type:'verify',name:'Home'});
+    assert.equal(view.loading,false);
+    assert.ok(!view.signature.includes('Loading hidden page'));
+  }
+  const result=await app.invoke({type:'open',path:['Profile'],timeoutMs:500,loadingTimeoutMs:2000});
+  assert.equal(result.ready,true);
+  assert.equal(result.loadingMs,0);
+  assert.ok(result.readinessMs<500);
+  const view=await app.invoke({type:'observe'});
+  assert.equal(view.loading,false,'recording uses the same page visibility checks');
+  assert.ok(!view.signature.includes('Loading hidden page'));
+});
+
+test('switching to a loading pager page waits until its content is ready', async t => {
+  const app=runtime(t);
+  const {selected,inactive,placeholder}=pagedContent(app);
+  selected.memoizedProps.active=false; inactive.memoizedProps.active=true;
+  const loading=await app.invoke({type:'open',path:['Profile'],timeoutMs:80,loadingTimeoutMs:140});
+  assert.equal(loading.ready,false);
+  assert.match(loading.reason,/busy/);
+  const timer=setTimeout(()=>{placeholder.memoizedProps.isLoading=false;placeholder.child.memoizedProps.children='Loaded selected page'},180);
+  t.after(()=>clearTimeout(timer));
+  const ready=await app.invoke({type:'open',path:['Profile'],timeoutMs:80,loadingTimeoutMs:1000});
+  assert.equal(ready.ready,true);
+  assert.ok(ready.loadingMs>=180);
+  assert.ok(ready.signature.includes('Loaded selected page'));
+  assert.ok(!ready.signature.includes('screen'));
+});
+
+test('inactive controls and content outside native page boundaries still block on visible loaders', async t => {
+  const app=runtime(t);
+  app.native.memoizedProps={children:'Loading',active:false,accessibilityState:{busy:true}};
+  assert.equal((await app.invoke({type:'verify',name:'Home'})).loading,true);
+  pagedContent(app);
+  // This is one control among the page's content, not the whole page.
+  app.native.sibling={tag:5,type:'Text',memoizedProps:{children:'Other content'},stateNode:app.native.stateNode,return:app.native.return};
+  assert.equal((await app.invoke({type:'verify',name:'Home'})).loading,true);
+});
+
 test('stopping during loading cancels polling and the restoration watchdog', async t => {
   let sequence=0;const timers=new Map<number,()=>void>();
   const app=runtime(t,false,{

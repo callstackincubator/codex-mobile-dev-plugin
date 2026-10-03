@@ -44,9 +44,11 @@ screenshot process or make a model call per screen. The first readiness attempt
 lasts up to 1 second. Two deferred retries allow 2 and 4 seconds. Visible loaders
 extend these waits to 6, 10, and 20 seconds, with capture as soon as content settles.
 The runtime checks focused content, pending initial queries, native transitions,
-and paint frames. Blank or stale screenshots and screen changes during capture
-invalidate the image. These waits are estimates of readiness, not proof that every
-image or request has finished.
+and paint frames. Inactive pager pages do not delay capture, even when the native
+pager reports their bounds at the same position as the selected page. The selected
+page still waits for visible loaders. Blank or stale screenshots and screen changes
+during capture invalidate the image. These waits are estimates of readiness, not
+proof that every image or request has finished.
 
 Route mapping restores the starting navigation state on completion or stop. Its runtime
 watchdog renews while the debugger stays connected and attempts restoration if

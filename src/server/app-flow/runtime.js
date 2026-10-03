@@ -179,11 +179,27 @@ export function installFlowRuntime(key, leaseMs) {
       if (hidden(props)) return false;
       if (name !== undefined && props?.route?.name === name && props.navigation?.isFocused?.()) { screen = fiber; return stopWalk; }
     });
-    const inactive = props => {
+    const pagerPage = fiber => {
+      // Only interpret an `active` flag at a page boundary. Buttons and media
+      // inside a visible page can be inactive while still showing a loader.
+      let child = fiber;
+      for (let count = 0; child?.return && count < 24; count++) {
+        const parent = child.return, props = parent.memoizedProps;
+        if (parent.tag === 5 && typeof props?.onPageSelected === 'function' && (typeof props.onPageScroll === 'function' || Number.isInteger(props.initialPage))) return true;
+        if (parent.child !== child || child.sibling) return false;
+        child = parent;
+      }
+      return false;
+    };
+    const inactive = fiber => {
+      const props = fiber.memoizedProps;
       if (hidden(props)) return true;
       // Native pagers can keep inactive pages at the same Yoga coordinates.
       // Honor common focus props in addition to React Navigation's focus state.
-      if (props && Object.keys(props).some(key => /^(?:is)?(?:screen|page|tab)?focused$/i.test(key) && props[key] === false)) return true;
+      if (props) for (const key of Object.keys(props)) {
+        if (props[key] !== false) continue;
+        if (/^(?:is)?(?:screen|page|tab)?focused$/i.test(key) || /^(?:is)?(?:screen|page|tab)?active$/i.test(key) && pagerPage(fiber)) return true;
+      }
       const styles = [props?.style];
       for (let index = 0; index < styles.length && index < 40; index++) {
         const style = styles[index];
@@ -202,7 +218,7 @@ export function installFlowRuntime(key, leaseMs) {
     const rect = fiber => {
       let result, host = false;
       fibers(child => {
-        if (inactive(child.memoizedProps)) return false;
+        if (inactive(child)) return false;
         if (child.tag !== 5) return;
         host = true; result = nativeRect(child);
         if (result) return stopWalk;
@@ -211,7 +227,7 @@ export function installFlowRuntime(key, leaseMs) {
     };
     if (wholeApp) fibers(fiber => {
       const props = fiber.memoizedProps;
-      if (inactive(props)) return false;
+      if (inactive(fiber)) return false;
       const type = fiber.type?.render ?? fiber.type?.type ?? fiber.type;
       const name = typeof type === 'string' ? type : type?.displayName ?? type?.name;
       if (props?.visible !== false && (props?.accessibilityViewIsModal === true || props?.['aria-modal'] === true || name === 'Modal' && props?.visible === true)) screen = fiber;
@@ -224,7 +240,7 @@ export function installFlowRuntime(key, leaseMs) {
       bounds ??= rect(screen).box;
     }
     if (wholeApp && !screen) fibers(fiber => {
-      if (inactive(fiber.memoizedProps)) return false;
+      if (inactive(fiber)) return false;
       if (fiber.tag === 5) { bounds = nativeRect(fiber); if (bounds) return stopWalk; }
     });
     const visibleLoader = fiber => {
@@ -245,7 +261,7 @@ export function installFlowRuntime(key, leaseMs) {
     };
     if (screen || wholeApp) fibers(fiber => {
       const props = fiber.memoizedProps;
-      if (inactive(props)) return false;
+      if (inactive(fiber)) return false;
       if (wholeApp && components.size < 1000) {
         const type = fiber.type?.render ?? fiber.type?.type ?? fiber.type;
         const name = type?.displayName ?? type?.name;
