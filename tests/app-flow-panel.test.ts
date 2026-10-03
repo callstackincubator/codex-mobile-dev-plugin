@@ -79,3 +79,19 @@ test('a finished open map reads updates from AI capture and preserves existing p
   assert.equal(api.getSnapshot().images.old,'data:image/png;base64,unchanged');
   api.hide();
 });
+
+test('record and extend keep the current map and images, and a manual step goes through the shared tool', async t => {
+  const calls:any[] = [];
+  const api = panel(t,async args => { calls.push(args.arguments); return {structuredContent:{run:{id:'saved-run',phase:args.arguments.action === 'record' ? 'recording' : 'complete',recording:args.arguments.action === 'record' ? {groupId:'group'} : undefined,nodes:[]}}}; });
+  api.settings = {...api.settings,project:'/project',metro:result.metroUrl,target:'target'};
+  api.state = {...api.state,run:{id:'saved-run',phase:'complete',nodes:[]},images:{old:'saved-image'}};
+  await api.recordFlow('Sign in');
+  assert.equal(calls[0].runId,'saved-run'); assert.equal(calls[0].label,'Sign in');
+  assert.equal(api.getSnapshot().images.old,'saved-image');
+  await api.captureStep('Reset password');
+  assert.equal(calls[1].action,'capture-step'); assert.equal(calls[1].label,'Reset password');
+  api.state = {...api.state,run:{...api.state.run,phase:'complete',recording:undefined}};
+  await api.extendMap();
+  assert.equal(calls[2].action,'extend'); assert.equal(calls[2].runId,'saved-run');
+  assert.equal(api.getSnapshot().images.old,'saved-image');
+});

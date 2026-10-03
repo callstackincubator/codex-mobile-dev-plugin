@@ -69,9 +69,10 @@ export class FlowReachability {
     // Keep confirmed screens, completed previews, and their links when extending
     // a saved map. The fresh catalog still supplies undiscovered destinations.
     for (const saved of previous?.nodes ?? []) {
+      if (saved.capture === 'observed') { this.add({ ...saved }); continue; }
       let node = this.nodes.find(node => node.id === saved.id);
       if (node) Object.assign(node, saved);
-      else { node = { ...saved }; this.nodes.push(node); }
+      else { node = { ...saved, paths: saved.paths ?? [saved.path] }; this.nodes.push(node); }
       this.add(node);
     }
     for (const edge of previous?.edges ?? []) {
@@ -79,7 +80,8 @@ export class FlowReachability {
       if (from && to) this.add(to, from);
     }
     for (const node of this.nodes) {
-      node.paths!.sort((a, b) => prefix(b, evidence.active ?? []) - prefix(a, evidence.active ?? []));
+      node.paths ??= [node.path];
+      node.paths.sort((a, b) => prefix(b, evidence.active ?? []) - prefix(a, evidence.active ?? []));
       node.path = node.paths![0];
       const candidate = evidence.candidates?.find(item => item.name === node.name && !missingFlowParams({ ...node, params: item.params }).length);
       if (candidate && missingFlowParams(node).length && node.status !== 'captured') { node.params = { ...node.params, ...Object.fromEntries(node.required.filter(key => candidate.params[key] !== undefined).map(key => [key, candidate.params[key]])) }; node.status = 'pending'; }

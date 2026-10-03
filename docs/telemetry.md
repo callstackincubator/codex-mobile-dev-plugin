@@ -135,6 +135,14 @@ pinch input in a frame to applying the canvas scale and scroll position. It uses
 the same bounded timing windows, without an event or span per frame. It measures
 plugin input handling, not device rendering or touch-to-photon latency. Existing
 layout and viewport timing boundaries stay unchanged.
+Since 0.1.120, flow recording reports `app_flow.recording` in milliseconds and
+`app_flow.recorded_screens` as a count. `app_flow.record_frame.mean`, `.p95`, and
+`.max` measure screenshot capture, verification, and saving after a view settles.
+They include failed attempts. These bounded metrics and existing checkpoint
+metrics use the `app-flow` surface and device platform. Flow names, headings,
+component identities, view signatures, input values, and screenshots remain local.
+Recording does not add a trace or event per observation. Existing route capture
+metrics keep their prior boundaries.
 `ui.app_flow.visible_nodes` records the number of cards mounted near the viewport.
 Hidden tabs stop polling, and responses from an earlier surface do not add timings
 to the current one. `mobile_read_app_flow` is excluded from frequent-tool traces.

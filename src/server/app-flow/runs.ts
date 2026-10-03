@@ -11,6 +11,7 @@ import type { scanAppFlow } from "./scan.ts";
 import { MeasurementWindow } from "../../shared/telemetry.ts";
 import { captureServerError } from "../telemetry.ts";
 import { FlowStore, type FlowLease, type SavedFlow } from './store.ts';
+import { recordFlow } from './recording.ts';
 
 export type FlowStart = { projectRoot: string; platform: "ios" | "android"; deviceId: string; targetId: string; metroUrl: string; useAi: boolean };
 export type RuntimeInfo = FlowEvidence & { available: boolean; data?: unknown[] };
@@ -44,12 +45,16 @@ export class AppFlowRuns {
   private closed = false;
   readonly directory: string;
   constructor(dependencies: FlowDependencies) { this.dependencies = dependencies; this.directory = dependencies.directory ?? FLOW_DIRECTORY; this.store = new FlowStore(this.directory); }
-  start(input: FlowStart): FlowRun {
-    if ([...this.sessions.values()].some(session => !session.settled && session.input.deviceId === input.deviceId)) throw new Error("App Flow is already running on this device.");
+  private makeRoom(id?: string) {
+    if (id && this.sessions.has(id)) return;
     if (this.sessions.size >= 10) {
       const expired = [...this.sessions].find(([, session]) => session.settled);
       if (expired) this.sessions.delete(expired[0]); else throw new Error("Too many active App Flow runs.");
     }
+  }
+  start(input: FlowStart): FlowRun {
+    if ([...this.sessions.values()].some(session => !session.settled && session.input.deviceId === input.deviceId)) throw new Error("App Flow is already running on this device.");
+    this.makeRoom();
     const startedAt = Date.now();
     const run: FlowRun = { id: randomUUID(), phase: "scanning", startedAt, revision: 0,
       nodes: [], edges: [], warnings: [], files: 0, scanMs: 0, ai: input.useAi ? "waiting" : "off" };
@@ -59,6 +64,66 @@ export class AppFlowRuns {
     return structuredClone(run);
   }
   read(id: string): FlowRun { return structuredClone(this.get(id).run); }
+  async record(input: FlowStart, name: string, id?: string): Promise<FlowRun> {
+    this.makeRoom(id);
+    const saved = id ? await this.saved(id) : undefined;
+    if (saved && (flowRunning(saved.run) || this.sessions.get(id!)?.settled === false)) throw new Error('Finish the current capture before recording a flow.');
+    if (saved?.input && (saved.input.projectRoot !== input.projectRoot || saved.input.platform !== input.platform || saved.input.deviceId !== input.deviceId)) throw new Error('Use the same project and device as this map, or start a new map.');
+    const lease = await this.store.claim(input);
+    if (!lease) throw new Error('App Flow is already running on this device.');
+    const group = { id: randomUUID(), name: name.trim().slice(0, 80) || 'Recorded flow' };
+    const run: FlowRun = saved?.run ?? { id: randomUUID(), phase: 'connecting', startedAt: Date.now(), revision: 0, nodes: [], edges: [], warnings: [], files: 0, scanMs: 0, ai: 'off' };
+    if (saved) run.elapsedMs ??= Math.max(0, (run.finishedAt ?? Date.now()) - run.startedAt);
+    run.groups = [...(run.groups ?? []), group];
+    run.recording = { groupId: group.id, message: 'Connecting to the app…' };
+    run.phase = 'connecting'; run.finishedAt = undefined; run.error = undefined; run.revision++;
+    const active: Active = { run, input, target: saved?.target, info: saved?.info, abort: new AbortController(), writing: new Set(), settled: false, lease };
+    try { await this.persist(active); } catch (error) { await lease.release(); throw error; }
+    this.sessions.set(run.id, active);
+    active.done = recordFlow({ run, input, target: active.target, signal: active.abort.signal, directory: this.directory, connect: this.dependencies.connect,
+      save: () => this.persist(active), connected: target => { active.target = target; },
+      controls: async () => {
+        const commands = await this.store.commands(run.id);
+        if (commands.some(item => item.command.type === 'stop')) this.stop(run.id);
+        // Preserve replies already queued before recording began. They can be
+        // captured by Map more screens later, without interrupting this flow.
+        for (const { command } of commands) {
+          if (command.type === 'resolve') { this.resolve(run.id, command.resolutions); run.ai = 'done'; }
+          if (command.type === 'retry') for (const node of run.nodes) if (node.status === 'timed-out' && node.capture !== 'observed') { node.status = 'pending'; node.captureAttempts = 0; run.revision++; }
+        }
+        const captures = commands.flatMap(({ command }) => command.type === 'capture-step' ? [{ label: command.label }] : []);
+        await this.store.acknowledge(run.id, commands.map(item => item.name));
+        return captures;
+      },
+    }).catch(() => { captureServerError(new Error('App Flow recording could not be saved.'), 'app_flow.save'); })
+      .finally(async () => {
+        await lease.release(); active.settled = true;
+        const values = active.checkpoints?.take();
+        if (values && process.env.MOBILE_DEV_TELEMETRY !== 'off') for (const statistic of ['mean', 'p95', 'max'] as const) Sentry.metrics.gauge(`app_flow.checkpoint.${statistic}`, values[statistic], { unit: 'millisecond', attributes: { surface: 'app-flow', device_platform: input.platform } });
+      });
+    return structuredClone(run);
+  }
+  async captureStep(id: string, label?: string) {
+    const saved = await this.saved(id);
+    if (!saved.run.recording || !flowRunning(saved.run)) throw new Error('Start recording a flow before capturing a step.');
+    await this.store.enqueue(id, { type: 'capture-step', label });
+    return saved.run;
+  }
+  async extend(id: string, input: FlowStart): Promise<FlowRun> {
+    this.makeRoom(id);
+    const saved = await this.saved(id);
+    if (flowRunning(saved.run) || this.sessions.get(id)?.settled === false) throw new Error('Finish the current capture before mapping more screens.');
+    if (saved.input && (saved.input.projectRoot !== input.projectRoot || saved.input.platform !== input.platform || saved.input.deviceId !== input.deviceId)) throw new Error('Use the same project and device as this map, or start a new map.');
+    const lease = await this.store.claim(input);
+    if (!lease) throw new Error('App Flow is already running on this device.');
+    const active: Active = { ...saved, input, lease, abort: new AbortController(), writing: new Set(), settled: false };
+    active.run.elapsedMs ??= Math.max(0, (active.run.finishedAt ?? Date.now()) - active.run.startedAt);
+    active.run.phase = 'connecting'; active.run.finishedAt = undefined; active.run.error = undefined;
+    active.run.ai = input.useAi ? 'waiting' : 'off'; active.run.revision++;
+    try { await this.persist(active); } catch (error) { await lease.release(); throw error; }
+    this.sessions.set(id, active); this.launch(active, true);
+    return structuredClone(active.run);
+  }
   readUpdate(id: string, revision?: number) { const run = this.get(id).run; return run.revision === revision ? undefined : structuredClone(run); }
   private get(id: string) { const session = this.sessions.get(id); if (!session) throw new Error("This App Flow run is no longer in memory. Start a new map."); return session; }
   private launch(active: Active, resume = false) {
@@ -97,12 +162,13 @@ export class AppFlowRuns {
     return this.contextFor(saved);
   }
   async submit(id: string, resolutions: FlowResolution[]) {
-    await this.saved(id);
+    if ((await this.saved(id)).run.recording) throw new Error('Finish recording before resolving route data.');
     await this.store.enqueue(id, { type: 'resolve', resolutions });
     await this.resumeSaved(id);
     return (await this.saved(id)).run;
   }
   async retry(id: string, input?: FlowStart) {
+    if ((await this.saved(id)).run.recording) throw new Error('Finish recording before retrying routes.');
     await this.prepare(id, input);
     await this.store.enqueue(id, { type: 'retry' });
     await this.resumeSaved(id);
@@ -260,7 +326,7 @@ export class AppFlowRuns {
       active.runtime = backend.runtime; active.target = backend.target;
       if (signal.aborted) { await backend.runtime.close(); signal.throwIfAborted(); }
       active.info = await abortable(backend.runtime.invoke({ type: "inspect" }, 2000), signal);
-      if (!active.info?.available) throw new Error("No mounted React Navigation container found. Open the app in a development build and log in first.");
+      if (!active.info?.available) throw new Error("No mounted navigator found. Use Record a flow for login, onboarding, or other screens outside navigation.");
       discovery = new FlowReachability(graph, active.info, resume ? run : undefined);
       Object.assign(run, graph);
       run.phase = "capturing"; run.revision++;

@@ -121,6 +121,26 @@ export class AppFlowPanel {
     if (!device || !this.settings.project || !this.settings.metro || !this.settings.target) return undefined;
     return { projectRoot: this.settings.project, metroUrl: this.settings.metro, targetId: this.settings.target, useAi: this.settings.useAi, deviceId: device.udid, platform: device.platform ?? 'ios' };
   }
+  private async continueMap(action: 'record' | 'extend', label?: string) {
+    if (flowRunning(this.state.run)) return;
+    const device = this.devices.getSnapshot().device;
+    if (device?.platform !== 'android' && device?.kind === 'physical') { this.update({ error: 'App Flow currently captures iOS simulators and Android devices.' }); return; }
+    const options = this.runOptions();
+    if (!options) { this.update({ error: 'Select the project, device, and running app first.' }); return; }
+    this.cancelSetup(); this.update({ busy: true, error: '', message: '' });
+    try {
+      const result = await this.call('mobile_app_flow', { action, options, runId: this.state.run?.id, label });
+      this.update({ run: result.run }); void this.poll();
+    } catch (error) { this.failure(error); }
+    finally { this.update({ busy: false }); }
+  }
+  recordFlow(label: string) { return this.continueMap('record', label); }
+  extendMap() { return this.continueMap('extend'); }
+  async captureStep(label?: string) {
+    if (!this.state.run?.recording) return;
+    try { await this.call('mobile_app_flow', { action: 'capture-step', runId: this.state.run.id, label: label?.trim() || undefined }); }
+    catch (error) { this.failure(error); }
+  }
   async retryTimedOut() {
     if (!this.state.run) return;
     this.update({ busy: true, error: '' });

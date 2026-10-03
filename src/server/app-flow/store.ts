@@ -5,7 +5,7 @@ import type { FlowResolution, FlowRun } from '../../shared/app-flow.ts';
 import type { FlowStart, FlowTargetIdentity, RuntimeInfo } from './runs.ts';
 
 export type SavedFlow = { run: FlowRun; input?: FlowStart; info?: RuntimeInfo; target?: FlowTargetIdentity };
-export type FlowCommand = { type: 'resolve'; resolutions: FlowResolution[] } | { type: 'retry' } | { type: 'stop' };
+export type FlowCommand = { type: 'resolve'; resolutions: FlowResolution[] } | { type: 'retry' } | { type: 'stop' } | { type: 'capture-step'; label?: string };
 export type FlowLease = { release(): Promise<void> };
 const uuid = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
 
@@ -59,7 +59,7 @@ export class FlowStore {
     const result = [];
     for (const name of names.filter(name => /^\d+-[a-f\d-]+\.json$/.test(name)).sort().slice(0, 100)) {
       const command = await this.json(join(folder, name));
-      if (!['resolve', 'retry', 'stop'].includes(command.type) || command.type === 'resolve' && !Array.isArray(command.resolutions)) throw new Error('Invalid saved App Flow request.');
+      if (!['resolve', 'retry', 'stop', 'capture-step'].includes(command.type) || command.type === 'resolve' && !Array.isArray(command.resolutions) || command.type === 'capture-step' && command.label !== undefined && (typeof command.label !== 'string' || command.label.length > 80)) throw new Error('Invalid saved App Flow request.');
       result.push({ name, command });
     }
     return result;

@@ -4,7 +4,7 @@ export function installFlowRuntime(key, leaseMs) {
   const hook = globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
   // Expo's native developer menu can cover every captured screen while JS keeps running.
   try { globalThis.expo?.modules?.ExpoDevMenu?.hideMenu?.()?.catch?.(() => {}); } catch {}
-  let root, original, stopped = false, generation = 0, safeBudget = 2000;
+  let root, original, observation, observing = false, stopped = false, generation = 0, safeBudget = 2000;
   const observed = new Map();
   const transitions = new Map();
   const waitTimers = new Set(), paintFrames = new Set();
@@ -171,13 +171,13 @@ export function installFlowRuntime(key, leaseMs) {
       if (router && typeof router.push === 'function' && typeof router.replace === 'function' && typeof router.canGoBack === 'function') return router;
     }
   }
-  function visualSignature(name) {
-    let hosts = 0, content = 0, screen, loadingReason, bounds;
-    const signature = [];
-    fibers(fiber => {
+  function visualSignature(name, wholeApp = false) {
+    let hosts = 0, content = 0, screen, loadingReason, bounds, title;
+    const signature = [], components = new Set();
+    if (!wholeApp) fibers(fiber => {
       const props = fiber.memoizedProps;
       if (hidden(props)) return false;
-      if (props?.route?.name === name && props.navigation?.isFocused?.()) { screen = fiber; return stopWalk; }
+      if (name !== undefined && props?.route?.name === name && props.navigation?.isFocused?.()) { screen = fiber; return stopWalk; }
     });
     const inactive = props => {
       if (hidden(props)) return true;
@@ -209,6 +209,13 @@ export function installFlowRuntime(key, leaseMs) {
       }, fiber);
       return { box: result, host };
     };
+    if (wholeApp) fibers(fiber => {
+      const props = fiber.memoizedProps;
+      if (inactive(props)) return false;
+      const type = fiber.type?.render ?? fiber.type?.type ?? fiber.type;
+      const name = typeof type === 'string' ? type : type?.displayName ?? type?.name;
+      if (props?.visible !== false && (props?.accessibilityViewIsModal === true || props?.['aria-modal'] === true || name === 'Modal' && props?.visible === true)) screen = fiber;
+    });
     if (screen) {
       // A descendant may be a small icon in a flattened native tree. Prefer the
       // enclosing native screen when deciding whether a loader is offscreen.
@@ -216,6 +223,10 @@ export function installFlowRuntime(key, leaseMs) {
       while (parent && !bounds && count++ < 80) { if (parent.tag === 5) bounds = nativeRect(parent); parent = parent.return; }
       bounds ??= rect(screen).box;
     }
+    if (wholeApp && !screen) fibers(fiber => {
+      if (inactive(fiber.memoizedProps)) return false;
+      if (fiber.tag === 5) { bounds = nativeRect(fiber); if (bounds) return stopWalk; }
+    });
     const visibleLoader = fiber => {
       const { box, host } = rect(fiber);
       if (!host) return false;
@@ -232,9 +243,14 @@ export function installFlowRuntime(key, leaseMs) {
         return value.data === undefined && !value.error && (value.isLoading === true || value.loading === true || (value.isPending === true || value.status === 'pending' || value.status === 'loading') && value.fetchStatus === 'fetching');
       } catch { return false; }
     };
-    if (screen) fibers(fiber => {
+    if (screen || wholeApp) fibers(fiber => {
       const props = fiber.memoizedProps;
       if (inactive(props)) return false;
+      if (wholeApp && components.size < 1000) {
+        const type = fiber.type?.render ?? fiber.type?.type ?? fiber.type;
+        const name = type?.displayName ?? type?.name;
+        if (name) components.add(name);
+      }
       if (!loadingReason && props) {
         const type = fiber.type?.render ?? fiber.type?.type ?? fiber.type;
         const component = typeof type === 'string' ? type : type?.displayName ?? type?.name ?? '';
@@ -255,10 +271,30 @@ export function installFlowRuntime(key, leaseMs) {
       if (fiber.tag !== 5 || !props) return;
       hosts++;
       const text = typeof props.children === 'string' ? props.children.slice(0, 100) : '';
+      if (!title && (props.accessibilityRole === 'header' || props.role === 'heading')) title = text || props.accessibilityLabel;
       if (text || props.source || props.src || props.accessibilityLabel) content++;
       if (signature.length < 250) signature.push([typeof fiber.type === 'string' ? fiber.type : '', text, !!props.source]);
     }, screen);
-    return { found: !!screen, loading: !!loadingReason, loadingReason, hosts, content, signature: JSON.stringify(signature) };
+    return { found: wholeApp ? hosts > 0 : !!screen, loading: !!loadingReason, loadingReason, hosts, content, title: typeof title === 'string' ? title.slice(0, 80) : undefined, components: wholeApp ? [...components] : undefined, signature: JSON.stringify(signature) };
+  }
+  function observe() {
+    // Recording only watches the app. Even watchdog cleanup must never reset
+    // navigation after the user logs in, signs out, or finishes onboarding.
+    observing = true;
+    root = undefined;
+    fibers(fiber => { const props = fiber.memoizedProps; if (hidden(props)) return false; navigation(props?.navigation); navigation(props?.value); if (root) return stopWalk; });
+    const path = active(root?.getRootState?.() ?? root?.getState?.());
+    const live = visible(), visual = visualSignature(undefined, true);
+    const key = JSON.stringify([path, visual.components.sort(), visual.title]);
+    const now = Date.now();
+    if (!observation || observation.key !== key || observation.signature !== visual.signature || visual.loading || live.transitioning) {
+      cancelWaits();
+      const next = observation = { key, signature: visual.signature, since: now, painted: false };
+      frame(() => frame(() => { if (observation === next) next.painted = true; }));
+    }
+    const ready = visual.found && visual.content > 0 && !visual.loading && !live.transitioning && observation.painted && now - observation.since >= 160 && now - transitionAt >= 32;
+    const component = visual.components.find(name => /(?:Screen|Page|Form)$/.test(name) && !/^(?:Native|RN|Animated|Screen$)/.test(name));
+    return { key, ready, active: path, title: visual.title ?? component, signature: visual.signature, loading: visual.loading };
   }
   function returnToStart() {
     const path = active(original);
@@ -271,10 +307,10 @@ export function installFlowRuntime(key, leaseMs) {
   function restore() {
     if (stopped) return;
     stopped = true; generation++; clearTimeout(watchdog); cancelWaits();
-    try { if (root && original) root.dispatch({ type: 'RESET', payload: original }); } catch {}
+    try { if (!observing && root && original) root.dispatch({ type: 'RESET', payload: original }); } catch {}
     for (const record of transitions.values()) for (const off of record.off) { try { off(); } catch {} }
     transitions.clear();
-    observed.clear(); root = original = undefined;
+    observed.clear(); root = original = observation = undefined;
     delete globalThis[key];
   }
   let watchdog;
@@ -287,6 +323,8 @@ export function installFlowRuntime(key, leaseMs) {
         if (stopped) { reply({ error: 'Capture stopped.' }); return; }
         renewLease();
         if (command.type === 'heartbeat') { reply({ alive: true }); return; }
+        if (command.type === 'observe') { reply(observe()); return; }
+        if (observing) { reply({ error: 'Recording observes screens; navigation commands are disabled.' }); return; }
         if (command.type === 'resume') {
           cancelWaits(); generation++;
           const saved = original;
@@ -316,7 +354,7 @@ export function installFlowRuntime(key, leaseMs) {
           later(check, 80); return;
         }
         if (command.type === 'verify') { reply({ active: active(root?.getRootState?.() ?? root?.getState?.()), ...visualSignature(command.name), ...visible() }); return; }
-        if (command.type !== 'open' || !root) { reply({ error: 'No mounted React Navigation container found. Open the app and log in first.' }); return; }
+        if (command.type !== 'open' || !root) { reply({ error: 'No mounted navigator found. Use Record a flow for screens outside navigation.' }); return; }
         cancelWaits();
         const ticket = ++generation, path = command.path;
         let expected = path[path.length - 1];

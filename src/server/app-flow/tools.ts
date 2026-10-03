@@ -78,10 +78,10 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
   };
   registerAppTool(server, "mobile_app_flow", {
     title: "Map React Native app screens",
-    description: "Discover and capture React Navigation and Expo Router screens. The app must be running and the user logged in. discover finds the project and Metro; targets lists apps. start needs options with source folder and device/target. prepare saves context before an AI handoff. context reads unresolved routes and real observed data, including saved runs from another process. resolve supplies real params and continues that map without recapturing successful screens. retry retries timed-out screens in the same map. Older saved maps may need options with prepare or retry. stop restores starting navigation. Read progress with mobile_read_app_flow. No app-specific adapters or source edits.",
-    inputSchema: { action: z.enum(["discover", "targets", "start", "prepare", "context", "resolve", "retry", "stop"]), discovery: z.object({ projectRoot: z.string().max(2048).optional(), metroUrl: z.string().max(2048).optional(), deviceId: z.string().max(256).optional(), deviceName: z.string().max(256).optional(), appId: z.string().max(512).optional() }).optional(), options: startSchema.optional(), runId: z.uuid().optional(), metroUrl: z.string().max(2048).optional(), resolutions: resolutionSchema.optional() },
+    description: "Map React Navigation and Expo Router screens in the running app. discover finds project/Metro; targets lists apps. start creates a map with options. extend maps the current app state into runId, keeping previews. record watches screens as the user moves through login, onboarding or local forms; needs options and label, with optional runId to extend a map. It never clicks, submits forms, changes auth, or restores navigation. capture-step optionally labels and captures the next settled view while recording. stop ends recording, or restores starting navigation for route mapping. prepare saves AI context; context reads unresolved routes and observed data; resolve submits real params; retry repeats timed-out routes. Read progress with mobile_read_app_flow. No app-specific adapters or source edits.",
+    inputSchema: { action: z.enum(["discover", "targets", "start", "extend", "record", "capture-step", "prepare", "context", "resolve", "retry", "stop"]), label: z.string().trim().min(1).max(80).optional(), discovery: z.object({ projectRoot: z.string().max(2048).optional(), metroUrl: z.string().max(2048).optional(), deviceId: z.string().max(256).optional(), deviceName: z.string().max(256).optional(), appId: z.string().max(512).optional() }).optional(), options: startSchema.optional(), runId: z.uuid().optional(), metroUrl: z.string().max(2048).optional(), resolutions: resolutionSchema.optional() },
     annotations: write, _meta: { ui: { visibility: ["app", "model"] } },
-  }, safe(async ({ action, discovery, options, runId, metroUrl, resolutions }) => {
+  }, safe(async ({ action, discovery, options, runId, metroUrl, resolutions, label }) => {
     if (action === "discover") {
       const started = performance.now();
       try {
@@ -93,12 +93,13 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
       }
     }
     if (action === "targets") return { targets: (await metroTargets(metroUrl ?? "http://127.0.0.1:8081")).map(({ webSocketDebuggerUrl, ...target }) => target) };
-    if (action === "start") {
+    if (["start", "extend", "record"].includes(action)) {
       const input: FlowStart = startSchema.parse(options); parseBaseUrl(input.metroUrl, "Metro URL");
       if (input.platform === "ios") udidSchema.parse(input.deviceId); else androidIdSchema.parse(input.deviceId);
-      return { run: runs.start(input) };
+      return { run: action === 'record' ? await runs.record(input, label ?? 'Recorded flow', runId) : action === 'extend' ? await runs.extend(z.uuid().parse(runId), input) : runs.start(input) };
     }
     const id = z.uuid().parse(runId);
+    if (action === 'capture-step') return { run: await runs.captureStep(id, label) };
     if (action === "prepare") return { context: await runs.prepare(id, options) };
     if (action === "context") return { context: await runs.contextShared(id) };
     if (action === "resolve") return { run: await runs.submit(id, safeResolutions(resolutions)) };

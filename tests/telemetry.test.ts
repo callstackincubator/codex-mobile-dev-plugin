@@ -57,6 +57,23 @@ test("UI timing windows retain exact totals, reset, and ignore invalid measureme
   assert.deepEqual(many, { count: 100_000, mean: 16, p95: 16, max: 16 });
 });
 
+test('flow recording reports capture and save costs without flow names or app data', async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({ dsn:'https://public@example.com/1', defaultIntegrations:false, beforeSendMetric:scrubMetric,
+    transport:() => ({async send(envelope){envelopes.push(envelope);return {statusCode:200}},async flush(){return true}}),
+  });
+  const directory = await mkdtemp(join(tmpdir(),'flow-recording-metrics-'));
+  const runs = new AppFlowRuns({directory,connect:async()=>({runtime:{async invoke(){return {key:'PRIVATE_VIEW',signature:'PRIVATE_CONTENT',title:'PRIVATE_TITLE',ready:true,active:[]}},async close(){}},async screenshot(){return Buffer.from('PRIVATE_IMAGE')}})});
+  t.after(async()=>{await runs.close();await Sentry.close();await rm(directory,{recursive:true,force:true})});
+  const run = await runs.record({projectRoot:'PRIVATE_PATH',deviceId:'PRIVATE_DEVICE',platform:'ios',targetId:'PRIVATE_TARGET',metroUrl:'http://127.0.0.1:8081',useAi:false},'PRIVATE_FLOW');
+  for(let i=0;i<100&&!runs.read(run.id).nodes.length;i++)await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(runs.read(run.id).nodes.length,1);
+  await runs.close();await Sentry.close();
+  const metrics = JSON.stringify(envelopes.flatMap(envelope=>envelope[1]).filter(item=>item[0].type==='trace_metric'));
+  for(const name of ['app_flow.recording','app_flow.record_frame.mean','app_flow.recorded_screens','app_flow.checkpoint.mean','app-flow']) contains(metrics,name);
+  for(const value of ['PRIVATE_FLOW','PRIVATE_VIEW','PRIVATE_CONTENT','PRIVATE_TITLE','PRIVATE_IMAGE','PRIVATE_PATH','PRIVATE_DEVICE','PRIVATE_TARGET']) contains(metrics,value,false);
+});
+
 test("high frequency reads and input avoid trace sampling even with a sampled parent", () => {
   let inherited = 0;
   const inherit = (rate: number) => { inherited++; return rate; };

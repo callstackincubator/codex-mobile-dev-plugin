@@ -21,13 +21,17 @@ export type FlowNode = {
   image?: string;
   captureMs?: number;
   captureAttempts?: number;
+  groupId?: string;
+  capture?: 'observed';
 };
 export type FlowEdge = { from: string; to: string; kind: "contains" | "navigation"; owner?: string; via?: "link" | "call"; guarded?: boolean; file?: string; line?: number };
 export type FlowLink = { target: string; owner: string; params?: FlowParams; guarded: boolean };
 export type FlowGraph = { links?: FlowLink[]; nodes: FlowNode[]; edges: FlowEdge[]; warnings: string[]; files: number; scanMs: number };
 export type FlowRun = FlowGraph & {
   id: string;
-  phase: "scanning" | "connecting" | "reconnecting" | "capturing" | "finishing" | "complete" | "stopped" | "failed";
+  phase: "scanning" | "connecting" | "reconnecting" | "capturing" | "recording" | "finishing" | "complete" | "stopped" | "failed";
+  groups?: { id: string; name: string }[];
+  recording?: { groupId: string; message: string };
   startedAt: number;
   finishedAt?: number;
   elapsedMs?: number;
@@ -38,7 +42,7 @@ export type FlowRun = FlowGraph & {
   ai: "off" | "waiting" | "resolving" | "done" | "unavailable";
 };
 export type FlowResolution = { nodeId: string; params: FlowParams };
-export const flowRunning = (run?: FlowRun) => !!run && ["scanning", "connecting", "reconnecting", "capturing", "finishing"].includes(run.phase);
+export const flowRunning = (run?: FlowRun) => !!run && ["scanning", "connecting", "reconnecting", "capturing", "recording", "finishing"].includes(run.phase);
 export function flowProgress(run: FlowRun) {
   const screens = run.nodes.filter(node => node.kind === 'screen');
   return {

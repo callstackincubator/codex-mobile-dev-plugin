@@ -93,6 +93,59 @@ test('runtime strips credentials from observed route data',async t=>{
   assert.ok(text.includes('real'));
 });
 
+test('recording observes local forms without a navigator and waits for their loading state', async t => {
+  const app = runtime(t);
+  app.fiber.memoizedProps = {};
+  app.fiber.type = function LoginForm() {};
+  app.native.memoizedProps = {children:'Sign in', accessibilityRole:'header'};
+  let view = await app.invoke({type:'observe'});
+  assert.equal(view.ready,false);
+  await new Promise(resolve => setTimeout(resolve,190));
+  view = await app.invoke({type:'observe'});
+  assert.equal(view.ready,true);
+  assert.equal(view.title,'Sign in');
+  assert.deepEqual(Array.from(view.active),[]);
+  const loginKey = view.key;
+  app.fiber.type = function ResetForm() {};
+  app.native.memoizedProps = {children:'Reset password', accessibilityState:{busy:true}};
+  view = await app.invoke({type:'observe'});
+  assert.equal(view.ready,false);
+  assert.notEqual(view.key,loginKey);
+  app.native.memoizedProps.accessibilityState.busy = false;
+  await app.invoke({type:'observe'});
+  await new Promise(resolve => setTimeout(resolve,190));
+  assert.equal((await app.invoke({type:'observe'})).ready,true);
+});
+
+test('recording never restores navigation after a user changes auth state, and blocks navigation commands', async t => {
+  const app = runtime(t);
+  const actions:any[] = [];
+  const dispatch = app.navigation.dispatch;
+  app.navigation.dispatch = action => {actions.push(action);dispatch(action)};
+  await app.invoke({type:'observe'});
+  // The user navigates or completes login during recording.
+  dispatch({type:'NAVIGATE',payload:{name:'Profile'}});
+  const result = await app.invoke({type:'open',path:['Home'],timeoutMs:200});
+  assert.match(result.error,/navigation commands are disabled/);
+  await app.invoke({type:'restore'});
+  assert.deepEqual(actions,[]);
+  assert.equal(app.getState().routes[app.getState().index].name,'Profile');
+  assert.equal(app.context.flow,undefined);
+});
+
+test('recording gives a visible modal priority over background content and loaders', async t => {
+  const app = runtime(t);
+  app.native.memoizedProps.accessibilityState = {busy:true};
+  const modal:any = {tag:0,type:function Modal(){},memoizedProps:{visible:true},child:{tag:5,type:'View',memoizedProps:{children:'Sign in',accessibilityRole:'header'},stateNode:app.native.stateNode}};
+  app.fiber.sibling = modal;
+  await app.invoke({type:'observe'});
+  await new Promise(resolve => setTimeout(resolve,190));
+  const view = await app.invoke({type:'observe'});
+  assert.equal(view.ready,true);
+  assert.equal(view.title,'Sign in');
+  assert.equal(view.loading,false);
+});
+
 test('persistent CDP connection uses binding replies and renews the runtime lease', {timeout: 5000}, async t=>{
   const server=new WebSocketServer({port:0,host:'127.0.0.1'});
   await once(server,'listening');
