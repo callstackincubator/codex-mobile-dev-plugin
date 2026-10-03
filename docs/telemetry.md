@@ -241,3 +241,9 @@ now count additional presentation attempts too. No app data enters telemetry.
 Since 0.1.128, runtime inspection refreshes detached navigators after local
 forms remount them. Capture timing includes that lookup. Readiness still starts
 at navigation dispatch; units, attributes and boundaries stay unchanged.
+
+Since 0.1.129, temporary previews retain the full live provider chain and catch
+render errors before they can unmount the app. Handled preview failures send a
+fixed error with operation `app_flow.presentation`, without the app's error
+message or component data. Existing capture and discovery timings cover preview
+creation and cleanup with the same units and attributes.

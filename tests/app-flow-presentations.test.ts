@@ -9,6 +9,10 @@ import { FlowPresentationCapture } from '../src/server/app-flow/presentations.ts
 import { AppFlowRuns } from '../src/server/app-flow/runs.ts';
 import { flowRunning, type FlowRun } from '../src/shared/app-flow.ts';
 import { bindPresentationSites } from '../src/server/app-flow/presentations-bindings.ts';
+import * as React from 'react';
+import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
+import { JSDOM } from 'jsdom';
 
 async function fixture(t: test.TestContext, files: Record<string,string>) {
   const root=await mkdtemp(join(tmpdir(),'presentation-test-'));t.after(()=>rm(root,{recursive:true,force:true}));
@@ -100,6 +104,17 @@ test('native presentation events hold readiness and cleanup restores event handl
   canonical.currentProps.onStateChange({nativeEvent:{state:'opening'}});assert.equal(app.runtime.motion(app.sheet).pending,true);
   canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});assert.equal(app.runtime.motion(app.sheet).pending,false);
   assert.equal(originalCalls,2);app.runtime.cleanup();assert.equal(canonical.currentProps,original);
+});
+
+test('native completion handlers survive mutation of the original props during dismissal',()=>{
+  const app=tree();let calls=0;
+  const original:any={onDismiss(){calls++;}};
+  const canonical={currentProps:original};
+  app.sheet.child={tag:5,type:'NativeSheet',memoizedProps:original,stateNode:{canonical},return:app.sheet};
+  app.runtime.open('open');const completed=canonical.currentProps.onDismiss;
+  delete original.onDismiss;
+  completed();assert.equal(calls,1);assert.equal(app.runtime.motion(app.sheet).pending,false);
+  app.runtime.cleanup();
 });
 
 test('JS portal content matches by React element props identity without an app adapter',()=>{
@@ -244,10 +259,10 @@ test('an existing modal does not wait for a second onShow when its local form ch
   app.runtime.open('open');assert.equal(app.runtime.motion(app.sheet).pending,false);app.runtime.cleanup();
 });
 
-test('native projection uses live props and contexts, preserves modal geometry and restores the root',async t=>{
+test('native projection keeps deep live contexts, contains render errors and restores the root',async t=>{
   const app=tree();function View(){}function Modal(){}function Provider(){}
   const originalRequire=(globalThis as any).__r;
-  const react={createElement:(type:any,props:any,children:any)=>({type,props:{...props,children}}),useState(){}};
+  const react=React;
   const native={View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}};
   (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}],[2,{isInitialized:true,publicModule:{exports:native}}]])};
   t.after(()=>{(globalThis as any).__r=originalRequire});
@@ -261,13 +276,36 @@ test('native projection uses live props and contexts, preserves modal geometry a
   // The owner remains App while the projection host is the framework View.
   function App(){}const owner:any={type:App,memoizedProps:{},child:app.button,return:app.root};app.root.child=owner;app.button.return=owner;modal.return=owner;
   configureFixture(runtime,{states:[],actions:[app.action]});runtime.open('open');
+  let ancestor=provider;
+  for(let i=0;i<120;i++){const next:any={type:View,memoizedProps:{},return:ancestor};ancestor.child=next;ancestor=next;}
+  ancestor.child=app.sheet;app.sheet.return=ancestor;
   assert.equal(runtime.project(app.sheet).error,undefined);
-  const element=app.root.memoizedProps.children[1];
+  const element=app.root.memoizedProps.children.props.children[1];
   assert.equal(element.type,Modal);assert.equal(element.props.presentationStyle,'pageSheet');
-  assert.equal(element.props.children.type,Provider);assert.equal(element.props.children.props.value,liveContext);
-  assert.equal(element.props.children.props.children.type,app.sheet.type);
-  assert.equal(element.props.children.props.children.props.control,app.control);
+  const boundary=element.props.children,content=boundary.props.children;
+  assert.equal(content.type,Provider);assert.equal(content.props.value,liveContext);
+  assert.equal(content.props.children.type,app.sheet.type);
+  assert.equal(content.props.children.props.control,app.control);
   element.props.onShow();assert.equal(runtime.motion(app.sheet).pending,false);
+  const dom=new JSDOM('<div id="root"></div>');
+  const previousWindow=(globalThis as any).window,previousDocument=(globalThis as any).document;
+  (globalThis as any).window=dom.window;(globalThis as any).document=dom.window.document;
+  const errors:unknown[]=[];
+  const rendered=createRoot(dom.window.document.getElementById('root')!,{onCaughtError:error=>errors.push(error)});
+  function BrokenPreview(){throw Error('preview error');}
+  try{
+    flushSync(()=>rendered.render(React.createElement(React.Fragment,null,
+      React.createElement('span',null,'Original app'),
+      React.createElement(boundary.type,null,React.createElement(BrokenPreview)))));
+    assert.equal(errors.length,1);
+    assert.equal(dom.window.document.getElementById('root')!.textContent,'Original app');
+    assert.equal(runtime.motion(app.sheet).error,'The temporary presentation preview failed.');
+  }finally{
+    flushSync(()=>rendered.unmount());
+    await new Promise(resolve=>setTimeout(resolve,20));
+    dom.window.close();
+    (globalThis as any).window=previousWindow;(globalThis as any).document=previousDocument;
+  }
   app.root.memoizedProps={...app.root.memoizedProps,marker:2};
   await runtime.rollback(0,false);
   assert.deepEqual(app.root.memoizedProps,{children:'original',marker:2});assert.equal(app.control.closes,1);runtime.cleanup();

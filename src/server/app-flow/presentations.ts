@@ -6,6 +6,7 @@ import type { FlowNode, FlowPresentations, FlowRun } from '../../shared/app-flow
 import type { FlowBackend } from './runs.ts';
 import { blankFlowFrame } from './frame.ts';
 import { MeasurementWindow } from '../../shared/telemetry.ts';
+import { captureServerError } from '../telemetry.ts';
 
 type View = { key: string; ready: boolean; found: boolean; signature: string; motion?: string; title?: string; active: string[]; loading?: boolean; transitioning?: boolean; error?: string };
 type Action = { id: string; name: string; file: string; line: number };
@@ -40,7 +41,11 @@ export class FlowPresentationCapture {
     do {
       this.signal.throwIfAborted();
       view = await backend.runtime.invoke({type: 'presentation-view'}, 2000);
-      if (view.error) throw new Error('Presentation inspection is unavailable.');
+      if (view.error) {
+        const error = new Error('Presentation inspection is unavailable.');
+        captureServerError(error, 'app_flow.presentation');
+        throw error;
+      }
       if (view.ready) return view;
       await delay(40, undefined, {signal: this.signal});
     } while (performance.now() - started < timeout);

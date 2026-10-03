@@ -18,6 +18,7 @@ import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { adapterClient } from "./agent-device-fixtures.ts";
 import { AppFlowRuns } from "../src/server/app-flow/runs.ts";
 import { flowRunning } from "../src/shared/app-flow.ts";
+import { FlowPresentationCapture } from "../src/server/app-flow/presentations.ts";
 
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
@@ -98,6 +99,30 @@ test('flow recording reports capture and save costs without flow names or app da
   const metrics = JSON.stringify(envelopes.flatMap(envelope=>envelope[1]).filter(item=>item[0].type==='trace_metric'));
   for(const name of ['app_flow.recording','app_flow.record_frame.mean','app_flow.recorded_screens','app_flow.checkpoint.mean','app-flow']) contains(metrics,name);
   for(const value of ['PRIVATE_FLOW','PRIVATE_VIEW','PRIVATE_CONTENT','PRIVATE_TITLE','PRIVATE_IMAGE','PRIVATE_PATH','PRIVATE_DEVICE','PRIVATE_TARGET']) contains(metrics,value,false);
+});
+
+test('preview failures report a fixed error without the app exception or source',async()=>{
+  const envelopes:Envelope[]=[];
+  Sentry.init({dsn:'https://public@example.com/1',defaultIntegrations:false,beforeSend:scrubErrorEvent,
+    transport:()=>({async send(envelope){envelopes.push(envelope);return {statusCode:200}},async flush(){return true}})});
+  let opened=false;
+  const node:any={id:'PRIVATE_NODE',name:'PRIVATE_FORM',kind:'screen',path:[],required:[],status:'pending',presentation:{actions:['PRIVATE_ACTION'],basePath:[]}};
+  const run:any={id:'PRIVATE_RUN',revision:0,nodes:[node],edges:[],presentations:{states:[],actions:[{id:'PRIVATE_ACTION'}]}};
+  const backend:any={screenshot:async()=>Buffer.from('PRIVATE_IMAGE'),runtime:{async invoke(command:any){
+    if(command.type==='presentations')return [{id:'PRIVATE_ACTION'}];
+    if(command.type==='presentation-open')opened=true;
+    if(command.type==='presentation-view')return {key:'PRIVATE_VIEW',error:opened?'PRIVATE_APP_ERROR':undefined};
+    if(command.type==='presentation-rollback')opened=false;
+    return {};
+  }}};
+  try{
+    const capture=new FlowPresentationCapture(run,'PRIVATE_PATH','PRIVATE_PATH',new AbortController().signal,async()=>{});
+    await assert.rejects(capture.retry(backend,node),/Presentation inspection is unavailable/);
+    assert.equal(opened,false,'A failed preview still restores its entry');
+    await Sentry.flush();
+    const errors=JSON.stringify(envelopes.flatMap(envelope=>envelope[1]).filter(item=>item[0].type==='event'));
+    contains(errors,'Presentation inspection is unavailable');contains(errors,'app_flow.presentation');contains(errors,'PRIVATE_',false);
+  }finally{await Sentry.close();}
 });
 
 test("high frequency reads and input avoid trace sampling even with a sampled parent", () => {

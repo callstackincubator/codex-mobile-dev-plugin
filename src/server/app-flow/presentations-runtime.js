@@ -119,7 +119,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       // screen controller is evaluated to manufacture a destination.
       if(Object.getOwnPropertyDescriptor(exports??{},'Platform')&&Object.getOwnPropertyDescriptor(exports??{},'StyleSheet')){try{if(typeof exports.Platform?.OS==='string'&&typeof exports.StyleSheet?.create==='function'&&exports.View&&exports.Modal)native=exports;}catch{}}
     }
-    if(!react||!native)return;
+    if(!react||typeof react.Component!=='function'||!native)return;
     let root;fibers(fiber=>{if(!root&&(fiber.type===native.View||fiber.elementType===native.View))root=fiber;});
     for(const renderer of hook.renderers.values())if(root&&renderer.rendererPackageName==='react-native-renderer'&&typeof renderer.overrideProps==='function')return {root,renderer,react,native};
   }
@@ -132,17 +132,26 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     let child=react.createElement(type,focus.memoizedProps);
     // Keep live provider values. Never fabricate auth or query data for the
     // preview. Context values remain inside this temporary app-side closure.
-    for(let parent=focus.return,n=0;parent&&n++<100;parent=parent.return)if(parent.tag===10&&parent.memoizedProps&&'value'in parent.memoizedProps){
+    const ancestors=new Set();
+    for(let parent=focus.return;parent&&!ancestors.has(parent);parent=parent.return){
+      ancestors.add(parent);
+      if(parent.tag!==10||!parent.memoizedProps||!('value'in parent.memoizedProps))continue;
       const provider=parent.elementType??parent.type;if(provider)child=react.createElement(provider,{value:parent.memoizedProps.value},child);
     }
-    const record={root,renderer,props,focus,child,shown:false,dismissed:false};
+    const record={root,renderer,props,focus,child,shown:false,dismissed:false,failed:false};
+    class PreviewBoundary extends react.Component {
+      constructor(props){super(props);this.state={failed:false};}
+      static getDerivedStateFromError(){return {failed:true};}
+      componentDidCatch(){record.failed=true;}
+      render(){return this.state.failed?null:this.props.children;}
+    }
     let modalProps={};
     for(let parent=focus.return;parent;parent=parent.return)if(parent.type===native.Modal||parent.elementType===native.Modal){
       for(const key of ['presentationStyle','transparent','statusBarTranslucent','navigationBarTranslucent','hardwareAccelerated','supportedOrientations'])if(key in parent.memoizedProps)modalProps[key]=parent.memoizedProps[key];
       break;
     }
-    const modal=react.createElement(native.Modal,{transparent:false,...modalProps,visible:true,animationType:'none',onShow:()=>{record.shown=true;},onDismiss:()=>{record.dismissed=true;}},child);
-    record.element=modal;record.next={...props,children:[props.children,modal]};
+    const modal=react.createElement(native.Modal,{transparent:false,...modalProps,visible:true,animationType:'none',onShow:()=>{record.shown=true;},onDismiss:()=>{record.dismissed=true;}},react.createElement(PreviewBoundary,null,child));
+    record.element=modal;record.next={...props,children:react.createElement(react.Fragment,null,props.children,modal)};
     projected.push(record);undo.push({projection:record});
     renderer.overrideProps(root,[],record.next);
     return {name:name(focus),focus};
@@ -213,7 +222,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       const record={canonical,field,fiber,original:props,pending:previous?.pending??(mounting&&typeof props.onShow==='function')};
       const patched={...props};
       for(const key of ['onShow','onDismiss','onStateChange'])if(typeof props[key]==='function'){
-        patched[key]=function(...args){const state=args[0]?.nativeEvent?.state;if(key==='onShow'||key==='onDismiss'||['open','opened','presented','closed','dismissed'].includes(state))record.pending=false;else if(['opening','closing'].includes(state))record.pending=true;return props[key].apply(this,args);};
+        const handler=props[key];
+        patched[key]=function(...args){const state=args[0]?.nativeEvent?.state;if(key==='onShow'||key==='onDismiss'||['open','opened','presented','closed','dismissed'].includes(state))record.pending=false;else if(['opening','closing'].includes(state))record.pending=true;return handler.apply(this,args);};
       }
       record.patched=patched;try{canonical[field]=patched;}catch{return;}
       if(pending&&focus&&scope.some(root=>inside(fiber,root)||ancestors&&inside(root,fiber)))record.pending=true;
@@ -239,7 +249,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       try{const box=canonical?.publicInstance?.getBoundingClientRect?.();if(box&&boxes.length<24){let {x,y,width,height}=box;if(viewport){const right=Math.min(x+width,viewport.x+viewport.width),bottom=Math.min(y+height,viewport.y+viewport.height);x=Math.max(x,viewport.x);y=Math.max(y,viewport.y);width=right-x;height=bottom-y;if(width<=0||height<=0)return;}boxes.push([x,y,width,height].map(v=>Math.round(v)));}}catch{}
     });
     if(projected.some(record=>!record.shown&&(focus===record.focus||roots(record.focus).includes(focus))))pending=true;
-    return {pending,signature:JSON.stringify(boxes)};
+    const error=projected.some(record=>record.failed&&(focus===record.focus||roots(record.focus).includes(focus)))?'The temporary presentation preview failed.':undefined;
+    return {pending,signature:JSON.stringify(boxes),error};
   }
   function clearNative(){if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())if(record.canonical[record.field]===record.patched)record.canonical[record.field]=record.original;nativeRecords.clear();}
   function open(id,focus) {

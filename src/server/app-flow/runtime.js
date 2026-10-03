@@ -377,7 +377,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
       const next = presentationObservation = { key, signature: visual.signature, since: now, painted: false };
       frame(() => frame(() => { if (presentationObservation === next) next.painted = true; }));
     }
-    return { ...visual, key, active: active(root?.getRootState?.() ?? root?.getState?.()), ready: visual.found && visual.content > 0 && !visual.loading && !live.transitioning && !nativeMotion?.pending && presentationObservation.painted && now - presentationObservation.since >= 160, ...live, nativePending:nativeMotion?.pending, components:componentTree };
+    return { ...visual, key, active: active(root?.getRootState?.() ?? root?.getState?.()), ready: !nativeMotion?.error && visual.found && visual.content > 0 && !visual.loading && !live.transitioning && !nativeMotion?.pending && presentationObservation.painted && now - presentationObservation.since >= 160, ...live, nativePending:nativeMotion?.pending, error:nativeMotion?.error, components:componentTree };
   }
   function returnToStart() {
     const path = active(original);
