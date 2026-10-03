@@ -130,6 +130,11 @@ App Flow uses the `app-flow` surface in UI and server context. The UI records
 reading host roots and probing local Metro servers, with no paths, ports, process
 IDs, or app identifiers in its attributes. Cancelled or hidden UI discovery does
 not add a UI timing.
+Since 0.1.119, `ui.app_flow.zoom` measures milliseconds from the first queued
+pinch input in a frame to applying the canvas scale and scroll position. It uses
+the same bounded timing windows, without an event or span per frame. It measures
+plugin input handling, not device rendering or touch-to-photon latency. Existing
+layout and viewport timing boundaries stay unchanged.
 `ui.app_flow.visible_nodes` records the number of cards mounted near the viewport.
 Hidden tabs stop polling, and responses from an earlier surface do not add timings
 to the current one. `mobile_read_app_flow` is excluded from frequent-tool traces.

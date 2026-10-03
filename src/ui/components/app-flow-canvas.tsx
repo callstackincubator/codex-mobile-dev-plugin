@@ -1,8 +1,9 @@
-import { memo, useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
+import { memo, useEffect, useId, useMemo, useState, type CSSProperties, type RefObject } from 'react';
 import { GitForkIcon } from 'lucide-react';
-import { layoutFlow, visibleFlowNodes, type FlowRun, type FlowViewport } from '../../shared/app-flow.ts';
+import { FLOW_CARD_HEIGHT, FLOW_CARD_WIDTH, FLOW_PREVIEW_ASPECT_RATIO, layoutFlow, visibleFlowNodes, type FlowRun, type FlowViewport } from '../../shared/app-flow.ts';
 import type { AppFlowPanel } from '../app-flow-panel.ts';
 import { recordUiTiming, setUiGauge } from '../telemetry.ts';
+import { useFlowGestures } from './app-flow-gestures.ts';
 
 type Props = {
   panel: AppFlowPanel;
@@ -10,15 +11,16 @@ type Props = {
   graph: ReturnType<typeof layoutFlow>;
   images: Record<string, string>;
   scale: number;
+  onScaleChange: (scale: number) => void;
   selected?: string;
   select: (id: string) => void;
   viewport: RefObject<HTMLDivElement | null>;
 };
 
-export const AppFlowCanvas = memo(function AppFlowCanvas({ panel, run, graph, images, scale, selected, select, viewport }: Props) {
+export const AppFlowCanvas = memo(function AppFlowCanvas({ panel, run, graph, images, scale, onScaleChange, selected, select, viewport }: Props) {
   const arrowId = useId();
   const [bounds, setBounds] = useState<FlowViewport>({ x: 0, y: 0, width: 1200, height: 800 });
-  const drag = useRef<{ x: number; y: number; left: number; top: number } | undefined>(undefined);
+  useFlowGestures(viewport, scale, onScaleChange);
   useEffect(() => {
     const element = viewport.current;
     if (!element) return;
@@ -45,11 +47,8 @@ export const AppFlowCanvas = memo(function AppFlowCanvas({ panel, run, graph, im
   const edges = useMemo(() => [...new Map(run?.edges.map(edge => [`${edge.from}:${edge.to}`, edge])).values()], [run?.edges]);
   const imageKey = nodes.flatMap(node => node.image ? [node.image] : []).join('|');
   useEffect(() => { panel.visible(imageKey ? imageKey.split('|') : []); }, [panel, imageKey]);
-  return <div ref={viewport} className="app-flow-viewport" onPointerDown={event => {
-    if ((event.target as HTMLElement).closest('button') || event.button !== 0) return;
-    const element = event.currentTarget; drag.current = { x: event.clientX, y: event.clientY, left: element.scrollLeft, top: element.scrollTop }; element.setPointerCapture(event.pointerId);
-  }} onPointerMove={event => { if (drag.current) { event.currentTarget.scrollLeft = drag.current.left + drag.current.x - event.clientX; event.currentTarget.scrollTop = drag.current.top + drag.current.y - event.clientY; } }} onPointerUp={() => { drag.current = undefined; }} onPointerCancel={() => { drag.current = undefined; }}>
-    {!run?.nodes.length ? <div className="app-flow-empty"><GitForkIcon size={36} /><h3>Your app, screen by screen</h3><p>Find routes from source, then follow the links available in your running app.</p></div> : <div style={{ width: graph.width * scale, height: graph.height * scale }}><div className="app-flow-canvas" style={{ width: graph.width, height: graph.height, transform: `scale(${scale})` }}>
+  return <div ref={viewport} className="app-flow-viewport">
+    {!run?.nodes.length ? <div className="app-flow-empty"><GitForkIcon size={36} /><h3>Your app, screen by screen</h3><p>Find routes from source, then follow the links available in your running app.</p></div> : <div style={{ width: graph.width * scale, height: graph.height * scale }}><div className="app-flow-canvas" style={{ width: graph.width, height: graph.height, transform: `scale(${scale})`, '--flow-card-width': `${FLOW_CARD_WIDTH}px`, '--flow-card-height': `${FLOW_CARD_HEIGHT}px`, '--flow-preview-ratio': FLOW_PREVIEW_ASPECT_RATIO } as CSSProperties}>
       <svg width={bounds.width} height={bounds.height} style={{ left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height }} className="app-flow-edges" aria-hidden="true">
         <defs><marker id={arrowId} viewBox="0 0 8 8" refX="8" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8" fill="currentColor" /></marker></defs>
         {edges.map(edge => {
@@ -57,10 +56,10 @@ export const AppFlowCanvas = memo(function AppFlowCanvas({ panel, run, graph, im
           if (!tree && edge.from !== selected && edge.to !== selected) return null;
           if (!visible.has(edge.from) || !visible.has(edge.to)) return null;
           const a = graph.positions.get(edge.from), b = graph.positions.get(edge.to);
-          if (!a || !b || Math.max(a.x + 202, b.x) < bounds.x || Math.min(a.x, b.x) > bounds.x + bounds.width || Math.max(a.y + 28, b.y + 28) < bounds.y || Math.min(a.y, b.y) > bounds.y + bounds.height) return null;
+          if (!a || !b || Math.max(a.x + FLOW_CARD_WIDTH, b.x) < bounds.x || Math.min(a.x, b.x) > bounds.x + bounds.width || Math.max(a.y + 28, b.y + 28) < bounds.y || Math.min(a.y, b.y) > bounds.y + bounds.height) return null;
           // Paths use local CSS pixels, just like cards. Do not introduce a second
           // SVG viewBox transform when the canvas already handles pan and zoom.
-          const x = a.x + 202 - bounds.x, y = a.y + 28 - bounds.y, endX = b.x - bounds.x, endY = b.y + 28 - bounds.y;
+          const x = a.x + FLOW_CARD_WIDTH - bounds.x, y = a.y + 28 - bounds.y, endX = b.x - bounds.x, endY = b.y + 28 - bounds.y;
           return <path key={`${edge.from}:${edge.to}`} d={`M${x},${y} C${x + 24},${y} ${endX - 24},${endY} ${endX},${endY}`} data-from={edge.from} data-to={edge.to} data-kind={tree ? 'contains' : 'navigation'} markerEnd={`url(#${arrowId})`} />;
         })}
       </svg>

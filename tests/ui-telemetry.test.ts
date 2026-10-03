@@ -250,6 +250,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   assert.equal(mirrorContext.device_kind, "physical");
   api.setUiSurface("app-flow");
   api.recordUiTiming("ui.app_flow.layout", 4);
+  api.recordUiTiming("ui.app_flow.zoom", 16);
   api.recordUiTiming("ui.app_flow.update", 8);
   Object.defineProperty(window.document, "visibilityState", { configurable: true, value: "hidden" });
   const visibilityChange = new window.Event("visibilitychange");
@@ -295,6 +296,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, "ui.annotations.inspection_fallback");
   contains(encoded, '"surface":{"value":"simulator"');
   contains(encoded, "ui.app_flow.layout.mean");
+  contains(encoded, "ui.app_flow.zoom.mean");
   contains(encoded, "ui.app_flow.update.mean");
   contains(encoded, '"surface":{"value":"app-flow"');
   contains(encoded, "ui.performance.batch.mean");

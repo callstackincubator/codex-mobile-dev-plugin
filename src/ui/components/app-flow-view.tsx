@@ -6,6 +6,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
 import { AppFlowCanvas } from "./app-flow-canvas.tsx";
+import { clampFlowScale } from "./app-flow-gestures.ts";
 import { recordUiTiming } from "../telemetry.ts";
 
 export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
@@ -28,11 +29,11 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   const progress = run && flowProgress(run);
   const missing = progress?.needsData ?? 0;
   const current = run?.nodes.find(node => node.id === selected);
-  const fit = () => { if (viewport.current) { setScale(Math.min(1, Math.max(.15, Math.min((viewport.current.clientWidth - 24) / graph.width, (viewport.current.clientHeight - 24) / graph.height)))); viewport.current.scrollTo(0, 0); } };
+  const fit = () => { if (viewport.current) { setScale(Math.min(1, clampFlowScale(Math.min((viewport.current.clientWidth - 24) / graph.width, (viewport.current.clientHeight - 24) / graph.height)))); viewport.current.scrollTo(0, 0); } };
   const status = run?.phase === "scanning" ? "Finding routes…" : run?.phase === "connecting" ? "Connecting to app…" : run?.phase === "reconnecting" ? "Reconnecting to app… Your map is saved." : run?.phase === "finishing" ? "Finishing…" : running ? run?.retrying ? "Retrying timed-out screens…" : "Discovering and capturing…" : run?.phase === "failed" ? "Capture failed" : run?.phase === "stopped" ? "Stopped" : run ? "Map ready" : "Map your app";
   return <section className="app-flow" aria-label="App Flow">
     <header className="app-flow-header"><div><GitForkIcon size={17} /><strong>App Flow</strong><span>{devices.device?.name ?? "Select a device"}</span></div>
-      <div><Button variant="ghost" size="sm" aria-expanded={configOpen} onClick={() => setConfigOpen(value => !value)}>Setup</Button><Button variant="ghost" size="icon-sm" aria-label="Zoom out" onClick={() => setScale(value => Math.max(.15, value - .15))}><ZoomOutIcon /></Button><span>{Math.round(scale * 100)}%</span><Button variant="ghost" size="icon-sm" aria-label="Zoom in" onClick={() => setScale(value => Math.min(1.5, value + .15))}><ZoomInIcon /></Button><Button variant="ghost" size="icon-sm" aria-label="Fit map" onClick={fit}><ExpandIcon /></Button></div>
+      <div><Button variant="ghost" size="sm" aria-expanded={configOpen} onClick={() => setConfigOpen(value => !value)}>Setup</Button><Button variant="ghost" size="icon-sm" aria-label="Zoom out" onClick={() => setScale(value => clampFlowScale(value - .15))}><ZoomOutIcon /></Button><span>{Math.round(scale * 100)}%</span><Button variant="ghost" size="icon-sm" aria-label="Zoom in" onClick={() => setScale(value => clampFlowScale(value + .15))}><ZoomInIcon /></Button><Button variant="ghost" size="icon-sm" aria-label="Fit map" onClick={fit}><ExpandIcon /></Button></div>
     </header>
     {configOpen && <form className="app-flow-setup" onSubmit={event => { event.preventDefault(); void panel.start(project.trim(), metro.trim(), target, useAi); }}>
       <label>App source folder<Input aria-label="App source folder" placeholder="/path/to/your/app" value={project} onChange={event => panel.setSetting("project", event.target.value)} disabled={running} required /></label>
@@ -50,7 +51,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
       {missing > 0 && run?.ai !== "resolving" && <Button variant="ghost" size="sm" disabled={state.resolving} onClick={() => { void panel.resolveWithAi(); }}><SparklesIcon />Resolve with AI</Button>}{run?.ai === "resolving" && <span>Resolving params…</span>}
       {!running && run?.nodes.some(node => node.status === 'timed-out') && <Button variant="ghost" size="sm" disabled={state.busy} onClick={() => { void panel.retryTimedOut(); }}><RefreshCwIcon />Retry timed out</Button>}
     </div>
-    <AppFlowCanvas panel={panel} run={run} graph={graph} images={state.images} scale={scale} selected={selected} select={setSelected} viewport={viewport} />
+    <AppFlowCanvas panel={panel} run={run} graph={graph} images={state.images} scale={scale} onScaleChange={setScale} selected={selected} select={setSelected} viewport={viewport} />
     {current && <aside className="app-flow-detail"><strong>{current.name}</strong><span>{current.path.join(" → ")}</span>{current.file && <code>{current.file}:{current.line ?? 1}</code>}{current.required.length > 0 && <span>Required: {current.required.join(", ")}</span>}{current.reason && <span>{current.reason}</span>}</aside>}
     {!!run?.warnings.length && <details className="app-flow-warnings"><summary>{run.warnings.length} discovery notes</summary>{run.warnings.map((warning, index) => <p key={index}>{warning}</p>)}</details>}
   </section>;

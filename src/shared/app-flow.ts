@@ -58,7 +58,9 @@ export function missingFlowParams(node: Pick<FlowNode, "required" | "params" | "
 }
 
 export const FLOW_CARD_WIDTH = 202;
-export const FLOW_CARD_HEIGHT = 324;
+export const FLOW_PREVIEW_ASPECT_RATIO = 9 / 16;
+// The frame is inset by 10px on each side; title, status and borders use 66px.
+export const FLOW_CARD_HEIGHT = Math.ceil((FLOW_CARD_WIDTH - 20) / FLOW_PREVIEW_ASPECT_RATIO) + 66;
 const columnGap = 48, rowGap = 28;
 
 /** Build a spanning forest from navigation links, then pack sibling branches in short columns. */

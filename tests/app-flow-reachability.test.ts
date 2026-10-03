@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FlowReachability, matchFlowLink } from '../src/server/app-flow/reachability.ts';
-import { layoutFlow, visibleFlowNodes, type FlowGraph, type FlowNode } from '../src/shared/app-flow.ts';
+import { FLOW_CARD_WIDTH, FLOW_CARD_HEIGHT, layoutFlow, visibleFlowNodes, type FlowGraph, type FlowNode } from '../src/shared/app-flow.ts';
 const node = (name: string, entry = false): FlowNode => ({ id:name,name,definition:`${name}.tsx#${name}`,kind:'screen',path:[name],required:[],status:'pending',entry,urls:[`/${name.toLowerCase()}`] });
 
 test('only live links and mounted navigation controls reveal registered screens', () => {
@@ -44,7 +44,7 @@ test('layout follows navigation depth, wraps broad branches horizontally, and cu
   assert.ok(layout.width>layout.height);
   assert.ok(layout.height<1600);
   const cards=[...layout.positions.values()];
-  for(let i=0;i<cards.length;i++)for(let j=i+1;j<cards.length;j++)assert.ok(Math.abs(cards[i].x-cards[j].x)>=202||Math.abs(cards[i].y-cards[j].y)>=324,'cards overlap');
+  for(let i=0;i<cards.length;i++)for(let j=i+1;j<cards.length;j++)assert.ok(Math.abs(cards[i].x-cards[j].x)>=FLOW_CARD_WIDTH||Math.abs(cards[i].y-cards[j].y)>=FLOW_CARD_HEIGHT,'cards overlap');
   const visible=visibleFlowNodes(layout.positions,{x:0,y:0,width:1000,height:800});
   assert.ok(visible.size<15);
   assert.ok(visible.has('Home'));
