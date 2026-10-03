@@ -128,6 +128,25 @@ test('legacy maps still provide context and can retry with confirmed setup', asy
   assert.equal(JSON.parse(await readFile(join(directory, id, 'session.json'), 'utf8')).input.projectRoot, input.projectRoot);
 });
 
+test('a fade starting during screenshot capture retries in place and saves only a settled frame', async t => {
+  const directory=await fixture(t);let shots=0,opens=0,checks=0;
+  const runs=new AppFlowRuns({directory,scan:async()=>({...graph(),nodes:[graph().nodes[0]]}),connect:async()=>({
+    runtime:{async invoke(command){
+      if(command.type==='inspect')return{available:true};
+      if(command.type==='open'){opens++;return{ready:true,name:'Home',active:['Home'],signature:'content',motion:'[0]'}}
+      if(command.type==='verify')return{found:true,active:['Home'],motion:JSON.stringify([ [.25,.75,1,1][checks++] ?? 1 ])};
+      return{};
+    },async close(){}},
+    async screenshot(){return Buffer.from(`frame-${++shots}`)},
+  })});
+  t.after(()=>runs.close());
+  const {id}=runs.start(input),result=await finished(runs,id);
+  assert.equal(result.nodes[0].status,'captured');
+  assert.equal(opens,1,'recapture must not replay the navigation or restart the fade');
+  assert.equal(shots,4);
+  assert.equal((await runs.image(id,'home')).toString(),'frame-4');
+});
+
 test('device leases exclude other capture owners and release cleanly', async t => {
   const store = new FlowStore(await fixture(t));
   const first = await store.claim(input);

@@ -341,6 +341,45 @@ test('inactive controls and content outside native page boundaries still block o
   assert.equal((await app.invoke({type:'verify',name:'Home'})).loading,true);
 });
 
+function opacityStyle(source: any) {
+  const updater=Object.assign(()=>{assert.fail('App style updaters must never execute during inspection')},{__closure:{source}});
+  return {viewDescriptors:{},initial:{value:{opacity:0},updater}};
+}
+
+test('native opacity changes delay readiness even when React content stays unchanged', async t => {
+  const app=runtime(t), source={_isReanimatedSharedValue:true,value:0};
+  const style=opacityStyle(source);
+  // Current Worklets versions expose the shared value through a closure getter.
+  Object.defineProperty(style.initial.updater.__closure,'source',{get:()=>source});
+  app.fiber.memoizedProps.style=style;
+  app.native.memoizedProps.style={opacity:0};
+  // The React host props keep the initial opacity while the native view animates.
+  app.native.sibling={tag:5,type:'Text',memoizedProps:{children:'Header'},stateNode:app.native.stateNode,return:app.fiber};
+  const interval=setInterval(()=>{source.value=Math.min(1,source.value+.25)},55);
+  t.after(()=>clearInterval(interval));
+  const result=await app.invoke({type:'open',path:['Profile'],timeoutMs:700});
+  assert.equal(result.ready,true);
+  assert.equal(result.motion,'[1]');
+  assert.ok(result.readinessMs>=220);
+  assert.ok(result.readinessMs<650);
+  assert.ok(result.signature.includes('Header'));
+});
+
+test('opacity inputs read once per sample, ignore offscreen views, and allow settled translucency', async t => {
+  const app=runtime(t);let reads=0;
+  const source={_isReanimatedSharedValue:true,getSync(){reads++;return .45}};
+  const style=opacityStyle(source);
+  app.fiber.memoizedProps.style=style;app.native.memoizedProps.style=style;
+  let view=await app.invoke({type:'verify',name:'Home'});
+  assert.equal(view.motion,'[0.45]');assert.equal(reads,1);
+  app.native.sibling={tag:5,type:'View',memoizedProps:{style:opacityStyle({_isReanimatedSharedValue:true,getSync(){assert.fail('Offscreen opacity must not be read')}})},stateNode:{getBoundingClientRect:()=>({x:0,y:500,width:100,height:100})}};
+  const result=await app.invoke({type:'open',path:['Profile'],timeoutMs:500});
+  assert.equal(result.ready,true);assert.equal(result.motion,'[0.45]');
+  app.native.memoizedProps.style=undefined;app.fiber.memoizedProps.style=undefined;
+  view=await app.invoke({type:'verify',name:'Profile'});
+  assert.equal(view.motion,undefined);
+});
+
 test('stopping during loading cancels polling and the restoration watchdog', async t => {
   let sequence=0;const timers=new Map<number,()=>void>();
   const app=runtime(t,false,{

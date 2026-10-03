@@ -50,6 +50,13 @@ page still waits for visible loaders. Blank or stale screenshots and screen chan
 during capture invalidate the image. These waits are estimates of readiness, not
 proof that every image or request has finished.
 
+Readiness also samples visible Reanimated opacity inputs. Changes restart the
+quiet period even when React content stays the same. If a fade starts during the
+screenshot, capture repeats in place until the inputs agree before and after the
+image. This uses the existing capture timeout and does not replay navigation.
+Settled screens keep the same wait. Unsupported custom animations may still need
+app instrumentation.
+
 Route mapping restores the starting navigation state on completion or stop. Its runtime
 watchdog renews while the debugger stays connected and attempts restoration if
 heartbeats stop for 10 seconds. Navigation can still trigger ordinary app effects,

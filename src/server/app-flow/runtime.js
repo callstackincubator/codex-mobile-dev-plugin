@@ -173,7 +173,7 @@ export function installFlowRuntime(key, leaseMs) {
   }
   function visualSignature(name, wholeApp = false) {
     let hosts = 0, content = 0, screen, loadingReason, bounds, title;
-    const signature = [], components = new Set();
+    const signature = [], motion = [], motionSources = new Set(), motionStyles = new Set(), components = new Set();
     if (!wholeApp) fibers(fiber => {
       const props = fiber.memoizedProps;
       if (hidden(props)) return false;
@@ -191,7 +191,7 @@ export function installFlowRuntime(key, leaseMs) {
       }
       return false;
     };
-    const inactive = fiber => {
+    const inactive = (fiber, includeTransparent = false) => {
       const props = fiber.memoizedProps;
       if (hidden(props)) return true;
       // Native pagers can keep inactive pages at the same Yoga coordinates.
@@ -204,7 +204,7 @@ export function installFlowRuntime(key, leaseMs) {
       for (let index = 0; index < styles.length && index < 40; index++) {
         const style = styles[index];
         if (Array.isArray(style)) styles.push(...style);
-        else if (style?.display === 'none' || style?.opacity === 0) return true;
+        else if (style?.display === 'none' || style?.opacity === 0 && !includeTransparent) return true;
       }
       return false;
     };
@@ -215,10 +215,10 @@ export function installFlowRuntime(key, leaseMs) {
         if (value && value.width > 0 && value.height > 0) return value;
       } catch { /* Older renderers do not expose native bounds. */ }
     };
-    const rect = fiber => {
+    const rect = (fiber, includeTransparent = false) => {
       let result, host = false;
       fibers(child => {
-        if (inactive(child)) return false;
+        if (inactive(child, includeTransparent)) return false;
         if (child.tag !== 5) return;
         host = true; result = nativeRect(child);
         if (result) return stopWalk;
@@ -243,8 +243,8 @@ export function installFlowRuntime(key, leaseMs) {
       if (inactive(fiber)) return false;
       if (fiber.tag === 5) { bounds = nativeRect(fiber); if (bounds) return stopWalk; }
     });
-    const visibleLoader = fiber => {
-      const { box, host } = rect(fiber);
+    const visibleLoader = (fiber, includeTransparent = false) => {
+      const { box, host } = rect(fiber, includeTransparent);
       if (!host) return false;
       if (!bounds) return true;
       // Offscreen list footers and preloaded tabs must not delay this preview.
@@ -259,9 +259,36 @@ export function installFlowRuntime(key, leaseMs) {
         return value.data === undefined && !value.error && (value.isLoading === true || value.loading === true || (value.isPending === true || value.status === 'pending' || value.status === 'loading') && value.fetchStatus === 'fetching');
       } catch { return false; }
     };
+    const animatedOpacity = fiber => {
+      const styles = [fiber.memoizedProps?.style];
+      for (let index = 0; index < styles.length && index < 40; index++) {
+        const style = styles[index];
+        if (Array.isArray(style)) { styles.push(...style); continue; }
+        // Reanimated updates these values on the UI thread without a React
+        // commit. Read inputs only; never execute an app's style updater.
+        if (!style?.viewDescriptors || motionStyles.has(style) || typeof style.initial?.value?.opacity !== 'number') continue;
+        const closure = style.initial.updater?.__closure;
+        const sources = [];
+        // Worklets can expose captured values through framework getters.
+        for (const name of Object.keys(closure ?? {}).slice(0, 24)) {
+          try { const value = closure[name]; if (value?._isReanimatedSharedValue && !motionSources.has(value)) sources.push(value); } catch {}
+        }
+        if (!sources.length || !visibleLoader(fiber, true)) continue;
+        motionStyles.add(style);
+        for (const source of sources) {
+          if (motionSources.has(source) || motionSources.size >= 32) continue;
+          motionSources.add(source);
+          try {
+            const value = typeof source.getSync === 'function' ? source.getSync() : source.value;
+            if (typeof value === 'number' && Number.isFinite(value)) motion.push(value);
+          } catch { /* A detached animated view may no longer expose its value. */ }
+        }
+      }
+    };
     if (screen || wholeApp) fibers(fiber => {
       const props = fiber.memoizedProps;
       if (inactive(fiber)) return false;
+      if (props?.style) animatedOpacity(fiber);
       if (wholeApp && components.size < 1000) {
         const type = fiber.type?.render ?? fiber.type?.type ?? fiber.type;
         const name = type?.displayName ?? type?.name;
@@ -291,7 +318,8 @@ export function installFlowRuntime(key, leaseMs) {
       if (text || props.source || props.src || props.accessibilityLabel) content++;
       if (signature.length < 250) signature.push([typeof fiber.type === 'string' ? fiber.type : '', text, !!props.source]);
     }, screen);
-    return { found: wholeApp ? hosts > 0 : !!screen, loading: !!loadingReason, loadingReason, hosts, content, title: typeof title === 'string' ? title.slice(0, 80) : undefined, components: wholeApp ? [...components] : undefined, signature: JSON.stringify(signature) };
+    if (motion.length) signature.push(['opacity', motion]);
+    return { found: wholeApp ? hosts > 0 : !!screen, loading: !!loadingReason, loadingReason, hosts, content, motion: motion.length ? JSON.stringify(motion) : undefined, title: typeof title === 'string' ? title.slice(0, 80) : undefined, components: wholeApp ? [...components] : undefined, signature: JSON.stringify(signature) };
   }
   function observe() {
     // Recording only watches the app. Even watchdog cleanup must never reset
@@ -424,7 +452,7 @@ export function installFlowRuntime(key, leaseMs) {
           const transitioning = [...transitions.values()].some(record => record.busy);
           if (transitioning) { quietSince = now; painted = false; painting = false; paintTicket++; }
           if (now - quietSince >= 80 && visual.content && !transitioning && now - transitionAt >= 32) {
-            if (painted) { complete({ ready: true, active: actual, name, signature: previous, readinessMs: now - started, loadingMs, ...visible() }); return; }
+            if (painted) { complete({ ready: true, active: actual, name, signature: previous, motion: visual.motion, readinessMs: now - started, loadingMs, ...visible() }); return; }
             if (!painting) {
               painting = true; const commit = ++paintTicket;
               frame(() => { if (ticket === generation && !stopped && commit === paintTicket) frame(() => { if (commit === paintTicket) painted = true; }); });

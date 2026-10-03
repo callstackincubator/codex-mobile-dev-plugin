@@ -392,7 +392,20 @@ export class AppFlowRuns {
               if (blankFlowFrame(bytes)) throw new Error("Native screen is blank.");
             }
             signal.throwIfAborted();
-            const verified = await backend.runtime.invoke({ type: "verify", name: result.name }, 1000);
+            const validatedFrame = bytes;
+            let verified = await backend.runtime.invoke({ type: "verify", name: result.name }, 1000);
+            let motion = result.motion;
+            const sameScreen = () => JSON.stringify(verified.active) === JSON.stringify(result.active) && verified.found && !verified.loading && !verified.transitioning;
+            // A fade can begin after readiness but before the native screenshot.
+            // Recapture in place until its live values agree across capture.
+            while (sameScreen() && verified.motion !== motion) {
+              motion = verified.motion;
+              await delay(40, undefined, { signal: captureSignal });
+              bytes = await backend.screenshot(captureSignal);
+              verified = await backend.runtime.invoke({ type: "verify", name: result.name }, 1000);
+            }
+            captureSignal.throwIfAborted();
+            if (bytes !== validatedFrame && blankFlowFrame(bytes)) throw new Error("Native screen is blank.");
             if (JSON.stringify(verified.active) !== JSON.stringify(result.active) || !verified.found || verified.loading || verified.transitioning) {
               node.status = "timed-out"; node.reason = "The screen changed during capture.";
             } else {

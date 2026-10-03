@@ -33,14 +33,14 @@ test("App Flow reports bounded readiness, loading, and reconnect timings without
   t.after(() => rm(directory, {recursive:true,force:true}));
   let connections=0;
   const runs = new AppFlowRuns({directory, scan: async()=>({files:1,scanMs:3,warnings:[],edges:[],nodes:[{id:'screen',name:'PRIVATE_SCREEN',kind:'screen',path:['PRIVATE_SCREEN'],required:[],status:'pending'}]}),
-    connect: async()=>{const generation=++connections;return {runtime:{async invoke(command){if(command.type==='inspect'||command.type==='resume')return {available:true};if(generation===1)throw Error('disconnected');return {ready:true,found:true,name:'PRIVATE_SCREEN',active:['PRIVATE_SCREEN'],readinessMs:345,loadingMs:210}},async close(){}},async screenshot(){return Buffer.from('PRIVATE_PNG')}}},
+    connect: async()=>{const generation=++connections;return {runtime:{async invoke(command){if(command.type==='inspect'||command.type==='resume')return {available:true};if(generation===1)throw Error('disconnected');return {ready:true,found:true,name:'PRIVATE_SCREEN',active:['PRIVATE_SCREEN'],motion:'PRIVATE_ANIMATION_INPUT',readinessMs:345,loadingMs:210}},async close(){}},async screenshot(){return Buffer.from('PRIVATE_PNG')}}},
   });
   const run=runs.start({projectRoot:'PRIVATE_PATH',deviceId:'PRIVATE_DEVICE',platform:'ios',targetId:'PRIVATE_TARGET',metroUrl:'http://127.0.0.1:8081',useAi:false});
   while(flowRunning(runs.read(run.id))) await new Promise(resolve=>setTimeout(resolve,5));
   await runs.close(); await Sentry.close();
   const metrics=JSON.stringify(envelopes.flatMap(envelope=>envelope[1]).filter(item=>item[0].type==='trace_metric'));
   for(const name of ['app_flow.readiness.mean','app_flow.loading.p95','app_flow.capture.max','app_flow.reconnect.mean','app_flow.reconnects','app_flow.retries','app_flow.checkpoint.mean','app-flow','device_platform']) contains(metrics,name);
-  for(const value of ['PRIVATE_SCREEN','PRIVATE_PNG','PRIVATE_PATH','PRIVATE_DEVICE','PRIVATE_TARGET']) contains(metrics,value,false);
+  for(const value of ['PRIVATE_SCREEN','PRIVATE_PNG','PRIVATE_PATH','PRIVATE_DEVICE','PRIVATE_TARGET','PRIVATE_ANIMATION_INPUT']) contains(metrics,value,false);
 });
 
 test("UI timing windows retain exact totals, reset, and ignore invalid measurements", () => {

@@ -196,6 +196,10 @@ Cached background fetches and inactive pager pages do not hold up capture.
 Since 0.1.122, page-level active flags also exclude hidden native pager content
 from readiness and loading checks. Both metrics retain their existing boundaries
 and units. No component names or new per-observation events are collected.
+Since 0.1.123, readiness includes visible animated opacity changes. Capture timing
+includes any in-place screenshots needed when a fade starts during capture. Both
+keep their existing boundaries and units. Bounded animation samples stay in the
+local runtime; their values and source identities do not enter telemetry.
 Detected loading gets up to six seconds on the first attempt and ten on retry;
 ready screens finish as soon as the checks pass. These are per-screen limits.
 Custom loaders without recognizable signals may still need app instrumentation.
