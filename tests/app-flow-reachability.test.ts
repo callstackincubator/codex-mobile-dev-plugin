@@ -60,6 +60,15 @@ test('required data excludes optional action flags and exact URLs beat dynamic s
   assert.deepEqual(graph.nodes[3].params,{id:'actual-id'});
 });
 
+test('recorded forms stay in the map without counting as reachable registered routes', () => {
+  const graph:FlowGraph = {files:1,scanMs:1,warnings:[],nodes:[node('Home',true),node('Hidden')],edges:[]};
+  const recorded:FlowNode = {...node('Sign in'),capture:'observed',status:'captured',path:[],image:'mobile-flow://run/login'};
+  const reach = new FlowReachability(graph,{active:['Home'],entries:[['Home']]},{nodes:[recorded],edges:[]});
+  reach.finish();
+  assert.deepEqual(graph.nodes.map(node => node.name),['Sign in','Home']);
+  assert.match(graph.warnings[0],/^1 registered screen/);
+});
+
 test('query data and one complete union variant can satisfy a real navigation link',()=>{
   const activity={...node('Activity'),urls:['/activity'],required:['posts'],status:'needs-data' as const};
   const video={...node('Video'),required:['kind','uri','did'],paramVariants:[{required:['kind','uri'],literals:{kind:'feed'}},{required:['kind','did'],literals:{kind:'author'}}],status:'needs-data' as const};

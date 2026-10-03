@@ -470,8 +470,8 @@ export class AppFlowRuns {
         }
         Sentry.metrics.distribution("app_flow.scan", run.scanMs, { unit: "millisecond", attributes });
         Sentry.metrics.distribution("app_flow.run", (run.finishedAt ?? Date.now()) - sessionStarted, { unit: "millisecond", attributes });
-        Sentry.metrics.gauge("app_flow.routes", run.nodes.filter(node => node.kind === "screen").length, { attributes });
-        Sentry.metrics.gauge("app_flow.captured", run.nodes.filter(node => node.status === "captured").length, { attributes });
+        Sentry.metrics.gauge("app_flow.routes", run.nodes.filter(node => node.kind === "screen" && node.capture !== 'observed').length, { attributes });
+        Sentry.metrics.gauge("app_flow.captured", run.nodes.filter(node => node.status === "captured" && node.capture !== 'observed').length, { attributes });
         Sentry.metrics.gauge("app_flow.reconnects", reconnects, { attributes });
         Sentry.metrics.gauge('app_flow.retries', retries, { attributes });
       }

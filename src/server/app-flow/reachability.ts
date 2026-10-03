@@ -137,7 +137,7 @@ export class FlowReachability {
     }
   }
   finish() {
-    const excluded = this.nodes.length - this.selected.size;
+    const excluded = this.nodes.filter(node => !this.selected.has(node.id)).length;
     if (excluded) this.graph.warnings.push(`${excluded} registered screens had no visible entry or confirmed navigation link and were left out. Hidden menus and unresolved navigation expressions may expose more screens.`);
   }
 }

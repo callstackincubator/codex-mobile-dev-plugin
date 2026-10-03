@@ -142,7 +142,7 @@ They include failed attempts. These bounded metrics and existing checkpoint
 metrics use the `app-flow` surface and device platform. Flow names, headings,
 component identities, view signatures, input values, and screenshots remain local.
 Recording does not add a trace or event per observation. Existing route capture
-metrics keep their prior boundaries.
+metrics keep their prior boundaries; route counts exclude recorded local forms.
 `ui.app_flow.visible_nodes` records the number of cards mounted near the viewport.
 Hidden tabs stop polling, and responses from an earlier surface do not add timings
 to the current one. `mobile_read_app_flow` is excluded from frequent-tool traces.
