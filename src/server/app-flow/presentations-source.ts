@@ -236,9 +236,18 @@ export function scanPresentations(units: Map<string,Unit>, root: string, symbol:
       const prop=attribute.name.getText();if(!/^on(?:Press|Click)(?:[A-Z].*)?$/.test(prop))continue;
       const exp=expression(attribute),handler=callback(unit,exp);if(!exp)continue;
       const loc=unit.ast.getLineAndCharacterOfPosition(attribute.getStart());
+      // Compilers can attribute a branch's JSX creation to its condition.
+      // Include that nearest condition without widening to the whole owner.
+      let sourceStart=node.getStart();
+      for(let parent:ts.Node=node;parent.parent&&!ts.isFunctionLike(parent.parent);parent=parent.parent){
+        const container=parent.parent;
+        if(ts.isConditionalExpression(container)){if(container.whenTrue===parent)sourceStart=container.condition.getStart();break;}
+        if(ts.isBinaryExpression(container)&&container.operatorToken.kind===ts.SyntaxKind.AmpersandAmpersandToken&&container.right===parent){sourceStart=container.left.getStart();break;}
+      }
+      const start=unit.ast.getLineAndCharacterOfPosition(sourceStart),end=unit.ast.getLineAndCharacterOfPosition(node.getEnd());
       const trigger:Record<string,string|number|boolean>={};
       for(const a of attributes(node)){if(!['testID','id','label','accessibilityLabel'].includes(a.name.getText()))continue;const value=a.initializer&&ts.isStringLiteralLike(a.initializer)?a.initializer.text:constant(unit,expression(a));if(['string','number','boolean'].includes(typeof value))trigger[a.name.getText()]=value as string|number|boolean;}
-      const base={trigger:Object.keys(trigger).length?trigger:undefined,handler:exp&&ts.isIdentifier(exp)?exp.text:undefined,id:key(`${relative(root,unit.file)}:${attribute.pos}`),file:relative(root,unit.file),line:loc.line+1,owner:own,component,prop};
+      const base={source:{line:start.line+1,column:start.character,endLine:end.line+1,endColumn:end.character},trigger:Object.keys(trigger).length?trigger:undefined,handler:exp&&ts.isIdentifier(exp)?exp.text:undefined,id:key(`${relative(root,unit.file)}:${attribute.pos}`),file:relative(root,unit.file),line:loc.line+1,owner:own,component,prop};
       // An unconditional presentation call may be extracted from a handler that
       // also emits analytics. Prop guards must hold in the mounted owner.
       const props=new Map<string,string[]>();

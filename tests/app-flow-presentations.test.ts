@@ -8,6 +8,7 @@ import { installPresentationRuntime } from '../src/server/app-flow/presentations
 import { FlowPresentationCapture } from '../src/server/app-flow/presentations.ts';
 import { AppFlowRuns } from '../src/server/app-flow/runs.ts';
 import { flowRunning, type FlowRun } from '../src/shared/app-flow.ts';
+import { bindPresentationSites } from '../src/server/app-flow/presentations-bindings.ts';
 
 async function fixture(t: test.TestContext, files: Record<string,string>) {
   const root=await mkdtemp(join(tmpdir(),'presentation-test-'));t.after(()=>rm(root,{recursive:true,force:true}));
@@ -55,17 +56,23 @@ test('presentation state never includes session and credential setters',async t=
   assert.equal((await scanAppFlow(root,'ios')).presentations!.actions.length,0);
 });
 
+function configureFixture(runtime:any, catalog:any, matches:any[] = [], checked:string[] = []) {
+  runtime.configure(catalog, matches, checked);
+  const entries=runtime.records(0).bindings.filter((b:any)=>b.kind==='entry');
+  runtime.configure(catalog,[...matches,...entries.flatMap((b:any)=>catalog.actions.filter((a:any)=>a.file===b.source?.file&&a.line===b.source?.line).map((a:any)=>({binding:b.id,site:a.id})))],entries.map((b:any)=>b.id));
+}
+
 function tree() {
   function App(){} function Button(){} function Sheet(){} function Nested(){}
   const root:any={type:App,memoizedProps:{},memoizedState:null};
-  const button:any={type:Button,memoizedProps:{onPress(){throw Error('do not call the UI event')}},return:root};
+  const button:any={type:Button,_debugSource:{fileName:'App.tsx',lineNumber:1,columnNumber:1},memoizedProps:{onPress(){throw Error('do not call the UI event')}},return:root};
   const control={opens:0,closes:0,open(){this.opens++},close(){this.closes++}};
   const sheet:any={type:Sheet,memoizedProps:{control},return:root};root.child=button;button.sibling=sheet;
   const nested:any={type:Nested,memoizedProps:{},return:sheet};sheet.child=nested;
   const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
   const runtime=installPresentationRuntime({hook:{renderers:new Map()},fibers,hidden:()=>false,later:setTimeout});
   const action:any={id:'open',file:'App.tsx',line:1,owner:'App',component:'Button',prop:'onPress',name:'Sheet',effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};
-  runtime.configure({states:[],actions:[action]},[]);
+  configureFixture(runtime,{states:[],actions:[action]});
   return {root,button,sheet,nested,control,runtime,action};
 }
 
@@ -136,7 +143,7 @@ test('state hook tracking restores only its presentation field and leaves no wra
   const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});
   const site:any={id:'state',file:'App.tsx',line:1,column:0,endLine:1,owner:'App',paths:[['panel']]};
   const {bindings}=await runtime.collect([site]);assert.equal(react.useState,useState);assert.equal(bindings.length,1);
-  runtime.configure({states:[site],actions:[{...app.action,effect:{kind:'state',site:'state',path:['panel'],value:true}}]},[{binding:bindings[0].id,site:'state'}],bindings.map(binding=>binding.id));
+  configureFixture(runtime,{states:[site],actions:[{...app.action,effect:{kind:'state',site:'state',path:['panel'],value:true}}]},[{binding:bindings[0].id,site:'state'}],bindings.map(binding=>binding.id));
   assert.deepEqual((await runtime.collect([site])).bindings,[],'A mounted owner does not repeat source binding');
   runtime.open('open');assert.equal(state.panel,true);setter((value:any)=>({...value,other:2}));
   await runtime.rollback(0,false);assert.deepEqual(state,{panel:false,other:2});runtime.cleanup();
@@ -214,7 +221,7 @@ test('native projection uses live props and contexts, preserves modal geometry a
   const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){fiber.memoizedProps=props}}]])},fibers,hidden:()=>false,later:setTimeout});
   // The owner remains App while the projection host is the framework View.
   function App(){}const owner:any={type:App,memoizedProps:{},child:app.button,return:app.root};app.root.child=owner;app.button.return=owner;modal.return=owner;
-  runtime.configure({states:[],actions:[app.action]},[]);runtime.open('open');
+  configureFixture(runtime,{states:[],actions:[app.action]});runtime.open('open');
   assert.equal(runtime.project(app.sheet).error,undefined);
   const element=app.root.memoizedProps.children[1];
   assert.equal(element.type,Modal);assert.equal(element.props.presentationStyle,'pageSheet');
@@ -292,4 +299,59 @@ test('a standalone form maps without a navigator or any injectable transitions',
   t.after(()=>runs.close());const run=runs.start({projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'target',metroUrl:'http://127.0.0.1:8081',useAi:false});
   for(let i=0;i<200&&flowRunning(runs.read(run.id));i++)await new Promise(resolve=>setTimeout(resolve,10));
   const result=runs.read(run.id);assert.equal(result.phase,'complete');assert.equal(result.nodes.length,1);assert.equal(result.nodes[0].name,'Sign in');assert.equal(result.nodes[0].status,'captured');
+});
+
+test('source entry binding distinguishes same-named components and same-line JSX',async()=>{
+  const actions:any[]=[
+    {id:'close',file:'Dialog.tsx',line:4,source:{line:4,column:0,endLine:4,endColumn:30}},
+    {id:'auth',file:'Account.tsx',line:4,source:{line:4,column:0,endLine:4,endColumn:30}},
+    {id:'other',file:'Dialog.tsx',line:4,source:{line:4,column:31,endLine:4,endColumn:60}},
+  ];
+  const binding:any={id:'button',kind:'entry',stack:'',source:{file:'/app/Dialog.tsx',line:4,column:10}};
+  assert.deepEqual(await bindPresentationSites('http://localhost:8081','/app',[binding],[],actions),[{binding:'button',site:'close'}]);
+  binding.source.column=40;
+  assert.deepEqual(await bindPresentationSites('http://localhost:8081','/app',[binding],[],actions),[{binding:'button',site:'other'}]);
+  binding.source.file='/app/node_modules/shared/Dialog.tsx';
+  assert.deepEqual(await bindPresentationSites('http://localhost:8081','/app',[binding],[],actions),[]);
+});
+
+test('an ancestor creation frame cannot prove a nested JSX entry',async t=>{
+  const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original});
+  globalThis.fetch=async()=>new Response(JSON.stringify({stack:[
+    {file:'/app/node_modules/react/jsx-runtime.js',lineNumber:1,column:0},
+    {file:'/app/Dialog.tsx',lineNumber:4,column:2},
+    {file:'/app/Account.tsx',lineNumber:4,column:2},
+  ]}));
+  const binding:any={id:'entry',kind:'entry',stack:['Error',...Array.from({length:3},(_,i)=>`    at render (http://localhost:8081/index.bundle:${i+1}:1)`)].join('\n')};
+  const action:any={id:'auth',file:'Account.tsx',source:{line:4,column:0,endLine:4,endColumn:30}};
+  assert.deepEqual(await bindPresentationSites('http://localhost:8081','/app',[binding],[],[action]),[]);
+});
+
+test('unverified entries never open a controller even with identical component and callback names',()=>{
+  const app=tree();app.action.id='unrelated';app.action.file='Other.tsx';app.runtime.configure({states:[],actions:[app.action]},[]);
+  assert.deepEqual(app.runtime.list(),[]);assert.ok(app.runtime.open('unrelated').error);assert.equal(app.control.opens,0);
+  delete app.button._debugSource;assert.deepEqual(app.runtime.list(),[]);app.runtime.cleanup();
+});
+
+test('source-verified triggers select the correct owner among duplicate component names',()=>{
+  const app=tree();const other:any={type:app.root.type,memoizedProps:{},child:undefined};
+  const button:any={type:app.button.type,_debugSource:{fileName:'Other.tsx',lineNumber:1,columnNumber:1},memoizedProps:app.button.memoizedProps,return:other};
+  const sheet:any={type:app.sheet.type,memoizedProps:{control:{open(){throw Error('wrong controller')},close(){}}},return:other};other.child=button;button.sibling=sheet;
+  // Place the unrelated owner first in the traversal.
+  other.sibling=app.root;const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??other];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+  const runtime=installPresentationRuntime({hook:{renderers:new Map()},fibers,hidden:()=>false,later:setTimeout});
+  configureFixture(runtime,{states:[],actions:[app.action]});
+  assert.equal(runtime.list().length,1);assert.equal(runtime.open('open').focus,app.sheet);assert.equal(app.control.opens,1);runtime.cleanup();app.runtime.cleanup();
+});
+
+test('compiled branch creation can bind at its condition without matching another file',async t=>{
+  const root=await fixture(t,{'App.tsx':`import {useState} from 'react';
+export function App(){const [step,setStep]=useState(0);
+return step===0 ? (
+<Welcome onPressLogin={()=>setStep(1)}/>
+) : <Login/>;}`});
+  const catalog=(await scanAppFlow(root,'ios')).presentations!,action=catalog.actions[0];
+  assert.equal(action.source?.line,3);
+  const binding:any={id:'welcome',kind:'entry',owner:'Welcome',stack:'',source:{file:join(root,'App.tsx'),line:3,column:10}};
+  assert.deepEqual(await bindPresentationSites('http://localhost:8081',root,[binding],[],catalog.actions),[{binding:'welcome',site:action.id}]);
 });

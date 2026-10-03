@@ -30,6 +30,7 @@ export type FlowLink = { target: string; owner: string; params?: FlowParams; gua
 export type FlowStateSite = { id: string; file: string; line: number; column: number; endLine: number; owner: string; paths: string[][] };
 export type FlowPresentationAction = {
   id: string; file: string; line: number; owner: string; component: string; prop: string; name: string;
+  source?: { line: number; column: number; endLine: number; endColumn: number };
   trigger?: Record<string,string|number|boolean>;
   handler?: string;
   guard?: FlowUiCondition;

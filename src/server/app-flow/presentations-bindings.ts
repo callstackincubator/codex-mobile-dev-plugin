@@ -1,34 +1,46 @@
 import { relative, isAbsolute } from 'node:path';
-import type { FlowStateSite } from '../../shared/app-flow.ts';
+import type { FlowStateSite, FlowPresentationAction } from '../../shared/app-flow.ts';
+import type { PresentationBinding } from './presentations-runtime.js';
 
-type Binding = {id:string;owner:string;stack:string};
-/** Metro resolves hook call sites, including calls inside custom hooks and compiled React. */
-export async function bindPresentationSites(base: string, root: string, bindings: Binding[], states: FlowStateSite[]) {
+type Frame = {file?: string; lineNumber?: number; column?: number};
+/** Metro resolves hook call sites and JSX entry locations without executing handlers. */
+export async function bindPresentationSites(base: string, root: string, bindings: PresentationBinding[], states: FlowStateSite[], actions: FlowPresentationAction[] = []) {
   const frames: {file:string;methodName:string;lineNumber:number;column:number}[] = [];
-  const owners: string[] = [];
+  const owners: PresentationBinding[] = [];
   const origin=new URL(base).origin;
-  for(const binding of bindings.slice(0,1500)) {
+  const matches: {binding:string;site:string}[] = [], resolvedEntries=new Set<string>(), resolvedStates=new Set<string>();
+  const matchFrame=(binding:PresentationBinding,frame:Frame)=>{
+    if(!frame.file||!Number.isInteger(frame.lineNumber))return;
+    const file=relative(root,frame.file.replace(/^file:\/\//,''));if(isAbsolute(file)||file.startsWith('..')||file.split(/[\\/]/).includes('node_modules'))return;
+    if(binding.kind==='entry'){
+      // Only the first project frame owns this JSX. Ancestor render frames must
+      // not turn a nested or unrelated button into a presentation entry.
+      if(resolvedEntries.has(binding.id))return;resolvedEntries.add(binding.id);
+      for(const action of actions){
+        const loc=action.source,line=frame.lineNumber!,column=frame.column;
+        if(action.file!==file||!loc||line<loc.line||line>loc.endLine)continue;
+        if(column===undefined||line===loc.line&&column<loc.column||line===loc.endLine&&column>=loc.endColumn)continue;
+        matches.push({binding:binding.id,site:action.id});
+      }
+    }else{
+      const candidates=states.filter(site=>site.file===file&&frame.lineNumber!>=site.line&&frame.lineNumber!<=site.endLine);
+      if(candidates.length===1&&!resolvedStates.has(binding.id)){resolvedStates.add(binding.id);matches.push({binding:binding.id,site:candidates[0].id});}
+    }
+  };
+  for(const binding of bindings.slice(0,3000)) {
+    if(binding.source){matchFrame(binding,{file:binding.source.file,lineNumber:binding.source.line,column:binding.source.column});continue;}
     for(const line of (binding.stack??'').split('\n').slice(0,16)){
       const match=/at\s+(.*?)\s+\((?:address at )?(https?:\/\/.*):(\d+):(\d+)\)/.exec(line)??/^(.*?)@(https?:\/\/.*):(\d+):(\d+)$/.exec(line);
       if(!match)continue;
       let url:URL;try{url=new URL(match[2]);}catch{continue;}if(url.origin!==origin)continue;
-      frames.push({file:url.href,methodName:match[1],lineNumber:Number(match[3]),column:Math.max(0,Number(match[4])-1)});owners.push(binding.id);
+      frames.push({file:url.href,methodName:match[1],lineNumber:Number(match[3]),column:Math.max(0,Number(match[4])-1)});owners.push(binding);
     }
   }
-  if(!frames.length)return [];
-  const matches=new Map<string,string>();
   for(let offset=0;offset<frames.length;offset+=120){
     const response=await fetch(new URL('/symbolicate',base),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stack:frames.slice(offset,offset+120)}),signal:AbortSignal.timeout(3000)});
-    if(!response.ok)throw new Error('Metro could not resolve presentation hook locations.');
-    const result=await response.json() as {stack?:{file?:string;lineNumber?:number;column?:number}[]};
-    for(const [index,frame]of (result.stack??[]).slice(0,120).entries()){
-      if(!frame.file||!Number.isInteger(frame.lineNumber))continue;
-      const file=relative(root,frame.file.replace(/^file:\/\//,''));if(isAbsolute(file)||file.startsWith('..'))continue;
-      const candidates=states.filter(site=>site.file===file&&frame.lineNumber!>=site.line&&frame.lineNumber!<=site.endLine);
-      if(candidates.length!==1)continue;
-      const id=owners[offset+index];
-      if(!matches.has(id))matches.set(id,candidates[0].id);
-    }
+    if(!response.ok)throw new Error('Metro could not resolve presentation source locations.');
+    const result=await response.json() as {stack?:Frame[]};
+    for(const [index,frame]of (result.stack??[]).slice(0,120).entries())matchFrame(owners[offset+index],frame);
   }
-  return [...matches].map(([binding,site])=>({binding,site}));
+  return matches;
 }

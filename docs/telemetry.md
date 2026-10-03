@@ -221,3 +221,9 @@ Readiness signatures exclude native content outside the captured viewport, so
 offscreen list batches do not extend the wait. Native motion bounds clip to that
 viewport. Existing readiness and capture timings retain their units and boundaries;
 these checks still wait for visible loaders and motion.
+
+Since 0.1.126, `app_flow.presentation_binding` also covers JSX entry collection
+and source checks that distinguish components with the same name. It keeps the
+same bounded windows, millisecond units and surface/platform attributes. The
+runtime caches checked entries and clears their records on cleanup. Creation
+stacks, paths and source locations stay local.

@@ -76,10 +76,10 @@ export class FlowConnection {
     await this.ready;
     if (command.type === 'presentation-setup') {
       const catalog = command.catalog as import('../../shared/app-flow.ts').FlowPresentations;
-      let page = await this.invoke({ type: 'presentation-collect', states: catalog.states }, 2500);
+      let page = await this.invoke({ type: 'presentation-collect', states: catalog.states, actions: catalog.actions }, 2500);
       const bindings = [];
-      for (let i=0;i<15;i++) { bindings.push(...(page.bindings ?? [])); if (page.next === undefined) break; page = await this.invoke({type:'presentation-bindings',offset:page.next},1500); }
-      const matches = await bindPresentationSites(this.metroBase, command.projectRoot as string, bindings, catalog.states);
+      for (let i=0;i<30;i++) { bindings.push(...(page.bindings ?? [])); if (page.next === undefined) break; page = await this.invoke({type:'presentation-bindings',offset:page.next},1500); }
+      const matches = await bindPresentationSites(this.metroBase, command.projectRoot as string, bindings, catalog.states, catalog.actions);
       await this.invoke({ type: 'presentation-configure', catalog, matches, checked: bindings.map(binding => binding.id) }, 1000);
       return { bindings: matches.length };
     }
