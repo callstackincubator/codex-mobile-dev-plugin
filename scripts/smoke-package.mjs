@@ -90,7 +90,7 @@ try {
   transport.stderr?.on("data", chunk => { diagnostics = (diagnostics + chunk).slice(-5000); });
   const client = new Client({ name: "mobile-dev-package-smoke", version: "1" });
   await client.connect(transport);
-  await verifyPackagedFlowScan(client);
+  const flowRunId = await verifyPackagedFlowScan(client);
   const tools = await client.listTools();
   const recordingCard = tools.tools.find(tool => tool.name === "mobile_render_performance_recording");
   assert.ok(recordingCard);
@@ -177,6 +177,12 @@ try {
   runtimeTransport = new StdioClientTransport({ command: serverConfig.command, args: serverConfig.args, cwd: serverCwd, stderr: "pipe", env: serverEnv });
   const runtime = new Client({ name: "mobile-dev-package-runtime", version: "1" });
   await runtime.connect(runtimeTransport);
+  const flowContext = await runtime.callTool({ name: 'mobile_app_flow', arguments: { action: 'context', runId: flowRunId } });
+  assert.ok(!flowContext.isError, JSON.stringify(flowContext.content));
+  assert.equal(flowContext.structuredContent.context.runId, flowRunId);
+  const savedFlow = await runtime.callTool({ name: 'mobile_read_app_flow', arguments: { runId: flowRunId } });
+  assert.equal(savedFlow.structuredContent.run.id, flowRunId);
+  console.log('Separate packaged MCP processes share saved App Flow context and progress.');
   const runtimeResource = await runtime.readResource({ uri: entrypoint._meta.ui.resourceUri });
   if (process.env.MOBILE_DEV_TELEMETRY === "off") {
     assert.deepEqual(runtimeResource.contents[0], resource.contents[0]);

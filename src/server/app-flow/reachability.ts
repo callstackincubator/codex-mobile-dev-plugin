@@ -42,7 +42,7 @@ export class FlowReachability {
   private selected = new Set<string>();
   private edgeKeys = new Set<string>();
   private graph: FlowGraph;
-  constructor(graph: FlowGraph, evidence: FlowEvidence) {
+  constructor(graph: FlowGraph, evidence: FlowEvidence, previous?: Pick<FlowGraph, 'nodes' | 'edges'>) {
     this.graph = graph;
     const top = new Set(evidence.registrations?.filter(route => route.path.length === 1).map(route => route.name));
     for (const route of evidence.registrations ?? []) {
@@ -66,11 +66,23 @@ export class FlowReachability {
     }
     this.edges = [...canonicalEdges.values()];
     graph.nodes = []; graph.edges = [];
+    // Keep confirmed screens, completed previews, and their links when extending
+    // a saved map. The fresh catalog still supplies undiscovered destinations.
+    for (const saved of previous?.nodes ?? []) {
+      let node = this.nodes.find(node => node.id === saved.id);
+      if (node) Object.assign(node, saved);
+      else { node = { ...saved }; this.nodes.push(node); }
+      this.add(node);
+    }
+    for (const edge of previous?.edges ?? []) {
+      const from = graph.nodes.find(node => node.id === edge.from), to = graph.nodes.find(node => node.id === edge.to);
+      if (from && to) this.add(to, from);
+    }
     for (const node of this.nodes) {
       node.paths!.sort((a, b) => prefix(b, evidence.active ?? []) - prefix(a, evidence.active ?? []));
       node.path = node.paths![0];
       const candidate = evidence.candidates?.find(item => item.name === node.name && !missingFlowParams({ ...node, params: item.params }).length);
-      if (candidate && node.required.length) { node.params = { ...node.params, ...Object.fromEntries(node.required.filter(key => candidate.params[key] !== undefined).map(key => [key, candidate.params[key]])) }; node.status = 'pending'; }
+      if (candidate && missingFlowParams(node).length && node.status !== 'captured') { node.params = { ...node.params, ...Object.fromEntries(node.required.filter(key => candidate.params[key] !== undefined).map(key => [key, candidate.params[key]])) }; node.status = 'pending'; }
       if (node.entry || evidence.entries?.some(path => node.paths!.some(candidate => samePath(candidate, path))) || node.paths!.some(path => samePath(path, evidence.active ?? []))) this.add(node);
     }
     // Older runtimes and caller-provided graphs may not carry entry metadata.

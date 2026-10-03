@@ -159,7 +159,7 @@ test("a redirect or changing frame cannot count as a captured target", async t =
   })});
   const run=runs.start(start);await waitForRun(runs,run.id);await runs.close();
   assert.equal(runs.read(run.id).nodes[0].status,'timed-out');
-  assert.equal(screenshotCount,2);
+  assert.equal(screenshotCount,3);
 });
 
 test("shared screens collapse into one preview with alternate navigation paths", async t => {
@@ -259,7 +259,7 @@ test('failed screens recover and the remaining queue continues; unchanged revisi
   const result=runs.read(first.id);
   assert.equal(result.nodes[0].status,'timed-out');
   assert.equal(result.nodes[1].status,'captured');
-  assert.equal(events.filter(e=>e==='recover').length,1);
+  assert.equal(events.filter(e=>e==='recover').length,2);
   assert.equal(result.phase,'complete');
   assert.equal(events.at(-1),'restore');
   assert.equal(runs.readUpdate(first.id,result.revision),undefined);

@@ -162,6 +162,17 @@ Capture timing includes reconnection when an attempt loses its connection.
 The canvas renders one edge per screen pair, with both cards mounted. Layout
 and viewport timings retain their boundaries. Progress lists captured, queued,
 and discovered screens separately because live discovery can add work.
+Since 0.1.118, `app_flow.retries` counts additional capture attempts per capture
+session. `app_flow.checkpoint.mean`, `.p95`, and `.max` measure atomic local
+snapshot writes in milliseconds. They use the same surface/platform attributes;
+saved route data and resolutions never enter telemetry. Capture and readiness
+metrics include each retry with unchanged boundaries. A continued saved map
+reports a new capture session. The UI adds capture time across sessions and
+excludes the idle time between them.
+Saved maps, setup, and bounded AI context now use private local files so panel
+and model MCP processes share the same run. AI replies use a durable queue;
+a device lease prevents concurrent capture. Idle open panels check for updates
+every two seconds; hidden panels still stop polling.
 Since 0.1.114, `app_flow.readiness.mean`, `.p95`, and `.max` measure the time from
 navigation dispatch to a ready or timed-out screen. `app_flow.loading.mean`,
 `.p95`, and `.max` measure the portion spent observing visible loading signals.

@@ -50,3 +50,32 @@ test('screenshots use host-compatible data URLs and publish one update per batch
   assert.equal(api.getSnapshot().images['mobile-flow://run/a'],'data:image/png;base64,iVBORw0KGgo=');
   assert.equal(api.getSnapshot().images['mobile-flow://run/b'],'data:image/png;base64,iVBORw0KGgo=');
 });
+
+test('AI handoff saves the run before sending its request to chat', async t => {
+  const events:string[]=[];
+  const api=panel(t,async args=>{events.push(args.arguments.action);return {structuredContent:{context:{}}}});
+  api.state={...api.state,run:{id:'saved-run',phase:'complete',revision:1,nodes:[]}};
+  api.app.sendMessage=async message=>{events.push('message');assert.match(message.content[0].text,/same saved map/);assert.doesNotMatch(message.content[0].text,/kept for the next run/);return {}};
+  await api.resolveWithAi();
+  assert.deepEqual(events,['prepare','message']);
+});
+
+test('failed handoff persistence leaves an error and does not send an unusable run to chat', async t => {
+  const api=panel(t,async()=>({isError:true,content:[{type:'text',text:'Could not save map'}]}));
+  api.state={...api.state,run:{id:'saved-run',phase:'complete',nodes:[]}};
+  api.app.sendMessage=async()=>{assert.fail('Must not send before saving')};
+  await api.resolveWithAi();
+  assert.equal(api.getSnapshot().error,'Could not save map');
+});
+
+test('a finished open map reads updates from AI capture and preserves existing previews', async t => {
+  const api=panel(t,async args=>{
+    assert.equal(args.name,'mobile_read_app_flow');
+    return {structuredContent:{run:{id:'saved-run',phase:'capturing',revision:2,nodes:[]}}};
+  });
+  api.state={...api.state,open:true,run:{id:'saved-run',phase:'complete',revision:1,nodes:[]},images:{old:'data:image/png;base64,unchanged'}};
+  await api.poll();
+  assert.equal(api.getSnapshot().run.phase,'capturing');
+  assert.equal(api.getSnapshot().images.old,'data:image/png;base64,unchanged');
+  api.hide();
+});

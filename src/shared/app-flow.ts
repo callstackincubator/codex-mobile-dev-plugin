@@ -20,6 +20,7 @@ export type FlowNode = {
   reason?: string;
   image?: string;
   captureMs?: number;
+  captureAttempts?: number;
 };
 export type FlowEdge = { from: string; to: string; kind: "contains" | "navigation"; owner?: string; via?: "link" | "call"; guarded?: boolean; file?: string; line?: number };
 export type FlowLink = { target: string; owner: string; params?: FlowParams; guarded: boolean };
@@ -29,8 +30,11 @@ export type FlowRun = FlowGraph & {
   phase: "scanning" | "connecting" | "reconnecting" | "capturing" | "finishing" | "complete" | "stopped" | "failed";
   startedAt: number;
   finishedAt?: number;
+  elapsedMs?: number;
+  captureStartedAt?: number;
   error?: string;
   revision: number;
+  retrying?: boolean;
   ai: "off" | "waiting" | "resolving" | "done" | "unavailable";
 };
 export type FlowResolution = { nodeId: string; params: FlowParams };

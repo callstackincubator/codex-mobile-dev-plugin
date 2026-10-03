@@ -39,7 +39,7 @@ test("App Flow reports bounded readiness, loading, and reconnect timings without
   while(flowRunning(runs.read(run.id))) await new Promise(resolve=>setTimeout(resolve,5));
   await runs.close(); await Sentry.close();
   const metrics=JSON.stringify(envelopes.flatMap(envelope=>envelope[1]).filter(item=>item[0].type==='trace_metric'));
-  for(const name of ['app_flow.readiness.mean','app_flow.loading.p95','app_flow.capture.max','app_flow.reconnect.mean','app_flow.reconnects','app-flow','device_platform']) contains(metrics,name);
+  for(const name of ['app_flow.readiness.mean','app_flow.loading.p95','app_flow.capture.max','app_flow.reconnect.mean','app_flow.reconnects','app_flow.retries','app_flow.checkpoint.mean','app-flow','device_platform']) contains(metrics,name);
   for(const value of ['PRIVATE_SCREEN','PRIVATE_PNG','PRIVATE_PATH','PRIVATE_DEVICE','PRIVATE_TARGET']) contains(metrics,value,false);
 });
 

@@ -78,8 +78,8 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
   };
   registerAppTool(server, "mobile_app_flow", {
     title: "Map React Native app screens",
-    description: "Discover React Navigation and Expo Router screens, show their hierarchy in App Flow, and capture them until all queued screens have been attempted. App must already be running and user logged in. discover finds the selected project from MCP roots and running Metro servers; targets lists apps at one URL. start needs options with the source folder and selected device/target. context returns unresolved routes and observed params for one AI batch. resolve supplies real params, never invented IDs. stop restores the starting navigation state. Read progress with mobile_read_app_flow. No app-specific adapters or source edits.",
-    inputSchema: { action: z.enum(["discover", "targets", "start", "context", "resolve", "stop"]), discovery: z.object({ projectRoot: z.string().max(2048).optional(), metroUrl: z.string().max(2048).optional(), deviceId: z.string().max(256).optional(), deviceName: z.string().max(256).optional(), appId: z.string().max(512).optional() }).optional(), options: startSchema.optional(), runId: z.uuid().optional(), metroUrl: z.string().max(2048).optional(), resolutions: resolutionSchema.optional() },
+    description: "Discover and capture React Navigation and Expo Router screens. The app must be running and the user logged in. discover finds the project and Metro; targets lists apps. start needs options with source folder and device/target. prepare saves context before an AI handoff. context reads unresolved routes and real observed data, including saved runs from another process. resolve supplies real params and continues that map without recapturing successful screens. retry retries timed-out screens in the same map. Older saved maps may need options with prepare or retry. stop restores starting navigation. Read progress with mobile_read_app_flow. No app-specific adapters or source edits.",
+    inputSchema: { action: z.enum(["discover", "targets", "start", "prepare", "context", "resolve", "retry", "stop"]), discovery: z.object({ projectRoot: z.string().max(2048).optional(), metroUrl: z.string().max(2048).optional(), deviceId: z.string().max(256).optional(), deviceName: z.string().max(256).optional(), appId: z.string().max(512).optional() }).optional(), options: startSchema.optional(), runId: z.uuid().optional(), metroUrl: z.string().max(2048).optional(), resolutions: resolutionSchema.optional() },
     annotations: write, _meta: { ui: { visibility: ["app", "model"] } },
   }, safe(async ({ action, discovery, options, runId, metroUrl, resolutions }) => {
     if (action === "discover") {
@@ -99,14 +99,16 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
       return { run: runs.start(input) };
     }
     const id = z.uuid().parse(runId);
-    if (action === "context") return { context: runs.context(id) };
-    if (action === "resolve") return { run: runs.resolve(id, safeResolutions(resolutions)) };
-    return { run: runs.stop(id) };
+    if (action === "prepare") return { context: await runs.prepare(id, options) };
+    if (action === "context") return { context: await runs.contextShared(id) };
+    if (action === "resolve") return { run: await runs.submit(id, safeResolutions(resolutions)) };
+    if (action === "retry") return { run: await runs.retry(id, options) };
+    return { run: await runs.stopShared(id) };
   }));
   registerAppTool(server, "mobile_read_app_flow", {
     title: "Read App Flow progress", description: "Read the route map and capture progress. Screenshots are local mobile-flow resources. Poll at most twice per second.",
     inputSchema: { runId: z.uuid(), revision: z.number().int().nonnegative().optional() }, annotations: read, _meta: { ui: { visibility: ["app", "model"] } },
-  }, safe(async ({ runId, revision }) => ({ run: runs.readUpdate(runId, revision) })));
+  }, safe(async ({ runId, revision }) => ({ run: await runs.readShared(runId, revision) })));
   server.registerResource("app-flow-image", new ResourceTemplate("mobile-flow://{runId}/{nodeId}", { list: undefined }), { mimeType: "image/png" }, async (uri, variables) => ({
     contents: [{ uri: uri.href, mimeType: "image/png", blob: (await runs.image(String(variables.runId), String(variables.nodeId))).toString("base64") }],
   }));

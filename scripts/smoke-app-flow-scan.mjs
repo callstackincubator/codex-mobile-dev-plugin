@@ -37,6 +37,7 @@ export async function verifyPackagedFlowScan(client, sourceFolder) {
     assert.deepEqual(run.nodes, []);
     assert.deepEqual(run.edges, []);
     console.log(`Packaged App Flow scanner: ${run.files} files, ${Math.round(run.scanMs)} ms. Unverified routes stayed hidden; no device navigation attempted.`);
+    return run.id;
   } finally {
     inspector.closeAllConnections();
     await new Promise(resolve => inspector.close(resolve));
