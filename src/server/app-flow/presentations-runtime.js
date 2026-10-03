@@ -44,7 +44,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const mounted=new Set();fibers(fiber=>mounted.add(fiber));
     for(const [id,binding]of bindings)if(!mounted.has(binding.fiber)&&!mounted.has(binding.fiber.alternate))bindings.delete(id);
     const renderOwners=[...mounted].filter(f=>f.tag!==14);
-    const missing=states.filter(site=>renderOwners.some(f=>name(f)===site.owner&&!owners.has(f)&&!owners.has(f.alternate)));
+    const tracked=fiber=>{const record=owners.get(fiber)??owners.get(fiber.alternate);return record&&[...record.values()].some(id=>bindings.has(id));};
+    const missing=states.filter(site=>renderOwners.some(f=>name(f)===site.owner&&!tracked(f)));
     const names=collecting=new Set(missing.map(s=>s.owner));
     if(!names.size){unpatch();return records(0);}
     const scheduled=new Set();

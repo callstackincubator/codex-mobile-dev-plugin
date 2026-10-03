@@ -188,17 +188,22 @@ test('queued capture deduplicates local forms and sheets and restores each paren
 });
 
 test('state hook tracking restores only its presentation field and leaves no wrapped exports',async t=>{
-  const app=tree();let state={panel:false,other:1};
+  const app=tree();let state={panel:false,other:1},mounted=true;
   const setter=(update:any)=>{state=update(state);app.root.memoizedState={memoizedState:state,next:null};};
   const useState=()=>[state,setter];const react={createElement(){},useState,useReducer(){}};
   const original=(globalThis as any).__r;(globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}]])};t.after(()=>{(globalThis as any).__r=original});
   const renderer={rendererPackageName:'react-native-renderer',getCurrentFiber:()=>app.root,scheduleUpdate(){app.root.memoizedState=null;react.useState();app.root.memoizedState={memoizedState:state,next:null}}};
-  const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??app.root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+  const fibers=(visit:any,subtree?:any)=>{if(!mounted)return;const stack=[subtree??app.root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
   const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});
   const site:any={id:'state',file:'App.tsx',line:1,column:0,endLine:1,owner:'App',paths:[['panel']]};
   const {bindings}=await runtime.collect([site]);assert.equal(react.useState,useState);assert.equal(bindings.length,1);
   configureFixture(runtime,{states:[site],actions:[{...app.action,effect:{kind:'state',site:'state',path:['panel'],value:true}}]},[{binding:bindings[0].id,site:'state'}],bindings.map(binding=>binding.id));
   assert.deepEqual((await runtime.collect([site])).bindings,[],'A mounted owner does not repeat source binding');
+  mounted=false;await runtime.collect([site]);mounted=true;
+  const refreshed=await runtime.collect([site]);
+  const stateBinding=refreshed.bindings.find(binding=>binding.kind==='useState');
+  assert.ok(stateBinding,'A returning owner recollects bindings removed while it was absent');
+  configureFixture(runtime,{states:[site],actions:[{...app.action,effect:{kind:'state',site:'state',path:['panel'],value:true}}]},[{binding:stateBinding.id,site:'state'}],refreshed.bindings.map(binding=>binding.id));
   runtime.open('open');assert.equal(state.panel,true);setter((value:any)=>({...value,other:2}));
   await runtime.rollback(0,false);assert.deepEqual(state,{panel:false,other:2});runtime.cleanup();
 });

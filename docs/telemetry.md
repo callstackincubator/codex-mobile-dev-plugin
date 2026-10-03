@@ -251,3 +251,7 @@ creation and cleanup with the same units and attributes.
 Since 0.1.130, preview insertion preserves single and array root children so
 the app's existing navigator stays mounted. Existing presentation timings still
 include insertion and restoration; their meaning and attributes stay unchanged.
+
+Since 0.1.131, source binding recollects hooks when a returning owner has lost
+its mounted binding records. `app_flow.presentation_binding` and discovery
+timings cover that work with unchanged boundaries, units and attributes.
