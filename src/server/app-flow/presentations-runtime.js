@@ -151,7 +151,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       break;
     }
     const modal=react.createElement(native.Modal,{transparent:false,...modalProps,visible:true,animationType:'none',onShow:()=>{record.shown=true;},onDismiss:()=>{record.dismissed=true;}},react.createElement(PreviewBoundary,null,child));
-    record.element=modal;record.next={...props,children:react.createElement(react.Fragment,null,props.children,modal)};
+    const children=Array.isArray(props.children)?props.children:[props.children];
+    record.element=modal;record.next={...props,children:react.createElement(react.Fragment,null,...children,modal)};
     projected.push(record);undo.push({projection:record});
     renderer.overrideProps(root,[],record.next);
     return {name:name(focus),focus};

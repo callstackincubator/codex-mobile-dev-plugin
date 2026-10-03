@@ -247,3 +247,7 @@ render errors before they can unmount the app. Handled preview failures send a
 fixed error with operation `app_flow.presentation`, without the app's error
 message or component data. Existing capture and discovery timings cover preview
 creation and cleanup with the same units and attributes.
+
+Since 0.1.130, preview insertion preserves single and array root children so
+the app's existing navigator stays mounted. Existing presentation timings still
+include insertion and restoration; their meaning and attributes stay unchanged.

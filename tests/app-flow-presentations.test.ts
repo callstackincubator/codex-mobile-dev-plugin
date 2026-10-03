@@ -311,6 +311,38 @@ test('native projection keeps deep live contexts, contains render errors and res
   assert.deepEqual(app.root.memoizedProps,{children:'original',marker:2});assert.equal(app.control.closes,1);runtime.cleanup();
 });
 
+test('adding a preview preserves app instances for single and array root children',async()=>{
+  for(const shape of ['single','array','siblings']){
+    const app=tree(),dom=new JSDOM('<div id="root"></div>');let mounts=0;
+    const previous={window:(globalThis as any).window,document:(globalThis as any).document,require:(globalThis as any).__r};
+    (globalThis as any).window=dom.window;(globalThis as any).document=dom.window.document;
+    function View({children}:any){return React.createElement('div',null,children);}
+    function Modal(){return null;}
+    function AppState(){const [instance]=React.useState(()=>++mounts);return React.createElement('span',null,instance);}
+    const element=React.createElement(AppState,{key:'app'});
+    const children=shape==='single'?element:shape==='array'?[element]:[element,React.createElement('span',{key:'sibling'},'Sibling')];
+    app.root.type=View;app.root.memoizedProps={children};
+    function App(){}const owner:any={type:App,memoizedProps:{},child:app.button,return:app.root};
+    app.root.child=owner;app.button.return=owner;app.sheet.return=owner;
+    const native={View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}};
+    (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:React}}],[2,{isInitialized:true,publicModule:{exports:native}}]])};
+    const rendered=createRoot(dom.window.document.getElementById('root')!);
+    const render=()=>flushSync(()=>rendered.render(React.createElement(View,app.root.memoizedProps)));
+    const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??app.root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+    const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){fiber.memoizedProps=props;render();}}]])},fibers,hidden:()=>false,later:setTimeout});
+    try{
+      render();configureFixture(runtime,{states:[],actions:[app.action]});runtime.open('open');
+      assert.equal(runtime.project(app.sheet).error,undefined);
+      assert.equal(mounts,1,`${shape} app children keep their state when a preview opens`);
+      await runtime.rollback(0,false);
+      assert.equal(mounts,1,`${shape} app children keep their state when the preview closes`);
+    }finally{
+      runtime.cleanup();flushSync(()=>rendered.unmount());await new Promise(resolve=>setTimeout(resolve,20));dom.window.close();
+      (globalThis as any).window=previous.window;(globalThis as any).document=previous.document;(globalThis as any).__r=previous.require;
+    }
+  }
+});
+
 test('saved native projections replay at the correct step on retry',async t=>{
   const root=await fixture(t,{});await mkdir(join(root,'run'));let key='entry';const commands:any[]=[];
   const node:any={id:'login',name:'Login',kind:'screen',path:[],required:[],status:'pending',presentation:{actions:['login'],projections:['login'],basePath:[]}};
@@ -347,7 +379,7 @@ test('a kept form reopens its saved native preview to discover uncaptured childr
 });
 
 test('apps without a navigator map local forms and resume a nested sheet after disconnect',async t=>{
-  const directory=await fixture(t,{});let connections=0,opens=0;
+  const directory=await mkdtemp(join(tmpdir(),'presentation-test-'));let connections=0,opens=0;
   const actions:any[]=[{id:'login',name:'Login',file:'App.tsx',line:1,owner:'App',component:'Button',prop:'onPress',effect:{kind:'state',site:'step',path:[],value:1}},
     {id:'sheet',name:'Options',file:'Login.tsx',line:2,owner:'Login',component:'Button',prop:'onPress',effect:{kind:'control',component:'Options',prop:'controller',method:'show',close:['hide']}}];
   const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes:[],edges:[],presentations:{states:[],actions}}),connect:async()=>{
@@ -363,7 +395,7 @@ test('apps without a navigator map local forms and resume a nested sheet after d
       return {};
     }}};
   }});
-  t.after(()=>runs.close());
+  t.after(async()=>{await runs.close();await rm(directory,{recursive:true,force:true});});
   const run=runs.start({projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'target',metroUrl:'http://127.0.0.1:8081',useAi:false});
   for(let i=0;i<300&&flowRunning(runs.read(run.id));i++)await new Promise(resolve=>setTimeout(resolve,10));
   const result=runs.read(run.id);assert.equal(result.phase,'complete');assert.equal(connections,2);
