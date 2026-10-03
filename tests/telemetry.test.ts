@@ -79,7 +79,7 @@ test('automatic local forms report bounded capture and binding costs without sou
   while(flowRunning(runs.read(run.id)))await new Promise(resolve=>setTimeout(resolve,5));
   await runs.close();await Sentry.close();
   const metrics=JSON.stringify(envelopes.flatMap(envelope=>envelope[1]).filter(item=>item[0].type==='trace_metric'));
-  for(const name of ['app_flow.presentations','app_flow.presentations_captured','app_flow.presentation.mean','app_flow.presentation_binding.p95','app-flow','device_platform'])contains(metrics,name);
+  for(const name of ['app_flow.presentations','app_flow.presentations_captured','app_flow.presentation.mean','app_flow.presentation_binding.p95','app_flow.presentation_discovery.mean','app-flow','device_platform'])contains(metrics,name);
   contains(metrics,'PRIVATE_',false);
 });
 

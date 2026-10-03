@@ -353,15 +353,22 @@ export class AppFlowRuns {
         await this.persist(active);
         signal.throwIfAborted();
         for (const node of run.nodes) attempts.set(node.id, node.captureAttempts ?? 0);
-        const node = run.nodes.filter(item => item.kind === 'screen' && !item.presentation && item.status === 'pending' && (attempts.get(item.id) ?? 0) < maxAttempts)
+        const node = run.nodes.filter(item => item.kind === 'screen' && item.status === 'pending' && (attempts.get(item.id) ?? 0) < maxAttempts)
           .sort((a, b) => (attempts.get(a.id) ?? 0) - (attempts.get(b.id) ?? 0))[0];
-        if (!node) {
-          const presentation=run.nodes.find(item=>item.presentation&&item.status==='pending');
-          if(presentation){
-            try {await presentations.retry(backend,presentation);}
-            catch(error){if(signal.aborted)throw error;presentation.status='timed-out';presentation.reason='Presentation capture was interrupted.';try{await backend.runtime.invoke({type:'heartbeat'},1000);}catch{await reconnect();presentation.status='pending';}}
-            continue;
+        if (node?.presentation) {
+          run.retrying = (node.captureAttempts ?? 0) > 0;
+          if (run.retrying) retries++;
+          try { await presentations.retry(backend, node); }
+          catch (error) {
+            if (signal.aborted) throw error;
+            node.status = (node.captureAttempts ?? 0) < maxAttempts ? 'pending' : 'timed-out';
+            node.reason = 'Presentation capture was interrupted.';
+            try { await backend.runtime.invoke({type: 'heartbeat'}, 1000); }
+            catch { await reconnect(); node.captureAttempts = Math.max(0, (node.captureAttempts ?? 1) - 1); node.status = 'pending'; }
           }
+          continue;
+        }
+        if (!node) {
           if (run.ai === "waiting") {
             const unresolved = run.nodes.some(node => node.status === "needs-data");
             if (unresolved && this.dependencies.resolve) {
@@ -518,7 +525,7 @@ export class AppFlowRuns {
         Sentry.metrics.distribution("app_flow.run", (run.finishedAt ?? Date.now()) - sessionStarted, { unit: "millisecond", attributes });
         Sentry.metrics.gauge("app_flow.routes", run.nodes.filter(node => node.kind === "screen" && node.capture !== 'observed' && !node.presentation).length, { attributes });
         Sentry.metrics.gauge("app_flow.captured", run.nodes.filter(node => node.status === "captured" && node.capture !== 'observed' && !node.presentation).length, { attributes });
-        for (const [name,window] of [["presentation", presentations?.timings], ["presentation_binding", presentations?.bindingTimings]] as const) {
+        for (const [name,window] of [["presentation", presentations?.timings], ["presentation_binding", presentations?.bindingTimings], ["presentation_discovery", presentations?.discoveryTimings]] as const) {
           const values = window?.take();
           if (values) for (const statistic of ["mean", "p95", "max"] as const) Sentry.metrics.gauge(`app_flow.${name}.${statistic}`,values[statistic],{unit:"millisecond",attributes});
         }

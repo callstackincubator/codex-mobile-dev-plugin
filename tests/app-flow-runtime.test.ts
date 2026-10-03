@@ -5,6 +5,7 @@ import { installFlowRuntime } from '../src/server/app-flow/runtime.js';
 import { WebSocketServer } from 'ws';
 import { once } from 'node:events';
 import { FlowConnection } from '../src/server/app-flow/connection.ts';
+import { installPresentationRuntime } from '../src/server/app-flow/presentations-runtime.js';
 
 function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, clearTimeout}) {
   let state:any = {index:0,routeNames:['Home','Profile'],routes:[{name:'Home'}]};
@@ -96,6 +97,30 @@ test('offscreen list batches do not change readiness, including flattened childr
   // Overflowing children can be visible while their parent is outside the view.
   y=500;text.stateNode={getBoundingClientRect:()=>({x:0,y:20,width:100,height:20})};
   assert.ok((await app.invoke({type:'verify',name:'Profile'})).signature.includes('offscreen row'));
+});
+
+test('presentation inspection reaches portal outlets beyond a large feed and uses their native bounds',async t=>{
+  const app=runtime(t);await app.invoke({type:'restore'});
+  const focus:any={type:function Sheet(){},memoizedProps:{},return:app.fiber};
+  const bodyProps={children:'Sheet content'},bodyType=function PortalBody(){};
+  focus.child={type:function Portal(){},memoizedProps:{children:{type:bodyType,props:bodyProps}},return:focus};
+  app.native.sibling=focus;
+  let tail=focus;
+  for(let i=0;i<16020;i++){tail.sibling={tag:5,type:'View',memoizedProps:{},return:app.fiber};tail=tail.sibling;}
+  const outlet:any={type:bodyType,memoizedProps:bodyProps,return:app.fiber};tail.sibling=outlet;
+  const box=()=>({x:0,y:0,width:100,height:200});
+  outlet.child={tag:5,type:'View',memoizedProps:{children:'Sheet content'},stateNode:{getBoundingClientRect:box},return:outlet};
+  const loader:any={type:function Skeleton(){},memoizedProps:{},return:outlet};
+  loader.child={tag:5,type:'View',memoizedProps:{},stateNode:{getBoundingClientRect:box},return:loader};outlet.child.sibling=loader;
+  app.native.stateNode={getBoundingClientRect:()=>({x:0,y:5000,width:100,height:200})};
+  app.context.focus=focus;
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,(options)=>{const p=(${installPresentationRuntime.toString()})(options);return {...p,open:()=>({name:'Sheet',focus})}})`,app.context);
+  await app.invoke({type:'inspect'});await app.invoke({type:'presentation-open',id:'sheet'});
+  let view=await app.invoke({type:'presentation-view'});
+  assert.equal(view.found,true);assert.equal(view.loading,true);assert.equal(view.bounds.y,0);assert.equal(view.hosts,2);
+  loader.memoizedProps.style={display:'none'};
+  await app.invoke({type:'presentation-view'});await new Promise(resolve=>setTimeout(resolve,200));
+  view=await app.invoke({type:'presentation-view'});assert.equal(view.ready,true);assert.equal(view.loading,false);
 });
 
 test('restoration waits for child sheet dismissal before resetting parent navigation',async t=>{

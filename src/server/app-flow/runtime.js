@@ -55,9 +55,13 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
       if (renderer.rendererPackageName !== 'react-native-renderer') continue;
       for (const item of hook.getFiberRoots(id)) stack.push(item.current);
     }
-    let count = 0;
-    while (stack.length && count++ < 16000) {
+    // A busy feed can exceed 16,000 fibers before a root-level portal outlet.
+    // Walk the complete mounted tree; guard cycles without dropping its tail.
+    const seen = new Set();
+    while (stack.length) {
       const fiber = stack.pop(); if (!fiber) continue;
+      if (seen.has(fiber)) continue;
+      seen.add(fiber);
       if (fiber !== subtree && fiber.sibling) stack.push(fiber.sibling);
       const result = callback(fiber);
       if (result === stopWalk) return;
@@ -240,6 +244,9 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
       if (props?.visible !== false && (props?.accessibilityViewIsModal === true || props?.['aria-modal'] === true || name === 'Modal' && props?.visible === true)) screen = fiber;
     });
     if (screen) {
+      // A portal's logical parent can sit far outside its native sheet. Its
+      // mounted content supplies the viewport for presentation inspection.
+      if (wholeApp && focus) bounds = rect(screen).box;
       // A descendant may be a small icon in a flattened native tree. Prefer the
       // enclosing native screen when deciding whether a loader is offscreen.
       let parent = screen.return, count = 0;

@@ -110,7 +110,43 @@ test('JS portal content matches by React element props identity without an app a
   app.runtime.cleanup();
 });
 
-test('recursive capture deduplicates local forms and sheets and restores each parent',async t=>{
+test('portal focus keeps the whole body instead of narrowing to its last child',()=>{
+  const app=tree(),textType=function Caption(){},textProps={children:'body text'};
+  const bodyType=function PortalBody(){},bodyProps={children:{type:textType,props:textProps}};
+  app.sheet.child={type:function Portal(){},memoizedProps:{children:{type:bodyType,props:bodyProps}},return:app.sheet};
+  const body:any={type:bodyType,memoizedProps:bodyProps,return:app.root};
+  body.child={type:textType,memoizedProps:textProps,return:body};app.sheet.sibling=body;
+  assert.equal(app.runtime.visualFocus(app.sheet),body);
+  app.runtime.cleanup();
+});
+
+test('presentation retries yield to untouched screens and retain all three readiness attempts',async t=>{
+  const directory=await fixture(t,{}),events:string[]=[];let clock=0,key='Home',slow=0;
+  t.mock.method(performance,'now',()=>clock);
+  const actions:any[]=['Slow','Quick'].map(name=>({id:name,name,file:'Home.tsx',line:1,owner:'Home',component:'Button',prop:'onPress',effect:{kind:'control',component:name,prop:'control',method:'open',close:['close']}}));
+  const nodes:any[]=['Home','Search'].map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending'}));
+  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions}}),connect:async()=>({
+    screenshot:async()=>Buffer.from(key),runtime:{async close(){},async invoke(command:any){
+      if(command.type==='inspect')return {available:true};
+      if(command.type==='open'){key=command.path.at(-1);if(command.timeoutMs===1000)events.push(key);}
+      if(command.type==='presentation-rollback')key='Home';
+      if(command.type==='presentations')return key==='Home'?actions:[];
+      if(command.type==='presentation-open'){key=command.id;if(key==='Slow')slow++;events.push(`${key}:${key==='Slow'?slow:1}`);}
+      if(command.type==='presentation-view'&&key==='Slow'&&slow<3){clock+=25000;return {key,ready:false,found:true,loading:true};}
+      return {key,ready:true,found:true,active:[key],signature:key};
+    }}
+  })});
+  t.after(()=>runs.close());
+  const run=runs.start({projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'target',metroUrl:'http://127.0.0.1:8081',useAi:false});
+  for(let i=0;i<300&&flowRunning(runs.read(run.id));i++)await new Promise(resolve=>setTimeout(resolve,10));
+  const result=runs.read(run.id);
+  assert.equal(result.phase,'complete');
+  assert.deepEqual(events,['Home','Search','Slow:1','Quick:1','Slow:2','Slow:3']);
+  assert.ok(result.nodes.every(node=>node.status==='captured'&&node.image));
+  assert.equal(result.nodes.find(node=>node.name==='Slow')?.captureAttempts,3);
+});
+
+test('queued capture deduplicates local forms and sheets and restores each parent',async t=>{
   const root=await fixture(t,{}),signal=new AbortController().signal;
   const actions:any[]=[{id:'login',name:'Login',file:'App.tsx',line:1,owner:'App',component:'Button',prop:'onPress',effect:{kind:'state',site:'step',path:[],value:1}},
     {id:'sheet',name:'Options',file:'Login.tsx',line:2,owner:'Login',component:'Button',prop:'onPress',effect:{kind:'control',component:'Options',prop:'control',method:'open',close:'close'}}];
@@ -128,7 +164,10 @@ test('recursive capture deduplicates local forms and sheets and restores each pa
   }}};
   const capture=new FlowPresentationCapture(run,root,root,signal,async()=>{});
   await capture.explore(backend,base);await capture.explore(backend,base);
-  assert.equal(screenshots,2);assert.equal(stack.length,0);
+  assert.equal(screenshots,0,'Discovery does not block the route queue with sheet captures');
+  await capture.retry(backend,run.nodes[1]);
+  await capture.retry(backend,run.nodes[2]);
+  assert.equal(screenshots,4);assert.equal(stack.length,0);
   assert.deepEqual(run.nodes.map(n=>n.name),['Welcome','Login','Options']);
   assert.deepEqual(run.edges.map(e=>[e.from,e.to]),[[base.id,run.nodes[1].id],[run.nodes[1].id,run.nodes[2].id]]);
 });
@@ -260,8 +299,13 @@ test('a kept form reopens its saved native preview to discover uncaptured childr
     if(command.type==='presentation-project'){key='projected login';projects++};
     if(command.type==='presentation-view')return {key,ready:true,found:true,signature:key};return {};
   }}};
-  await new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{}).explore(backend,base);
-  assert.equal(projects,1);assert.equal(existing.image,'kept');assert.equal(run.nodes.at(-1)?.name,'Options');assert.equal(run.nodes.at(-1)?.status,'captured');
+  const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
+  await capture.explore(backend,base);
+  assert.equal(existing.status,'pending');
+  await capture.retry(backend,existing);
+  assert.equal(projects,1);assert.equal(existing.image,'kept');assert.equal(run.nodes.at(-1)?.name,'Options');assert.equal(run.nodes.at(-1)?.status,'pending');
+  await capture.retry(backend,run.nodes.at(-1)!);
+  assert.equal(run.nodes.at(-1)?.status,'captured');
 });
 
 test('apps without a navigator map local forms and resume a nested sheet after disconnect',async t=>{
@@ -286,7 +330,7 @@ test('apps without a navigator map local forms and resume a nested sheet after d
   for(let i=0;i<300&&flowRunning(runs.read(run.id));i++)await new Promise(resolve=>setTimeout(resolve,10));
   const result=runs.read(run.id);assert.equal(result.phase,'complete');assert.equal(connections,2);
   assert.deepEqual(result.nodes.map(n=>n.name),['Welcome','Login','Options']);assert.ok(result.nodes.every(n=>n.status==='captured'&&n.image));
-  assert.equal(result.edges.length,2);assert.equal(opens,3,'The completed form reopens only to reach its interrupted child');
+  assert.equal(result.edges.length,2);assert.equal(opens,4,'The completed form replays to reach its child on each attempt');
 });
 
 test('a standalone form maps without a navigator or any injectable transitions',async t=>{

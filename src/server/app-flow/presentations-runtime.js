@@ -101,7 +101,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
           if(!element||typeof element!=='object'||depth>8||seen.has(element))return;seen.add(element);
           if(Array.isArray(element)){for(const child of element.slice(0,100))visit(child,depth+1);return;}
           if(!element.props||!element.type)return;
-          for(const target of props.get(element.props)??[]){if(target.type!==element.type&&target.elementType!==element.type)continue;if(target===source||target===source.alternate||indexInside(target,source))continue;if(!result.includes(target)){result.push(target);queue.push(target);}}
+          for(const target of props.get(element.props)??[]){if(target.type!==element.type&&target.elementType!==element.type)continue;if(result.some(root=>indexInside(target,root)))continue;if(!result.includes(target)){result.push(target);queue.push(target);}}
           visit(element.props.children,depth+1);
         };
         if(!fiber.child&&fiber.tag!==5)visit(fiber.memoizedProps?.children);

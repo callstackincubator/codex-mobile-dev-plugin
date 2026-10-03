@@ -227,3 +227,13 @@ and source checks that distinguish components with the same name. It keeps the
 same bounded windows, millisecond units and surface/platform attributes. The
 runtime caches checked entries and clears their records on cleanup. Creation
 stacks, paths and source locations stay local.
+
+Since 0.1.127, presentations share the route queue. Each
+`app_flow.presentation` sample measures one attempt, including entry-chain
+replay, readiness, capture, child discovery and restoration. It no longer
+includes nested captures or several retries in one sample. The units and
+surface/platform attributes stay unchanged. `app_flow.presentation_discovery`
+uses bounded `.mean`, `.p95` and `.max` windows in milliseconds for source binding,
+live entry checks and queue updates. Existing binding measurements still cover
+source checks. Route capture and readiness boundaries stay unchanged; retries
+now count additional presentation attempts too. No app data enters telemetry.
