@@ -255,3 +255,7 @@ include insertion and restoration; their meaning and attributes stay unchanged.
 Since 0.1.131, source binding recollects hooks when a returning owner has lost
 its mounted binding records. `app_flow.presentation_binding` and discovery
 timings cover that work with unchanged boundaries, units and attributes.
+
+Since 0.1.132, preview root lookup uses the target's mounted ancestor tree so
+unrelated React roots cannot receive a preview. Existing presentation timings
+cover the lookup with unchanged units, attributes and boundaries.

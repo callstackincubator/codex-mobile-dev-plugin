@@ -276,7 +276,8 @@ test('native projection keeps deep live contexts, contains render errors and res
   const liveContext={user:'real existing context'};
   const provider:any={tag:10,type:Provider,memoizedProps:{value:liveContext},child:app.sheet,return:modal};
   modal.child=provider;app.sheet.return=provider;app.button.sibling=modal;
-  const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??app.root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+  const unrelated:any={type:View,memoizedProps:{children:'unrelated overlay'}};
+  const fibers=(visit:any,subtree?:any)=>{const stack=subtree?[subtree]:[app.root,unrelated];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
   const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){fiber.memoizedProps=props}}]])},fibers,hidden:()=>false,later:setTimeout});
   // The owner remains App while the projection host is the framework View.
   function App(){}const owner:any={type:App,memoizedProps:{},child:app.button,return:app.root};app.root.child=owner;app.button.return=owner;modal.return=owner;
@@ -285,6 +286,7 @@ test('native projection keeps deep live contexts, contains render errors and res
   for(let i=0;i<120;i++){const next:any={type:View,memoizedProps:{},return:ancestor};ancestor.child=next;ancestor=next;}
   ancestor.child=app.sheet;app.sheet.return=ancestor;
   assert.equal(runtime.project(app.sheet).error,undefined);
+  assert.equal(unrelated.memoizedProps.children,'unrelated overlay','A preview uses its own app root instead of an unrelated renderer root');
   const element=app.root.memoizedProps.children.props.children[1];
   assert.equal(element.type,Modal);assert.equal(element.props.presentationStyle,'pageSheet');
   const boundary=element.props.children,content=boundary.props.children;

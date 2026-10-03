@@ -113,7 +113,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   const indexInside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner?.alternate)return true;return false;};
   function visualFocus(focus){return roots(focus).at(-1)??focus;}
   const projected=[];
-  function projectionRoot() {
+  function projectionRoot(focus) {
     const modules=globalThis.__r?.getModules?.();let react,native;
     for(const module of modules?.values?.()??[]){if(!module.isInitialized)continue;const exports=module.publicModule?.exports;if(typeof exports?.createElement==='function'&&typeof exports.useState==='function')react=exports;
       // Framework exports only. No project module, account store or native
@@ -121,12 +121,14 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(Object.getOwnPropertyDescriptor(exports??{},'Platform')&&Object.getOwnPropertyDescriptor(exports??{},'StyleSheet')){try{if(typeof exports.Platform?.OS==='string'&&typeof exports.StyleSheet?.create==='function'&&exports.View&&exports.Modal)native=exports;}catch{}}
     }
     if(!react||typeof react.Component!=='function'||!native)return;
-    let root;fibers(fiber=>{if(!root&&(fiber.type===native.View||fiber.elementType===native.View))root=fiber;});
+    let ancestor;const seen=new Set();
+    for(let parent=focus;parent&&!seen.has(parent);parent=parent.return){seen.add(parent);if(parent.type===native.View||parent.elementType===native.View)ancestor=parent;}
+    let root;if(ancestor)fibers(fiber=>{if(fiber===ancestor||fiber===ancestor.alternate)root=fiber;});
     for(const renderer of hook.renderers.values())if(root&&renderer.rendererPackageName==='react-native-renderer'&&typeof renderer.overrideProps==='function')return {root,renderer,react,native};
   }
   function project(focus) {
     if(!focus||!undo.length||projected.some(p=>p.focus===focus||p.focus===focus.alternate))return {error:'This view cannot be projected.'};
-    const context=projectionRoot();if(!context)return {error:'This renderer cannot project a local view.'};
+    const context=projectionRoot(focus);if(!context)return {error:'This renderer cannot project a local view.'};
     const type=focus.elementType??focus.type;
     if(!type||typeof type==='string')return {error:'No component view to project.'};
     const {root,renderer,react,native}=context,props=root.memoizedProps;
