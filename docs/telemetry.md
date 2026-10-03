@@ -237,3 +237,7 @@ uses bounded `.mean`, `.p95` and `.max` windows in milliseconds for source bindi
 live entry checks and queue updates. Existing binding measurements still cover
 source checks. Route capture and readiness boundaries stay unchanged; retries
 now count additional presentation attempts too. No app data enters telemetry.
+
+Since 0.1.128, runtime inspection refreshes detached navigators after local
+forms remount them. Capture timing includes that lookup. Readiness still starts
+at navigation dispatch; units, attributes and boundaries stay unchanged.

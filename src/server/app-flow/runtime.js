@@ -80,8 +80,12 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         visited.add(nav);
         const parent = nav.getParent(); if (!parent) break; nav = parent;
       }
-      if (nav.getState()?.routeNames?.length && !root) { root = nav; original = nav.getRootState?.() ?? nav.getState(); }
+      if (nav.getState()?.routeNames?.length && !root) { root = nav; original ??= nav.getRootState?.() ?? nav.getState(); }
     } catch { /* Detached navigation objects are ignored. */ }
+  }
+  function navigatorState() {
+    try { return root?.getRootState?.() ?? root?.getState?.(); }
+    catch { /* Local forms can unmount and later replace the navigator. */ }
   }
   const hidden = props => props?.hidden === true || props?.mode === 'hidden' || props?.activityState === 0 || props?.route && props.navigation?.isFocused && !props.navigation.isFocused();
   function visible() {
@@ -116,6 +120,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
     return { links, components: [...components], transitioning: [...transitions.values()].some(record => record.busy) };
   }
   function inspect() {
+    if (!navigatorState()?.routeNames?.length) root = undefined;
     safeBudget = 2000;
     const mounted = [], registrations = [], entries = [], data = [], seen = new Set(), clients = new Set();
     fibers(fiber => {
@@ -440,7 +445,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
           reply(info); return;
         }
         if (command.type === 'inspect') { reply(inspect()); return; }
-        if (!root) inspect();
+        if (!navigatorState()?.routeNames?.length) inspect();
         if (command.type === 'recover') {
           cancelWaits();
           const ticket = ++generation, started = Date.now(), path = active(original);
@@ -460,6 +465,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
           later(check, 80); return;
         }
         if (command.type === 'verify') { reply({ active: active(root?.getRootState?.() ?? root?.getState?.()), ...visualSignature(command.name), ...visible() }); return; }
+        if (command.type === 'open' && !navigatorState()?.routeNames?.length) { reply({ready: false, reason: 'The navigator is remounting. This screen will be retried.'}); return; }
         if (command.type !== 'open' || !root) { reply({ error: 'No mounted navigator found. Use Record a flow for screens outside navigation.' }); return; }
         cancelWaits();
         const ticket = ++generation, path = command.path;

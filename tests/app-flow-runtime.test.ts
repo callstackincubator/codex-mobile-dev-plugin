@@ -47,6 +47,19 @@ test('runtime rejects redirects and never reports a login screen as the target',
   assert.match(result.reason,/redirected/);
 });
 
+test('a local form can remount its navigator without losing routes or the starting state',async t=>{
+  const app=runtime(t);await app.invoke({type:'inspect'});
+  await app.invoke({type:'open',path:['Profile'],timeoutMs:300});
+  const live={...app.navigation};
+  app.navigation.getState=()=>undefined;
+  app.fiber.memoizedProps.navigation=live;
+  const result=await app.invoke({type:'open',path:['Home'],timeoutMs:300});
+  assert.equal(result.ready,true);assert.equal(result.active[0],'Home');
+  await app.invoke({type:'restore'});
+  assert.equal(app.getState().routes[0].name,'Home');
+  assert.equal(app.getState().routes.length,1,'Rebinding preserves the original restoration snapshot');
+});
+
 test('a resumed runtime cancels old work and retains the original restoration state',async t=>{
   const app=runtime(t);
   await app.invoke({type:'inspect'});
