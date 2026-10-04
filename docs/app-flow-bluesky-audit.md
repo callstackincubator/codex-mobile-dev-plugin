@@ -14,8 +14,32 @@ and a missing media query. Injected wrappers captured loop bindings that affecte
 Hermes versions share. Version 0.1.137 binds each hook, effect and native completion
 handler in its own function scope. Three regression tests fail on the old code
 under shared loop bindings and pass with the fix. Discovery and timeout recovery
-from 0.1.136 stay intact. The update is installed, but the host still holds the
-0.1.136 connection. **The automatic capture count for 0.1.137 is not measured yet.**
+from 0.1.136 stay intact.
+
+A full live run of **0.1.137**, `36ea26a0-117d-46cb-b6ea-a830aa7e2f02`,
+finished in **734.1 seconds** on the iPhone 17 Pro simulator. Saved PNGs with
+matching source hashes verify **52 of 260 views**, all navigator routes.
+All 52 queued routes captured; four succeeded on their second attempt.
+The app kept the same process through the run and returned to Home afterward.
+The Hashtag image has loaded content, and the conversation image has no faded
+message text. This checks those two images, not every screenshot's content.
+
+**The full mapper still fails this test.** No guarded form, later flow step,
+sheet, sheet step or prompt captured. The run reported presentation failures
+and left out 27 registered names without a confirmed live entry. Thirteen of
+the 65 reviewed navigator views have no verified capture. Source matches and
+preview plans still do not prove working capture paths.
+
+Two routes received params from real observed app data through the AI-facing
+resolve tool. The test did not invent identifiers, submit forms or issue
+account-changing actions. This does not verify background AI sampling on the host.
+
+Two sampling windows during mapping and cleanup recorded an app physical
+footprint peak of **7.29 GB**. Memory fell from that peak to **2.91 GB** by the
+end of the first window. The windows do not cover the whole run, and there is
+no fresh-launch baseline, so these samples neither prove a leak nor attribute
+the spike to the mapper. The high memory use and slow run still need work.
+The existing capture, readiness, timeout and recovery telemetry stayed intact.
 
 | Category | Reviewed views | Exact source matches | Container only | Ambiguous | Missing |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -26,6 +50,16 @@ from 0.1.136 stay intact. The update is installed, but the host still holds the
 | Steps inside sheets | 29 | 29 | 0 | 0 | 0 |
 | Confirmation and information dialogs | 45 | 45 | 0 | 0 | 0 |
 | **Total** | **260** | **260** | **0** | **0** | **0** |
+
+| Category | Reviewed views | Verified captures in 0.1.137 |
+| --- | ---: | ---: |
+| Navigator routes | 65 | 52 |
+| Auth and account gates | 25 | 0 |
+| Steps inside navigator flows | 5 | 0 |
+| Sheets and overlays | 91 | 0 |
+| Steps inside sheets | 29 | 0 |
+| Confirmation and information dialogs | 45 | 0 |
+| **Total** | **260** | **52** |
 
 ## Counting rules
 
