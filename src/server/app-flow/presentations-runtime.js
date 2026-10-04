@@ -113,15 +113,17 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   };
   const visible=fiber=>activeAncestors(fiber)&&attached(fiber);
   function index() {
-    const names=new Map(), live=new WeakMap();
-    fibers(fiber=>{const n=name(fiber);if(n){const list=names.get(n)??[];list.push(fiber);names.set(n,list);}});
+    const names=new Map(), live=new WeakMap(), current=new WeakMap(), all=[], states=new Map(), values=new Map();
+    fibers(fiber=>{all.push(fiber);current.set(fiber,fiber);if(fiber.alternate)current.set(fiber.alternate,fiber);const n=name(fiber);if(n){const list=names.get(n)??[];list.push(fiber);names.set(n,list);}});
+    for(const binding of bindings.values())if(binding.site&&current.has(binding.fiber)){const list=states.get(binding.site)??[];list.push(binding);states.set(binding.site,list);}
     const isVisible=fiber=>{let value=live.get(fiber);if(value===undefined){value=visible(fiber);live.set(fiber,value);}return value;};
     const inside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner.alternate)return true;return false;};
-    return {names,isVisible,inside};
+    return {names,isVisible,inside,current,all,states,values};
   }
-  function roots(focus) {
+  function roots(focus,tree) {
     if(!focus)return [];
-    const all=[];const props=new Map();fibers(fiber=>{all.push(fiber);const p=fiber.memoizedProps;if(p&&typeof p==='object'){const list=props.get(p)??[];list.push(fiber);props.set(p,list);}});
+    const props=new Map(),add=fiber=>{const p=fiber.memoizedProps;if(p&&typeof p==='object'){const list=props.get(p)??[];list.push(fiber);props.set(p,list);}};
+    if(tree)for(const fiber of tree.all)add(fiber);else fibers(add);
     const result=[focus];for(const projection of projected)if(projection.focus===focus||projection.focus===focus.alternate){for(const target of props.get(projection.child.props)??[])result.push(target);}
     const seen=new Set(),queue=[focus];
     for(let offset=0;offset<queue.length&&offset<12;offset++){
@@ -140,7 +142,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return result;
   }
   const indexInside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner?.alternate)return true;return false;};
-  function visualFocus(focus){return roots(focus).at(-1)??focus;}
+  function visualFocus(focus,tree){return roots(focus,tree).at(-1)??focus;}
   const projected=[];
   function projectionRoot(focus) {
     const modules=globalThis.__r?.getModules?.();let react,native;
@@ -226,21 +228,22 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     switch(node.op){case '!':return !a;case '&&':return a&&b;case '||':return a||b;case '===':return a===b;case '!==':return a!==b;case '==':return a==b;case '!=':return a!=b;}
     return false;
   }
-  function hookValue(binding) {
+  function hookValue(binding,tree) {
     // React alternates swap on every commit. Read the currently mounted owner.
-    let live;fibers(fiber=>{if(fiber===binding.fiber||fiber===binding.fiber.alternate)live=fiber;});
+    if(tree?.values.has(binding))return tree.values.get(binding);
+    let live;if(tree)live=tree.current.get(binding.fiber);else fibers(fiber=>{if(fiber===binding.fiber||fiber===binding.fiber.alternate)live=fiber;});
     if(!live)return;
     binding.fiber=live;
     let state=live.memoizedState;for(let i=0;state&&i<binding.index;i++)state=state.next;
-    return state?.memoizedState;
+    const value=state?.memoizedState;tree?.values.set(binding,value);return value;
   }
-  const find = (action,tree=index(),focus,scope=roots(focus)) => {
+  const find = (action,tree=index(),focus,scope=roots(focus,tree)) => {
     const inScope=fiber=>!focus||scope.some(root=>tree.inside(fiber,root));
     if(action.preview&&action.effect.kind==='state'){
-      const candidates=[...bindings.values()].filter(b=>b.site===action.effect.site&&['useState','useReducer'].includes(b.kind));
+      const candidates=(tree.states.get(action.effect.site)??[]).filter(b=>['useState','useReducer'].includes(b.kind));
       const found=[];
       for(const binding of candidates){
-        const snapshot=hookValue(binding);if(!tree.isVisible(binding.fiber))continue;
+        const snapshot=hookValue(binding,tree);if(!tree.isVisible(binding.fiber))continue;
         const consumers=action.consumer?(tree.names.get(action.consumer.component)??[]).filter(f=>entry(f)?.actions.has(`${action.id}:consumer`)&&tree.inside(f,binding.fiber)):[binding.fiber];
         for(const consumer of consumers){
           if(!tree.isVisible(consumer)||focus&&!scope.some(root=>tree.inside(consumer,root)||tree.inside(root,consumer)))continue;
@@ -272,9 +275,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(callbacks.size!==1||!condition(action.guard,owner.memoizedProps))return;
     if(action.effect.kind==='state'){
       const site=catalog.states.find(s=>s.id===action.effect.site);
-      const matches=[...bindings.values()].filter(b=>{if(b.site!==action.effect.site||b.kind!=='useState')return false;hookValue(b);return tree.isVisible(b.fiber)&&(site?.owner!==action.owner||tree.inside(b.fiber,owner));});
+      const matches=(tree.states.get(action.effect.site)??[]).filter(b=>{if(b.kind!=='useState')return false;hookValue(b,tree);return tree.isVisible(b.fiber)&&(site?.owner!==action.owner||tree.inside(b.fiber,owner));});
       if(matches.length!==1)return;const binding=matches[0];
-      let value=hookValue(binding);for(const part of action.effect.path)value=value?.[part];
+      let value=hookValue(binding,tree);for(const part of action.effect.path)value=value?.[part];
       if(JSON.stringify(value)===JSON.stringify(action.effect.value))return;
       if(!action.effect.path.length&&typeof action.effect.value==='object'&&value!=null)return;
       return {owner,binding};
@@ -291,14 +294,14 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(unique.length===1)return {owner,target:unique[0]};
     }
   };
-  const list = focus => {const tree=index(),scope=roots(focus),seen=new Set();return catalog.actions.filter(action=>{const found=find(action,tree,focus,scope);if(!found)return false;const key=found.target?.value??JSON.stringify([action.effect.site,action.effect.path,action.effect.value]);if(seen.has(key))return false;seen.add(key);return true;}).map(action=>({id:action.id,name:action.name,file:action.file,line:action.line}));};
+  const list = focus => {const tree=index(),scope=roots(focus,tree),seen=new Set();return catalog.actions.filter(action=>{const found=find(action,tree,focus,scope);if(!found)return false;const key=found.target?.value??JSON.stringify([action.effect.site,action.effect.path,action.effect.value]);if(seen.has(key))return false;seen.add(key);return true;}).map(action=>({id:action.id,name:action.name,file:action.file,line:action.line}));};
   function activeViews(focus) {
-    const tree=index(),visual=visualFocus(focus),ids=new Set();
+    const tree=index(),visual=visualFocus(focus,tree),ids=new Set();
     for(const record of projected){if(record.failed)continue;for(let p=visual,n=0;p&&n++<100;p=p.return)if((p.pendingProps??p.memoizedProps)===record.child.props){for(const id of record.views??[])ids.add(id);break;}}
     for(const action of catalog.actions){
       if(!action.views?.length||action.effect.kind!=='state')continue;
-      for(const binding of bindings.values()){
-        if(binding.site!==action.effect.site)continue;let value=hookValue(binding);for(const part of action.effect.path)value=value?.[part];if(value!==action.effect.value)continue;
+      for(const binding of tree.states.get(action.effect.site)??[]){
+        let value=hookValue(binding,tree);for(const part of action.effect.path)value=value?.[part];if(value!==action.effect.value)continue;
         if(!(tree.names.get(action.name)??[]).some(f=>tree.isVisible(f)&&tree.inside(f,binding.fiber)&&(!visual||tree.inside(f,visual))))continue;
         for(const id of action.views)ids.add(id);
       }

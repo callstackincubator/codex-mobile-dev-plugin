@@ -3,6 +3,7 @@ import { WebSocket } from "ws";
 import { installFlowRuntime } from "./runtime.js";
 import { installPresentationRuntime } from './presentations-runtime.js';
 import { bindPresentationSites } from './presentations-bindings.ts';
+import {FlowRuntimeMetrics,FlowRuntimeTimeout,runtimeOperation} from './runtime-metrics.ts';
 
 /** A reconnect can reuse the runtime lease and original navigation state. */
 export class FlowConnection {
@@ -10,7 +11,7 @@ export class FlowConnection {
   private key: string;
   private binding: string;
   private sequence = 0;
-  private pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
+  private pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout; operation:string; started:number }>();
   private closed = false;
   private closing?: Promise<void>;
   private ready: Promise<void>;
@@ -18,8 +19,10 @@ export class FlowConnection {
   private heartbeatPending = false;
   private heartbeatFailures = 0;
   private metroBase: string;
+  private metrics:FlowRuntimeMetrics;
 
-  constructor(url: string, sessionId = randomUUID()) {
+  constructor(url: string, sessionId = randomUUID(), platform?:'ios'|'android') {
+    this.metrics=new FlowRuntimeMetrics(platform);
     this.key = `__mobile_flow_${sessionId.replaceAll("-", "")}`;
     this.binding = `${this.key}_reply_${randomUUID().replaceAll("-", "")}`;
     const origin = new URL(url); origin.protocol = "http:";
@@ -44,9 +47,9 @@ export class FlowConnection {
     this.socket.on("error", () => this.fail(new Error("Metro disconnected.")));
     this.socket.on("close", () => this.fail(new Error("Metro disconnected.")));
     this.ready = this.ready.then(async () => {
-      await this.send("Runtime.addBinding", { name: this.binding }, 2000);
+      await this.send("Runtime.addBinding", { name: this.binding }, 2000,undefined,'binding');
       // esbuild keepNames may introduce __name inside serialized functions.
-      await this.send("Runtime.evaluate", { expression: `(()=>{const __name=(value)=>value;for(const name of Object.keys(globalThis))if(name.startsWith(${JSON.stringify(`${this.key}_reply_`)})&&name!==${JSON.stringify(this.binding)})delete globalThis[name];(${installFlowRuntime.toString()})(${JSON.stringify(this.key)},10000,${installPresentationRuntime.toString()});})()`, silent: true, returnByValue: true, objectGroup: this.key }, 2000);
+      await this.send("Runtime.evaluate", { expression: `(()=>{const __name=(value)=>value;for(const name of Object.keys(globalThis))if(name.startsWith(${JSON.stringify(`${this.key}_reply_`)})&&name!==${JSON.stringify(this.binding)})delete globalThis[name];(${installFlowRuntime.toString()})(${JSON.stringify(this.key)},10000,${installPresentationRuntime.toString()});})()`, silent: true, returnByValue: true, objectGroup: this.key }, 2000,undefined,'install');
       if (!this.closing && !this.closed) {
         this.heartbeat = setInterval(() => {
           if (this.heartbeatPending) return;
@@ -61,14 +64,15 @@ export class FlowConnection {
   private finish(id: number, value?: unknown, error?: Error) {
     const pending = this.pending.get(id); if (!pending) return;
     this.pending.delete(id); clearTimeout(pending.timer);
+    this.metrics.record(pending.operation,performance.now()-pending.started,error instanceof FlowRuntimeTimeout);
     if (error) pending.reject(error); else pending.resolve(value);
   }
   private fail(error: Error) { clearInterval(this.heartbeat); for (const id of this.pending.keys()) this.finish(id, undefined, error); }
-  private send(method: string, params: unknown, timeout: number, id = ++this.sequence): Promise<any> {
+  private send(method: string, params: unknown, timeout: number, id = ++this.sequence,operation='other'): Promise<any> {
     if (this.closed || this.socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error("Metro connection is closed."));
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => this.finish(id, undefined, new Error("App Flow runtime timed out.")), timeout);
-      this.pending.set(id, { resolve, reject, timer });
+      const timer = setTimeout(() => this.finish(id, undefined, new FlowRuntimeTimeout(operation)), timeout);
+      this.pending.set(id, { resolve, reject, timer,operation:runtimeOperation(operation),started:performance.now() });
       this.socket.send(JSON.stringify({ id, method, params }), error => { if (error) this.finish(id, undefined, new Error("Metro disconnected.")); });
     });
   }
@@ -84,8 +88,10 @@ export class FlowConnection {
       return { bindings: matches.length };
     }
     const id = -(++this.sequence);
-    const expression = `globalThis[${JSON.stringify(this.key)}]?.invoke(${JSON.stringify(command)},result=>globalThis[${JSON.stringify(this.binding)}]?.(JSON.stringify({id:${id},result})))`;
-    return this.send("Runtime.evaluate", { expression, silent: true, returnByValue: true, objectGroup: this.key }, timeout, id);
+    const expression = `(()=>{const runtime=globalThis[${JSON.stringify(this.key)}],reply=result=>globalThis[${JSON.stringify(this.binding)}]?.(JSON.stringify({id:${id},result}));if(!runtime?.invoke){reply({runtimeUnavailable:true});return;}runtime.invoke(${JSON.stringify(command)},reply);})()`;
+    const result=await this.send("Runtime.evaluate", { expression, silent: true, returnByValue: true, objectGroup: this.key }, timeout, id,runtimeOperation(command.type));
+    if(result?.runtimeUnavailable)throw new Error('App Flow inspector is no longer installed. Reconnecting.');
+    return result;
   }
   close(options?: { restore?: boolean }): Promise<void> { return this.closing ??= this.dispose(options?.restore !== false); }
   private async dispose(restore: boolean) {
@@ -99,6 +105,7 @@ export class FlowConnection {
     }
     this.closed = true;
     this.fail(new Error("App Flow stopped."));
+    this.metrics.flush();
     this.socket.terminate();
   }
 }

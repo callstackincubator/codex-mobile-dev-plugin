@@ -1,10 +1,19 @@
 # Bluesky source inventory and extraction comparison
 
-The reviewed list contains **260 distinct views**. Plugin 0.1.135 has a distinct source match for **all 260**. There are no missing, container-only or ambiguous reference rows. The comparison has a strict mode that fails if any reviewed view loses its match.
+The reviewed list contains **260 distinct views**. Plugin 0.1.136 has a distinct source match for **all 260**. There are no missing, container-only or ambiguous reference rows. The comparison has a strict mode that fails if any reviewed view loses its match.
 
 Of the 260 matches, **164 have a route or UI action**, **75 have new UI preview plans**, and **21 have source evidence only**. That gives 239 views with a planned capture path. Plans still need live source bindings, real data and settled content. They do not establish that 239 screenshots can be taken in the current session.
 
-This audit uses the clean iOS checkout at `2d8e349afd92d2be3ff31f298bc27ab0d82c61cc`. The scan read 2,371 files in 3.80 seconds. No target app code was changed or executed by the comparison. Mobile Dev returned `Transport closed` during the live check. **The actual automatic capture count is not measured yet.**
+This audit uses the clean iOS checkout at `2d8e349afd92d2be3ff31f298bc27ab0d82c61cc`. The scan read 2,371 files in 4.12 seconds. The comparison does not change or execute target app code.
+
+The live connection returned for the 0.1.135 check. Run
+`015cae57-8a5b-4ebd-8659-cd109fb29cd4` captured only Home before failing with
+`App Flow runtime timed out.` after 14.5 seconds. This failed run does not establish
+full-session coverage. Version 0.1.136 replaces repeated global tree scans with
+one lookup per presentation check, keeps the route queue running after a second
+discovery failure, and names the timed-out command in the error. Functional tests
+cover those paths. The update is installed, but the host still holds the 0.1.135
+connection. **The automatic capture count for 0.1.136 is not measured yet.**
 
 | Category | Reviewed views | Exact source matches | Container only | Ambiguous | Missing |
 | --- | ---: | ---: | ---: | ---: | ---: |

@@ -13,6 +13,7 @@ import { captureServerError } from "../telemetry.ts";
 import { FlowStore, type FlowLease, type SavedFlow } from './store.ts';
 import { FlowPresentationCapture } from './presentations.ts';
 import { recordFlow } from './recording.ts';
+import { PLUGIN_VERSION } from '../../shared/version.ts';
 
 export type FlowStart = { projectRoot: string; platform: "ios" | "android"; deviceId: string; targetId: string; metroUrl: string; useAi: boolean };
 export type RuntimeInfo = FlowEvidence & { available: boolean; data?: unknown[] };
@@ -57,7 +58,7 @@ export class AppFlowRuns {
     if ([...this.sessions.values()].some(session => !session.settled && session.input.deviceId === input.deviceId)) throw new Error("App Flow is already running on this device.");
     this.makeRoom();
     const startedAt = Date.now();
-    const run: FlowRun = { id: randomUUID(), phase: "scanning", startedAt, revision: 0,
+    const run: FlowRun = { id: randomUUID(), pluginVersion: PLUGIN_VERSION, phase: "scanning", startedAt, revision: 0,
       nodes: [], edges: [], warnings: [], files: 0, scanMs: 0, ai: input.useAi ? "waiting" : "off" };
     const active: Active = { run, input, abort: new AbortController(), writing: new Set(), settled: false };
     this.sessions.set(run.id, active);
@@ -78,7 +79,7 @@ export class AppFlowRuns {
     const lease = await this.store.claim(input);
     if (!lease) throw new Error('App Flow is already running on this device.');
     const group = { id: randomUUID(), name: name.trim().slice(0, 80) || 'Recorded flow' };
-    const run: FlowRun = saved?.run ?? { id: randomUUID(), phase: 'connecting', startedAt: Date.now(), revision: 0, nodes: [], edges: [], warnings: [], files: 0, scanMs: 0, ai: 'off' };
+    const run: FlowRun = saved?.run ?? { id: randomUUID(), pluginVersion: PLUGIN_VERSION, phase: 'connecting', startedAt: Date.now(), revision: 0, nodes: [], edges: [], warnings: [], files: 0, scanMs: 0, ai: 'off' };
     if (saved) run.elapsedMs ??= Math.max(0, (run.finishedAt ?? Date.now()) - run.startedAt);
     run.groups = [...(run.groups ?? []), group];
     run.recording = { groupId: group.id, message: 'Connecting to the app…' };
@@ -463,8 +464,18 @@ export class AppFlowRuns {
             try { if(previousFrame)presentations.rememberFrame(previousFrame.bytes);await presentations.explore(backend, node); }
             catch (error) {
               if (signal.aborted) throw error;
-              try { await backend.runtime.invoke({type:"heartbeat"},1000); }
-              catch { await reconnect();const restored=await backend!.runtime.invoke({type:"open",path:node.path,params:node.params,expo:node.component==="expo-router",timeoutMs:2000,loadingTimeoutMs:10000},10500);if(restored.ready)await presentations.explore(backend!,node); }
+              try {
+                try { await backend.runtime.invoke({type:"heartbeat"},1000); }
+                catch {
+                  await reconnect();
+                  const restored=await backend!.runtime.invoke({type:"open",path:node.path,params:node.params,expo:node.component==="expo-router",timeoutMs:2000,loadingTimeoutMs:10000},10500);
+                  if(restored.ready)await presentations.explore(backend!,node);
+                }
+              } catch (recoveryError) {
+                // Discovery can fail again after a reconnect. Keep the saved
+                // screenshot and let the queue retry other routes.
+                if(signal.aborted)throw recoveryError;
+              }
               const warning="Some presentation entries could not be captured automatically. The completed map was kept.";
               if(!run.warnings.includes(warning)){run.warnings.push(warning);captureServerError(new Error("App Flow presentation capture failed."),"app_flow.presentation");}
             }

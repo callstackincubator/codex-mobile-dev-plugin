@@ -181,6 +181,15 @@ and boundaries. The full source catalog still stays out of runtime injection;
 only compact plans enter the runtime. All new metrics use the app-flow surface and
 platform attributes. Source hashes, fact IDs, state fields and copied app data stay
 local and never enter telemetry.
+Since 0.1.136, `app_flow.runtime.mean`, `.p95`, and `.max` measure inspector
+command round trips in milliseconds, from send to reply or failure.
+`app_flow.runtime.timeouts` counts commands that reached their timeout. Bounded
+windows flush and clear when each connection closes. The fixed
+`runtime_operation` attribute separates binding, discovery, readiness and
+restoration; unknown commands use `other`. Metrics retain the app-flow surface
+and device platform. Commands, source, app data, paths and identities stay local.
+Presentation discovery builds one tree and hook-value lookup per synchronous
+check. Existing discovery and capture metrics still cover the same work.
 Since 0.1.116, discovery reuses route matches and complete helper/component walks
 within each scan. PNG validation selects its filter once per row, and runtime
 lookups stop once they find the focused screen or first native bounds. Existing

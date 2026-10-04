@@ -28,7 +28,7 @@ test('source preview plans cover finite reducer bodies without opener callbacks 
 
 function runtimeFixture(t:test.TestContext,shared=false){
   const real={step:'start',record:{id:'observed-record'},pendingSubmit:null};let current:any,clone:any,projection:any;
-  let dispatched=0,effects=0,initializers=0;
+  let dispatched=0,effects=0,initializers=0,walks=0;
   function View(){}function Modal(){}function Provider(){}function Wizard(){}function Form(){}function Start(){}function Verify(){}
   const originalChildren={type:Wizard,props:{}};
   const host:any={type:View,memoizedProps:{children:originalChildren}};
@@ -41,7 +41,7 @@ function runtimeFixture(t:test.TestContext,shared=false){
   const originals={useReducer:react.useReducer,useEffect:react.useEffect,useLayoutEffect:react.useLayoutEffect};
   const native={View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}};
   const prior=(globalThis as any).__r;(globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}],[2,{isInitialized:true,publicModule:{exports:native}}]])};t.after(()=>{(globalThis as any).__r=prior});
-  const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??host];while(stack.length){const fiber=stack.pop();if(fiber!==subtree&&fiber.sibling)stack.push(fiber.sibling);if(visit(fiber)!==false&&fiber.child)stack.push(fiber.child)}};
+  const fibers=(visit:any,subtree?:any)=>{if(!subtree)walks++;const stack=[subtree??host];while(stack.length){const fiber=stack.pop();if(fiber!==subtree&&fiber.sibling)stack.push(fiber.sibling);if(visit(fiber)!==false&&fiber.child)stack.push(fiber.child)}};
   const renderer:any={rendererPackageName:'react-native-renderer',getCurrentFiber:()=>current,scheduleUpdate(fiber:any){current=fiber;fiber.memoizedState=null;react.useReducer(()=>{throw Error('never dispatch')},real);current=undefined;},overrideProps(fiber:any,_path:any,props:any){
     fiber.memoizedProps=props;const modal=props.children?.props?.children?.at?.(-1);
     if(!modal||modal.type!==Modal){owner.sibling=undefined;clone=undefined;projection=undefined;return;}
@@ -57,7 +57,7 @@ function runtimeFixture(t:test.TestContext,shared=false){
   const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});t.after(()=>runtime.cleanup());
   const site:any={id:'state',file:'App.tsx',line:1,column:0,endLine:1,owner:shared?'useFlow':'Wizard',owners:shared?['Provider']:[],paths:[['step']],hook:'useReducer'};
   const action:any={id:'preview',file:'App.tsx',line:2,owner:shared?'Form':'Wizard',name:'Verify',component:'Verify',prop:'',preview:true,views:['verified-body'],effect:{kind:'state',site:'state',path:['step'],value:'verify'},...(shared?{consumer:{component:'Form',entries:[{file:'App.tsx',owner:'Provider',source:{line:5,column:0,endLine:5,endColumn:10}}]}}:{})};
-  return {runtime,site,action,real,owner,host,form,context,react,originals,originalChildren,get clone(){return clone},get projection(){return projection},get counts(){return {dispatched,effects,initializers}},setCurrent:(fiber:any)=>{current=fiber}};
+  return {runtime,site,action,real,owner,host,form,context,react,originals,originalChildren,get walks(){return walks},get clone(){return clone},get projection(){return projection},get counts(){return {dispatched,effects,initializers}},setCurrent:(fiber:any)=>{current=fiber}};
 }
 
 async function configure(app:ReturnType<typeof runtimeFixture>){
@@ -126,6 +126,16 @@ test('nested preview metadata counts only the top visible state',async t=>{
   const next={...app.action,id:'done',name:'Start',views:['done-body'],effect:{...app.action.effect,value:'done'}};
   app.runtime.configure({states:[app.site],actions:[app.action,next]},[]);
   app.runtime.open('done');assert.deepEqual(app.runtime.activeViews(app.owner),['done-body']);
+});
+
+test('many preview plans share one mounted-tree lookup and see fresh state on the next check',async t=>{
+  const app=runtimeFixture(t);await configure(app);
+  const plans=Array.from({length:128},(_,i)=>({...app.action,id:`plan-${i}`,effect:{...app.action.effect,value:`step-${i}`}}));
+  app.runtime.configure({states:[app.site],actions:plans},[]);
+  let before=app.walks;assert.equal(app.runtime.list().length,128);assert.equal(app.walks-before,1);
+  app.real.step='step-10';
+  before=app.walks;assert.equal(app.runtime.list().length,127);assert.equal(app.walks-before,1);
+  before=app.walks;app.runtime.activeViews(app.owner);assert.equal(app.walks-before,1);
 });
 
 test('a source-only preview uses the capture queue and a failed body does not stop its siblings',async t=>{

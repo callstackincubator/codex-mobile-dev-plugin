@@ -6,6 +6,7 @@ import { WebSocketServer } from 'ws';
 import { once } from 'node:events';
 import { FlowConnection } from '../src/server/app-flow/connection.ts';
 import { installPresentationRuntime } from '../src/server/app-flow/presentations-runtime.js';
+import {FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
 
 function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, clearTimeout}) {
   let state:any = {index:0,routeNames:['Home','Profile'],routes:[{name:'Home'}]};
@@ -276,6 +277,22 @@ test('reconnections isolate late replies and release debugger objects without re
   await next.close();await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal(restores,1);assert.deepEqual(released,['__mobile_flow_samerun','__mobile_flow_samerun']);
   assert.ok(evaluations.every(params=>params.returnByValue===true));
+});
+
+test('runtime acknowledgements identify the stalled step and missing inspectors fail immediately',async t=>{
+  const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
+  t.after(()=>new Promise<void>(resolve=>{for(const socket of server.clients)socket.terminate();server.close(()=>resolve())}));
+  let binding='';
+  server.on('connection',socket=>socket.on('message',bytes=>{
+    const message=JSON.parse(bytes.toString());
+    if(message.method==='Runtime.addBinding')binding=message.params.name;
+    socket.send(JSON.stringify({id:message.id,result:{}}));
+    if(message.id<0&&message.params.expression.includes('"heartbeat"'))vm.runInNewContext(message.params.expression,{[binding]:(payload:string)=>socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload}}))});
+  }));
+  const address=server.address()as {port:number},connection=new FlowConnection(`ws://127.0.0.1:${address.port}`);
+  t.after(()=>connection.close({restore:false}));
+  await assert.rejects(connection.invoke({type:'presentation-collect'},20),error=>error instanceof FlowRuntimeTimeout&&/collecting presentation bindings/.test(error.message));
+  await assert.rejects(connection.invoke({type:'heartbeat'},200),/inspector is no longer installed/);
 });
 
 

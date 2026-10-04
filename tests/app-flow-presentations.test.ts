@@ -507,3 +507,27 @@ return step===0 ? (
   const binding:any={id:'welcome',kind:'entry',owner:'Welcome',stack:'',source:{file:join(root,'App.tsx'),line:3,column:10}};
   assert.deepEqual(await bindPresentationSites('http://localhost:8081',root,[binding],[],catalog.actions),[{binding:'welcome',site:action.id}]);
 });
+
+test('a second discovery timeout after reconnect keeps captured routes and continues the queue',async t=>{
+  const directory=await fixture(t,{});let connections=0,discoveryFailed=false;
+  const action:any={id:'dialog',owner:'Home',file:'App.tsx',component:'Button',prop:'onPress',name:'Dialog',line:1,effect:{kind:'control',component:'Dialog',prop:'control',method:'open',close:'close'}};
+  const nodes:any[]=['Home','Search'].map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending',entry:true}));
+  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>{
+    const generation=++connections;
+    return {runtime:{async close(){},async invoke(command:any){
+      if(['inspect','resume','recover'].includes(command.type))return {available:true};
+      if(command.type==='presentation-setup'&&generation===1){discoveryFailed=true;throw Error('discovery stalled')}
+      if(command.type==='heartbeat'&&generation===1&&discoveryFailed)throw Error('connection stalled');
+      if(command.type==='open'&&generation===2&&command.path[0]==='Home')throw Error('replay stalled');
+      if(command.type==='open')return {ready:true,name:command.path[0],active:command.path,signature:command.path[0]};
+      if(command.type==='verify')return {found:true,active:[command.name]};
+      if(command.type==='presentations')return [];
+      return {};
+    }},screenshot:async()=>Buffer.from('frame')};
+  }});
+  const run=runs.start({projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'fixture',metroUrl:'http://127.0.0.1:8081',useAi:false});
+  while(flowRunning(runs.read(run.id)))await new Promise(resolve=>setTimeout(resolve,5));
+  const saved=runs.read(run.id);assert.equal(saved.phase,'complete');assert.equal(saved.error,undefined);
+  assert.equal(saved.nodes.filter(node=>node.status==='captured').length,2);assert.equal(connections,2);
+  assert.ok(saved.warnings.some(w=>w.includes('completed map was kept')));await runs.close();
+});

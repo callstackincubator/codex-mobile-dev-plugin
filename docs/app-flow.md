@@ -68,6 +68,12 @@ heartbeats stop for 10 seconds. Navigation can still trigger ordinary app effect
 such as marking content read. It cannot undo
 those effects or arbitrary application state changes.
 
+Presentation discovery shares one React tree lookup per check and reads fresh
+hook values on the next check. A second discovery failure after reconnection
+keeps saved screenshots and lets the route queue continue. Runtime timeout
+messages name the inspector step that failed. Saved maps include the plugin
+version that started the run.
+
 ## Automatic local forms and sheets
 
 The runner binds hook calls and JSX entries to exact source locations through Metro symbolication.

@@ -19,6 +19,7 @@ import { adapterClient } from "./agent-device-fixtures.ts";
 import { AppFlowRuns } from "../src/server/app-flow/runs.ts";
 import { flowRunning } from "../src/shared/app-flow.ts";
 import { FlowPresentationCapture } from "../src/server/app-flow/presentations.ts";
+import {FlowRuntimeMetrics,FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
 
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
@@ -56,6 +57,19 @@ test("UI timing windows retain exact totals, reset, and ignore invalid measureme
   for (let index = 0; index < 100_000; index++) window.record(16);
   const many = window.take();
   assert.deepEqual(many, { count: 100_000, mean: 16, p95: 16, max: 16 });
+});
+
+test('runtime timing and timeout metrics use fixed operation names and no command data',async()=>{
+  const envelopes:Envelope[]=[];
+  Sentry.init({dsn:'https://public@example.com/1',defaultIntegrations:false,beforeSendMetric:scrubMetric,
+    transport:()=>({async send(envelope){envelopes.push(envelope);return {statusCode:200}},async flush(){return true}})});
+  const metrics=new FlowRuntimeMetrics('ios');
+  for(let i=0;i<3000;i++)metrics.record('presentation-collect',12,false);
+  metrics.record('presentation-collect',2500,true);metrics.record('PRIVATE_COMMAND',20,true);metrics.flush();metrics.flush();
+  await Sentry.close();
+  const payload=JSON.stringify(envelopes.flatMap(envelope=>envelope[1]).filter(item=>item[0].type==='trace_metric'));
+  for(const value of ['app_flow.runtime.mean','app_flow.runtime.p95','app_flow.runtime.max','app_flow.runtime.timeouts','presentation-collect','other','app-flow','device_platform'])contains(payload,value);
+  contains(payload,'PRIVATE_',false);assert.doesNotMatch(new FlowRuntimeTimeout('PRIVATE_COMMAND').message,/PRIVATE_/);
 });
 
 test('automatic local forms report bounded capture and binding costs without source or UI state',async t=>{

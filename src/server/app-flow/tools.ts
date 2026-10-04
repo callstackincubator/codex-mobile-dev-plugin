@@ -40,7 +40,7 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
       const screenshotUrl = input.platform === "ios" ? new URL(`/simulators/${input.deviceId}/screenshot.png`, baguette.baseUrl) : new URL("/api/screenshot", (await android.start(input.deviceId)).url);
       if (input.platform === "ios") screenshotUrl.searchParams.set("scale", "3");
       signal.throwIfAborted();
-      const runtime = new FlowConnection(target.webSocketDebuggerUrl, resume?.sessionId);
+      const runtime = new FlowConnection(target.webSocketDebuggerUrl, resume?.sessionId,input.platform);
       const stop = () => { void runtime.close(); };
       signal.addEventListener("abort", stop, { once: true });
       return { target: { appId: target.appId, deviceId: target.deviceId, deviceName: target.deviceName }, runtime: { invoke: (command, timeout) => runtime.invoke(command, timeout), close: async options => { signal.removeEventListener("abort", stop); await runtime.close(options); } },

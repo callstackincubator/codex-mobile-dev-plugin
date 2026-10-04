@@ -58,6 +58,7 @@ export type FlowPresentations = { states: FlowStateSite[]; actions: FlowPresenta
 export type FlowGraph = { presentations?: FlowPresentations; sourceHash?: string; catalogMs?: number; links?: FlowLink[]; nodes: FlowNode[]; edges: FlowEdge[]; warnings: string[]; files: number; scanMs: number };
 export type FlowRun = FlowGraph & {
   id: string;
+  pluginVersion?: string;
   phase: "scanning" | "connecting" | "reconnecting" | "capturing" | "recording" | "finishing" | "complete" | "stopped" | "failed";
   groups?: { id: string; name: string }[];
   recording?: { groupId: string; message: string };
