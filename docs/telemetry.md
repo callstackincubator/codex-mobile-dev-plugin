@@ -259,3 +259,9 @@ timings cover that work with unchanged boundaries, units and attributes.
 Since 0.1.132, preview root lookup uses the target's mounted ancestor tree so
 unrelated React roots cannot receive a preview. Existing presentation timings
 cover the lookup with unchanged units, attributes and boundaries.
+
+Since 0.1.133, hook-owner lookup uses one mounted-tree pass, binding pages share
+one collection snapshot, and Metro resolves each distinct source frame once per
+setup. `app_flow.presentation_binding` and discovery timings still include the
+full source check with the same bounded windows, units and attributes. Source
+matches retain each entry's stack order. No source data enters telemetry.

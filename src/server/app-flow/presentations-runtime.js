@@ -2,6 +2,7 @@
 export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   let sequence = 0, owners = new WeakMap(), collecting = new Set();
   const bindings = new Map(), patches = [], undo = [];
+  let collected = [];
   const entries = new Map(); let entrySources = new WeakMap();
   let catalog = {states:[],actions:[]};
   const name = fiber => { const type=fiber.type?.render??fiber.type?.type??fiber.type;return type?.displayName??type?.name; };
@@ -43,10 +44,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(!patchHooks())return records(0);
     const mounted=new Set();fibers(fiber=>mounted.add(fiber));
     for(const [id,binding]of bindings)if(!mounted.has(binding.fiber)&&!mounted.has(binding.fiber.alternate))bindings.delete(id);
-    const renderOwners=[...mounted].filter(f=>f.tag!==14);
     const tracked=fiber=>{const record=owners.get(fiber)??owners.get(fiber.alternate);return record&&[...record.values()].some(id=>bindings.has(id));};
-    const missing=states.filter(site=>renderOwners.some(f=>name(f)===site.owner&&!tracked(f)));
-    const names=collecting=new Set(missing.map(s=>s.owner));
+    const targets=new Set(states.map(site=>site.owner)),missing=new Set();
+    for(const fiber of mounted){if(fiber.tag===14)continue;const owner=name(fiber);if(targets.has(owner)&&!tracked(fiber))missing.add(owner);}
+    const names=collecting=missing;
     if(!names.size){unpatch();return records(0);}
     const scheduled=new Set();
     fibers(fiber=>{
@@ -62,14 +63,18 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return records(0);
   }
   function records(offset) {
+    // Later pages read the same collection. Rewalking a changing React tree for
+    // each page repeats source work and can shift entries across page offsets.
+    if(offset>0)return page(offset);
     // JSX creation stacks identify the actual entry, even when unrelated
     // components and callbacks have identical names. Never invoke the callback.
     const targets=new Map();for(const action of catalog.actions){const names=targets.get(action.component)??new Set();names.add(action.owner);targets.set(action.component,names);}
     const mounted=new Set();fibers(fiber=>{mounted.add(fiber);const names=targets.get(name(fiber));if(!names)return;for(let parent=fiber.return,n=0;parent&&n++<100;parent=parent.return)if(names.has(name(parent))){entry(fiber);break;}});
     for(const [id,record]of entries)if(!mounted.has(record.fiber)&&!mounted.has(record.fiber.alternate))entries.delete(id);
-    const values=[...bindings.values(),...entries.values()].filter(b=>!b.site&&!b.checked);
-    return {bindings:values.slice(offset,offset+100).map(b=>({id:b.id,kind:b.kind,owner:name(b.fiber),stack:(b.stack??'').slice(0,8000),source:b.source})),next:offset+100<values.length?offset+100:undefined};
+    collected=[...bindings.values(),...entries.values()].filter(b=>!b.site&&!b.checked).map(b=>({id:b.id,kind:b.kind,owner:name(b.fiber),stack:(b.stack??'').slice(0,8000),source:b.source}));
+    return page(0);
   }
+  const page=offset=>({bindings:collected.slice(offset,offset+100),next:offset+100<collected.length?offset+100:undefined});
   function entry(fiber){
     const source=fiber._debugStack??fiber._debugSource;if(!source||typeof source!=='object')return;
     let record=entrySources.get(source);
@@ -283,6 +288,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80));
   }
-  function cleanup(){projected.length=0;clearNative();unpatch();bindings.clear();entries.clear();entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){projected.length=0;clearNative();unpatch();bindings.clear();entries.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   return {collect,records,configure,list,open,rollback,cleanup,motion, visualFocus, project, focusFor:(name_,scope)=>{const tree=index();const candidates=(tree.names.get(name_)??[]).filter(fiber=>tree.isVisible(fiber)&&(!scope||tree.inside(fiber,scope)||tree.inside(fiber,scope.alternate)));const unique=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner)));return unique.length===1?unique[0]:undefined;}, focused:focus=>{if(undo.length)undo[undo.length-1].focus=focus;}, checkpoint:()=>undo.length};
 }

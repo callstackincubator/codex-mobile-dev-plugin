@@ -208,6 +208,22 @@ test('state hook tracking restores only its presentation field and leaves no wra
   await runtime.rollback(0,false);assert.deepEqual(state,{panel:false,other:2});runtime.cleanup();
 });
 
+test('presentation binding pages keep one snapshot while new entries mount',()=>{
+  const app=tree();let walks=0;
+  for(let index=0;index<120;index++)app.root.child={type:app.button.type,return:app.root,sibling:app.root.child,_debugSource:{fileName:'App.tsx',lineNumber:1,columnNumber:1},memoizedProps:app.button.memoizedProps};
+  const fibers=(visit:any)=>{walks++;const stack=[app.root];while(stack.length){const fiber=stack.pop();if(fiber.sibling)stack.push(fiber.sibling);if(visit(fiber)!==false&&fiber.child)stack.push(fiber.child)}};
+  const runtime=installPresentationRuntime({hook:{renderers:new Map()},fibers,hidden:()=>false,later:setTimeout});
+  runtime.configure({states:[],actions:[app.action]},[]);
+  const first=runtime.records(0);assert.equal(first.bindings.length,100);
+  app.root.child={type:app.button.type,return:app.root,sibling:app.root.child,_debugSource:{fileName:'App.tsx',lineNumber:1,columnNumber:1},memoizedProps:app.button.memoizedProps};
+  const next=runtime.records(first.next);
+  assert.equal(walks,1);assert.equal(next.bindings.length,21);
+  assert.equal(new Set([...first.bindings,...next.bindings].map(binding=>binding.id)).size,121);
+  const refreshed=runtime.records(0),tail=runtime.records(refreshed.next);
+  assert.equal(refreshed.bindings.length+tail.bindings.length,122,'The next collection includes the newly mounted entry');
+  runtime.cleanup();assert.deepEqual(runtime.records(100).bindings,[]);app.runtime.cleanup();
+});
+
 test('class presentation handlers observe native completion even through an opaque portal adapter',()=>{
   const app=tree();let calls=0;const original={onStateChange(){calls++}};
   const instance={props:original,onStateChange(event:any){this.props.onStateChange(event)}};
@@ -446,6 +462,19 @@ test('an ancestor creation frame cannot prove a nested JSX entry',async t=>{
   const binding:any={id:'entry',kind:'entry',stack:['Error',...Array.from({length:3},(_,i)=>`    at render (http://localhost:8081/index.bundle:${i+1}:1)`)].join('\n')};
   const action:any={id:'auth',file:'Account.tsx',source:{line:4,column:0,endLine:4,endColumn:30}};
   assert.deepEqual(await bindPresentationSites('http://localhost:8081','/app',[binding],[],[action]),[]);
+});
+
+test('shared source frames resolve once and retain each entry stack order',async t=>{
+  let requested=0;
+  t.mock.method(globalThis,'fetch',async(_url:any,options:any)=>{
+    const {stack}=JSON.parse(options.body);requested+=stack.length;
+    return new Response(JSON.stringify({stack:stack.map((frame:any)=>({file:frame.lineNumber===1?'/app/Child.tsx':'/app/Parent.tsx',lineNumber:4,column:2}))}));
+  });
+  const actions:any[]=['Child','Parent'].map(name=>({id:name,file:name+'.tsx',source:{line:4,column:0,endLine:4,endColumn:30}}));
+  const frame=(line:number)=>`    at render (http://localhost:8081/index.bundle:${line}:1)`;
+  const bindings:any[]=Array.from({length:240},(_,index)=>({id:String(index),kind:'entry',stack:['Error',...((index%2)?[frame(2),frame(1)]:[frame(1),frame(2)])].join('\n')}));
+  const matches=await bindPresentationSites('http://localhost:8081','/app',bindings,[],actions);
+  assert.equal(requested,2);assert.deepEqual(matches,bindings.map((binding,index)=>({binding:binding.id,site:index%2?'Parent':'Child'})));
 });
 
 test('unverified entries never open a controller even with identical component and callback names',()=>{

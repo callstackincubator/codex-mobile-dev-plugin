@@ -6,7 +6,9 @@ type Frame = {file?: string; lineNumber?: number; column?: number};
 /** Metro resolves hook call sites and JSX entry locations without executing handlers. */
 export async function bindPresentationSites(base: string, root: string, bindings: PresentationBinding[], states: FlowStateSite[], actions: FlowPresentationAction[] = []) {
   const frames: {file:string;methodName:string;lineNumber:number;column:number}[] = [];
-  const owners: PresentationBinding[] = [];
+  const frameIds = new Map<string,number>();
+  const references: {owner:PresentationBinding;index:number}[] = [];
+  const resolved: Frame[] = [];
   const origin=new URL(base).origin;
   const matches: {binding:string;site:string}[] = [], resolvedEntries=new Set<string>(), resolvedStates=new Set<string>();
   const matchFrame=(binding:PresentationBinding,frame:Frame)=>{
@@ -33,14 +35,21 @@ export async function bindPresentationSites(base: string, root: string, bindings
       const match=/at\s+(.*?)\s+\((?:address at )?(https?:\/\/.*):(\d+):(\d+)\)/.exec(line)??/^(.*?)@(https?:\/\/.*):(\d+):(\d+)$/.exec(line);
       if(!match)continue;
       let url:URL;try{url=new URL(match[2]);}catch{continue;}if(url.origin!==origin)continue;
-      frames.push({file:url.href,methodName:match[1],lineNumber:Number(match[3]),column:Math.max(0,Number(match[4])-1)});owners.push(binding);
+      const frame={file:url.href,methodName:match[1],lineNumber:Number(match[3]),column:Math.max(0,Number(match[4])-1)};
+      const key=JSON.stringify(frame);
+      let index=frameIds.get(key);
+      if(index===undefined){index=frames.length;frameIds.set(key,index);frames.push(frame);}
+      references.push({owner:binding,index});
     }
   }
   for(let offset=0;offset<frames.length;offset+=120){
     const response=await fetch(new URL('/symbolicate',base),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stack:frames.slice(offset,offset+120)}),signal:AbortSignal.timeout(3000)});
     if(!response.ok)throw new Error('Metro could not resolve presentation source locations.');
     const result=await response.json() as {stack?:Frame[]};
-    for(const [index,frame]of (result.stack??[]).slice(0,120).entries())matchFrame(owners[offset+index],frame);
+    for(const [index,frame]of (result.stack??[]).slice(0,120).entries())resolved[offset+index]=frame;
   }
+  // Shared creation stacks need one lookup per exact frame. Replay each owner's
+  // original frame order so an ancestor cannot claim a nested JSX entry.
+  for(const reference of references){const frame=resolved[reference.index];if(frame)matchFrame(reference.owner,frame);}
   return matches;
 }
