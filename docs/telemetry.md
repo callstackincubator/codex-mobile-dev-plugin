@@ -190,6 +190,10 @@ restoration; unknown commands use `other`. Metrics retain the app-flow surface
 and device platform. Commands, source, app data, paths and identities stay local.
 Presentation discovery builds one tree and hook-value lookup per synchronous
 check. Existing discovery and capture metrics still cover the same work.
+Since 0.1.137, injected hook, effect and native event wrappers bind their original
+functions in separate function scopes for Hermes compatibility. Existing binding,
+discovery, readiness, runtime and capture measurements retain their boundaries
+and cleanup. This fix adds no telemetry fields or per-hook events.
 Since 0.1.116, discovery reuses route matches and complete helper/component walks
 within each scan. PNG validation selects its filter once per row, and runtime
 lookups stop once they find the focused screen or first native bounds. Existing

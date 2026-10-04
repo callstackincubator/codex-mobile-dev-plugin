@@ -1,19 +1,21 @@
 # Bluesky source inventory and extraction comparison
 
-The reviewed list contains **260 distinct views**. Plugin 0.1.136 has a distinct source match for **all 260**. There are no missing, container-only or ambiguous reference rows. The comparison has a strict mode that fails if any reviewed view loses its match.
+The reviewed list contains **260 distinct views**. Plugin 0.1.137 has a distinct source match for **all 260**. There are no missing, container-only or ambiguous reference rows. The comparison has a strict mode that fails if any reviewed view loses its match.
 
 Of the 260 matches, **164 have a route or UI action**, **75 have new UI preview plans**, and **21 have source evidence only**. That gives 239 views with a planned capture path. Plans still need live source bindings, real data and settled content. They do not establish that 239 screenshots can be taken in the current session.
 
-This audit uses the clean iOS checkout at `2d8e349afd92d2be3ff31f298bc27ab0d82c61cc`. The scan read 2,371 files in 4.12 seconds. The comparison does not change or execute target app code.
+This audit uses the clean iOS checkout at `2d8e349afd92d2be3ff31f298bc27ab0d82c61cc`. The scan read 2,371 files in 4.65 seconds. The comparison does not change or execute target app code.
 
-The live connection returned for the 0.1.135 check. Run
-`015cae57-8a5b-4ebd-8659-cd109fb29cd4` captured only Home before failing with
-`App Flow runtime timed out.` after 14.5 seconds. This failed run does not establish
-full-session coverage. Version 0.1.136 replaces repeated global tree scans with
-one lookup per presentation check, keeps the route queue running after a second
-discovery failure, and names the timed-out command in the error. Functional tests
-cover those paths. The update is installed, but the host still holds the 0.1.135
-connection. **The automatic capture count for 0.1.136 is not measured yet.**
+The saved 0.1.136 run `4e553412-6f1f-49a1-a036-a154a48b2088` has verified
+automatic screenshots for **2 of 260 views**, Home and Search. It has no captured
+UI previews. The rest of its queued routes timed out with a remounting navigator.
+The app log reports hook-order changes, with `useState` becoming `useReducer`,
+and a missing media query. Injected wrappers captured loop bindings that affected
+Hermes versions share. Version 0.1.137 binds each hook, effect and native completion
+handler in its own function scope. Three regression tests fail on the old code
+under shared loop bindings and pass with the fix. Discovery and timeout recovery
+from 0.1.136 stay intact. The update is installed, but the host still holds the
+0.1.136 connection. **The automatic capture count for 0.1.137 is not measured yet.**
 
 | Category | Reviewed views | Exact source matches | Container only | Ambiguous | Missing |
 | --- | ---: | ---: | ---: | ---: | ---: |

@@ -31,6 +31,16 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // the exact hook index collected during this render, including custom hooks.
     return result;
   }
+  // Injected code bypasses Metro's block-scope transform. Some Hermes versions
+  // share loop bindings across closures, so each wrapper needs a function scope.
+  function hookWrapper(kind, original) { return (...args)=>register(kind,original,args); }
+  function effectWrapper(original) {
+    return (callback,deps)=>{
+      const fiber=current()?.fiber;
+      const preview=projected.some(record=>{for(let p=fiber,count=0;p&&count++<100;p=p.return)if((p.pendingProps??p.memoizedProps)===record.child.props)return true;return false;});
+      return original(preview?()=>{}:callback,deps);
+    };
+  }
   function patchHooks() {
     if(patches.length)return true;
     const modules=globalThis.__r?.getModules?.();if(!modules?.values)return false;
@@ -39,7 +49,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(typeof react?.createElement!=='function'||typeof react.useState!=='function'||typeof react.useReducer!=='function')continue;
       for(const key of ['useState','useReducer']){
         const descriptor=Object.getOwnPropertyDescriptor(react,key);if(!descriptor?.writable)continue;
-        const original=react[key],wrapped=(...args)=>register(key,original,args);
+        const original=react[key],wrapped=hookWrapper(key,original);
         react[key]=wrapped;patches.push({react,key,original,wrapped});
       }
       break;
@@ -52,11 +62,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     for(const key of ['useEffect','useLayoutEffect','useInsertionEffect']){
       if(typeof react[key]!=='function')continue;
       if(!Object.getOwnPropertyDescriptor(react,key)?.writable){unpatchPreviewEffects();return false;}
-      const original=react[key],wrapped=(callback,deps)=>{
-        const fiber=current()?.fiber;
-        const preview=projected.some(record=>{for(let p=fiber,count=0;p&&count++<100;p=p.return)if((p.pendingProps??p.memoizedProps)===record.child.props)return true;return false;});
-        return original(preview?()=>{}:callback,deps);
-      };
+      const original=react[key],wrapped=effectWrapper(original);
       react[key]=wrapped;effectPatches.push({react,key,original,wrapped});
     }
     return true;
@@ -313,6 +319,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const [first,...rest]=path;const copy=Array.isArray(value)?value.slice():{...value};copy[first]=setPath(value?.[first],rest,next);return copy;
   }
   const nativeRecords=new Map();let commitPatch;
+  function nativeHandler(key, handler, record) {
+    return function(...args){const state=args[0]?.nativeEvent?.state;if(key==='onShow'||key==='onDismiss'||['open','opened','presented','closed','dismissed'].includes(state))record.pending=false;else if(['opening','closing'].includes(state))record.pending=true;return handler.apply(this,args);};
+  }
   const inside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner?.alternate)return true;return false;};
   function watchNative(focus, pending = false, ancestors = false, mounting = false) {
     const scope=focus?roots(focus):[];
@@ -326,8 +335,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       const record={canonical,field,fiber,original:props,pending:previous?.pending??(mounting&&typeof props.onShow==='function')};
       const patched={...props};
       for(const key of ['onShow','onDismiss','onStateChange'])if(typeof props[key]==='function'){
-        const handler=props[key];
-        patched[key]=function(...args){const state=args[0]?.nativeEvent?.state;if(key==='onShow'||key==='onDismiss'||['open','opened','presented','closed','dismissed'].includes(state))record.pending=false;else if(['opening','closing'].includes(state))record.pending=true;return handler.apply(this,args);};
+        patched[key]=nativeHandler(key,props[key],record);
       }
       record.patched=patched;try{canonical[field]=patched;}catch{return;}
       if(pending&&focus&&scope.some(root=>inside(fiber,root)||ancestors&&inside(root,fiber)))record.pending=true;

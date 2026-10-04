@@ -13,6 +13,7 @@ import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { JSDOM } from 'jsdom';
+import {sharedLoopRuntime} from './app-flow-runtime-fixtures.ts';
 
 async function fixture(t: test.TestContext, files: Record<string,string>) {
   const root=await mkdtemp(join(tmpdir(),'presentation-test-'));t.after(()=>rm(root,{recursive:true,force:true}));
@@ -66,7 +67,7 @@ function configureFixture(runtime:any, catalog:any, matches:any[] = [], checked:
   runtime.configure(catalog,[...matches,...entries.flatMap((b:any)=>catalog.actions.filter((a:any)=>a.file===b.source?.file&&a.line===b.source?.line).map((a:any)=>({binding:b.id,site:a.id})))],entries.map((b:any)=>b.id));
 }
 
-function tree() {
+function tree(install=installPresentationRuntime) {
   function App(){} function Button(){} function Sheet(){} function Nested(){}
   const root:any={type:App,memoizedProps:{},memoizedState:null};
   const button:any={type:Button,_debugSource:{fileName:'App.tsx',lineNumber:1,columnNumber:1},memoizedProps:{onPress(){throw Error('do not call the UI event')}},return:root};
@@ -74,7 +75,7 @@ function tree() {
   const sheet:any={type:Sheet,memoizedProps:{control},return:root};root.child=button;button.sibling=sheet;
   const nested:any={type:Nested,memoizedProps:{},return:sheet};sheet.child=nested;
   const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
-  const runtime=installPresentationRuntime({hook:{renderers:new Map()},fibers,hidden:()=>false,later:setTimeout});
+  const runtime=install({hook:{renderers:new Map()},fibers,hidden:()=>false,later:setTimeout});
   const action:any={id:'open',file:'App.tsx',line:1,owner:'App',component:'Button',prop:'onPress',name:'Sheet',effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};
   configureFixture(runtime,{states:[],actions:[action]});
   return {root,button,sheet,nested,control,runtime,action};
@@ -104,6 +105,18 @@ test('native presentation events hold readiness and cleanup restores event handl
   canonical.currentProps.onStateChange({nativeEvent:{state:'opening'}});assert.equal(app.runtime.motion(app.sheet).pending,true);
   canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});assert.equal(app.runtime.motion(app.sheet).pending,false);
   assert.equal(originalCalls,2);app.runtime.cleanup();assert.equal(canonical.currentProps,original);
+});
+
+test('serialized native handlers retain their event and receiver with shared loop bindings',()=>{
+  const app=tree(sharedLoopRuntime()),calls:string[]=[];
+  const props={onShow(this:any){assert.equal(this,canonical);calls.push('show')},onDismiss(this:any){assert.equal(this,canonical);calls.push('dismiss')},onStateChange(this:any){assert.equal(this,canonical);calls.push('state')}};
+  const canonical:any={currentProps:props};
+  app.sheet.child={tag:5,type:'NativeSheet',memoizedProps:props,stateNode:{canonical},return:app.sheet};
+  app.runtime.open('open');assert.equal(app.runtime.motion(app.sheet).pending,true);
+  canonical.currentProps.onShow.call(canonical);assert.equal(app.runtime.motion(app.sheet).pending,false);
+  canonical.currentProps.onStateChange.call(canonical,{nativeEvent:{state:'closing'}});assert.equal(app.runtime.motion(app.sheet).pending,true);
+  canonical.currentProps.onDismiss.call(canonical);assert.equal(app.runtime.motion(app.sheet).pending,false);
+  assert.deepEqual(calls,['show','state','dismiss']);app.runtime.cleanup();assert.equal(canonical.currentProps,props);
 });
 
 test('native completion handlers survive mutation of the original props during dismissal',()=>{

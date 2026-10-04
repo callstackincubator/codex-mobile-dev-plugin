@@ -1,7 +1,7 @@
 {
   "revision": "2d8e349afd92d2be3ff31f298bc27ab0d82c61cc",
   "platform": "ios",
-  "pluginVersion": "0.1.136",
+  "pluginVersion": "0.1.137",
   "method": "Independent reading of navigation, native auth wrapper, shell gates, each dialog boundary, actual native callers and reducer/state branches. Expected rows were authored before reading current presentation output. One view per body/form; wrappers, repeated openers, repeated tab registrations and same shared dialog body do not add views. First body of a registered wizard is included in its route row. Line evidence pins the reviewed source, not runtime availability.",
   "adjudication": "After the first comparison, source review of unclassified wrappers added moderation appeal and suspension/gate bodies, split the eleven fixed notification settings subjects, added the nested moderation label appeal form, and linked existing shared report/trending/composer bodies to their caller identities. This corrected reference omissions and selectors, not production extraction. The complete catalog comparison adds exact JSX caller selectors for six shell gates, drawer and lightbox, and exact condition/side/body selectors for five server-result forms. These eleven rows previously had no testable selector. It also corrects the case of Wizard/State.tsx and pins the invite announcement to its own Dialog.Outer at line 84, not its wrapper or the shared invitation dialog.",
   "exclusions": [
@@ -266,7 +266,7 @@
   ],
   "meaning": "Matched means distinct source evidence covers the reviewed view. Coverage separates route/action paths, temporary UI preview plans, and source-only facts. A plan is not a successful screenshot. Preview plans retain real data and leave account/backend state unchanged. With --capture-map, capture counts require saved automatic PNGs from the same source, and distinguish live views from UI previews. Unclassified source candidates include inline UI and are not flow screens.",
   "files": 2371,
-  "scanMs": 4124,
+  "scanMs": 4649,
   "registeredRouteNames": 79,
   "manualViews": 260,
   "matchedViews": 260,

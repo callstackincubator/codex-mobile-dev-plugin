@@ -3,6 +3,7 @@ import test from 'node:test';
 import {mkdir,mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {sharedLoopRuntime} from './app-flow-runtime-fixtures.ts';
 import {scanAppFlow} from '../src/server/app-flow/scan.ts';
 import {installPresentationRuntime} from '../src/server/app-flow/presentations-runtime.js';
 import {bindPresentationSites} from '../src/server/app-flow/presentations-bindings.ts';
@@ -26,9 +27,9 @@ test('source preview plans cover finite reducer bodies without opener callbacks 
   assert.equal(result.previewPlannedViews,3);assert.equal(result.actionableViews,0);
 });
 
-function runtimeFixture(t:test.TestContext,shared=false){
+function runtimeFixture(t:test.TestContext,shared=false,install=installPresentationRuntime){
   const real={step:'start',record:{id:'observed-record'},pendingSubmit:null};let current:any,clone:any,projection:any;
-  let dispatched=0,effects=0,initializers=0,walks=0;
+  let dispatched=0,effects=0,initializers=0,walks=0;const effectKinds:string[]=[];
   function View(){}function Modal(){}function Provider(){}function Wizard(){}function Form(){}function Start(){}function Verify(){}
   const originalChildren={type:Wizard,props:{}};
   const host:any={type:View,memoizedProps:{children:originalChildren}};
@@ -37,7 +38,7 @@ function runtimeFixture(t:test.TestContext,shared=false){
   const form:any={type:Form,return:context,memoizedProps:{},_debugSource:{fileName:'App.tsx',lineNumber:5,columnNumber:1}};
   if(shared){owner.child=context;context.child=form;form.child={type:Start,return:form,memoizedProps:{}};}else owner.child={type:Start,return:owner,memoizedProps:{}};
   const reducer=(fn:any,initial:any,init?:any)=>{const state=current===owner?real:init?init(initial):initial;current.memoizedState={memoizedState:state,next:null};return [state,()=>{dispatched++;fn(state,{})}];};
-  const react:any={createElement(type:any,props:any,...children:any[]){return {type,props:{...props,...(children.length?{children:children.length===1?children[0]:children}:{})}}},Component:class{},Fragment:Symbol(),useState(initial:any){const value=typeof initial==='function'?initial():initial;return [value,()=>{}]},useReducer:reducer,useEffect(callback:any){callback()},useLayoutEffect(callback:any){callback()}};
+  const react:any={createElement(type:any,props:any,...children:any[]){return {type,props:{...props,...(children.length?{children:children.length===1?children[0]:children}:{})}}},Component:class{},Fragment:Symbol(),useState(initial:any){const value=typeof initial==='function'?initial():initial;return [value,()=>{}]},useReducer:reducer,useEffect(callback:any){effectKinds.push('useEffect');callback()},useLayoutEffect(callback:any){effectKinds.push('useLayoutEffect');callback()},useInsertionEffect(callback:any){effectKinds.push('useInsertionEffect');callback()}};
   const originals={useReducer:react.useReducer,useEffect:react.useEffect,useLayoutEffect:react.useLayoutEffect};
   const native={View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}};
   const prior=(globalThis as any).__r;(globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}],[2,{isInitialized:true,publicModule:{exports:native}}]])};t.after(()=>{(globalThis as any).__r=prior});
@@ -54,10 +55,10 @@ function runtimeFixture(t:test.TestContext,shared=false){
     clone.child={type:snapshot.step==='verify'?Verify:Start,return:clone,memoizedProps:{}};
     modal.props.onShow();current=undefined;
   }};
-  const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});t.after(()=>runtime.cleanup());
+  const runtime=install({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});t.after(()=>runtime.cleanup());
   const site:any={id:'state',file:'App.tsx',line:1,column:0,endLine:1,owner:shared?'useFlow':'Wizard',owners:shared?['Provider']:[],paths:[['step']],hook:'useReducer'};
   const action:any={id:'preview',file:'App.tsx',line:2,owner:shared?'Form':'Wizard',name:'Verify',component:'Verify',prop:'',preview:true,views:['verified-body'],effect:{kind:'state',site:'state',path:['step'],value:'verify'},...(shared?{consumer:{component:'Form',entries:[{file:'App.tsx',owner:'Provider',source:{line:5,column:0,endLine:5,endColumn:10}}]}}:{})};
-  return {runtime,site,action,real,owner,host,form,context,react,originals,originalChildren,get walks(){return walks},get clone(){return clone},get projection(){return projection},get counts(){return {dispatched,effects,initializers}},setCurrent:(fiber:any)=>{current=fiber}};
+  return {runtime,site,action,real,owner,host,form,context,react,originals,originalChildren,effectKinds,get walks(){return walks},get clone(){return clone},get projection(){return projection},get counts(){return {dispatched,effects,initializers}},setCurrent:(fiber:any)=>{current=fiber}};
 }
 
 async function configure(app:ReturnType<typeof runtimeFixture>){
@@ -93,6 +94,37 @@ test('a shared reducer preview copies its tuple context and keeps live props and
   assert.equal(app.context.memoizedProps.value[0],app.real);
   assert.deepEqual(app.counts,{dispatched:0,effects:0,initializers:0});
   await app.runtime.rollback(0,false);assert.equal(app.host.memoizedProps.children,app.originalChildren);
+});
+
+test('serialized hook and effect wrappers keep their identities with shared loop bindings',async t=>{
+  const app=runtimeFixture(t,false,sharedLoopRuntime());await configure(app);
+  const calls:string[]=[];
+  const opened=app.runtime.open('preview');assert.equal(opened.error,undefined);
+  assert.equal(app.clone.memoizedState.memoizedState.step,'verify');
+  const originalEffect=app.originals.useEffect,originalLayout=app.originals.useLayoutEffect;
+  assert.notEqual(originalEffect,originalLayout);
+  app.effectKinds.length=0;
+  app.setCurrent(app.owner);app.react.useEffect(()=>calls.push('effect'));app.react.useLayoutEffect(()=>calls.push('layout'));app.react.useInsertionEffect(()=>calls.push('insertion'));app.setCurrent(undefined);
+  assert.deepEqual(calls,['effect','layout','insertion']);assert.deepEqual(app.effectKinds,['useEffect','useLayoutEffect','useInsertionEffect']);assert.deepEqual(app.counts,{dispatched:0,effects:0,initializers:0});
+  await app.runtime.rollback(0,false);
+  assert.equal(app.react.useReducer,app.originals.useReducer);assert.equal(app.react.useEffect,originalEffect);assert.equal(app.react.useLayoutEffect,originalLayout);
+});
+
+test('collection preserves useState and useReducer calls with shared loop bindings',async t=>{
+  function App(){}const owner:any={type:App,memoizedProps:{},memoizedState:null};const calls:string[]=[];
+  const append=(kind:string,value:any)=>{calls.push(kind);const hook={memoizedState:value,next:null};let previous=owner.memoizedState;if(!previous)owner.memoizedState=hook;else{while(previous.next)previous=previous.next;previous.next=hook;}return [value,()=>{}];};
+  let initialized=0;
+  const react:any={createElement(){},useState(value:any){return append('useState',typeof value==='function'?value():value)},useReducer(_reducer:any,value:any){return append('useReducer',value)}};
+  const originals={...react},prior=(globalThis as any).__r;(globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}]])};
+  const renderer={rendererPackageName:'react-native-renderer',getCurrentFiber:()=>owner,scheduleUpdate(){owner.memoizedState=null;react.useState('state');react.useReducer(()=>{},'reducer');react.useState(()=>{initialized++;return 'second state'});}};
+  const runtime=sharedLoopRuntime()({hook:{renderers:new Map([[1,renderer]])},fibers:(visit:any)=>visit(owner),hidden:()=>false,later:setTimeout});
+  t.after(()=>{runtime.cleanup();(globalThis as any).__r=prior});
+  const page=await runtime.collect([{id:'hook',owner:'App'}]);
+  assert.deepEqual(calls,['useState','useReducer','useState']);assert.deepEqual(page.bindings.map(binding=>binding.kind),calls);
+  assert.deepEqual(page.bindings.map(binding=>binding.owner),['App','App','App']);
+  assert.equal(owner.memoizedState.memoizedState,'state');assert.equal(owner.memoizedState.next.memoizedState,'reducer');
+  assert.equal(owner.memoizedState.next.next.memoizedState,'second state');assert.equal(initialized,1);
+  assert.equal(react.useState,originals.useState);assert.equal(react.useReducer,originals.useReducer);
 });
 
 test('shared-state previews require an exact consumer entry and reject ambiguous shared references',async t=>{

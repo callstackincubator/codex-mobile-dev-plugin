@@ -79,6 +79,8 @@ version that started the run.
 The runner binds hook calls and JSX entries to exact source locations through Metro symbolication.
 React hook exports stay wrapped for one bounded render pass, then return to their
 original functions. It previews only presentation fields with finite source values.
+Injected wrappers keep separate function scopes so Hermes preserves each hook
+primitive and native completion handler.
 It does not change auth/session fields, create accounts, sign out, type fake input,
 or invoke submit/save/delete handlers. A whole-object presentation starts only
 when that state is empty, so mapping does not replace a user's open draft.
