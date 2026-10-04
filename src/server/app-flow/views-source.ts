@@ -76,12 +76,12 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
       if(ts.isVariableDeclaration(n)){const fn=owner(n);if(fn){const container=declarationScope(n);declare(n.name,scope(container));if(ts.isIdentifier(n.name)&&n.initializer){let values=initializers.get(container);if(!values){values=new Map();initializers.set(container,values);}values.set(n.name.text,n.initializer);}}else if(ts.isIdentifier(n.name)&&n.initializer)globals.get(unit)!.set(n.name.text,n.initializer);}
       if(!ts.isVariableDeclaration(n)||!n.initializer||!ts.isArrayBindingPattern(n.name))continue;
       const call=unwrap(n.initializer),fn=owner(n);if(!fn||!ts.isCallExpression(call)||!/^react#use(?:State|Reducer)$/.test(symbol(unit,call.expression.getText())))continue;
-      const loc=location(unit,call),site:FlowStateSite={id:createHash('sha256').update(`${relative(root,unit.file)}:${call.pos}`).digest('hex').slice(0,20),file:relative(root,unit.file),...loc,owner:name(fn),paths:[]};states.push(site);
+      const value=n.name.elements[0],loc=location(unit,call),site:FlowStateSite={id:createHash('sha256').update(`${relative(root,unit.file)}:${call.pos}`).digest('hex').slice(0,20),file:relative(root,unit.file),...loc,owner:name(fn),paths:[],hook:symbol(unit,call.expression.getText()).endsWith('useReducer')?'useReducer':'useState',valueName:value&&ts.isBindingElement(value)&&ts.isIdentifier(value.name)?value.name.text:undefined};states.push(site);
       const v={0:{site,path:[]}};stateCalls.set(call,v);calls.set(site.id,{unit,call});bind(n.name,v,scope(declarationScope(n)));
     }
     // Custom hooks often return the tuple directly, without a local variable.
     for(const n of list)if(ts.isCallExpression(n)&&!stateCalls.has(n)&&/^react#use(?:State|Reducer)$/.test(symbol(unit,n.expression.getText()))){
-      const fn=owner(n);if(!fn)continue;const loc=location(unit,n),site:FlowStateSite={id:createHash('sha256').update(`${relative(root,unit.file)}:${n.pos}`).digest('hex').slice(0,20),file:relative(root,unit.file),...loc,owner:name(fn),paths:[]};states.push(site);stateCalls.set(n,{0:{site,path:[]}});calls.set(site.id,{unit,call:n});
+      const fn=owner(n);if(!fn)continue;const loc=location(unit,n),site:FlowStateSite={id:createHash('sha256').update(`${relative(root,unit.file)}:${n.pos}`).digest('hex').slice(0,20),file:relative(root,unit.file),...loc,owner:name(fn),paths:[],hook:symbol(unit,n.expression.getText()).endsWith('useReducer')?'useReducer':'useState'};states.push(site);stateCalls.set(n,{0:{site,path:[]}});calls.set(site.id,{unit,call:n});
     }
   }
   function read(unit:SourceUnit,n:ts.Node|undefined,fn= n&&owner(n),seen=new Set<ts.Node>(),depth=0):Value{
@@ -106,9 +106,14 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
   }
   // Origins cross custom hooks, tuple/object contexts and component props. Each
   // pass reads source facts; no project expression or handler runs.
+  const consumers=(value:Value,fn:Fn|undefined,depth=0)=>{
+    if(!value||!fn||depth>8)return;const own=name(fn);if(!/^[A-Z]/.test(own)&&own!=='default')return;
+    const sources=origins(value);if(sources.length){for(const v of sources){const owners=v.site.owners??=[];if(!owners.includes(own))owners.push(own);}}
+    else for(const v of Object.values(value))consumers(v,fn,depth+1);
+  };
   for(let pass=0;pass<6;pass++)for(const [unit,list]of nodes)for(const n of list){
     const fn=owner(n);
-    if(ts.isVariableDeclaration(n)&&n.initializer&&fn)bind(n.name,read(unit,n.initializer,fn),scope(declarationScope(n)));
+    if(ts.isVariableDeclaration(n)&&n.initializer&&fn){const value=read(unit,n.initializer,fn);consumers(value,fn);bind(n.name,value,scope(declarationScope(n)));}
     if(ts.isReturnStatement(n)&&n.expression&&fn){const v=read(unit,n.expression,fn),key=`${unit.file}#${name(fn)}`;if(v&&functions.get(key)===fn)returns.set(key,merge(returns.get(key),v));}
     if(ts.isArrowFunction(n)&&!ts.isBlock(n.body)){const v=read(unit,n.body,n as Fn),key=`${unit.file}#${name(n as Fn)}`;if(v&&functions.get(key)===n)returns.set(key,merge(returns.get(key),v));}
     if(!ts.isJsxOpeningElement(n)&&!ts.isJsxSelfClosingElement(n))continue;
@@ -154,15 +159,16 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
       if(ts.isBinaryExpression(parent)&&parent.right===p&&parent.operatorToken.kind===ts.SyntaxKind.AmpersandAmpersandToken&&finite(unit,parent.left)===false)return false;
     }return true;
   };
-  const parts=(unit:SourceUnit,body:ts.Node)=>{const result=new Map<string,{file:string;component:string}>();const visit=(n:ts.Node)=>{if(ts.isFunctionLike(n))return;if(ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n)){const tag=n.tagName.getText();if(/^[A-Z]/.test(tag)){const resolved=symbol(unit,tag),split=resolved.lastIndexOf('#');if(split>=0&&units.has(resolved.slice(0,split))){const item={file:relative(root,resolved.slice(0,split)),component:resolved.slice(split+1)};result.set(resolved,item);}}}ts.forEachChild(n,visit);};visit(body);return [...result.values()];};
+  const parts=(unit:SourceUnit,body:ts.Node,state?:FlowSourceView['state'])=>{const result=new Map<string,{file:string;component:string}>(),site=state&&states.find(s=>s.id===state.site);const visit=(n:ts.Node)=>{if(ts.isFunctionLike(n))return;if(ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n)){if(state&&site&&!possible(unit,n,{site,path:state.path},state.value))return;const tag=n.tagName.getText();if(/^[A-Z]/.test(tag)){const resolved=symbol(unit,tag),split=resolved.lastIndexOf('#');if(split>=0&&units.has(resolved.slice(0,split))){const item={file:relative(root,resolved.slice(0,split)),component:resolved.slice(split+1)};result.set(resolved,item);}}}ts.forEachChild(n,visit);};visit(body);return [...result.values()];};
   const add=(unit:SourceUnit,body:ts.Node,kind:FlowSourceView['kind'],extra:Partial<FlowSourceView>)=>{
     const loc=location(unit,body),fn=owner(body);if(!fn||!reachable(unit,body))return;
     let jsx=false;walk(body,n=>{if(ts.isJsxElement(n)||ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n))jsx=true;});if(!jsx)return;
-    const components=parts(unit,body),file=relative(root,unit.file),own=name(fn);
+    const components=parts(unit,body,extra.state),file=relative(root,unit.file),own=name(fn);
     const identity=extra.state?['state',extra.state]:[file,own,loc,kind,extra.control,extra.branch];
     const id=hash(identity),existing=views.get(id);
-    if(existing){for(const p of components)if(!existing.components.some(c=>c.file===p.file&&c.component===p.component))existing.components.push(p);return;}
-    views.set(id,{id,file,owner:own,line:loc.line,source:loc,kind,name:components[0]?.component??own,components,availability:'observed-only',...extra});
+    const renderBody=ts.isCaseClause(body)||ts.isReturnStatement(body)||ts.isBlock(body)&&body.statements.some(ts.isReturnStatement)||(()=>{for(let p=body;p.parent&&!ts.isFunctionLike(p.parent);p=p.parent){if(ts.isReturnStatement(p.parent))return true;if(ts.isJsxElement(p.parent)||ts.isJsxFragment(p.parent))return false;}return false;})();
+    if(existing){existing.renderBody||=renderBody;if(!existing.components.length&&components.length)existing.name=components[0].component;for(const p of components)if(!existing.components.some(c=>c.file===p.file&&c.component===p.component))existing.components.push(p);return;}
+    views.set(id,{id,file,owner:own,line:loc.line,source:loc,kind,name:components[0]?.component??own,components,availability:'observed-only',renderBody,...extra});
   };
   const stateBranch=(unit:SourceUnit,condition:ts.Node,body:ts.Node,side:'true'|'false')=>{
     let predicate=unwrap(condition),invert=side==='false';
@@ -211,8 +217,8 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
       }
     }
   }
-  const entries=new Map<string,{file:string;line:number;owner:string}[]>();
-  for(const [unit,list]of nodes)for(const n of list)if((ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n))&&reachable(unit,n)){let target=symbol(unit,n.tagName.getText());const fn=owner(n),callee=functions.get(target);if(callee)target=`${fnUnits.get(callee)!.file}#${name(callee)}`;if(!fn)continue;const list=entries.get(target)??[];list.push({file:relative(root,unit.file),line:location(unit,n).line,owner:name(fn)});entries.set(target,list);}
+  const entries=new Map<string,NonNullable<FlowSourceView['entries']>>();
+  for(const [unit,list]of nodes)for(const n of list)if((ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n))&&reachable(unit,n)){let target=symbol(unit,n.tagName.getText());const fn=owner(n),callee=functions.get(target);if(callee)target=`${fnUnits.get(callee)!.file}#${name(callee)}`;if(!fn)continue;const list=entries.get(target)??[],source=location(unit,n);list.push({file:relative(root,unit.file),line:source.line,owner:name(fn),source});entries.set(target,list);}
   for(const view of views.values())if(view.kind==='component')view.entries=entries.get(`${root}/${view.file}#${view.owner}`)??[];
   return {states:states.filter(site=>site.paths.length),views:[...views.values()]};
 }

@@ -125,7 +125,7 @@ test('an anonymous default component keeps its identity when nested callbacks re
     'Guard.tsx':`export default ()=>{const renderItem=()=> <Inline/>;return <Blocked renderItem={renderItem}/>}`});
   const graph=await scanAppFlow(root,'ios'),result=compareViewReference(graph,{views:[{id:'guard',category:'auth-guard',selectors:[{component:{file:'Guard.tsx',name:'default',entry:{file:'App.tsx',line:1}}}]}]},()=>[]);
   assert.equal(result.matchedViews,1);
-  assert.deepEqual(graph.presentations!.views!.find(v=>v.kind==='component'&&v.file==='Guard.tsx'&&v.owner==='default')?.entries,[{file:'App.tsx',line:1,owner:'App'}]);
+  assert.deepEqual(graph.presentations!.views!.find(v=>v.kind==='component'&&v.file==='Guard.tsx'&&v.owner==='default')?.entries?.map(({source,...entry})=>entry),[{file:'App.tsx',line:1,owner:'App'}]);
 });
 
 test('a local prop cannot inherit an unrelated constant or hook with the same name',async t=>{

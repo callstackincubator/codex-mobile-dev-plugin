@@ -185,13 +185,15 @@ test("shared screens collapse into one preview with alternate navigation paths",
 
 test("Stop cancels connection setup and closes a late connection",async t=>{
   const directory=await fixture(t,{});let closed=false;
+  const connecting=Promise.withResolvers<void>(),disconnected=Promise.withResolvers<void>();
   const runs=new AppFlowRuns({directory,scan:async()=>graph(),connect:async()=>{
+    connecting.resolve();
     await delay(100);
-    return {runtime:{async invoke(){throw Error('Must not navigate after Stop')},async close(){closed=true}},async screenshot(){throw Error('Must not capture after Stop')}};
+    return {runtime:{async invoke(){throw Error('Must not navigate after Stop')},async close(){closed=true;disconnected.resolve()}},async screenshot(){throw Error('Must not capture after Stop')}};
   }});
-  const run=runs.start(start); await delay(10); runs.stop(run.id); await runs.close();
+  const run=runs.start(start); await connecting.promise; runs.stop(run.id); await runs.close();
   assert.equal(runs.read(run.id).phase,'stopped');
-  await delay(110);assert.equal(closed,true);await runs.close();
+  await disconnected.promise;assert.equal(closed,true);await runs.close();
 });
 
 test("a loading screen at verification is retried and never labelled captured",async t=>{

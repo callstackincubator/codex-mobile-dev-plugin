@@ -8,7 +8,8 @@ export function installPresentationRuntime(options: {
   records(offset: number): {bindings: PresentationBinding[]; next?: number};
   configure(catalog: FlowPresentations, matches: {binding: string; site: string}[], checked?: string[]): void;
   list(focus?: any): {id: string; name: string; file: string; line: number}[];
-  open(id: string, focus?: any): {name?: string; focus?: any; scope?: any; error?: string};
+  open(id: string, focus?: any): {name?: string; focus?: any; scope?: any; expected?: string; error?: string};
+  activeViews(focus?: any): string[];
   rollback(level?: number, wait?: boolean): Promise<void>;
   cleanup(): void; motion(focus?: any, viewport?: {x: number; y: number; width: number; height: number}): {pending: boolean; signature: string};
   project(focus: any): {name?: string; focus?: any; error?: string};

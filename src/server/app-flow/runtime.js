@@ -69,7 +69,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
     }
   }
   const presentations = presentationFactory?.({ hook, fibers, hidden: props => hidden(props), later });
-  let presentationFocus, presentationObservation;
+  let presentationFocus, presentationObservation, presentationExpected;
   const presentationFrames = [];
   function navigation(value) {
     if (!value || typeof value !== 'object' || typeof value.getState !== 'function' || typeof value.dispatch !== 'function') return;
@@ -367,17 +367,18 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
   function presentationView() {
     if(presentationFocus){let current;fibers(fiber=>{if(fiber===presentationFocus||fiber===presentationFocus.alternate)current=fiber;});presentationFocus=current;}
     const visualFocus=presentations?.visualFocus(presentationFocus)??presentationFocus;
+    const expectedReady=!presentationExpected||!!presentations?.focusFor(presentationExpected,visualFocus);
     const visual = visualSignature(undefined, true, visualFocus);
     const live = visible(), now = Date.now();
     const componentTree = visual.components;
     const nativeMotion=presentations?.motion(presentationFocus,visual.bounds);
     if(nativeMotion){visual.signature+=nativeMotion.signature;visual.motion=JSON.stringify([visual.motion,nativeMotion.signature]);}
     const key = JSON.stringify([active(root?.getRootState?.() ?? root?.getState?.()), visual.components?.sort(), visual.title]);
-    if (!presentationObservation || presentationObservation.key !== key || presentationObservation.signature !== visual.signature || visual.loading || live.transitioning || nativeMotion?.pending) {
+    if (!presentationObservation || presentationObservation.key !== key || presentationObservation.signature !== visual.signature || visual.loading || live.transitioning || nativeMotion?.pending || !expectedReady) {
       const next = presentationObservation = { key, signature: visual.signature, since: now, painted: false };
       frame(() => frame(() => { if (presentationObservation === next) next.painted = true; }));
     }
-    return { ...visual, key, active: active(root?.getRootState?.() ?? root?.getState?.()), ready: !nativeMotion?.error && visual.found && visual.content > 0 && !visual.loading && !live.transitioning && !nativeMotion?.pending && presentationObservation.painted && now - presentationObservation.since >= 160, ...live, nativePending:nativeMotion?.pending, error:nativeMotion?.error, components:componentTree };
+    return { ...visual, key, active: active(root?.getRootState?.() ?? root?.getState?.()), ready: expectedReady && !nativeMotion?.error && visual.found && visual.content > 0 && !visual.loading && !live.transitioning && !nativeMotion?.pending && presentationObservation.painted && now - presentationObservation.since >= 160, ...live, nativePending:nativeMotion?.pending, error:nativeMotion?.error, components:componentTree };
   }
   function returnToStart() {
     const path = active(original);
@@ -393,7 +394,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
     // Native sheets must dismiss before their parent modal unmounts. Dropping
     // both at once can leave UIKit showing a detached, blank presentation.
     if(presentations?.checkpoint())await presentations.rollback(0,true);
-    presentations?.cleanup(); presentationFrames.length=0; presentationFocus=presentationObservation=undefined;
+    presentations?.cleanup(); presentationFrames.length=0; presentationFocus=presentationObservation=presentationExpected=undefined;
     cancelWaits();
     try { if (!observing && root && original) root.dispatch({ type: 'RESET', payload: original }); } catch {}
     for (const record of transitions.values()) for (const off of record.off) { try { off(); } catch {} }
@@ -417,17 +418,18 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         if (command.type === 'presentation-bindings') { reply(presentations?.records(command.offset ?? 0) ?? {bindings:[]}); return; }
         if (command.type === 'presentation-configure') { presentations?.configure(command.catalog, command.matches ?? [], command.checked ?? []); reply({}); return; }
         if (command.type === 'presentations') { reply(presentations?.list(presentationFocus) ?? []); return; }
+        if (command.type === 'presentation-active') { reply(presentations?.activeViews(presentationFocus) ?? []); return; }
         if (command.type === 'presentation-view') { reply(presentationView()); return; }
         if (command.type === 'presentation-checkpoint') { reply({level:presentations?.checkpoint()??0}); return; }
-        if (command.type === 'presentation-rollback') { const level=command.level??0;while(presentationFrames.length>level)presentationFocus=presentationFrames.pop();presentationObservation=undefined; void (presentations?.rollback(command.level ?? 0) ?? Promise.resolve()).then(() => reply({}), () => reply({error:'Presentation restoration failed.'})); return; }
+        if (command.type === 'presentation-rollback') { const level=command.level??0;while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined; void (presentations?.rollback(command.level ?? 0) ?? Promise.resolve()).then(() => reply({}), () => reply({error:'Presentation restoration failed.'})); return; }
         if (command.type === 'presentation-project') {
           const result=presentations?.project(presentationFocus);if(!result||result.error){reply(result??{error:'Presentation projection is unavailable.'});return;}
-          presentationFrames.push(presentationFocus);presentationObservation=undefined;later(()=>reply(presentationView()),80);return;
+          presentationFrames.push({focus:presentationFocus,expected:presentationExpected});presentationObservation=undefined;later(()=>reply(presentationView()),80);return;
         }
         if (command.type === 'presentation-open') {
           const result = presentations?.open(command.id,presentationFocus) ?? { error: 'Presentation capture is unavailable.' };
           if (result.error) { reply(result); return; }
-          presentationFrames.push(presentationFocus); presentationObservation = undefined;
+          presentationFrames.push({focus:presentationFocus,expected:presentationExpected});presentationExpected=result.expected; presentationObservation = undefined;
           later(() => {
             presentationFocus = result.focus;
             if (!presentationFocus) presentationFocus=presentations?.focusFor(result.name,result.scope);

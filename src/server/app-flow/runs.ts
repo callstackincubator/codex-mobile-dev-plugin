@@ -327,7 +327,7 @@ export class AppFlowRuns {
       signal.throwIfAborted();
       // Do not render the unfiltered registration catalog while connecting. It
       // includes repeated screen instances and multiple source edges per pair.
-      Object.assign(run, { files: graph.files, scanMs: graph.scanMs, catalogMs: graph.catalogMs, warnings: graph.warnings });
+      Object.assign(run, { files: graph.files, scanMs: graph.scanMs, catalogMs: graph.catalogMs, sourceHash:graph.sourceHash, warnings: graph.warnings });
       const cached = this.resolved.get(this.cacheKey(input));
       for (const node of graph.nodes) { const params = cached?.get(node.id); if (params) { node.params = params; if (!missingFlowParams(node).length) node.status = "pending"; } }
       run.phase = "connecting"; run.revision++;
@@ -446,7 +446,7 @@ export class AppFlowRuns {
               const file = `${node.id}.png`;
               // Disk writes do not hold up navigation. A screenshot remains labelled only after it saves.
               const writing = writeFile(join(this.directory, run.id, file), bytes, { mode: 0o600 }).then(() => {
-                node.image = `mobile-flow://${run.id}/${node.id}`; node.status = "captured"; node.reason = "Focused screen captured; content completeness is not verified."; run.revision++;
+                node.image = `mobile-flow://${run.id}/${node.id}`;node.imageSourceHash=run.sourceHash; node.status = "captured"; node.reason = "Focused screen captured; content completeness is not verified."; run.revision++;
               }).catch(() => { node.status = "blocked"; node.reason = "Could not save screenshot."; run.revision++; });
               active.writing.add(writing); capturedTarget=true;
               void writing.finally(() => active.writing.delete(writing));
@@ -530,6 +530,7 @@ export class AppFlowRuns {
         Sentry.metrics.distribution("app_flow.scan", run.scanMs, { unit: "millisecond", attributes });
         if(run.catalogMs!==undefined)Sentry.metrics.distribution("app_flow.source_catalog",run.catalogMs,{unit:"millisecond",attributes});
         if(run.presentations?.views)Sentry.metrics.gauge("app_flow.source_candidates",run.presentations.views.length,{attributes});
+        if(run.presentations?.previews)Sentry.metrics.gauge('app_flow.preview_plans',run.presentations.previews.length,{attributes});
         Sentry.metrics.distribution("app_flow.run", (run.finishedAt ?? Date.now()) - sessionStarted, { unit: "millisecond", attributes });
         Sentry.metrics.gauge("app_flow.routes", run.nodes.filter(node => node.kind === "screen" && node.capture !== 'observed' && !node.presentation).length, { attributes });
         Sentry.metrics.gauge("app_flow.captured", run.nodes.filter(node => node.status === "captured" && node.capture !== 'observed' && !node.presentation).length, { attributes });
@@ -539,6 +540,8 @@ export class AppFlowRuns {
         }
         Sentry.metrics.gauge("app_flow.presentations",run.nodes.filter(node=>node.presentation).length,{attributes});
         Sentry.metrics.gauge("app_flow.presentations_captured",run.nodes.filter(node=>node.presentation&&node.status==='captured').length,{attributes});
+        Sentry.metrics.gauge('app_flow.previews_captured',run.nodes.filter(node=>node.presentation?.preview&&node.status==='captured').length,{attributes});
+        Sentry.metrics.gauge('app_flow.previews_blocked',run.nodes.filter(node=>node.presentation?.preview&&node.status==='blocked').length,{attributes});
         Sentry.metrics.gauge("app_flow.reconnects", reconnects, { attributes });
         Sentry.metrics.gauge('app_flow.retries', retries, { attributes });
       }

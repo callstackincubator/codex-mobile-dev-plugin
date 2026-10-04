@@ -30,8 +30,8 @@ screen components, nested navigators, static navigator configurations, and Expo
 Router layouts and route files. It reads param types and literal defaults.
 Runtime discovery adds registered routes and observed params. Conditional routes,
 custom wrappers and computed names may remain unresolved by route discovery.
-A second source pass finds finite `useState` transitions that select rendered
-views, including context providers and callback helpers. It also finds reversible
+A second source pass finds finite `useState` and `useReducer` values that select
+rendered views, including shared hooks, context providers and callback helpers. It also finds reversible
 `control.open()` and ref-based `present()`/`show()`/`expand()` calls paired with
 mounted sheet or dialog components. No app names or adapters enter this pass.
 
@@ -70,7 +70,7 @@ those effects or arbitrary application state changes.
 
 ## Automatic local forms and sheets
 
-The runner binds hook calls to source locations through Metro symbolication.
+The runner binds hook calls and JSX entries to exact source locations through Metro symbolication.
 React hook exports stay wrapped for one bounded render pass, then return to their
 original functions. It previews only presentation fields with finite source values.
 It does not change auth/session fields, create accounts, sign out, type fake input,
@@ -96,19 +96,35 @@ presentation style, and removes the preview before restoring the parent. Saved
 retry plans retain this step. This previews the form; it does not sign in or
 alter account state.
 
+Source previews can open a finite reducer or local-state branch without a visible
+button. The runner mounts a temporary copy with the original props, data and
+provider values, then seeds only the proven UI selector during hook initialization.
+It never dispatches the original reducer. For shared state, it copies one exact
+state reference into the proven consumer's props or context. Ambiguous references
+stay out. The original form, draft and provider state remain intact.
+
+App effects inside these temporary copies do not run. This prevents mount effects
+from submitting a form or changing account data. Views that need those effects to
+load data or build their UI may remain blocked. Each preview must mount its proven
+body and pass the existing readiness and screenshot checks. The canvas labels
+these captures **UI preview**. Controllers can also open without a visible trigger
+when their exact mounted source has a known open/close pair and the opening method
+takes no arguments.
+
 This covers common React patterns, not every custom state store or native UI.
-Reducers, arbitrary global stores, native system pickers, and opaque third-party
-presentation APIs can need recording. Simple UI state changes can run normal app
-render effects, and controller open/close methods can run their own effects. App Flow
-cannot undo those effects. Unsupported loaders and native animations can still need
-app instrumentation. It does not claim a complete map of every app.
+Unmounted state owners, arbitrary global stores, native system pickers, and opaque
+presentation APIs can need recording. Backend result bodies still need real data.
+Existing in-place UI actions can run normal render effects, and controller
+open/close methods can run their own effects. App Flow cannot undo those effects.
+Unsupported loaders and native animations can still need app instrumentation.
+It does not claim a complete map of every app.
 
 Source discovery also keeps a separate catalog of reducer steps, shared hook/context
 state, guarded render branches, and exact sheet targets. It records these views even
-when their data or account state is unavailable. These source facts are not capture
-plans: they do not dispatch reducers, change auth, or invent backend results. The
-catalog stays out of canvas polling and runtime injection, and saves once alongside
-the map for source inspection.
+when their data or account state is unavailable. Only finite UI selectors and exact
+controller targets become preview plans; a plan still needs a live binding and real
+data. The full catalog stays out of canvas polling and runtime injection, and saves
+once alongside the map. The runtime receives only compact executable plans.
 
 ## Record steps that need input
 
@@ -158,3 +174,8 @@ The [Bluesky source audit](app-flow-bluesky-audit.md) compares an independently
 reviewed list of routes, guarded forms, sheets and prompts with source extraction.
 It includes the full inventory, capture limits and a strict command to repeat the comparison.
 Source matches do not confirm screenshot capture or availability in one session.
+The audit command accepts `--capture-map /path/to/<run-id>/map.json` to count saved
+automatic PNGs. It separates live captures from temporary UI previews, excludes
+recorded steps, and requires the scan and each image to have the same local source
+hash. A child screenshot never counts as a screenshot of its parent. Source hashes
+and view identities stay local.

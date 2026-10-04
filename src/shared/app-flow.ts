@@ -19,21 +19,26 @@ export type FlowNode = {
   status: FlowStatus;
   reason?: string;
   image?: string;
+  imageSourceHash?: string;
   captureMs?: number;
   captureAttempts?: number;
   groupId?: string;
   capture?: 'observed';
-  presentation?: { actions: string[]; projections?: string[]; basePath: string[]; baseParams?: FlowParams; expo?: boolean; entryKey?: string };
+  sourceViews?: string[];
+  presentation?: { actions: string[]; projections?: string[]; preview?: boolean; basePath: string[]; baseParams?: FlowParams; expo?: boolean; entryKey?: string };
 };
 export type FlowEdge = { from: string; to: string; kind: "contains" | "navigation"; owner?: string; via?: "link" | "call"; guarded?: boolean; file?: string; line?: number };
 export type FlowLink = { target: string; owner: string; params?: FlowParams; guarded: boolean };
-export type FlowStateSite = { id: string; file: string; line: number; column: number; endLine: number; owner: string; paths: string[][] };
+export type FlowStateSite = { id: string; file: string; line: number; column: number; endLine: number; endColumn?: number; owner: string; paths: string[][]; hook?: 'useState' | 'useReducer'; valueName?: string; owners?: string[] };
 export type FlowPresentationAction = {
   id: string; file: string; line: number; owner: string; component: string; prop: string; name: string;
   source?: { line: number; column: number; endLine: number; endColumn: number };
   trigger?: Record<string,string|number|boolean>;
   handler?: string;
   guard?: FlowUiCondition;
+  preview?: boolean;
+  views?: string[];
+  consumer?: {component: string; entries: {file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}}[]};
   effect: { kind: 'state'; site: string; path: string[]; value: unknown } | { kind: 'control'; component: string; prop: string; method: string; close: string | string[]; target?: {file: string; owner: string; line: number; source: {line: number; column: number; endLine: number; endColumn: number}} };
 };
 export type FlowUiCondition = { prop: string[] } | { value: unknown } | { op: '!' | '&&' | '||' | '===' | '!==' | '==' | '!='; args: FlowUiCondition[] };
@@ -46,10 +51,11 @@ export type FlowSourceView = {
   control?: {component: string; prop: string; boundary: boolean; generic: boolean};
   branch?: {condition: string; side: 'true' | 'false' | 'case'};
   availability: 'observed-only';
-  entries?: {file: string; line: number; owner: string}[];
+  renderBody?: boolean;
+  entries?: {file: string; line: number; owner: string; source?: {line: number; column: number; endLine: number; endColumn: number}}[];
 };
-export type FlowPresentations = { states: FlowStateSite[]; actions: FlowPresentationAction[]; views?: FlowSourceView[]; viewStates?: FlowStateSite[] };
-export type FlowGraph = { presentations?: FlowPresentations; catalogMs?: number; links?: FlowLink[]; nodes: FlowNode[]; edges: FlowEdge[]; warnings: string[]; files: number; scanMs: number };
+export type FlowPresentations = { states: FlowStateSite[]; actions: FlowPresentationAction[]; previews?: FlowPresentationAction[]; previewStates?: FlowStateSite[]; views?: FlowSourceView[]; viewStates?: FlowStateSite[] };
+export type FlowGraph = { presentations?: FlowPresentations; sourceHash?: string; catalogMs?: number; links?: FlowLink[]; nodes: FlowNode[]; edges: FlowEdge[]; warnings: string[]; files: number; scanMs: number };
 export type FlowRun = FlowGraph & {
   id: string;
   phase: "scanning" | "connecting" | "reconnecting" | "capturing" | "recording" | "finishing" | "complete" | "stopped" | "failed";
@@ -67,7 +73,7 @@ export type FlowRun = FlowGraph & {
 };
 /** Source facts are immutable scan data, not canvas polling data. */
 export function publicFlowRun(run: FlowRun): FlowRun {
-  return {...run,presentations:run.presentations?{states:run.presentations.states,actions:run.presentations.actions}:undefined};
+  return {...run,presentations:run.presentations?{states:run.presentations.states,actions:run.presentations.actions,previews:run.presentations.previews,previewStates:run.presentations.previewStates}:undefined};
 }
 export type FlowResolution = { nodeId: string; params: FlowParams };
 export const flowRunning = (run?: FlowRun) => !!run && ["scanning", "connecting", "reconnecting", "capturing", "recording", "finishing"].includes(run.phase);

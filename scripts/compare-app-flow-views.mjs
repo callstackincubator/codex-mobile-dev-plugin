@@ -1,13 +1,14 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, open } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import ts from 'typescript';
 import { scanAppFlow } from '../src/server/app-flow/scan.ts';
 import { compareViewReference } from './lib/compare-app-flow-views.mjs';
+import {compareFlowCapture} from './lib/compare-app-flow-capture.mjs';
 
 const [project, referenceFile, ...options] = process.argv.slice(2);
-if (!project || !referenceFile) throw new Error('Usage: node scripts/compare-app-flow-views.mjs PROJECT REFERENCE [--snapshot GRAPH.json] [--write-snapshot GRAPH.json] [--output REPORT.json] [--strict]');
+if (!project || !referenceFile) throw new Error('Usage: node scripts/compare-app-flow-views.mjs PROJECT REFERENCE [--snapshot GRAPH.json] [--write-snapshot GRAPH.json] [--capture-map MAP.json] [--output REPORT.json] [--strict]');
 const option = name => { const index = options.indexOf(name); return index < 0 ? undefined : options[index + 1]; };
 const json = async file => JSON.parse(await readFile(file, 'utf8'));
 const reference = await json(referenceFile), root = resolve(project);
@@ -105,10 +106,21 @@ const compared = compareViewReference(graph, reference, targetsForAction);
 const report = { ...provenance,
   method: reference.method, adjudication: reference.adjudication, exclusions: reference.excluded,
   scope: reference.scope, limits: reference.limits,
-  meaning: 'Matched means distinct source evidence covers the reviewed view: route access, an exact finite hook state with a rendered body, a precise controller target, or a reviewed render branch/component and JSX caller. Coverage distinguishes executable actions from source-only facts. Source-only facts do not authorize dispatch, account overrides, form submission, or fabrication of server results. Unclassified source candidates include inline UI and are not flow screens or captured screenshots.',
+  meaning: 'Matched means distinct source evidence covers the reviewed view. Coverage separates route/action paths, temporary UI preview plans, and source-only facts. A plan is not a successful screenshot. Preview plans retain real data and leave account/backend state unchanged. With --capture-map, capture counts require saved automatic PNGs from the same source, and distinguish live views from UI previews. Unclassified source candidates include inline UI and are not flow screens.',
   files: graph.files, scanMs: Math.round(graph.scanMs), registeredRouteNames: new Set(graph.nodes.filter(node => node.kind === 'screen').map(node => node.name)).size,
   ...compared };
+if(option('--capture-map')){
+  const map=resolve(option('--capture-map')),run=await json(map),verified=new Set();
+  if(!/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(run.id))throw new Error('Invalid saved capture run.');
+  for(const node of run.nodes??[]){
+    if(node.status!=='captured'||node.capture==='observed'||!/^[-a-z\d]{1,64}$/.test(node.id)||node.image!==`mobile-flow://${run.id}/${node.id}`)continue;
+    let file;try{file=await open(join(dirname(map),`${node.id}.png`),'r');const header=Buffer.alloc(24);await file.read(header,0,24,0);
+      if(header.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))&&header.readUInt32BE(16)>0&&header.readUInt32BE(20)>0)verified.add(node.id);
+    }catch{/* Missing image files never count as successful captures. */}finally{await file?.close();}
+  }
+  report.capture=compareFlowCapture(graph,compared,run,verified);
+}
 if (option('--output')) await writeFile(option('--output'), JSON.stringify(report, null, 2) + '\n');
 console.log(JSON.stringify({ ...report, method: undefined, adjudication: undefined, exclusions: report.exclusions.length,
-  rows: undefined, unclassifiedDestinations: report.unclassifiedDestinations.length, collisions: report.collisions.length }, null, 2));
+  rows: undefined, capture:report.capture?{...report.capture,rows:undefined}:undefined,unclassifiedDestinations: report.unclassifiedDestinations.length, collisions: report.collisions.length }, null, 2));
 if(options.includes('--strict')&&report.matchedViews!==report.manualViews)process.exitCode=1;

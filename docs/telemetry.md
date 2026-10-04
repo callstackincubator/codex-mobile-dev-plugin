@@ -171,6 +171,16 @@ in a separate local file and stays out of canvas polling and runtime injection.
 Existing checkpoint timings still cover active map writes. Source, guards, state
 values, paths and controller identities remain local and never become metric
 attributes.
+Since 0.1.135, `app_flow.source_catalog` also includes compiling finite UI preview
+plans. `app_flow.preview_plans` counts those plans before live binding; it does not
+measure successful screenshots. `app_flow.previews_captured` and
+`app_flow.previews_blocked` count temporary preview nodes at the end of a run.
+Existing presentation counts include those nodes. Binding, discovery, capture and
+readiness timings cover the new reducer/shared-state path with their prior units
+and boundaries. The full source catalog still stays out of runtime injection;
+only compact plans enter the runtime. All new metrics use the app-flow surface and
+platform attributes. Source hashes, fact IDs, state fields and copied app data stay
+local and never enter telemetry.
 Since 0.1.116, discovery reuses route matches and complete helper/component walks
 within each scan. PNG validation selects its filter once per row, and runtime
 lookups stop once they find the focused screen or first native bounds. Existing

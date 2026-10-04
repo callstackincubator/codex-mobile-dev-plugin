@@ -144,6 +144,21 @@ test('restoration waits for child sheet dismissal before resetting parent naviga
   assert.deepEqual(Array.from(app.context.order),['dismiss','dismissed','cleanup','navigation']);assert.equal(app.context.flow,undefined);
 });
 
+test('source previews wait for their proven body to mount instead of capturing the previous form',async t=>{
+  const app=runtime(t);await app.invoke({type:'restore'});app.context.focus=app.fiber;
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,(options)=>{const p=(${installPresentationRuntime.toString()})(options);return {...p,open:()=>({name:'Wizard',focus,expected:'Verify'})}})`,app.context);
+  await app.invoke({type:'inspect'});
+  const opened=await app.invoke({type:'presentation-open',id:'verify'});
+  assert.equal(opened.error,undefined);assert.equal(opened.ready,false);
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.equal((await app.invoke({type:'presentation-view'})).ready,false,'A stable old form is not the expected body');
+  const verified:any={type:function Verify(){},memoizedProps:{},return:app.fiber,child:app.native};
+  app.native.return=verified;app.fiber.child=verified;
+  assert.equal((await app.invoke({type:'presentation-view'})).ready,false);
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.equal((await app.invoke({type:'presentation-view'})).ready,true);
+});
+
 test('runtime strips credentials from observed route data',async t=>{
   const app=runtime(t);
   await app.invoke({type:'open',path:['Profile'],params:{id:'real',accessToken:'secret',password:'secret',nested:{cookie:'secret',id:'safe'}},timeoutMs:300});

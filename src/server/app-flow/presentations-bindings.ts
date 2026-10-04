@@ -21,6 +21,7 @@ export async function bindPresentationSites(base: string, root: string, bindings
       for(const action of actions){
         const sites=[{file:action.file,loc:action.source,id:action.id}];
         if(action.effect?.kind==='control'&&action.effect.target)sites.push({file:action.effect.target.file,loc:action.effect.target.source,id:`${action.id}:target`});
+        for(const entry of action.consumer?.entries??[])sites.push({file:entry.file,loc:entry.source,id:`${action.id}:consumer`});
         for(const site of sites){
           const loc=site.loc,line=frame.lineNumber!,column=frame.column;
           if(site.file!==file||!loc||line<loc.line||line>loc.endLine)continue;
@@ -29,7 +30,8 @@ export async function bindPresentationSites(base: string, root: string, bindings
         }
       }
     }else{
-      const candidates=states.filter(site=>site.file===file&&frame.lineNumber!>=site.line&&frame.lineNumber!<=site.endLine);
+      const candidates=states.filter(site=>site.file===file&&frame.lineNumber!>=site.line&&frame.lineNumber!<=site.endLine&&
+        (frame.column===undefined||site.endColumn===undefined||!(frame.lineNumber===site.line&&frame.column<site.column||frame.lineNumber===site.endLine&&frame.column>=site.endColumn)));
       if(candidates.length===1&&!resolvedStates.has(binding.id)){resolvedStates.add(binding.id);matches.push({binding:binding.id,site:candidates[0].id});}
     }
   };

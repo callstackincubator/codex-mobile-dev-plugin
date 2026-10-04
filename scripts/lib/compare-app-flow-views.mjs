@@ -17,9 +17,10 @@ const controlMatches = (selector, target) => (selector.prop === undefined || sel
 export function compareViewReference(graph, reference, targetsForAction) {
   const states = new Map([...(graph.presentations?.states ?? []),...(graph.presentations?.viewStates ?? [])].map(site => [site.id, site]));
   const groups = new Map();
-  for (const action of graph.presentations?.actions ?? []) {
+  for (const action of [...(graph.presentations?.actions ?? []),...(graph.presentations?.previews??[])]) {
     const key = presentationDestination(action);
-    const group = groups.get(key) ?? { key, actions: [], targets: [], executable: true };
+    const group = groups.get(key) ?? { key, actions: [], targets: [], executable: action.preview?'preview':'action' };
+    if(!action.preview)group.executable='action';
     group.actions.push(action);
     if (action.effect.kind === 'control') group.targets.push(...targetsForAction(action));
     groups.set(key, group);
@@ -63,9 +64,9 @@ export function compareViewReference(graph, reference, targetsForAction) {
       const results = row.selectors.map(selector => matches(selector, group)).filter(Boolean);
       const controls = row.selectors.filter(selector => selector.control);
       const covered = group.targets.length && group.targets.every(target => controls.some(selector => controlMatches(selector.control, target)));
-      return results.length ? [{ key: group.key, evidence: group.executable?'action':'source', result: covered || results.includes('exact') ? 'exact' : 'ambiguous' }] : [];
+      return results.length ? [{ key: group.key, evidence: group.executable??'source', result: covered || results.includes('exact') ? 'exact' : 'ambiguous' }] : [];
     });
-    return { ...row, coverage:routeMatches(row)?'route':candidates.some(c=>c.result==='exact'&&c.evidence==='action')?'action':'source', status: routeMatches(row) || candidates.some(candidate => candidate.result === 'exact') ? 'matched'
+    return { ...row, coverage:routeMatches(row)?'route':candidates.some(c=>c.result==='exact'&&c.evidence==='action')?'action':candidates.some(c=>c.result==='exact'&&c.evidence==='preview')?'preview':'source', status: routeMatches(row) || candidates.some(candidate => candidate.result === 'exact') ? 'matched'
       : candidates.length ? 'ambiguous' : 'missing', candidates };
   });
   // Several distinct views cannot all be credited to one collapsed destination.
@@ -91,8 +92,11 @@ export function compareViewReference(graph, reference, targetsForAction) {
   return {
     manualViews: rows.length, matchedViews: rows.filter(row => row.status === 'matched').length, byCategory,
     rawPresentationActions: graph.presentations?.actions.length ?? 0, presentationDestinations: [...groups.values()].filter(group=>group.executable).length,
+    rawPreviewPlans:graph.presentations?.previews?.length??0,
     sourceCandidates:graph.presentations?.views?.length??0,
-    actionableViews:rows.filter(row=>row.status==='matched'&&row.coverage!=='source').length,
+    actionableViews:rows.filter(row=>row.status==='matched'&&['route','action'].includes(row.coverage)).length,
+    previewPlannedViews:rows.filter(row=>row.status==='matched'&&row.coverage==='preview').length,
+    plannedViews:rows.filter(row=>row.status==='matched'&&row.coverage!=='source').length,
     sourceOnlyViews:rows.filter(row=>row.status==='matched'&&row.coverage==='source').length,
     collisions,
     unclassifiedSourceCandidates:[...groups.values()].filter(group=>!group.executable&&!claims.has(group.key)).length,

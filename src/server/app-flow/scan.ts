@@ -7,6 +7,7 @@ import { missingFlowParams } from "../../shared/app-flow.ts";
 import { sourceLinkMatches, sourceLinkReader } from "./source-links.ts";
 import { scanPresentations } from './presentations-source.ts';
 import { scanSourceViews } from './views-source.ts';
+import { addSourcePreviewPlans } from './preview-plans.ts';
 
 const ignored = new Set(["node_modules", ".git", ".expo", ".next", "dist", "build", "ios", "android", "vendor", "coverage", "__tests__", "__mocks__"]);
 const extensions = [".tsx", ".ts", ".jsx", ".js"];
@@ -432,11 +433,13 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
   graph.presentations = scanPresentations(units, root, (unit, name) => symbol(units.get(unit.file)!, name));
   const catalogStarted = performance.now();
   const catalog = scanSourceViews(units, root, (unit, name) => symbol(units.get(unit.file)!, name));
-  graph.catalogMs = performance.now() - catalogStarted;
-  // Source-only views keep their data dependencies. Do not expose them as
-  // executable transitions or infer that a container covers every inner form.
   graph.presentations.views = catalog.views;
   graph.presentations.viewStates = catalog.states;
+  addSourcePreviewPlans(graph.presentations);
+  graph.catalogMs = performance.now() - catalogStarted;
+  const sourceHash=createHash('sha256').update(platform);for(const unit of [...units.values()].sort((a,b)=>a.file.localeCompare(b.file))){sourceHash.update(relative(root,unit.file));sourceHash.update('\0');sourceHash.update(unit.ast.text);sourceHash.update('\0');}graph.sourceHash=sourceHash.digest('hex');
+  // Source facts remain separate. Only finite presentation selectors and exact
+  // controller targets become plans; runtime still proves their live bindings.
   if (!graph.nodes.length) warnings.push("No supported route declarations found. Runtime discovery may still find mounted navigators.");
   if (graph.nodes.length >= 1500) warnings.push("Discovery reached the 1,500-node limit.");
   graph.warnings = [...new Set(warnings)].slice(0, 40);

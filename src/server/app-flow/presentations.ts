@@ -24,7 +24,8 @@ export class FlowPresentationCapture {
   private run: FlowRun; private root: string; private directory: string; private signal: AbortSignal; private changed: () => Promise<void>;
   constructor(run: FlowRun, root: string, directory: string, signal: AbortSignal, changed: () => Promise<void>) {
     this.run=run; this.root=root; this.directory=directory; this.signal=signal; this.changed=changed;
-    this.catalog = {states: run.presentations?.states ?? [], actions: run.presentations?.actions ?? []};
+    const catalog=run.presentations;
+    this.catalog = {states: [...new Map([...(catalog?.states??[]),...(catalog?.previewStates??[])].map(site=>[site.id,site])).values()], actions: [...(catalog?.actions??[]),...(catalog?.previews??[])]};
   }
   get enabled() { return this.catalog.actions.length > 0; }
   async setup(backend: FlowBackend) {
@@ -42,6 +43,7 @@ export class FlowPresentationCapture {
       this.signal.throwIfAborted();
       view = await backend.runtime.invoke({type: 'presentation-view'}, 2000);
       if (view.error) {
+        if(view.error==='The temporary presentation preview failed.')return view;
         const error = new Error('Presentation inspection is unavailable.');
         captureServerError(error, 'app_flow.presentation');
         throw error;
@@ -72,7 +74,8 @@ export class FlowPresentationCapture {
     await writeFile(join(this.directory, this.run.id, `${node.id}.png`), bytes, {mode: 0o600});
     this.previous={key:view.key,bytes};
     node.image = `mobile-flow://${this.run.id}/${node.id}`;
-    node.status = 'captured'; node.reason = 'Presentation captured; content completeness is not verified.';
+    node.imageSourceHash=this.run.sourceHash;
+    node.status = 'captured'; node.reason = node.presentation?.preview?'UI preview captured; backend conditions are unchanged.':'Presentation captured; content completeness is not verified.';
     this.run.revision++;
     return true;
   }
@@ -104,6 +107,10 @@ export class FlowPresentationCapture {
     try {
       // Newly mounted forms can introduce hooks absent from the initial tree.
       await this.setup(backend);
+      if(this.catalog.actions.some(action=>action.views?.length)){
+        const active=await backend.runtime.invoke({type:'presentation-active'},2000);
+        if(Array.isArray(active)&&active.length){base.sourceViews=[...new Set([...(base.sourceViews??[]),...active])];this.run.revision++;}
+      }
       const available: Action[] = await backend.runtime.invoke({type: 'presentations'}, 2000);
       for (const action of available) {
         const source = this.catalog.actions.find(item => item.id === action.id);
@@ -114,7 +121,7 @@ export class FlowPresentationCapture {
         let node = this.run.nodes.find(item => item.id === id);
         if (!node) {
           node = {id, name: source.name, kind: 'screen', path: [], required: [], status: 'pending', file: source.file, line: source.line,
-            presentation: {actions: [...(base.presentation?.actions ?? []), action.id], projections: base.presentation?.projections?.slice(), basePath: base.presentation?.basePath ?? base.path, baseParams: base.presentation?.baseParams ?? base.params, expo: base.presentation?.expo ?? base.component === 'expo-router'}};
+            sourceViews:source.views?.slice(),presentation: {actions: [...(base.presentation?.actions ?? []), action.id], preview:source.preview||base.presentation?.preview, projections: base.presentation?.projections?.slice(), basePath: base.presentation?.basePath ?? base.path, baseParams: base.presentation?.baseParams ?? base.params, expo: base.presentation?.expo ?? base.component === 'expo-router'}};
           this.run.nodes.push(node); this.run.revision++;
         } else if (node.status === 'captured' && !this.visited.has(id)) {
           // Reopen kept previews once to discover children after a reconnect.
@@ -155,8 +162,8 @@ export class FlowPresentationCapture {
           if (projected.error) { node.status = 'blocked'; node.reason = 'The saved presentation preview is no longer available.'; return; }
         }
         view = await this.settled(backend, timeout);
-        if (view.key === before.key) { node.status = 'blocked'; node.reason = 'The entry did not open a new presentation.'; return; }
-        if (!view.ready) { node.status = 'pending'; node.reason = 'The presentation did not finish rendering.'; return; }
+        if (view.key === before.key&&view.signature===before.signature) { node.status = 'blocked'; node.reason = 'The entry did not open a new presentation.'; return; }
+        if (!view.ready) { node.status = view.error?'blocked':'pending'; node.reason = view.error?'The temporary UI preview could not render with real app data.':'The presentation did not finish rendering.'; return; }
       }
       view ??= await this.settled(backend, timeout);
       if (plan.entryKey && view.key !== plan.entryKey) { node.status = 'blocked'; node.reason = 'The app entry state has changed. Start a fresh map.'; return; }
