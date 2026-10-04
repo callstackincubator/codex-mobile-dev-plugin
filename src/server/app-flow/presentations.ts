@@ -24,7 +24,7 @@ export class FlowPresentationCapture {
   private run: FlowRun; private root: string; private directory: string; private signal: AbortSignal; private changed: () => Promise<void>;
   constructor(run: FlowRun, root: string, directory: string, signal: AbortSignal, changed: () => Promise<void>) {
     this.run=run; this.root=root; this.directory=directory; this.signal=signal; this.changed=changed;
-    this.catalog = run.presentations ?? {states: [], actions: []};
+    this.catalog = {states: run.presentations?.states ?? [], actions: run.presentations?.actions ?? []};
   }
   get enabled() { return this.catalog.actions.length > 0; }
   async setup(backend: FlowBackend) {

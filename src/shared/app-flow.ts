@@ -34,11 +34,22 @@ export type FlowPresentationAction = {
   trigger?: Record<string,string|number|boolean>;
   handler?: string;
   guard?: FlowUiCondition;
-  effect: { kind: 'state'; site: string; path: string[]; value: unknown } | { kind: 'control'; component: string; prop: string; method: string; close: string | string[] };
+  effect: { kind: 'state'; site: string; path: string[]; value: unknown } | { kind: 'control'; component: string; prop: string; method: string; close: string | string[]; target?: {file: string; owner: string; line: number; source: {line: number; column: number; endLine: number; endColumn: number}} };
 };
 export type FlowUiCondition = { prop: string[] } | { value: unknown } | { op: '!' | '&&' | '||' | '===' | '!==' | '==' | '!='; args: FlowUiCondition[] };
-export type FlowPresentations = { states: FlowStateSite[]; actions: FlowPresentationAction[] };
-export type FlowGraph = { presentations?: FlowPresentations; links?: FlowLink[]; nodes: FlowNode[]; edges: FlowEdge[]; warnings: string[]; files: number; scanMs: number };
+export type FlowSourceView = {
+  id: string; name: string; file: string; owner: string; line: number;
+  kind: 'state' | 'control' | 'branch' | 'component';
+  source: {line: number; column: number; endLine: number; endColumn: number};
+  components: {file: string; component: string}[];
+  state?: {site: string; path: string[]; value: unknown};
+  control?: {component: string; prop: string; boundary: boolean; generic: boolean};
+  branch?: {condition: string; side: 'true' | 'false' | 'case'};
+  availability: 'observed-only';
+  entries?: {file: string; line: number; owner: string}[];
+};
+export type FlowPresentations = { states: FlowStateSite[]; actions: FlowPresentationAction[]; views?: FlowSourceView[]; viewStates?: FlowStateSite[] };
+export type FlowGraph = { presentations?: FlowPresentations; catalogMs?: number; links?: FlowLink[]; nodes: FlowNode[]; edges: FlowEdge[]; warnings: string[]; files: number; scanMs: number };
 export type FlowRun = FlowGraph & {
   id: string;
   phase: "scanning" | "connecting" | "reconnecting" | "capturing" | "recording" | "finishing" | "complete" | "stopped" | "failed";
@@ -51,8 +62,13 @@ export type FlowRun = FlowGraph & {
   error?: string;
   revision: number;
   retrying?: boolean;
+  sourceCatalogKey?: string;
   ai: "off" | "waiting" | "resolving" | "done" | "unavailable";
 };
+/** Source facts are immutable scan data, not canvas polling data. */
+export function publicFlowRun(run: FlowRun): FlowRun {
+  return {...run,presentations:run.presentations?{states:run.presentations.states,actions:run.presentations.actions}:undefined};
+}
 export type FlowResolution = { nodeId: string; params: FlowParams };
 export const flowRunning = (run?: FlowRun) => !!run && ["scanning", "connecting", "reconnecting", "capturing", "recording", "finishing"].includes(run.phase);
 export function flowProgress(run: FlowRun) {

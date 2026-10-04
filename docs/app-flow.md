@@ -103,6 +103,13 @@ render effects, and controller open/close methods can run their own effects. App
 cannot undo those effects. Unsupported loaders and native animations can still need
 app instrumentation. It does not claim a complete map of every app.
 
+Source discovery also keeps a separate catalog of reducer steps, shared hook/context
+state, guarded render branches, and exact sheet targets. It records these views even
+when their data or account state is unavailable. These source facts are not capture
+plans: they do not dispatch reducers, change auth, or invent backend results. The
+catalog stays out of canvas polling and runtime injection, and saves once alongside
+the map for source inspection.
+
 ## Record steps that need input
 
 Choose **Record a flow**, give it a name, and open its first screen in the app.
@@ -149,5 +156,5 @@ flow names remain local. Error and timeout cards remain in the map with their re
 
 The [Bluesky source audit](app-flow-bluesky-audit.md) compares an independently
 reviewed list of routes, guarded forms, sheets and prompts with source extraction.
-It includes the full inventory, known gaps and a command to repeat the comparison.
+It includes the full inventory, capture limits and a strict command to repeat the comparison.
 Source matches do not confirm screenshot capture or availability in one session.

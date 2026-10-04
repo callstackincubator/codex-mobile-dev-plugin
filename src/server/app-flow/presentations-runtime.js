@@ -68,7 +68,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(offset>0)return page(offset);
     // JSX creation stacks identify the actual entry, even when unrelated
     // components and callbacks have identical names. Never invoke the callback.
-    const targets=new Map();for(const action of catalog.actions){const names=targets.get(action.component)??new Set();names.add(action.owner);targets.set(action.component,names);}
+    const targets=new Map();for(const action of catalog.actions){for(const [component,owner]of [[action.component,action.owner],...(action.effect.kind==='control'&&action.effect.target?[[action.effect.component,action.effect.target.owner]]:[])]){const names=targets.get(component)??new Set();names.add(owner);targets.set(component,names);}}
     const mounted=new Set();fibers(fiber=>{mounted.add(fiber);const names=targets.get(name(fiber));if(!names)return;for(let parent=fiber.return,n=0;parent&&n++<100;parent=parent.return)if(names.has(name(parent))){entry(fiber);break;}});
     for(const [id,record]of entries)if(!mounted.has(record.fiber)&&!mounted.has(record.fiber.alternate))entries.delete(id);
     collected=[...bindings.values(),...entries.values()].filter(b=>!b.site&&!b.checked).map(b=>({id:b.id,kind:b.kind,owner:name(b.fiber),stack:(b.stack??'').slice(0,8000),source:b.source}));
@@ -201,7 +201,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       return {owner,binding};
     }
     if(action.effect.kind==='control'){
-      const targets=(tree.names.get(action.effect.component)??[]).filter(fiber=>tree.inside(fiber,owner)).flatMap(fiber=>{
+      const targets=(tree.names.get(action.effect.component)??[]).filter(fiber=>tree.inside(fiber,owner)&&(!action.effect.target||entry(fiber)?.actions.has(`${action.id}:target`))).flatMap(fiber=>{
         const value=action.effect.prop==='ref'?fiber.ref?.current??fiber.memoizedProps?.ref?.current:fiber.memoizedProps?.[action.effect.prop];
         const close=(Array.isArray(action.effect.close)?action.effect.close:[action.effect.close]).find(key=>typeof value?.[key]==='function');
         return value&&typeof value[action.effect.method]==='function'&&close?[{fiber,value,close}]:[];

@@ -64,9 +64,11 @@ test('automatic local forms report bounded capture and binding costs without sou
     transport:()=>({async send(envelope){envelopes.push(envelope);return {statusCode:200}},async flush(){return true}})});
   const directory=await mkdtemp(join(tmpdir(),'flow-presentation-metrics-'));let opened=false;
   const action:any={id:'PRIVATE_ACTION',name:'PRIVATE_FORM',file:'PRIVATE_SOURCE',line:12,owner:'PRIVATE_OWNER',component:'PRIVATE_BUTTON',prop:'onPress',effect:{kind:'state',site:'PRIVATE_SITE',path:['PRIVATE_FIELD'],value:'PRIVATE_STATE'}};
-  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:3,warnings:[],nodes:[],edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>({
+  const view:any={id:'PRIVATE_CATALOG_VIEW',name:'PRIVATE_CATALOG_FORM',file:'PRIVATE_CATALOG_SOURCE',availability:'observed-only'};
+  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:3,catalogMs:1,warnings:[],nodes:[],edges:[],presentations:{states:[],actions:[action],views:[view],viewStates:[]}}),connect:async()=>({
     runtime:{async close(){},async invoke(command:any){
       if(command.type==='inspect')return {available:false};
+      if(command.type==='presentation-setup')assert.equal(command.catalog.views,undefined);
       if(command.type==='presentation-view')return {key:opened?'PRIVATE_FORM':'PRIVATE_ENTRY',signature:'PRIVATE_CONTENT',ready:true,found:true};
       if(command.type==='presentation-checkpoint')return {level:0};
       if(command.type==='presentations')return opened?[]:[action];
@@ -80,7 +82,7 @@ test('automatic local forms report bounded capture and binding costs without sou
   while(flowRunning(runs.read(run.id)))await new Promise(resolve=>setTimeout(resolve,5));
   await runs.close();await Sentry.close();
   const metrics=JSON.stringify(envelopes.flatMap(envelope=>envelope[1]).filter(item=>item[0].type==='trace_metric'));
-  for(const name of ['app_flow.presentations','app_flow.presentations_captured','app_flow.presentation.mean','app_flow.presentation_binding.p95','app_flow.presentation_discovery.mean','app-flow','device_platform'])contains(metrics,name);
+  for(const name of ['app_flow.source_catalog','app_flow.source_candidates','app_flow.presentations','app_flow.presentations_captured','app_flow.presentation.mean','app_flow.presentation_binding.p95','app_flow.presentation_discovery.mean','app-flow','device_platform'])contains(metrics,name);
   contains(metrics,'PRIVATE_',false);
 });
 

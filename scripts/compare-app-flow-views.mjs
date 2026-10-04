@@ -7,7 +7,7 @@ import { scanAppFlow } from '../src/server/app-flow/scan.ts';
 import { compareViewReference } from './lib/compare-app-flow-views.mjs';
 
 const [project, referenceFile, ...options] = process.argv.slice(2);
-if (!project || !referenceFile) throw new Error('Usage: node scripts/compare-app-flow-views.mjs PROJECT REFERENCE [--snapshot GRAPH.json] [--write-snapshot GRAPH.json] [--output REPORT.json]');
+if (!project || !referenceFile) throw new Error('Usage: node scripts/compare-app-flow-views.mjs PROJECT REFERENCE [--snapshot GRAPH.json] [--write-snapshot GRAPH.json] [--output REPORT.json] [--strict]');
 const option = name => { const index = options.indexOf(name); return index < 0 ? undefined : options[index + 1]; };
 const json = async file => JSON.parse(await readFile(file, 'utf8'));
 const reference = await json(referenceFile), root = resolve(project);
@@ -82,6 +82,8 @@ const targetsForAction = action => {
     if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText().split('.').at(-1) === action.effect.component &&
       node.attributes.properties.some(prop => ts.isJsxAttribute(prop) && prop.name.getText() === action.effect.prop && prop.initializer) &&
       owner(node) && ownerName(owner(node)) === action.owner) {
+      const target = action.effect.target;
+      if (target && (target.file !== action.file || target.line !== unit.ast.getLineAndCharacterOfPosition(node.getStart()).line + 1)) return;
       const resolved = symbol(unit.file, node.tagName.getText());
       targets.push({ file: action.file, line: unit.ast.getLineAndCharacterOfPosition(node.getStart()).line + 1, prop: action.effect.prop,
         owner: ownerName(owner(node)), generic: node.tagName.getText().includes('.'), definition: resolved });
@@ -103,9 +105,10 @@ const compared = compareViewReference(graph, reference, targetsForAction);
 const report = { ...provenance,
   method: reference.method, adjudication: reference.adjudication, exclusions: reference.excluded,
   scope: reference.scope, limits: reference.limits,
-  meaning: 'Matched means the extractor has a distinct destination with the reviewed route access, exact finite state, or unambiguous custom control identity. A container or candidate is not a captured screenshot. Unclassified destinations require source review, not automatic rejection.',
+  meaning: 'Matched means distinct source evidence covers the reviewed view: route access, an exact finite hook state with a rendered body, a precise controller target, or a reviewed render branch/component and JSX caller. Coverage distinguishes executable actions from source-only facts. Source-only facts do not authorize dispatch, account overrides, form submission, or fabrication of server results. Unclassified source candidates include inline UI and are not flow screens or captured screenshots.',
   files: graph.files, scanMs: Math.round(graph.scanMs), registeredRouteNames: new Set(graph.nodes.filter(node => node.kind === 'screen').map(node => node.name)).size,
   ...compared };
 if (option('--output')) await writeFile(option('--output'), JSON.stringify(report, null, 2) + '\n');
 console.log(JSON.stringify({ ...report, method: undefined, adjudication: undefined, exclusions: report.exclusions.length,
   rows: undefined, unclassifiedDestinations: report.unclassifiedDestinations.length, collisions: report.collisions.length }, null, 2));
+if(options.includes('--strict')&&report.matchedViews!==report.manualViews)process.exitCode=1;

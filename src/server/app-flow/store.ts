@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FlowResolution, FlowRun } from '../../shared/app-flow.ts';
+import {publicFlowRun} from '../../shared/app-flow.ts';
 import type { FlowStart, FlowTargetIdentity, RuntimeInfo } from './runs.ts';
 
 export type SavedFlow = { run: FlowRun; input?: FlowStart; info?: RuntimeInfo; target?: FlowTargetIdentity };
@@ -12,6 +13,8 @@ const uuid = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
 /** Shared by panel and model MCP processes. Only the device lease holder captures. */
 export class FlowStore {
   readonly directory: string;
+  private catalogs = new WeakMap<object,{key:string;value:unknown}>();
+  private savedCatalogs = new Map<string,string>();
   constructor(directory: string) { this.directory = directory; }
   private folder(id: string) {
     if (!uuid.test(id)) throw new Error('Invalid App Flow run.');
@@ -32,10 +35,18 @@ export class FlowStore {
   async save(value: SavedFlow) {
     const folder = this.folder(value.run.id);
     await mkdir(folder, { recursive: true, mode: 0o700 });
-    await this.write(join(folder, 'session.json'), value);
-    await this.write(join(folder, 'map.json'), value.run);
+    const views=value.run.presentations?.views;
+    const run=publicFlowRun(value.run);
+    if(views){
+      let catalog=this.catalogs.get(views);
+      if(!catalog){const data={views,viewStates:value.run.presentations?.viewStates??[]};catalog={key:createHash('sha256').update(JSON.stringify(data)).digest('hex'),value:data};this.catalogs.set(views,catalog);}
+      if(this.savedCatalogs.get(run.id)!==catalog.key){await this.write(join(folder,`source-${catalog.key}.json`),catalog.value);this.savedCatalogs.set(run.id,catalog.key);}
+      run.sourceCatalogKey=catalog.key;
+    }
+    await this.write(join(folder, 'session.json'), {...value,run});
+    await this.write(join(folder, 'map.json'), run);
   }
-  async load(id: string): Promise<SavedFlow> {
+  async load(id: string, includeCatalog = true): Promise<SavedFlow> {
     const folder = this.folder(id);
     let value: SavedFlow;
     try { value = await this.json(join(folder, 'session.json')); }
@@ -45,6 +56,13 @@ export class FlowStore {
       catch { throw new Error('This saved App Flow map could not be found.'); }
     }
     if (value.run?.id !== id || !Array.isArray(value.run.nodes) || !Array.isArray(value.run.edges)) throw new Error('Invalid saved App Flow map.');
+    if(includeCatalog&&value.run.sourceCatalogKey){
+      if(!/^[a-f\d]{64}$/.test(value.run.sourceCatalogKey))throw new Error('Invalid saved App Flow source catalog.');
+      const catalog=await this.json(join(folder,`source-${value.run.sourceCatalogKey}.json`));
+      if(!Array.isArray(catalog.views)||!Array.isArray(catalog.viewStates)||!value.run.presentations)throw new Error('Invalid saved App Flow source catalog.');
+      Object.assign(value.run.presentations,catalog);
+      this.catalogs.set(catalog.views,{key:value.run.sourceCatalogKey,value:catalog});this.savedCatalogs.set(id,value.run.sourceCatalogKey);
+    }
     return value;
   }
   async enqueue(id: string, command: FlowCommand) {

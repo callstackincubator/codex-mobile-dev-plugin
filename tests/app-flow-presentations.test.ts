@@ -262,8 +262,10 @@ test('source supports optional sheet refs, custom controller props and false-val
   const root=await fixture(t,{'App.tsx':`import {useState,useRef} from 'react';export function App(){const [register,setRegister]=useState(true);const sheet=useRef();const menu=useMenu();return <><Button label="sheet" onPress={()=>sheet.current?.present()}/><Sheet ref={sheet}/><Button label="menu" onPress={()=>menu.show()}/><Menu controller={menu}/>{register?<Register onPressLogin={()=>setRegister(false)}/>:<Login/>}</>}`});
   const actions=(await scanAppFlow(root,'ios')).presentations!.actions;
   assert.deepEqual(actions.map(a=>a.name),['Sheet','Menu','Login']);
-  assert.deepEqual(actions[0].effect,{kind:'control',component:'Sheet',prop:'ref',method:'present',close:['dismiss','close']});
-  assert.deepEqual(actions[1].effect,{kind:'control',component:'Menu',prop:'controller',method:'show',close:['hide','close','dismiss']});
+  const first=actions[0].effect as Extract<typeof actions[0]['effect'],{kind:'control'}>,second=actions[1].effect as typeof first;
+  assert.deepEqual({...first,target:undefined},{kind:'control',component:'Sheet',prop:'ref',method:'present',close:['dismiss','close'],target:undefined});
+  assert.deepEqual({...second,target:undefined},{kind:'control',component:'Menu',prop:'controller',method:'show',close:['hide','close','dismiss'],target:undefined});
+  assert.equal(first.target?.file,'App.tsx');assert.ok(first.target!.source.column<second.target!.source.column);
 });
 
 test('controller close pairs can use hide without a close method',async()=>{

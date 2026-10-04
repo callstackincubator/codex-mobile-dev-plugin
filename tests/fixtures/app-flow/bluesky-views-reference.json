@@ -13,7 +13,7 @@
     "A shared sheet container is not proof of all its nested states. Ambiguous generic controls or collapsed destination keys are not counted as exact matches.",
     "Expected list can have human omissions; evidence and exclusions make it reviewable and repeatable at this revision."
   ],
-  "adjudication": "After the first comparison, source review of unclassified wrappers added moderation appeal and suspension/gate bodies, split the eleven fixed notification settings subjects, added the nested moderation label appeal form, and linked existing shared report/trending/composer bodies to their caller identities. This corrected reference omissions and selectors, not production extraction.",
+  "adjudication": "After the first comparison, source review of unclassified wrappers added moderation appeal and suspension/gate bodies, split the eleven fixed notification settings subjects, added the nested moderation label appeal form, and linked existing shared report/trending/composer bodies to their caller identities. This corrected reference omissions and selectors, not production extraction. The complete catalog comparison adds exact JSX caller selectors for six shell gates, drawer and lightbox, and exact condition/side/body selectors for five server-result forms. These eleven rows previously had no testable selector. It also corrects the case of Wizard/State.tsx and pins the invite announcement to its own Dialog.Outer at line 84, not its wrapper or the shared invitation dialog.",
   "views": [
     {
       "id": "route:AboutSettings",
@@ -1795,9 +1795,24 @@
         {
           "file": "src/screens/SignupQueued.tsx",
           "line": 22
+        },
+        {
+          "file": "src/view/shell/createNativeStackNavigatorWithAuth.tsx",
+          "line": 128
         }
       ],
-      "selectors": [],
+      "selectors": [
+        {
+          "component": {
+            "file": "src/screens/SignupQueued.tsx",
+            "name": "SignupQueued",
+            "entry": {
+              "file": "src/view/shell/createNativeStackNavigatorWithAuth.tsx",
+              "line": 128
+            }
+          }
+        }
+      ],
       "condition": "Session signupQueued"
     },
     {
@@ -1830,9 +1845,24 @@
         {
           "file": "src/screens/Deactivated.tsx",
           "line": 33
+        },
+        {
+          "file": "src/view/shell/index.tsx",
+          "line": 242
         }
       ],
-      "selectors": [],
+      "selectors": [
+        {
+          "component": {
+            "file": "src/screens/Deactivated.tsx",
+            "name": "Deactivated",
+            "entry": {
+              "file": "src/view/shell/index.tsx",
+              "line": 242
+            }
+          }
+        }
+      ],
       "condition": "Account status deactivated"
     },
     {
@@ -1843,9 +1873,24 @@
         {
           "file": "src/ageAssurance/components/DataUnavailableScreen.tsx",
           "line": 9
+        },
+        {
+          "file": "src/view/shell/index.tsx",
+          "line": 246
         }
       ],
-      "selectors": [],
+      "selectors": [
+        {
+          "component": {
+            "file": "src/ageAssurance/components/DataUnavailableScreen.tsx",
+            "name": "DataUnavailableScreen",
+            "entry": {
+              "file": "src/view/shell/index.tsx",
+              "line": 246
+            }
+          }
+        }
+      ],
       "condition": "Age assurance account-data failure"
     },
     {
@@ -1856,9 +1901,24 @@
         {
           "file": "src/ageAssurance/components/NoAccessScreen.tsx",
           "line": 47
+        },
+        {
+          "file": "src/view/shell/index.tsx",
+          "line": 248
         }
       ],
-      "selectors": [],
+      "selectors": [
+        {
+          "component": {
+            "file": "src/ageAssurance/components/NoAccessScreen.tsx",
+            "name": "NoAccessScreen",
+            "entry": {
+              "file": "src/view/shell/index.tsx",
+              "line": 248
+            }
+          }
+        }
+      ],
       "condition": "Age assurance access none"
     },
     {
@@ -1869,9 +1929,24 @@
         {
           "file": "src/components/PolicyUpdateOverlay/index.tsx",
           "line": 15
+        },
+        {
+          "file": "src/view/shell/createNativeStackNavigatorWithAuth.tsx",
+          "line": 214
         }
       ],
-      "selectors": [],
+      "selectors": [
+        {
+          "component": {
+            "file": "src/components/PolicyUpdateOverlay/index.tsx",
+            "name": "PolicyUpdateOverlay",
+            "entry": {
+              "file": "src/view/shell/createNativeStackNavigatorWithAuth.tsx",
+              "line": 214
+            }
+          }
+        }
+      ],
       "condition": "Persisted policy update is incomplete"
     },
     {
@@ -1882,9 +1957,24 @@
         {
           "file": "src/ageAssurance/components/RedirectOverlay.tsx",
           "line": 133
+        },
+        {
+          "file": "src/view/shell/index.tsx",
+          "line": 255
         }
       ],
-      "selectors": [],
+      "selectors": [
+        {
+          "component": {
+            "file": "src/ageAssurance/components/RedirectOverlay.tsx",
+            "name": "RedirectOverlay",
+            "entry": {
+              "file": "src/view/shell/index.tsx",
+              "line": 255
+            }
+          }
+        }
+      ],
       "condition": "Age assurance callback for current account"
     },
     {
@@ -1968,14 +2058,14 @@
       "category": "flow-step",
       "evidence": [
         {
-          "file": "src/screens/StarterPack/Wizard/state.tsx",
+          "file": "src/screens/StarterPack/Wizard/State.tsx",
           "line": 172
         }
       ],
       "selectors": [
         {
           "state": {
-            "file": "src/screens/StarterPack/Wizard/state.tsx",
+            "file": "src/screens/StarterPack/Wizard/State.tsx",
             "line": 172,
             "path": [
               "currentStep"
@@ -1992,14 +2082,14 @@
       "category": "flow-step",
       "evidence": [
         {
-          "file": "src/screens/StarterPack/Wizard/state.tsx",
+          "file": "src/screens/StarterPack/Wizard/State.tsx",
           "line": 172
         }
       ],
       "selectors": [
         {
           "state": {
-            "file": "src/screens/StarterPack/Wizard/state.tsx",
+            "file": "src/screens/StarterPack/Wizard/State.tsx",
             "line": 172,
             "path": [
               "currentStep"
@@ -2656,13 +2746,17 @@
         {
           "file": "src/components/dialogs/nuxs/InviteFriendsAnnouncement.tsx",
           "line": 26
+        },
+        {
+          "file": "src/components/dialogs/nuxs/InviteFriendsAnnouncement.tsx",
+          "line": 84
         }
       ],
       "selectors": [
         {
           "control": {
             "file": "src/components/dialogs/nuxs/InviteFriendsAnnouncement.tsx",
-            "component": "InviteFriendsAnnouncement"
+            "line": 84
           }
         }
       ],
@@ -3611,13 +3705,21 @@
         {
           "file": "src/view/shell/Drawer.tsx",
           "line": 184
+        },
+        {
+          "file": "src/view/shell/index.tsx",
+          "line": 146
         }
       ],
       "selectors": [
         {
-          "control": {
+          "component": {
             "file": "src/view/shell/Drawer.tsx",
-            "component": "DrawerContent"
+            "name": "DrawerContent",
+            "entry": {
+              "file": "src/view/shell/index.tsx",
+              "line": 146
+            }
           }
         }
       ],
@@ -3631,13 +3733,21 @@
         {
           "file": "src/components/Lightbox/Lightbox.tsx",
           "line": 8
+        },
+        {
+          "file": "src/view/shell/index.tsx",
+          "line": 117
         }
       ],
       "selectors": [
         {
-          "control": {
+          "component": {
             "file": "src/components/Lightbox/Lightbox.tsx",
-            "component": "Lightbox"
+            "name": "Lightbox",
+            "entry": {
+              "file": "src/view/shell/index.tsx",
+              "line": 117
+            }
           }
         }
       ],
@@ -4552,7 +4662,16 @@
           "line": 155
         }
       ],
-      "selectors": [],
+      "selectors": [
+        {
+          "branch": {
+            "file": "src/screens/Takendown.tsx",
+            "condition": "isSuccess",
+            "side": "true",
+            "line": 150
+          }
+        }
+      ],
       "parent": "guard:takendown-appeal",
       "condition": "Appeal submission succeeded; no submission performed"
     },
@@ -4611,7 +4730,16 @@
           "line": 91
         }
       ],
-      "selectors": [],
+      "selectors": [
+        {
+          "branch": {
+            "file": "src/components/dialogs/BirthDateSettings.tsx",
+            "condition": "isBirthdateUpdateAllowed",
+            "side": "false",
+            "line": 91
+          }
+        }
+      ],
       "parent": "sheet:birthdate",
       "condition": "Recent birthdate change"
     },
@@ -4625,7 +4753,16 @@
           "line": 182
         }
       ],
-      "selectors": [],
+      "selectors": [
+        {
+          "branch": {
+            "file": "src/screens/Settings/components/AddAppPasswordDialog.tsx",
+            "condition": "!data",
+            "side": "false",
+            "line": 182
+          }
+        }
+      ],
       "parent": "sheet:app-password",
       "condition": "Server returned a newly created credential; never manufacture it"
     },
@@ -4639,7 +4776,16 @@
           "line": 229
         }
       ],
-      "selectors": [],
+      "selectors": [
+        {
+          "branch": {
+            "file": "src/components/ageAssurance/AgeAssuranceInitDialog.tsx",
+            "condition": "success",
+            "side": "true",
+            "line": 198
+          }
+        }
+      ],
       "parent": "sheet:age-init",
       "condition": "Age assurance begin response succeeded"
     },
@@ -4653,7 +4799,16 @@
           "line": 235
         }
       ],
-      "selectors": [],
+      "selectors": [
+        {
+          "branch": {
+            "file": "src/ageAssurance/components/RedirectOverlay.tsx",
+            "condition": "success",
+            "side": "true",
+            "line": 235
+          }
+        }
+      ],
       "parent": "guard:age-return",
       "condition": "Age assurance polling succeeded"
     },

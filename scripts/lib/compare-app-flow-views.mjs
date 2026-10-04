@@ -15,18 +15,33 @@ const controlMatches = (selector, target) => (selector.prop === undefined || sel
 
 /** Compare reviewed identities, never labels inferred from a whole render branch. */
 export function compareViewReference(graph, reference, targetsForAction) {
-  const states = new Map((graph.presentations?.states ?? []).map(site => [site.id, site]));
+  const states = new Map([...(graph.presentations?.states ?? []),...(graph.presentations?.viewStates ?? [])].map(site => [site.id, site]));
   const groups = new Map();
   for (const action of graph.presentations?.actions ?? []) {
     const key = presentationDestination(action);
-    const group = groups.get(key) ?? { key, actions: [], targets: [] };
+    const group = groups.get(key) ?? { key, actions: [], targets: [], executable: true };
     group.actions.push(action);
     if (action.effect.kind === 'control') group.targets.push(...targetsForAction(action));
     groups.set(key, group);
   }
+  for (const view of graph.presentations?.views ?? []) {
+    if (view.state) {
+      const effect = {kind:'state', ...view.state}, key = presentationDestination({effect});
+      const group = groups.get(key) ?? {key, actions:[{effect}], targets:[]};
+      group.views = [...(group.views ?? []), view]; groups.set(key, group);
+    } else if (view.control) {
+      const key = `source:${view.id}`, target = {file:view.file,line:view.line,prop:view.control.prop,owner:view.owner,generic:view.control.boundary&&view.control.generic,
+        definition:view.components.find(c=>c.component===view.control.component) ?? view.components[0]};
+      groups.set(key,{key,actions:[{effect:{kind:'control'}}],targets:[target],views:[view]});
+    } else groups.set(`source:${view.id}`,{key:`source:${view.id}`,actions:[{effect:{kind:view.kind}}],targets:[],views:[view]});
+  }
   for (const group of groups.values()) group.targets = [...new Map(group.targets.map(target => [JSON.stringify(target), target])).values()];
   const matches = (selector, group) => {
     const action = group.actions[0], effect = action.effect;
+    if (selector.component) return group.views?.some(view=>view.kind==='component'&&view.file===selector.component.file&&view.owner===selector.component.name&&
+      view.entries?.some(entry=>entry.file===selector.component.entry.file&&entry.line===selector.component.entry.line))?'exact':undefined;
+    if (selector.branch) return group.views?.some(view=>view.kind==='branch'&&view.file===selector.branch.file&&view.branch?.side===selector.branch.side&&
+      view.branch.condition.replace(/\s/g,'')===selector.branch.condition.replace(/\s/g,'')&&view.source.line<=selector.branch.line&&view.source.endLine>=selector.branch.line)?'exact':undefined;
     if (selector.state && effect.kind === 'state') {
       const site = states.get(effect.site), expected = selector.state;
       return site?.file === expected.file && site.line === expected.line &&
@@ -48,9 +63,9 @@ export function compareViewReference(graph, reference, targetsForAction) {
       const results = row.selectors.map(selector => matches(selector, group)).filter(Boolean);
       const controls = row.selectors.filter(selector => selector.control);
       const covered = group.targets.length && group.targets.every(target => controls.some(selector => controlMatches(selector.control, target)));
-      return results.length ? [{ key: group.key, result: covered || results.includes('exact') ? 'exact' : 'ambiguous' }] : [];
+      return results.length ? [{ key: group.key, evidence: group.executable?'action':'source', result: covered || results.includes('exact') ? 'exact' : 'ambiguous' }] : [];
     });
-    return { ...row, status: routeMatches(row) || candidates.some(candidate => candidate.result === 'exact') ? 'matched'
+    return { ...row, coverage:routeMatches(row)?'route':candidates.some(c=>c.result==='exact'&&c.evidence==='action')?'action':'source', status: routeMatches(row) || candidates.some(candidate => candidate.result === 'exact') ? 'matched'
       : candidates.length ? 'ambiguous' : 'missing', candidates };
   });
   // Several distinct views cannot all be credited to one collapsed destination.
@@ -75,9 +90,13 @@ export function compareViewReference(graph, reference, targetsForAction) {
   }));
   return {
     manualViews: rows.length, matchedViews: rows.filter(row => row.status === 'matched').length, byCategory,
-    rawPresentationActions: graph.presentations?.actions.length ?? 0, presentationDestinations: groups.size,
+    rawPresentationActions: graph.presentations?.actions.length ?? 0, presentationDestinations: [...groups.values()].filter(group=>group.executable).length,
+    sourceCandidates:graph.presentations?.views?.length??0,
+    actionableViews:rows.filter(row=>row.status==='matched'&&row.coverage!=='source').length,
+    sourceOnlyViews:rows.filter(row=>row.status==='matched'&&row.coverage==='source').length,
     collisions,
-    unclassifiedDestinations: [...groups.values()].filter(group => !claims.has(group.key)).map(group => ({
+    unclassifiedSourceCandidates:[...groups.values()].filter(group=>!group.executable&&!claims.has(group.key)).length,
+    unclassifiedDestinations: [...groups.values()].filter(group => group.executable&&!claims.has(group.key)).map(group => ({
       key: group.key, targets: group.targets, actions: group.actions.map(({ file, line, owner, name, effect }) => ({ file, line, owner, name, effect })),
     })),
     rows,

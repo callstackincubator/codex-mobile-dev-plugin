@@ -283,11 +283,12 @@ export function scanPresentations(units: Map<string,Unit>, root: string, symbol:
         const control=head(call.expression),reference=call.expression.getText().replace(/\?\./g,'.').includes('.current.');
         const targets:{node:ts.JsxOpeningLikeElement;prop:string}[]=[];
         const visit=(child:ts.Node)=>{if(ts.isFunctionLike(child)&&child!==fn)return;if(ts.isJsxOpeningElement(child)||ts.isJsxSelfClosingElement(child))for(const a of attributes(child)){const value=expression(a),prop=a.name.getText();if(value&&value.getText()===control&&(reference?prop==='ref':!/^on[A-Z]/.test(prop)))targets.push({node:child,prop});}ts.forEachChild(child,visit);};visit(fn.body);
-        if(!targets.length||new Set(targets.map(t=>`${t.node.tagName.getText()}:${t.prop}`)).size!==1)continue;const target=targets[0],targetComponent=target.node.tagName.getText().split('.').at(-1)!;
+        if(targets.length!==1)continue;const target=targets[0],targetComponent=target.node.tagName.getText().split('.').at(-1)!;
         // Data-dependent opening arguments cannot be fabricated.
         if(call.arguments.length)continue;
         const closes=m==='present'?['dismiss','close']:m==='show'?['hide','close','dismiss']:m==='expand'?['close','collapse','dismiss']:['close','dismiss','hide'];
-        controlAction={...base,id:key(`${base.id}:${targetComponent}:${call.expression.getText()}`),guard,name:targetComponent,effect:{kind:'control',component:targetComponent,prop:target.prop,method:m,close:closes}};actions.push(controlAction);
+        const targetStart=unit.ast.getLineAndCharacterOfPosition(target.node.getStart()),targetEnd=unit.ast.getLineAndCharacterOfPosition(target.node.getEnd());
+        controlAction={...base,id:key(`${base.id}:${targetComponent}:${call.expression.getText()}`),guard,name:targetComponent,effect:{kind:'control',component:targetComponent,prop:target.prop,method:m,close:closes,target:{file:base.file,owner:own,line:targetStart.line+1,source:{line:targetStart.line+1,column:targetStart.character,endLine:targetEnd.line+1,endColumn:targetEnd.character}}}};actions.push(controlAction);
       }
       if(controlAction)continue;
       if(!handler)continue;

@@ -162,6 +162,15 @@ Since 0.1.115, `app_flow.scan` also covers symbolic URL reads, re-export and laz
 import resolution, and parameter alternatives within the same scan boundary.
 Source evidence stays in the local graph and audit files; it adds no telemetry
 attributes. Repeated navigation edges collapse before runtime reachability checks.
+Since 0.1.134, `app_flow.scan` also includes the source catalog for reducer steps,
+shared hook/context state and guarded render bodies. `app_flow.source_catalog`
+measures that part in milliseconds; `app_flow.source_candidates` counts render
+facts, including inline UI, and does not measure reachable or captured screens.
+Both retain the app-flow surface and platform attributes. The catalog saves once
+in a separate local file and stays out of canvas polling and runtime injection.
+Existing checkpoint timings still cover active map writes. Source, guards, state
+values, paths and controller identities remain local and never become metric
+attributes.
 Since 0.1.116, discovery reuses route matches and complete helper/component walks
 within each scan. PNG validation selects its filter once per row, and runtime
 lookups stop once they find the focused screen or first native bounds. Existing

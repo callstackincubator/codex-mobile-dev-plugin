@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import * as Sentry from "@sentry/node";
-import { flowRunning, missingFlowParams, type FlowParams, type FlowResolution, type FlowRun } from "../../shared/app-flow.ts";
+import { flowRunning, missingFlowParams, publicFlowRun, type FlowParams, type FlowResolution, type FlowRun } from "../../shared/app-flow.ts";
 import { blankFlowFrame } from "./frame.ts";
 import { FlowReachability, type FlowEvidence } from "./reachability.ts";
 import type { scanAppFlow } from "./scan.ts";
@@ -64,7 +64,12 @@ export class AppFlowRuns {
     this.launch(active);
     return structuredClone(run);
   }
-  read(id: string): FlowRun { return structuredClone(this.get(id).run); }
+  read(id: string): FlowRun {
+    const run=this.get(id).run;
+    // The immutable source catalog belongs to inspection. Canvas polling only
+    // needs live capture data and must not clone or transfer the catalog.
+    return structuredClone(publicFlowRun(run));
+  }
   async record(input: FlowStart, name: string, id?: string): Promise<FlowRun> {
     this.makeRoom(id);
     const saved = id ? await this.saved(id) : undefined;
@@ -136,7 +141,8 @@ export class AppFlowRuns {
   }
   private persist(active: Active) {
     if (active.savedRevision === active.run.revision) return active.saving ?? Promise.resolve();
-    const value = structuredClone({ run: active.run, input: active.input, info: active.info, target: active.target });
+    const value = structuredClone({ run: publicFlowRun(active.run), input: active.input, info: active.info, target: active.target });
+    if(active.run.presentations?.views&&value.run.presentations){value.run.presentations.views=active.run.presentations.views;value.run.presentations.viewStates=active.run.presentations.viewStates;}
     active.savedRevision = value.run.revision;
     return active.saving = (active.saving ?? Promise.resolve()).catch(() => {}).then(async () => {
       const started = performance.now();
@@ -145,14 +151,14 @@ export class AppFlowRuns {
       finally { (active.checkpoints ??= new MeasurementWindow()).record(performance.now() - started); }
     });
   }
-  private async saved(id: string): Promise<SavedFlow> {
+  private async saved(id: string, includeCatalog = true): Promise<SavedFlow> {
     const active = this.sessions.get(id);
-    if (active && !active.settled) return { run: structuredClone(active.run), input: active.input, info: active.info, target: active.target };
-    return this.store.load(id);
+    if (active && !active.settled) {const run=this.read(id);if(includeCatalog)run.presentations=active.run.presentations;return {run,input:active.input,info:active.info,target:active.target};}
+    return this.store.load(id,includeCatalog);
   }
   async readShared(id: string, revision?: number) {
-    const { run } = await this.saved(id);
-    return run.revision === revision ? undefined : run;
+    const { run } = await this.saved(id,false);
+    return run.revision === revision ? undefined : publicFlowRun(run);
   }
   async contextShared(id: string) { return this.contextFor(await this.saved(id)); }
   async prepare(id: string, input?: FlowStart) {
@@ -321,7 +327,7 @@ export class AppFlowRuns {
       signal.throwIfAborted();
       // Do not render the unfiltered registration catalog while connecting. It
       // includes repeated screen instances and multiple source edges per pair.
-      Object.assign(run, { files: graph.files, scanMs: graph.scanMs, warnings: graph.warnings });
+      Object.assign(run, { files: graph.files, scanMs: graph.scanMs, catalogMs: graph.catalogMs, warnings: graph.warnings });
       const cached = this.resolved.get(this.cacheKey(input));
       for (const node of graph.nodes) { const params = cached?.get(node.id); if (params) { node.params = params; if (!missingFlowParams(node).length) node.status = "pending"; } }
       run.phase = "connecting"; run.revision++;
@@ -522,6 +528,8 @@ export class AppFlowRuns {
           if (values) for (const statistic of ["mean", "p95", "max"] as const) Sentry.metrics.gauge(`app_flow.${name}.${statistic}`, values[statistic], { unit: "millisecond", attributes });
         }
         Sentry.metrics.distribution("app_flow.scan", run.scanMs, { unit: "millisecond", attributes });
+        if(run.catalogMs!==undefined)Sentry.metrics.distribution("app_flow.source_catalog",run.catalogMs,{unit:"millisecond",attributes});
+        if(run.presentations?.views)Sentry.metrics.gauge("app_flow.source_candidates",run.presentations.views.length,{attributes});
         Sentry.metrics.distribution("app_flow.run", (run.finishedAt ?? Date.now()) - sessionStarted, { unit: "millisecond", attributes });
         Sentry.metrics.gauge("app_flow.routes", run.nodes.filter(node => node.kind === "screen" && node.capture !== 'observed' && !node.presentation).length, { attributes });
         Sentry.metrics.gauge("app_flow.captured", run.nodes.filter(node => node.status === "captured" && node.capture !== 'observed' && !node.presentation).length, { attributes });
