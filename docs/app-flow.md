@@ -146,3 +146,8 @@ Maps and PNG screenshots are saved under
 app data and are not telemetry. The panel retains the current map while open;
 saved context lets other MCP processes read and continue a map. Screenshots and
 flow names remain local. Error and timeout cards remain in the map with their reasons.
+
+The [Bluesky source audit](app-flow-bluesky-audit.md) compares an independently
+reviewed list of routes, guarded forms, sheets and prompts with source extraction.
+It includes the full inventory, known gaps and a command to repeat the comparison.
+Source matches do not confirm screenshot capture or availability in one session.

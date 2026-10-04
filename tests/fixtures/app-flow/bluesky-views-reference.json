@@ -1,0 +1,5858 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/bluesky-social/social-app",
+  "revision": "2d8e349afd92d2be3ff31f298bc27ab0d82c61cc",
+  "platform": "ios",
+  "routeReference": "bluesky-reference.json",
+  "scope": "Distinct app-owned navigator screens, full-body state guarded forms, custom sheets, stepped forms inside those sheets, and confirmation/information dialogs with a source UI, entry, feature or data path. Internal/debug builds, direct-link-only legacy routes and platform-external UI are separate.",
+  "method": "Independent reading of navigation, native auth wrapper, shell gates, each dialog boundary, actual native callers and reducer/state branches. Expected rows were authored before reading current presentation output. One view per body/form; wrappers, repeated openers, repeated tab registrations and same shared dialog body do not add views. First body of a registered wizard is included in its route row. Line evidence pins the reviewed source, not runtime availability.",
+  "limits": [
+    "This is a bounded source inventory, not a proof that a session can open every view. Feature flags, geography, account restrictions and server replies still apply.",
+    "No account mutations, permission prompts, logout, signup, reporting or secret generation were performed.",
+    "Not counted as separate screens: loading/empty/error variants inside the same form, inline route tabs, menus/selects/tooltips/autocomplete, keyboard, native OS pickers/share sheet, browser pages. Full-page shell gates and separately presented prompts remain counted.",
+    "A shared sheet container is not proof of all its nested states. Ambiguous generic controls or collapsed destination keys are not counted as exact matches.",
+    "Expected list can have human omissions; evidence and exclusions make it reviewable and repeatable at this revision."
+  ],
+  "adjudication": "After the first comparison, source review of unclassified wrappers added moderation appeal and suspension/gate bodies, split the eleven fixed notification settings subjects, added the nested moderation label appeal form, and linked existing shared report/trending/composer bodies to their caller identities. This corrected reference omissions and selectors, not production extraction.",
+  "views": [
+    {
+      "id": "route:AboutSettings",
+      "label": "AboutSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ],
+      "selectors": [
+        {
+          "route": "AboutSettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:AccessibilitySettings",
+      "label": "AccessibilitySettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ],
+      "selectors": [
+        {
+          "route": "AccessibilitySettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:AccountSettings",
+      "label": "AccountSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ],
+      "selectors": [
+        {
+          "route": "AccountSettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ActivityNotificationSettings",
+      "label": "ActivityNotificationSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/NotificationSettings/index.tsx",
+          "line": 221
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ActivityNotificationSettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "NotificationSettings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ActivityPrivacySettings",
+      "label": "ActivityPrivacySettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/PrivacyAndSecuritySettings.tsx",
+          "line": 73
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ActivityPrivacySettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "PrivacyAndSecuritySettings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:AppPasswords",
+      "label": "AppPasswords",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/PrivacyAndSecuritySettings.tsx",
+          "line": 73
+        }
+      ],
+      "selectors": [
+        {
+          "route": "AppPasswords"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "PrivacyAndSecuritySettings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:AppearanceSettings",
+      "label": "AppearanceSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ],
+      "selectors": [
+        {
+          "route": "AppearanceSettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:AutomationLabelSettings",
+      "label": "AutomationLabelSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/AccountSettings.tsx",
+          "line": 154
+        }
+      ],
+      "selectors": [
+        {
+          "route": "AutomationLabelSettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "AccountSettings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:BetaFeaturesSettings",
+      "label": "BetaFeaturesSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ],
+      "selectors": [
+        {
+          "route": "BetaFeaturesSettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:Bookmarks",
+      "label": "Bookmarks",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/view/shell/Drawer.tsx",
+          "line": 272
+        }
+      ],
+      "selectors": [
+        {
+          "route": "Bookmarks"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Home"
+      ],
+      "sharedOwners": [
+        "DrawerContent"
+      ]
+    },
+    {
+      "id": "route:ContentAndMediaSettings",
+      "label": "ContentAndMediaSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ContentAndMediaSettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:CustomFeed",
+      "label": "CustomFeed",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/view/com/feeds/FeedSourceCard.tsx",
+          "line": 193
+        }
+      ],
+      "selectors": [
+        {
+          "route": "CustomFeed"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "Feeds"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:CustomFeedLikedBy",
+      "label": "CustomFeedLikedBy",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/CustomFeed/components/CustomFeedHeader.tsx",
+          "line": 541
+        }
+      ],
+      "selectors": [
+        {
+          "route": "CustomFeedLikedBy"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "CustomFeed"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:Feeds",
+      "label": "Feeds",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/view/shell/Drawer.tsx",
+          "line": 272
+        }
+      ],
+      "selectors": [
+        {
+          "route": "Feeds"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Home"
+      ],
+      "sharedOwners": [
+        "DrawerContent"
+      ]
+    },
+    {
+      "id": "route:FindContactsFlow",
+      "label": "FindContactsFlow",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/FindContactsSettings.tsx",
+          "line": 155
+        }
+      ],
+      "selectors": [
+        {
+          "route": "FindContactsFlow"
+        }
+      ],
+      "access": "feature",
+      "parents": [
+        "FindContactsSettings",
+        "ProfileFollows"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:FindContactsSettings",
+      "label": "FindContactsSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 228
+        }
+      ],
+      "selectors": [
+        {
+          "route": "FindContactsSettings"
+        }
+      ],
+      "access": "feature",
+      "parents": [
+        "Settings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:Hashtag",
+      "label": "Hashtag",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/components/RichTextTag.tsx",
+          "line": 27
+        }
+      ],
+      "selectors": [
+        {
+          "route": "Hashtag"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "Home"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:Home",
+      "label": "Home",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/Navigation.tsx",
+          "line": 636
+        }
+      ],
+      "selectors": [
+        {
+          "route": "Home"
+        }
+      ],
+      "access": "entry",
+      "parents": [],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:InterestsSettings",
+      "label": "InterestsSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/ContentAndMediaSettings.tsx",
+          "line": 61
+        }
+      ],
+      "selectors": [
+        {
+          "route": "InterestsSettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "ContentAndMediaSettings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:InviteScanner",
+      "label": "InviteScanner",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/features/inviteFriends/InviteFriendsDialogInner.tsx",
+          "line": 113
+        }
+      ],
+      "selectors": [
+        {
+          "route": "InviteScanner"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "FindContactsSettings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:LanguageSettings",
+      "label": "LanguageSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ],
+      "selectors": [
+        {
+          "route": "LanguageSettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:Lists",
+      "label": "Lists",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/view/shell/Drawer.tsx",
+          "line": 272
+        }
+      ],
+      "selectors": [
+        {
+          "route": "Lists"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Home"
+      ],
+      "sharedOwners": [
+        "DrawerContent"
+      ]
+    },
+    {
+      "id": "route:Log",
+      "label": "Log",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/AboutSettings.tsx",
+          "line": 117
+        }
+      ],
+      "selectors": [
+        {
+          "route": "Log"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "AboutSettings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:Messages",
+      "label": "Messages",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/Navigation.tsx",
+          "line": 636
+        }
+      ],
+      "selectors": [
+        {
+          "route": "Messages"
+        }
+      ],
+      "access": "entry",
+      "parents": [],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:MessagesConversation",
+      "label": "MessagesConversation",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/components/ChatListItem.tsx",
+          "line": 494
+        }
+      ],
+      "selectors": [
+        {
+          "route": "MessagesConversation"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "Messages"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:MessagesConversationSettings",
+      "label": "MessagesConversationSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/components/dms/MessagesListHeader.tsx",
+          "line": 154
+        }
+      ],
+      "selectors": [
+        {
+          "route": "MessagesConversationSettings"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "MessagesConversation"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:MessagesInbox",
+      "label": "MessagesInbox",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/components/InboxRequests.tsx",
+          "line": 44
+        }
+      ],
+      "selectors": [
+        {
+          "route": "MessagesInbox"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Messages"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:MessagesJoinRequests",
+      "label": "MessagesJoinRequests",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/ConversationSettings/MembersAndRequests.tsx",
+          "line": 51
+        }
+      ],
+      "selectors": [
+        {
+          "route": "MessagesJoinRequests"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "MessagesConversationSettings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:MessagesSettings",
+      "label": "MessagesSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/ChatList.tsx",
+          "line": 669
+        }
+      ],
+      "selectors": [
+        {
+          "route": "MessagesSettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Messages"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:Moderation",
+      "label": "Moderation",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ],
+      "selectors": [
+        {
+          "route": "Moderation"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ModerationBlockedAccounts",
+      "label": "ModerationBlockedAccounts",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Moderation/index.tsx",
+          "line": 326
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ModerationBlockedAccounts"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Moderation"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ModerationInbox",
+      "label": "ModerationInbox",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Moderation/index.tsx",
+          "line": 202
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ModerationInbox"
+        }
+      ],
+      "access": "feature",
+      "parents": [
+        "Moderation"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ModerationInboxNoticeDetails",
+      "label": "ModerationInboxNoticeDetails",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/ModerationInbox/index.tsx",
+          "line": 47
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ModerationInboxNoticeDetails"
+        }
+      ],
+      "access": "feature",
+      "parents": [
+        "ModerationInbox"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ModerationInboxReportDetails",
+      "label": "ModerationInboxReportDetails",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/ModerationInbox/index.tsx",
+          "line": 47
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ModerationInboxReportDetails"
+        }
+      ],
+      "access": "feature",
+      "parents": [
+        "ModerationInbox"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ModerationInboxSettings",
+      "label": "ModerationInboxSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/ModerationInbox/index.tsx",
+          "line": 47
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ModerationInboxSettings"
+        }
+      ],
+      "access": "feature",
+      "parents": [
+        "ModerationInbox"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ModerationInteractionSettings",
+      "label": "ModerationInteractionSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Moderation/index.tsx",
+          "line": 326
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ModerationInteractionSettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Moderation"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ModerationModlists",
+      "label": "ModerationModlists",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Moderation/index.tsx",
+          "line": 326
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ModerationModlists"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Moderation"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ModerationMutedAccounts",
+      "label": "ModerationMutedAccounts",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Moderation/index.tsx",
+          "line": 326
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ModerationMutedAccounts"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Moderation"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ModerationVerificationSettings",
+      "label": "ModerationVerificationSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Moderation/index.tsx",
+          "line": 326
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ModerationVerificationSettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Moderation"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:MyProfile",
+      "label": "MyProfile",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/Navigation.tsx",
+          "line": 636
+        },
+        {
+          "file": "src/view/shell/Drawer.tsx",
+          "line": 205
+        }
+      ],
+      "selectors": [
+        {
+          "route": "MyProfile"
+        }
+      ],
+      "access": "entry",
+      "parents": [],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:NotificationSettings",
+      "label": "NotificationSettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ],
+      "selectors": [
+        {
+          "route": "NotificationSettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:Notifications",
+      "label": "Notifications",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/Navigation.tsx",
+          "line": 636
+        }
+      ],
+      "selectors": [
+        {
+          "route": "Notifications"
+        }
+      ],
+      "access": "entry",
+      "parents": [],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:NotificationsActivityList",
+      "label": "NotificationsActivityList",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/view/com/notifications/NotificationFeedItem.tsx",
+          "line": 130
+        }
+      ],
+      "selectors": [
+        {
+          "route": "NotificationsActivityList"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "Notifications"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:PostLikedBy",
+      "label": "PostLikedBy",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/PostThread/components/LikesStat.tsx",
+          "line": 26
+        }
+      ],
+      "selectors": [
+        {
+          "route": "PostLikedBy"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "PostThread"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:PostQuotes",
+      "label": "PostQuotes",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/PostThread/components/ThreadItemAnchor.tsx",
+          "line": 478
+        }
+      ],
+      "selectors": [
+        {
+          "route": "PostQuotes"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "PostThread"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:PostRepostedBy",
+      "label": "PostRepostedBy",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/PostThread/components/ThreadItemAnchor.tsx",
+          "line": 459
+        }
+      ],
+      "selectors": [
+        {
+          "route": "PostRepostedBy"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "PostThread"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:PostThread",
+      "label": "PostThread",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/view/com/notifications/NotificationFeedItem.tsx",
+          "line": 106
+        }
+      ],
+      "selectors": [
+        {
+          "route": "PostThread"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "Home"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:PreferencesExternalEmbeds",
+      "label": "PreferencesExternalEmbeds",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/ContentAndMediaSettings.tsx",
+          "line": 61
+        }
+      ],
+      "selectors": [
+        {
+          "route": "PreferencesExternalEmbeds"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "ContentAndMediaSettings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:PreferencesFollowingFeed",
+      "label": "PreferencesFollowingFeed",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/ContentAndMediaSettings.tsx",
+          "line": 61
+        }
+      ],
+      "selectors": [
+        {
+          "route": "PreferencesFollowingFeed"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "ContentAndMediaSettings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:PreferencesThreads",
+      "label": "PreferencesThreads",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/ContentAndMediaSettings.tsx",
+          "line": 61
+        }
+      ],
+      "selectors": [
+        {
+          "route": "PreferencesThreads"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "ContentAndMediaSettings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:PrivacyAndSecuritySettings",
+      "label": "PrivacyAndSecuritySettings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 182
+        }
+      ],
+      "selectors": [
+        {
+          "route": "PrivacyAndSecuritySettings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Settings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:Profile",
+      "label": "Profile",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/components/RichText.tsx",
+          "line": 153
+        }
+      ],
+      "selectors": [
+        {
+          "route": "Profile"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "Home"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ProfileFollowers",
+      "label": "ProfileFollowers",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Profile/Header/Metrics.tsx",
+          "line": 38
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ProfileFollowers"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "Profile",
+        "MyProfile"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ProfileFollows",
+      "label": "ProfileFollows",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Profile/Header/Metrics.tsx",
+          "line": 38
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ProfileFollows"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "Profile",
+        "MyProfile"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ProfileKnownFollowers",
+      "label": "ProfileKnownFollowers",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/components/KnownFollowers.tsx",
+          "line": 126
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ProfileKnownFollowers"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "Profile",
+        "MyProfile"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ProfileLabelerLikedBy",
+      "label": "ProfileLabelerLikedBy",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Profile/Header/ProfileHeaderLabeler.tsx",
+          "line": 139
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ProfileLabelerLikedBy"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "Profile"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ProfileList",
+      "label": "ProfileList",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/view/screens/Lists.tsx",
+          "line": 45
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ProfileList"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "Lists",
+        "ModerationModlists"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:ProfileSearch",
+      "label": "ProfileSearch",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/view/com/profile/ProfileMenu.tsx",
+          "line": 267
+        }
+      ],
+      "selectors": [
+        {
+          "route": "ProfileSearch"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "Profile",
+        "MyProfile"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:SavedFeeds",
+      "label": "SavedFeeds",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/ContentAndMediaSettings.tsx",
+          "line": 61
+        }
+      ],
+      "selectors": [
+        {
+          "route": "SavedFeeds"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "ContentAndMediaSettings"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:Search",
+      "label": "Search",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/Navigation.tsx",
+          "line": 636
+        }
+      ],
+      "selectors": [
+        {
+          "route": "Search"
+        }
+      ],
+      "access": "entry",
+      "parents": [],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:Settings",
+      "label": "Settings",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/view/shell/Drawer.tsx",
+          "line": 272
+        }
+      ],
+      "selectors": [
+        {
+          "route": "Settings"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "Home"
+      ],
+      "sharedOwners": [
+        "DrawerContent"
+      ]
+    },
+    {
+      "id": "route:StarterPack",
+      "label": "StarterPack",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/components/StarterPack/StarterPackCard.tsx",
+          "line": 155
+        }
+      ],
+      "selectors": [
+        {
+          "route": "StarterPack"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "MyProfile",
+        "Profile"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:StarterPackEdit",
+      "label": "StarterPackEdit",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/screens/StarterPack/StarterPackScreen.tsx",
+          "line": 606
+        }
+      ],
+      "selectors": [
+        {
+          "route": "StarterPackEdit"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "StarterPack"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:StarterPackWizard",
+      "label": "StarterPackWizard",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/components/StarterPack/ProfileStarterPacks.tsx",
+          "line": 211
+        }
+      ],
+      "selectors": [
+        {
+          "route": "StarterPackWizard"
+        }
+      ],
+      "access": "ui",
+      "parents": [
+        "MyProfile"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "route:VideoFeed",
+      "label": "VideoFeed",
+      "category": "route",
+      "evidence": [
+        {
+          "file": "src/components/VideoPostCard.tsx",
+          "line": 114
+        }
+      ],
+      "selectors": [
+        {
+          "route": "VideoFeed"
+        }
+      ],
+      "access": "data",
+      "parents": [
+        "Home"
+      ],
+      "sharedOwners": []
+    },
+    {
+      "id": "auth:splash",
+      "label": "Login / create account landing",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/view/com/auth/LoggedOut.tsx",
+          "line": 63
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/view/com/auth/LoggedOut.tsx",
+            "line": 63,
+            "path": [],
+            "value": 0
+          }
+        }
+      ],
+      "condition": "Logged-out view"
+    },
+    {
+      "id": "auth:login:0",
+      "label": "Login form",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Login/index.tsx",
+          "line": 63
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Login/index.tsx",
+            "line": 63,
+            "path": [],
+            "value": 0
+          }
+        }
+      ],
+      "condition": "Saved accounts or password reset flow; later forms need a valid reset response",
+      "containers": [
+        {
+          "state": {
+            "file": "src/view/com/auth/LoggedOut.tsx",
+            "line": 63,
+            "path": [],
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "auth:login:1",
+      "label": "Choose saved account",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Login/index.tsx",
+          "line": 63
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Login/index.tsx",
+            "line": 63,
+            "path": [],
+            "value": 1
+          }
+        }
+      ],
+      "condition": "Saved accounts or password reset flow; later forms need a valid reset response",
+      "containers": [
+        {
+          "state": {
+            "file": "src/view/com/auth/LoggedOut.tsx",
+            "line": 63,
+            "path": [],
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "auth:login:2",
+      "label": "Forgot password",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Login/index.tsx",
+          "line": 63
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Login/index.tsx",
+            "line": 63,
+            "path": [],
+            "value": 2
+          }
+        }
+      ],
+      "condition": "Saved accounts or password reset flow; later forms need a valid reset response",
+      "containers": [
+        {
+          "state": {
+            "file": "src/view/com/auth/LoggedOut.tsx",
+            "line": 63,
+            "path": [],
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "auth:login:3",
+      "label": "Set new password",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Login/index.tsx",
+          "line": 63
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Login/index.tsx",
+            "line": 63,
+            "path": [],
+            "value": 3
+          }
+        }
+      ],
+      "condition": "Saved accounts or password reset flow; later forms need a valid reset response",
+      "containers": [
+        {
+          "state": {
+            "file": "src/view/com/auth/LoggedOut.tsx",
+            "line": 63,
+            "path": [],
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "auth:login:4",
+      "label": "Password updated",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Login/index.tsx",
+          "line": 63
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Login/index.tsx",
+            "line": 63,
+            "path": [],
+            "value": 4
+          }
+        }
+      ],
+      "condition": "Saved accounts or password reset flow; later forms need a valid reset response",
+      "containers": [
+        {
+          "state": {
+            "file": "src/view/com/auth/LoggedOut.tsx",
+            "line": 63,
+            "path": [],
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "auth:signup:info",
+      "label": "Signup account details",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/view/com/auth/LoggedOut.tsx",
+          "line": 63
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/view/com/auth/LoggedOut.tsx",
+            "line": 63,
+            "path": [],
+            "value": 2
+          }
+        }
+      ],
+      "condition": "Create account; Signup initial reducer step is INFO"
+    },
+    {
+      "id": "auth:signup:1",
+      "label": "Signup handle",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Signup/index.tsx",
+          "line": 41
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Signup/index.tsx",
+            "line": 41,
+            "path": [
+              "activeStep"
+            ],
+            "value": 1
+          }
+        }
+      ],
+      "parent": "auth:signup:info",
+      "condition": "Signup reducer; later steps depend on validation / CAPTCHA"
+    },
+    {
+      "id": "auth:signup:2",
+      "label": "Signup CAPTCHA",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Signup/index.tsx",
+          "line": 41
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Signup/index.tsx",
+            "line": 41,
+            "path": [
+              "activeStep"
+            ],
+            "value": 2
+          }
+        }
+      ],
+      "parent": "auth:signup:info",
+      "condition": "Signup reducer; later steps depend on validation / CAPTCHA"
+    },
+    {
+      "id": "onboarding:profile",
+      "label": "Onboarding profile",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Onboarding/index.tsx",
+          "line": 52
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Onboarding/index.tsx",
+            "line": 52,
+            "path": [
+              "activeStep"
+            ],
+            "value": "profile"
+          }
+        }
+      ],
+      "condition": "Onboarding active; starter packs language flag / contacts region flag when applicable"
+    },
+    {
+      "id": "onboarding:interests",
+      "label": "Onboarding interests",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Onboarding/index.tsx",
+          "line": 52
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Onboarding/index.tsx",
+            "line": 52,
+            "path": [
+              "activeStep"
+            ],
+            "value": "interests"
+          }
+        }
+      ],
+      "condition": "Onboarding active; starter packs language flag / contacts region flag when applicable"
+    },
+    {
+      "id": "onboarding:suggested-accounts",
+      "label": "Onboarding suggested accounts",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Onboarding/index.tsx",
+          "line": 52
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Onboarding/index.tsx",
+            "line": 52,
+            "path": [
+              "activeStep"
+            ],
+            "value": "suggested-accounts"
+          }
+        }
+      ],
+      "condition": "Onboarding active; starter packs language flag / contacts region flag when applicable"
+    },
+    {
+      "id": "onboarding:suggested-starterpacks",
+      "label": "Onboarding suggested starter packs",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Onboarding/index.tsx",
+          "line": 52
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Onboarding/index.tsx",
+            "line": 52,
+            "path": [
+              "activeStep"
+            ],
+            "value": "suggested-starterpacks"
+          }
+        }
+      ],
+      "condition": "Onboarding active; starter packs language flag / contacts region flag when applicable"
+    },
+    {
+      "id": "onboarding:find-contacts-intro",
+      "label": "Onboarding contacts introduction",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Onboarding/index.tsx",
+          "line": 52
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Onboarding/index.tsx",
+            "line": 52,
+            "path": [
+              "activeStep"
+            ],
+            "value": "find-contacts-intro"
+          }
+        }
+      ],
+      "condition": "Onboarding active; starter packs language flag / contacts region flag when applicable"
+    },
+    {
+      "id": "onboarding:finished",
+      "label": "Onboarding finished",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Onboarding/index.tsx",
+          "line": 52
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Onboarding/index.tsx",
+            "line": 52,
+            "path": [
+              "activeStep"
+            ],
+            "value": "finished"
+          }
+        }
+      ],
+      "condition": "Onboarding active; starter packs language flag / contacts region flag when applicable"
+    },
+    {
+      "id": "guard:queued",
+      "label": "Signup queued",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/SignupQueued.tsx",
+          "line": 22
+        }
+      ],
+      "selectors": [],
+      "condition": "Session signupQueued"
+    },
+    {
+      "id": "guard:takendown",
+      "label": "Account taken down",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Takendown.tsx",
+          "line": 30
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Takendown.tsx",
+            "line": 38,
+            "path": [],
+            "value": false
+          }
+        }
+      ],
+      "condition": "Account status takendown"
+    },
+    {
+      "id": "guard:deactivated",
+      "label": "Account deactivated",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Deactivated.tsx",
+          "line": 33
+        }
+      ],
+      "selectors": [],
+      "condition": "Account status deactivated"
+    },
+    {
+      "id": "guard:age-data",
+      "label": "Age assurance data unavailable",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/ageAssurance/components/DataUnavailableScreen.tsx",
+          "line": 9
+        }
+      ],
+      "selectors": [],
+      "condition": "Age assurance account-data failure"
+    },
+    {
+      "id": "guard:age-access",
+      "label": "Age assurance access blocked",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/ageAssurance/components/NoAccessScreen.tsx",
+          "line": 47
+        }
+      ],
+      "selectors": [],
+      "condition": "Age assurance access none"
+    },
+    {
+      "id": "guard:policy",
+      "label": "Policy update acceptance",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/components/PolicyUpdateOverlay/index.tsx",
+          "line": 15
+        }
+      ],
+      "selectors": [],
+      "condition": "Persisted policy update is incomplete"
+    },
+    {
+      "id": "guard:age-return",
+      "label": "Age assurance return overlay",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/ageAssurance/components/RedirectOverlay.tsx",
+          "line": 133
+        }
+      ],
+      "selectors": [],
+      "condition": "Age assurance callback for current account"
+    },
+    {
+      "id": "contacts:2: verify number",
+      "label": "Contacts verification code",
+      "category": "flow-step",
+      "evidence": [
+        {
+          "file": "src/components/contacts/state.ts",
+          "line": 183
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/contacts/state.ts",
+            "line": 183,
+            "path": [
+              "step"
+            ],
+            "value": "2: verify number"
+          }
+        }
+      ],
+      "parent": "route:FindContactsFlow",
+      "condition": "Contacts reducer; valid phone / server response / local contacts permission. Reused by onboarding."
+    },
+    {
+      "id": "contacts:3: get contacts",
+      "label": "Contacts import consent",
+      "category": "flow-step",
+      "evidence": [
+        {
+          "file": "src/components/contacts/state.ts",
+          "line": 183
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/contacts/state.ts",
+            "line": 183,
+            "path": [
+              "step"
+            ],
+            "value": "3: get contacts"
+          }
+        }
+      ],
+      "parent": "route:FindContactsFlow",
+      "condition": "Contacts reducer; valid phone / server response / local contacts permission. Reused by onboarding."
+    },
+    {
+      "id": "contacts:4: view matches",
+      "label": "Contacts matches",
+      "category": "flow-step",
+      "evidence": [
+        {
+          "file": "src/components/contacts/state.ts",
+          "line": 183
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/contacts/state.ts",
+            "line": 183,
+            "path": [
+              "step"
+            ],
+            "value": "4: view matches"
+          }
+        }
+      ],
+      "parent": "route:FindContactsFlow",
+      "condition": "Contacts reducer; valid phone / server response / local contacts permission. Reused by onboarding."
+    },
+    {
+      "id": "starter-wizard:Profiles",
+      "label": "Starter pack wizard profiles",
+      "category": "flow-step",
+      "evidence": [
+        {
+          "file": "src/screens/StarterPack/Wizard/state.tsx",
+          "line": 172
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/StarterPack/Wizard/state.tsx",
+            "line": 172,
+            "path": [
+              "currentStep"
+            ],
+            "value": "Profiles"
+          }
+        }
+      ],
+      "parent": "route:StarterPackWizard"
+    },
+    {
+      "id": "starter-wizard:Feeds",
+      "label": "Starter pack wizard feeds",
+      "category": "flow-step",
+      "evidence": [
+        {
+          "file": "src/screens/StarterPack/Wizard/state.tsx",
+          "line": 172
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/StarterPack/Wizard/state.tsx",
+            "line": 172,
+            "path": [
+              "currentStep"
+            ],
+            "value": "Feeds"
+          }
+        }
+      ],
+      "parent": "route:StarterPackWizard"
+    },
+    {
+      "id": "sheet:bot",
+      "label": "Bot account information",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/BotAccountAlert.tsx",
+          "line": 13
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/BotAccountAlert.tsx",
+            "component": "BotAccountAlert"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:channel",
+      "label": "Switch update channel",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/OTAChannelNotice.tsx",
+          "line": 169
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/OTAChannelNotice.tsx",
+            "component": "SwitchChannelDialog"
+          }
+        }
+      ],
+      "condition": "Native distributed update channel notice; disabled in development builds"
+    },
+    {
+      "id": "sheet:replies",
+      "label": "Who can reply information",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/WhoCanReply.tsx",
+          "line": 187
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/WhoCanReply.tsx",
+            "component": "WhoCanReplyDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:follow",
+      "label": "Suggested follows",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/ProgressGuide/FollowDialog.tsx",
+          "line": 57
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/ProgressGuide/FollowDialog.tsx",
+            "component": "FollowDialog"
+          }
+        },
+        {
+          "control": {
+            "file": "src/components/ProgressGuide/FollowDialog.tsx",
+            "component": "FollowDialogWithoutGuide"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:error-report",
+      "label": "Send app error report",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/SendErrorReportDialog.tsx",
+          "line": 16
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/SendErrorReportDialog.tsx",
+            "component": "SendErrorReportDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:starter-qr",
+      "label": "Starter pack QR code",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/StarterPack/QrCodeDialog.tsx",
+          "line": 29
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/StarterPack/QrCodeDialog.tsx",
+            "component": "QrCodeDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:starter-share",
+      "label": "Share starter pack",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/StarterPack/ShareDialog.tsx",
+          "line": 31
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/StarterPack/ShareDialog.tsx",
+            "component": "ShareDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:starter-edit-members",
+      "label": "Edit starter pack members",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/StarterPack/Wizard/WizardEditListDialog.tsx",
+          "line": 33
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/StarterPack/Wizard/WizardEditListDialog.tsx",
+            "component": "WizardEditListDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:activity",
+      "label": "Profile activity subscription",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/activity-notifications/SubscribeProfileDialog.tsx",
+          "line": 39
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/activity-notifications/SubscribeProfileDialog.tsx",
+            "component": "SubscribeProfileDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:age-appeal",
+      "label": "Age assurance appeal",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/ageAssurance/AgeAssuranceAppealDialog.tsx",
+          "line": 21
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/ageAssurance/AgeAssuranceAppealDialog.tsx",
+            "component": "AgeAssuranceAppealDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:age-init",
+      "label": "Begin age assurance",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/ageAssurance/AgeAssuranceInitDialog.tsx",
+          "line": 41
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/ageAssurance/AgeAssuranceInitDialog.tsx",
+            "component": "AgeAssuranceInitDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:age-result",
+      "label": "Age assurance return dialog",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/ageAssurance/AgeAssuranceRedirectDialog.tsx",
+          "line": 63
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/ageAssurance/AgeAssuranceRedirectDialog.tsx",
+            "component": "AgeAssuranceRedirectDialog"
+          }
+        }
+      ],
+      "condition": "Age assurance return URL and current account match"
+    },
+    {
+      "id": "sheet:contacts-invite",
+      "label": "Contacts invitation information",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/contacts/components/InviteInfo.tsx",
+          "line": 13
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/contacts/components/InviteInfo.tsx",
+            "component": "InviteInfo"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:birthdate",
+      "label": "Edit birthdate",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/BirthDateSettings.tsx",
+          "line": 29
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/BirthDateSettings.tsx",
+            "component": "BirthDateSettingsDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:location",
+      "label": "Device location request",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/DeviceLocationRequestDialog.tsx",
+          "line": 30
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/DeviceLocationRequestDialog.tsx",
+            "component": "DeviceLocationRequestDialog"
+          }
+        }
+      ],
+      "condition": "Location policy check in signup or restricted account UI; does not grant OS permission"
+    },
+    {
+      "id": "sheet:embed-consent",
+      "label": "External embed consent",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/EmbedConsent.tsx",
+          "line": 19
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/EmbedConsent.tsx",
+            "component": "EmbedConsentDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:browser-consent",
+      "label": "In-app browser consent",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/InAppBrowserConsent.tsx",
+          "line": 17
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/InAppBrowserConsent.tsx",
+            "component": "InAppBrowserConsentDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:language",
+      "label": "Language selection",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/LanguageSelectDialog.tsx",
+          "line": 31
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/LanguageSelectDialog.tsx",
+            "component": "LanguageSelectDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:link-warning",
+      "label": "Link safety warning",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/LinkWarning.tsx",
+          "line": 16
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/LinkWarning.tsx",
+            "component": "LinkWarningDialog"
+          }
+        },
+        {
+          "control": {
+            "file": "src/components/dialogs/LinkWarning.tsx",
+            "component": "CustomLinkWarningDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:muted-words",
+      "label": "Muted words",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/MutedWords.tsx",
+          "line": 43
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/MutedWords.tsx",
+            "component": "MutedWordsDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:new-account",
+      "label": "New account information",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/NewskieDialog/index.tsx",
+          "line": 24
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/NewskieDialog/index.tsx",
+            "component": "NewskieDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:post-interactions",
+      "label": "Post interaction settings",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/PostInteractionSettingsDialog.tsx",
+          "line": 144
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/PostInteractionSettingsDialog.tsx",
+            "component": "PostInteractionSettingsDialog"
+          }
+        },
+        {
+          "control": {
+            "file": "src/components/dialogs/PostInteractionSettingsDialog.tsx",
+            "component": "PostInteractionSettingsControlledDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:server",
+      "label": "Custom hosting provider",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/ServerInput.tsx",
+          "line": 23
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/ServerInput.tsx",
+            "component": "ServerInputDialog"
+          }
+        }
+      ],
+      "condition": "Custom hosting provider in login or signup"
+    },
+    {
+      "id": "sheet:signin",
+      "label": "Sign-in reminder",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/Signin.tsx",
+          "line": 18
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/Signin.tsx",
+            "component": "SigninDialog"
+          }
+        }
+      ],
+      "condition": "Unauthenticated action requests a sign-in reminder"
+    },
+    {
+      "id": "sheet:profile-starters",
+      "label": "Profile starter packs",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/StarterPackDialog.tsx",
+          "line": 42
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/StarterPackDialog.tsx",
+            "component": "StarterPackDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:switch-account",
+      "label": "Switch account",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/SwitchAccount.tsx",
+          "line": 15
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/SwitchAccount.tsx",
+            "component": "SwitchAccountDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:list-from-starter",
+      "label": "Create list from starter pack",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/lists/CreateListFromStarterPackDialog.tsx",
+          "line": 28
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/lists/CreateListFromStarterPackDialog.tsx",
+            "component": "CreateListFromStarterPackDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:edit-list",
+      "label": "Create / edit list",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/lists/CreateOrEditListDialog.tsx",
+          "line": 41
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/lists/CreateOrEditListDialog.tsx",
+            "component": "CreateOrEditListDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:list-users",
+      "label": "Add / remove list members",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/lists/ListAddRemoveUsersDialog.tsx",
+          "line": 28
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/lists/ListAddRemoveUsersDialog.tsx",
+            "component": "ListAddRemoveUsersDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:user-lists",
+      "label": "Add / remove user from lists",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/lists/UserAddRemoveListsDialog.tsx",
+          "line": 39
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/lists/UserAddRemoveListsDialog.tsx",
+            "component": "UserAddRemoveListsDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:nux-groups",
+      "label": "Group chats announcement",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/nuxs/GroupChatsAnnouncement.tsx",
+          "line": 52
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/nuxs/GroupChatsAnnouncement.tsx",
+            "component": "GroupChatsAnnouncement"
+          }
+        }
+      ],
+      "condition": "Current NUX host queues group chats announcement based on feature / completion flags"
+    },
+    {
+      "id": "sheet:nux-invites",
+      "label": "Invite friends announcement",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/nuxs/InviteFriendsAnnouncement.tsx",
+          "line": 26
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/nuxs/InviteFriendsAnnouncement.tsx",
+            "component": "InviteFriendsAnnouncement"
+          }
+        }
+      ],
+      "condition": "Current NUX host queues invite friends announcement based on feature / completion flags"
+    },
+    {
+      "id": "sheet:after-report-convo",
+      "label": "After reporting a conversation",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dms/AfterReportConversationDialog.tsx",
+          "line": 32
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dms/AfterReportConversationDialog.tsx",
+            "component": "AfterReportConversationDialog"
+          }
+        }
+      ],
+      "condition": "Report-conversation submission succeeded"
+    },
+    {
+      "id": "sheet:after-report-msg",
+      "label": "After reporting a message",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dms/AfterReportDialog.tsx",
+          "line": 32
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dms/AfterReportDialog.tsx",
+            "component": "AfterReportDialog"
+          }
+        }
+      ],
+      "condition": "Report-message submission succeeded"
+    },
+    {
+      "id": "sheet:reactions",
+      "label": "Message reactions",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dms/ReactionsDialog.tsx",
+          "line": 37
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dms/ReactionsDialog.tsx",
+            "component": "ReactionsDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:new-chat",
+      "label": "New chat recipient picker",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dms/dialogs/NewChatDialog.tsx",
+          "line": 21
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dms/dialogs/NewChatDialog.tsx",
+            "component": "NewChat"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:send-chat",
+      "label": "Share via chat",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/dms/dialogs/ShareViaChatDialog.tsx",
+          "line": 16
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dms/dialogs/ShareViaChatDialog.tsx",
+            "component": "SendViaChatDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:date",
+      "label": "Date picker",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/forms/DateField/index.tsx",
+          "line": 36
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/forms/DateField/index.tsx",
+            "component": "DateField"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:group-intent",
+      "label": "Join group chat intent",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/intents/GroupChatJoinDialog.tsx",
+          "line": 52
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/intents/GroupChatJoinDialog.tsx",
+            "component": "GroupChatJoinDialog"
+          }
+        }
+      ],
+      "condition": "Valid incoming group invite URL"
+    },
+    {
+      "id": "sheet:email-intent",
+      "label": "Verify email intent",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/intents/VerifyEmailIntentDialog.tsx",
+          "line": 21
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/intents/VerifyEmailIntentDialog.tsx",
+            "component": "VerifyEmailIntentDialog"
+          }
+        }
+      ],
+      "condition": "Valid incoming email verification URL"
+    },
+    {
+      "id": "sheet:block",
+      "label": "Block account",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/moderation/BlockDialog.tsx",
+          "line": 38
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/moderation/BlockDialog.tsx",
+            "component": "BlockDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:my-labels",
+      "label": "Labels applied to your content",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/moderation/LabelsOnMeDialog.tsx",
+          "line": 35
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/moderation/LabelsOnMeDialog.tsx",
+            "component": "LabelsOnMeDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:moderation-details",
+      "label": "Moderation details",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/moderation/ModerationDetailsDialog.tsx",
+          "line": 30
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/moderation/ModerationDetailsDialog.tsx",
+            "component": "ModerationDetailsDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:report",
+      "label": "Report category",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/moderation/ReportDialog/index.tsx",
+          "line": 80
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/moderation/ReportDialog/index.tsx",
+            "component": "ReportDialog"
+          }
+        },
+        {
+          "control": {
+            "file": "src/components/moderation/ReportDialog/index.tsx",
+            "component": "GlobalReportDialog"
+          }
+        },
+        {
+          "control": {
+            "file": "src/components/dms/ReportConversationDialog.tsx",
+            "component": "ReportConversationDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:verifications",
+      "label": "Account verifications",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/verification/VerificationsDialog.tsx",
+          "line": 28
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/verification/VerificationsDialog.tsx",
+            "component": "VerificationsDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:verifier",
+      "label": "Verifier information",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/verification/VerifierDialog.tsx",
+          "line": 22
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/verification/VerifierDialog.tsx",
+            "component": "VerifierDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:gif",
+      "label": "GIF picker",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/features/gifPicker/GifPickerDialog.tsx",
+          "line": 22
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/features/gifPicker/GifPickerDialog.tsx",
+            "component": "GifPickerDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:invite",
+      "label": "Invite friends",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/features/inviteFriends/InviteFriendsDialog.tsx",
+          "line": 4
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/features/inviteFriends/InviteFriendsDialog.tsx",
+            "component": "InviteFriendsDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:edit-live",
+      "label": "Edit live status",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/features/liveNow/components/EditLiveDialog.tsx",
+          "line": 31
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/features/liveNow/components/EditLiveDialog.tsx",
+            "component": "EditLiveDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:go-live",
+      "label": "Go live",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/features/liveNow/components/GoLiveDialog.tsx",
+          "line": 34
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/features/liveNow/components/GoLiveDialog.tsx",
+            "component": "GoLiveDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:go-live-disabled",
+      "label": "Live status unavailable",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/features/liveNow/components/GoLiveDisabledDialog.tsx",
+          "line": 19
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/features/liveNow/components/GoLiveDisabledDialog.tsx",
+            "component": "GoLiveDisabledDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:live-status",
+      "label": "Live status information",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/features/liveNow/components/LiveStatusDialog.tsx",
+          "line": 32
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/features/liveNow/components/LiveStatusDialog.tsx",
+            "component": "LiveStatusDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:login-host",
+      "label": "Login hosting provider",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Login/components/HostingProviderDialog.tsx",
+          "line": 28
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Login/components/HostingProviderDialog.tsx",
+            "component": "HostingProviderDialog"
+          }
+        }
+      ],
+      "condition": "Login form hosting provider selection"
+    },
+    {
+      "id": "sheet:login-confirm-host",
+      "label": "Confirm login provider",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Login/components/ConfirmHostingProviderDialog.tsx",
+          "line": 20
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Login/components/ConfirmHostingProviderDialog.tsx",
+            "component": "ConfirmHostingProviderDialog"
+          }
+        }
+      ],
+      "condition": "Login form detects a provider requiring confirmation"
+    },
+    {
+      "id": "sheet:edit-profile",
+      "label": "Edit profile",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Profile/Header/EditProfileDialog.tsx",
+          "line": 29
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Profile/Header/EditProfileDialog.tsx",
+            "component": "EditProfileDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:search-filters",
+      "label": "Advanced search",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Search/components/AdvancedSearchDialog/index.tsx",
+          "line": 40
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Search/components/AdvancedSearchDialog/index.tsx",
+            "component": "AdvancedSearchDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:app-password",
+      "label": "Create app password",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/AddAppPasswordDialog.tsx",
+          "line": 30
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/components/AddAppPasswordDialog.tsx",
+            "component": "AddAppPasswordDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:beta-feedback",
+      "label": "Beta features feedback",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/BetaFeaturesFeedbackDialog.tsx",
+          "line": 19
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/components/BetaFeaturesFeedbackDialog.tsx",
+            "component": "BetaFeaturesFeedbackDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:handle",
+      "label": "Change handle: provided handle",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/ChangeHandleDialog.tsx",
+          "line": 51
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/components/ChangeHandleDialog.tsx",
+            "component": "ChangeHandleDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:password",
+      "label": "Change password: request code",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/ChangePasswordDialog.tsx",
+          "line": 29
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/components/ChangePasswordDialog.tsx",
+            "component": "ChangePasswordDialog"
+          }
+        },
+        {
+          "state": {
+            "file": "src/screens/Settings/components/ChangePasswordDialog.tsx",
+            "line": 52,
+            "path": [],
+            "value": "RequestCode"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:disable-2fa",
+      "label": "Disable 2FA: send email",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/DisableEmail2FADialog.tsx",
+          "line": 27
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/components/DisableEmail2FADialog.tsx",
+            "component": "DisableEmail2FADialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:export",
+      "label": "Export account data",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/ExportCarDialog.tsx",
+          "line": 18
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/components/ExportCarDialog.tsx",
+            "component": "ExportCarDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:deactivate",
+      "label": "Deactivate account confirmation",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/DeactivateAccountDialog.tsx",
+          "line": 19
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/components/DeactivateAccountDialog.tsx",
+            "component": "DeactivateAccountDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:delete-account",
+      "label": "Delete account: request code",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/DeleteAccountDialog.tsx",
+          "line": 52
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/components/DeleteAccountDialog.tsx",
+            "component": "DeleteAccountDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:gif-alt",
+      "label": "GIF alt text",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/view/com/composer/GifAltText.tsx",
+          "line": 29
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/view/com/composer/GifAltText.tsx",
+            "component": "GifAltTextDialog"
+          }
+        },
+        {
+          "control": {
+            "file": "src/view/com/composer/GifAltText.tsx",
+            "component": "GifAltTextDialogLoaded"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:drafts",
+      "label": "Post drafts",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/view/com/composer/drafts/DraftsListDialog.tsx",
+          "line": 22
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/view/com/composer/drafts/DraftsListDialog.tsx",
+            "component": "DraftsListDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:image-alt",
+      "label": "Image alt text",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/view/com/composer/photos/ImageAltTextDialog.tsx",
+          "line": 28
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/view/com/composer/photos/ImageAltTextDialog.tsx",
+            "component": "ImageAltTextDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:missing-feed",
+      "label": "Unavailable feed information",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/view/com/feeds/MissingFeed.tsx",
+          "line": 20
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/view/com/feeds/MissingFeed.tsx",
+            "component": "MissingFeed"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:repost",
+      "label": "Repost / quote choices",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/PostControls/RepostButton.tsx",
+          "line": 95
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/PostControls/RepostButton.tsx",
+            "line": 95
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:feed-info",
+      "label": "Feed information",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/CustomFeed/components/CustomFeedHeader.tsx",
+          "line": 398
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/CustomFeed/components/CustomFeedHeader.tsx",
+            "line": 398
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:add-members",
+      "label": "Add group members",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/ConversationSettings/AddMembersLink.tsx",
+          "line": 118
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Messages/ConversationSettings/AddMembersLink.tsx",
+            "line": 118
+          }
+        },
+        {
+          "control": {
+            "file": "src/screens/Messages/components/MessagesListGroupInfoPanel.tsx",
+            "line": 165
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:chat-disabled",
+      "label": "Chat disabled information",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/components/ChatDisabled.tsx",
+          "line": 82
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Messages/components/ChatDisabled.tsx",
+            "line": 82
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:avatar",
+      "label": "Onboarding avatar creator",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Onboarding/StepProfile/index.tsx",
+          "line": 322
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Onboarding/StepProfile/index.tsx",
+            "line": 322
+          }
+        }
+      ],
+      "condition": "Onboarding profile is active and created-avatar option is available"
+    },
+    {
+      "id": "sheet:germ",
+      "label": "Encrypted messaging introduction",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Profile/components/GermButton.tsx",
+          "line": 234
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Profile/components/GermButton.tsx",
+            "line": 234
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:content-labels",
+      "label": "Post content warning labels",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/view/com/composer/labels/LabelsBtn.tsx",
+          "line": 76
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/view/com/composer/labels/LabelsBtn.tsx",
+            "line": 76
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:video-alt",
+      "label": "Video alt text",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/view/com/composer/videos/SubtitleDialog.tsx",
+          "line": 63
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/view/com/composer/videos/SubtitleDialog.tsx",
+            "line": 63
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:composer",
+      "label": "Compose post",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/view/shell/Composer.ios.tsx",
+          "line": 11
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/view/shell/Composer.ios.tsx",
+            "component": "Composer"
+          }
+        },
+        {
+          "state": {
+            "file": "src/state/shell/composer/index.tsx",
+            "line": 69,
+            "path": [],
+            "value": {
+              "logContext": "Fab"
+            }
+          }
+        }
+      ],
+      "condition": "Global UI state; image viewer requires a real image"
+    },
+    {
+      "id": "sheet:drawer",
+      "label": "Navigation drawer",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/view/shell/Drawer.tsx",
+          "line": 184
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/view/shell/Drawer.tsx",
+            "component": "DrawerContent"
+          }
+        }
+      ],
+      "condition": "Global UI state; image viewer requires a real image"
+    },
+    {
+      "id": "sheet:lightbox",
+      "label": "Image lightbox",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/components/Lightbox/Lightbox.tsx",
+          "line": 8
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/Lightbox/Lightbox.tsx",
+            "component": "Lightbox"
+          }
+        }
+      ],
+      "condition": "Real image and measured opening state"
+    },
+    {
+      "id": "email:Update",
+      "label": "Update email address",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/EmailDialog/index.tsx",
+          "line": 49
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/dialogs/EmailDialog/index.tsx",
+            "line": 49,
+            "path": [
+              "id"
+            ],
+            "value": "Update"
+          }
+        }
+      ],
+      "parent": "container:email",
+      "containers": [
+        {
+          "control": {
+            "file": "src/components/dialogs/EmailDialog/index.tsx",
+            "component": "EmailDialog"
+          }
+        }
+      ]
+    },
+    {
+      "id": "email:Verify",
+      "label": "Verify email: send email",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/EmailDialog/index.tsx",
+          "line": 49
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/dialogs/EmailDialog/index.tsx",
+            "line": 49,
+            "path": [
+              "id"
+            ],
+            "value": "Verify"
+          }
+        }
+      ],
+      "parent": "container:email",
+      "containers": [
+        {
+          "control": {
+            "file": "src/components/dialogs/EmailDialog/index.tsx",
+            "component": "EmailDialog"
+          }
+        }
+      ]
+    },
+    {
+      "id": "email:VerificationReminder",
+      "label": "Verify email reminder",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/EmailDialog/index.tsx",
+          "line": 49
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/dialogs/EmailDialog/index.tsx",
+            "line": 49,
+            "path": [
+              "id"
+            ],
+            "value": "VerificationReminder"
+          }
+        }
+      ],
+      "parent": "container:email",
+      "containers": [
+        {
+          "control": {
+            "file": "src/components/dialogs/EmailDialog/index.tsx",
+            "component": "EmailDialog"
+          }
+        }
+      ]
+    },
+    {
+      "id": "email:2fa:enable",
+      "label": "Enable email 2FA",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/EmailDialog/screens/Manage2FA/index.tsx",
+          "line": 14
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/dialogs/EmailDialog/screens/Manage2FA/index.tsx",
+            "line": 14,
+            "path": [],
+            "value": "enable"
+          }
+        }
+      ],
+      "parent": "container:email",
+      "condition": "Verified email and existing 2FA setting",
+      "containers": [
+        {
+          "control": {
+            "file": "src/components/dialogs/EmailDialog/index.tsx",
+            "component": "EmailDialog"
+          }
+        }
+      ]
+    },
+    {
+      "id": "email:2fa:disable",
+      "label": "Disable email 2FA: request code",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/EmailDialog/screens/Manage2FA/index.tsx",
+          "line": 14
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/dialogs/EmailDialog/screens/Manage2FA/index.tsx",
+            "line": 14,
+            "path": [],
+            "value": "disable"
+          }
+        }
+      ],
+      "parent": "container:email",
+      "condition": "Verified email and existing 2FA setting",
+      "containers": [
+        {
+          "control": {
+            "file": "src/components/dialogs/EmailDialog/index.tsx",
+            "component": "EmailDialog"
+          }
+        }
+      ]
+    },
+    {
+      "id": "email:update-token",
+      "label": "Update email: security code",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/EmailDialog/screens/Update.tsx",
+          "line": 110
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/dialogs/EmailDialog/screens/Update.tsx",
+            "line": 110,
+            "path": [
+              "step"
+            ],
+            "value": "token"
+          }
+        }
+      ],
+      "parent": "email:Update",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "email:verify-token",
+      "label": "Verify email: enter code",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/EmailDialog/screens/Verify.tsx",
+          "line": 97
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/dialogs/EmailDialog/screens/Verify.tsx",
+            "line": 97,
+            "path": [
+              "step"
+            ],
+            "value": "token"
+          }
+        }
+      ],
+      "parent": "email:Verify",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "email:verify-success",
+      "label": "Email verified",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/EmailDialog/screens/Verify.tsx",
+          "line": 97
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/dialogs/EmailDialog/screens/Verify.tsx",
+            "line": 97,
+            "path": [
+              "step"
+            ],
+            "value": "success"
+          }
+        }
+      ],
+      "parent": "email:Verify",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "email:disable-token",
+      "label": "Disable email 2FA: enter code",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/EmailDialog/screens/Manage2FA/Disable.tsx",
+          "line": 99
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/dialogs/EmailDialog/screens/Manage2FA/Disable.tsx",
+            "line": 99,
+            "path": [
+              "step"
+            ],
+            "value": "token"
+          }
+        }
+      ],
+      "parent": "email:2fa:disable",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "handle:own",
+      "label": "Change handle: own domain",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/ChangeHandleDialog.tsx",
+          "line": 73
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Settings/components/ChangeHandleDialog.tsx",
+            "line": 73,
+            "path": [],
+            "value": "own-handle"
+          }
+        }
+      ],
+      "parent": "sheet:handle",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "password:code",
+      "label": "Change password: enter code",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/ChangePasswordDialog.tsx",
+          "line": 52
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Settings/components/ChangePasswordDialog.tsx",
+            "line": 52,
+            "path": [],
+            "value": "ChangePassword"
+          }
+        }
+      ],
+      "parent": "sheet:password",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "password:done",
+      "label": "Password changed",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/ChangePasswordDialog.tsx",
+          "line": 52
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Settings/components/ChangePasswordDialog.tsx",
+            "line": 52,
+            "path": [],
+            "value": "Done"
+          }
+        }
+      ],
+      "parent": "sheet:password",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "disable2fa:code",
+      "label": "Disable 2FA: enter code",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/DisableEmail2FADialog.tsx",
+          "line": 39
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Settings/components/DisableEmail2FADialog.tsx",
+            "line": 39,
+            "path": [],
+            "value": 1
+          }
+        }
+      ],
+      "parent": "sheet:disable-2fa",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "delete:verify",
+      "label": "Delete account: verify code",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/DeleteAccountDialog.tsx",
+          "line": 87
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Settings/components/DeleteAccountDialog.tsx",
+            "line": 87,
+            "path": [],
+            "value": 1
+          }
+        }
+      ],
+      "parent": "sheet:delete-account",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "delete:confirm",
+      "label": "Delete account: final confirmation",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/DeleteAccountDialog.tsx",
+          "line": 87
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Settings/components/DeleteAccountDialog.tsx",
+            "line": 87,
+            "path": [],
+            "value": 2
+          }
+        }
+      ],
+      "parent": "sheet:delete-account",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "newchat:group",
+      "label": "New group: choose members",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/dms/InitiateChatFlow.tsx",
+          "line": 275
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/dms/InitiateChatFlow.tsx",
+            "line": 275,
+            "path": [
+              "chatState"
+            ],
+            "value": 1
+          }
+        }
+      ],
+      "parent": "sheet:new-chat",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "newchat:name",
+      "label": "New group: choose name",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/dms/InitiateChatFlow.tsx",
+          "line": 275
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/dms/InitiateChatFlow.tsx",
+            "line": 275,
+            "path": [
+              "chatState"
+            ],
+            "value": 2
+          }
+        }
+      ],
+      "parent": "sheet:new-chat",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "report:reason",
+      "label": "Report reason",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/moderation/ReportDialog/index.tsx",
+          "line": 172
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/moderation/ReportDialog/index.tsx",
+            "line": 172,
+            "path": [
+              "activeStepIndex1"
+            ],
+            "value": 2
+          }
+        }
+      ],
+      "parent": "sheet:report",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "report:service",
+      "label": "Report moderation service",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/moderation/ReportDialog/index.tsx",
+          "line": 172
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/moderation/ReportDialog/index.tsx",
+            "line": 172,
+            "path": [
+              "activeStepIndex1"
+            ],
+            "value": 3
+          }
+        }
+      ],
+      "parent": "sheet:report",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "report:details",
+      "label": "Report details / final confirmation",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/moderation/ReportDialog/index.tsx",
+          "line": 172
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/moderation/ReportDialog/index.tsx",
+            "line": 172,
+            "path": [
+              "activeStepIndex1"
+            ],
+            "value": 4
+          }
+        }
+      ],
+      "parent": "sheet:report",
+      "condition": "Local presentation step; backend result required in some flows. Discovery does not authorize submitting forms."
+    },
+    {
+      "id": "invite-link:0",
+      "label": "Group invite link information",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/components/InviteLinkDialog.tsx",
+          "line": 80
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Messages/components/InviteLinkDialog.tsx",
+            "line": 80,
+            "path": [],
+            "value": 0
+          }
+        }
+      ],
+      "parent": "container:invite-link",
+      "condition": "Group owner and current join-link state; no link changes were performed",
+      "containers": [
+        {
+          "control": {
+            "file": "src/screens/Messages/components/InviteLinkDialog.tsx",
+            "component": "InviteLinkDialog"
+          }
+        }
+      ]
+    },
+    {
+      "id": "invite-link:1",
+      "label": "Generate group invite link",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/components/InviteLinkDialog.tsx",
+          "line": 80
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Messages/components/InviteLinkDialog.tsx",
+            "line": 80,
+            "path": [],
+            "value": 1
+          }
+        }
+      ],
+      "parent": "container:invite-link",
+      "condition": "Group owner and current join-link state; no link changes were performed",
+      "containers": [
+        {
+          "control": {
+            "file": "src/screens/Messages/components/InviteLinkDialog.tsx",
+            "component": "InviteLinkDialog"
+          }
+        }
+      ]
+    },
+    {
+      "id": "invite-link:2",
+      "label": "Manage group invite link",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/components/InviteLinkDialog.tsx",
+          "line": 80
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Messages/components/InviteLinkDialog.tsx",
+            "line": 80,
+            "path": [],
+            "value": 2
+          }
+        }
+      ],
+      "parent": "container:invite-link",
+      "condition": "Group owner and current join-link state; no link changes were performed",
+      "containers": [
+        {
+          "control": {
+            "file": "src/screens/Messages/components/InviteLinkDialog.tsx",
+            "component": "InviteLinkDialog"
+          }
+        }
+      ]
+    },
+    {
+      "id": "invite-link:3",
+      "label": "Disable group invite link confirmation",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/components/InviteLinkDialog.tsx",
+          "line": 80
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Messages/components/InviteLinkDialog.tsx",
+            "line": 80,
+            "path": [],
+            "value": 3
+          }
+        }
+      ],
+      "parent": "container:invite-link",
+      "condition": "Group owner and current join-link state; no link changes were performed",
+      "containers": [
+        {
+          "control": {
+            "file": "src/screens/Messages/components/InviteLinkDialog.tsx",
+            "component": "InviteLinkDialog"
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:moderation-appeal",
+      "label": "Appeal moderation notice",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/ModerationInbox/Notice.tsx",
+          "line": 119
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/ModerationInbox/Notice.tsx",
+            "component": "AppealDialog"
+          }
+        }
+      ],
+      "condition": "Logged in; relevant feature and real subject data when required"
+    },
+    {
+      "id": "sheet:notification:likes",
+      "label": "Notification options: Likes",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/NotificationSettings/index.tsx",
+          "line": 310
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/NotificationSettings/index.tsx",
+            "line": 310
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:notification:followers",
+      "label": "Notification options: New followers",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/NotificationSettings/index.tsx",
+          "line": 319
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/NotificationSettings/index.tsx",
+            "line": 319
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:notification:replies",
+      "label": "Notification options: Replies",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/NotificationSettings/index.tsx",
+          "line": 326
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/NotificationSettings/index.tsx",
+            "line": 326
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:notification:mentions",
+      "label": "Notification options: Mentions",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/NotificationSettings/index.tsx",
+          "line": 335
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/NotificationSettings/index.tsx",
+            "line": 335
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:notification:quotes",
+      "label": "Notification options: Quotes",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/NotificationSettings/index.tsx",
+          "line": 342
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/NotificationSettings/index.tsx",
+            "line": 342
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:notification:reposts",
+      "label": "Notification options: Reposts",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/NotificationSettings/index.tsx",
+          "line": 351
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/NotificationSettings/index.tsx",
+            "line": 351
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:notification:repost-likes",
+      "label": "Notification options: Likes of your reposts",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/NotificationSettings/index.tsx",
+          "line": 360
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/NotificationSettings/index.tsx",
+            "line": 360
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:notification:repost-reposts",
+      "label": "Notification options: Reposts of your reposts",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/NotificationSettings/index.tsx",
+          "line": 369
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/NotificationSettings/index.tsx",
+            "line": 369
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:notification:misc",
+      "label": "Notification options: Everything else",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/NotificationSettings/index.tsx",
+          "line": 382
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/NotificationSettings/index.tsx",
+            "line": 382
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:notification:chat",
+      "label": "Notification options: New messages",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/NotificationSettings/components/ChatNotificationDialogs.tsx",
+          "line": 17
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/NotificationSettings/components/ChatNotificationDialogs.tsx",
+            "component": "ChatNotificationDialogs",
+            "prop": "chatControl"
+          }
+        }
+      ]
+    },
+    {
+      "id": "sheet:notification:chat-request",
+      "label": "Notification options: New message requests",
+      "category": "sheet",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/NotificationSettings/components/ChatNotificationDialogs.tsx",
+          "line": 27
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/NotificationSettings/components/ChatNotificationDialogs.tsx",
+            "component": "ChatNotificationDialogs",
+            "prop": "chatRequestControl"
+          }
+        }
+      ]
+    },
+    {
+      "id": "guard:takendown-appeal",
+      "label": "Account suspension appeal form",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Takendown.tsx",
+          "line": 38
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/screens/Takendown.tsx",
+            "line": 38,
+            "path": [],
+            "value": true
+          }
+        }
+      ],
+      "parent": "guard:takendown",
+      "condition": "Suspended account; UI-only appeal button"
+    },
+    {
+      "id": "guard:takendown-submitted",
+      "label": "Account appeal submitted",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/screens/Takendown.tsx",
+          "line": 155
+        }
+      ],
+      "selectors": [],
+      "parent": "guard:takendown-appeal",
+      "condition": "Appeal submission succeeded; no submission performed"
+    },
+    {
+      "id": "guard:moderated-content",
+      "label": "Profile / screen moderation gate",
+      "category": "auth-guard",
+      "evidence": [
+        {
+          "file": "src/components/moderation/ScreenHider.tsx",
+          "line": 40
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/moderation/ScreenHider.tsx",
+            "line": 40,
+            "path": [],
+            "value": false
+          }
+        }
+      ],
+      "condition": "Moderation blur or unauthenticated viewing restriction; shared gate body"
+    },
+    {
+      "id": "moderation:appeal-label",
+      "label": "Appeal moderation label",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/moderation/ModerationDetailsDialog.tsx",
+          "line": 53
+        }
+      ],
+      "selectors": [
+        {
+          "state": {
+            "file": "src/components/moderation/ModerationDetailsDialog.tsx",
+            "line": 53,
+            "path": [],
+            "value": true
+          }
+        }
+      ],
+      "parent": "sheet:moderation-details",
+      "condition": "Appealable label on current account or its content"
+    },
+    {
+      "id": "birthdate:locked",
+      "label": "Birthdate update not allowed",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/BirthDateSettings.tsx",
+          "line": 91
+        }
+      ],
+      "selectors": [],
+      "parent": "sheet:birthdate",
+      "condition": "Recent birthdate change"
+    },
+    {
+      "id": "app-password:created",
+      "label": "Generated app password",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/AddAppPasswordDialog.tsx",
+          "line": 182
+        }
+      ],
+      "selectors": [],
+      "parent": "sheet:app-password",
+      "condition": "Server returned a newly created credential; never manufacture it"
+    },
+    {
+      "id": "age-init:sent",
+      "label": "Age verification email sent",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/components/ageAssurance/AgeAssuranceInitDialog.tsx",
+          "line": 229
+        }
+      ],
+      "selectors": [],
+      "parent": "sheet:age-init",
+      "condition": "Age assurance begin response succeeded"
+    },
+    {
+      "id": "age-return:success",
+      "label": "Age assurance return success",
+      "category": "sheet-step",
+      "evidence": [
+        {
+          "file": "src/ageAssurance/components/RedirectOverlay.tsx",
+          "line": 235
+        }
+      ],
+      "selectors": [],
+      "parent": "guard:age-return",
+      "condition": "Age assurance polling succeeded"
+    },
+    {
+      "id": "prompt:alt",
+      "label": "Alt text information",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/AltBadgeWithDialog.tsx",
+          "line": 80
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/AltBadgeWithDialog.tsx",
+            "line": 80
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:remove-feed",
+      "label": "Remove feed confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/FeedCard.tsx",
+          "line": 399
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/FeedCard.tsx",
+            "line": 399
+          }
+        },
+        {
+          "control": {
+            "file": "src/view/com/posts/PostFeedErrorMessage.tsx",
+            "line": 214
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:delete-post",
+      "label": "Delete post confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/PostControls/PostMenu/PostMenuItems.tsx",
+          "line": 816
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/PostControls/PostMenu/PostMenuItems.tsx",
+            "line": 816
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:hide-post",
+      "label": "Hide post from feed confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/PostControls/PostMenu/PostMenuItems.tsx",
+          "line": 824
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/PostControls/PostMenu/PostMenuItems.tsx",
+            "line": 824
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:detach-quote",
+      "label": "Detach quote confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/PostControls/PostMenu/PostMenuItems.tsx",
+          "line": 852
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/PostControls/PostMenu/PostMenuItems.tsx",
+            "line": 852
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:hide-reply",
+      "label": "Hide reply in thread confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/PostControls/PostMenu/PostMenuItems.tsx",
+          "line": 859
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/PostControls/PostMenu/PostMenuItems.tsx",
+            "line": 859
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:generate-starter",
+      "label": "Generate starter pack confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/StarterPack/ProfileStarterPacks.tsx",
+          "line": 332
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/StarterPack/ProfileStarterPacks.tsx",
+            "line": 332
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:starter-minimum",
+      "label": "Starter pack minimum follows information",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/StarterPack/ProfileStarterPacks.tsx",
+          "line": 359
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/StarterPack/ProfileStarterPacks.tsx",
+            "line": 359
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:starter-retry",
+      "label": "Starter pack generation retry dialog",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/StarterPack/ProfileStarterPacks.tsx",
+          "line": 366
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/StarterPack/ProfileStarterPacks.tsx",
+            "line": 366
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:trending",
+      "label": "Trending topics information",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/TrendingTopics.tsx",
+          "line": 28
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/TrendingTopics.tsx",
+            "line": 28
+          }
+        },
+        {
+          "control": {
+            "file": "src/components/TrendingTopics.tsx",
+            "component": "TrendingTopicsPrompt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:delete-word",
+      "label": "Delete muted word confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/MutedWords.tsx",
+          "line": 452
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/MutedWords.tsx",
+            "line": 452
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:discard-list",
+      "label": "Discard list edits confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/lists/CreateOrEditListDialog.tsx",
+          "line": 97
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dialogs/lists/CreateOrEditListDialog.tsx",
+            "line": 97
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:list-blocked",
+      "label": "Account blocked by moderation list",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/dms/BlockedByListDialog.tsx",
+          "line": 26
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dms/BlockedByListDialog.tsx",
+            "line": 26
+          }
+        },
+        {
+          "control": {
+            "file": "src/components/dms/BlockedByListDialog.tsx",
+            "component": "BlockedByListDialog"
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:new-account-chat",
+      "label": "Account too new for group chat",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/dms/InitiateChatFlow.tsx",
+          "line": 834
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dms/InitiateChatFlow.tsx",
+            "line": 834
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:leave-convo",
+      "label": "Leave conversation confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/dms/LeaveConvoPrompt.tsx",
+          "line": 55
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dms/LeaveConvoPrompt.tsx",
+            "line": 55
+          }
+        },
+        {
+          "control": {
+            "file": "src/components/dms/LeaveConvoPrompt.tsx",
+            "component": "LeaveConvoPrompt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:blocked-messages",
+      "label": "Hidden blocked messages information",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/dms/MessageItem.tsx",
+          "line": 731
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dms/MessageItem.tsx",
+            "line": 731
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:delete-message",
+      "label": "Delete message confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/dms/MessageOverlays.tsx",
+          "line": 180
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/dms/MessageOverlays.tsx",
+            "line": 180
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:hide-trending",
+      "label": "Hide trending videos confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/interstitials/TrendingVideos.tsx",
+          "line": 136
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/interstitials/TrendingVideos.tsx",
+            "line": 136
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:verify",
+      "label": "Verify account confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/verification/VerificationCreatePrompt.tsx",
+          "line": 48
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/verification/VerificationCreatePrompt.tsx",
+            "line": 48
+          }
+        },
+        {
+          "control": {
+            "file": "src/components/verification/VerificationCreatePrompt.tsx",
+            "component": "VerificationCreatePrompt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:remove-verification",
+      "label": "Remove verification confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/components/verification/VerificationRemovePrompt.tsx",
+          "line": 44
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/components/verification/VerificationRemovePrompt.tsx",
+            "line": 44
+          }
+        },
+        {
+          "control": {
+            "file": "src/components/verification/VerificationRemovePrompt.tsx",
+            "component": "VerificationRemovePrompt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:group-name",
+      "label": "Edit group chat name",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+          "line": 39
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+            "line": 39
+          }
+        },
+        {
+          "control": {
+            "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+            "component": "EditNamePrompt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:group-lock",
+      "label": "Lock group chat confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+          "line": 103
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+            "line": 103
+          }
+        },
+        {
+          "control": {
+            "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+            "component": "LockChatPrompt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:group-leave",
+      "label": "Leave group chat confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+          "line": 126
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+            "line": 126
+          }
+        },
+        {
+          "control": {
+            "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+            "component": "LeaveChatPrompt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:group-leave-lock",
+      "label": "Leave and lock group chat confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+          "line": 150
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+            "line": 150
+          }
+        },
+        {
+          "control": {
+            "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+            "component": "LeaveAndLockChatPrompt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:group-remove-member",
+      "label": "Remove group member confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+          "line": 174
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+            "line": 174
+          }
+        },
+        {
+          "control": {
+            "file": "src/screens/Messages/ConversationSettings/prompts.tsx",
+            "component": "RemoveMemberPrompt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:rescind-request",
+      "label": "Rescind group join request confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/Messages/components/OutgoingRequestListItem.tsx",
+          "line": 111
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Messages/components/OutgoingRequestListItem.tsx",
+            "line": 111
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:account-status",
+      "label": "Account moderation status information",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/ModerationInbox/components/AccountStatus.tsx",
+          "line": 59
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/ModerationInbox/components/AccountStatus.tsx",
+            "line": 59
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:archived-post",
+      "label": "Archived post information",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/PostThread/components/ThreadItemAnchor.tsx",
+          "line": 633
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/PostThread/components/ThreadItemAnchor.tsx",
+            "line": 633
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:discard-profile",
+      "label": "Discard profile edits confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/Profile/Header/EditProfileDialog.tsx",
+          "line": 74
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Profile/Header/EditProfileDialog.tsx",
+            "line": 74
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:labeler-limit",
+      "label": "Labeler subscription limit information",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/Profile/Header/ProfileHeaderLabeler.tsx",
+          "line": 213
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Profile/Header/ProfileHeaderLabeler.tsx",
+            "line": 213
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:unblock",
+      "label": "Unblock account confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/Profile/Header/ProfileHeaderStandard.tsx",
+          "line": 181
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Profile/Header/ProfileHeaderStandard.tsx",
+            "line": 181
+          }
+        },
+        {
+          "control": {
+            "file": "src/screens/Profile/Header/ProfileHeaderStandard.tsx",
+            "line": 425
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:delete-list",
+      "label": "Delete list confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/ProfileList/components/MoreOptionsMenu.tsx",
+          "line": 315
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/ProfileList/components/MoreOptionsMenu.tsx",
+            "line": 315
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:list-optout",
+      "label": "Opt out of starter pack confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/ProfileList/components/MoreOptionsMenu.tsx",
+          "line": 324
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/ProfileList/components/MoreOptionsMenu.tsx",
+            "line": 324
+          }
+        },
+        {
+          "control": {
+            "file": "src/screens/StarterPack/StarterPackScreen.tsx",
+            "line": 750
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:mute-list",
+      "label": "Mute list confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/ProfileList/components/SubscribeMenu.tsx",
+          "line": 102
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/ProfileList/components/SubscribeMenu.tsx",
+            "line": 102
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:block-list",
+      "label": "Block list confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/ProfileList/components/SubscribeMenu.tsx",
+          "line": 112
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/ProfileList/components/SubscribeMenu.tsx",
+            "line": 112
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:dismiss-interests",
+      "label": "Dismiss explore interests confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/Search/modules/ExploreInterestsCard.tsx",
+          "line": 40
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Search/modules/ExploreInterestsCard.tsx",
+            "line": 40
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:delete-app-password",
+      "label": "Delete app password confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/AppPasswords.tsx",
+          "line": 207
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/AppPasswords.tsx",
+            "line": 207
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:signout",
+      "label": "Sign out confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 306
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/Settings.tsx",
+            "line": 306
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:remove-account",
+      "label": "Remove saved account confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 687
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/Settings/Settings.tsx",
+            "line": 687
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:delete-starter",
+      "label": "Delete starter pack confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/screens/StarterPack/StarterPackScreen.tsx",
+          "line": 706
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/screens/StarterPack/StarterPackScreen.tsx",
+            "line": 706
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:discard-composer",
+      "label": "Save / discard composer confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/view/com/composer/Composer.tsx",
+          "line": 1509
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/view/com/composer/Composer.tsx",
+            "line": 1509
+          }
+        },
+        {
+          "control": {
+            "file": "src/view/com/composer/Composer.tsx",
+            "line": 1518
+          }
+        },
+        {
+          "control": {
+            "file": "src/view/com/composer/drafts/DraftsButton.tsx",
+            "line": 84
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:empty-posts",
+      "label": "Skip empty thread posts confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/view/com/composer/Composer.tsx",
+          "line": 1566
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/view/com/composer/Composer.tsx",
+            "line": 1566
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:discard-thread-post",
+      "label": "Discard thread post confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/view/com/composer/Composer.tsx",
+          "line": 1758
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/view/com/composer/Composer.tsx",
+            "line": 1758
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:delete-draft",
+      "label": "Delete saved draft confirmation",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/view/com/composer/drafts/DraftItem.tsx",
+          "line": 238
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/view/com/composer/drafts/DraftItem.tsx",
+            "line": 238
+          }
+        }
+      ]
+    },
+    {
+      "id": "prompt:private-sharing",
+      "label": "Private profile sharing notice",
+      "category": "prompt",
+      "evidence": [
+        {
+          "file": "src/view/com/profile/ProfileMenu.tsx",
+          "line": 577
+        }
+      ],
+      "selectors": [
+        {
+          "control": {
+            "file": "src/view/com/profile/ProfileMenu.tsx",
+            "line": 577
+          }
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "label": "AppIconSettings",
+      "reason": "link-only",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/AppearanceSettings.tsx",
+          "line": 166
+        }
+      ]
+    },
+    {
+      "label": "CommunityGuidelines",
+      "reason": "link-only",
+      "evidence": [
+        {
+          "file": "src/routes.ts",
+          "line": 71
+        }
+      ]
+    },
+    {
+      "label": "CopyrightPolicy",
+      "reason": "link-only",
+      "evidence": [
+        {
+          "file": "src/routes.ts",
+          "line": 71
+        }
+      ]
+    },
+    {
+      "label": "Debug",
+      "reason": "internal",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 301
+        }
+      ]
+    },
+    {
+      "label": "DebugMod",
+      "reason": "internal",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/Settings.tsx",
+          "line": 481
+        }
+      ]
+    },
+    {
+      "label": "LegacyNotificationSettings",
+      "reason": "redirect",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/LegacyNotificationSettings.tsx",
+          "line": 13
+        }
+      ]
+    },
+    {
+      "label": "NotFound",
+      "reason": "fallback",
+      "evidence": [
+        {
+          "file": "src/lib/routes/router.ts",
+          "line": 26
+        }
+      ]
+    },
+    {
+      "label": "PrivacyPolicy",
+      "reason": "link-only",
+      "evidence": [
+        {
+          "file": "src/routes.ts",
+          "line": 71
+        }
+      ]
+    },
+    {
+      "label": "SharedPreferencesTester",
+      "reason": "internal",
+      "evidence": [
+        {
+          "file": "src/view/screens/Storybook/Storybook.tsx",
+          "line": 86
+        }
+      ]
+    },
+    {
+      "label": "Start",
+      "reason": "redirect",
+      "evidence": [
+        {
+          "file": "src/view/screens/Home.tsx",
+          "line": 73
+        }
+      ]
+    },
+    {
+      "label": "StarterPackShort",
+      "reason": "link-only",
+      "evidence": [
+        {
+          "file": "src/lib/strings/url-helpers.ts",
+          "line": 412
+        }
+      ]
+    },
+    {
+      "label": "Support",
+      "reason": "link-only",
+      "evidence": [
+        {
+          "file": "src/routes.ts",
+          "line": 71
+        }
+      ]
+    },
+    {
+      "label": "TermsOfService",
+      "reason": "link-only",
+      "evidence": [
+        {
+          "file": "src/routes.ts",
+          "line": 71
+        }
+      ]
+    },
+    {
+      "label": "Topic",
+      "reason": "server-link",
+      "evidence": [
+        {
+          "file": "src/components/TrendingTopics.tsx",
+          "line": 142
+        }
+      ]
+    },
+    {
+      "label": "Web embed code dialog",
+      "reason": "Only web callers",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/Embed.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "label": "Native image editor",
+      "reason": "Native implementation returns null",
+      "evidence": [
+        {
+          "file": "src/view/com/composer/photos/EditImageDialog.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "label": "Bookmarks announcement",
+      "reason": "Not mounted by current NUX host",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/nuxs/BookmarksAnnouncement.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "label": "Drafts announcement",
+      "reason": "Not mounted by current NUX host",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/nuxs/DraftsAnnouncement.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "label": "Contacts announcement",
+      "reason": "Not mounted by current NUX host",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/nuxs/FindContactsAnnouncement.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "label": "Verification announcement",
+      "reason": "Not mounted by current NUX host",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/nuxs/InitialVerificationAnnouncement.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "label": "Live now beta announcement",
+      "reason": "Not mounted by current NUX host",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/nuxs/LiveNowBetaDialog.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "label": "Activity subscription announcement",
+      "reason": "Not mounted by current NUX host",
+      "evidence": [
+        {
+          "file": "src/components/dialogs/nuxs/ActivitySubscriptions.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "label": "Growthbook flags dialog",
+      "reason": "Internal builds only",
+      "evidence": [
+        {
+          "file": "src/screens/Settings/components/GrowthbookDialog.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "label": "Debug field prompt",
+      "reason": "Internal debugging UI",
+      "evidence": [
+        {
+          "file": "src/components/DebugFieldDisplay.tsx",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "label": "Web welcome overlay",
+      "reason": "Only mounted by index.web.tsx; native useWelcomeModal throws",
+      "evidence": [
+        {
+          "file": "src/components/hooks/useWelcomeModal.native.ts",
+          "line": 4
+        }
+      ]
+    }
+  ]
+}
