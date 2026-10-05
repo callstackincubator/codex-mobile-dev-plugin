@@ -21,6 +21,18 @@ import { flowRunning } from "../src/shared/app-flow.ts";
 import { FlowPresentationCapture } from "../src/server/app-flow/presentations.ts";
 import {FlowRuntimeMetrics,FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
 
+test('local runtime totals retain fixed names across flushes without retaining command data',()=>{
+  const metrics=new FlowRuntimeMetrics('ios');
+  metrics.record('open',10,false);metrics.record('open',20,true);metrics.record('/private/app/secret',30,false);
+  metrics.record('open',NaN,false);metrics.record('open',-1,false);
+  const before=metrics.snapshot();
+  assert.deepEqual(before,[{operation:'open',count:2,totalMs:30,maxMs:20,timeouts:1},{operation:'other',count:1,totalMs:30,maxMs:30,timeouts:0}]);
+  before[0].count=100;
+  metrics.flush();metrics.record('open',40,false);
+  assert.equal(metrics.snapshot()[0].count,3);assert.equal(metrics.snapshot()[0].totalMs,70);
+  assert.equal(JSON.stringify(metrics.snapshot()).includes('secret'),false);
+});
+
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
   assert.equal(included, expected, `Telemetry fragment: ${fragment}`);

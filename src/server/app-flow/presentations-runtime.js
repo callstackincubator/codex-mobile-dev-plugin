@@ -305,7 +305,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(unique.length===1)return {owner,target:unique[0]};
     }
   };
-  const list = focus => {const tree=index(),scope=roots(focus,tree),seen=new Set();return catalog.actions.filter(action=>{const found=find(action,tree,focus,scope);if(!found)return false;const key=found.target?.value??JSON.stringify([action.effect.site,action.effect.path,action.effect.value]);if(seen.has(key))return false;seen.add(key);return true;}).map(action=>({id:action.id,name:action.name,file:action.file,line:action.line}));};
+  let lastAvailable=0;
+  const list = focus => {const tree=index(),scope=roots(focus,tree),seen=new Set();const result=catalog.actions.filter(action=>{const found=find(action,tree,focus,scope);if(!found)return false;const key=found.target?.value??JSON.stringify([action.effect.site,action.effect.path,action.effect.value]);if(seen.has(key))return false;seen.add(key);return true;}).map(action=>({id:action.id,name:action.name,file:action.file,line:action.line}));lastAvailable=result.length;return result;};
   function activeViews(focus) {
     const tree=index(),visual=visualFocus(focus,tree),ids=new Set();
     for(const record of projected){if(record.failed)continue;for(let p=visual,n=0;p&&n++<100;p=p.return)if((p.pendingProps??p.memoizedProps)===record.child.props){for(const id of record.views??[])ids.add(id);break;}}
@@ -313,7 +314,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(!action.views?.length||action.effect.kind!=='state')continue;
       for(const binding of tree.states.get(action.effect.site)??[]){
         let value=hookValue(binding,tree);for(const part of action.effect.path)value=value?.[part];if(value!==action.effect.value)continue;
-        if(!(tree.names.get(action.name)??[]).some(f=>tree.isVisible(f)&&tree.inside(f,binding.fiber)&&(!visual||tree.inside(f,visual))))continue;
+        if(!(tree.names.get(action.name)??[]).some(f=>tree.inside(f,binding.fiber)&&(!visual||tree.inside(f,visual))&&tree.isVisible(f)))continue;
         for(const id of action.views)ids.add(id);
       }
     }
@@ -394,12 +395,30 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   async function rollback(level = 0, wait = true) {
     while(undo.length>Math.max(0,level)){
-      const entry=undo.pop();
-      try{if(entry.projection){const record=entry.projection;clearTimeout(record.seedTimer);const index=projected.indexOf(record);if(index>=0)projected.splice(index,1);if(record.seed)unpatch();if(!projected.length)unpatchPreviewEffects();const props=record.root.memoizedProps??record.props;record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});if(wait){const started=Date.now();while(!record.dismissed&&Date.now()-started<1000)await new Promise(resolve=>later(resolve,40));}}else if(entry.control){const focus=entry.focus;watchNative(focus,true);entry.control[entry.close]();if(wait){const started=Date.now();while(motion(focus).pending&&Date.now()-started<2000)await new Promise(resolve=>later(resolve,40));}}else{const focus=entry.focus;if(entry.nativeDismiss)watchNative(focus,true,true);entry.binding.setter(previous=>setPath(previous,entry.path,entry.value));if(wait&&entry.nativeDismiss){const started=Date.now();while(motion(focus).pending&&Date.now()-started<2000)await new Promise(resolve=>later(resolve,40));}}}catch{}
+      // Keep the checkpoint until its close operation succeeds. A thrown close
+      // must not discard the only way to restore the app on the next attempt.
+      const entry=undo[undo.length-1];
+      if(entry.projection){
+        const record=entry.projection;clearTimeout(record.seedTimer);
+        const props=record.root.memoizedProps??record.props;
+        record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
+        if(wait){const started=Date.now();while(!record.dismissed&&Date.now()-started<1000)await new Promise(resolve=>later(resolve,40));}
+        const index=projected.indexOf(record);if(index>=0)projected.splice(index,1);
+        if(record.seed)unpatch();if(!projected.length)unpatchPreviewEffects();
+      }else if(entry.control){
+        const focus=entry.focus;watchNative(focus,true);entry.control[entry.close]();
+        if(wait){const started=Date.now();while(motion(focus).pending&&Date.now()-started<2000)await new Promise(resolve=>later(resolve,40));}
+      }else{
+        const focus=entry.focus;if(entry.nativeDismiss)watchNative(focus,true,true);
+        entry.binding.setter(previous=>setPath(previous,entry.path,entry.value));
+        if(wait&&entry.nativeDismiss){const started=Date.now();while(motion(focus).pending&&Date.now()-started<2000)await new Promise(resolve=>later(resolve,40));}
+      }
+      undo.pop();
     }
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80));
   }
   function cleanup(){for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;clearNative();unpatch();unpatchPreviewEffects();bindings.clear();entries.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
-  return {collect,records,configure,list,open,activeViews,rollback,cleanup,motion, visualFocus, project, focusFor:(name_,scope)=>{const tree=index();const candidates=(tree.names.get(name_)??[]).filter(fiber=>tree.isVisible(fiber)&&(!scope||tree.inside(fiber,scope)||tree.inside(fiber,scope.alternate)));const unique=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner)));return unique.length===1?unique[0]:undefined;}, focused:focus=>{if(undo.length)undo[undo.length-1].focus=focus;}, checkpoint:()=>undo.length};
+  const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativePending:[...nativeRecords.values()].filter(r=>r.pending).length,checkpoints:undo.length,projections:projected.length});
+  return {collect,records,configure,list,open,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, focusFor:(name_,scope)=>{const tree=index();const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||tree.inside(fiber,scope)||tree.inside(fiber,scope.alternate))&&tree.isVisible(fiber));const unique=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner)));return unique.length===1?unique[0]:undefined;}, focused:focus=>{if(undo.length)undo[undo.length-1].focus=focus;}, checkpoint:()=>undo.length};
 }

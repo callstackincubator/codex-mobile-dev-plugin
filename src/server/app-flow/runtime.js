@@ -350,6 +350,12 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         if (reason && visibleLoader(fiber)) loadingReason = reason;
       }
       if (fiber.tag !== 5 || !props) return;
+      // After the signature is full and visible content is proven, another
+      // plain host cannot change readiness. Keep scanning loaders, query hooks,
+      // opacity and headings above/below this point, without crossing Fabric
+      // for every offscreen row. Host/content counts describe sampled hosts.
+      const heading = props.accessibilityRole === 'header' || props.role === 'heading';
+      if (signature.length >= 250 && content > 0 && (title || !heading)) return;
       // Virtualized lists can keep mounting rows below the viewport for many
       // seconds. Those rows cannot change this screenshot or its readiness.
       let box = bounds && nativeRect(fiber);
@@ -357,7 +363,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
       if (box && !(box.x < bounds.x + bounds.width && box.x + box.width > bounds.x && box.y < bounds.y + bounds.height && box.y + box.height > bounds.y)) return;
       hosts++;
       const text = typeof props.children === 'string' ? props.children.slice(0, 100) : '';
-      if (!title && (props.accessibilityRole === 'header' || props.role === 'heading')) title = text || props.accessibilityLabel;
+      if (!title && heading) title = text || props.accessibilityLabel;
       if (text || props.source || props.src || props.accessibilityLabel) content++;
       if (signature.length < 250) signature.push([typeof fiber.type === 'string' ? fiber.type : '', text, !!props.source]);
     }, screen);
@@ -410,10 +416,11 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
   async function restore() {
     if (stopped) return;
     stopped = true; generation++; clearTimeout(watchdog); cancelWaits();
-    try { if (errorHandler && errorUtils.getGlobalHandler() === errorHandler) errorUtils.setGlobalHandler(originalErrorHandler); } catch {}
     // Native sheets must dismiss before their parent modal unmounts. Dropping
     // both at once can leave UIKit showing a detached, blank presentation.
-    if(presentations?.checkpoint())await presentations.rollback(0,true);
+    try { if(presentations?.checkpoint())await presentations.rollback(0,true); }
+    catch(error){stopped=false;renewLease();throw error;}
+    try { if (errorHandler && errorUtils.getGlobalHandler() === errorHandler) errorUtils.setGlobalHandler(originalErrorHandler); } catch {}
     presentations?.cleanup(); presentationFrames.length=0; presentationFocus=presentationObservation=presentationExpected=undefined;
     cancelWaits();
     try { if (!observing && root && original) root.dispatch({ type: 'RESET', payload: original }); } catch {}
@@ -423,7 +430,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
     delete globalThis[key];
   }
   let watchdog;
-  function renewLease() { clearTimeout(watchdog); watchdog = setTimeout(restore, Math.max(1, leaseMs)); }
+  function renewLease() { clearTimeout(watchdog); watchdog = setTimeout(() => { void restore().catch(() => {}); }, Math.max(1, leaseMs)); }
   renewLease();
   globalThis[key] = {
       invoke(command, reply) {
@@ -437,6 +444,10 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         renewLease();
         if (failed()) return;
         if (command.type === 'heartbeat') { reply({ alive: true }); return; }
+        if (command.type === 'diagnostics') {
+          let mountedFibers=0,mountedHosts=0;fibers(fiber=>{mountedFibers++;if(fiber.tag===5)mountedHosts++;});
+          reply({mountedFibers,mountedHosts,transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,presentations:presentations?.diagnostics?.()});return;
+        }
         if (command.type === 'observe') { reply(observe()); return; }
         if (observing) { reply({ error: 'Recording observes screens; navigation commands are disabled.' }); return; }
         if (command.type === 'presentation-collect') { if (!presentations) { reply({bindings:[]}); return; } void presentations.collect(command.states,command.actions).then(reply, error => reply({error:'Presentation bindings could not be read.',detail:String(error?.message??error).slice(0,1000)})); return; }
@@ -446,7 +457,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         if (command.type === 'presentation-active') { reply(presentations?.activeViews(presentationFocus) ?? []); return; }
         if (command.type === 'presentation-view') { reply(presentationView()); return; }
         if (command.type === 'presentation-checkpoint') { reply({level:presentations?.checkpoint()??0}); return; }
-        if (command.type === 'presentation-rollback') { const level=command.level??0;while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined; void (presentations?.rollback(command.level ?? 0) ?? Promise.resolve()).then(() => reply({}), () => reply({error:'Presentation restoration failed.'})); return; }
+        if (command.type === 'presentation-rollback') { const level=command.level??0; void (presentations?.rollback(level) ?? Promise.resolve()).then(() => {while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined;reply({});}, () => reply({error:'Presentation restoration failed.'})); return; }
         if (command.type === 'presentation-project') {
           const result=presentations?.project(presentationFocus);if(!result||result.error){reply(result??{error:'Presentation projection is unavailable.'});return;}
           presentationFrames.push({focus:presentationFocus,expected:presentationExpected});presentationObservation=undefined;later(()=>{try{reply(presentationView());}catch(error){reply({error:'Presentation inspection is unavailable.',detail:String(error?.message??error).slice(0,1000)});}},80);return;

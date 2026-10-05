@@ -201,6 +201,13 @@ catalog reuse and discovery retries. Saved discovery errors and bounded exceptio
 details stay local; telemetry reports only fixed errors and operation names.
 Collection cancellation releases its wait and restores hook exports. No app data,
 source, view IDs or failure details enter metrics or error events.
+Since 0.1.143, saved maps also keep numeric command totals across reconnects for
+local diagnosis. These totals do not change Sentry's per-connection bounded
+timing windows or flushes. The fixed `diagnostics` operation measures a requested
+inspector count read; its result stays local. Readiness and presentation timings
+still include the full check after plain-host and unrelated-owner layout reads
+are skipped. Host/content counts now describe the readiness sample, rather than
+all visible hosts. Those counts are not telemetry measurements.
 Since 0.1.140, presentation lookup rejects absent source-bound entries before
 checking native layout and shares native bounds within one synchronous lookup.
 The existing `presentations` runtime round trip and presentation discovery

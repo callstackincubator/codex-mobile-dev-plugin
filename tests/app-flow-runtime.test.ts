@@ -145,6 +145,26 @@ test('restoration waits for child sheet dismissal before resetting parent naviga
   assert.deepEqual(Array.from(app.context.order),['dismiss','dismissed','cleanup','navigation']);assert.equal(app.context.flow,undefined);
 });
 
+test('a failed presentation restore leaves the inspector available to retry cleanup',async t=>{
+  const app=runtime(t);await app.invoke({type:'restore'});app.context.attempts=0;
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,()=>({checkpoint:()=>1,async rollback(){if(++attempts===1)throw Error('close failed')},cleanup(){}}))`,app.context);
+  await app.invoke({type:'inspect'});
+  assert.equal((await app.invoke({type:'restore'})).error,'App Flow restoration failed.');
+  assert.equal((await app.invoke({type:'heartbeat'})).alive,true);
+  assert.equal((await app.invoke({type:'restore'})).restored,true);
+  assert.equal(app.context.flow,undefined);
+});
+
+test('diagnostics report bounded counts without traversing native layout or returning app content',async t=>{
+  const app=runtime(t,false,{setTimeout,clearTimeout},true);
+  app.native.stateNode.getBoundingClientRect=()=>{assert.fail('Diagnostic counters must not request native layout')};
+  app.native.memoizedProps.children='private app content';
+  const diagnostics=await app.invoke({type:'diagnostics'});
+  assert.equal(diagnostics.mountedFibers,2);assert.equal(diagnostics.mountedHosts,1);
+  assert.equal(diagnostics.presentations.bindings,0);
+  assert.equal(JSON.stringify(diagnostics).includes('private'),false);
+});
+
 test('source previews wait for their proven body to mount instead of capturing the previous form',async t=>{
   const app=runtime(t);await app.invoke({type:'restore'});app.context.focus=app.fiber;
   vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,(options)=>{const p=(${installPresentationRuntime.toString()})(options);return {...p,open:()=>({name:'Wizard',focus,expected:'Verify'})}})`,app.context);
@@ -413,6 +433,34 @@ test('recovery restores the starting stack without ending the runtime session', 
   await app.invoke({type:'recover'});
   assert.equal(app.getState().routes[0].name,'Home');
   assert.equal((await app.invoke({type:'heartbeat'})).alive,true);
+});
+
+test('long screens cap host layout reads while retaining late loaders, queries, headings and opacity',async t=>{
+  const app=runtime(t);let measured=0;
+  const box=()=>{measured++;return {x:0,y:0,width:100,height:200}};
+  app.native.stateNode={getBoundingClientRect:box};
+  let tail=app.native;
+  for(let i=1;i<1000;i++){
+    const host:any={tag:5,type:'Text',memoizedProps:{children:`row ${i}`},stateNode:{getBoundingClientRect:box},return:app.fiber};
+    tail.sibling=host;tail=host;
+  }
+  let view=await app.invoke({type:'verify',name:'Home'});
+  assert.equal(measured,250);assert.equal(JSON.parse(view.signature).length,250);
+  const signature=view.signature;
+  const heading:any={tag:5,type:'Text',memoizedProps:{children:'Late heading',accessibilityRole:'header'},stateNode:{getBoundingClientRect:box},return:app.fiber};
+  tail.sibling=heading;
+  measured=0;view=await app.invoke({type:'presentation-view'});
+  assert.equal(view.title,'Late heading');assert.equal(measured,251);assert.equal(view.signature,signature);
+  const loader:any={tag:0,type:function Skeleton(){},memoizedProps:{},return:app.fiber,child:{tag:5,type:'View',memoizedProps:{},stateNode:{getBoundingClientRect:box}}};
+  heading.sibling=loader;
+  assert.equal((await app.invoke({type:'verify',name:'Home'})).loading,true,'Loaders after the signature cap still block');
+  loader.type=function QueryView(){};loader.memoizedState={memoizedState:{data:undefined,status:'pending',fetchStatus:'fetching'}};
+  assert.equal((await app.invoke({type:'verify',name:'Home'})).loadingReason,'data');
+  loader.memoizedState=null;
+  let opacity=.2;loader.memoizedProps={style:opacityStyle({_isReanimatedSharedValue:true,getSync:()=>opacity})};
+  const first=await app.invoke({type:'verify',name:'Home'});opacity=.8;
+  const second=await app.invoke({type:'verify',name:'Home'});
+  assert.notEqual(first.motion,second.motion,'A late native fade still changes the signature');
 });
 
 test('an unchanged skeleton waits beyond the fast deadline and captures as soon as content replaces it', async t => {

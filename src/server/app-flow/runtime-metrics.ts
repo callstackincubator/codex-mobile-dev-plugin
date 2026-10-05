@@ -5,6 +5,7 @@ const operations:Record<string,string>={
   install:'installing the inspector', binding:'connecting the inspector', heartbeat:'checking the connection',
   inspect:'reading navigation', resume:'resuming the inspector', recover:'restoring navigation', restore:'closing the inspector',
   open:'opening a route', verify:'checking a screenshot', observe:'observing the app',
+  diagnostics:'reading inspector diagnostics',
   'presentation-collect':'collecting presentation bindings', 'presentation-bindings':'reading presentation bindings',
   'presentation-configure':'binding presentation source', 'presentation-active':'reading presentation state',
   'presentation-symbolicate':'resolving presentation source',
@@ -34,12 +35,18 @@ export class FlowAppFailure extends FlowRuntimeFailure {
 /** Fixed operation names and bounded samples. Never retain commands or app data. */
 export class FlowRuntimeMetrics {
   private windows=new Map<string,{timings:MeasurementWindow;timeouts:number}>();
+  private totals=new Map<string,{operation:string;count:number;totalMs:number;maxMs:number;timeouts:number}>();
   private platform?:'ios'|'android';
   constructor(platform?:'ios'|'android'){this.platform=platform;}
   record(operation:string,ms:number,timedOut:boolean){
+    if(!Number.isFinite(ms)||ms<0)return;
     const key=runtimeOperation(operation),window=this.windows.get(key)??{timings:new MeasurementWindow(),timeouts:0};
     window.timings.record(ms);if(timedOut)window.timeouts++;this.windows.set(key,window);
+    const total=this.totals.get(key)??{operation:key,count:0,totalMs:0,maxMs:0,timeouts:0};
+    total.count++;total.totalMs+=ms;total.maxMs=Math.max(total.maxMs,ms);if(timedOut)total.timeouts++;this.totals.set(key,total);
   }
+  /** Local diagnostics survive telemetry flushes; no command or app data. */
+  snapshot(){return [...this.totals.values()].map(value=>({...value}));}
   flush(){
     if(process.env.MOBILE_DEV_TELEMETRY==='off'){this.windows.clear();return;}
     for(const [runtime_operation,window]of this.windows){

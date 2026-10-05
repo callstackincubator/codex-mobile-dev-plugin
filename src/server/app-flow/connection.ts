@@ -22,8 +22,8 @@ export class FlowConnection {
   private metrics:FlowRuntimeMetrics;
   private presentationCatalog?:import('../../shared/app-flow.ts').FlowPresentations;
 
-  constructor(url: string, sessionId = randomUUID(), platform?:'ios'|'android') {
-    this.metrics=new FlowRuntimeMetrics(platform);
+  constructor(url: string, sessionId = randomUUID(), platform?:'ios'|'android', metrics?:FlowRuntimeMetrics) {
+    this.metrics=metrics??new FlowRuntimeMetrics(platform);
     this.key = `__mobile_flow_${sessionId.replaceAll("-", "")}`;
     this.binding = `${this.key}_reply_${randomUUID().replaceAll("-", "")}`;
     const origin = new URL(url); origin.protocol = "http:";
@@ -100,7 +100,7 @@ export class FlowConnection {
     const result=await this.send("Runtime.evaluate", { expression, silent: true, returnByValue: true, objectGroup: this.key }, timeout, id,runtimeOperation(command.type));
     if(result?.runtimeUnavailable)throw new Error('App Flow inspector is no longer installed. Reconnecting.');
     if(result?.appFailed)throw new FlowAppFailure(String(command.type));
-    if (['presentation-collect','presentation-bindings','presentation-configure','presentation-active','presentations'].includes(String(command.type))) {
+    if (['presentation-collect','presentation-bindings','presentation-configure','presentation-active','presentations','presentation-rollback'].includes(String(command.type))) {
       if(result?.error)throw new FlowRuntimeFailure(String(command.type),'was rejected',result.detail??result.error);
       if(['presentation-active','presentations'].includes(String(command.type))&&!Array.isArray(result))throw new FlowRuntimeFailure(String(command.type),'returned an invalid response');
       if(['presentation-collect','presentation-bindings'].includes(String(command.type))&&!Array.isArray(result?.bindings))throw new FlowRuntimeFailure(String(command.type),'returned an invalid response');

@@ -40,7 +40,7 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
       const screenshotUrl = input.platform === "ios" ? new URL(`/simulators/${input.deviceId}/screenshot.png`, baguette.baseUrl) : new URL("/api/screenshot", (await android.start(input.deviceId)).url);
       if (input.platform === "ios") screenshotUrl.searchParams.set("scale", "3");
       signal.throwIfAborted();
-      const runtime = new FlowConnection(target.webSocketDebuggerUrl, resume?.sessionId,input.platform);
+      const runtime = new FlowConnection(target.webSocketDebuggerUrl, resume?.sessionId,input.platform,resume?.metrics);
       const stop = () => { void runtime.close(); };
       signal.addEventListener("abort", stop, { once: true });
       return { target: { appId: target.appId, deviceId: target.deviceId, deviceName: target.deviceName }, runtime: { invoke: (command, timeout) => runtime.invoke(command, timeout), close: async options => { signal.removeEventListener("abort", stop); await runtime.close(options); } },
@@ -78,8 +78,8 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
   };
   registerAppTool(server, "mobile_app_flow", {
     title: "Map React Native app screens",
-    description: "Map React Navigation and Expo Router routes, finite presentation state, and reversible sheet controls in the running app. Mapping previews UI state without changing session state or submitting forms. discover finds project/Metro; targets lists apps. start creates a map with options. extend maps the current app state into runId, keeping previews. record watches screens as the user moves through login, onboarding or local forms; needs options and label, with optional runId to extend a map. It never clicks, submits forms, changes auth, or restores navigation. capture-step optionally labels and captures the next settled view while recording. stop ends recording, or restores starting navigation for route mapping. prepare saves AI context; context reads unresolved routes and observed data; resolve submits real params; retry repeats timed-out routes. Read progress with mobile_read_app_flow. No app-specific adapters or source edits.",
-    inputSchema: { action: z.enum(["discover", "targets", "start", "extend", "record", "capture-step", "prepare", "context", "resolve", "retry", "stop"]), label: z.string().trim().min(1).max(80).optional(), discovery: z.object({ projectRoot: z.string().max(2048).optional(), metroUrl: z.string().max(2048).optional(), deviceId: z.string().max(256).optional(), deviceName: z.string().max(256).optional(), appId: z.string().max(512).optional() }).optional(), options: startSchema.optional(), runId: z.uuid().optional(), metroUrl: z.string().max(2048).optional(), resolutions: resolutionSchema.optional() },
+    description: "Map React Navigation and Expo Router routes, finite presentation state, and reversible sheet controls in the running app. Mapping previews UI state without changing session state or submitting forms. discover finds project/Metro; targets lists apps. start creates a map with options. extend maps the current app state into runId, keeping previews. record watches screens as the user moves through login, onboarding or local forms; needs options and label, with optional runId to extend a map. It never clicks, submits forms, changes auth, or restores navigation. capture-step optionally labels and captures the next settled view while recording. stop ends recording, or restores starting navigation for route mapping. prepare saves AI context; context reads unresolved routes and observed data; diagnostics reads command timings and inspector counts; resolve submits real params; retry repeats timed-out routes. Read progress with mobile_read_app_flow. No app-specific adapters or source edits.",
+    inputSchema: { action: z.enum(["discover", "targets", "start", "extend", "record", "capture-step", "prepare", "context", "diagnostics", "resolve", "retry", "stop"]), label: z.string().trim().min(1).max(80).optional(), discovery: z.object({ projectRoot: z.string().max(2048).optional(), metroUrl: z.string().max(2048).optional(), deviceId: z.string().max(256).optional(), deviceName: z.string().max(256).optional(), appId: z.string().max(512).optional() }).optional(), options: startSchema.optional(), runId: z.uuid().optional(), metroUrl: z.string().max(2048).optional(), resolutions: resolutionSchema.optional() },
     annotations: write, _meta: { ui: { visibility: ["app", "model"] } },
   }, safe(async ({ action, discovery, options, runId, metroUrl, resolutions, label }) => {
     if (action === "discover") {
@@ -102,6 +102,7 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
     if (action === 'capture-step') return { run: await runs.captureStep(id, label) };
     if (action === "prepare") return { context: await runs.prepare(id, options) };
     if (action === "context") return { context: await runs.contextShared(id) };
+    if (action === "diagnostics") return { diagnostics: await runs.diagnostics(id) };
     if (action === "resolve") return { run: await runs.submit(id, safeResolutions(resolutions)) };
     if (action === "retry") return { run: await runs.retry(id, options) };
     return { run: await runs.stopShared(id) };

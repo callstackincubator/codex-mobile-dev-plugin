@@ -14,7 +14,7 @@ import { FlowStore, type FlowLease, type SavedFlow } from './store.ts';
 import { FlowPresentationCapture } from './presentations.ts';
 import { recordFlow } from './recording.ts';
 import { PLUGIN_VERSION } from '../../shared/version.ts';
-import { FlowAppFailure, FlowRuntimeFailure } from './runtime-metrics.ts';
+import { FlowAppFailure, FlowRuntimeFailure, FlowRuntimeMetrics } from './runtime-metrics.ts';
 
 export type FlowStart = { projectRoot: string; platform: "ios" | "android"; deviceId: string; targetId: string; metroUrl: string; useAi: boolean };
 export type RuntimeInfo = FlowEvidence & { available: boolean; data?: unknown[] };
@@ -22,12 +22,12 @@ export type FlowRuntime = { invoke(command: Record<string, unknown>, timeout?: n
 export type FlowTargetIdentity = { appId?: string; deviceId?: string; deviceName?: string };
 export type FlowBackend = { runtime: FlowRuntime; target?: FlowTargetIdentity; screenshot(signal: AbortSignal): Promise<Buffer> };
 export type FlowDependencies = {
-  connect(input: FlowStart, signal: AbortSignal, resume?: { sessionId: string; target?: FlowTargetIdentity }): Promise<FlowBackend>;
+  connect(input: FlowStart, signal: AbortSignal, resume?: { sessionId: string; target?: FlowTargetIdentity; metrics?:FlowRuntimeMetrics }): Promise<FlowBackend>;
   scan?: typeof scanAppFlow;
   resolve?: (context: unknown, signal: AbortSignal) => Promise<FlowResolution[]>;
   directory?: string;
 };
-type Active = { run: FlowRun; input: FlowStart; abort: AbortController; done?: Promise<void>; runtime?: FlowRuntime; info?: RuntimeInfo; target?: FlowTargetIdentity; saving?: Promise<void>; savedRevision?: number; checkpoints?: MeasurementWindow; lease?: FlowLease; writing: Set<Promise<void>>; settled: boolean };
+type Active = { run: FlowRun; input: FlowStart; abort: AbortController; done?: Promise<void>; runtime?: FlowRuntime; runtimeMetrics?:FlowRuntimeMetrics; info?: RuntimeInfo; target?: FlowTargetIdentity; saving?: Promise<void>; savedRevision?: number; checkpoints?: MeasurementWindow; lease?: FlowLease; writing: Set<Promise<void>>; settled: boolean };
 const maxAttempts = 3;
 const discoveryWarning="Presentation discovery failed on some screens. The partial map was kept.";
 export const FLOW_DIRECTORY = join(homedir(), "Library/Application Support/mobile-dev/app-flow");
@@ -68,10 +68,10 @@ export class AppFlowRuns {
     return structuredClone(run);
   }
   read(id: string): FlowRun {
-    const run=this.get(id).run;
+    const active=this.get(id),run=active.run;
     // The immutable source catalog belongs to inspection. Canvas polling only
     // needs live capture data and must not clone or transfer the catalog.
-    return structuredClone(publicFlowRun(run));
+    return structuredClone({...publicFlowRun(run),...(active.runtimeMetrics?{runtimeTimings:active.runtimeMetrics.snapshot()}:{})});
   }
   async record(input: FlowStart, name: string, id?: string): Promise<FlowRun> {
     this.makeRoom(id);
@@ -148,6 +148,7 @@ export class AppFlowRuns {
   }
   private persist(active: Active) {
     if (active.savedRevision === active.run.revision) return active.saving ?? Promise.resolve();
+    if(active.runtimeMetrics)active.run.runtimeTimings=active.runtimeMetrics.snapshot();
     const value = structuredClone({ run: publicFlowRun(active.run), input: active.input, info: active.info, target: active.target });
     if(active.run.presentations?.views&&value.run.presentations){value.run.presentations.views=active.run.presentations.views;value.run.presentations.viewStates=active.run.presentations.viewStates;}
     active.savedRevision = value.run.revision;
@@ -168,6 +169,14 @@ export class AppFlowRuns {
     return run.revision === revision ? undefined : publicFlowRun(run);
   }
   async contextShared(id: string) { return this.contextFor(await this.saved(id)); }
+  async diagnostics(id:string) {
+    const active=this.sessions.get(id),run=active?this.read(id):(await this.saved(id,false)).run;
+    if(active?.runtime&&!active.settled){
+      try{return {runId:id,runtimeTimings:active.runtimeMetrics?.snapshot(),runtime:await active.runtime.invoke({type:'diagnostics'},1500)};}
+      catch(error){return {runId:id,runtimeTimings:active.runtimeMetrics?.snapshot(),error:error instanceof FlowRuntimeFailure?error.message:'The active inspector could not be read.'};}
+    }
+    return {runId:id,runtimeTimings:run.runtimeTimings,runtime:undefined};
+  }
   async prepare(id: string, input?: FlowStart) {
     const active = this.sessions.get(id);
     if (active && !active.settled) { await this.persist(active); return this.context(id); }
@@ -288,11 +297,12 @@ export class AppFlowRuns {
     let reconnects = 0;
     let retries = 0;
     const attributes = { surface: "app-flow", device_platform: input.platform };
+    const runtimeMetrics=active.runtimeMetrics=new FlowRuntimeMetrics(input.platform);
     const save = async () => {
       try { await this.persist(active); }
       catch { captureServerError(new Error("App Flow map could not be saved."), "app_flow.save"); }
     };
-    const connect = () => abortable(this.dependencies.connect(input, signal, { sessionId: run.id, target: backend?.target ?? active.target }).then(async connected => {
+    const connect = () => abortable(this.dependencies.connect(input, signal, { sessionId: run.id, target: backend?.target ?? active.target, metrics:runtimeMetrics }).then(async connected => {
       if (signal.aborted) { await connected.runtime.close(); signal.throwIfAborted(); }
       return connected;
     }), signal);

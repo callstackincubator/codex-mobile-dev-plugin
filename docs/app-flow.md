@@ -74,6 +74,11 @@ entry skip native layout checks. Related owners share native bounds within
 that synchronous lookup; the next lookup reads fresh bounds. Motion signatures
 read at most 24 accepted host rectangles and still check later hosts for native
 transition events. Retry status retains the fixed name of a failed runtime step.
+Readiness stops measuring plain hosts after its 250-entry signature is full and
+visible content is proven. It still checks every later loader, initial query,
+heading and opacity animation. Host/content counts describe the sampled hosts.
+Scoped presentation checks reject unrelated owners before reading native bounds.
+Failed close operations retain their restore checkpoint for another attempt.
 Failed discovery keeps saved screenshots and
 retries after untouched routes, with at most three attempts per route. Mapping
 more screens rechecks captured routes for new local forms and sheets without
@@ -81,6 +86,10 @@ replacing their screenshots. A map with unresolved discovery failures ends as
 `partial`, with the failed step in `discoveryFailures`; it does not report ready.
 Bounded runtime exception details stay in the local map for diagnosis.
 Saved maps include the plugin version that started the run.
+They also save fixed-name runtime command counts, total/maximum milliseconds and
+timeouts for the mapping session, including reconnects. The `diagnostics` action
+returns those timings and, when this MCP process owns the live run, bounded
+inspector counts. It does not read native bounds or return account data.
 While capturing, the runtime observes React Native's fatal JavaScript error
 handler when the app exposes it. A fatal error stops the run before saving
 further images; it does not count an error overlay as the requested screen.

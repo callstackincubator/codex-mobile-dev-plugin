@@ -85,6 +85,20 @@ mutation. Those params did not make every route capturable. Several routes
 reported unfinished native transitions; sheet attempts lost their failed step
 behind a generic interruption message.
 
+A live **0.1.142** attempt, `ea5bf8ee-38dc-46e5-a08e-b840cf1df973`,
+stopped after **87.2 seconds** with five saved route PNGs and no presentation
+images. Feeds timed out while opening a route and reconnect recovery stalled.
+This was a focused diagnosis, not a full coverage run. It does not establish
+an improvement over 0.1.141. The app returned to Home with no visible overlay.
+
+Version 0.1.143 skips plain-host bounds after readiness has filled its existing
+250-entry signature and proved visible content. Tests retain late loading,
+query, heading and opacity checks. Scoped presentation checks skip bounds for
+unrelated owners. Failed close calls keep their restore checkpoints. Local
+fixed-name command totals and bounded inspector counts expose the next failed
+stage without collecting app content. These changes have functional coverage;
+their live speed and broader capture coverage still need verification.
+
 Version 0.1.142 keeps the fixed operation name in retry status. Its sheet motion
 check stops reading bounds once the 24 rectangles used in its signature are
 filled, while still checking later hosts for pending transition events. A

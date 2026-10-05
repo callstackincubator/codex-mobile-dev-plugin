@@ -89,6 +89,30 @@ test('controller capture calls only the matched open/close methods and rolls bac
   app.runtime.cleanup();assert.equal(app.runtime.list().length,0);
 });
 
+test('a failed close keeps its checkpoint and can be retried',async()=>{
+  const app=tree();let attempts=0;
+  app.control.close=()=>{if(++attempts===1)throw Error('close not ready');app.control.closes++};
+  app.runtime.open('open');
+  await assert.rejects(app.runtime.rollback(0,false),/close not ready/);
+  assert.equal(app.runtime.checkpoint(),1);
+  await app.runtime.rollback(0,false);
+  assert.equal(app.runtime.checkpoint(),0);assert.equal(app.control.closes,1);
+  app.runtime.cleanup();
+});
+
+test('focus lookup rejects unrelated owners before reading their native bounds',()=>{
+  const app=tree();let measured=0;
+  let tail=app.button;
+  for(let i=0;i<200;i++){
+    const other:any={type:app.sheet.type,memoizedProps:{},return:app.root,child:{tag:5,memoizedProps:{},stateNode:{getBoundingClientRect(){assert.fail('Unrelated sheet bounds must not be read')}}}};
+    tail.sibling=other;tail=other;
+  }
+  tail.sibling=app.sheet;
+  app.sheet.child={tag:5,memoizedProps:{},stateNode:{getBoundingClientRect(){measured++;return {width:100,height:200}}},return:app.sheet};
+  assert.equal(app.runtime.focusFor('Sheet',app.sheet),app.sheet);assert.equal(measured,1);
+  app.runtime.cleanup();
+});
+
 test('binding updates and later collections retain the installed presentation plans',async()=>{
   const app=tree();app.runtime.configure(undefined,[]);await app.runtime.collect();
   assert.equal(app.runtime.list().length,1);assert.equal(app.runtime.open('open').focus,app.sheet);
