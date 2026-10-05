@@ -624,6 +624,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   async function waitForDismissal(entry) {
     const started=Date.now();
     while(entry.native?.some(status=>!status.closed)){
+      const tree=index(),waiting=entry.native.filter(status=>!status.closed);
+      if(!waiting.some(status=>[...nativeRecords.values()].some(record=>record.status===status&&tree.current.has(record.fiber))))return;
       if(Date.now()-started>=2000)throw new Error('Native presentation dismissal has not finished.');
       await new Promise(resolve=>later(resolve,40));
     }
@@ -700,13 +702,26 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const task=rollbackTask.catch(()=>{}).then(()=>restorePresentations(level,wait));
     rollbackTask=task;return task;
   }
+  function projectionAttached(record,tree=index()){
+    const root=tree.current.get(record.root),children=root?.memoizedProps?.children?.props?.children;
+    return Array.isArray(children)&&children.some(child=>child?.props?.onDismiss===record.element.props.onDismiss);
+  }
+  function releaseProjection(record){
+    clearTimeout(record.seedTimer);
+    for(const [id,portal]of portalEffects)if(portal.preview===record)portalEffects.delete(id);
+    record.portals.length=0;const position=projected.indexOf(record);if(position>=0)projected.splice(position,1);
+    releasePreviewErrors();if(record.seed)unpatch();if(!projected.length)unpatchPreviewEffects();
+  }
   async function restorePresentations(level,wait) {
-    while(undo.length>Math.max(0,level)){
+    restoring:while(undo.length>Math.max(0,level)){
       // Keep the checkpoint until its close operation succeeds. A thrown close
       // must not discard the only way to restore the app on the next attempt.
       const entry=undo[undo.length-1];
       if(entry.projection){
         const record=entry.projection;clearTimeout(record.seedTimer);
+        // An app commit may remove the entire preview before its native callback.
+        // The old Modal listener is gone. Keep the app's new children intact.
+        if(!projectionAttached(record)){releaseProjection(record);undo.pop();continue;}
         if(!entry.closing){
           const props=record.root.memoizedProps??record.props;
           structureCache=undefined;
@@ -723,6 +738,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         // record when an already shown iOS modal is still dismissing.
         if(wait&&record.ios&&record.shown){
           const started=Date.now();while(!record.dismissed){
+            if(!projectionAttached(record)){releaseProjection(record);undo.pop();continue restoring;}
             if(Date.now()-started>=2000)throw new Error('Temporary modal dismissal has not finished.');
             await new Promise(resolve=>later(resolve,40));
           }
@@ -731,9 +747,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
           const props=record.root.memoizedProps??record.props;structureCache=undefined;
           record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
         }
-        for(const [id,portal]of portalEffects)if(portal.preview===record)portalEffects.delete(id);record.portals.length=0;const index=projected.indexOf(record);if(index>=0)projected.splice(index,1);
-        releasePreviewErrors();if(record.seed)unpatch();if(!projected.length)unpatchPreviewEffects();
+        releaseProjection(record);
       }else if(entry.control){
+        const tree=index(),connected=roots(entry.nativeFocus,tree);
+        if(!connected.some(fiber=>tree.current.has(fiber))){undo.pop();continue;}
         if(!entry.closing){
           beginDismissal(entry,entry.nativeFocus);entry.control[entry.close]();entry.closing=true;
         }
@@ -760,6 +777,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const tree=index(),currentFocus=focus&&tree.current.get(focus),connected=roots(currentFocus,tree);
     return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:viewport=>motion(currentFocus,viewport,tree,connected)};
   }
-  const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
   return {collect,records,configure,list,open,portalBindings,previewPortals,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

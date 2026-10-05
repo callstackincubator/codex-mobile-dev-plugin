@@ -518,7 +518,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         }
         if (command.type === 'presentation-view') { reply(presentationView()); return; }
         if (command.type === 'presentation-checkpoint') { reply({level:presentations?.checkpoint()??0}); return; }
-        if (command.type === 'presentation-rollback') { const level=command.level??0; void (presentations?.rollback(level) ?? Promise.resolve()).then(() => {while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined;reply({});}, () => reply({error:'Presentation restoration failed.'})); return; }
+        if (command.type === 'presentation-rollback') { const level=command.level??0; void (presentations?.rollback(level) ?? Promise.resolve()).then(() => {while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined;reply({});}, error => reply({error:'Presentation restoration failed.',detail:String(error?.message??error).slice(0,1000)})); return; }
         if (command.type === 'presentation-project') {
           const result=presentations?.project(presentationFocus);if(!result||result.error){reply(result??{error:'Presentation projection is unavailable.'});return;}
           presentationFrames.push({focus:presentationFocus,expected:presentationExpected});presentationObservation=undefined;later(()=>{try{reply(presentationView());}catch(error){reply({error:'Presentation inspection is unavailable.',detail:String(error?.message??error).slice(0,1000)});}},80);return;

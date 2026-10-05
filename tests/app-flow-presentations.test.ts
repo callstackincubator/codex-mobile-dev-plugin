@@ -1280,3 +1280,69 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
     assert.equal(canonical.currentProps,props);app.runtime.cleanup();
   });
 }
+
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+ test(`an app commit that removes a preview preserves the new app children (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+  const previous=(globalThis as any).__r,app=tree();function View(){}function Modal(){}
+  t.after(()=>{app.runtime.cleanup();(globalThis as any).__r=previous});
+  const original=React.createElement('span',null,'Original'),updated=React.createElement('span',null,'Updated');
+  const wrapper:any={type:View,memoizedProps:{children:original},child:app.root};app.root.return=wrapper;
+  const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??wrapper];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+  let writes=0;const renderer={rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){writes++;fiber.memoizedProps=props}};
+  (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:{...React}}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}]])};
+  const runtime=install({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});
+  try{
+   assert.equal(runtime.project(app.root,{}).error,undefined);wrapper.memoizedProps.children.props.children.at(-1).props.onShow();
+   wrapper.memoizedProps={children:updated};
+   assert.equal(runtime.diagnostics().detachedProjections,1);
+   await runtime.rollback();assert.equal(writes,1);assert.equal(wrapper.memoizedProps.children,updated);
+   assert.equal(runtime.checkpoint(),0);assert.equal(runtime.diagnostics().projections,0);
+  }finally{runtime.cleanup()}
+ });
+ test(`a completely unmounted controller needs no stale close callback (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+  const app=tree(install);app.runtime.open('open');app.root.child=app.button;app.button.sibling=undefined;
+  await app.runtime.rollback();assert.equal(app.control.closes,0);assert.equal(app.runtime.checkpoint(),0);app.runtime.cleanup();
+ });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+ test(`a detached source still closes its mounted portal body (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+  const app=tree(install);function Body(){}
+  const props={},element=React.createElement(Body,props);
+  const portal:any={type:function Portal(){},memoizedProps:{children:element},return:app.sheet};app.sheet.child=portal;
+  const original={onStateChange(){}},canonical={currentProps:original};
+  const native:any={tag:5,type:'SheetHost',memoizedProps:original,stateNode:{canonical}};
+  const body:any={type:Body,memoizedProps:element.props,return:app.root,child:native};native.return=body;app.sheet.sibling=body;
+  app.control.open=()=>canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});
+  app.control.close=()=>{app.control.closes++;setTimeout(()=>canonical.currentProps.onStateChange({nativeEvent:{state:'closed'}}),20)};
+  try{
+   app.runtime.open('open');app.button.sibling=body;
+   await app.runtime.rollback();assert.equal(app.control.closes,1);assert.equal(app.runtime.checkpoint(),0);
+  }finally{app.runtime.cleanup()}
+ });
+}
+
+
+test('a preview removed during native dismissal preserves the next app render',async t=>{
+ const previous=(globalThis as any).__r,app=tree();function View(){}function Modal(){}
+ t.after(()=>{app.runtime.cleanup();(globalThis as any).__r=previous});
+ const updated=React.createElement('span',null,'Updated');
+ const wrapper:any={type:View,memoizedProps:{children:React.createElement('span',null,'Original')},child:app.root};app.root.return=wrapper;
+ const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??wrapper];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+ let writes=0;const renderer={rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){writes++;fiber.memoizedProps=props;if(props.children?.props?.children?.at(-1)?.props.visible===false)setTimeout(()=>{wrapper.memoizedProps={children:updated}},20)}};
+ (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:{...React}}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}]])};
+ const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});
+ try{
+  assert.equal(runtime.project(app.root,{}).error,undefined);wrapper.memoizedProps.children.props.children.at(-1).props.onShow();
+  await runtime.rollback();assert.equal(writes,2);assert.equal(wrapper.memoizedProps.children,updated);assert.equal(runtime.checkpoint(),0);
+ }finally{runtime.cleanup()}
+});
+
+test('a native host removed while closing does not wait for its removed listener',async()=>{
+ const app=tree(),instance={props:{onStateChange(){}}};
+ const native:any={tag:1,type:function NativeSheet(){},memoizedProps:instance.props,stateNode:instance,return:app.sheet};app.sheet.child=native;
+ app.control.open=()=>instance.props.onStateChange({nativeEvent:{state:'open'}});
+ app.control.close=()=>{app.control.closes++;setTimeout(()=>{app.sheet.child=undefined},20)};
+ try{app.runtime.open('open');await app.runtime.rollback();assert.equal(app.control.closes,1);assert.equal(app.runtime.checkpoint(),0);}finally{app.runtime.cleanup()}
+});

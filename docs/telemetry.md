@@ -396,3 +396,11 @@ readiness and screenshot work. Existing command timings keep their boundaries.
 Portal binding stacks, source, copied context and child content stay local and
 never enter metrics or Sentry attributes. Cleanup releases portal bindings and
 previews with their parent projection.
+
+Since 0.1.154, restoration releases previews and native waiters that leave the
+committed React tree. It keeps waits for live portal bodies and preserves the
+app's new children after an external unmount. Existing presentation, command and
+resource measurement boundaries remain unchanged. Local diagnostics add bounded
+counts for detached, closing, shown and dismissed projections. Rollback failures
+retain their cause only in local diagnostics; Sentry still receives fixed error
+messages and operation names, with no app data or source.
