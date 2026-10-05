@@ -4,7 +4,7 @@ export function installPresentationRuntime(options: {
   hook: any; fibers(callback: (fiber: any) => unknown, subtree?: any): void;
   hidden(props: any): boolean; later(callback: () => void, ms: number): unknown;
 }): {
-  collect(states: FlowStateSite[], actions?: FlowPresentationAction[]): Promise<{bindings: PresentationBinding[]; next?: number}>;
+  collect(states: FlowStateSite[], actions?: FlowPresentationAction[], projectRoot?: string): Promise<{bindings: PresentationBinding[]; next?: number}>;
   records(offset: number): {bindings: PresentationBinding[]; next?: number};
   configure(catalog: FlowPresentations, matches: {binding: string; site: string}[], checked?: string[]): void;
   list(focus?: any): {id: string; name: string; file: string; line: number}[];

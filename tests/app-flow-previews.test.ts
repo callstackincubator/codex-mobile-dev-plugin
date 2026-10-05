@@ -177,8 +177,8 @@ function runtimeFixture(t:test.TestContext,shared=false,install=installPresentat
   return {runtime,site,action,real,owner,host,form,context,react,originals,originalChildren,effectKinds,hook,get walks(){return walks},get clone(){return clone},get projection(){return projection},get counts(){return {dispatched,effects,initializers}},setCurrent:(fiber:any)=>{current=fiber}};
 }
 
-async function configure(app:ReturnType<typeof runtimeFixture>){
-  const page=await app.runtime.collect([app.site],[app.action]);
+async function configure(app:ReturnType<typeof runtimeFixture>,projectRoot?:string){
+  const page=await app.runtime.collect([app.site],[app.action],projectRoot);
   app.runtime.configure({states:[app.site],actions:[app.action]},page.bindings.map(b=>({binding:b.id,site:b.kind==='entry'?'preview:consumer':'state'})),page.bindings.map(b=>b.id));
   return page;
 }
@@ -287,6 +287,22 @@ test('many preview plans share one mounted-tree lookup and see fresh state on th
 });
 
 for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`absolute Metro module paths identify the exact state owner (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    const exports:any={};
+    const app=runtimeFixture(t,false,install,{modules:[[3,{isInitialized:true,verboseName:'/workspace/demo/App.tsx',publicModule:{exports}}]]});
+    exports.Wizard=app.owner.type;
+    const unrelated:any={type:function Wizard(){},return:app.host,memoizedProps:{},memoizedState:{memoizedState:{step:'start'},next:null}};
+    app.owner.sibling=unrelated;
+    const renderer=app.hook.renderers.get(1),scheduled:any[]=[],update=renderer.scheduleUpdate;
+    renderer.scheduleUpdate=(fiber:any)=>{scheduled.push(fiber);return update(fiber)};
+    await configure(app,'/workspace/demo');
+    assert.deepEqual(scheduled,[app.owner],'A same-named component from another module must not be rerendered');
+    assert.equal(app.runtime.list().length,1);
+    assert.equal(app.counts.dispatched,0);
+  });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   test(`unchanged presentation binding passes reuse committed structure (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
     let commits=0;const hook={onCommitFiberRoot(){commits++}};
     const app=runtimeFixture(t,false,install,{hook});await configure(app);assert.equal(app.runtime.list().length,1);
@@ -384,14 +400,16 @@ test('unmounted owner plans require an export with optional props, including inh
 });
 
 test('unmounted previews use initialized exact data exports and keep each owner distinct',async t=>{
-  for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  for(const install of [installPresentationRuntime,sharedLoopRuntime()])for(const projectRoot of [undefined,'/workspace/demo']){
     function Welcome(){}function OtherWelcome(){}
     const exports:any={Welcome,OtherWelcome};Object.defineProperty(exports,'Getter',{get(){assert.fail('Never invoke an export getter')}});
-    const modules=[[3,{verboseName:'Forms.tsx',isInitialized:true,publicModule:{exports}}],
-      [4,{verboseName:'Never.tsx',isInitialized:false,get publicModule(){assert.fail('Never initialize a module')}}]];
+    const modules=[[3,{verboseName:projectRoot?`${projectRoot}/Forms.tsx`:'Forms.tsx',isInitialized:true,publicModule:{exports}}],
+      [4,{verboseName:projectRoot?`${projectRoot}/Never.tsx`:'Never.tsx',isInitialized:false,get publicModule(){assert.fail('Never initialize a module')}}],
+      [5,{verboseName:'/workspace/other/Other.tsx',isInitialized:true,publicModule:{exports:{Welcome}}}]];
     const app=runtimeFixture(t,false,install,{modules,bootstrap:Welcome});
     const mount=(id:string,owner:string,file='Forms.tsx',exported=owner):any=>({id,file,line:1,owner,component:owner,name:owner,prop:'',preview:true,views:[`${id}-body`],effect:{kind:'mount',file,export:exported}});
     const actions=[mount('welcome','Welcome'),mount('other','OtherWelcome'),mount('wrong','Welcome','Other.tsx'),mount('getter','Getter'),mount('never','Welcome','Never.tsx')];
+    if(projectRoot)await app.runtime.collect([],actions,projectRoot);
     app.runtime.configure({states:[],actions},[]);
     assert.deepEqual(app.runtime.list().map(a=>a.id),['welcome','other']);
     assert.equal(app.runtime.open('welcome').error,undefined);assert.equal(app.clone.type,Welcome);
@@ -404,6 +422,20 @@ test('unmounted previews use initialized exact data exports and keep each owner 
     app.host.memoizedProps={style:{display:'none'}};assert.deepEqual(app.runtime.list(),[]);
   }
 });
+
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`cleanup clears the project root for unmounted exports (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    function Welcome(){}
+    const app=runtimeFixture(t,false,install,{modules:[[3,{verboseName:'file:///workspace/demo/Forms.tsx',isInitialized:true,publicModule:{exports:{Welcome}}}]],bootstrap:Welcome});
+    const action:any={id:'welcome',file:'Forms.tsx',line:1,owner:'Welcome',component:'Welcome',name:'Welcome',prop:'',preview:true,views:['welcome-body'],effect:{kind:'mount',file:'Forms.tsx',export:'Welcome'}};
+    const catalog={states:[],actions:[action]};
+    await app.runtime.collect([],catalog.actions,'/workspace/demo/');
+    app.runtime.configure(catalog,[]);assert.deepEqual(app.runtime.list().map(a=>a.id),['welcome']);
+    app.runtime.cleanup();app.runtime.configure(catalog,[]);
+    assert.deepEqual(app.runtime.list(),[],'A later catalog must not inherit the old project root');
+  });
+}
 
 
 test('finite UI body selectors do not depend on the hook field name',async t=>{

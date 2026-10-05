@@ -4,7 +4,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   const bindings = new Map(), patches = [], effectPatches = [], undo = [];
   let collected = [];
   const entries = new Map(), entryKeys = new Map(); let entrySources = new WeakMap();
-  let lastScheduled = 0, structureCache;
+  let lastScheduled = 0, structureCache, sourceRoot;
   const portalEffects=new Map();let portalOwners=new WeakMap(),approvedPortals=new WeakSet(),syncingPortals=false;
   let previewRefs=new WeakSet(),containedImperativeHandles=0;
   let catalog = {states:[],actions:[]};
@@ -98,15 +98,17 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
   }
   function unpatchPreviewEffects(){for(const p of effectPatches)if(p.react[p.key]===p.wrapped)p.react[p.key]=p.original;effectPatches.length=0;}
+  const modulePath=value=>value.replaceAll('\\','/').replace(/^file:\/\//,'').replace(/^\.\//,'');
+  const sourceModule=(modules,file)=>modules.get(file)??(sourceRoot?modules.get(`${sourceRoot}/${file}`):undefined);
   function collectionTargets(states) {
     const targets=new Map(), modules=globalThis.__r?.getModules?.();
     const initialized=new Map();
     for(const module of modules?.values?.()??[]){
-      if(module.isInitialized&&typeof module.verboseName==='string')initialized.set(module.verboseName.replaceAll('\\','/').replace(/^\.\//,''),module.publicModule?.exports);
+      if(module.isInitialized&&typeof module.verboseName==='string')initialized.set(modulePath(module.verboseName),module.publicModule?.exports);
     }
     for(const site of states)for(const owner of new Set([site.owner,...(site.owners??[])])){
       const target=targets.get(owner)??{types:new Set(),fallback:false};
-      const exports=initialized.get(site.file), matches=[];
+      const exports=sourceModule(initialized,site.file), matches=[];
       // Read data exports only. Never initialize a project module or invoke a
       // getter to identify one of several unrelated same-named Providers.
       const descriptors=exports&&(typeof exports==='object'||typeof exports==='function')?Object.getOwnPropertyDescriptors(exports):{};
@@ -123,7 +125,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     return targets;
   }
-  async function collect(states = catalog.states, actions = catalog.actions) {
+  async function collect(states = catalog.states, actions = catalog.actions, projectRoot = sourceRoot) {
+    if(typeof projectRoot==='string')sourceRoot=modulePath(projectRoot).replace(/\/$/,'');
     catalog={states,actions};lastScheduled=0;
     if(!patchHooks())return records(0);
     try {
@@ -470,10 +473,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       tree.modules=new Map();
       for(const module of globalThis.__r?.getModules?.()?.values?.()??[]){
         if(!module.isInitialized||typeof module.verboseName!=='string')continue;
-        tree.modules.set(module.verboseName.replaceAll('\\','/').replace(/^\.\//,''),module.publicModule?.exports);
+        tree.modules.set(modulePath(module.verboseName),module.publicModule?.exports);
       }
     }
-    const exports=tree.modules.get(action.effect.file);
+    const exports=sourceModule(tree.modules,action.effect.file);
     if(!exports||(typeof exports!=='object'&&typeof exports!=='function'))return;
     const descriptor=Object.getOwnPropertyDescriptor(exports,action.effect.export);
     const type=descriptor&&'value'in descriptor?descriptor.value:action.effect.export==='default'&&typeof exports==='function'?exports:undefined;
@@ -841,7 +844,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80,resolve));
   }
-  function cleanup(){nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){sourceRoot=undefined;nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[]) {
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&tree.isVisible(fiber));
     const unique=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner)));

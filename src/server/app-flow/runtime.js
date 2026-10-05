@@ -535,7 +535,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         if (command.type === 'context-data') { reply(contextData()); return; }
         if (command.type === 'observe') { reply(observe()); return; }
         if (observing) { reply({ error: 'Recording observes screens; navigation commands are disabled.' }); return; }
-        if (command.type === 'presentation-collect') { if (!presentations) { reply({bindings:[]}); return; } void presentations.collect(command.states,command.actions).then(reply, error => reply({error:'Presentation bindings could not be read.',detail:String(error?.message??error).slice(0,1000)})); return; }
+        if (command.type === 'presentation-collect') { if (!presentations) { reply({bindings:[]}); return; } void presentations.collect(command.states,command.actions,command.projectRoot).then(reply, error => reply({error:'Presentation bindings could not be read.',detail:String(error?.message??error).slice(0,1000)})); return; }
         if (command.type === 'presentation-bindings') { reply(presentations?.records(command.offset ?? 0) ?? {bindings:[]}); return; }
         if (command.type === 'presentation-configure') { presentations?.configure(command.catalog, command.matches ?? [], command.checked ?? []); reply({}); return; }
         if (command.type === 'presentations') { reply(presentations?.list(presentationFocus) ?? []); return; }

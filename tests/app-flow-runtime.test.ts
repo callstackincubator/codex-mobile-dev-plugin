@@ -456,7 +456,15 @@ test('a connection sends presentation plans once and fresh connections seed thei
   const next=new FlowConnection(url);t.after(()=>next.close({restore:false}));await next.invoke(command);
   const collections=commands.filter(command=>command.type==='presentation-collect');
   assert.deepEqual(collections.map(command=>command.actions?.length),[1,undefined,1]);
+  assert.deepEqual(collections.map(command=>command.projectRoot),['/app',undefined,'/app']);
   assert.ok(commands.filter(command=>command.type==='presentation-configure').every(command=>command.catalog===undefined));
+});
+
+
+test('runtime forwards the project root to presentation collection',async t=>{
+  const app=runtime(t,false,{setTimeout,clearTimeout},function(){return {collect(states,actions,projectRoot){return Promise.resolve({projectRoot,states,actions})},checkpoint(){return 0},cleanup(){},rollback(){return Promise.resolve()}}});
+  const result=await app.invoke({type:'presentation-collect',states:[],actions:[],projectRoot:'/workspace/demo'});
+  assert.equal(result.projectRoot,'/workspace/demo');
 });
 
 test('recovery releases a cancelled collection wait and restores React exports', {timeout:1000}, async t=>{

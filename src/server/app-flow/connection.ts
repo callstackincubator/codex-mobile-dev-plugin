@@ -83,7 +83,7 @@ export class FlowConnection {
     if (command.type === 'presentation-setup') {
       this.presentationRoot=command.projectRoot as string;
       const catalog = command.catalog as import('../../shared/app-flow.ts').FlowPresentations;
-      let page = await this.invoke({ type: 'presentation-collect', ...(this.presentationCatalog===catalog?{}:{states:catalog.states,actions:catalog.actions}) }, 2500);
+      let page = await this.invoke({ type: 'presentation-collect', ...(this.presentationCatalog===catalog?{}:{states:catalog.states,actions:catalog.actions,projectRoot:command.projectRoot}) }, 2500);
       const bindings = [];
       for (let i=0;i<30;i++) { bindings.push(...(page.bindings ?? [])); if (page.next === undefined) break; page = await this.invoke({type:'presentation-bindings',offset:page.next},1500); }
       let matches;

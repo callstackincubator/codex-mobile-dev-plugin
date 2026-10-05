@@ -462,3 +462,7 @@ Presentation binding passes also reuse the committed tree structure when React
 has not committed a change. Hook and entry matches still update for each source
 binding pass, and native bounds remain live. Existing binding and discovery
 measurements include this work with the same boundaries and units.
+
+Initialized Metro export lookup accepts relative paths and absolute paths under
+the selected project root. Binding and preview-open timings still include this
+lookup with the same units and boundaries. Module paths and exports stay local.
