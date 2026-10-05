@@ -253,3 +253,11 @@ Before opening a route, the runtime finds the current mounted navigation helpers
 A detached helper can keep reading container state while dispatching through an
 old navigator. Stack replacement uses the helper for the current stack key.
 This preserves bounded mounted screens without retrying a stale dispatcher.
+
+
+Native sheets close before the runner removes their parent preview or restores
+navigation. The runner watches the sheet's native dismissal event and keeps its
+restore checkpoint if the event is late. It waits on a pending close when it
+reconnects, without repeating the close call. Idle child sheets do not count as
+pending animations. Temporary iOS previews wait for `Modal.onDismiss`; Android
+previews do not depend on that iOS-only event.

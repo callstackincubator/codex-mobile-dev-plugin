@@ -359,3 +359,11 @@ and the same readiness and screenshot checks. Route command timing includes
 rebinding the current mounted navigator before dispatch. Existing metric names,
 units, surface attributes and bounded windows stay unchanged. Export identities,
 provider values, app data and source paths stay local.
+
+
+Since 0.1.149, presentation rollback waits for the native close event before it
+releases a child checkpoint or unmounts a parent. Existing presentation and
+`app_flow.presentation_restoration` windows include that wait in milliseconds.
+Runtime rollback failures identify the same fixed operation name. Reconnect
+closes presentations before route recovery. No event payload, app state or source
+path enters telemetry; native observer and preview cleanup remain bounded.

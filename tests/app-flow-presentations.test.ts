@@ -1045,3 +1045,105 @@ test('an unmounted form renders with live context while its temporary effects st
     }finally{runtime.cleanup();flushSync(()=>rendered.unmount());await new Promise(resolve=>setTimeout(resolve,20));dom.window.close();(globalThis as any).window=previous.window;(globalThis as any).document=previous.document;(globalThis as any).__r=previous.require;}
   }
 });
+
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresentationRuntime)]){
+  test(`native dismissal retains its checkpoint through commits and late open events (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    let now=0;
+    const hook={renderers:new Map(),onCommitFiberRoot(){}};
+    const app=tree(options=>install({...options,hook,later:callback=>setTimeout(()=>{now+=100;callback()},0)}));
+    t.mock.method(Date,'now',()=>now);
+    let calls=0;
+    const original={onStateChange(){calls++}};
+    const instance={props:original};
+    const native:any={tag:1,type:function NativeSheet(){},memoizedProps:original,stateNode:instance,return:app.sheet,child:app.nested};
+    app.sheet.child=native;app.nested.return=native;
+    app.runtime.open('open');instance.props.onStateChange({nativeEvent:{state:'open'}});
+    app.runtime.focused(app.nested);
+    app.control.close=()=>{app.control.closes++;instance.props.onStateChange({nativeEvent:{state:'closing'}})};
+    await assert.rejects(app.runtime.rollback(),/dismissal has not finished/);
+    assert.equal(app.runtime.checkpoint(),1);assert.equal(app.control.closes,1);
+    // A React commit replaces props while native dismissal is still in flight.
+    instance.props={...original};native.memoizedProps=instance.props;
+    hook.onCommitFiberRoot();
+    instance.props.onStateChange({nativeEvent:{state:'open'}});
+    await assert.rejects(app.runtime.rollback(),/dismissal has not finished/);
+    assert.equal(app.control.closes,1,'A retry waits for the existing close instead of closing twice');
+    instance.props.onStateChange({nativeEvent:{state:'closed'}});
+    await app.runtime.rollback();assert.equal(app.runtime.checkpoint(),0);
+    assert.equal(calls,4);app.runtime.cleanup();assert.equal(instance.props.onStateChange,original.onStateChange);
+  });
+}
+
+test('opening a sheet does not arm the idle native sheets inside its body',()=>{
+  const app=tree();
+  const original={onStateChange(){}};
+  const outer={props:original},inner={props:original};
+  const idle:any={tag:1,type:function IdleSheet(){},memoizedProps:original,stateNode:inner,return:app.nested};app.nested.child=idle;
+  const native:any={tag:1,type:function NativeSheet(){},memoizedProps:original,stateNode:outer,return:app.sheet,child:app.nested};
+  app.sheet.child=native;app.nested.return=native;
+  app.runtime.open('open');assert.equal(app.runtime.diagnostics().nativePending,1);
+  outer.props.onStateChange({nativeEvent:{state:'open'}});
+  assert.equal(app.runtime.motion(app.sheet).pending,false);app.runtime.cleanup();
+});
+
+test('a focused sheet body dismisses before its temporary parent modal unmounts',async t=>{
+  const previous=(globalThis as any).__r;function View(){}function Modal(){}
+  const app=tree(),events:string[]=[];
+  const wrapper:any={type:View,memoizedProps:{children:React.createElement(app.root.type)},child:app.root};app.root.return=wrapper;
+  const instance={props:{onStateChange(){}}};
+  const native:any={tag:1,type:function NativeSheet(){},memoizedProps:instance.props,stateNode:instance,return:app.sheet,child:app.nested};app.sheet.child=native;app.nested.return=native;
+  const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??wrapper];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+  let modal:any;
+  const renderer={rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){
+    fiber.memoizedProps=props;
+    if(props.children?.type===React.Fragment)modal=props.children.props.children.at(-1);
+    else {events.push('parent unmounted');assert.ok(events.includes('child dismissed'));modal.props.onDismiss();}
+  }};
+  (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:{...React}}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}]])};
+  t.after(()=>{(globalThis as any).__r=previous});
+  const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});
+  configureFixture(runtime,{states:[],actions:[app.action]});
+  assert.equal(runtime.project(app.root,{}).error,undefined);modal.props.onShow();
+  app.control.open=()=>{instance.props.onStateChange({nativeEvent:{state:'open'}})};
+  app.control.close=()=>{events.push('child close');setTimeout(()=>{events.push('child dismissed');instance.props.onStateChange({nativeEvent:{state:'closed'}})},20)};
+  runtime.open('open');runtime.focused(app.nested);
+  await runtime.rollback();
+  assert.deepEqual(events,['child close','child dismissed','parent unmounted']);assert.equal(runtime.checkpoint(),0);
+  runtime.cleanup();app.runtime.cleanup();
+});
+
+test('a shown iOS preview keeps its restore record until Modal.onDismiss',async t=>{
+  let now=0;const previous=(globalThis as any).__r;
+  t.mock.method(Date,'now',()=>now);
+  t.after(()=>{(globalThis as any).__r=previous});
+  for(const platform of ['ios','android']){
+    const app=tree();function View(){}function Modal(){}
+    const wrapper:any={type:View,memoizedProps:{children:React.createElement(app.root.type)},child:app.root};app.root.return=wrapper;
+    const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??wrapper];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+    let updates=0;
+    const renderer={rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){updates++;fiber.memoizedProps=props}};
+    (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:{...React}}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:platform},StyleSheet:{create(){}}}}}]])};
+    const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:callback=>setTimeout(()=>{now+=100;callback()},0)});
+    assert.equal(runtime.project(app.root,{}).error,undefined);
+    const modal=wrapper.memoizedProps.children.props.children.at(-1);modal.props.onShow();
+    if(platform==='ios'){
+      await assert.rejects(runtime.rollback(),/modal dismissal has not finished/);
+      assert.equal(runtime.checkpoint(),1);assert.equal(runtime.diagnostics().projections,1);
+      modal.props.onDismiss();await runtime.rollback();assert.equal(updates,2);
+    }else await runtime.rollback();
+    assert.equal(runtime.checkpoint(),0);runtime.cleanup();app.runtime.cleanup();
+  }
+});
+
+
+test('concurrent rollback requests wait for one native dismissal',async()=>{
+  const app=tree();
+  const instance={props:{onStateChange(){}}};
+  const native:any={tag:1,type:function NativeSheet(){},memoizedProps:instance.props,stateNode:instance,return:app.sheet};app.sheet.child=native;
+  app.control.open=()=>instance.props.onStateChange({nativeEvent:{state:'open'}});
+  app.control.close=()=>{app.control.closes++;setTimeout(()=>instance.props.onStateChange({nativeEvent:{state:'closed'}}),20)};
+  app.runtime.open('open');
+  await Promise.all([app.runtime.rollback(),app.runtime.rollback()]);
+  assert.equal(app.control.closes,1);assert.equal(app.runtime.checkpoint(),0);app.runtime.cleanup();
+});

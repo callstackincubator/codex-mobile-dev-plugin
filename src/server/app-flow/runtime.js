@@ -541,6 +541,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
           reply(info); return;
         }
         if (command.type === 'inspect') { reply(inspect()); return; }
+        if (['open','recover'].includes(command.type)&&presentations?.checkpoint()) { reply({error:'Restore presentations before changing navigation.'});return; }
         if (!navigatorState()?.routeNames?.length) inspect();
         if (command.type === 'recover') {
           cancelWaits();

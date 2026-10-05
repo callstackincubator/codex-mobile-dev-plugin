@@ -279,7 +279,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(parent.tag!==10||!parent.memoizedProps||!('value'in parent.memoizedProps))continue;
       const provider=parent.elementType??parent.type;if(provider)content=react.createElement(provider,{value:preview?.providers?.get(parent)??parent.memoizedProps.value},content);
     }
-    const record={root,renderer,props,focus,child,seed:preview?.seed,views:preview?.views,mount:preview?.mount,shown:false,dismissed:false,failed:false};
+    const record={root,renderer,props,focus,child,seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:false,dismissed:false,failed:false};
     class PreviewBoundary extends react.Component {
       constructor(props){super(props);this.state={failed:false};}
       static getDerivedStateFromError(){return {failed:true};}
@@ -465,7 +465,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // the record even when the wrapper can no longer be removed from that chain.
     record.detach.push(()=>{record=undefined;});
     return function(...args){
-      if(record){const state=args[0]?.nativeEvent?.state;if(key==='onShow'||key==='onDismiss'||['open','opened','presented','closed','dismissed'].includes(state))record.pending=false;else if(['opening','closing'].includes(state))record.pending=true;}
+      if(record){
+        const status=record.status,state=key==='onShow'?'open':key==='onDismiss'?'closed':args[0]?.nativeEvent?.state;
+        if(['closed','dismissed'].includes(state)){status.pending=false;status.closed=true;}
+        else if(['open','opened','presented'].includes(state)){status.closed=false;status.pending=!!status.closing;}
+        else if(['opening','closing'].includes(state))status.pending=true;
+      }
       return handler.apply(this,args);
     };
   }
@@ -480,25 +485,49 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   const inside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner?.alternate)return true;return false;};
   function watchNative(focus, pending = false, ancestors = false, mounting = false) {
-    const scope=focus?roots(focus):[];
     fibers(fiber=>{
       if(fiber.tag!==5&&fiber.tag!==1)return;
       const canonical=fiber.tag===1?fiber.stateNode:fiber.stateNode?.canonical,field=fiber.tag===1?'props':'currentProps',props=canonical?.[field];
       if(!props||typeof props.onShow!=='function'&&typeof props.onDismiss!=='function'&&typeof props.onStateChange!=='function')return;
       const previous=nativeRecords.get(canonical);
-      if(previous?.patched===props){previous.fiber=fiber;if(pending&&focus&&scope.some(root=>inside(fiber,root)||ancestors&&inside(root,fiber)))previous.pending=true;return;}
+      if(previous?.patched===props){previous.fiber=fiber;return;}
       if(nativeRecords.size>=200&&!previous)return;
-      const pendingBefore=previous?.pending??(mounting&&typeof props.onShow==='function');
+      const status=previous?.status??{pending:mounting&&typeof props.onShow==='function',closed:false,closing:false};
       if(previous)forgetNative(previous);
-      const record={canonical,field,fiber,original:props,pending:pendingBefore,detach:[]};
+      const record={canonical,field,fiber,original:props,status,detach:[]};
       const patched={...props};
       for(const key of ['onShow','onDismiss','onStateChange'])if(typeof props[key]==='function'){
         patched[key]=nativeHandler(key,props[key],record);
       }
       record.patched=patched;try{canonical[field]=patched;}catch{forgetNative(record);nativeRecords.delete(canonical);return;}
-      if(pending&&focus&&scope.some(root=>inside(fiber,root)||ancestors&&inside(root,fiber)))record.pending=true;
       nativeRecords.set(canonical,record);
     });
+    const targets=nativeTargets(focus,ancestors);
+    if(pending)for(const record of targets){record.status.pending=true;record.status.closed=false;record.status.closing=false;}
+    return targets;
+  }
+  function nativeTargets(focus,ancestors=false) {
+    if(!focus)return [];
+    const scope=roots(focus),records=[...nativeRecords.values()];
+    // A wrapper and its native host forward the same lifecycle event. Observe
+    // the outer boundary, without arming idle child sheets that never opened.
+    if(ancestors){
+      const parents=records.filter(record=>scope.some(root=>inside(root,record.fiber)));
+      if(parents.length)return parents.filter(record=>!parents.some(other=>other!==record&&inside(other.fiber,record.fiber)));
+    }
+    const children=records.filter(record=>scope.some(root=>inside(record.fiber,root)));
+    return children.filter(record=>!children.some(other=>other!==record&&inside(record.fiber,other.fiber)));
+  }
+  function beginDismissal(entry,focus,ancestors=false) {
+    entry.native=watchNative(focus,false,ancestors).map(record=>record.status);
+    for(const status of entry.native){status.closing=true;status.pending=true;status.closed=false;}
+  }
+  async function waitForDismissal(entry) {
+    const started=Date.now();
+    while(entry.native?.some(status=>!status.closed)){
+      if(Date.now()-started>=2000)throw new Error('Native presentation dismissal has not finished.');
+      await new Promise(resolve=>later(resolve,40));
+    }
   }
   function observeCommits() {
     if(commitPatch&&hook?.onCommitFiberRoot===commitPatch.wrapped)return true;
@@ -516,7 +545,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   function motion(focus,viewport,tree=index(),scope=roots(focus,tree)) {
     for(const [canonical,record]of nativeRecords)if(!tree.current.has(record.fiber)&&!tree.current.has(record.fiber?.alternate)){forgetNative(record);nativeRecords.delete(canonical);}
-    let pending=[...nativeRecords.values()].some(r=>r.pending&&scope.some(root=>inside(r.fiber,root)||inside(root,r.fiber)));const boxes=[];
+    let pending=[...nativeRecords.values()].some(r=>r.status.pending&&scope.some(root=>inside(r.fiber,root)||inside(root,r.fiber)));const boxes=[];
     const relevant=new Set();
     // Build the same connected-body and ancestor set without testing every
     // offscreen feed fiber against each parent chain. Preserve mounted order.
@@ -527,7 +556,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     for(const fiber of tree.all){
       if(!relevant.has(fiber))continue;
       const canonical=fiber.stateNode?.canonical,record=canonical&&nativeRecords.get(canonical);
-      if(record?.pending)pending=true;
+      if(record?.status.pending)pending=true;
       // Remaining hosts still contribute transition events, but their bounds
       // cannot change this capped signature. Avoid extra Fabric layout reads.
       if(boxes.length>=24)continue;
@@ -539,6 +568,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   function clearNative(){structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();}
   function open(id,focus) {
+    if(undo.some(entry=>entry.closing))return {error:'A native presentation is still dismissing.'};
     armNative();
     const action=catalog.actions.find(a=>a.id===id),found=action&&find(action,index(true),focus);if(!found)return {error:'This presentation entry is not currently available.'};
     if(action.effect.kind==='mount'){
@@ -557,30 +587,49 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     if(action.effect.kind==='control'){
       const {fiber,value,close}=found.target;
-      armNative(fiber);undo.push({control:value,close,focus:fiber,views:action.views});value[found.target.method??action.effect.method]();
+      armNative(fiber);undo.push({control:value,close,focus:fiber,nativeFocus:fiber,views:action.views});value[found.target.method??action.effect.method]();
       return {name:action.name,focus:fiber};
     }
     return {error:'Unsupported presentation transition.'};
   }
-  async function rollback(level = 0, wait = true) {
+  let rollbackTask=Promise.resolve();
+  function rollback(level=0,wait=true) {
+    const task=rollbackTask.catch(()=>{}).then(()=>restorePresentations(level,wait));
+    rollbackTask=task;return task;
+  }
+  async function restorePresentations(level,wait) {
     while(undo.length>Math.max(0,level)){
       // Keep the checkpoint until its close operation succeeds. A thrown close
       // must not discard the only way to restore the app on the next attempt.
       const entry=undo[undo.length-1];
       if(entry.projection){
         const record=entry.projection;clearTimeout(record.seedTimer);
-        const props=record.root.memoizedProps??record.props;
-        structureCache=undefined;record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
-        if(wait){const started=Date.now();while(!record.dismissed&&Date.now()-started<1000)await new Promise(resolve=>later(resolve,40));}
+        if(!entry.closing){
+          const props=record.root.memoizedProps??record.props;
+          structureCache=undefined;record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
+          entry.closing=true;
+        }
+        // React Native emits Modal.onDismiss on iOS only. Retain the restore
+        // record when an already shown iOS modal is still dismissing.
+        if(wait&&record.ios&&record.shown){
+          const started=Date.now();while(!record.dismissed){
+            if(Date.now()-started>=2000)throw new Error('Temporary modal dismissal has not finished.');
+            await new Promise(resolve=>later(resolve,40));
+          }
+        }
         const index=projected.indexOf(record);if(index>=0)projected.splice(index,1);
         releasePreviewErrors();if(record.seed)unpatch();if(!projected.length)unpatchPreviewEffects();
       }else if(entry.control){
-        const focus=entry.focus;watchNative(focus,true);entry.control[entry.close]();
-        if(wait){const started=Date.now();while(motion(focus).pending&&Date.now()-started<2000)await new Promise(resolve=>later(resolve,40));}
+        if(!entry.closing){
+          beginDismissal(entry,entry.nativeFocus);entry.control[entry.close]();entry.closing=true;
+        }
+        if(wait)await waitForDismissal(entry);
       }else{
-        const focus=entry.focus;if(entry.nativeDismiss)watchNative(focus,true,true);
-        entry.binding.setter(previous=>setPath(previous,entry.path,entry.value));
-        if(wait&&entry.nativeDismiss){const started=Date.now();while(motion(focus).pending&&Date.now()-started<2000)await new Promise(resolve=>later(resolve,40));}
+        if(!entry.closing){
+          if(entry.nativeDismiss)beginDismissal(entry,entry.focus,true);
+          entry.binding.setter(previous=>setPath(previous,entry.path,entry.value));entry.closing=true;
+        }
+        if(wait&&entry.nativeDismiss)await waitForDismissal(entry);
       }
       undo.pop();
     }
@@ -597,6 +646,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const tree=index(),currentFocus=focus&&tree.current.get(focus),connected=roots(currentFocus,tree);
     return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:viewport=>motion(currentFocus,viewport,tree,connected)};
   }
-  const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativePending:[...nativeRecords.values()].filter(r=>r.pending).length,checkpoints:undo.length,projections:projected.length});
+  const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,checkpoints:undo.length,projections:projected.length});
   return {collect,records,configure,list,open,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

@@ -43,7 +43,7 @@ export class FlowPresentationCapture {
     const started=performance.now();
     try {
       const restored=await backend.runtime.invoke({type:'presentation-rollback',level:0},10000);
-      if(restored?.error)throw new Error('Presentation restoration failed.');
+      if(restored?.error)throw new FlowRuntimeFailure('presentation-rollback');
     } finally { this.restorationTimings.record(performance.now()-started); }
   }
   private sameView(a: View, b: View) {
@@ -59,7 +59,7 @@ export class FlowPresentationCapture {
     const kept=branch.frames[depth-1];
     if(depth<branch.actions.length){
       const restored=await backend.runtime.invoke({type:'presentation-rollback',level:kept.level},10000);
-      if(restored?.error)throw new Error('Presentation restoration failed.');
+      if(restored?.error)throw new FlowRuntimeFailure('presentation-rollback');
     }
     const view=depth===branch.actions.length?current:await this.settled(backend,timeout);
     if(!this.sameView(view,kept.view))return;
@@ -209,7 +209,7 @@ export class FlowPresentationCapture {
       if(!reused){
         this.discardBranch();
         const restored=await backend.runtime.invoke({type:'presentation-rollback',level:0},10000);
-        if(restored?.error)throw new Error('Presentation restoration failed.');
+        if(restored?.error)throw new FlowRuntimeFailure('presentation-rollback');
       }
       if (!reused&&plan.basePath.length) {
         const base = await backend.runtime.invoke({type: 'open', path: plan.basePath, params: plan.baseParams, expo: plan.expo, timeoutMs: 2000, loadingTimeoutMs: 10000}, 10500);
@@ -256,7 +256,7 @@ export class FlowPresentationCapture {
     } finally {
       if (node.status === 'pending' && node.captureAttempts >= 3) node.status = 'timed-out';
       try {
-        if(!retained){this.discardBranch();await backend.runtime.invoke({type:'presentation-rollback',level:0},10000);}
+        if(!retained){this.discardBranch();const restored=await backend.runtime.invoke({type:'presentation-rollback',level:0},10000);if(restored?.error)throw new FlowRuntimeFailure('presentation-rollback');}
       }
       finally {
         node.captureMs = performance.now() - started; this.timings.record(node.captureMs); this.run.revision++;

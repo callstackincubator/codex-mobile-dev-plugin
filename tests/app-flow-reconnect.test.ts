@@ -154,3 +154,34 @@ test('a native screenshot failure keeps its own step and local evidence',async t
   const node=runs.read(run.id).nodes[0];assert.equal(node.status,'timed-out');assert.equal(node.captureAttempts,3);
   assert.match(node.reason!,/device screenshot/);assert.deepEqual(node.failure,{operation:'screenshot',detail:'Screenshot failed with HTTP 503.'});
 });
+
+
+test('failed native dismissal reconnects despite a healthy heartbeat and closes before navigation recovery',async t=>{
+  const {FlowRuntimeFailure}=await import('../src/server/app-flow/runtime-metrics.ts');
+  const g=graph();g.nodes=g.nodes.slice(0,1);
+  g.presentations={states:[],actions:[{id:'sheet',name:'Sheet',file:'App.tsx',line:1,owner:'App',component:'Button',prop:'onPress',effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}}]};
+  let connections=0,open=false,screen='Home';const events:string[]=[];
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>g,connect:async()=>{
+    const generation=++connections;
+    return {runtime:{async invoke(command){
+      const type=String(command.type);events.push(`${generation}:${type}`);
+      if(type==='inspect'||type==='resume')return {available:true};
+      if(type==='heartbeat')return {alive:true};
+      if(type==='presentation-rollback'){
+        if(open&&generation===1)throw new FlowRuntimeFailure(type,'was rejected','Native dismissal is still pending.');
+        open=false;screen='Home';return {};
+      }
+      if(type==='recover'){assert.equal(open,false,'Native sheets must dismiss before route recovery');return {recovered:true};}
+      if(type==='open'){assert.equal(open,false);return {ready:true,active:['Home'],name:'Home',signature:'Home'};}
+      if(type==='presentations')return open?[]:[{id:'sheet'}];
+      if(type==='presentation-active')return [];
+      if(type==='presentation-open'){open=true;screen='Sheet';if(generation===1)throw new FlowRuntimeFailure(type);}
+      if(type==='presentation-checkpoint')return {level:open?1:0};
+      return {key:screen,ready:true,found:true,active:[screen],signature:screen};
+    },async close(){}},async screenshot(){return Buffer.from(screen)}};
+  }});
+  const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
+  assert.equal(connections,2);assert.equal(runs.read(run.id).phase,'complete');
+  assert.equal(runs.read(run.id).nodes.find(node=>node.presentation)?.status,'captured');
+  assert.ok(events.indexOf('2:presentation-rollback')<events.indexOf('2:recover'));
+});

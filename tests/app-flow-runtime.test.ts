@@ -768,3 +768,17 @@ test('bounded stack replacement dispatches through its current mounted helper',a
   assert.equal(opened.ready,true);assert.equal(replaces,1);assert.equal(leaf.routes.length,1);
   assert.deepEqual(Array.from(opened.active),['HomeTab','Profile']);
 });
+
+
+test('route opens and recovery cannot unmount an unrestored presentation',async t=>{
+  const app=runtime(t);await app.invoke({type:'restore'});app.context.level=1;
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,()=>({checkpoint:()=>level,async rollback(){level=0},cleanup(){}}))`,app.context);
+  await app.invoke({type:'inspect'});
+  for(const type of ['open','recover']){
+    const result=await app.invoke({type,path:['Profile']});
+    assert.equal(result.error,'Restore presentations before changing navigation.');
+    assert.equal(app.getState().routes[0].name,'Home');
+  }
+  await app.invoke({type:'presentation-rollback'});
+  assert.equal((await app.invoke({type:'open',path:['Profile'],timeoutMs:300})).ready,true);
+});

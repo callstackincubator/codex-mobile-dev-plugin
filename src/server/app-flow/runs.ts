@@ -323,8 +323,9 @@ export class AppFlowRuns {
             next = await connect();
             const info = await abortable(next.runtime.invoke({ type: "resume" }, 2500), signal);
             if (!info?.available && !presentations) throw new Error("Waiting for the app's navigation container.");
+            const restored=await next.runtime.invoke({type: "presentation-rollback"}, 10000);
+            if(restored?.error)throw new FlowRuntimeFailure('presentation-rollback');
             if (info?.available) await abortable(next.runtime.invoke({ type: "recover" }, 2500), signal);
-            await next.runtime.invoke({type: "presentation-rollback"}, 10000);
             signal.throwIfAborted();
             backend = next; active.runtime = next.runtime; active.info = info; active.target = next.target;
             previousFrame = undefined;
@@ -393,7 +394,10 @@ export class AppFlowRuns {
               node.reason = error instanceof FlowRuntimeFailure ? error.message : 'Presentation capture was interrupted.';
               node.failure={operation:error instanceof FlowRuntimeFailure?error.operation:'other',detail:error instanceof FlowRuntimeFailure?error.detail:error instanceof Error?error.message.slice(0,1000):undefined};
             }
-            try { await backend.runtime.invoke({type: 'heartbeat'}, 1000); }
+            try {
+              if(error instanceof FlowRuntimeFailure&&error.operation==='presentation-rollback')throw error;
+              await backend.runtime.invoke({type: 'heartbeat'}, 1000);
+            }
             catch { await reconnect(); if(node.status!=='captured'){node.captureAttempts = Math.max(0, (node.captureAttempts ?? 1) - 1); node.status = 'pending';} }
           }
           continue;
