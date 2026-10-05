@@ -3,6 +3,7 @@ import { openRequestSession } from "./request-session.ts";
 import type { ServerRequestContext } from "./request-session.ts";
 import { addToolIcons, PHONE_ICONS } from "./tool-icons.ts";
 import type { UIResource } from "./ui-resource.ts";
+import { PluginUpdates, registerPluginUpdateTools } from "./plugin-updates.ts";
 import { LIVE_UI_URI } from "../shared/live-ui.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PLUGIN_VERSION } from "../shared/version.ts";
@@ -120,7 +121,9 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. See the Mobile Dev skill for device control, logs, and performance workflows.",
   });
   instrumentMcpServer(server);
+  const updates = new PluginUpdates();
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
+  registerPluginUpdateTools(server, updates);
   const extensions = new OpenAIExtensions(server);
   registerDeviceChoiceTools(server, extensions, {
     simulators: () => baguette.start(), android: () => android.list(), physicalIos: listIosDevices,
@@ -438,6 +441,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   return {
     server,
     async close() {
+      updates.close();
       stopRecordingStorageMetrics();
       await recordings.close();
       closeInspection(); closeAndroid(); streams.close();

@@ -14,10 +14,12 @@ import { useMediaQuery } from "./use-media-query";
 import { markUiSurfaceReady, setUiSurface, setUiTelemetryContext } from "../telemetry.ts";
 import type { RecordingController } from "../recording-controller.ts";
 import { RecordingCard } from "./recording-card";
+import { PluginUpdateBanner } from "./plugin-update-banner";
+import type { PluginUpdateController } from "../plugin-updates.ts";
 
 export type DeviceLayout = "both" | "ios" | "android" | "none";
 
-export function Workspace({ logs, performance, recordingController, onLayout }: { logs: LogsPanel; performance: PerformancePanel; recordingController: RecordingController; onLayout: (layout: DeviceLayout) => void }) {
+export function Workspace({ logs, performance, recordingController, updates, onLayout }: { logs: LogsPanel; performance: PerformancePanel; recordingController: RecordingController; updates?: PluginUpdateController; onLayout: (layout: DeviceLayout) => void }) {
   const [tool, setTool] = useState<"logs" | "performance">("logs");
   const [savedVisible, setSavedVisible] = useState(false);
   const [layout, setLayout] = useState<DeviceLayout>("ios");
@@ -105,6 +107,7 @@ export function Workspace({ logs, performance, recordingController, onLayout }: 
   </ResizablePanel>;
   const divider = <ResizableHandle key="divider" hidden={layout === "none" || (!fullscreen && !open)} disabled={layout === "none" || (!fullscreen && !open)} aria-label="Resize tools and simulators" />;
   return <main className="flex h-dvh flex-col">
+    {updates && <PluginUpdateBanner controller={updates} />}
     {(fullscreen || layout === "none") && <nav className="workspace-toolbar @container flex h-12 shrink-0 items-center gap-2 border-y px-2" aria-label="Developer tools">{toolbar}</nav>}
     <ResizablePanelGroup id="workspace-panels" groupRef={workspaceGroupRef} orientation={split ? "horizontal" : "vertical"} className="min-h-0 flex-1" data-split={split}>
       {split ? [toolPanel, divider, simulatorPanel] : [simulatorPanel, divider, toolPanel]}

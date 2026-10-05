@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.131",
+  "version": "0.1.132",
   "private": true,
   "type": "module",
   "engines": {
@@ -41,6 +41,7 @@
     "sentry:upload": "node scripts/upload-sourcemaps.mjs",
     "typecheck:telemetry": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution bundler --allowImportingTsExtensions src/shared/telemetry.ts src/server/instrument.ts src/server/telemetry.ts src/server/storage-metrics.ts src/ui/telemetry.ts",
     "test:codex-plugin": "node scripts/smoke-codex-plugin.mjs",
+    "test:updates": "node scripts/smoke-plugin-updates.mjs",
     "prepare": "husky",
     "lint:commits": "commitlint"
   },

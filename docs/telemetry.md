@@ -2,6 +2,16 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Since 0.1.132, `plugin.update.operations` counts release checks and installations
+by fixed operation and outcome, and `plugin.update.duration` measures their
+duration in milliseconds. Cache hits emit no extra measurement. These measure
+plugin work and do not attach device context, version strings, GitHub responses,
+CLI output, paths, or profile details. Offline checks count as unavailable;
+installation failures report a fixed error message. The existing MCP wrapper
+preserves sampled UI/server tracing and action outcomes on the active workspace
+surface. UI counters record successful updates and dismissed banners without
+release details. All collection honors telemetry opt-out.
+
 Since 0.1.129, discovery command failures retain bounded `discovery_command`, `discovery_cause`,
 `discovery_termination`, and optional `discovery_signal` tags. Failed exception
 contexts contain only numeric `elapsed_ms`, `deadline_ms`, and an optional exit

@@ -92,7 +92,27 @@ The prebuilt marketplace is named `mobile-dev`, separate from the
 repository visibility.
 
 The configured `release/latest` ref stays attached to the marketplace. Codex
-refreshes its Git snapshot and installed plugin cache; start a new session after
-updating so its MCP process uses the refreshed files. This is an explicit refresh,
+refreshes its Git snapshot and installed plugin cache; fully quit and reopen Codex
+after updating so its MCP process and UI use the refreshed files. This is an explicit refresh,
 not a promise of immediate automatic background updates. The first successful
 release with this workflow creates the branch.
+
+Release builds check for updates when Mobile Dev becomes visible. The server
+checks GitHub's latest full release and the public `release/latest` manifest;
+their versions must agree before the banner offers an update. Successful checks
+are cached for one hour across chats in the active Codex profile; unavailable
+checks retry after fifteen minutes. Development builds do not check or install
+public updates. The embedded UI needs no GitHub network permissions.
+
+The Update button calls an app-only MCP tool. It locates the CLI process that
+launched the plugin, verifies the `mobile-dev` Git marketplace belongs to this
+repository, and runs `codex plugin marketplace upgrade mobile-dev --json`.
+Success requires an error-free refresh and verification of the new manifest in
+Codex's installed plugin cache. The plugin preserves the restart notice across
+chats until the new version runs. It does not restart Codex automatically.
+`CODEX_HOME` is forwarded by the MCP manifest so updates use the same profile.
+
+`npm run test:updates` verifies the update flow with the real Codex CLI in a
+temporary profile and a local Git mirror. It checks refreshed cache files and
+the restart notice without changing the user's installation or fetching a
+public plugin package. It requires `codex` on PATH or `CODEX_CLI_PATH`.

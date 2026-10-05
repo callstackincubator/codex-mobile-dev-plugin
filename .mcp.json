@@ -9,6 +9,7 @@
       "cwd": ".",
       "env_vars": [
         "HOME",
+        "CODEX_HOME",
         "DEVELOPER_DIR",
         "MOBILE_DEV_TELEMETRY",
         "MOBILE_DEV_ENVIRONMENT"

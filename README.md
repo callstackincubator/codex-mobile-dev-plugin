@@ -17,13 +17,16 @@ Open a new chat after installing. The package includes the built plugin and
 bundled runtimes; no plugin build or `npm install` is needed. While the repository
 is private, installation requires GitHub read access and working Git authentication.
 
-To update an existing installation:
+Mobile Dev shows a banner when a newer release is ready to install. Click
+**Update**, then fully quit and reopen Codex after it finishes.
+
+You can also update an existing installation from the terminal:
 
 ```sh
 codex plugin marketplace upgrade mobile-dev
 ```
 
-Open a new chat after updating.
+Fully quit and reopen Codex after updating.
 
 ## Features
 

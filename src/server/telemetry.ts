@@ -11,6 +11,13 @@ import { getDiscoveryCommandDiagnostic } from "../shared/device-apps-command-dia
 import { androidStartupDiagnosticTags } from "../shared/android-startup-diagnostics.ts";
 import type { AndroidStartupSummary, AndroidStartupContext, AndroidStartupFailure, AndroidDeviceState } from "../shared/android-startup-diagnostics.ts";
 
+export function recordPluginUpdate(operation: "check" | "install", outcome: "disabled" | "unavailable" | "current" | "available" | "updated" | "failed", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", operation, outcome };
+  Sentry.metrics.count("plugin.update.operations", 1, { attributes });
+  Sentry.metrics.gauge("plugin.update.duration", duration, { unit: "millisecond", attributes });
+}
+
 export function recordAndroidBackendStartup(duration: number, outcome: "ready" | "failed") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };

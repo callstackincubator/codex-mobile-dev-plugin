@@ -18,6 +18,7 @@ import { startLiveReload } from "./live-reload.ts";
 import { ErrorBoundary, captureUiError, startUiTelemetry, stopUiTelemetry, setUiTelemetryContext } from "./telemetry.ts";
 import { PLUGIN_VERSION } from "../shared/version.ts";
 import { RecordingController } from "./recording-controller.ts";
+import { PluginUpdateController } from "./plugin-updates.ts";
 
 const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, {}, { autoResize: false });
 startUiTelemetry(app);
@@ -27,9 +28,10 @@ const deviceApps = new DeviceAppsStore(app, document);
 const performancePanel = new PerformancePanel(app, deviceApps);
 const logsPanel = new LogsPanel(app, panelContext, deviceApps);
 const recordingController = new RecordingController(app, extensions);
+const updates = new PluginUpdateController(app);
 const reactRoot = createRoot(document.getElementById("root")!);
 const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-  <Workspace performance={performancePanel} logs={logsPanel} recordingController={recordingController} onLayout={changeLayout} />
+  <Workspace performance={performancePanel} logs={logsPanel} recordingController={recordingController} updates={updates} onLayout={changeLayout} />
 </ErrorBoundary>;
 flushSync(() => { reactRoot.render(workspace); });
 
@@ -74,6 +76,7 @@ function disposeUI() {
     document.removeEventListener("visibilitychange", resumeContext);
     deviceApps.dispose();
     recordingController.dispose();
+    updates.dispose();
     await Promise.allSettled([...panels.map(panel => panel.dispose()), logsPanel.dispose(), performancePanel.dispose()]);
     reactRoot.unmount();
     await stopUiTelemetry();
@@ -122,6 +125,7 @@ void (async () => {
     logsPanel.setAvailable(available);
     performancePanel.setAvailable(available);
     deviceApps.setAvailable(available);
+    updates.setAvailable(available);
     for (const panel of panels) {
       panel.setAvailable(available);
       if (!available) panel.notice("This host cannot call the plugin's simulator tools.");
