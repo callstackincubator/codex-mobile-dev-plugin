@@ -80,3 +80,64 @@ test('progress reports discovered work without treating it as a fixed total',()=
   run.nodes.push({...run.nodes[2],id:'new'});
   assert.deepEqual(flowProgress(run),{captured:1,queued:2,discovered:4,needsData:1,unsuccessful:0});
 });
+
+test('fatal app errors stop capture before saving an error overlay or opening later routes',async t=>{
+  const {FlowAppFailure}=await import('../src/server/app-flow/runtime-metrics.ts');
+  const path=await directory(t),opened:string[]=[],shots:string[]=[];
+  let screen='Home',connections=0;
+  const runs=new AppFlowRuns({directory:path,scan:async()=>graph(),connect:async()=>{
+    connections++;
+    return {runtime:{async invoke(command){
+      if(command.type==='inspect')return {available:true};
+      if(command.type==='open'){screen=(command.path as string[])[0];opened.push(screen);return {ready:true,active:[screen],name:screen,signature:screen};}
+      if(command.type==='verify'&&screen==='Profile')throw new FlowAppFailure('verify');
+      return {found:true,active:[screen]};
+    },async close(){}},async screenshot(){shots.push(screen);return Buffer.from(screen)}};
+  }});
+  const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
+  const result=runs.read(run.id);
+  assert.equal(result.phase,'failed');assert.match(result.error!,/fatal JavaScript error/);
+  assert.equal(connections,1);assert.deepEqual(opened,['Home','Profile']);assert.deepEqual(shots,['Home','Profile']);
+  assert.equal(result.nodes.find(node=>node.name==='Home')?.status,'captured');
+  assert.equal(result.nodes.find(node=>node.name==='Profile')?.image,undefined);
+  await assert.rejects(readFile(join(path,run.id,'Profile.png')),{code:'ENOENT'});
+});
+
+test('a fatal app error during reconnect ends the run instead of retrying forever',async t=>{
+  const {FlowAppFailure}=await import('../src/server/app-flow/runtime-metrics.ts');
+  let connections=0;
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>graph(),connect:async()=>{
+    connections++;
+    return {runtime:{async invoke(command){
+      if(command.type==='inspect')return {available:true};
+      if(command.type==='resume')throw new FlowAppFailure('resume');
+      throw Error('connection lost');
+    },async close(){}},async screenshot(){throw Error('must not capture')}};
+  }});
+  const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
+  assert.equal(runs.read(run.id).phase,'failed');assert.equal(connections,2);
+});
+
+test('route and presentation retries preserve the failed runtime step in their saved reason',async t=>{
+  const {FlowRuntimeTimeout}=await import('../src/server/app-flow/runtime-metrics.ts');
+  const g=graph();g.nodes=g.nodes.slice(0,2);
+  g.presentations={states:[],actions:[{id:'sheet',name:'Sheet',file:'App.tsx',line:1,owner:'App',component:'Button',prop:'onPress',effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}}]};
+  let screen='Home';
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>g,connect:async()=>({runtime:{async invoke(command){
+    if(command.type==='inspect')return {available:true};
+    if(command.type==='open'){
+      screen=(command.path as string[])[0];
+      if(screen==='Profile')throw new FlowRuntimeTimeout('open');
+      return {ready:true,active:[screen],name:screen,signature:screen};
+    }
+    if(command.type==='presentations')return [{id:'sheet'}];
+    if(command.type==='presentation-view')throw new FlowRuntimeTimeout('presentation-view');
+    if(command.type==='presentation-active')return [];
+    return {found:true,active:[screen]};
+  },async close(){}},async screenshot(){return Buffer.from(screen)}})});
+  const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
+  const nodes=runs.read(run.id).nodes;
+  const route=nodes.find(n=>n.name==='Profile')!,sheet=nodes.find(n=>n.presentation)!;
+  assert.equal(route.status,'timed-out');assert.match(route.reason!,/opening a route/);assert.equal(route.captureAttempts,3);
+  assert.equal(sheet.status,'timed-out');assert.match(sheet.reason!,/checking presentation readiness/);assert.equal(sheet.captureAttempts,3);
+});

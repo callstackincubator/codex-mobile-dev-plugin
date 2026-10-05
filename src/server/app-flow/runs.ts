@@ -14,7 +14,7 @@ import { FlowStore, type FlowLease, type SavedFlow } from './store.ts';
 import { FlowPresentationCapture } from './presentations.ts';
 import { recordFlow } from './recording.ts';
 import { PLUGIN_VERSION } from '../../shared/version.ts';
-import { FlowRuntimeFailure } from './runtime-metrics.ts';
+import { FlowAppFailure, FlowRuntimeFailure } from './runtime-metrics.ts';
 
 export type FlowStart = { projectRoot: string; platform: "ios" | "android"; deviceId: string; targetId: string; metroUrl: string; useAi: boolean };
 export type RuntimeInfo = FlowEvidence & { available: boolean; data?: unknown[] };
@@ -320,8 +320,8 @@ export class AppFlowRuns {
             run.phase = "capturing"; run.revision++;
             return;
           } catch (error) {
-            await next?.runtime.close({ restore: signal.aborted }).catch(() => {});
-            if (signal.aborted) throw error;
+            await next?.runtime.close({ restore: signal.aborted || error instanceof FlowAppFailure }).catch(() => {});
+            if (signal.aborted || error instanceof FlowAppFailure) throw error;
           }
         }
       } finally { reconnectTimings.record(performance.now() - started); }
@@ -354,7 +354,7 @@ export class AppFlowRuns {
       if (!active.info?.available) {
         try { await presentations.baseline(backend); }
         catch (error) {
-          if (signal.aborted) throw error;
+          if (signal.aborted || error instanceof FlowAppFailure) throw error;
           try { await backend.runtime.invoke({type:'heartbeat'},1000); }
           catch { await reconnect(); await presentations.baseline(backend); }
           if (!run.nodes.length) throw error;
@@ -376,10 +376,10 @@ export class AppFlowRuns {
           if (run.retrying) retries++;
           try { await presentations.retry(backend, node); }
           catch (error) {
-            if (signal.aborted) throw error;
+            if (signal.aborted || error instanceof FlowAppFailure) throw error;
             if(node.status!=='captured'){
               node.status = (node.captureAttempts ?? 0) < maxAttempts ? 'pending' : 'timed-out';
-              node.reason = 'Presentation capture was interrupted.';
+              node.reason = error instanceof FlowRuntimeFailure ? error.message : 'Presentation capture was interrupted.';
             }
             try { await backend.runtime.invoke({type: 'heartbeat'}, 1000); }
             catch { await reconnect(); if(node.status!=='captured'){node.captureAttempts = Math.max(0, (node.captureAttempts ?? 1) - 1); node.status = 'pending';} }
@@ -398,7 +398,7 @@ export class AppFlowRuns {
               discovery?.reveal(base,opened);
               await abortable(presentations.explore(backend,base),signal);pendingDiscovery.delete(id);
             } catch(error) {
-              if(signal.aborted)throw error;
+              if(signal.aborted || error instanceof FlowAppFailure)throw error;
               if(!presentations.failures.has(id))presentations.failures.set(id,{nodeId:id,operation:error instanceof FlowRuntimeFailure?error.operation:'other',message:error instanceof FlowRuntimeFailure?error.message:'App Flow presentation discovery failed.'});
               try { await backend.runtime.invoke({type:'heartbeat'},1000); } catch { await reconnect(); }
             }
@@ -484,15 +484,15 @@ export class AppFlowRuns {
             }
           }
         } catch (error) {
-          if (signal.aborted) throw error;
-          node.status = "timed-out"; node.reason = error instanceof Error && error.message === "Native screen is blank." ? "The native screen is blank. It was not saved as a preview." : error instanceof Error && error.message === "Native frame did not change." ? "The device still shows the previous screen. Close any native overlay and try again." : "Capture or runtime acknowledgement timed out.";
+          if (signal.aborted || error instanceof FlowAppFailure) throw error;
+          node.status = "timed-out"; node.reason = error instanceof FlowRuntimeFailure ? error.message : error instanceof Error && error.message === "Native screen is blank." ? "The native screen is blank. It was not saved as a preview." : error instanceof Error && error.message === "Native frame did not change." ? "The device still shows the previous screen. Close any native overlay and try again." : "Capture or runtime acknowledgement timed out.";
         }
         const routeCaptureMs=capturedTarget?performance.now()-started:undefined;
         if (capturedTarget) {
           if (presentations.enabled) {
             try { if(previousFrame)presentations.rememberFrame(previousFrame.bytes);await presentations.explore(backend, node);pendingDiscovery.delete(node.id); }
             catch (error) {
-              if (signal.aborted) throw error;
+              if (signal.aborted || error instanceof FlowAppFailure) throw error;
               try {
                 try { await backend.runtime.invoke({type:"heartbeat"},1000); }
                 catch {
@@ -503,7 +503,7 @@ export class AppFlowRuns {
               } catch (recoveryError) {
                 // Discovery can fail again after a reconnect. Keep the saved
                 // screenshot and let the queue retry other routes.
-                if(signal.aborted)throw recoveryError;
+                if(signal.aborted || recoveryError instanceof FlowAppFailure)throw recoveryError;
               }
               run.discoveryFailures=[...presentations.failures.values()];run.revision++;
               if(presentations.failures.has(node.id))pendingDiscovery.set(node.id,1);
@@ -518,7 +518,8 @@ export class AppFlowRuns {
           // turn an otherwise finished map into a connection failure.
           if (more) {
             try { await backend.runtime.invoke({ type: "recover" }, 2500); }
-            catch {
+            catch (error) {
+              if(error instanceof FlowAppFailure)throw error;
               const interrupted = (interruptions.get(node.id) ?? 0) + 1;
               interruptions.set(node.id, interrupted);
               await reconnect();

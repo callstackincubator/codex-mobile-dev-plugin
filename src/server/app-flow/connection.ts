@@ -3,7 +3,7 @@ import { WebSocket } from "ws";
 import { installFlowRuntime } from "./runtime.js";
 import { installPresentationRuntime } from './presentations-runtime.js';
 import { bindPresentationSites } from './presentations-bindings.ts';
-import {FlowRuntimeFailure,FlowRuntimeMetrics,FlowRuntimeTimeout,runtimeOperation} from './runtime-metrics.ts';
+import {FlowAppFailure,FlowRuntimeFailure,FlowRuntimeMetrics,FlowRuntimeTimeout,runtimeOperation} from './runtime-metrics.ts';
 
 /** A reconnect can reuse the runtime lease and original navigation state. */
 export class FlowConnection {
@@ -99,6 +99,7 @@ export class FlowConnection {
     const expression = `(()=>{const runtime=globalThis[${JSON.stringify(this.key)}],reply=result=>globalThis[${JSON.stringify(this.binding)}]?.(JSON.stringify({id:${id},result}));if(!runtime?.invoke){reply({runtimeUnavailable:true});return;}runtime.invoke(${JSON.stringify(command)},reply);})()`;
     const result=await this.send("Runtime.evaluate", { expression, silent: true, returnByValue: true, objectGroup: this.key }, timeout, id,runtimeOperation(command.type));
     if(result?.runtimeUnavailable)throw new Error('App Flow inspector is no longer installed. Reconnecting.');
+    if(result?.appFailed)throw new FlowAppFailure(String(command.type));
     if (['presentation-collect','presentation-bindings','presentation-configure','presentation-active','presentations'].includes(String(command.type))) {
       if(result?.error)throw new FlowRuntimeFailure(String(command.type),'was rejected',result.detail??result.error);
       if(['presentation-active','presentations'].includes(String(command.type))&&!Array.isArray(result))throw new FlowRuntimeFailure(String(command.type),'returned an invalid response');

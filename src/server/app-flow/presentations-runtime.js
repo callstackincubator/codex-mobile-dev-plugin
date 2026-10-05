@@ -125,7 +125,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // Native bounds cross into Fabric. Related owners share host descendants;
     // measure each host once during this synchronous lookup, then discard it.
     const isVisible=fiber=>{let value=live.get(fiber);if(value===undefined){value=activeAncestors(fiber)&&attached(fiber,boxes);live.set(fiber,value);}return value;};
-    const inside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner.alternate)return true;return false;};
+    const inside=(fiber,owner)=>{if(!owner)return false;for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner.alternate)return true;return false;};
     return {names,isVisible,inside,current,all,states,values};
   }
   function roots(focus,tree) {
@@ -363,6 +363,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(!focus||!scope.some(root=>inside(fiber,root)||inside(root,fiber)))return;
       const canonical=fiber.stateNode?.canonical,record=canonical&&nativeRecords.get(canonical);
       if(record?.pending)pending=true;
+      // Remaining hosts still contribute transition events, but their bounds
+      // cannot change this capped signature. Avoid extra Fabric layout reads.
+      if(boxes.length>=24)return;
       try{const box=canonical?.publicInstance?.getBoundingClientRect?.();if(box&&boxes.length<24){let {x,y,width,height}=box;if(viewport){const right=Math.min(x+width,viewport.x+viewport.width),bottom=Math.min(y+height,viewport.y+viewport.height);x=Math.max(x,viewport.x);y=Math.max(y,viewport.y);width=right-x;height=bottom-y;if(width<=0||height<=0)return;}boxes.push([x,y,width,height].map(v=>Math.round(v)));}}catch{}
     });
     if(projected.some(record=>!record.shown&&(focus===record.focus||roots(record.focus).includes(focus))))pending=true;

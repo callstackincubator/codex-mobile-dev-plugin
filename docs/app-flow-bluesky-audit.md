@@ -49,8 +49,55 @@ Metro log session returned no hook-order error during that attempt. This
 identifies the failed stage, but does not establish its internal cost.
 Version 0.1.140 skips native bounds for absent source-bound entries and shares
 bounds across related owners within one lookup. Functional tests check both
-changes and confirm that later lookups read new layout. Its live capture
-coverage remains unverified until the host loads that build.
+changes and confirm that later lookups read new layout. A live 0.1.140 attempt after reloading Codex got past that discovery failure.
+
+Run `194b847f-e206-4e3c-9d9e-c22fd0ecd3d3` stopped after **195.4 seconds**
+when a UI preview raised an uncaught mapper error. It marked 43 images as
+captured, but two showed the React Native error overlay. Excluding those two
+leaves **41 app views: 40 navigator routes and one confirmation dialog**.
+The dialog image shows the actual “Dismiss interests” sheet. No UI preview
+captured. This was an interrupted attempt, not a full coverage result; the
+remaining 219 reviewed views have no valid image from this attempt.
+
+The Metro stack pins the error to `focusFor`, which checked whether a fiber
+belonged to a null alternate scope. Version 0.1.141 treats that scope as absent
+and catches errors in deferred presentation checks. It also observes React
+Native's fatal error handler during capture, preserves the app's own error
+handling, and stops the run before saving an error overlay. Cleanup removes
+that observer without replacing a handler the app installed later. Regression
+tests cover the missing alternate, deferred error replies, in-flight capture
+failure, cleanup and stopping reconnect retries after a fatal app error.
+The full 0.1.141 run after a host reload,
+`3581bc05-b62d-4eee-9f52-f2024f47f7b1`, finished in **702.4 seconds**. It saved
+**45 of 260 reviewed views**, all navigator routes, with no presentation or
+preview images. Three queued views timed out and fifteen were blocked. The
+app kept PID 33410 and restored Home beneath a remaining “Dismiss interests”
+prompt; I closed that prompt with Cancel. Cleanup therefore did not fully
+restore the UI. The fatal-error overlay did not return.
+The log buffer dropped warnings, so its reads are not an exhaustive error audit.
+PNG headers and source hashes verify these 45 files; their content has not
+received a full visual audit. The mapper still fails the broader coverage test.
+
+This run supplied ProfileSearch with a handle from observed query data and
+ProfileList with a real URI from the public list endpoint for a profile visible
+in the app. It submitted no form, changed no auth state, and issued no account
+mutation. Those params did not make every route capturable. Several routes
+reported unfinished native transitions; sheet attempts lost their failed step
+behind a generic interruption message.
+
+Version 0.1.142 keeps the fixed operation name in retry status. Its sheet motion
+check stops reading bounds once the 24 rectangles used in its signature are
+filled, while still checking later hosts for pending transition events. A
+regression test checks identical rectangle output, bounded layout reads and
+late events under both normal and shared Hermes loop bindings. The change
+removes unused native layout reads; it does not shorten readiness waits or
+prove faster live mapping. Version 0.1.142 still needs a live run.
+
+Capture comparison checks saved PNG headers and source hashes; those checks
+alone did not detect the two error-overlay images. The local attempt report
+records their exclusion rather than changing the saved map or counting them
+as success. Static extraction still matches all 260 source views. This does
+not establish automatic capture of those views.
 
 | Category | Reviewed views | Exact source matches | Container only | Ambiguous | Missing |
 | --- | ---: | ---: | ---: | ---: | ---: |

@@ -175,6 +175,15 @@ test('portal focus keeps the whole body instead of narrowing to its last child',
   app.runtime.cleanup();
 });
 
+test('presentation focus treats a missing alternate as outside the scope',()=>{
+  for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+    const app=tree(install);app.button.alternate=null;
+    assert.equal(app.runtime.focusFor('Nested',app.button),undefined);
+    assert.equal(app.runtime.focusFor('Nested',app.sheet),app.nested);
+    app.runtime.cleanup();
+  }
+});
+
 test('presentation retries yield to untouched screens and retain all three readiness attempts',async t=>{
   const directory=await fixture(t,{}),events:string[]=[];let clock=0,key='Home',slow=0;
   t.mock.method(performance,'now',()=>clock);
@@ -652,4 +661,25 @@ test('extending a captured route discovers newly available sheets and keeps its 
   const saved=runs.read(run.id);assert.equal(saved.phase,'complete');assert.equal(saved.nodes.filter(node=>node.status==='captured').length,2);
   assert.equal(saved.nodes.find(node=>node.id==='Home')?.captureAttempts,1);
   assert.deepEqual(await readFile(join(directory,run.id,'Home.png')),image);
+});
+
+test('motion limits native layout reads while retaining transition events beyond the signature cap',()=>{
+  for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+    const app=tree(install);let calls=0,last:any,original:any;
+    let previous=app.nested;
+    for(let index=0;index<80;index++){
+      const handler=()=>{};
+      const canonical={currentProps:{onStateChange:handler},publicInstance:{getBoundingClientRect(){calls++;return {x:index,y:0,width:100,height:200}}}};
+      const fiber:any={tag:5,type:'View',memoizedProps:{},stateNode:{canonical},return:app.sheet};
+      previous.sibling=fiber;previous=fiber;last=canonical;original=handler;
+    }
+    app.runtime.open('open');calls=0;
+    app.runtime.motion(app.sheet);assert.equal(calls,24);
+    last.currentProps.onStateChange({nativeEvent:{state:'opening'}});
+    calls=0;const view=app.runtime.motion(app.sheet);
+    assert.equal(view.pending,true);assert.equal(calls,24);
+    const boxes=JSON.parse(view.signature);
+    assert.equal(boxes.length,24);assert.deepEqual(boxes.map((box:any)=>box[0]),Array.from({length:24},(_,i)=>i));
+    app.runtime.cleanup();assert.equal(last.currentProps.onStateChange,original);
+  }
 });

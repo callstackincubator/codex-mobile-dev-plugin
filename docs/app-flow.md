@@ -71,7 +71,9 @@ those effects or arbitrary application state changes.
 Presentation discovery shares one React tree lookup per check and reads fresh
 hook values on the next check. Source plans without a mounted, source-bound
 entry skip native layout checks. Related owners share native bounds within
-that synchronous lookup; the next lookup reads fresh bounds.
+that synchronous lookup; the next lookup reads fresh bounds. Motion signatures
+read at most 24 accepted host rectangles and still check later hosts for native
+transition events. Retry status retains the fixed name of a failed runtime step.
 Failed discovery keeps saved screenshots and
 retries after untouched routes, with at most three attempts per route. Mapping
 more screens rechecks captured routes for new local forms and sheets without
@@ -79,6 +81,13 @@ replacing their screenshots. A map with unresolved discovery failures ends as
 `partial`, with the failed step in `discoveryFailures`; it does not report ready.
 Bounded runtime exception details stay in the local map for diagnosis.
 Saved maps include the plugin version that started the run.
+While capturing, the runtime observes React Native's fatal JavaScript error
+handler when the app exposes it. A fatal error stops the run before saving
+further images; it does not count an error overlay as the requested screen.
+The observer forwards errors to the app's original handler and restores that
+handler during cleanup, unless the app has replaced it. It retains only a
+failure flag, not app error text. Deferred presentation inspection errors
+return to the mapper without escaping into the app.
 
 ## Automatic local forms and sheets
 

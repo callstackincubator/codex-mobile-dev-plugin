@@ -5,6 +5,22 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
   // Expo's native developer menu can cover every captured screen while JS keeps running.
   try { globalThis.expo?.modules?.ExpoDevMenu?.hideMenu?.()?.catch?.(() => {}); } catch {}
   let root, original, observation, observing = false, stopped = false, generation = 0, safeBudget = 2000;
+  // Preserve RN's error handler. A live navigator behind LogBox is not a
+  // capturable screen, even when its React tree has finished rendering.
+  let appFailed = false, errorUtils, originalErrorHandler, errorHandler;
+  try {
+    errorUtils = globalThis.ErrorUtils;
+    if (typeof errorUtils?.getGlobalHandler === 'function' && typeof errorUtils?.setGlobalHandler === 'function') {
+      originalErrorHandler = errorUtils.getGlobalHandler();
+      if (typeof originalErrorHandler === 'function') {
+        errorHandler = function(error, fatal) {
+          if (fatal) appFailed = true;
+          return originalErrorHandler.apply(this, arguments);
+        };
+        errorUtils.setGlobalHandler(errorHandler);
+      }
+    }
+  } catch { /* Not every development runtime exposes RN ErrorUtils. */ }
   const observed = new Map();
   const transitions = new Map();
   const waitTimers = new Set(), paintFrames = new Set();
@@ -394,6 +410,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
   async function restore() {
     if (stopped) return;
     stopped = true; generation++; clearTimeout(watchdog); cancelWaits();
+    try { if (errorHandler && errorUtils.getGlobalHandler() === errorHandler) errorUtils.setGlobalHandler(originalErrorHandler); } catch {}
     // Native sheets must dismiss before their parent modal unmounts. Dropping
     // both at once can leave UIKit showing a detached, blank presentation.
     if(presentations?.checkpoint())await presentations.rollback(0,true);
@@ -410,10 +427,15 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
   renewLease();
   globalThis[key] = {
       invoke(command, reply) {
+      const originalReply = reply;
+      const cleanup = ['restore', 'heartbeat', 'presentation-rollback'].includes(command.type);
+      const failed = () => { if (!appFailed || cleanup) return false; originalReply({appFailed:true}); return true; };
+      reply = value => { if (!failed()) originalReply(value); };
       try {
         if (command.type === 'restore') { void restore().then(() => reply({restored:true}),()=>reply({error:'App Flow restoration failed.'})); return; }
         if (stopped) { reply({ error: 'Capture stopped.' }); return; }
         renewLease();
+        if (failed()) return;
         if (command.type === 'heartbeat') { reply({ alive: true }); return; }
         if (command.type === 'observe') { reply(observe()); return; }
         if (observing) { reply({ error: 'Recording observes screens; navigation commands are disabled.' }); return; }
@@ -427,17 +449,19 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         if (command.type === 'presentation-rollback') { const level=command.level??0;while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined; void (presentations?.rollback(command.level ?? 0) ?? Promise.resolve()).then(() => reply({}), () => reply({error:'Presentation restoration failed.'})); return; }
         if (command.type === 'presentation-project') {
           const result=presentations?.project(presentationFocus);if(!result||result.error){reply(result??{error:'Presentation projection is unavailable.'});return;}
-          presentationFrames.push({focus:presentationFocus,expected:presentationExpected});presentationObservation=undefined;later(()=>reply(presentationView()),80);return;
+          presentationFrames.push({focus:presentationFocus,expected:presentationExpected});presentationObservation=undefined;later(()=>{try{reply(presentationView());}catch(error){reply({error:'Presentation inspection is unavailable.',detail:String(error?.message??error).slice(0,1000)});}},80);return;
         }
         if (command.type === 'presentation-open') {
           const result = presentations?.open(command.id,presentationFocus) ?? { error: 'Presentation capture is unavailable.' };
           if (result.error) { reply(result); return; }
           presentationFrames.push({focus:presentationFocus,expected:presentationExpected});presentationExpected=result.expected; presentationObservation = undefined;
           later(() => {
-            presentationFocus = result.focus;
-            if (!presentationFocus) presentationFocus=presentations?.focusFor(result.name,result.scope);
-            if (!presentationFocus) { reply({ error: 'The presentation target did not mount.' }); return; }
-            presentations?.focused(presentationFocus); reply(presentationView());
+            try {
+              presentationFocus = result.focus;
+              if (!presentationFocus) presentationFocus=presentations?.focusFor(result.name,result.scope);
+              if (!presentationFocus) { reply({ error: 'The presentation target did not mount.' }); return; }
+              presentations?.focused(presentationFocus); reply(presentationView());
+            } catch(error) { reply({error:'Presentation inspection is unavailable.',detail:String(error?.message??error).slice(0,1000)}); }
           }, 80);
           return;
         }
@@ -508,6 +532,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         function check() {
           try {
           if (ticket !== generation || stopped) return;
+          if (appFailed) { complete({appFailed:true}); return; }
           const state = root.getRootState?.() ?? root.getState();
           const actual = active(state), name = expected ?? actual[actual.length - 1];
           const visual = visualSignature(name);

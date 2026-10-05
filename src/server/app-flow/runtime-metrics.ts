@@ -25,6 +25,12 @@ export class FlowRuntimeFailure extends Error {
 export class FlowRuntimeTimeout extends FlowRuntimeFailure {
   constructor(operation:string){super(operation,'timed out');}
 }
+export class FlowAppFailure extends FlowRuntimeFailure {
+  constructor(operation:string) {
+    super(operation);
+    this.message='App Flow stopped because the app reported a fatal JavaScript error. Check the app error screen before retrying.';
+  }
+}
 /** Fixed operation names and bounded samples. Never retain commands or app data. */
 export class FlowRuntimeMetrics {
   private windows=new Map<string,{timings:MeasurementWindow;timeouts:number}>();

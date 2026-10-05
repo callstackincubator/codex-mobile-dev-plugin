@@ -6,9 +6,9 @@ import { WebSocketServer } from 'ws';
 import { once } from 'node:events';
 import { FlowConnection } from '../src/server/app-flow/connection.ts';
 import { installPresentationRuntime } from '../src/server/app-flow/presentations-runtime.js';
-import {FlowRuntimeFailure,FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
+import {FlowAppFailure,FlowRuntimeFailure,FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
 
-function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, clearTimeout}, presentations = false) {
+function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, clearTimeout}, presentations = false, globals = {}) {
   let state:any = {index:0,routeNames:['Home','Profile'],routes:[{name:'Home'}]};
   const original = state;
   const navigation = { getState:()=>state, isFocused:()=>true, dispatch(action:any){
@@ -20,7 +20,7 @@ function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, cl
   const native:any = {tag:5,type:'View',memoizedProps:{children:'screen'},stateNode:{getBoundingClientRect:()=>({x:0,y:0,width:100,height:200})},return:fiber};
   fiber.child=native;
   function sync(){fiber.memoizedProps.route=state.routes[state.index ?? 0]}
-  const context=vm.createContext({...timers,Date,Map,Set,JSON,Math,Object,Array,String,__REACT_DEVTOOLS_GLOBAL_HOOK__:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer'}]]),getFiberRoots:()=>[{current:fiber}]}});
+  const context=vm.createContext({...timers,...globals,Date,Map,Set,JSON,Math,Object,Array,String,__REACT_DEVTOOLS_GLOBAL_HOOK__:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer'}]]),getFiberRoots:()=>[{current:fiber}]}});
   vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,${presentations?installPresentationRuntime.toString():'undefined'})`,context);
   const invoke=(command:any)=>new Promise<any>(resolve=>context.flow.invoke(command,resolve));
   t.after(async()=>{if(context.flow)await invoke({type:'restore'})});
@@ -158,6 +158,22 @@ test('source previews wait for their proven body to mount instead of capturing t
   assert.equal((await app.invoke({type:'presentation-view'})).ready,false);
   await new Promise(resolve=>setTimeout(resolve,200));
   assert.equal((await app.invoke({type:'presentation-view'})).ready,true);
+});
+
+test('deferred presentation inspection errors reply to the mapper without escaping into the app',async t=>{
+  const app=runtime(t);await app.invoke({type:'restore'});app.context.focus=app.fiber;
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,()=>({
+    open:()=>({focus,expected:'Next'}),project:()=>({}),
+    focusFor(){throw Error('private inspection failure')},visualFocus:focus=>focus,
+    checkpoint:()=>0,focused(){},cleanup(){},rollback:async()=>{}
+  }))`,app.context);
+  await app.invoke({type:'inspect'});
+  for(const type of ['presentation-open','presentation-project']){
+    const result=await app.invoke({type,id:'next'});
+    assert.equal(result.error,'Presentation inspection is unavailable.');
+    assert.equal(result.detail,'private inspection failure');
+    assert.equal((await app.invoke({type:'heartbeat'})).alive,true);
+  }
 });
 
 test('runtime strips credentials from observed route data',async t=>{
@@ -550,4 +566,53 @@ test('stopping during loading cancels polling and the restoration watchdog', asy
   assert.ok(timers.size>1);
   await app.invoke({type:'restore'});
   assert.equal(timers.size,0);
+});
+
+test('fatal RN errors reject in-flight and later captures while preserving error handling and cleanup',async t=>{
+  const forwarded:any[]=[];
+  const receiver={};
+  const original=function(this:unknown,...args:unknown[]){forwarded.push([this,...args]);return 'handled'};
+  let handler=original;
+  const ErrorUtils={getGlobalHandler:()=>handler,setGlobalHandler:(value:typeof original)=>{handler=value}};
+  const app=runtime(t,false,undefined,true,{ErrorUtils});
+  const warning=Error('nonfatal');
+  assert.equal(handler.call(receiver,warning,false),'handled');
+  assert.equal((await app.invoke({type:'inspect'})).available,true);
+  const opening=app.invoke({type:'open',path:['Profile'],timeoutMs:1000});
+  const fatal=Error('private app error');
+  assert.equal(handler.call(receiver,fatal,true),'handled');
+  assert.equal((await opening).appFailed,true);
+  for(const type of ['verify','presentation-view','presentation-open','resume']){
+    const result=await app.invoke({type});
+    assert.equal(result.appFailed,true);assert.equal(result.error,undefined,'No app error text leaves the observer');
+  }
+  assert.equal((await app.invoke({type:'heartbeat'})).alive,true);
+  await app.invoke({type:'presentation-rollback'});
+  await app.invoke({type:'restore'});
+  assert.equal(handler,original);
+  assert.deepEqual(forwarded,[[receiver,warning,false],[receiver,fatal,true]]);
+  assert.equal(app.getState().routes[0].name,'Home');
+});
+
+test('runtime cleanup does not replace an error handler installed later by the app',async t=>{
+  let handler=()=>{};
+  const ErrorUtils={getGlobalHandler:()=>handler,setGlobalHandler:(value:typeof handler)=>{handler=value}};
+  const app=runtime(t,false,undefined,false,{ErrorUtils});
+  const next=()=>{};handler=next;
+  await app.invoke({type:'restore'});assert.equal(handler,next);
+});
+
+test('CDP binding replies turn a fatal app error into a fixed capture failure',async t=>{
+  const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
+  t.after(()=>new Promise<void>(resolve=>{for(const client of server.clients)client.terminate();server.close(()=>resolve())}));
+  let binding='';
+  server.on('connection',socket=>socket.on('message',bytes=>{
+    const message=JSON.parse(bytes.toString());
+    if(message.method==='Runtime.addBinding')binding=message.params.name;
+    socket.send(JSON.stringify({id:message.id,result:{result:{type:'undefined'}}}));
+    if(message.id<0)socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload:JSON.stringify({id:message.id,result:{appFailed:true}})}}));
+  }));
+  const address=server.address()as {port:number},connection=new FlowConnection(`ws://127.0.0.1:${address.port}`);
+  await assert.rejects(connection.invoke({type:'verify'}),error=>error instanceof FlowAppFailure&&error.operation==='verify'&&error.detail===undefined);
+  await connection.close();
 });
