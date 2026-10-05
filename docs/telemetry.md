@@ -420,3 +420,13 @@ closes. Existing presentation, restoration and runtime timing windows cover
 this path with unchanged names, milliseconds and boundaries. App memory
 sampling still measures the app process. Copied state, props, source evidence
 and native lifecycle events stay local. No per-step telemetry was added.
+
+Since 0.1.157, every temporary projection contains effects and imperative handles.
+Only refs created by the preview's own `useRef` may receive its imperative handles;
+shared app refs and callback refs remain untouched. Existing presentation,
+restoration and runtime timing windows keep their names, milliseconds and
+boundaries. The local diagnostic count `containedImperativeHandles` records
+suppressed handle registrations and resets on cleanup. Ref values, callbacks,
+props and source evidence never enter telemetry. Real React tests cover local
+controls, shared refs, nested projections and hook cleanup in normal and shared
+loop execution.

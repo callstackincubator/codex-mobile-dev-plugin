@@ -6,6 +6,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   const entries = new Map(), entryKeys = new Map(); let entrySources = new WeakMap();
   let lastScheduled = 0, structureCache;
   const portalEffects=new Map();let portalOwners=new WeakMap(),approvedPortals=new WeakSet(),syncingPortals=false;
+  let previewRefs=new WeakSet(),containedImperativeHandles=0;
   let catalog = {states:[],actions:[]};
   const name = fiber => { const type=fiber.type?.render??fiber.type?.type??fiber.type;return type?.displayName??type?.name; };
   const current = () => {
@@ -52,25 +53,42 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(patches.length)return true;
     const modules=globalThis.__r?.getModules?.();if(!modules?.values)return false;
     for(const module of modules.values()){
-      if(!module.isInitialized)continue;const react=module.publicModule?.exports;
+      if(!module.isInitialized)continue;const react=mutableReact(module.publicModule?.exports);
       if(typeof react?.createElement!=='function'||typeof react.useState!=='function'||typeof react.useReducer!=='function')continue;
       for(const key of ['useState','useReducer']){
         const descriptor=Object.getOwnPropertyDescriptor(react,key);if(!descriptor?.writable)continue;
         const original=react[key],wrapped=hookWrapper(key,original);
-        react[key]=wrapped;patches.push({react,key,original,wrapped});
+        try{react[key]=wrapped;}catch{unpatch();return false;}patches.push({react,key,original,wrapped});
       }
       break;
     }
     return patches.length>0;
   }
   function unpatch(){for(const p of patches)if(p.react[p.key]===p.wrapped)p.react[p.key]=p.original;patches.length=0;}
+  function previewRefWrapper(original) {
+    return (...args)=>{
+      const ref=original(...args);
+      if(previewOwner(current()?.fiber)&&ref&&typeof ref==='object')previewRefs.add(ref);
+      return ref;
+    };
+  }
+  function previewHandleWrapper(original) {
+    return (ref,create,deps)=>{
+      // React implements this hook internally, so wrapping useLayoutEffect does
+      // not contain it. A copied body must never overwrite or clear an app ref.
+      if(previewOwner(current()?.fiber)&&(!ref||typeof ref!=='object'||!previewRefs.has(ref))){
+        containedImperativeHandles++;return original(null,create,deps);
+      }
+      return original(ref,create,deps);
+    };
+  }
   function patchPreviewEffects(react) {
     if(effectPatches.length)return true;
-    for(const key of ['useEffect','useLayoutEffect','useInsertionEffect']){
+    for(const key of ['useEffect','useLayoutEffect','useInsertionEffect','useRef','useImperativeHandle']){
       if(typeof react[key]!=='function')continue;
       if(!Object.getOwnPropertyDescriptor(react,key)?.writable){unpatchPreviewEffects();return false;}
-      const original=react[key],wrapped=effectWrapper(original);
-      react[key]=wrapped;effectPatches.push({react,key,original,wrapped});
+      const original=react[key],wrapped=key==='useRef'?previewRefWrapper(original):key==='useImperativeHandle'?previewHandleWrapper(original):effectWrapper(original);
+      try{react[key]=wrapped;}catch{unpatchPreviewEffects();return false;}effectPatches.push({react,key,original,wrapped});
     }
     return true;
   }
@@ -261,9 +279,15 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       patch.detach();caughtPatches.splice(index,1);
     }
   }
+  function mutableReact(exports) {
+    // ESM namespace properties can report writable while rejecting assignment.
+    // Use its real React default export only when both expose the same runtime.
+    const value=exports&&Object.getOwnPropertyDescriptor(exports,'default')?.value;
+    return value?.createElement===exports?.createElement&&typeof value?.useState==='function'&&value.useState===exports.useState&&value.useReducer===exports.useReducer?value:exports;
+  }
   function projectionRoot(focus) {
     const modules=globalThis.__r?.getModules?.();let react,native;
-    for(const module of modules?.values?.()??[]){if(!module.isInitialized)continue;const exports=module.publicModule?.exports;if(typeof exports?.createElement==='function'&&typeof exports.useState==='function')react=exports;
+    for(const module of modules?.values?.()??[]){if(!module.isInitialized)continue;const exports=module.publicModule?.exports;if(typeof exports?.createElement==='function'&&typeof exports.useState==='function')react=mutableReact(exports);
       // Framework exports only. No project module, account store or native
       // screen controller is evaluated to manufacture a destination.
       if(Object.getOwnPropertyDescriptor(exports??{},'Platform')&&Object.getOwnPropertyDescriptor(exports??{},'StyleSheet')){try{if(typeof exports.Platform?.OS==='string'&&typeof exports.StyleSheet?.create==='function'&&exports.View&&exports.Modal)native=exports;}catch{}}
@@ -311,7 +335,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const modal=previousPreview?react.cloneElement(previousPreview.element,{},body):react.createElement(native.Modal,{key:`mobile-flow-preview-${++sequence}`,transparent:false,...modalProps,visible:true,animationType:'none',onShow:()=>{record.shown=true;},onDismiss:()=>{record.dismissed=true;}},body);
     const appChildren=Array.isArray(props.children)?props.children:[props.children];
     record.element=modal;record.next={...props,children:previousPreview?react.cloneElement(props.children,{},...children.map(element=>element===previousPreview.element?modal:element)):react.createElement(react.Fragment,null,...appChildren,modal)};
-    if(preview&&!patchPreviewEffects(react))return {error:'Temporary preview effects cannot be contained.'};
+    if(!patchPreviewEffects(react))return {error:'Temporary preview effects cannot be contained.'};
     if(record.seed&&!patchHooks()){if(!projected.length)unpatchPreviewEffects();return {error:'Temporary hook initialization is unavailable.'};}
     // React Native reports even caught render errors to LogBox. Contain only
     // errors caught by this exact temporary boundary; all app errors keep the
@@ -805,7 +829,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80));
   }
-  function cleanup(){portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){previewRefs=new WeakSet();containedImperativeHandles=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[]) {
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&tree.isVisible(fiber));
     const unique=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner)));
@@ -821,6 +845,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const connected=roots(currentFocus,tree);
     return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:viewport=>motion(currentFocus,viewport,tree,connected)};
   }
-  const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  const diagnostics=()=>({containedImperativeHandles,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
   return {collect,records,configure,list,open,portalBindings,previewPortals,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

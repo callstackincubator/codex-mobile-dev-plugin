@@ -1451,3 +1451,62 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   assert.equal(app.control.closes,0);assert.equal(runtime.diagnostics().projections,0);
  });
 }
+
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresentationRuntime)]){
+ test(`temporary imperative handles preserve app refs and keep local controls usable (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+  const react=(React as any).default??React,dom=new JSDOM('<div id="root"></div>');
+  const previous={window:(globalThis as any).window,document:(globalThis as any).document,require:(globalThis as any).__r};
+  (globalThis as any).window=dom.window;(globalThis as any).document=dom.window.document;
+  const originalHooks={useRef:react.useRef,useImperativeHandle:react.useImperativeHandle};
+  const appHandle={close(){closes++}},external=react.createRef();
+  let current:any,clone:any,local:any,closes=0,appCreates=0,sharedCreates=0,localCreates=0,callbackCalls=0;
+  function View({children}:any){return react.createElement('div',null,children)}
+  function Modal({children,onShow}:any){onShow();return children}
+  const rendered=createRoot(dom.window.document.getElementById('root')!);
+  const root:any={tag:3,stateNode:(rendered as any)._internalRoot};
+  const host:any={tag:5,type:View,memoizedProps:{},return:root};root.child=host;
+  const appFiber:any={type:function AppBody(){},memoizedProps:{},return:host};
+  function AppBody(){
+   current=appFiber;
+   react.useImperativeHandle(external,()=>{appCreates++;return appHandle},[]);
+   current=undefined;return react.createElement('span',null,'Original app');
+  }
+  const original=react.createElement(AppBody);host.memoizedProps={children:original};
+  function HiddenForm(props:any){
+   clone={type:HiddenForm,elementType:HiddenForm,memoizedProps:props,pendingProps:props,return:host};host.child=clone;current=clone;
+   local=react.useRef(null);
+   react.useImperativeHandle(local,()=>{localCreates++;return {label:'Preview control'}},[]);
+   react.useImperativeHandle(external,()=>{sharedCreates++;return {close(){assert.fail('Detached preview handle')}}},[]);
+   react.useImperativeHandle(()=>callbackCalls++,()=>({label:'Shared callback'}),[]);
+   current=undefined;return react.createElement('span',null,'Temporary form');
+  }
+  (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}],
+   [2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}],
+   [3,{verboseName:'Forms.tsx',isInitialized:true,publicModule:{exports:{HiddenForm}}}]])};
+  const render=()=>flushSync(()=>rendered.render(react.createElement(View,host.memoizedProps)));
+  const runtime=install({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',getCurrentFiber:()=>current,overrideProps(fiber:any,_path:any,props:any){fiber.memoizedProps=props;host.child=undefined;render()}}]])},fibers:(visit:any,subtree?:any)=>{const stack=[subtree??root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}},hidden:()=>false,later:setTimeout});
+  const action:any={id:'mount',file:'Forms.tsx',line:1,owner:'HiddenForm',component:'HiddenForm',name:'HiddenForm',prop:'',preview:true,views:['form'],effect:{kind:'mount',file:'Forms.tsx',export:'HiddenForm'}};
+  try{
+   render();assert.equal(external.current,appHandle);
+   runtime.configure({states:[],actions:[action]},[]);assert.equal(runtime.open('mount').error,undefined);
+   assert.equal(dom.window.document.getElementById('root')!.textContent,'Original appTemporary form');
+   assert.equal(external.current,appHandle);assert.equal(appCreates,1);assert.equal(sharedCreates,0);assert.equal(callbackCalls,0);
+   assert.equal(localCreates,1);assert.deepEqual(local.current,{label:'Preview control'});
+   assert.equal(runtime.diagnostics().containedImperativeHandles,2);
+   assert.equal(runtime.project(clone).error,undefined,'Opaque-body projections need the same ref containment');
+   assert.equal(external.current,appHandle);assert.equal(sharedCreates,0);assert.equal(callbackCalls,0);
+   assert.equal(localCreates,2);assert.deepEqual(local.current,{label:'Preview control'});
+   assert.equal(runtime.diagnostics().containedImperativeHandles,4);
+   await runtime.rollback(0,false);
+   assert.equal(external.current,appHandle,'Preview cleanup must not clear the app handle');
+   assert.equal(local.current,null,'React cleans up the temporary local handle');
+   external.current.close();assert.equal(closes,1);
+   assert.equal(react.useRef,originalHooks.useRef);assert.equal(react.useImperativeHandle,originalHooks.useImperativeHandle);
+   runtime.cleanup();assert.equal(runtime.diagnostics().containedImperativeHandles,0);
+  }finally{
+   runtime.cleanup();flushSync(()=>rendered.unmount());await new Promise(resolve=>setTimeout(resolve,20));dom.window.close();
+   (globalThis as any).window=previous.window;(globalThis as any).document=previous.document;(globalThis as any).__r=previous.require;
+  }
+ });
+}
