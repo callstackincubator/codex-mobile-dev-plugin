@@ -113,17 +113,18 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   function configure(next=catalog,matches,checked=[]){catalog=next;for(const match of matches){const binding=bindings.get(match.binding);if(binding)binding.site=match.site;else entries.get(match.binding)?.actions.add(match.site);}for(const id of checked){const binding=bindings.get(id)??entries.get(id);if(binding)binding.checked=true;}}
   const descendants = (fiber,callback) => fibers(callback,fiber);
-  function attached(fiber){let measurable=false,shown=false;descendants(fiber,child=>{if(shown)return false;if(child.tag!==5)return;try{const native=child.stateNode?.canonical?.publicInstance??child.stateNode;if(typeof native?.getBoundingClientRect!=='function')return;measurable=true;const box=native.getBoundingClientRect();if(box?.width>0&&box?.height>0)shown=true;}catch{}});return !measurable||shown;}
+  function attached(fiber,boxes){let measurable=false,shown=false;descendants(fiber,child=>{if(shown)return false;if(child.tag!==5)return;let measured=boxes?.get(child);if(!measured){measured={measurable:false,shown:false};try{const native=child.stateNode?.canonical?.publicInstance??child.stateNode;if(typeof native?.getBoundingClientRect==='function'){measured.measurable=true;const box=native.getBoundingClientRect();measured.shown=box?.width>0&&box?.height>0;}}catch{}boxes?.set(child,measured);}measurable||=measured.measurable;shown||=measured.shown;});return !measurable||shown;}
   const activeAncestors = fiber => {
     for(let parent=fiber,count=0;parent&&count++<100;parent=parent.return){const p=parent.memoizedProps;if(hidden(p)||p?.visible===false&&(name(parent)==='Modal'||parent.tag===5&&typeof p?.onShow==='function')||p?.disabled===true||p?.accessibilityState?.disabled===true)return false;const styles=[p?.style];for(let i=0;i<styles.length&&i<30;i++){if(Array.isArray(styles[i]))styles.push(...styles[i]);else if(styles[i]?.display==='none')return false;}}
     return true;
   };
-  const visible=fiber=>activeAncestors(fiber)&&attached(fiber);
   function index() {
-    const names=new Map(), live=new WeakMap(), current=new WeakMap(), all=[], states=new Map(), values=new Map();
+    const names=new Map(), live=new WeakMap(), boxes=new WeakMap(), current=new WeakMap(), all=[], states=new Map(), values=new Map();
     fibers(fiber=>{all.push(fiber);current.set(fiber,fiber);if(fiber.alternate)current.set(fiber.alternate,fiber);const n=name(fiber);if(n){const list=names.get(n)??[];list.push(fiber);names.set(n,list);}});
     for(const binding of bindings.values())if(binding.site&&current.has(binding.fiber)){const list=states.get(binding.site)??[];list.push(binding);states.set(binding.site,list);}
-    const isVisible=fiber=>{let value=live.get(fiber);if(value===undefined){value=visible(fiber);live.set(fiber,value);}return value;};
+    // Native bounds cross into Fabric. Related owners share host descendants;
+    // measure each host once during this synchronous lookup, then discard it.
+    const isVisible=fiber=>{let value=live.get(fiber);if(value===undefined){value=activeAncestors(fiber)&&attached(fiber,boxes);live.set(fiber,value);}return value;};
     const inside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner.alternate)return true;return false;};
     return {names,isVisible,inside,current,all,states,values};
   }
@@ -250,10 +251,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       const candidates=(tree.states.get(action.effect.site)??[]).filter(b=>['useState','useReducer'].includes(b.kind));
       const found=[];
       for(const binding of candidates){
-        const snapshot=hookValue(binding,tree);if(!tree.isVisible(binding.fiber))continue;
+        const snapshot=hookValue(binding,tree);
         const consumers=action.consumer?(tree.names.get(action.consumer.component)??[]).filter(f=>entry(f)?.actions.has(`${action.id}:consumer`)&&tree.inside(f,binding.fiber)):[binding.fiber];
         for(const consumer of consumers){
-          if(!tree.isVisible(consumer)||focus&&!scope.some(root=>tree.inside(consumer,root)||tree.inside(root,consumer)))continue;
+          if(focus&&!scope.some(root=>tree.inside(consumer,root)||tree.inside(root,consumer))||!tree.isVisible(consumer)||!tree.isVisible(binding.fiber))continue;
           let value=snapshot;for(const part of action.effect.path)value=value?.[part];
           if(value===action.effect.value)continue;found.push({owner:consumer,consumer,binding});
         }
@@ -261,7 +262,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       return found.length===1?found[0]:undefined;
     }
     if(action.preview&&action.effect.kind==='control'){
-      const targets=(tree.names.get(action.effect.component)??[]).filter(f=>activeAncestors(f.return)&&entry(f)?.actions.has(`${action.id}:target`)&&(!focus||scope.some(root=>tree.inside(f,root)||tree.inside(root,f))));
+      const targets=(tree.names.get(action.effect.component)??[]).filter(f=>entry(f)?.actions.has(`${action.id}:target`)&&(!focus||scope.some(root=>tree.inside(f,root)||tree.inside(root,f)))&&activeAncestors(f.return));
       const found=[];
       for(const fiber of targets){
         const value=action.effect.prop==='ref'?fiber.ref?.current??fiber.memoizedProps?.ref?.current:fiber.memoizedProps?.[action.effect.prop];
@@ -272,11 +273,14 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       }
       return found.length===1?found[0]:undefined;
     }
-    const candidates=(tree.names.get(action.owner)??[]).filter(fiber=>tree.isVisible(fiber)&&(!focus||scope.some(root=>tree.inside(fiber,root)||tree.inside(root,fiber))));
-    const ownersFound=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner))).filter(owner=>(tree.names.get(action.component)??[]).some(fiber=>entry(fiber)?.actions.has(action.id)&&tree.inside(fiber,owner)&&inScope(fiber)&&tree.isVisible(fiber)&&typeof fiber.memoizedProps?.[action.prop]==='function'));
+    // Most source plans are absent from the current screen. Reject those by
+    // source identity before measuring any same-named owner in a large feed.
+    const entriesFound=(tree.names.get(action.component)??[]).filter(fiber=>entry(fiber)?.actions.has(action.id)&&inScope(fiber)&&typeof fiber.memoizedProps?.[action.prop]==='function');
+    if(!entriesFound.length)return;
+    const candidates=(tree.names.get(action.owner)??[]).filter(fiber=>!focus||scope.some(root=>tree.inside(fiber,root)||tree.inside(root,fiber)));
+    const ownersFound=candidates.filter(owner=>entriesFound.some(fiber=>tree.inside(fiber,owner))&&tree.isVisible(owner)&&!candidates.some(child=>child!==owner&&tree.inside(child,owner)&&tree.isVisible(child))).filter(owner=>entriesFound.some(fiber=>tree.inside(fiber,owner)&&tree.isVisible(fiber)));
     if(ownersFound.length!==1)return;const owner=ownersFound[0];
-    const triggers=(tree.names.get(action.component)??[]).filter(fiber=>tree.inside(fiber,owner)&&inScope(fiber)&&tree.isVisible(fiber)&&typeof fiber.memoizedProps?.[action.prop]==='function');
-    const matching=triggers.filter(fiber=>entry(fiber)?.actions.has(action.id)&&Object.entries(action.trigger??{}).every(([key,value])=>fiber.memoizedProps?.[key]===value));
+    const matching=entriesFound.filter(fiber=>tree.inside(fiber,owner)&&tree.isVisible(fiber)&&Object.entries(action.trigger??{}).every(([key,value])=>fiber.memoizedProps?.[key]===value));
     const callbacks=new Set(matching.map(fiber=>fiber.memoizedProps[action.prop]));
     if(callbacks.size>1&&action.handler){for(const callback of callbacks)if(callback.name!==action.handler)callbacks.delete(callback);}
     if(callbacks.size!==1||!condition(action.guard,owner.memoizedProps))return;

@@ -120,6 +120,10 @@ export class AppFlowRuns {
   }
   async extend(id: string, input: FlowStart): Promise<FlowRun> {
     this.makeRoom(id);
+    const current=this.sessions.get(id);
+    // The final phase can be read while its checkpoint and lease are closing.
+    // Finish that cleanup before claiming the device for an extension.
+    if(current&&!current.settled&&!flowRunning(current.run))await current.done;
     const saved = await this.saved(id);
     if (flowRunning(saved.run) || this.sessions.get(id)?.settled === false) throw new Error('Finish the current capture before mapping more screens.');
     if (saved.input && (saved.input.projectRoot !== input.projectRoot || saved.input.platform !== input.platform || saved.input.deviceId !== input.deviceId)) throw new Error('Use the same project and device as this map, or start a new map.');

@@ -41,6 +41,17 @@ no fresh-launch baseline, so these samples neither prove a leak nor attribute
 the spike to the mapper. The high memory use and slow run still need work.
 The existing capture, readiness, timeout and recovery telemetry stayed intact.
 
+A focused live test of **0.1.139** after reloading Codex,
+`3cbc47e9-93f7-4e5c-a1b0-6701f7bec8f2`, captured Home, then timed out in
+`presentations` while finding presentation entries. The test stopped at that
+first failure, after 16.5 seconds; it was not a full coverage run. Its live
+Metro log session returned no hook-order error during that attempt. This
+identifies the failed stage, but does not establish its internal cost.
+Version 0.1.140 skips native bounds for absent source-bound entries and shares
+bounds across related owners within one lookup. Functional tests check both
+changes and confirm that later lookups read new layout. Its live capture
+coverage remains unverified until the host loads that build.
+
 | Category | Reviewed views | Exact source matches | Container only | Ambiguous | Missing |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Navigator routes | 65 | 65 | 0 | 0 | 0 |

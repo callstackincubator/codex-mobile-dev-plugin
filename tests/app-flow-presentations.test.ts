@@ -103,6 +103,27 @@ test('runtime rejects disabled entries, unmet props and ambiguous controller ins
   app.runtime.cleanup();
 });
 
+test('presentation lookup skips native bounds for source plans absent from a busy screen',()=>{
+  const app=tree();let measured=0;
+  app.button.child={tag:5,type:'NativeButton',memoizedProps:{},stateNode:{getBoundingClientRect(){measured++;return {width:10,height:20}}},return:app.button};
+  const absent=Array.from({length:500},(_,i)=>({...app.action,id:`absent-${i}`,file:'Other.tsx',line:i+1}));
+  app.runtime.configure({states:[],actions:absent},[]);
+  assert.deepEqual(app.runtime.list(app.root),[]);
+  assert.equal(measured,0,'Unbound source entries must not measure same-named visible owners');
+  app.runtime.cleanup();
+});
+
+test('a lookup shares native bounds across related owners and refreshes them on the next call',()=>{
+  const app=tree();let measured=0,height=20;
+  app.button.child={tag:5,type:'NativeButton',memoizedProps:{},stateNode:{getBoundingClientRect(){measured++;return {width:10,height}}},return:app.button};
+  assert.equal(app.runtime.list(app.root).length,1);
+  assert.equal(measured,1,'Owner and entry checks share the same native measurement');
+  height=0;
+  assert.deepEqual(app.runtime.list(app.root),[]);
+  assert.equal(measured,2,'Bounds cannot survive a lookup or hide a later layout change');
+  app.runtime.cleanup();
+});
+
 test('native presentation events hold readiness and cleanup restores event handlers',()=>{
   const app=tree();let originalCalls=0;const original={onStateChange(){originalCalls++}};
   const canonical={currentProps:original,publicInstance:{getBoundingClientRect:()=>({x:0,y:0,width:10,height:20})}};
@@ -515,14 +536,27 @@ test('unverified entries never open a controller even with identical component a
 });
 
 test('source-verified triggers select the correct owner among duplicate component names',()=>{
-  const app=tree();const other:any={type:app.root.type,memoizedProps:{},child:undefined};
+  const app=tree();let unrelatedBounds=0;const other:any={type:app.root.type,memoizedProps:{},child:undefined};
   const button:any={type:app.button.type,_debugSource:{fileName:'Other.tsx',lineNumber:1,columnNumber:1},memoizedProps:app.button.memoizedProps,return:other};
   const sheet:any={type:app.sheet.type,memoizedProps:{control:{open(){throw Error('wrong controller')},close(){}}},return:other};other.child=button;button.sibling=sheet;
+  button.child={tag:5,type:'NativeButton',memoizedProps:{},stateNode:{getBoundingClientRect(){unrelatedBounds++;return {width:10,height:20}}},return:button};
   // Place the unrelated owner first in the traversal.
   other.sibling=app.root;const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??other];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
   const runtime=installPresentationRuntime({hook:{renderers:new Map()},fibers,hidden:()=>false,later:setTimeout});
   configureFixture(runtime,{states:[],actions:[app.action]});
-  assert.equal(runtime.list().length,1);assert.equal(runtime.open('open').focus,app.sheet);assert.equal(app.control.opens,1);runtime.cleanup();app.runtime.cleanup();
+  assert.equal(runtime.list().length,1);assert.equal(runtime.open('open').focus,app.sheet);assert.equal(app.control.opens,1);assert.equal(unrelatedBounds,0);runtime.cleanup();app.runtime.cleanup();
+});
+
+test('source-first owner lookup still rejects a visible nested owner that makes the entry ambiguous',()=>{
+  const app=tree();
+  const nested:any={type:app.root.type,memoizedProps:{},return:app.root};
+  app.sheet.sibling=nested;
+  assert.deepEqual(app.runtime.list(),[],'A nested same-named owner still excludes its ancestor');
+  nested.memoizedProps.hidden=true;
+  // This fixture uses only the built-in native visibility properties.
+  nested.memoizedProps.style={display:'none'};
+  assert.equal(app.runtime.list().length,1);
+  app.runtime.cleanup();
 });
 
 test('compiled branch creation can bind at its condition without matching another file',async t=>{
@@ -581,6 +615,11 @@ test('failed discovery retries after fresh routes and discovers sheets without r
   })});
   t.after(()=>runs.close());
   const input:any={projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'fixture',metroUrl:'http://127.0.0.1:8081',useAi:false};
+  const store=(runs as any).store,save=store.save.bind(store);
+  t.mock.method(store,'save',async(value:any)=>{
+    if(value.run.phase==='complete')await new Promise(resolve=>setTimeout(resolve,100));
+    return save(value);
+  });
   const run=runs.start(input);while(flowRunning(runs.read(run.id)))await new Promise(resolve=>setTimeout(resolve,5));
   const saved=runs.read(run.id);assert.equal(saved.phase,'complete');assert.deepEqual(saved.discoveryFailures,[]);
   assert.equal(saved.nodes.filter(node=>node.status==='captured').length,3);

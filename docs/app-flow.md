@@ -69,7 +69,10 @@ such as marking content read. It cannot undo
 those effects or arbitrary application state changes.
 
 Presentation discovery shares one React tree lookup per check and reads fresh
-hook values on the next check. Failed discovery keeps saved screenshots and
+hook values on the next check. Source plans without a mounted, source-bound
+entry skip native layout checks. Related owners share native bounds within
+that synchronous lookup; the next lookup reads fresh bounds.
+Failed discovery keeps saved screenshots and
 retries after untouched routes, with at most three attempts per route. Mapping
 more screens rechecks captured routes for new local forms and sheets without
 replacing their screenshots. A map with unresolved discovery failures ends as

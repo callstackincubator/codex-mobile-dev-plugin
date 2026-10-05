@@ -201,6 +201,11 @@ catalog reuse and discovery retries. Saved discovery errors and bounded exceptio
 details stay local; telemetry reports only fixed errors and operation names.
 Collection cancellation releases its wait and restores hook exports. No app data,
 source, view IDs or failure details enter metrics or error events.
+Since 0.1.140, presentation lookup rejects absent source-bound entries before
+checking native layout and shares native bounds within one synchronous lookup.
+The existing `presentations` runtime round trip and presentation discovery
+timings still cover that work. Measurement names, units, surface attribution
+and cleanup stay unchanged; no new app data or per-view events are collected.
 Since 0.1.116, discovery reuses route matches and complete helper/component walks
 within each scan. PNG validation selects its filter once per row, and runtime
 lookups stop once they find the focused screen or first native bounds. Existing
