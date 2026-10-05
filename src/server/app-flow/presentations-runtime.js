@@ -415,6 +415,20 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const value=state?.memoizedState;tree?.values.set(binding,value);return value;
   }
   const controlValue=(fiber,prop)=>prop==='ref'?fiber.ref?.current??fiber.memoizedProps?.ref?.current:fiber.memoizedProps?.[prop];
+  function controllerFocus(fiber,value) {
+    const candidates=[];
+    // A source component may forward several independent controls. Follow only
+    // this exact controller reference through data props, without invoking getters.
+    descendants(fiber,child=>{
+      if(!inside(child,fiber))return;
+      const props=child.memoizedProps;if(!props||typeof props!=='object')return;
+      if(Object.entries(Object.getOwnPropertyDescriptors(props)).some(([key,descriptor])=>key!=='children'&&'value'in descriptor&&descriptor.value===value))candidates.push(child);
+    });
+    const leaves=candidates.filter(owner=>!candidates.some(child=>child!==owner&&inside(child,owner)));
+    // Sharing one control across siblings is ambiguous. Keep the source scope
+    // instead of selecting a sheet by position or component name.
+    return leaves.length===1?leaves[0]:fiber;
+  }
   function mountedExport(action,tree) {
     if(!tree.modules){
       tree.modules=new Map();
@@ -525,7 +539,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   function activeViews(focus) {
     const tree=index(),visual=visualFocus(focus,tree),ids=new Set();
     const opened=undo[undo.length-1];
-    if(opened?.control&&focus&&roots(opened.nativeFocus,tree).some(root=>tree.inside(visual,root)))for(const id of opened.views??[])ids.add(id);
+    if(opened?.control&&focus&&roots(opened.nativeFocus,tree).some(root=>tree.inside(visual,root)||tree.inside(root,visual)))for(const id of opened.views??[])ids.add(id);
     for(const record of projected){if(record.failed)continue;for(let p=visual,n=0;p&&n++<100;p=p.return)if((p.pendingProps??p.memoizedProps)===record.child.props){for(const id of record.views??[])ids.add(id);break;}}
     for(const action of catalog.actions){
       if(!action.views?.length||action.effect.kind!=='state')continue;
@@ -579,14 +593,17 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // can receive native events. Keep active waiters and prefer dispatch hosts.
     for(const {fiber,canonical,field,props}of [...hosts,...adapters]){
       const previous=nativeRecords.get(canonical);
-      if(previous?.patched===props){previous.fiber=fiber;continue;}
+      // A hidden modal becoming visible must receive its real onShow before
+      // capture. Ignoring unopened hidden hosts must not skip this transition.
+      if(previous?.visible===false&&props.visible===true&&!previous.status.opened&&typeof props.onShow==='function'){previous.status.pending=true;previous.status.closed=false;}
+      if(previous?.patched===props){previous.fiber=fiber;previous.visible=props.visible;continue;}
       if(nativeRecords.size>=200&&!previous){
         const idle=fiber.tag===5&&[...nativeRecords.values()].find(record=>record.fiber?.tag===1&&!record.status.pending&&!record.status.opened);
         if(!idle)continue;const key=idle.canonical;forgetNative(idle);nativeRecords.delete(key);
       }
-      const status=previous?.status??{pending:mounting&&typeof props.onShow==='function',opened:props.visible===true,closed:false,closing:false};
+      const status=previous?.status??{pending:mounting&&props.visible!==false&&typeof props.onShow==='function',opened:props.visible===true,closed:false,closing:false};
       if(previous)forgetNative(previous);
-      const record={canonical,field,fiber,original:props,status,detach:[]};
+      const record={canonical,field,fiber,original:props,visible:props.visible,status,detach:[]};
       const patched={...props};
       for(const key of ['onShow','onDismiss','onStateChange'])if(typeof props[key]==='function'){
         patched[key]=nativeHandler(key,props[key],record);
@@ -595,7 +612,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       nativeRecords.set(canonical,record);
     }
     const targets=nativeTargets(focus,ancestors);
-    if(pending)for(const record of targets){record.status.pending=true;record.status.closed=false;record.status.closing=false;}
+    if(pending)for(const record of targets){if(record.original?.visible===false&&!record.status.opened&&!record.status.pending)continue;record.status.pending=true;record.status.closed=false;record.status.closing=false;}
     return targets;
   }
   function nativeTargets(focus,ancestors=false) {
@@ -689,7 +706,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       return {name:action.name,scope:catalog.states.find(s=>s.id===action.effect.site)?.owner===action.owner?b.fiber:undefined};
     }
     if(action.effect.kind==='control'){
-      const {fiber,value,close}=found.target;
+      const {value,close}=found.target,fiber=controllerFocus(found.target.fiber,value);
       const opened=undo.find(entry=>entry.control===value);
       if(opened){if(opened===undo[undo.length-1])opened.views=[...new Set([...(opened.views??[]),...(action.views??[])])];return {name:action.name,focus:fiber,alreadyOpen:true};}
       armNative(fiber);undo.push({control:value,close,focus:fiber,nativeFocus:fiber,views:action.views?.slice()});value[found.target.method??action.effect.method]();

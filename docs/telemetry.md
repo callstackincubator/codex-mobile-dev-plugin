@@ -404,3 +404,12 @@ resource measurement boundaries remain unchanged. Local diagnostics add bounded
 counts for detached, closing, shown and dismissed projections. Rollback failures
 retain their cause only in local diagnostics; Sentry still receives fixed error
 messages and operation names, with no app data or source.
+
+Since 0.1.155, controller capture follows the exact forwarded control reference
+to one child body. Independent sibling sheets no longer share native readiness
+or dismissal waits. Explicitly hidden, unopened modals do not start those waits.
+Existing presentation capture, restoration and command timings measure the active
+path with unchanged names, units and boundaries. Resource sampling still measures
+the app process. Controller references, props, native events and source evidence
+stay local and never enter metrics or Sentry. Observer cleanup and native
+dismissal regression tests cover the narrower scope.

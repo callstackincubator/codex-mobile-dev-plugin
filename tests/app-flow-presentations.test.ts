@@ -1346,3 +1346,59 @@ test('a native host removed while closing does not wait for its removed listener
  app.control.close=()=>{app.control.closes++;setTimeout(()=>{app.sheet.child=undefined},20)};
  try{app.runtime.open('open');await app.runtime.rollback();assert.equal(app.control.closes,1);assert.equal(app.runtime.checkpoint(),0);}finally{app.runtime.cleanup()}
 });
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`forwarded controls scope native capture and dismissal to their own child (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+    const app=tree(install),events:string[]=[];
+    const selected:any={type:function ControlledBody(){},memoizedProps:{control:app.control},return:app.sheet};
+    const unrelated:any={type:function OtherBody(){},memoizedProps:{control:{open(){assert.fail('Unrelated control')},close(){assert.fail('Unrelated control')}}},return:app.sheet};
+    const selectedProps={onShow(){events.push('selected show')},onDismiss(){events.push('selected dismissed')}};
+    const unrelatedProps={visible:true,onShow(){events.push('other show')},onDismiss(){assert.fail('Unrelated dismissal')}};
+    const selectedNative={currentProps:selectedProps},otherNative={currentProps:unrelatedProps};
+    selected.child={tag:5,type:'ModalHost',memoizedProps:selectedProps,stateNode:{canonical:selectedNative},return:selected};
+    unrelated.child={tag:5,type:'ModalHost',memoizedProps:unrelatedProps,stateNode:{canonical:otherNative},return:unrelated};
+    app.sheet.child=selected;selected.sibling=unrelated;
+    app.control.open=()=>selectedNative.currentProps.onShow();
+    app.control.close=()=>{events.push('close');setTimeout(()=>selectedNative.currentProps.onDismiss(),20)};
+    const opened=app.runtime.open('open');
+    assert.equal(opened.focus,selected);
+    assert.equal(app.runtime.motion(selected).pending,false);
+    const closing=app.runtime.rollback();
+    assert.equal(app.runtime.checkpoint(),1,'A real native dismissal must still finish');
+    await closing;
+    assert.equal(app.runtime.checkpoint(),0);
+    assert.deepEqual(events,['selected show','close','selected dismissed']);
+    app.runtime.cleanup();
+    assert.equal(selectedNative.currentProps,selectedProps);assert.equal(otherNative.currentProps,unrelatedProps);
+  });
+  test(`a controller shared by sibling bodies retains its source scope (${install===installPresentationRuntime?'normal':'shared loops'})`,()=>{
+    const app=tree(install);
+    const first:any={type:function First(){},memoizedProps:{control:app.control},return:app.sheet};
+    const second:any={type:function Second(){},memoizedProps:{control:app.control},return:app.sheet};
+    app.sheet.child=first;first.sibling=second;
+    assert.equal(app.runtime.open('open').focus,app.sheet);app.runtime.cleanup();
+  });
+  test(`an explicitly hidden native modal is not armed before it opens (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+    const app=tree(install),props={visible:false,onShow(){},onDismiss(){assert.fail('A never-opened modal cannot dismiss')}};
+    const canonical={currentProps:props};
+    app.sheet.child={tag:5,type:'ModalHost',memoizedProps:props,stateNode:{canonical},return:app.sheet};
+    app.runtime.open('open');
+    assert.equal(app.runtime.motion(app.sheet).pending,false);
+    await app.runtime.rollback();assert.equal(app.runtime.checkpoint(),0);
+    app.runtime.cleanup();assert.equal(canonical.currentProps,props);
+  });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`a hidden modal becoming visible still waits for its native show event (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+    const hook={renderers:new Map(),onCommitFiberRoot(){}},app=tree(options=>install({...options,hook}));
+    const props={visible:false,onShow(){},onDismiss(){}};const canonical={currentProps:props};
+    app.sheet.child={tag:5,type:'ModalHost',memoizedProps:props,stateNode:{canonical},return:app.sheet};
+    app.control.open=()=>{canonical.currentProps={...canonical.currentProps,visible:true};hook.onCommitFiberRoot()};
+    app.control.close=()=>{canonical.currentProps={...canonical.currentProps,visible:false};hook.onCommitFiberRoot();setTimeout(()=>canonical.currentProps.onDismiss(),20)};
+    app.runtime.open('open');assert.equal(app.runtime.motion(app.sheet).pending,true);
+    canonical.currentProps.onShow();assert.equal(app.runtime.motion(app.sheet).pending,false);
+    const closing=app.runtime.rollback();assert.equal(app.runtime.checkpoint(),1);
+    await closing;assert.equal(app.runtime.checkpoint(),0);app.runtime.cleanup();
+  });
+}
