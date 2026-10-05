@@ -11,6 +11,7 @@ import { FlowRuntimeFailure } from './runtime-metrics.ts';
 
 type View = { key: string; ready: boolean; found: boolean; signature: string; motion?: string; title?: string; active: string[]; loading?: boolean; transitioning?: boolean; reason?: string; error?: string };
 type Action = { id: string; name: string; file: string; line: number };
+type RetainedBranch = { backend: FlowBackend; base: string; actions: string[]; projections: string[]; frames: {level:number;view:View}[] };
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24);
 
 /** Discover live presentation entries, then capture them through the shared queue. */
@@ -18,9 +19,52 @@ export class FlowPresentationCapture {
   readonly timings = new MeasurementWindow();
   readonly bindingTimings = new MeasurementWindow();
   readonly discoveryTimings = new MeasurementWindow();
+  readonly restorationTimings = new MeasurementWindow();
   private visited = new Set<string>();
   readonly failures = new Map<string,{nodeId:string;operation:string;message:string;detail?:string}>();
   private previous?: {key:string;bytes:Buffer};
+  private retained?: RetainedBranch;
+  private baseKey(node: FlowNode) {
+    const plan=node.presentation!;
+    return JSON.stringify([plan.basePath,plan.baseParams??{},!!plan.expo]);
+  }
+  reuseDepth(node: FlowNode) {
+    const branch=this.retained,plan=node.presentation;
+    if(!branch||!plan||branch.base!==this.baseKey(node))return 0;
+    let depth=0;
+    while(depth<branch.actions.length&&branch.actions[depth]===plan.actions[depth]&&branch.projections.includes(plan.actions[depth])===!!plan.projections?.includes(plan.actions[depth])&&branch.frames[depth])depth++;
+    return depth;
+  }
+  discardBranch() { this.retained=undefined; }
+  async leave(backend: FlowBackend) {
+    const retained=this.retained;
+    this.retained=undefined;
+    if(!retained||retained.backend!==backend)return;
+    const started=performance.now();
+    try {
+      const restored=await backend.runtime.invoke({type:'presentation-rollback',level:0},10000);
+      if(restored?.error)throw new Error('Presentation restoration failed.');
+    } finally { this.restorationTimings.record(performance.now()-started); }
+  }
+  private sameView(a: View, b: View) {
+    return a.ready&&a.found&&!a.loading&&!a.transitioning&&a.key===b.key&&a.signature===b.signature&&a.motion===b.motion;
+  }
+  private async reuse(backend: FlowBackend,node: FlowNode,timeout: number) {
+    const branch=this.retained,depth=this.reuseDepth(node);
+    this.retained=undefined;
+    if(!branch||branch.backend!==backend||!depth)return;
+    const current:View=await backend.runtime.invoke({type:'presentation-view'},2000);
+    const checkpoint=await backend.runtime.invoke({type:'presentation-checkpoint'},2000);
+    if(checkpoint?.level!==branch.frames.at(-1)!.level||!this.sameView(current,branch.frames.at(-1)!.view))return;
+    const kept=branch.frames[depth-1];
+    if(depth<branch.actions.length){
+      const restored=await backend.runtime.invoke({type:'presentation-rollback',level:kept.level},10000);
+      if(restored?.error)throw new Error('Presentation restoration failed.');
+    }
+    const view=depth===branch.actions.length?current:await this.settled(backend,timeout);
+    if(!this.sameView(view,kept.view))return;
+    return {actions:branch.actions.slice(0,depth),frames:branch.frames.slice(0,depth),view};
+  }
   rememberFrame(bytes:Buffer) { this.previous={key:"",bytes}; }
   private catalog: FlowPresentations;
   private run: FlowRun; private root: string; private directory: string; private signal: AbortSignal; private changed: () => Promise<void>;
@@ -46,7 +90,10 @@ export class FlowPresentationCapture {
       this.signal.throwIfAborted();
       view = await backend.runtime.invoke({type: 'presentation-view'}, 2000);
       if (view.error) {
-        if(view.error==='The temporary presentation preview failed.')return view;
+        if(view.error==='The temporary presentation preview failed.'){
+          captureServerError(new Error('App Flow temporary preview could not render.'),'app_flow.presentation');
+          return view;
+        }
         const error = new Error('Presentation inspection is unavailable.');
         captureServerError(error, 'app_flow.presentation');
         throw error;
@@ -146,23 +193,30 @@ export class FlowPresentationCapture {
     }
     finally { this.run.discoveryFailures=[...this.failures.values()];this.run.revision++;this.discoveryTimings.record(performance.now() - started); }
   }
-  async retry(backend: FlowBackend, node: FlowNode) {
+  async retry(backend: FlowBackend, node: FlowNode, retainCompleted = false) {
     const plan = node.presentation!;
     const attempt = Math.min(node.captureAttempts ?? 0, 2);
     const timeout = [6000, 10000, 20000][attempt];
     const started = performance.now();
     node.captureAttempts = attempt + 1; node.status = 'capturing'; node.reason = undefined; node.failure=undefined; this.run.revision++;
     await this.changed();
+    let retained=false;
     try {
       this.signal.throwIfAborted();
-      await backend.runtime.invoke({type: 'presentation-rollback', level: 0}, 10000);
-      if (plan.basePath.length) {
+      const reused=retainCompleted?await this.reuse(backend,node,timeout):undefined;
+      const actions=reused?.actions??[],frames=reused?.frames??[];
+      let view:View|undefined=reused?.view;
+      if(!reused){
+        this.discardBranch();
+        const restored=await backend.runtime.invoke({type:'presentation-rollback',level:0},10000);
+        if(restored?.error)throw new Error('Presentation restoration failed.');
+      }
+      if (!reused&&plan.basePath.length) {
         const base = await backend.runtime.invoke({type: 'open', path: plan.basePath, params: plan.baseParams, expo: plan.expo, timeoutMs: 2000, loadingTimeoutMs: 10000}, 10500);
         if (!base.ready) { node.status = 'pending'; node.reason = 'The presentation entry route has not settled.'; node.failure={operation:'open',detail:base.reason}; return; }
       }
       if (plan.actions.length) this.rememberFrame(await backend.screenshot(AbortSignal.any([this.signal, AbortSignal.timeout(2000)])));
-      let view: View | undefined;
-      for (const id of plan.actions) {
+      for (const id of plan.actions.slice(actions.length)) {
         await this.setup(backend);
         const available: Action[] = await backend.runtime.invoke({type: 'presentations'}, 2000);
         if (!available.some(action => action.id === id)) { node.status = 'blocked'; node.reason = 'The presentation entry is no longer available in this app state.'; return; }
@@ -176,6 +230,11 @@ export class FlowPresentationCapture {
         view = await this.settled(backend, timeout);
         if (view.key === before.key&&view.signature===before.signature) { node.status = 'blocked'; node.reason = 'The entry did not open a new presentation.'; return; }
         if (!view.ready) { node.status = view.error?'blocked':'pending'; node.reason = view.error?'The temporary UI preview could not render with real app data.':'The presentation did not finish rendering.'; node.failure={operation:'presentation-view',detail:view.reason}; return; }
+        actions.push(id);
+        if(retainCompleted){
+          const checkpoint=await backend.runtime.invoke({type:'presentation-checkpoint'},2000);
+          if(Number.isInteger(checkpoint?.level)&&checkpoint.level>(frames.at(-1)?.level??0))frames.push({level:checkpoint.level,view});
+        }
       }
       view ??= await this.settled(backend, timeout);
       if (plan.entryKey && view.key !== plan.entryKey) { node.status = 'blocked'; node.reason = 'The app entry state has changed. Start a fresh map.'; return; }
@@ -183,10 +242,22 @@ export class FlowPresentationCapture {
         node.status = 'captured';
         this.visited.delete(node.id);
         await this.explore(backend, node);
+        // Projection can add another undo step after the source action. Store
+        // the runtime's actual checkpoint, never an action-count approximation.
+        if(retainCompleted&&actions.length&&frames.length===actions.length){
+          const current:View=await backend.runtime.invoke({type:'presentation-view'},2000);
+          const checkpoint=await backend.runtime.invoke({type:'presentation-checkpoint'},2000);
+          if(current.ready&&current.found&&!current.loading&&!current.transitioning&&Number.isInteger(checkpoint?.level)&&checkpoint.level>=frames.at(-1)!.level){
+            frames[frames.length-1]={level:checkpoint.level,view:current};
+            this.retained={backend,base:this.baseKey(node),actions,projections:plan.projections?.slice()??[],frames};retained=true;
+          }
+        }
       } else { node.status = 'pending'; node.reason ??= 'The presentation did not finish rendering.'; }
     } finally {
       if (node.status === 'pending' && node.captureAttempts >= 3) node.status = 'timed-out';
-      try { await backend.runtime.invoke({type: 'presentation-rollback', level: 0}, 10000); }
+      try {
+        if(!retained){this.discardBranch();await backend.runtime.invoke({type:'presentation-rollback',level:0},10000);}
+      }
       finally {
         node.captureMs = performance.now() - started; this.timings.record(node.captureMs); this.run.revision++;
         await this.changed();

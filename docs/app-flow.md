@@ -68,7 +68,12 @@ heartbeats stop for 10 seconds. Navigation can still trigger ordinary app effect
 such as marking content read. It cannot undo
 those effects or arbitrary application state changes.
 
-At the same attempt count, newly found routes run before queued sheets.
+At the same attempt count, newly found routes run before queued sheets. Related
+sheets reuse an open parent only when its base route, source actions, projection
+steps, current view, motion and runtime checkpoint still match. Siblings close
+only the changed part of the branch, using actual runtime checkpoints. Loading,
+animation and screenshot checks stay active. Failed attempts, route work,
+reconnects and run cleanup release the branch.
 Presentation discovery reuses committed tree structure until the next React
 commit. If no commit observer is available, it walks the tree each time. Each
 check still reads current hook values, native bounds and animation inputs. Source plans without a mounted, source-bound
@@ -83,6 +88,9 @@ visible content is proven. It still checks every later loader, initial query,
 heading and opacity animation. Host/content counts describe the sampled hosts.
 Scoped presentation checks reject unrelated owners before reading native bounds.
 Failed close operations retain their restore checkpoint for another attempt.
+On React roots with `onCaughtError`, temporary previews contain only errors caught
+by their own boundary. Other app errors still reach the original root handler.
+A failed preview stays uncaptured; it does not supply missing backend data.
 Failed discovery keeps saved screenshots and
 retries after untouched routes, with at most three attempts per route. Mapping
 more screens rechecks captured routes for new local forms and sheets without

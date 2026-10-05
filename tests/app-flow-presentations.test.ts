@@ -508,7 +508,7 @@ test('apps without a navigator map local forms and resume a nested sheet after d
   for(let i=0;i<300&&flowRunning(runs.read(run.id));i++)await new Promise(resolve=>setTimeout(resolve,10));
   const result=runs.read(run.id);assert.equal(result.phase,'complete');assert.equal(connections,2);
   assert.deepEqual(result.nodes.map(n=>n.name),['Welcome','Login','Options']);assert.ok(result.nodes.every(n=>n.status==='captured'&&n.image));
-  assert.equal(result.edges.length,2);assert.equal(opens,4,'The completed form replays to reach its child on each attempt');
+  assert.equal(result.edges.length,2);assert.equal(opens,3,'The verified form stays open for its child; a reconnect replays it once');
 });
 
 test('a standalone form maps without a navigator or any injectable transitions',async t=>{
@@ -893,4 +893,115 @@ test('controller previews honor a proven opener even when its sheet stays mounte
   app.button.memoizedProps.disabled=false;app.button.memoizedProps.onPress=undefined;
   assert.deepEqual(app.runtime.list(),[]);
   app.runtime.cleanup();
+});
+
+
+test('related sheets retain a verified parent and use actual projection checkpoints',async t=>{
+  const root=await fixture(t,{});await mkdir(join(root,'run'));const events:any[]=[];let stack:string[]=[];
+  const make=(id:string,actions:string[])=>({id,name:id,kind:'screen',path:[],required:[],status:'pending',presentation:{basePath:['Home'],actions,projections:['form']}} as any);
+  const parent=make('parent',['form']),first=make('first',['form','first']),second=make('second',['form','second']);
+  const run:any={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[parent,first,second],edges:[],presentations:{states:[],actions:[]}};
+  const view=()=>({key:stack.join('/')||'Home',signature:stack.join('/'),ready:true,found:true});
+  const backend:any={screenshot:async()=>Buffer.from(view().key),runtime:{async invoke(command:any){
+    events.push(command);
+    if(command.type==='open'){stack=[];return {ready:true};}
+    if(command.type==='presentation-rollback'){stack.length=command.level??0;return {};}
+    if(command.type==='presentation-checkpoint')return {level:stack.length};
+    if(command.type==='presentation-open')stack.push(command.id);
+    if(command.type==='presentation-project')stack.push('projection');
+    if(command.type==='presentations')return ['form','first','second'].map(id=>({id}));
+    if(command.type==='presentation-view')return view();
+    return {};
+  }}};
+  const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
+  await capture.retry(backend,parent,true);assert.equal(capture.reuseDepth(first),1);
+  await capture.retry(backend,first,true);await capture.retry(backend,second,true);
+  assert.ok(run.nodes.every((node:any)=>node.status==='captured'&&node.image));
+  assert.deepEqual(events.filter(e=>e.type==='presentation-open').map(e=>e.id),['form','first','second']);
+  assert.equal(events.filter(e=>e.type==='open').length,1);
+  assert.deepEqual(events.filter(e=>e.type==='presentation-rollback').map(e=>e.level),[0,2]);
+  await capture.leave(backend);assert.deepEqual(stack,[]);assert.equal(capture.reuseDepth(first),0);
+  assert.ok(capture.timings.take(),'Presentation attempts remain measured');
+  assert.ok(capture.restorationTimings.take(),'Deferred branch restoration remains measured');
+});
+
+test('parent reuse requires unchanged view, checkpoint, base, projection and backend',async t=>{
+  for(const changed of ['signature','motion','checkpoint','base','projection','backend','loading']){
+    const root=await fixture(t,{});await mkdir(join(root,'run'));let stack:string[]=[],version='',motion='',ready=true,opens=0,extra=0;
+    const make=(id:string,actions:string[])=>({id,name:id,kind:'screen',path:[],required:[],status:'pending',presentation:{basePath:['Home'],actions}} as any);
+    const parent=make('parent',['form']),child=make('child',['form','options']);
+    const run:any={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[parent,child],edges:[],presentations:{states:[],actions:[]}};
+    const runtime={async invoke(command:any){
+      if(command.type==='open'){stack=[];version='';motion='';ready=true;extra=0;return {ready:true};}
+      if(command.type==='presentation-rollback'){stack.length=command.level??0;return {};}
+      if(command.type==='presentation-checkpoint')return {level:stack.length+extra};
+      if(command.type==='presentation-open'){stack.push(command.id);opens++;}
+      if(command.type==='presentations')return ['form','options'].map(id=>({id}));
+      if(command.type==='presentation-view')return {key:stack.join('/')||'Home',signature:stack.join('/')+version,motion,ready,found:true,loading:!ready};
+      return {};
+    }};
+    let backend:any={runtime,screenshot:async()=>Buffer.from(stack.join('/')||'Home')};
+    const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
+    await capture.retry(backend,parent,true);
+    if(changed==='signature')version='changed';if(changed==='motion')motion='changed';if(changed==='checkpoint')extra=1;
+    if(changed==='base')child.presentation.baseParams={id:'real changed record'};
+    if(changed==='projection')child.presentation.projections=['form'];
+    if(changed==='backend')backend={...backend};if(changed==='loading')ready=false;
+    await capture.retry(backend,child,true);
+    assert.equal(child.status,'captured',changed);assert.equal(opens,3,`${changed} must replay the whole chain`);
+    await capture.leave(backend);
+  }
+});
+
+test('failed child capture restores its retained parent instead of leaving an overlay',async t=>{
+  const root=await fixture(t,{});await mkdir(join(root,'run'));let stack:string[]=[],shots=0;
+  const parent:any={id:'parent',name:'Form',kind:'screen',path:[],required:[],status:'pending',presentation:{basePath:[],actions:['form']}};
+  const child:any={...parent,id:'child',name:'Options',presentation:{basePath:[],actions:['form','options']}};
+  const run:any={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[parent,child],edges:[],presentations:{states:[],actions:[]}};
+  const backend:any={screenshot:async()=>{if(stack.at(-1)==='options'&&++shots===1)throw Error('device capture failed');return Buffer.from(stack.join('/')||'entry');},runtime:{async invoke(c:any){
+    if(c.type==='presentation-rollback')stack.length=c.level??0;
+    if(c.type==='presentation-checkpoint')return {level:stack.length};
+    if(c.type==='presentation-open')stack.push(c.id);
+    if(c.type==='presentations')return ['form','options'].map(id=>({id}));
+    if(c.type==='presentation-view')return {key:stack.join('/')||'entry',signature:stack.join('/'),ready:true,found:true};
+    return {};
+  }}};
+  const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
+  await capture.retry(backend,parent,true);await assert.rejects(capture.retry(backend,child,true),/device capture failed/);
+  assert.deepEqual(stack,[]);assert.equal(capture.reuseDepth(child),0);assert.ok(parent.image);assert.equal(child.image,undefined);
+});
+
+test('temporary preview boundaries contain their own React root errors and preserve app handlers',async t=>{
+  for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+    const app=tree(install),dom=new JSDOM('<div id="root"></div>');
+    const previous={window:(globalThis as any).window,document:(globalThis as any).document,require:(globalThis as any).__r};
+    (globalThis as any).window=dom.window;(globalThis as any).document=dom.window.document;
+    const errors:any[]=[];function View({children}:any){return React.createElement('div',null,children)}
+    function Modal({children}:any){return children}function Sheet(){throw Error('missing real input')}
+    const original=function(this:any,...args:any[]){errors.push({receiver:this,args})};
+    const rendered=createRoot(dom.window.document.getElementById('root')!,{onCaughtError:original});
+    const root=(rendered as any)._internalRoot;
+    const host:any={tag:3,stateNode:root};app.root.return=host;app.root.type=View;app.root.memoizedProps={children:React.createElement('span',null,'Original app')};app.sheet.type=Sheet;
+    const owner:any={type:function App(){},memoizedProps:{},child:app.button,return:app.root};app.root.child=owner;app.button.return=owner;app.sheet.return=owner;
+    (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:React}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}]])};
+    const render=()=>flushSync(()=>rendered.render(React.createElement(View,app.root.memoizedProps)));
+    const runtime=install({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){fiber.memoizedProps=props;render()}}]])},fibers:(visit:any)=>{const stack=[app.root];while(stack.length){const f=stack.pop();if(f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}},hidden:()=>false,later:setTimeout});
+    try{
+      render();configureFixture(runtime,{states:[],actions:[app.action]});runtime.open('open');
+      assert.equal(runtime.project(app.sheet).error,undefined);
+      assert.equal(errors.length,0,'A caught temporary preview error does not open the framework error overlay');
+      assert.equal(runtime.motion(app.sheet).error,'The temporary presentation preview failed.');
+      assert.equal(dom.window.document.getElementById('root')!.textContent,'Original app');
+      const error=Error('ordinary app failure'),info={errorBoundary:{constructor:function PreviewBoundary(){}}},receiver={};
+      root.onCaughtError.call(receiver,error,info);
+      assert.equal(errors.length,1);assert.equal(errors[0].receiver,receiver);assert.equal(errors[0].args[0],error);assert.equal(errors[0].args[1],info);
+      await runtime.rollback(0,false);assert.equal(root.onCaughtError,original,'Normal rollback restores the exact root handler');
+      runtime.open('open');assert.equal(runtime.project(app.sheet).error,undefined);
+      const observer=root.onCaughtError;root.onCaughtError=function(...args:any[]){return observer.apply(this,args)};
+      runtime.cleanup();root.onCaughtError(error,info);assert.equal(errors.length,2,'A later observer keeps forwarding after mapper cleanup');
+    }finally{
+      runtime.cleanup();flushSync(()=>rendered.unmount());await new Promise(resolve=>setTimeout(resolve,20));dom.window.close();app.runtime.cleanup();
+      (globalThis as any).window=previous.window;(globalThis as any).document=previous.document;(globalThis as any).__r=previous.require;
+    }
+  }
 });

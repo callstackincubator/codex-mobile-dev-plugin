@@ -223,7 +223,33 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   const indexInside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner?.alternate)return true;return false;};
   function visualFocus(focus,tree){return roots(focus,tree).at(-1)??focus;}
-  const projected=[];
+  const projected=[],caughtPatches=[];
+  function previewErrorHandler(original,records,root) {
+    const wrapped=function(error,info){
+      const preview=records?.find(item=>item.errorRoot===root&&info?.errorBoundary?.constructor===item.boundaryType);
+      if(preview){preview.failed=true;return;}
+      return original.apply(this,arguments);
+    };
+    return {wrapped,detach:()=>{records=undefined;root=undefined;}};
+  }
+  function containPreviewErrors(focus,record,boundaryType) {
+    let root;const seen=new Set();
+    for(let parent=focus;parent&&!seen.has(parent);parent=parent.return){seen.add(parent);if(parent.tag===3)root=parent.stateNode;}
+    if(!root||typeof root.onCaughtError!=='function')return;
+    record.errorRoot=root;record.boundaryType=boundaryType;
+    if(caughtPatches.some(patch=>patch.root===root&&root.onCaughtError===patch.wrapped))return;
+    const original=root.onCaughtError;
+    const {wrapped,detach}=previewErrorHandler(original,projected,root);
+    root.onCaughtError=wrapped;caughtPatches.push({root,original,wrapped,detach});
+  }
+  function releasePreviewErrors(all=false) {
+    for(let index=caughtPatches.length-1;index>=0;index--){
+      const patch=caughtPatches[index];
+      if(!all&&projected.some(record=>record.errorRoot===patch.root))continue;
+      if(patch.root.onCaughtError===patch.wrapped)patch.root.onCaughtError=patch.original;
+      patch.detach();caughtPatches.splice(index,1);
+    }
+  }
   function projectionRoot(focus) {
     const modules=globalThis.__r?.getModules?.();let react,native;
     for(const module of modules?.values?.()??[]){if(!module.isInitialized)continue;const exports=module.publicModule?.exports;if(typeof exports?.createElement==='function'&&typeof exports.useState==='function')react=exports;
@@ -270,6 +296,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     record.element=modal;record.next={...props,children:react.createElement(react.Fragment,null,...children,modal)};
     if(preview&&!patchPreviewEffects(react))return {error:'Temporary preview effects cannot be contained.'};
     if(record.seed&&!patchHooks()){if(!projected.length)unpatchPreviewEffects();return {error:'Temporary hook initialization is unavailable.'};}
+    // React Native reports even caught render errors to LogBox. Contain only
+    // errors caught by this exact temporary boundary; all app errors keep the
+    // root's original handler. Neither the error nor its message is retained.
+    containPreviewErrors(focus,record,PreviewBoundary);
     projected.push(record);undo.push({projection:record});
     structureCache=undefined;renderer.overrideProps(root,[],record.next);
     if(record.seed)record.seedTimer=later(()=>{if(!projected.includes(record))return;if(!record.seed.applied)record.failed=true;if(!collecting.size&&!projected.some(p=>p.seed&&!p.seed.applied&&!p.failed))unpatch();},1000);
@@ -510,7 +540,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         structureCache=undefined;record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
         if(wait){const started=Date.now();while(!record.dismissed&&Date.now()-started<1000)await new Promise(resolve=>later(resolve,40));}
         const index=projected.indexOf(record);if(index>=0)projected.splice(index,1);
-        if(record.seed)unpatch();if(!projected.length)unpatchPreviewEffects();
+        releasePreviewErrors();if(record.seed)unpatch();if(!projected.length)unpatchPreviewEffects();
       }else if(entry.control){
         const focus=entry.focus;watchNative(focus,true);entry.control[entry.close]();
         if(wait){const started=Date.now();while(motion(focus).pending&&Date.now()-started<2000)await new Promise(resolve=>later(resolve,40));}
@@ -524,7 +554,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80));
   }
-  function cleanup(){for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;clearNative();unpatch();unpatchPreviewEffects();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[]) {
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&tree.isVisible(fiber));
     const unique=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner)));

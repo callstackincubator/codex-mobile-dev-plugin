@@ -310,6 +310,7 @@ export class AppFlowRuns {
       run.phase = "reconnecting"; run.revision++; reconnects++;
       await Promise.allSettled(active.writing);
       await save();
+      presentations?.discardBranch();
       await backend?.runtime.close({ restore: false }).catch(() => {});
       const started = performance.now();
       try {
@@ -380,11 +381,11 @@ export class AppFlowRuns {
         signal.throwIfAborted();
         for (const node of run.nodes) attempts.set(node.id, node.captureAttempts ?? 0);
         const node = run.nodes.filter(item => item.kind === 'screen' && item.status === 'pending' && (attempts.get(item.id) ?? 0) < maxAttempts)
-          .sort((a, b) => (attempts.get(a.id) ?? 0) - (attempts.get(b.id) ?? 0) || Number(!!a.presentation)-Number(!!b.presentation))[0];
+          .sort((a, b) => (attempts.get(a.id) ?? 0) - (attempts.get(b.id) ?? 0) || Number(!!a.presentation)-Number(!!b.presentation) || presentations.reuseDepth(b)-presentations.reuseDepth(a))[0];
         if (node?.presentation) {
           run.retrying = (node.captureAttempts ?? 0) > 0;
           if (run.retrying) retries++;
-          try { await presentations.retry(backend, node); }
+          try { await presentations.retry(backend, node, true); }
           catch (error) {
             if (signal.aborted || error instanceof FlowAppFailure) throw error;
             if(node.status!=='captured'){
@@ -396,6 +397,11 @@ export class AppFlowRuns {
             catch { await reconnect(); if(node.status!=='captured'){node.captureAttempts = Math.max(0, (node.captureAttempts ?? 1) - 1); node.status = 'pending';} }
           }
           continue;
+        }
+        try { await presentations.leave(backend); }
+        catch(error){
+          if(signal.aborted||error instanceof FlowAppFailure)throw error;
+          await reconnect();continue;
         }
         if (!node) {
           const entry=[...pendingDiscovery].filter(([,attempts])=>attempts<maxAttempts).sort((a,b)=>a[1]-b[1])[0];
@@ -565,6 +571,7 @@ export class AppFlowRuns {
       for (const node of run.nodes) if (node.kind === "screen" && ["pending", "capturing"].includes(node.status)) { node.status = "timed-out"; node.reason = "Run stopped."; }
       if (["waiting", "resolving"].includes(run.ai)) run.ai = "unavailable";
       run.revision++;
+      presentations?.discardBranch();
       await backend?.runtime.close().catch(() => {});
       await Promise.allSettled(active.writing);
       discovery?.finish();
@@ -593,7 +600,7 @@ export class AppFlowRuns {
         Sentry.metrics.distribution("app_flow.run", (run.finishedAt ?? Date.now()) - sessionStarted, { unit: "millisecond", attributes });
         Sentry.metrics.gauge("app_flow.routes", run.nodes.filter(node => node.kind === "screen" && node.capture !== 'observed' && !node.presentation).length, { attributes });
         Sentry.metrics.gauge("app_flow.captured", run.nodes.filter(node => node.status === "captured" && node.capture !== 'observed' && !node.presentation).length, { attributes });
-        for (const [name,window] of [["presentation", presentations?.timings], ["presentation_binding", presentations?.bindingTimings], ["presentation_discovery", presentations?.discoveryTimings]] as const) {
+        for (const [name,window] of [["presentation", presentations?.timings], ["presentation_restoration", presentations?.restorationTimings], ["presentation_binding", presentations?.bindingTimings], ["presentation_discovery", presentations?.discoveryTimings]] as const) {
           const values = window?.take();
           if (values) for (const statistic of ["mean", "p95", "max"] as const) Sentry.metrics.gauge(`app_flow.${name}.${statistic}`,values[statistic],{unit:"millisecond",attributes});
         }

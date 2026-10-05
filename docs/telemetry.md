@@ -341,3 +341,14 @@ one collection snapshot, and Metro resolves each distinct source frame once per
 setup. `app_flow.presentation_binding` and discovery timings still include the
 full source check with the same bounded windows, units and attributes. Source
 matches retain each entry's stack order. No source data enters telemetry.
+
+Since 0.1.147, related presentation attempts reuse a verified open parent. Existing
+`app_flow.presentation` samples still measure each attempt's actual replay or
+reuse, readiness, capture, discovery and immediate cleanup in milliseconds.
+Restoration deferred until route work or the end of a branch now has its own
+bounded `app_flow.presentation_restoration.mean`, `.p95` and `.max` window; it is
+not added as a separate short sample to the attempt window. Runtime command
+metrics still include each checkpoint read and rollback. Surface and platform
+attributes stay unchanged. Caught temporary preview failures report a fixed
+`app_flow.presentation` error without app messages, inputs or component data.
+Root handlers forward all other errors and detach preview records on cleanup.
