@@ -63,6 +63,11 @@ tools for the platforms you use:
 | Physical iOS CPU and memory | iOS 17.4 or later, a running development-signed app with `get-task-allow`, a mounted developer disk image, and Xcode/LLDB detached. |
 | Display FPS | Android 12 or later with FrameTimeline support, or a physical iOS device running iOS 17.4 or later. iOS simulators do not support Display FPS. |
 
+Simulator tools use the full Xcode installation selected by `xcode-select` (or
+`DEVELOPER_DIR`), including its Swift compatibility libraries. Custom Xcode names
+and locations are supported. If Command Line Tools or an older Xcode is selected,
+choose Xcode 26 or later in Xcode Settings > Locations > Command Line Tools.
+
 The app project's own tools build, install, and launch your app. Mobile Dev supplies
 its device panel, inspection, logs, and performance tools.
 

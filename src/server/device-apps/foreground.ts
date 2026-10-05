@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { adbPath } from "../native-logs.ts";
+import { baguetteEnvironment } from "../baguette-runtime.ts";
 import type { ForegroundApp } from "../../shared/device-apps.ts";
 
 const execute = promisify(execFile);
@@ -24,9 +25,13 @@ export async function foregroundPhysicalPid(deviceId: string, signal?: AbortSign
 }
 
 export async function foregroundSimulatorPid(deviceId: string, signal?: AbortSignal,
-  helper = new URL("./baguette/Baguette", import.meta.url)): Promise<number | null> {
+  helper = new URL("./baguette/Baguette", import.meta.url), runtime = baguetteEnvironment): Promise<number | null> {
   const path = fileURLToPath(helper);
-  const result = await execute(path, ["foreground", "--udid", deviceId], { encoding: "utf8", timeout: 10000, maxBuffer: 4096, signal });
+  const cancellation = signal ?? AbortSignal.timeout(10000);
+  const environment = await runtime(path, cancellation);
+  const result = await execute(path, ["foreground", "--udid", deviceId], {
+    encoding: "utf8", timeout: 10000, maxBuffer: 4096, signal: cancellation, env: environment,
+  });
   const decoded: unknown = JSON.parse(result.stdout);
   const foreground = schema.parse(decoded);
   return foreground.pid;

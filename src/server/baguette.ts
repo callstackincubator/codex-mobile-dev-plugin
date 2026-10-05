@@ -11,6 +11,7 @@ import { errorMessage, normalizeDevices, parseBaseUrl, udidSchema } from "../sha
 import type { Status } from "../shared/protocol.ts";
 import { buttonMarginsSchema } from "../shared/bezel.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { baguetteEnvironment } from "./baguette-runtime.ts";
 
 export const definitionSchema = z.object({
   identity: z.object({ udid: udidSchema, name: z.string(), model: z.string() }),
@@ -112,11 +113,12 @@ export class Baguette {
 
     this.diagnostics = "";
     const executable = await this.executable();
+    const environment = await baguetteEnvironment(executable, this.lifecycle.signal);
     if (this.disposed) throw new Error("The plugin server has closed.");
     const child = spawn(executable, [
       "serve", "--host", this.baseUrl.hostname.replace(/^\[|\]$/g, ""),
       "--port", this.baseUrl.port || "80", "--no-plugins",
-    ], { stdio: ["ignore", "pipe", "pipe"], shell: false });
+    ], { stdio: ["ignore", "pipe", "pipe"], shell: false, env: environment });
     this.child = child;
     let launchError: Error | undefined;
     child.on("error", error => { launchError = error; });
@@ -206,8 +208,11 @@ export class Baguette {
 
   async repairInput(udid: string): Promise<void> {
     await this.device(udid, true);
-    const { stdout, stderr } = await promisify(execFile)(await this.executable(), ["heal", "--udid", udid], {
-      timeout: 45000, maxBuffer: 1024 * 1024, encoding: "utf8",
+    const executable = await this.executable();
+    const environment = await baguetteEnvironment(executable, this.lifecycle.signal);
+    const execute = promisify(execFile);
+    const { stdout, stderr } = await execute(executable, ["heal", "--udid", udid], {
+      timeout: 45000, maxBuffer: 1024 * 1024, encoding: "utf8", env: environment, signal: this.lifecycle.signal,
     });
     if (stdout || stderr) process.stderr.write(stdout + stderr);
   }

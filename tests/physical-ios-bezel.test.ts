@@ -64,11 +64,16 @@ function fixture() {
       return { stdout: Buffer.alloc(0) };
     }
     assert.match(file, /\/vendor\/baguette\/Baguette$/);
+    assert.equal(options.env?.DYLD_LIBRARY_PATH, "/selected/toolchain/libraries");
     assert.equal(args[0], "chrome");
     assert.deepEqual(args.slice(2), ["--device-name", selectedName]);
     if (args[1] === "layout") return jsonOutput({ ...layout, screen });
     assert.equal(args[1], "composite");
     return { stdout: image };
+  }, async (executable, signal) => {
+    assert.match(executable, /\/vendor\/baguette\/Baguette$/);
+    assert.equal(signal.aborted, false);
+    return { DYLD_LIBRARY_PATH: "/selected/toolchain/libraries" };
   });
   return {
     read, calls, maskDirectories,

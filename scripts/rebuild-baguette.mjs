@@ -1,3 +1,4 @@
+import { removeBaguetteToolchainRpaths } from "./baguette-rpaths.mjs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
@@ -14,6 +15,8 @@ export async function baguetteTelemetrySourceHash() {
   await nativeTelemetrySourceHash(hash);
   const script = await readFile("scripts/rebuild-baguette.mjs");
   hash.update(script);
+  const rpathScript = await readFile("scripts/baguette-rpaths.mjs");
+  hash.update(rpathScript);
   for (const file of ["ForegroundCommand.swift", "foreground-method.swift"]) {
     const contents = await readFile(`native/baguette/${file}`);
     hash.update(contents);
@@ -106,6 +109,7 @@ export async function rebuildBaguette(sourceDirectory) {
       });
     } catch (error) { throw new Error(`Baguette build failed. ${String(error.stderr ?? error.message).slice(-5000)}`); }
     const executable = join(source, ".build/release/Baguette");
+    await removeBaguetteToolchainRpaths(executable);
     await saveNativeSymbols(executable, "Baguette");
     const target = "vendor/baguette/Baguette";
     // Replace the inode so macOS cannot reuse the old code-signature cache.
