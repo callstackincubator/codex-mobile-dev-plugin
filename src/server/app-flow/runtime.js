@@ -61,7 +61,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
     if (depth > 8 || --safeBudget < 0) return undefined;
     if (typeof value === 'string') return value.length <= 256 && !/^(Bearer |eyJ[A-Za-z0-9_-]+\.)/.test(value) ? value : undefined;
     if (typeof value === 'boolean' || typeof value === 'number' || value === null) return value;
-    if (Array.isArray(value)) return value.slice(0, 12).map(item => safe(item, depth + 1));
+    if (Array.isArray(value)) return Array.from({length: Math.min(value.length, 12)}, (_, i) => safe(ownValue(value, String(i)), depth + 1));
     if (!value || typeof value !== 'object') return undefined;
     const result = {};
     for (const name of Object.keys(value).slice(0, 24)) {
@@ -72,6 +72,31 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
       if (item !== undefined) result[name] = item;
     }
     return result;
+  }
+  function ownValue(value, name) {
+    if (!value || typeof value !== 'object') return undefined;
+    const descriptor = Object.getOwnPropertyDescriptor(value, name);
+    return descriptor && 'value' in descriptor ? descriptor.value : undefined;
+  }
+  function readClientData(props, clients, data) {
+    const client = ownValue(props, 'client');
+    if (!client || typeof client.getQueryCache !== 'function' || clients.has(client) || data.length >= 40) return;
+    clients.add(client);
+    try {
+      for (const query of client.getQueryCache().getAll().slice(0, 40)) {
+        if (data.length >= 40) break;
+        const value = safe(ownValue(ownValue(query, 'state'), 'data'));
+        if (value) data.push({query: safe(ownValue(query, 'queryKey')), value});
+      }
+    } catch { /* Optional query caches may be unavailable. */ }
+  }
+  function contextData() {
+    safeBudget = 2000;
+    const data = [], clients = new Set();
+    // Reading current cache records must not rebind navigation, run app hooks,
+    // refetch queries, or change the temporary presentation being captured.
+    fibers(fiber => readClientData(fiber.memoizedProps, clients, data));
+    return {data, candidates: [...observed.values()]};
   }
   function remember(name, params) {
     if (typeof name !== 'string' || !params || typeof params !== 'object' || observed.size >= 200) return;
@@ -179,17 +204,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
       const props = fiber.memoizedProps;
       if (!props || typeof props !== 'object') return;
       navigation(props.navigation); navigation(props.value);
-      const client = props.client;
-      if (client && typeof client.getQueryCache === 'function' && !clients.has(client) && data.length < 40) {
-        clients.add(client);
-        try {
-          for (const query of client.getQueryCache().getAll().slice(0, 40)) {
-            if (data.length >= 40) break;
-            const value = safe(query.state?.data);
-            if (value) data.push({ query: safe(query.queryKey), value });
-          }
-        } catch { /* Optional query caches may be unavailable. */ }
-      }
+      readClientData(props, clients, data);
       if (props.route?.name) {
         remember(props.route.name, props.route.params);
         if (props.navigation?.isFocused?.() && !mounted.includes(props.route.name)) mounted.push(props.route.name);
@@ -504,6 +519,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
           let mountedFibers=0,mountedHosts=0;fibers(fiber=>{mountedFibers++;if(fiber.tag===5)mountedHosts++;});
           reply({mountedFibers,mountedHosts,transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,lastPresentationProbe,presentations:presentations?.diagnostics?.()});return;
         }
+        if (command.type === 'context-data') { reply(contextData()); return; }
         if (command.type === 'observe') { reply(observe()); return; }
         if (observing) { reply({ error: 'Recording observes screens; navigation commands are disabled.' }); return; }
         if (command.type === 'presentation-collect') { if (!presentations) { reply({bindings:[]}); return; } void presentations.collect(command.states,command.actions).then(reply, error => reply({error:'Presentation bindings could not be read.',detail:String(error?.message??error).slice(0,1000)})); return; }

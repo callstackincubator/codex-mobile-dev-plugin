@@ -76,6 +76,46 @@ test('a resumed runtime cancels old work and retains the original restoration st
   assert.equal(app.getState().routes[0].name,'Home');
 });
 
+for (const command of ['resume', 'restore']) {
+  test(`${command} releases an in-flight presentation rollback before queuing another restore`, async t => {
+    const scheduled = new Set<ReturnType<typeof setTimeout>>();
+    const timers = {
+      setTimeout(callback: (...args: any[]) => void, ms: number) {
+        const timer = setTimeout(() => { scheduled.delete(timer); callback(); }, ms);
+        scheduled.add(timer); return timer;
+      },
+      clearTimeout(timer: ReturnType<typeof setTimeout>) { scheduled.delete(timer); clearTimeout(timer); },
+    };
+    const app = runtime(t, false, timers, true);
+    t.after(() => { for (const timer of scheduled) clearTimeout(timer); });
+    await app.invoke({type: 'inspect'});
+    const rollback = app.invoke({type: 'presentation-rollback'});
+    // The empty rollback has released its native records, but still awaits its
+    // final paint delay. Reconnect/restore must settle that cancelled delay.
+    await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal((await app.invoke({type: 'diagnostics'})).waitTimers, 1);
+    const next = app.invoke({type: command});
+    let deadline: ReturnType<typeof setTimeout>;
+    const result = await Promise.race([
+      Promise.all([rollback, next]),
+      new Promise<null>(resolve => { deadline = setTimeout(() => resolve(null), 400); }),
+    ]);
+    clearTimeout(deadline!);
+    // A failing implementation must not hang this test's cleanup on the same
+    // broken queue. Its tracked timers are cleared by the hook above.
+    if (!result) app.context.flow = undefined;
+    assert.ok(result, 'Cancelling a paint delay must release the serialized rollback queue');
+    if (command === 'resume') {
+      assert.equal(result[1].available, true);
+      await app.invoke({type: 'presentation-rollback'});
+      assert.equal((await app.invoke({type: 'heartbeat'})).alive, true);
+    } else {
+      assert.equal(result[1].restored, true);
+      assert.equal(app.context.flow, undefined);
+    }
+  });
+}
+
 test('focused lookup keeps scanning content and links after finding the first native bounds',async t=>{
   const app=runtime(t);
   const box=()=>({x:0,y:0,width:100,height:200});
@@ -203,6 +243,30 @@ test('runtime strips credentials from observed route data',async t=>{
   const text=JSON.stringify(info);
   assert.equal(text.includes('secret'),false);
   assert.ok(text.includes('real'));
+});
+
+test('context refresh reads newly cached records without navigation, layout, getters, or refetching', async t => {
+  const app = runtime(t);
+  let data: any = {id: 'old-record'}, reads = 0;
+  const queries = [{queryKey: ['records'], state: {get data() { assert.fail('Query data accessor must stay unread'); }}},
+    {queryKey: ['records'], state: {data}}];
+  const client = {getQueryCache() { reads++; return {getAll: () => queries}; }, refetchQueries() { assert.fail('Cache refresh must not fetch'); }};
+  app.fiber.memoizedProps.client = client;
+  app.navigation.getState = () => { assert.fail('Context refresh must not inspect navigation'); };
+  app.navigation.isFocused = () => { assert.fail('Context refresh must not change focus'); };
+  app.navigation.dispatch = () => { assert.fail('Context refresh must not navigate'); };
+  app.native.stateNode.getBoundingClientRect = () => { assert.fail('Context refresh must not inspect layout'); };
+  assert.equal((await app.invoke({type: 'context-data'})).data[0].value.id, 'old-record');
+  const records: any[] = [{id: 'new-record', password: 'private', nested: {authorization: 'private', id: 'safe'}}];
+  Object.defineProperty(records, '1', {get() { assert.fail('Array accessors must stay unread'); }, enumerable: true});
+  data = {records, accessToken: 'private', get dangerous() { assert.fail('Object accessors must stay unread'); }};
+  queries[1].state = {data};
+  const snapshot = await app.invoke({type: 'context-data'});
+  assert.equal(snapshot.data[0].value.records[0].id, 'new-record');
+  assert.equal(snapshot.data[0].value.records[0].nested.id, 'safe');
+  assert.equal(JSON.stringify(snapshot).includes('private'), false);
+  assert.equal(reads, 2);
+  assert.equal((await app.invoke({type: 'heartbeat'})).alive, true);
 });
 
 test('recording observes local forms without a navigator and waits for their loading state', async t => {

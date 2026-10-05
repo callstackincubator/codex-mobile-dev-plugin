@@ -678,7 +678,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       const tree=index(),waiting=entry.native.filter(status=>!status.closed);
       if(!waiting.some(status=>[...nativeRecords.values()].some(record=>record.status===status&&tree.current.has(record.fiber))))return;
       if(Date.now()-started>=2000)throw new Error('Native presentation dismissal has not finished.');
-      await new Promise(resolve=>later(resolve,40));
+      await new Promise(resolve=>later(resolve,40,resolve));
     }
   }
   function observeCommits() {
@@ -802,7 +802,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
           const started=Date.now();while(!record.dismissed){
             if(!projectionAttached(record)){releaseProjection(record);undo.pop();continue restoring;}
             if(Date.now()-started>=2000)throw new Error('Temporary modal dismissal has not finished.');
-            await new Promise(resolve=>later(resolve,40));
+            await new Promise(resolve=>later(resolve,40,resolve));
           }
         }
         if(wait&&record.ios&&record.shown){
@@ -827,7 +827,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       undo.pop();
     }
     if(wait&&level===0)clearNative();
-    if(wait)await new Promise(resolve=>later(resolve,80));
+    if(wait)await new Promise(resolve=>later(resolve,80,resolve));
   }
   function cleanup(){previewRefs=new WeakSet();containedImperativeHandles=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[]) {

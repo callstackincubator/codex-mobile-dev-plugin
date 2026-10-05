@@ -128,21 +128,23 @@ test("capture loop acknowledges screenshots, keeps missing data, and restores na
 
 test("Stop aborts capture and late AI params are reused on the next run", async t => {
   const directory = await fixture(t, {});
-  let closes=0;
+  let closes=0, capturing=false;
   const runs = new AppFlowRuns({ directory, scan:async()=>graph(), connect:async()=>({
     runtime:{ async invoke(command){ if(command.type==='inspect') return {available:true}; return {ready:true,active:['Home'],name:'Home',signature:'home'}; }, async close(){closes++} },
-    async screenshot(signal){ await delay(1000,undefined,{signal}); return Buffer.from('fixture'); },
+    async screenshot(signal){ capturing=true; await delay(1000,undefined,{signal}); return Buffer.from('fixture'); },
   }) });
   const run=runs.start(start);
   await assert.rejects(async()=>runs.start(start),/already running/);
-  await delay(20); runs.stop(run.id); await runs.close();
+  for(let i=0;i<200&&!capturing;i++)await delay(10);
+  assert.equal(capturing,true,'Stop must interrupt an actual in-flight screenshot');
+  runs.stop(run.id); await runs.close();
   const result=runs.read(run.id);
   assert.equal(result.phase,'stopped');
   assert.equal(result.nodes[0].status,'timed-out');
   runs.resolve(run.id,[{nodeId:'second',params:{id:'real'}}]);
   const next=runs.start(start);
-  await delay(20);
-  assert.equal(runs.read(next.id).nodes[1].params?.id,'real');
+  for(let i=0;i<200&&runs.read(next.id).nodes.length<2;i++)await delay(10);
+  assert.equal(runs.read(next.id).nodes[1]?.params?.id,'real');
   await runs.close();
   assert.ok(closes>=2);
 });

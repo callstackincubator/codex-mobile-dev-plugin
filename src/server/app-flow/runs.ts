@@ -27,7 +27,7 @@ export type FlowDependencies = {
   resolve?: (context: unknown, signal: AbortSignal) => Promise<FlowResolution[]>;
   directory?: string;
 };
-type Active = { run: FlowRun; input: FlowStart; abort: AbortController; done?: Promise<void>; runtime?: FlowRuntime; runtimeMetrics?:FlowRuntimeMetrics; info?: RuntimeInfo; target?: FlowTargetIdentity; saving?: Promise<void>; savedRevision?: number; checkpoints?: MeasurementWindow; lease?: FlowLease; writing: Set<Promise<void>>; settled: boolean };
+type Active = { run: FlowRun; input: FlowStart; abort: AbortController; done?: Promise<void>; runtime?: FlowRuntime; runtimeMetrics?:FlowRuntimeMetrics; info?: RuntimeInfo; target?: FlowTargetIdentity; saving?: Promise<void>; savedRevision?: number; checkpoints?: MeasurementWindow; lease?: FlowLease; writing: Set<Promise<void>>; settled: boolean; contextRefresh?: Promise<void> };
 const maxAttempts = 3;
 const discoveryWarning="Presentation discovery failed on some screens. The partial map was kept.";
 export const FLOW_DIRECTORY = join(homedir(), "Library/Application Support/mobile-dev/app-flow");
@@ -168,7 +168,32 @@ export class AppFlowRuns {
     const { run } = await this.saved(id,false);
     return run.revision === revision ? undefined : publicFlowRun(run);
   }
-  async contextShared(id: string) { return this.contextFor(await this.saved(id)); }
+  private async refreshContext(active?: Active) {
+    if (!active?.runtime || !active.info || active.settled || active.abort.signal.aborted) return;
+    if (active.contextRefresh) return active.contextRefresh;
+    const runtime = active.runtime;
+    const refresh = async () => {
+      try {
+        const snapshot = await abortable(runtime.invoke({type: 'context-data'}, 1500), active.abort.signal);
+        if (active.settled || active.abort.signal.aborted || active.runtime !== runtime || !Array.isArray(snapshot?.data)) return;
+        const candidates = Array.isArray(snapshot.candidates) ? snapshot.candidates : active.info!.candidates;
+        if (JSON.stringify([active.info!.data, active.info!.candidates]) === JSON.stringify([snapshot.data, candidates])) return;
+        active.info = {...active.info!, data: snapshot.data, candidates};
+        active.run.revision++;
+        // The canvas and model can own separate MCP processes. Save the fresh
+        // evidence before the model reads context from the shared map.
+        await this.persist(active);
+      } catch {
+        if (!active.abort.signal.aborted) captureServerError(new Error('App Flow context refresh failed.'), 'app_flow.context');
+      }
+    };
+    active.contextRefresh = refresh();
+    try { await active.contextRefresh; } finally { active.contextRefresh = undefined; }
+  }
+  async contextShared(id: string) {
+    await this.refreshContext(this.sessions.get(id));
+    return this.contextFor(await this.saved(id));
+  }
   async diagnostics(id:string) {
     const active=this.sessions.get(id),run=active?this.read(id):(await this.saved(id,false)).run;
     if(active?.runtime&&!active.settled){
@@ -179,7 +204,7 @@ export class AppFlowRuns {
   }
   async prepare(id: string, input?: FlowStart) {
     const active = this.sessions.get(id);
-    if (active && !active.settled) { await this.persist(active); return this.context(id); }
+    if (active && !active.settled) { await this.refreshContext(active); await this.persist(active); return this.context(id); }
     const saved = await this.store.load(id);
     if (!saved.input && input) { saved.input = input; await this.store.save(saved); }
     return this.contextFor(saved);
@@ -432,7 +457,7 @@ export class AppFlowRuns {
             const unresolved = run.nodes.some(node => node.status === "needs-data");
             if (unresolved && this.dependencies.resolve) {
               run.ai = "resolving";
-              ai = abortable(this.dependencies.resolve(this.context(run.id), signal), signal).then(resolutions => {
+              ai = abortable(this.contextShared(run.id).then(context => this.dependencies.resolve!(context, signal)), signal).then(resolutions => {
                 if (!signal.aborted) { this.resolve(run.id, resolutions); run.ai = "done"; run.revision++; }
               }).catch(() => { if (!signal.aborted) { run.ai = "unavailable"; run.revision++; } });
             } else run.ai = unresolved ? "unavailable" : "off";

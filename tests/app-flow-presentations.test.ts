@@ -1143,6 +1143,34 @@ test('a shown iOS preview keeps its restore record until Modal.onDismiss',async 
 });
 
 
+test('cancelling a native dismissal poll keeps waiting for its real close event', async t => {
+  const waits = new Map<ReturnType<typeof setTimeout>, (() => void) | undefined>();
+  const app = tree(options => installPresentationRuntime({...options, later(callback, ms, onCancel) {
+    const timer = setTimeout(() => { waits.delete(timer); callback(); }, ms);
+    waits.set(timer, onCancel); return timer;
+  }}));
+  t.after(() => { for (const timer of waits.keys()) clearTimeout(timer); app.runtime.cleanup(); });
+  const instance = {props: {onStateChange() {}}};
+  app.sheet.child = {tag: 1, type: function NativeSheet() {}, memoizedProps: instance.props, stateNode: instance, return: app.sheet};
+  app.control.open = () => instance.props.onStateChange({nativeEvent: {state: 'open'}});
+  app.control.close = () => { app.control.closes++; instance.props.onStateChange({nativeEvent: {state: 'closing'}}); };
+  app.runtime.open('open');
+  let settled = false;
+  const closing = app.runtime.rollback().then(() => { settled = true; });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  for (const [timer, cancel] of [...waits]) { clearTimeout(timer); waits.delete(timer); cancel?.(); }
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(settled, false, 'Cancelling a poll must not fake native dismissal');
+  assert.equal(app.runtime.checkpoint(), 1);
+  instance.props.onStateChange({nativeEvent: {state: 'closed'}});
+  let deadline: ReturnType<typeof setTimeout>;
+  const result = await Promise.race([closing.then(() => true), new Promise<false>(resolve => { deadline = setTimeout(() => resolve(false), 400); })]);
+  clearTimeout(deadline!);
+  assert.equal(result, true, 'A cancelled poll must not leave restoration pending forever');
+  assert.equal(app.runtime.checkpoint(), 0);
+  assert.equal(app.control.closes, 1);
+});
+
 test('concurrent rollback requests wait for one native dismissal',async()=>{
   const app=tree();
   const instance={props:{onStateChange(){}}};

@@ -6,6 +6,7 @@ const operations:Record<string,string>={
   inspect:'reading navigation', resume:'resuming the inspector', recover:'restoring navigation', restore:'closing the inspector',
   open:'opening a route', verify:'checking a screenshot', observe:'observing the app',
   diagnostics:'reading inspector diagnostics', screenshot:'taking a device screenshot',
+  'context-data':'reading cached app data',
   'presentation-collect':'collecting presentation bindings', 'presentation-bindings':'reading presentation bindings',
   'presentation-configure':'binding presentation source', 'presentation-active':'reading presentation state',
   'presentation-symbolicate':'resolving presentation source',

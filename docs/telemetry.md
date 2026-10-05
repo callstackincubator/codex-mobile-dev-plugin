@@ -430,3 +430,10 @@ suppressed handle registrations and resets on cleanup. Ref values, callbacks,
 props and source evidence never enter telemetry. Real React tests cover local
 controls, shared refs, nested projections and hook cleanup in normal and shared
 loop execution.
+
+Since 0.1.158, the existing App Flow command timing windows also cover the fixed
+`context-data` operation. It reads a bounded snapshot of already cached app data
+only when AI context is requested. Timing units and boundaries stay the same;
+query records, route params and cache keys remain local and are never telemetry
+attributes. Presentation cancellation uses the existing restoration timing and
+timeout coverage.

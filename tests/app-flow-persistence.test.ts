@@ -70,6 +70,42 @@ test('another MCP instance can resolve a finished saved map without recapturing 
   assert.deepEqual(shots, ['Home', 'Profile']);
 });
 
+test('preparing a live map saves fresh evidence for another MCP process and preserves it on refresh failure', async t => {
+  const directory = await fixture(t), shots: string[] = [];
+  let release!: () => void, opening = false, connections = 0, reads = 0, failRefresh = false;
+  const wait = new Promise<void>(resolve => { release = resolve; });
+  const connect = backend(shots, async name => { if (name === 'Home') { opening = true; await wait; } });
+  const dependencies: FlowDependencies = {directory, scan: async () => graph(), connect: async (...args) => {
+    connections++;
+    const result = await connect(...args), invoke = result.runtime.invoke;
+    result.runtime.invoke = async (command, timeout) => {
+      if (command.type !== 'context-data') return invoke(command, timeout);
+      reads++;
+      if (failRefresh) throw Error('private app context failure');
+      await delay(5);
+      return {data: [{id: 'new-record'}], candidates: [{name: 'Profile', params: {id: 'new-record'}}]};
+    };
+    return result;
+  }};
+  const panel = new AppFlowRuns(dependencies), model = new AppFlowRuns(dependencies);
+  t.after(async () => { release(); await panel.close(); await model.close(); });
+  const {id} = panel.start(input);
+  while (!opening) await delay(5);
+  await Promise.all([panel.prepare(id), panel.contextShared(id)]);
+  assert.equal(reads, 1, 'Concurrent context requests share one bounded cache snapshot');
+  let context = await model.contextShared(id);
+  assert.deepEqual(context.data, [{id: 'new-record'}]);
+  assert.deepEqual(context.candidates, [{name: 'Profile', params: {id: 'new-record'}}]);
+  failRefresh = true;
+  await panel.prepare(id);
+  context = await model.contextShared(id);
+  assert.deepEqual(context.data, [{id: 'new-record'}], 'An inspector failure keeps the last real evidence');
+  assert.equal(reads, 2);
+  assert.equal(connections, 1, 'The model context must not open a competing inspector');
+  assert.deepEqual(shots, [], 'Reading context leaves the in-flight capture alone');
+  release(); await finished(panel, id);
+});
+
 test('a live owner consumes another process reply and competing clients never capture the same device', async t => {
   const directory = await fixture(t), shots: string[] = [];
   let release!: () => void, opening = false, connections = 0;
