@@ -226,6 +226,13 @@ Shared presentation indexes and detached observer cleanup preserve the existing
 binding, discovery and readiness measurement boundaries. No per-frame events
 or new user dimensions enter telemetry.
 
+Since 0.1.146, committed-tree caching and controller opener checks retain the
+existing runtime, binding, discovery and readiness timing boundaries. Native
+bounds, hook values and animation inputs remain fresh per check. Missing commit
+observers fall back to tree walks. The initialized RN LogBox observer forwards
+no log data and unsubscribes on cleanup. Existing fixed capture-failure reporting
+covers visible error overlays; no per-commit telemetry events are added.
+
 Since 0.1.140, presentation lookup rejects absent source-bound entries before
 checking native layout and shares native bounds within one synchronous lookup.
 The existing `presentations` runtime round trip and presentation discovery

@@ -824,6 +824,7 @@ test('newly discovered routes run before sheets at the same attempt count',async
   assert.deepEqual(events.slice(0,4),['Home','Search','Settings','Home']);
   assert.equal(events[4],'Sheet');
   assert.ok(runs.read(run.id).nodes.every(n=>n.status==='captured'));
+  await runs.close();
 });
 
 
@@ -838,5 +839,58 @@ test('one presentation probe shares its mounted index and avoids scanning offscr
   const probe=app.runtime.probeFocus(app.sheet,'Sheet');
   assert.equal(probe.expectedReady,true);assert.equal(probe.visualFocus,app.sheet);
   assert.equal(probe.motion().pending,false);assert.equal(outsideVisits,0);
+  app.runtime.cleanup();
+});
+
+
+test('committed tree metadata is reused while native geometry and state stay fresh',()=>{
+  function Sheet(){};let walks=0,reads=0,width=100,commits=0;
+  const host:any={tag:5,type:'View',memoizedProps:{children:'body'},stateNode:{canonical:{publicInstance:{getBoundingClientRect(){reads++;return {x:0,y:0,width,height:100}}}}}};
+  const sheet:any={type:Sheet,memoizedProps:{},child:host};host.return=sheet;
+  const hook:any={renderers:new Map(),onCommitFiberRoot(){commits++}};
+  const runtime=installPresentationRuntime({hook,fibers(visit:any,subtree?:any){if(!subtree)walks++;const root=subtree??sheet;const stack=[root];while(stack.length){const fiber=stack.pop();if(fiber!==subtree&&fiber.sibling)stack.push(fiber.sibling);if(visit(fiber)!==false&&fiber.child)stack.push(fiber.child);}},hidden:()=>false,later:setTimeout});
+  const first=runtime.probeFocus(sheet,'Sheet');assert.equal(first.expectedReady,true);const old=first.motion().signature;
+  const initialWalks=walks;reads=0;width=160;
+  const next=runtime.probeFocus(sheet,'Sheet');assert.equal(walks,initialWalks,'A stable tree must not be walked again for metadata');assert.ok(reads>0,'Native visibility bounds stay fresh');
+  assert.notEqual(next.motion().signature,old);
+  sheet.child=undefined;hook.onCommitFiberRoot();assert.equal(commits,1);
+  runtime.probeFocus(sheet,'Sheet');assert.ok(walks>initialWalks,'A committed tree change invalidates metadata');
+  runtime.cleanup();const before=walks;hook.onCommitFiberRoot();assert.equal(walks,before,'Cleanup removes the observer');
+});
+
+test('an unavailable commit hook never caches tree structure',()=>{
+  const app=tree();assert.equal(app.runtime.focusFor('Nested',app.sheet),app.nested);
+  app.sheet.child=undefined;assert.equal(app.runtime.focusFor('Nested',app.sheet),undefined);
+  app.runtime.cleanup();
+});
+
+
+test('replacing the commit callback invalidates metadata and preserves the new observer',()=>{
+  function Sheet(){};const sheet:any={type:Sheet,memoizedProps:{}};let walks=0,oldCalls=0,newCalls=0;
+  const hook:any={renderers:new Map(),onCommitFiberRoot(){oldCalls++}};
+  const runtime=installPresentationRuntime({hook,fibers(visit:any,subtree?:any){if(!subtree)walks++;visit(subtree??sheet)},hidden:()=>false,later:setTimeout});
+  runtime.probeFocus(sheet,'Sheet');const first=walks;
+  const next=()=>{newCalls++};hook.onCommitFiberRoot=next;
+  runtime.probeFocus(sheet,'Sheet');assert.ok(walks>first);const second=walks;
+  hook.onCommitFiberRoot();runtime.probeFocus(sheet,'Sheet');assert.ok(walks>second);
+  assert.equal(oldCalls,0);assert.equal(newCalls,1);
+  runtime.cleanup();assert.equal(hook.onCommitFiberRoot,next);
+});
+
+
+test('controller previews honor a proven opener even when its sheet stays mounted',async()=>{
+  const app=tree();
+  const preview:any={id:'preview-control',file:'App.tsx',line:2,owner:'App',component:'Sheet',prop:'',name:'Sheet',preview:true,effect:{kind:'control',component:'Sheet',prop:'control',method:'auto',close:['close']}};
+  app.sheet._debugSource={fileName:'App.tsx',lineNumber:2,columnNumber:1};
+  const catalog={states:[],actions:[app.action,preview]};app.runtime.configure(catalog,[]);
+  const record=app.runtime.records(0).bindings.find((b:any)=>b.source?.line===2);assert.ok(record);
+  app.runtime.configure(catalog,[{binding:record!.id,site:'preview-control:target'}],[record!.id]);
+  assert.deepEqual(app.runtime.list().map((a:any)=>a.id),['open'],'One controller has one available entry');
+  assert.equal(app.runtime.open('preview-control').error,undefined);await app.runtime.rollback(0,false);
+  app.button.memoizedProps.disabled=true;
+  assert.deepEqual(app.runtime.list(),[]);assert.ok(app.runtime.open('preview-control').error);
+  assert.equal(app.control.opens,1,'No hidden or disabled opener may be bypassed');
+  app.button.memoizedProps.disabled=false;app.button.memoizedProps.onPress=undefined;
+  assert.deepEqual(app.runtime.list(),[]);
   app.runtime.cleanup();
 });

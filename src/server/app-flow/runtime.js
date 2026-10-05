@@ -21,6 +21,20 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
       }
     }
   } catch { /* Not every development runtime exposes RN ErrorUtils. */ }
+  let logBoxSubscription, logBoxVisible = false;
+  function observeLogBox() {
+    if(logBoxSubscription)return;
+    // Read only RN's initialized framework store. Do not initialize an app
+    // module, suppress errors, or send log content through the capture bridge.
+    for(const module of globalThis.__r?.getModules?.()?.values?.()??[]){
+      if(!module.isInitialized||typeof module.verboseName!=='string'||!/(?:^|\/)react-native\/Libraries\/LogBox\/Data\/LogBoxData\.js$/.test(module.verboseName.replaceAll('\\','/')))continue;
+      const exports=module.publicModule?.exports,descriptor=exports&&Object.getOwnPropertyDescriptor(exports,'observe');
+      if(typeof descriptor?.value!=='function')continue;
+      try{logBoxSubscription=descriptor.value(state=>{logBoxVisible=state?.isDisabled!==true&&Number.isInteger(state?.selectedLogIndex)&&state.selectedLogIndex>=0;});}catch{}
+      break;
+    }
+  }
+  observeLogBox();
   const observed = new Map();
   const transitions = new Map();
   const waitTimers = new Set(), paintFrames = new Set();
@@ -139,6 +153,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
     return { links, components: [...components], transitioning: [...transitions.values()].some(record => record.busy) };
   }
   function inspect() {
+    observeLogBox();
     if (!navigatorState()?.routeNames?.length) root = undefined;
     safeBudget = 2000;
     const mounted = [], registrations = [], entries = [], data = [], seen = new Set(), clients = new Set();
@@ -399,8 +414,9 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
   }
   function presentationView() {
     const start=Date.now(),probe=lastPresentationProbe={stage:'focus',focusMs:0,expectedMs:0,visualMs:0,visibleMs:0,motionMs:0,totalMs:0};
-    if(presentationFocus){let current;fibers(fiber=>{if(fiber===presentationFocus||fiber===presentationFocus.alternate)current=fiber;});presentationFocus=current;}
-    const presentationProbe=presentations?.probeFocus?.(presentationFocus,presentationExpected);
+    let presentationProbe;
+    if(presentations?.probeFocus){presentationProbe=presentations.probeFocus(presentationFocus,presentationExpected);presentationFocus=presentationProbe.focus;}
+    else if(presentationFocus){let current;fibers(fiber=>{if(fiber===presentationFocus||fiber===presentationFocus.alternate)current=fiber;});presentationFocus=current;}
     const visualFocus=presentationProbe?.visualFocus??presentations?.visualFocus(presentationFocus)??presentationFocus;
     probe.focusMs=Date.now()-start;probe.stage='expected';let before=Date.now();
     // A portal's visual body can live outside its logical owner. Check the
@@ -442,6 +458,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
     try { if(presentations?.checkpoint())await presentations.rollback(0,true); }
     catch(error){stopped=false;renewLease();throw error;}
     try { if (errorHandler && errorUtils.getGlobalHandler() === errorHandler) errorUtils.setGlobalHandler(originalErrorHandler); } catch {}
+    try{logBoxSubscription?.unsubscribe?.();}catch{}logBoxSubscription=undefined;logBoxVisible=false;
     presentations?.cleanup(); presentationFrames.length=0; presentationFocus=presentationObservation=presentationExpected=undefined;
     cancelWaits();
     try { if (!observing && root && original) root.dispatch({ type: 'RESET', payload: original }); } catch {}
@@ -457,7 +474,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
       invoke(command, reply) {
       const originalReply = reply;
       const cleanup = ['restore', 'heartbeat', 'presentation-rollback'].includes(command.type);
-      const failed = () => { if (!appFailed || cleanup) return false; originalReply({appFailed:true}); return true; };
+      const failed = () => { if ((!appFailed&&!logBoxVisible) || cleanup) return false; originalReply({appFailed:true}); return true; };
       reply = value => { if (!failed()) originalReply(value); };
       try {
         if (command.type === 'restore') { void restore().then(() => reply({restored:true}),()=>reply({error:'App Flow restoration failed.'})); return; }

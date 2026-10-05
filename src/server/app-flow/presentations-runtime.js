@@ -4,7 +4,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   const bindings = new Map(), patches = [], effectPatches = [], undo = [];
   let collected = [];
   const entries = new Map(), entryKeys = new Map(); let entrySources = new WeakMap();
-  let lastScheduled = 0;
+  let lastScheduled = 0, structureCache;
   let catalog = {states:[],actions:[]};
   const name = fiber => { const type=fiber.type?.render??fiber.type?.type??fiber.type;return type?.displayName??type?.name; };
   const current = () => {
@@ -95,7 +95,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return targets;
   }
   async function collect(states = catalog.states, actions = catalog.actions) {
-    catalog={states,actions};lastScheduled=0;
+    catalog={states,actions};lastScheduled=0;structureCache=undefined;
     if(!patchHooks())return records(0);
     try {
       const mounted=new Set();fibers(fiber=>mounted.add(fiber));
@@ -159,7 +159,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     if(record){record.fiber=fiber;record.fibers.add(fiber);}return record;
   }
-  function configure(next=catalog,matches,checked=[]){catalog=next;for(const match of matches){const binding=bindings.get(match.binding);if(binding)binding.site=match.site;else entries.get(match.binding)?.actions.add(match.site);}for(const id of checked){const binding=bindings.get(id)??entries.get(id);if(binding)binding.checked=true;}}
+  function configure(next=catalog,matches,checked=[]){structureCache=undefined;catalog=next;for(const match of matches){const binding=bindings.get(match.binding);if(binding)binding.site=match.site;else entries.get(match.binding)?.actions.add(match.site);}for(const id of checked){const binding=bindings.get(id)??entries.get(id);if(binding)binding.checked=true;}}
   const descendants = (fiber,callback) => fibers(callback,fiber);
   function attached(fiber,boxes){let measurable=false,shown=false;descendants(fiber,child=>{if(shown)return false;if(child.tag!==5)return;let measured=boxes?.get(child);if(!measured){measured={measurable:false,shown:false};try{const native=child.stateNode?.canonical?.publicInstance??child.stateNode;if(typeof native?.getBoundingClientRect==='function'){measured.measurable=true;const box=native.getBoundingClientRect();measured.shown=box?.width>0&&box?.height>0;}}catch{}boxes?.set(child,measured);}measurable||=measured.measurable;shown||=measured.shown;});return !measurable||shown;}
   const activeAncestors = fiber => {
@@ -167,28 +167,43 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return true;
   };
   function index(includeEntries=false) {
-    const names=new Map(), live=new WeakMap(), boxes=new WeakMap(), current=new WeakMap(), all=[], states=new Map(), values=new Map();
-    const matched=new Map(),targets=new Set();
+    const observed=observeCommits();
+    let structure=observed&&structureCache;
+    if(!structure){
+      const names=new Map(),current=new WeakMap(),all=[],props=new Map();
+      fibers(fiber=>{
+        all.push(fiber);current.set(fiber,fiber);if(fiber.alternate)current.set(fiber.alternate,fiber);
+        const n=name(fiber);if(n){const list=names.get(n)??[];list.push(fiber);names.set(n,list);}
+        const p=fiber.memoizedProps;if(p&&typeof p==='object'){const list=props.get(p)??[];list.push(fiber);props.set(p,list);}
+      });
+      structure={names,current,all,props};if(observed)structureCache=structure;
+    }
+    const {names,current,all,props}=structure,live=new WeakMap(),boxes=new WeakMap(),states=new Map(),values=new Map(),matched=new Map(),targets=new Set(),openers=new Map();
     if(includeEntries)for(const action of catalog.actions){targets.add(action.component);if(action.effect.kind==='control')targets.add(action.effect.component);if(action.consumer)targets.add(action.consumer.component);}
-    fibers(fiber=>{
-      all.push(fiber);current.set(fiber,fiber);if(fiber.alternate)current.set(fiber.alternate,fiber);
-      const n=name(fiber);if(n){const list=names.get(n)??[];list.push(fiber);names.set(n,list);}
-      if(!targets.has(n))return;
-      // Index proven sources once, rather than scanning every same-named
-      // button for each of hundreds of absent plans. Keep all live instances.
+    // Source bindings can change without a React commit. Rebuild these matches
+    // from the current catalog, while reusing only the committed tree structure.
+    for(const n of targets)for(const fiber of names.get(n)??[]){
       for(const id of entry(fiber,false)?.actions??[]){const list=matched.get(id)??[];list.push(fiber);matched.set(id,list);}
-    });
+    }
     for(const binding of bindings.values())if(binding.site&&current.has(binding.fiber)){const list=states.get(binding.site)??[];list.push(binding);states.set(binding.site,list);}
+    if(includeEntries)for(const action of catalog.actions){
+      if(action.preview||action.effect.kind!=='control')continue;
+      for(const fiber of names.get(action.effect.component)??[]){
+        if(action.effect.target&&!(matched.get(`${action.id}:target`)??[]).includes(fiber))continue;
+        const value=controlValue(fiber,action.effect.prop);if(!value)continue;
+        const list=openers.get(value)??[];if(!list.includes(action))list.push(action);openers.set(value,list);
+      }
+    }
     // Native bounds cross into Fabric. Related owners share host descendants;
     // measure each host once during this synchronous lookup, then discard it.
     const isVisible=fiber=>{let value=live.get(fiber);if(value===undefined){value=activeAncestors(fiber)&&attached(fiber,boxes);live.set(fiber,value);}return value;};
     const inside=(fiber,owner)=>{if(!owner)return false;for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner.alternate)return true;return false;};
-    return {names,entries:matched,isVisible,inside,current,all,states,values};
+    return {names,entries:matched,isVisible,inside,current,all,props,states,values,openers};
   }
   function roots(focus,tree) {
     if(!focus)return [];
-    const props=new Map(),add=fiber=>{const p=fiber.memoizedProps;if(p&&typeof p==='object'){const list=props.get(p)??[];list.push(fiber);props.set(p,list);}};
-    if(tree)for(const fiber of tree.all)add(fiber);else fibers(add);
+    const props=tree?.props??new Map();
+    if(!tree)fibers(fiber=>{const p=fiber.memoizedProps;if(p&&typeof p==='object'){const list=props.get(p)??[];list.push(fiber);props.set(p,list);}});
     const result=[focus];for(const projection of projected)if(projection.focus===focus||projection.focus===focus.alternate){for(const target of props.get(projection.child.props)??[])result.push(target);}
     const seen=new Set(),queue=[focus];
     for(let offset=0;offset<queue.length&&offset<12;offset++){
@@ -256,7 +271,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(preview&&!patchPreviewEffects(react))return {error:'Temporary preview effects cannot be contained.'};
     if(record.seed&&!patchHooks()){if(!projected.length)unpatchPreviewEffects();return {error:'Temporary hook initialization is unavailable.'};}
     projected.push(record);undo.push({projection:record});
-    renderer.overrideProps(root,[],record.next);
+    structureCache=undefined;renderer.overrideProps(root,[],record.next);
     if(record.seed)record.seedTimer=later(()=>{if(!projected.includes(record))return;if(!record.seed.applied)record.failed=true;if(!collecting.size&&!projected.some(p=>p.seed&&!p.seed.applied&&!p.failed))unpatch();},1000);
     return {name:name(focus),focus};
   }
@@ -302,6 +317,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     let state=live.memoizedState;for(let i=0;state&&i<binding.index;i++)state=state.next;
     const value=state?.memoizedState;tree?.values.set(binding,value);return value;
   }
+  const controlValue=(fiber,prop)=>prop==='ref'?fiber.ref?.current??fiber.memoizedProps?.ref?.current:fiber.memoizedProps?.[prop];
   const find = (action,tree=index(true),focus,scope=roots(focus,tree)) => {
     const inScope=fiber=>!focus||scope.some(root=>tree.inside(fiber,root));
     if(action.preview&&action.effect.kind==='state'){
@@ -322,7 +338,11 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       const targets=(tree.entries.get(`${action.id}:target`)??[]).filter(f=>name(f)===action.effect.component&&(!focus||scope.some(root=>tree.inside(f,root)||tree.inside(root,f)))&&activeAncestors(f.return));
       const found=[];
       for(const fiber of targets){
-        const value=action.effect.prop==='ref'?fiber.ref?.current??fiber.memoizedProps?.ref?.current:fiber.memoizedProps?.[action.effect.prop];
+        const value=controlValue(fiber,action.effect.prop);
+        // A mounted, closed sheet may carry props for another wizard step. If
+        // its source has a proven opener, honor that opener's current state.
+        const openers=tree.openers.get(value);
+        if(openers?.length&&!openers.some(opener=>find(opener,tree,focus)?.target?.value===value))continue;
         const pairs=[['open',['close','dismiss','hide']],['present',['dismiss','close']],['show',['hide','close','dismiss']],['expand',['close','collapse','dismiss']]];
         const pair=pairs.find(([method])=>typeof value?.[method]==='function'&&value[method].length===0);
         const close=pair?.[1].find(method=>typeof value?.[method]==='function');
@@ -332,7 +352,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     // Most source plans are absent from the current screen. Reject those by
     // source identity before measuring any same-named owner in a large feed.
-    const entriesFound=(tree.entries.get(action.id)??[]).filter(fiber=>name(fiber)===action.component&&inScope(fiber)&&typeof fiber.memoizedProps?.[action.prop]==='function');
+    const entriesFound=(tree.entries.get(action.id)??[]).filter(fiber=>name(fiber)===action.component&&inScope(fiber)&&typeof fiber.memoizedProps?.[action.prop]==='function'&&fiber.memoizedProps.disabled!==true&&fiber.memoizedProps.accessibilityState?.disabled!==true&&fiber.memoizedProps['aria-disabled']!==true);
     if(!entriesFound.length)return;
     const candidates=(tree.names.get(action.owner)??[]).filter(fiber=>!focus||scope.some(root=>tree.inside(fiber,root)||tree.inside(root,fiber)));
     const ownersFound=candidates.filter(owner=>entriesFound.some(fiber=>tree.inside(fiber,owner))&&tree.isVisible(owner)&&!candidates.some(child=>child!==owner&&tree.inside(child,owner)&&tree.isVisible(child))).filter(owner=>entriesFound.some(fiber=>tree.inside(fiber,owner)&&tree.isVisible(fiber)));
@@ -381,7 +401,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(!path.length)return next;
     const [first,...rest]=path;const copy=Array.isArray(value)?value.slice():{...value};copy[first]=setPath(value?.[first],rest,next);return copy;
   }
-  const nativeRecords=new Map();let commitPatch;
+  const nativeRecords=new Map();let commitPatch,nativeArmed=false;
   function nativeHandler(key, handler, record) {
     // A newer observer can keep this wrapper as its original handler. Detach
     // the record even when the wrapper can no longer be removed from that chain.
@@ -398,7 +418,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   function commitHandler(original,callback) {
     const state={callback};
-    return {original,state,wrapped:function(...args){const result=original.apply(this,args);state.callback?.();return result;}};
+    return {original,state,wrapped:function(...args){try{return original.apply(this,args);}finally{state.callback?.();}}};
   }
   const inside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner?.alternate)return true;return false;};
   function watchNative(focus, pending = false, ancestors = false, mounting = false) {
@@ -422,12 +442,19 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       nativeRecords.set(canonical,record);
     });
   }
+  function observeCommits() {
+    if(commitPatch&&hook?.onCommitFiberRoot===commitPatch.wrapped)return true;
+    // A later observer may replace the hook without forwarding ours. Detach
+    // the old callback and observe the current chain before reusing metadata.
+    if(commitPatch){commitPatch.state.callback=undefined;commitPatch=undefined;structureCache=undefined;}
+    if(typeof hook?.onCommitFiberRoot!=='function')return false;
+    const patch=commitHandler(hook.onCommitFiberRoot,()=>{structureCache=undefined;if(nativeArmed)watchNative(undefined,false,false,true);});
+    try{hook.onCommitFiberRoot=patch.wrapped;}catch{patch.state.callback=undefined;return false;}
+    if(hook.onCommitFiberRoot!==patch.wrapped){patch.state.callback=undefined;return false;}
+    commitPatch=patch;return true;
+  }
   function armNative(focus) {
-    if(!commitPatch&&typeof hook?.onCommitFiberRoot==='function'){
-      commitPatch=commitHandler(hook.onCommitFiberRoot,()=>watchNative(undefined,false,false,true));
-      hook.onCommitFiberRoot=commitPatch.wrapped;
-    }
-    watchNative(focus,true);
+    nativeArmed=true;observeCommits();watchNative(focus,true);
   }
   function motion(focus,viewport,tree=index(),scope=roots(focus,tree)) {
     for(const [canonical,record]of nativeRecords)if(!tree.current.has(record.fiber)&&!tree.current.has(record.fiber?.alternate)){forgetNative(record);nativeRecords.delete(canonical);}
@@ -452,7 +479,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const error=projected.some(record=>record.failed&&(focus===record.focus||roots(record.focus).includes(focus)))?'The temporary presentation preview failed.':undefined;
     return {pending,signature:JSON.stringify(boxes),error};
   }
-  function clearNative(){if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();}
+  function clearNative(){structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();}
   function open(id,focus) {
     armNative();
     const action=catalog.actions.find(a=>a.id===id),found=action&&find(action,index(true),focus);if(!found)return {error:'This presentation entry is not currently available.'};
@@ -480,7 +507,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(entry.projection){
         const record=entry.projection;clearTimeout(record.seedTimer);
         const props=record.root.memoizedProps??record.props;
-        record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
+        structureCache=undefined;record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
         if(wait){const started=Date.now();while(!record.dismissed&&Date.now()-started<1000)await new Promise(resolve=>later(resolve,40));}
         const index=projected.indexOf(record);if(index>=0)projected.splice(index,1);
         if(record.seed)unpatch();if(!projected.length)unpatchPreviewEffects();
@@ -504,8 +531,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return unique.length===1?unique[0]:undefined;
   }
   function probeFocus(focus,expected) {
-    const tree=index(),connected=roots(focus,tree);
-    return {visualFocus:connected.at(-1)??focus,expectedReady:!expected||!!focusedComponent(expected,focus,tree,connected),motion:viewport=>motion(focus,viewport,tree,connected)};
+    const tree=index(),currentFocus=focus&&tree.current.get(focus),connected=roots(currentFocus,tree);
+    return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:viewport=>motion(currentFocus,viewport,tree,connected)};
   }
   const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativePending:[...nativeRecords.values()].filter(r=>r.pending).length,checkpoints:undo.length,projections:projected.length});
   return {collect,records,configure,list,open,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length)undo[undo.length-1].focus=focus;}, checkpoint:()=>undo.length};

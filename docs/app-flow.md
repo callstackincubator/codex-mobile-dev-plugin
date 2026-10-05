@@ -69,8 +69,9 @@ such as marking content read. It cannot undo
 those effects or arbitrary application state changes.
 
 At the same attempt count, newly found routes run before queued sheets.
-Presentation discovery shares one React tree lookup per check and reads fresh
-hook values on the next check. Source plans without a mounted, source-bound
+Presentation discovery reuses committed tree structure until the next React
+commit. If no commit observer is available, it walks the tree each time. Each
+check still reads current hook values, native bounds and animation inputs. Source plans without a mounted, source-bound
 entry skip native layout checks. Related owners share native bounds within
 that synchronous lookup; the next lookup reads fresh bounds. Motion signatures
 read at most 24 accepted host rectangles and still check later hosts for native
@@ -93,8 +94,12 @@ They also save fixed-name runtime command counts, total/maximum milliseconds and
 timeouts for the mapping session, including reconnects. The `diagnostics` action
 returns those timings and, when this MCP process owns the live run, bounded
 inspector counts. It does not read native bounds or return account data.
+Controller previews honor known source openers. A sheet cannot bypass a hidden
+or disabled opener just because its closed component remains mounted.
+
 While capturing, the runtime observes React Native's fatal JavaScript error
-handler when the app exposes it. A fatal error stops the run before saving
+handler and its initialized LogBox store when available. A visible LogBox
+inspector blocks capture, including React render errors that skip ErrorUtils. A fatal error stops the run before saving
 further images; it does not count an error overlay as the requested screen.
 The observer forwards errors to the app's original handler and restores that
 handler during cleanup, unless the app has replaced it. It retains only a

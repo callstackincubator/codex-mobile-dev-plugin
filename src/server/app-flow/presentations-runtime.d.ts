@@ -14,5 +14,7 @@ export function installPresentationRuntime(options: {
   cleanup(): void; motion(focus?: any, viewport?: {x: number; y: number; width: number; height: number}): {pending: boolean; signature: string};
   project(focus: any): {name?: string; focus?: any; error?: string};
   focusFor(name: string, scope?: any): any;
+  probeFocus(focus?: any, expected?: string): {focus:any;visualFocus:any;expectedReady:boolean;motion(viewport?: {x:number;y:number;width:number;height:number}): {pending:boolean;signature:string;error?:string}};
+  diagnostics(): Record<string,number>;
   visualFocus(focus?: any): any; focused(focus: any): void; checkpoint(): number;
 };

@@ -713,3 +713,26 @@ test('presentation readiness checks the expected logical owner before inspecting
   const probe=(await app.invoke({type:'diagnostics'})).lastPresentationProbe;
   assert.equal(probe.expectedReady,true);assert.equal(probe.found,true);assert.equal(probe.stage,'done');assert.ok(probe.totalMs>=probe.visualMs);
 });
+
+
+test('an initialized RN LogBox observer rejects overlays without exporting error text',async t=>{
+  let observer:any,unsubscribed=0;
+  const store={observe(callback:any){observer=callback;callback({isDisabled:false,selectedLogIndex:-1});return {unsubscribe(){unsubscribed++;observer=undefined}}}};
+  const __r={getModules:()=>new Map([[1,{isInitialized:true,verboseName:'node_modules/react-native/Libraries/LogBox/Data/LogBoxData.js',publicModule:{exports:store}}]])};
+  const app=runtime(t,false,undefined,false,{__r});
+  assert.equal((await app.invoke({type:'inspect'})).available,true);
+  const opening=app.invoke({type:'open',path:['Profile'],timeoutMs:1000});
+  observer({isDisabled:false,selectedLogIndex:0,logs:new Set([{message:'private render error'}])});
+  assert.equal((await opening).appFailed,true);
+  for(const type of ['verify','presentation-view','presentation-open'])assert.deepEqual(JSON.parse(JSON.stringify(await app.invoke({type}))),{appFailed:true});
+  assert.equal((await app.invoke({type:'heartbeat'})).alive,true);
+  await app.invoke({type:'restore'});assert.equal(unsubscribed,1);assert.equal(observer,undefined);
+});
+
+test('LogBox detection never initializes modules or treats a disabled inspector as visible',async t=>{
+  let initializations=0;
+  const module={isInitialized:false,verboseName:'node_modules/react-native/Libraries/LogBox/Data/LogBoxData.js',get publicModule(){initializations++;throw Error('never initialize')}};
+  const disabled={isInitialized:true,verboseName:module.verboseName,publicModule:{exports:{observe(callback:any){callback({isDisabled:true,selectedLogIndex:0});return {unsubscribe(){}}}}}};
+  const app=runtime(t,false,undefined,false,{__r:{getModules:()=>new Map([[1,module],[2,disabled]])}});
+  assert.equal((await app.invoke({type:'inspect'})).available,true);assert.equal(initializations,0);
+});
