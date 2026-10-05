@@ -290,7 +290,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(parent.tag!==10||!parent.memoizedProps||!('value'in parent.memoizedProps))continue;
       const provider=parent.elementType??parent.type;if(provider)content=react.createElement(provider,{value:preview?.providers?.get(parent)??parent.memoizedProps.value},content);
     }
-    const record={root,renderer,react,props,focus,child,content,portals:[],seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:false,dismissed:false,failed:false};
+    // Nested temporary form states share one shown native window. Stacking
+    // Modal controllers for each step can leave UIKit displaying an old body
+    // after React removes its tree. Retain each body's own undo checkpoint.
+    const owner=previewOwner(focus),children=props.children?.props?.children;
+    const previousPreview=owner?.shown&&projectionAttached(owner)&&Array.isArray(children)&&children.includes(owner.element)?owner:undefined;
+    const record={root,renderer,react,props,focus,child,content,parent:previousPreview,portals:[],seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:!!previousPreview,dismissed:false,failed:false};
     class PreviewBoundary extends react.Component {
       constructor(props){super(props);this.state={failed:false};}
       static getDerivedStateFromError(){return {failed:true};}
@@ -302,9 +307,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       for(const key of ['presentationStyle','transparent','statusBarTranslucent','navigationBarTranslucent','hardwareAccelerated','supportedOrientations'])if(key in parent.memoizedProps)modalProps[key]=parent.memoizedProps[key];
       break;
     }
-    const modal=react.createElement(native.Modal,{key:`mobile-flow-preview-${++sequence}`,transparent:false,...modalProps,visible:true,animationType:'none',onShow:()=>{record.shown=true;},onDismiss:()=>{record.dismissed=true;}},react.createElement(PreviewBoundary,null,content));
-    const children=Array.isArray(props.children)?props.children:[props.children];
-    record.element=modal;record.next={...props,children:react.createElement(react.Fragment,null,...children,modal)};
+    const body=react.createElement(PreviewBoundary,null,content);
+    const modal=previousPreview?react.cloneElement(previousPreview.element,{},body):react.createElement(native.Modal,{key:`mobile-flow-preview-${++sequence}`,transparent:false,...modalProps,visible:true,animationType:'none',onShow:()=>{record.shown=true;},onDismiss:()=>{record.dismissed=true;}},body);
+    const appChildren=Array.isArray(props.children)?props.children:[props.children];
+    record.element=modal;record.next={...props,children:previousPreview?react.cloneElement(props.children,{},...children.map(element=>element===previousPreview.element?modal:element)):react.createElement(react.Fragment,null,...appChildren,modal)};
     if(preview&&!patchPreviewEffects(react))return {error:'Temporary preview effects cannot be contained.'};
     if(record.seed&&!patchHooks()){if(!projected.length)unpatchPreviewEffects();return {error:'Temporary hook initialization is unavailable.'};}
     // React Native reports even caught render errors to LogBox. Contain only
@@ -313,8 +319,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     containPreviewErrors(focus,record,PreviewBoundary);
     projected.push(record);undo.push({projection:record});
     structureCache=undefined;renderer.overrideProps(root,[],record.next);
-    if(record.seed)record.seedTimer=later(()=>{if(!projected.includes(record))return;if(!record.seed.applied)record.failed=true;if(!collecting.size&&!projected.some(p=>p.seed&&!p.seed.applied&&!p.failed))unpatch();},1000);
+    if(record.seed)seedDeadline(record);
     return {name:name(focus),focus};
+  }
+  function seedDeadline(record){
+    clearTimeout(record.seedTimer);
+    record.seedTimer=later(()=>{if(!projected.includes(record))return;if(!record.seed.applied)record.failed=true;if(!collecting.size&&!projected.some(p=>p.seed&&!p.seed.applied&&!p.failed))unpatch();},1000);
   }
   function portalBindings(focus){
     const tree=index(),scope=roots(focus,tree),result=[];
@@ -727,7 +737,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     clearTimeout(record.seedTimer);
     for(const [id,portal]of portalEffects)if(portal.preview===record)portalEffects.delete(id);
     record.portals.length=0;const position=projected.indexOf(record);if(position>=0)projected.splice(position,1);
-    releasePreviewErrors();if(record.seed)unpatch();if(!projected.length)unpatchPreviewEffects();
+    releasePreviewErrors();if(record.seed&&!projected.some(p=>p.seed&&!p.seed.applied&&!p.failed))unpatch();if(!projected.length)unpatchPreviewEffects();
   }
   async function restorePresentations(level,wait) {
     restoring:while(undo.length>Math.max(0,level)){
@@ -739,6 +749,17 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         // An app commit may remove the entire preview before its native callback.
         // The old Modal listener is gone. Keep the app's new children intact.
         if(!projectionAttached(record)){releaseProjection(record);undo.pop();continue;}
+        if(record.parent){
+          const root=index().current.get(record.root),props=root?.memoizedProps,children=props?.children?.props?.children;
+          if(Array.isArray(children)){
+            const parent=record.parent,modal=parent.element;
+            // Replacing the modal body remounts only the temporary form. Seed
+            // its saved finite state again before React renders the prior step.
+            if(parent.seed){parent.seed.applied=false;if(!patchHooks())throw new Error('Temporary hook restoration is unavailable.');seedDeadline(parent);}
+            structureCache=undefined;record.renderer.overrideProps(root,[],{...props,children:record.react.cloneElement(props.children,{},...children.map(child=>child?.props?.onDismiss===record.element.props.onDismiss?modal:child))});
+          }
+          releaseProjection(record);undo.pop();continue;
+        }
         if(!entry.closing){
           const props=record.root.memoizedProps??record.props;
           structureCache=undefined;
@@ -791,7 +812,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return unique.length===1?unique[0]:undefined;
   }
   function probeFocus(focus,expected) {
-    const tree=index(),currentFocus=focus&&tree.current.get(focus),connected=roots(currentFocus,tree);
+    const tree=index();let currentFocus=focus&&tree.current.get(focus);
+    if(focus&&!currentFocus){
+      const record=[...projected].reverse().find(record=>record.focus===focus||record.focus===focus.alternate||record.child.props===(focus.pendingProps??focus.memoizedProps));
+      const bodies=record?(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type):[];
+      if(bodies.length===1)currentFocus=bodies[0];
+    }
+    const connected=roots(currentFocus,tree);
     return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:viewport=>motion(currentFocus,viewport,tree,connected)};
   }
   const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});

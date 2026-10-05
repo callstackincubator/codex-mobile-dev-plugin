@@ -1402,3 +1402,52 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
     await closing;assert.equal(app.runtime.checkpoint(),0);app.runtime.cleanup();
   });
 }
+
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+ test(`nested preview steps reuse one native modal and restore seeded bodies (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+  const app=tree(install),previous=(globalThis as any).__r;
+  function View(){}function Modal(){}
+  const original=React.createElement('span',null,'Original app');
+  const wrapper:any={type:View,memoizedProps:{children:original,marker:1},child:app.root};app.root.return=wrapper;
+  let current:any,body:any,shown=0,dismissed=0,hidden=0;
+  const states:string[]=[];
+  const react={...React,useState(initial:any){const value=typeof initial==='function'?initial():initial;current.memoizedState={memoizedState:value,next:null};states.push(value);return [value,()=>assert.fail('Original setters must not run')];},useReducer(_reducer:any,value:any,init:any){return [init?init(value):value,()=>assert.fail('Original reducers must not run')];}};
+  const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??wrapper];while(stack.length){const fiber=stack.pop();if(fiber!==subtree&&fiber.sibling)stack.push(fiber.sibling);if(visit(fiber)!==false&&fiber.child)stack.push(fiber.child)}};
+  const renderer={rendererPackageName:'react-native-renderer',getCurrentFiber:()=>current,overrideProps(fiber:any,_path:any,props:any){
+   fiber.memoizedProps=props;
+   const modal=props.children?.props?.children?.at(-1);
+   app.root.sibling=undefined;body=undefined;
+   if(modal?.type!==Modal)return;
+   if(!shown){shown++;modal.props.onShow();}
+   if(modal.props.visible===false){hidden++;setTimeout(()=>{dismissed++;modal.props.onDismiss();},20);return;}
+   const element=modal.props.children.props.children;
+   body={type:element.type,memoizedProps:element.props,pendingProps:element.props,return:wrapper,memoizedState:null};app.root.sibling=body;
+   current=body;react.useState('initial');current=undefined;
+  }};
+  (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}]])};
+  const runtime=install({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});
+  t.after(()=>{runtime.cleanup();(globalThis as any).__r=previous});
+  const preview=(value:string)=>({props:{control:app.control,value},seed:{kind:'useState',index:0,value,applied:false},views:[value]});
+  assert.equal(runtime.project(app.sheet,preview('first')).error,undefined);
+  const first=body,firstModal=wrapper.memoizedProps.children.props.children.at(-1),key=firstModal.key;
+  assert.equal(runtime.project(first,preview('second')).error,undefined);
+  const second=body;
+  assert.equal(runtime.probeFocus(first).focus,second,'Focus follows the replacement body through the exact preview props');
+  assert.equal(runtime.project(second,preview('third')).error,undefined);
+  assert.equal(wrapper.memoizedProps.children.props.children.length,2,'The app plus one modal remains mounted');
+  assert.equal(wrapper.memoizedProps.children.props.children.at(-1).key,key);
+  assert.equal(shown,1);assert.equal(runtime.checkpoint(),3);
+  wrapper.memoizedProps={...wrapper.memoizedProps,marker:2};
+  await runtime.rollback(2);
+  assert.equal(body.memoizedState.memoizedState,'second');assert.equal(runtime.probeFocus(second).focus,body);
+  await runtime.rollback(1);
+  assert.equal(body.memoizedState.memoizedState,'first');assert.equal(runtime.probeFocus(first).focus,body);
+  assert.equal(hidden,0,'Back between form steps must not dismiss the native modal');
+  await runtime.rollback();
+  assert.deepEqual(states,['first','second','third','second','first']);
+  assert.equal(hidden,1);assert.equal(dismissed,1);assert.equal(runtime.checkpoint(),0);
+  assert.equal(wrapper.memoizedProps.children,original);assert.equal(wrapper.memoizedProps.marker,2);
+  assert.equal(app.control.closes,0);assert.equal(runtime.diagnostics().projections,0);
+ });
+}

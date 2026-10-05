@@ -413,3 +413,10 @@ path with unchanged names, units and boundaries. Resource sampling still measure
 the app process. Controller references, props, native events and source evidence
 stay local and never enter metrics or Sentry. Observer cleanup and native
 dismissal regression tests cover the narrower scope.
+
+Since 0.1.156, nested temporary form steps share one shown preview modal. Back
+restores the prior copied body and finite hook state before the outer modal
+closes. Existing presentation, restoration and runtime timing windows cover
+this path with unchanged names, milliseconds and boundaries. App memory
+sampling still measures the app process. Copied state, props, source evidence
+and native lifecycle events stay local. No per-step telemetry was added.
