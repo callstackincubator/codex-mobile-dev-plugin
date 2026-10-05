@@ -185,3 +185,29 @@ test('failed native dismissal reconnects despite a healthy heartbeat and closes 
   assert.equal(runs.read(run.id).nodes.find(node=>node.presentation)?.status,'captured');
   assert.ok(events.indexOf('2:presentation-rollback')<events.indexOf('2:recover'));
 });
+
+test('diagnostics use the reconnected inspector while native dismissal is pending',async t=>{
+  let connections=0,dismissing=false,released=false,release!:()=>void;
+  const wait=new Promise<void>(resolve=>{release=()=>{released=true;resolve()}});
+  const events:string[]=[];
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>graph(),connect:async()=>{
+    const generation=++connections;let screen='Home';
+    return {runtime:{async invoke(command){
+      const type=String(command.type);events.push(`${generation}:${type}`);
+      if(type==='inspect'||type==='resume')return {available:true};
+      if(type==='open'){screen=(command.path as string[])[0];if(generation===1&&screen==='Profile')throw Error('disconnected');return {ready:true,active:[screen],name:screen,signature:screen};}
+      if((type==='heartbeat'||type==='recover')&&generation===1)throw Error('disconnected');
+      if(type==='presentation-rollback'&&generation===2){dismissing=true;await wait;return {};}
+      if(type==='diagnostics')return {generation,dismissalWaiters:released?0:1};
+      if(type==='recover'&&generation===2)assert.equal(released,true);
+      return {found:true,active:[screen]};
+    },async close(){}},async screenshot(){return Buffer.from(screen)}};
+  }});
+  t.after(async()=>{release();await runs.close()});
+  const run=runs.start(input);await until(()=>dismissing);
+  assert.equal(runs.read(run.id).phase,'reconnecting');
+  assert.deepEqual((await runs.diagnostics(run.id)).runtime,{generation:2,dismissalWaiters:1});
+  release();await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
+  assert.equal(runs.read(run.id).phase,'complete');
+  assert.ok(events.indexOf('2:diagnostics')<events.indexOf('2:recover'));
+});

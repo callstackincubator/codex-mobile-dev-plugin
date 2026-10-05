@@ -321,6 +321,7 @@ export class AppFlowRuns {
           let next: FlowBackend | undefined;
           try {
             next = await connect();
+            active.runtime = next.runtime;
             const info = await abortable(next.runtime.invoke({ type: "resume" }, 2500), signal);
             if (!info?.available && !presentations) throw new Error("Waiting for the app's navigation container.");
             const restored=await next.runtime.invoke({type: "presentation-rollback"}, 10000);
@@ -332,6 +333,7 @@ export class AppFlowRuns {
             run.phase = "capturing"; run.revision++;
             return;
           } catch (error) {
+            if (active.runtime === next?.runtime) active.runtime = undefined;
             await next?.runtime.close({ restore: signal.aborted || error instanceof FlowAppFailure }).catch(() => {});
             if (signal.aborted || error instanceof FlowAppFailure) throw error;
           }

@@ -513,10 +513,17 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // the outer boundary, without arming idle child sheets that never opened.
     if(ancestors){
       const parents=records.filter(record=>scope.some(root=>inside(root,record.fiber)));
-      if(parents.length)return parents.filter(record=>!parents.some(other=>other!==record&&inside(other.fiber,record.fiber)));
+      if(parents.length){
+        const hosts=parents.filter(record=>record.fiber.tag===5),boundaries=hosts.length?hosts:parents;
+        return boundaries.filter(record=>!boundaries.some(other=>other!==record&&inside(other.fiber,record.fiber)));
+      }
     }
     const children=records.filter(record=>scope.some(root=>inside(record.fiber,root)));
-    return children.filter(record=>!children.some(other=>other!==record&&inside(record.fiber,other.fiber)));
+    // Class adapters often spread a cached handler into a native host. Their
+    // patched props need not receive that host's event. Prefer the actual
+    // Fabric dispatch target, retaining the class fallback for opaque portals.
+    const hosts=children.filter(record=>record.fiber.tag===5),boundaries=hosts.length?hosts:children;
+    return boundaries.filter(record=>!boundaries.some(other=>other!==record&&inside(record.fiber,other.fiber)));
   }
   function beginDismissal(entry,focus,ancestors=false) {
     entry.native=watchNative(focus,false,ancestors).map(record=>record.status);
@@ -545,7 +552,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   function motion(focus,viewport,tree=index(),scope=roots(focus,tree)) {
     for(const [canonical,record]of nativeRecords)if(!tree.current.has(record.fiber)&&!tree.current.has(record.fiber?.alternate)){forgetNative(record);nativeRecords.delete(canonical);}
-    let pending=[...nativeRecords.values()].some(r=>r.status.pending&&scope.some(root=>inside(r.fiber,root)||inside(root,r.fiber)));const boxes=[];
+    const related=[...nativeRecords.values()].filter(r=>scope.some(root=>inside(r.fiber,root)||inside(root,r.fiber)));
+    const hosts=related.filter(r=>r.fiber.tag===5),boundaries=hosts.length?hosts:related;
+    let pending=boundaries.some(r=>r.status.pending);const boxes=[];
     const relevant=new Set();
     // Build the same connected-body and ancestor set without testing every
     // offscreen feed fiber against each parent chain. Preserve mounted order.
@@ -556,7 +565,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     for(const fiber of tree.all){
       if(!relevant.has(fiber))continue;
       const canonical=fiber.stateNode?.canonical,record=canonical&&nativeRecords.get(canonical);
-      if(record?.status.pending)pending=true;
+      if(record?.status.pending&&(!hosts.length||fiber.tag===5))pending=true;
       // Remaining hosts still contribute transition events, but their bounds
       // cannot change this capped signature. Avoid extra Fabric layout reads.
       if(boxes.length>=24)continue;
@@ -646,6 +655,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const tree=index(),currentFocus=focus&&tree.current.get(focus),connected=roots(currentFocus,tree);
     return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:viewport=>motion(currentFocus,viewport,tree,connected)};
   }
-  const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,checkpoints:undo.length,projections:projected.length});
+  const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length});
   return {collect,records,configure,list,open,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

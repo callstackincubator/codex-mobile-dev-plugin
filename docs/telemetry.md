@@ -367,3 +367,10 @@ releases a child checkpoint or unmounts a parent. Existing presentation and
 Runtime rollback failures identify the same fixed operation name. Reconnect
 closes presentations before route recovery. No event payload, app state or source
 path enters telemetry; native observer and preview cleanup remain bounded.
+
+Since 0.1.150, native lifecycle observation prefers the Fabric host when a class
+adapter holds cached event props. Local diagnostics count host observers, pending
+host events and dismissal waiters, and use the new inspector while reconnect
+cleanup is pending. These bounded counts contain no app content. Existing runtime,
+presentation, reconnect and restoration measurements keep their names, units and
+boundaries; no new per-event telemetry is sent.

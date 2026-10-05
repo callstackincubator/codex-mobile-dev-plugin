@@ -1147,3 +1147,44 @@ test('concurrent rollback requests wait for one native dismissal',async()=>{
   await Promise.all([app.runtime.rollback(),app.runtime.rollback()]);
   assert.equal(app.control.closes,1);assert.equal(app.runtime.checkpoint(),0);app.runtime.cleanup();
 });
+
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresentationRuntime)]){
+  test(`native lifecycle uses a host event behind a class adapter with cached props (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+    const app=tree(install);let events=0;
+    const props={onStateChange(){events++}},instance={props};
+    const adapter:any={tag:1,type:function NativeAdapter(){},memoizedProps:props,stateNode:instance,return:app.sheet};
+    const canonical={currentProps:props,publicInstance:{getBoundingClientRect:()=>({x:0,y:0,width:100,height:200})}};
+    const host:any={tag:5,type:'NativeSheetHost',memoizedProps:props,stateNode:{canonical},return:adapter,child:app.nested};
+    app.sheet.child=adapter;adapter.child=host;app.nested.return=host;
+    // The adapter passed its handler during render. Native events call the
+    // host's props, rather than looking up the adapter's patched props.
+    app.control.open=()=>canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});
+    app.control.close=()=>{app.control.closes++;setTimeout(()=>canonical.currentProps.onStateChange({nativeEvent:{state:'closed'}}),20)};
+    app.runtime.open('open');assert.equal(app.runtime.motion(app.sheet).pending,false);
+    app.runtime.focused(app.nested);await app.runtime.rollback();
+    assert.equal(app.runtime.checkpoint(),0);assert.equal(app.control.closes,1);assert.equal(events,2);
+    assert.equal(instance.props,props);assert.equal(canonical.currentProps,props);app.runtime.cleanup();
+  });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresentationRuntime)]){
+  test(`a cached adapter in a portal waits on its actual native host (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+    const app=tree(install);let events=0;
+    const props={onStateChange(){events++}},instance={props};
+    function NativeAdapter(){}
+    const canonical={currentProps:props,publicInstance:{getBoundingClientRect:()=>({x:0,y:0,width:100,height:200})}};
+    const adapter:any={tag:1,type:NativeAdapter,memoizedProps:props,stateNode:instance,return:app.root};
+    const host:any={tag:5,type:'NativeSheetHost',memoizedProps:props,stateNode:{canonical},return:adapter,child:app.nested};
+    adapter.child=host;app.nested.return=host;app.sheet.sibling=adapter;
+    app.sheet.child={type:function Portal(){},memoizedProps:{children:{type:NativeAdapter,props}},return:app.sheet};
+    app.control.open=()=>canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});
+    app.control.close=()=>{app.control.closes++;setTimeout(()=>canonical.currentProps.onStateChange({nativeEvent:{state:'closed'}}),20)};
+    app.runtime.open('open');assert.equal(app.runtime.motion(app.sheet).pending,false);
+    app.runtime.focused(app.nested);const closing=app.runtime.rollback();
+    await new Promise(resolve=>setTimeout(resolve,5));
+    assert.equal(app.runtime.checkpoint(),1);assert.equal(app.runtime.diagnostics().dismissalWaiters,1);
+    await closing;assert.equal(app.runtime.checkpoint(),0);assert.equal(events,2);assert.equal(app.control.closes,1);
+    assert.equal(instance.props,props);assert.equal(canonical.currentProps,props);app.runtime.cleanup();
+  });
+}
