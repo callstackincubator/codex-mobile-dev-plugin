@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="d49fa7ed-c302-5780-a5d7-edf750a5fca2")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="eef28f95-7232-5f7a-a073-50472fbce6be")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -15493,11 +15493,11 @@ function _stringbool(Classes, _params) {
   const _Boolean = Classes.Boolean ?? $ZodBoolean;
   const _String = Classes.String ?? $ZodString;
   const stringSchema = new _String({ type: "string", error: params.error });
-  const booleanSchema = new _Boolean({ type: "boolean", error: params.error });
+  const booleanSchema2 = new _Boolean({ type: "boolean", error: params.error });
   const codec3 = new _Codec({
     type: "pipe",
     in: stringSchema,
-    out: booleanSchema,
+    out: booleanSchema2,
     transform: ((input2, payload) => {
       let data = input2;
       if (params.case !== "sensitive")
@@ -19483,27 +19483,27 @@ function convertBaseSchema(schema2, ctx) {
     }
     case "number":
     case "integer": {
-      let numberSchema = type === "integer" ? z.number().int() : z.number();
+      let numberSchema2 = type === "integer" ? z.number().int() : z.number();
       if (typeof schema2.minimum === "number" && schema2.exclusiveMinimum !== true) {
-        numberSchema = numberSchema.min(schema2.minimum);
+        numberSchema2 = numberSchema2.min(schema2.minimum);
       }
       if (typeof schema2.maximum === "number" && schema2.exclusiveMaximum !== true) {
-        numberSchema = numberSchema.max(schema2.maximum);
+        numberSchema2 = numberSchema2.max(schema2.maximum);
       }
       if (typeof schema2.exclusiveMinimum === "number") {
-        numberSchema = numberSchema.gt(schema2.exclusiveMinimum);
+        numberSchema2 = numberSchema2.gt(schema2.exclusiveMinimum);
       } else if (schema2.exclusiveMinimum === true && typeof schema2.minimum === "number") {
-        numberSchema = numberSchema.gt(schema2.minimum);
+        numberSchema2 = numberSchema2.gt(schema2.minimum);
       }
       if (typeof schema2.exclusiveMaximum === "number") {
-        numberSchema = numberSchema.lt(schema2.exclusiveMaximum);
+        numberSchema2 = numberSchema2.lt(schema2.exclusiveMaximum);
       } else if (schema2.exclusiveMaximum === true && typeof schema2.maximum === "number") {
-        numberSchema = numberSchema.lt(schema2.maximum);
+        numberSchema2 = numberSchema2.lt(schema2.maximum);
       }
       if (typeof schema2.multipleOf === "number") {
-        numberSchema = numberSchema.multipleOf(schema2.multipleOf);
+        numberSchema2 = numberSchema2.multipleOf(schema2.multipleOf);
       }
-      zodSchema = numberSchema;
+      zodSchema = numberSchema2;
       break;
     }
     case "boolean": {
@@ -61661,10 +61661,10 @@ function dump(code, filename) {
   const path = require$$14;
   const fs = require$$04;
   const base = process.env.TRACING_DUMP_DIR ?? os4.tmpdir();
-  const dirname7 = path.dirname(filename);
-  const basename3 = path.basename(filename);
-  const targetDir = path.join(base, dirname7.slice(path.parse(dirname7).root.length));
-  const targetFile = path.join(targetDir, basename3);
+  const dirname8 = path.dirname(filename);
+  const basename4 = path.basename(filename);
+  const targetDir = path.join(base, dirname8.slice(path.parse(dirname8).root.length));
+  const targetFile = path.join(targetDir, basename4);
   debug2("Dumping patched code to: %s", targetFile);
   fs.mkdirSync(targetDir, { recursive: true });
   fs.writeFileSync(targetFile, code);
@@ -62470,7 +62470,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // src/shared/version.ts
-var PLUGIN_VERSION = "0.1.131";
+var PLUGIN_VERSION = "0.1.132";
 
 // src/shared/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -62842,7 +62842,7 @@ client?.on("spanStart", (span) => {
 });
 
 // src/server/index.ts
-import { readFile as readFile7 } from "node:fs/promises";
+import { readFile as readFile8 } from "node:fs/promises";
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
 import process2 from "node:process";
@@ -65137,6 +65137,12 @@ function androidDeviceState(output2, serial) {
 }
 
 // src/server/telemetry.ts
+function recordPluginUpdate(operation, outcome, duration6) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", operation, outcome };
+  public_api_exports.count("plugin.update.operations", 1, { attributes });
+  public_api_exports.gauge("plugin.update.duration", duration6, { unit: "millisecond", attributes });
+}
 function recordAndroidBackendStartup(duration6, outcome) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };
@@ -65436,11 +65442,13 @@ function addToolIcons(server, icons) {
   };
 }
 
-// src/shared/live-ui.ts
-var LIVE_UI_URI = "ui://mobile-dev/live";
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.js
-import tr_ch_apm_dc from "diagnostics_channel";
+// src/server/plugin-updates.ts
+import { execFile as execFile2 } from "node:child_process";
+import { mkdir, readFile as readFile3, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { homedir as homedir3 } from "node:os";
+import { basename as basename2, dirname as dirname4, isAbsolute as isAbsolute3, join as join10 } from "node:path";
+import { promisify as promisify2 } from "node:util";
 
 // node_modules/zod/v3/helpers/util.js
 var util2;
@@ -71860,6 +71868,377 @@ function mergeCapabilities(base, additional) {
   return result4;
 }
 
+// node_modules/@modelcontextprotocol/ext-apps/dist/src/server/index.js
+init_v4();
+var r2 = ((Z) => typeof __require < "u" ? __require : typeof Proxy < "u" ? new Proxy(Z, { get: ($, J) => (typeof __require < "u" ? __require : $)[J] }) : Z)(function(Z) {
+  if (typeof __require < "u") return __require.apply(this, arguments);
+  throw Error('Dynamic require of "' + Z + '" is not supported');
+});
+var v2 = external_exports.union([external_exports.literal("light"), external_exports.literal("dark")]).describe("Color theme preference for the host environment.");
+var K = external_exports.union([external_exports.literal("inline"), external_exports.literal("fullscreen"), external_exports.literal("pip")]).describe("Display mode for UI presentation.");
+var QQ = external_exports.union([external_exports.literal("--color-background-primary"), external_exports.literal("--color-background-secondary"), external_exports.literal("--color-background-tertiary"), external_exports.literal("--color-background-inverse"), external_exports.literal("--color-background-ghost"), external_exports.literal("--color-background-info"), external_exports.literal("--color-background-danger"), external_exports.literal("--color-background-success"), external_exports.literal("--color-background-warning"), external_exports.literal("--color-background-disabled"), external_exports.literal("--color-text-primary"), external_exports.literal("--color-text-secondary"), external_exports.literal("--color-text-tertiary"), external_exports.literal("--color-text-inverse"), external_exports.literal("--color-text-ghost"), external_exports.literal("--color-text-info"), external_exports.literal("--color-text-danger"), external_exports.literal("--color-text-success"), external_exports.literal("--color-text-warning"), external_exports.literal("--color-text-disabled"), external_exports.literal("--color-border-primary"), external_exports.literal("--color-border-secondary"), external_exports.literal("--color-border-tertiary"), external_exports.literal("--color-border-inverse"), external_exports.literal("--color-border-ghost"), external_exports.literal("--color-border-info"), external_exports.literal("--color-border-danger"), external_exports.literal("--color-border-success"), external_exports.literal("--color-border-warning"), external_exports.literal("--color-border-disabled"), external_exports.literal("--color-ring-primary"), external_exports.literal("--color-ring-secondary"), external_exports.literal("--color-ring-inverse"), external_exports.literal("--color-ring-info"), external_exports.literal("--color-ring-danger"), external_exports.literal("--color-ring-success"), external_exports.literal("--color-ring-warning"), external_exports.literal("--font-sans"), external_exports.literal("--font-mono"), external_exports.literal("--font-weight-normal"), external_exports.literal("--font-weight-medium"), external_exports.literal("--font-weight-semibold"), external_exports.literal("--font-weight-bold"), external_exports.literal("--font-text-xs-size"), external_exports.literal("--font-text-sm-size"), external_exports.literal("--font-text-md-size"), external_exports.literal("--font-text-lg-size"), external_exports.literal("--font-heading-xs-size"), external_exports.literal("--font-heading-sm-size"), external_exports.literal("--font-heading-md-size"), external_exports.literal("--font-heading-lg-size"), external_exports.literal("--font-heading-xl-size"), external_exports.literal("--font-heading-2xl-size"), external_exports.literal("--font-heading-3xl-size"), external_exports.literal("--font-text-xs-line-height"), external_exports.literal("--font-text-sm-line-height"), external_exports.literal("--font-text-md-line-height"), external_exports.literal("--font-text-lg-line-height"), external_exports.literal("--font-heading-xs-line-height"), external_exports.literal("--font-heading-sm-line-height"), external_exports.literal("--font-heading-md-line-height"), external_exports.literal("--font-heading-lg-line-height"), external_exports.literal("--font-heading-xl-line-height"), external_exports.literal("--font-heading-2xl-line-height"), external_exports.literal("--font-heading-3xl-line-height"), external_exports.literal("--border-radius-xs"), external_exports.literal("--border-radius-sm"), external_exports.literal("--border-radius-md"), external_exports.literal("--border-radius-lg"), external_exports.literal("--border-radius-xl"), external_exports.literal("--border-radius-full"), external_exports.literal("--border-width-regular"), external_exports.literal("--shadow-hairline"), external_exports.literal("--shadow-sm"), external_exports.literal("--shadow-md"), external_exports.literal("--shadow-lg")]).describe("CSS variable keys available to MCP apps for theming.");
+var ZQ = external_exports.record(QQ.describe(`Style variables for theming MCP apps.
+
+Individual style keys are optional - hosts may provide any subset of these values.
+Values are strings containing CSS values (colors, sizes, font stacks, etc.).
+
+Note: This type uses \`Record<K, string | undefined>\` rather than \`Partial<Record<K, string>>\`
+for compatibility with Zod schema generation. Both are functionally equivalent for validation.`), external_exports.union([external_exports.string(), external_exports.undefined()]).describe(`Style variables for theming MCP apps.
+
+Individual style keys are optional - hosts may provide any subset of these values.
+Values are strings containing CSS values (colors, sizes, font stacks, etc.).
+
+Note: This type uses \`Record<K, string | undefined>\` rather than \`Partial<Record<K, string>>\`
+for compatibility with Zod schema generation. Both are functionally equivalent for validation.`)).describe(`Style variables for theming MCP apps.
+
+Individual style keys are optional - hosts may provide any subset of these values.
+Values are strings containing CSS values (colors, sizes, font stacks, etc.).
+
+Note: This type uses \`Record<K, string | undefined>\` rather than \`Partial<Record<K, string>>\`
+for compatibility with Zod schema generation. Both are functionally equivalent for validation.`);
+var $Q = external_exports.object({ method: external_exports.literal("ui/open-link"), params: external_exports.object({ url: external_exports.string().describe("URL to open in the host's browser") }) });
+var I = external_exports.object({ isError: external_exports.boolean().optional().describe("True if the host failed to open the URL (e.g., due to security policy).") }).passthrough();
+var P2 = external_exports.object({ isError: external_exports.boolean().optional().describe("True if the download failed (e.g., user cancelled or host denied).") }).passthrough();
+var w2 = external_exports.object({ isError: external_exports.boolean().optional().describe("True if the host rejected or failed to deliver the message.") }).passthrough();
+var JQ = external_exports.object({ method: external_exports.literal("ui/notifications/sandbox-proxy-ready"), params: external_exports.object({}) });
+var Y = external_exports.object({ connectDomains: external_exports.array(external_exports.string()).optional().describe(`Origins for network requests (fetch/XHR/WebSocket).
+
+- Maps to CSP \`connect-src\` directive
+- Empty or omitted \u2192 no network connections (secure default)`), resourceDomains: external_exports.array(external_exports.string()).optional().describe("Origins for static resources (images, scripts, stylesheets, fonts, media).\n\n- Maps to CSP `img-src`, `script-src`, `style-src`, `font-src`, `media-src` directives\n- Wildcard subdomains supported: `https://*.example.com`\n- Empty or omitted \u2192 no network resources (secure default)"), frameDomains: external_exports.array(external_exports.string()).optional().describe("Origins for nested iframes.\n\n- Maps to CSP `frame-src` directive\n- Empty or omitted \u2192 no nested iframes allowed (`frame-src 'none'`)"), baseUriDomains: external_exports.array(external_exports.string()).optional().describe("Allowed base URIs for the document.\n\n- Maps to CSP `base-uri` directive\n- Empty or omitted \u2192 only same origin allowed (`base-uri 'self'`)") });
+var j = external_exports.object({ camera: external_exports.object({}).optional().describe("Request camera access.\n\nMaps to Permission Policy `camera` feature."), microphone: external_exports.object({}).optional().describe("Request microphone access.\n\nMaps to Permission Policy `microphone` feature."), geolocation: external_exports.object({}).optional().describe("Request geolocation access.\n\nMaps to Permission Policy `geolocation` feature."), clipboardWrite: external_exports.object({}).optional().describe("Request clipboard write access.\n\nMaps to Permission Policy `clipboard-write` feature.") });
+var XQ = external_exports.object({ method: external_exports.literal("ui/notifications/size-changed"), params: external_exports.object({ width: external_exports.number().optional().describe("New width in pixels."), height: external_exports.number().optional().describe("New height in pixels.") }) });
+var H = external_exports.object({ method: external_exports.literal("ui/notifications/tool-input"), params: external_exports.object({ arguments: external_exports.record(external_exports.string(), external_exports.unknown().describe("Complete tool call arguments as key-value pairs.")).optional().describe("Complete tool call arguments as key-value pairs.") }) });
+var _ = external_exports.object({ method: external_exports.literal("ui/notifications/tool-input-partial"), params: external_exports.object({ arguments: external_exports.record(external_exports.string(), external_exports.unknown().describe("Partial tool call arguments (incomplete, may change).")).optional().describe("Partial tool call arguments (incomplete, may change).") }) });
+var A2 = external_exports.object({ method: external_exports.literal("ui/notifications/tool-cancelled"), params: external_exports.object({ reason: external_exports.string().optional().describe('Optional reason for the cancellation (e.g., "user action", "timeout").') }) });
+var f2 = external_exports.object({ fonts: external_exports.string().optional() });
+var u2 = external_exports.object({ variables: ZQ.optional().describe("CSS variables for theming the app."), css: f2.optional().describe("CSS blocks that apps can inject.") });
+var E = external_exports.object({ method: external_exports.literal("ui/resource-teardown"), params: external_exports.object({}) });
+var VQ = external_exports.record(external_exports.string(), external_exports.unknown());
+var O = external_exports.object({ text: external_exports.object({}).optional().describe("Host supports text content blocks."), image: external_exports.object({}).optional().describe("Host supports image content blocks."), audio: external_exports.object({}).optional().describe("Host supports audio content blocks."), resource: external_exports.object({}).optional().describe("Host supports resource content blocks."), resourceLink: external_exports.object({}).optional().describe("Host supports resource link content blocks."), structuredContent: external_exports.object({}).optional().describe("Host supports structured content.") });
+var DQ = external_exports.object({ method: external_exports.literal("ui/notifications/request-teardown"), params: external_exports.object({}).optional() });
+var d4 = external_exports.object({ experimental: external_exports.record(external_exports.string(), external_exports.record(external_exports.string(), external_exports.any()).describe("Experimental features keyed by identifier.")).optional().describe("Experimental features keyed by identifier."), openLinks: external_exports.object({}).optional().describe("Host supports opening external URLs."), downloadFile: external_exports.object({}).optional().describe("Host supports file downloads via ui/download-file."), serverTools: external_exports.object({ listChanged: external_exports.boolean().optional().describe("Host supports tools/list_changed notifications.") }).optional().describe("Host can proxy tool calls to the MCP server."), serverResources: external_exports.object({ listChanged: external_exports.boolean().optional().describe("Host supports resources/list_changed notifications.") }).optional().describe("Host can proxy resource reads to the MCP server."), logging: external_exports.object({}).optional().describe("Host accepts log messages."), sandbox: external_exports.object({ permissions: j.optional().describe("Permissions granted by the host (camera, microphone, geolocation)."), csp: Y.optional().describe("CSP domains approved by the host.") }).optional().describe("Sandbox configuration applied by the host."), updateModelContext: O.optional().describe("Host accepts context updates (ui/update-model-context) to be included in the model's context for future turns."), message: O.optional().describe("Host supports receiving content messages (ui/message) from the view."), sampling: external_exports.object({ tools: external_exports.object({}).optional().describe("Host supports tool use via `tools` and `toolChoice` parameters.") }).optional().describe("Host supports LLM sampling (sampling/createMessage) from the view.\nMirrors the MCP `ClientCapabilities.sampling` shape so hosts can pass it through.") });
+var h3 = external_exports.object({ experimental: external_exports.record(external_exports.string(), external_exports.record(external_exports.string(), external_exports.any()).describe("Experimental features keyed by identifier.")).optional().describe("Experimental features keyed by identifier."), tools: external_exports.object({ listChanged: external_exports.boolean().optional().describe("App supports tools/list_changed notifications.") }).optional().describe("App exposes MCP-style tools that the host can call."), availableDisplayModes: external_exports.array(K).optional().describe("Display modes the app supports.") });
+var LQ = external_exports.object({ method: external_exports.literal("ui/notifications/initialized"), params: external_exports.object({}).optional() });
+var WQ = external_exports.object({ csp: Y.optional().describe("Content Security Policy configuration for UI resources."), permissions: j.optional().describe("Sandbox permissions requested by the UI resource."), domain: external_exports.string().optional().describe(`Dedicated origin for view sandbox.
+
+Useful when views need stable, dedicated origins for OAuth callbacks, CORS policies, or API key allowlists.
+
+**Host-dependent:** The format and validation rules for this field are determined by each host. Servers MUST consult host-specific documentation for the expected domain format. Common patterns include:
+- Hash-based subdomains (e.g., \`{hash}.claudemcpcontent.com\`)
+- URL-derived subdomains (e.g., \`www-example-com.oaiusercontent.com\`)
+
+If omitted, host uses default sandbox origin (typically per-conversation).`), prefersBorder: external_exports.boolean().optional().describe(`Visual boundary preference - true if view prefers a visible border.
+
+Boolean requesting whether a visible border and background is provided by the host. Specifying an explicit value for this is recommended because hosts' defaults may vary.
+
+- \`true\`: request visible border + background
+- \`false\`: request no visible border + background
+- omitted: host decides border`) });
+var BQ = external_exports.object({ method: external_exports.literal("ui/request-display-mode"), params: external_exports.object({ mode: K.describe("The display mode being requested.") }) });
+var R = external_exports.object({ mode: K.describe("The display mode that was actually set. May differ from requested if not supported.") }).passthrough();
+var m4 = external_exports.union([external_exports.literal("model"), external_exports.literal("app")]).describe("Tool visibility scope - who can access the tool.");
+var GQ = external_exports.object({ resourceUri: external_exports.string().optional(), visibility: external_exports.array(m4).optional().describe(`Who can access this tool. Default: ["model", "app"]
+- "model": Tool visible to and callable by the agent
+- "app": Tool callable by the app from this server only`), csp: external_exports.never().optional(), permissions: external_exports.never().optional() });
+var dQ = external_exports.object({ mimeTypes: external_exports.array(external_exports.string()).optional().describe('Array of supported MIME types for UI resources.\nMust include `"text/html;profile=mcp-app"` for MCP Apps support.') });
+var KQ = external_exports.object({ method: external_exports.literal("ui/download-file"), params: external_exports.object({ contents: external_exports.array(external_exports.union([EmbeddedResourceSchema, ResourceLinkSchema])).describe("Resource contents to download \u2014 embedded (inline data) or linked (host fetches). Uses standard MCP resource types.") }) });
+var NQ = external_exports.object({ method: external_exports.literal("ui/message"), params: external_exports.object({ role: external_exports.literal("user").describe('Message role, currently only "user" is supported.'), content: external_exports.array(ContentBlockSchema).describe("Message content blocks (text, image, etc.).") }) });
+var YQ = external_exports.object({ method: external_exports.literal("ui/notifications/sandbox-resource-ready"), params: external_exports.object({ html: external_exports.string().describe("HTML content to load into the inner iframe."), sandbox: external_exports.string().optional().describe("Optional override for the inner iframe's sandbox attribute."), csp: Y.optional().describe("CSP configuration from resource metadata."), permissions: j.optional().describe("Sandbox permissions from resource metadata.") }) });
+var U = external_exports.object({ method: external_exports.literal("ui/notifications/tool-result"), params: CallToolResultSchema.describe("Standard MCP tool execution result.") });
+var T = external_exports.object({ toolInfo: external_exports.object({ id: RequestIdSchema.optional().describe("JSON-RPC id of the tools/call request."), tool: ToolSchema.describe("Tool definition including name, inputSchema, etc.") }).optional().describe("Metadata of the tool call that instantiated this App."), theme: v2.optional().describe("Current color theme preference."), styles: u2.optional().describe("Style configuration for theming the app."), displayMode: K.optional().describe("How the UI is currently displayed."), availableDisplayModes: external_exports.array(K).optional().describe("Display modes the host supports."), containerDimensions: external_exports.union([external_exports.object({ height: external_exports.number().describe("Fixed container height in pixels.") }), external_exports.object({ maxHeight: external_exports.union([external_exports.number(), external_exports.undefined()]).optional().describe("Maximum container height in pixels.") })]).and(external_exports.union([external_exports.object({ width: external_exports.number().describe("Fixed container width in pixels.") }), external_exports.object({ maxWidth: external_exports.union([external_exports.number(), external_exports.undefined()]).optional().describe("Maximum container width in pixels.") })])).optional().describe(`Container dimensions. Represents the dimensions of the iframe or other
+container holding the app. Specify either width or maxWidth, and either height or maxHeight.`), locale: external_exports.string().optional().describe("User's language and region preference in BCP 47 format."), timeZone: external_exports.string().optional().describe("User's timezone in IANA format."), userAgent: external_exports.string().optional().describe("Host application identifier."), platform: external_exports.union([external_exports.literal("web"), external_exports.literal("desktop"), external_exports.literal("mobile")]).optional().describe("Platform type for responsive design decisions."), deviceCapabilities: external_exports.object({ touch: external_exports.boolean().optional().describe("Whether the device supports touch input."), hover: external_exports.boolean().optional().describe("Whether the device supports hover interactions.") }).optional().describe("Device input capabilities."), safeAreaInsets: external_exports.object({ top: external_exports.number().describe("Top safe area inset in pixels."), right: external_exports.number().describe("Right safe area inset in pixels."), bottom: external_exports.number().describe("Bottom safe area inset in pixels."), left: external_exports.number().describe("Left safe area inset in pixels.") }).optional().describe("Mobile safe area boundaries in pixels.") }).passthrough();
+var k = external_exports.object({ method: external_exports.literal("ui/notifications/host-context-changed"), params: T.describe("Partial context update containing only changed fields.") });
+var jQ = external_exports.object({ method: external_exports.literal("ui/update-model-context"), params: external_exports.object({ content: external_exports.array(ContentBlockSchema).optional().describe("Context content blocks (text, image, etc.)."), structuredContent: external_exports.record(external_exports.string(), external_exports.unknown().describe("Structured content for machine-readable context data.")).optional().describe("Structured content for machine-readable context data.") }) });
+var FQ = external_exports.object({ method: external_exports.literal("ui/initialize"), params: external_exports.object({ appInfo: ImplementationSchema.describe("App identification (name and version)."), appCapabilities: h3.describe("Features and capabilities this app provides."), protocolVersion: external_exports.string().describe("Protocol version this app supports.") }) });
+var M = external_exports.object({ protocolVersion: external_exports.string().describe('Negotiated protocol version string (e.g., "2025-11-21").'), hostInfo: ImplementationSchema.describe("Host application identification and version."), hostCapabilities: d4.describe("Features and capabilities provided by the host."), hostContext: T.describe("Rich context about the host environment.") }).passthrough();
+var C = "ui/resourceUri";
+var p3 = "text/html;profile=mcp-app";
+function K3(Z, $, J, X) {
+  let V = J._meta, D2 = V.ui, L2 = V[C], W = V;
+  if (D2?.resourceUri && !L2) W = { ...V, [C]: D2.resourceUri };
+  else if (L2 && !D2?.resourceUri) W = { ...V, ui: { ...D2, resourceUri: L2 } };
+  return Z.registerTool($, { ...J, _meta: W }, X);
+}
+function N3(Z, $, J, X, V) {
+  return Z.registerResource($, J, { mimeType: p3, ...X }, V);
+}
+
+// src/shared/plugin-updates.ts
+var versionTextSchema = external_exports.string();
+var releaseVersionSchema = versionTextSchema.regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
+var statusSchema = external_exports.enum(["disabled", "unavailable", "current", "available", "updated"]);
+var optionalVersionSchema = releaseVersionSchema.optional();
+var pluginUpdateSchema = external_exports.object({
+  status: statusSchema,
+  currentVersion: releaseVersionSchema,
+  latestVersion: optionalVersionSchema
+});
+function compareReleaseVersions(left, right) {
+  const leftParts = left.split(".");
+  const rightParts = right.split(".");
+  for (let index = 0; index < 3; index++) {
+    const leftNumber = BigInt(leftParts[index]);
+    const rightNumber = BigInt(rightParts[index]);
+    if (leftNumber !== rightNumber) return leftNumber > rightNumber ? 1 : -1;
+  }
+  return 0;
+}
+
+// src/server/plugin-updates.ts
+var execute = promisify2(execFile2);
+var repository = "callstackincubator/codex-mobile-dev-plugin";
+var releaseEndpoint = `https://api.github.com/repos/${repository}/releases/latest`;
+var marketplaceEndpoint = `https://raw.githubusercontent.com/${repository}/release/latest/plugins/mobile-dev/.codex-plugin/plugin.json`;
+var checkIntervalMs = 60 * 60 * 1e3;
+var failedCheckIntervalMs = 15 * 60 * 1e3;
+var numberSchema = external_exports.number();
+var timestampSchema = numberSchema.nonnegative();
+var optionalVersionSchema2 = releaseVersionSchema.optional();
+var cacheSchema = external_exports.object({ checkedAt: timestampSchema, latestVersion: optionalVersionSchema2, installedVersion: optionalVersionSchema2 });
+var pluginNameSchema = external_exports.literal("mobile-dev");
+var manifestSchema = external_exports.object({ name: pluginNameSchema, version: releaseVersionSchema });
+var textSchema = external_exports.string();
+var falseSchema = external_exports.literal(false);
+var releaseSchema = external_exports.object({ tag_name: textSchema, draft: falseSchema, prerelease: falseSchema });
+var sourceSchema = external_exports.object({ sourceType: textSchema, source: textSchema });
+var optionalSourceSchema = sourceSchema.optional();
+var marketplaceItemSchema = external_exports.object({ name: textSchema, root: textSchema, marketplaceSource: optionalSourceSchema });
+var marketplacesSchema = external_exports.array(marketplaceItemSchema);
+var marketplaceSchema = external_exports.object({ marketplaces: marketplacesSchema });
+var textsSchema = external_exports.array(textSchema);
+var unknownSchema = external_exports.unknown();
+var errorsSchema = external_exports.array(unknownSchema);
+var upgradeSchema = external_exports.object({ selectedMarketplaces: textsSchema, upgradedRoots: textsSchema, errors: errorsSchema });
+var booleanSchema = external_exports.boolean();
+var installedPluginSchema = external_exports.object({ pluginId: textSchema, version: textSchema, installed: booleanSchema });
+var installedPluginsSchema = external_exports.array(installedPluginSchema);
+var pluginsSchema = external_exports.object({ installed: installedPluginsSchema });
+var PluginUpdateError = class extends Error {
+};
+async function resolveCodexCli(parentPid = process.ppid) {
+  const pid3 = String(parentPid);
+  const result4 = await execute("/bin/ps", ["-p", pid3, "-o", "comm="], { timeout: 5e3, maxBuffer: 4096 });
+  const path = result4.stdout.trim();
+  const absolute = isAbsolute3(path);
+  const name = basename2(path);
+  if (absolute === false || name !== "codex") throw new PluginUpdateError("Could not locate the Codex executable that launched Mobile Dev.");
+  return path;
+}
+async function runCodex(args) {
+  const path = await resolveCodexCli();
+  try {
+    const result4 = await execute(path, args, { timeout: 12e4, maxBuffer: 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+    return JSON.parse(result4.stdout);
+  } catch {
+    throw new PluginUpdateError("Codex could not update Mobile Dev. Check your network connection and try again.");
+  }
+}
+function isReleaseRepository(source) {
+  return source === `https://github.com/${repository}` || source === `https://github.com/${repository}.git` || source === `git@github.com:${repository}.git` || source === `ssh://git@github.com/${repository}.git`;
+}
+var PluginUpdates = class {
+  enabled;
+  currentVersion;
+  profile;
+  cachePath;
+  fetch;
+  run;
+  now;
+  checking;
+  installing;
+  abort = new AbortController();
+  constructor(options = {}) {
+    this.enabled = options.enabled ?? resolveTelemetryEnvironment() === "release";
+    this.currentVersion = options.currentVersion ?? PLUGIN_VERSION;
+    const home2 = homedir3();
+    const defaultProfile = join10(home2, ".codex");
+    this.profile = options.profile ?? process.env.CODEX_HOME ?? defaultProfile;
+    this.cachePath = join10(this.profile, "mobile-dev", "updates.json");
+    this.fetch = options.fetch ?? fetch;
+    this.run = options.run ?? runCodex;
+    this.now = options.now ?? Date.now;
+  }
+  status(cache) {
+    const installed = cache.installedVersion;
+    if (installed !== void 0 && compareReleaseVersions(installed, this.currentVersion) > 0) {
+      return { status: "updated", currentVersion: this.currentVersion, latestVersion: installed };
+    }
+    const latest = cache.latestVersion;
+    if (latest === void 0) return { status: "unavailable", currentVersion: this.currentVersion };
+    const newer = compareReleaseVersions(latest, this.currentVersion) > 0;
+    return { status: newer ? "available" : "current", currentVersion: this.currentVersion, latestVersion: latest };
+  }
+  async readCache() {
+    try {
+      const text6 = await readFile3(this.cachePath, "utf8");
+      const data = JSON.parse(text6);
+      return cacheSchema.parse(data);
+    } catch {
+      return { checkedAt: 0 };
+    }
+  }
+  async saveCache(cache) {
+    const directory = dirname4(this.cachePath);
+    const id = randomUUID();
+    const temporary = `${this.cachePath}.${id}.tmp`;
+    try {
+      await mkdir(directory, { recursive: true });
+      const text6 = JSON.stringify(cache);
+      await writeFile(temporary, text6, { mode: 384 });
+      await rename(temporary, this.cachePath);
+    } catch {
+      throw new PluginUpdateError("Could not save the update status. Check free disk space and try again.");
+    } finally {
+      await rm(temporary, { force: true });
+    }
+  }
+  async readJson(url3) {
+    const timeout = AbortSignal.timeout(1e4);
+    const signal = AbortSignal.any([timeout, this.abort.signal]);
+    const response3 = await this.fetch(url3, { headers: { Accept: "application/vnd.github+json" }, signal, redirect: "error" });
+    if (response3.ok === false) throw new Error("Could not check for plugin updates.");
+    return response3.json();
+  }
+  check() {
+    if (this.enabled === false) return Promise.resolve({ status: "disabled", currentVersion: this.currentVersion });
+    if (this.installing !== void 0) return this.installing;
+    if (this.checking !== void 0) return this.checking;
+    const checking = this.checkLatest();
+    this.checking = checking.finally(() => {
+      this.checking = void 0;
+    });
+    return this.checking;
+  }
+  async checkLatest() {
+    const cache = await this.readCache();
+    const status = this.status(cache);
+    const age = this.now() - cache.checkedAt;
+    const interval = cache.latestVersion === void 0 ? failedCheckIntervalMs : checkIntervalMs;
+    if (status.status === "updated" || cache.checkedAt > 0 && age >= 0 && age < interval) return status;
+    const startedAt = performance.now();
+    const next = { checkedAt: this.now(), installedVersion: cache.installedVersion };
+    try {
+      const releaseData = this.readJson(releaseEndpoint);
+      const marketplaceData = this.readJson(marketplaceEndpoint);
+      const data = await Promise.all([releaseData, marketplaceData]);
+      const release2 = releaseSchema.parse(data[0]);
+      const manifest = manifestSchema.parse(data[1]);
+      if (release2.tag_name !== `v${manifest.version}`) throw new Error("The latest release is not available in the marketplace yet.");
+      next.latestVersion = manifest.version;
+    } catch {
+    }
+    try {
+      await this.saveCache(next);
+    } catch {
+      const error113 = new Error("Could not save the plugin update check.");
+      captureServerError(error113, "plugin.update.cache");
+      delete next.latestVersion;
+    }
+    const update = this.status(next);
+    const elapsed = performance.now() - startedAt;
+    recordPluginUpdate("check", update.status, elapsed);
+    return update;
+  }
+  install() {
+    if (this.enabled === false) {
+      const error113 = new Error("Development builds do not install public plugin updates.");
+      return Promise.reject(error113);
+    }
+    if (this.installing !== void 0) return this.installing;
+    const installing2 = this.installLatest();
+    this.installing = installing2.finally(() => {
+      this.installing = void 0;
+    });
+    return this.installing;
+  }
+  async installLatest() {
+    const startedAt = performance.now();
+    try {
+      const update = await this.check();
+      if (update.status === "updated") return update;
+      if (update.status !== "available" || update.latestVersion === void 0) throw new PluginUpdateError("No installable Mobile Dev update is available. Try again later.");
+      const listed = await this.run(["plugin", "marketplace", "list", "--json"]);
+      const marketplaces = marketplaceSchema.parse(listed);
+      const marketplace = marketplaces.marketplaces.find((item) => item.name === "mobile-dev");
+      const source = marketplace?.marketplaceSource;
+      if (marketplace === void 0 || source?.sourceType !== "git" || isReleaseRepository(source.source) === false) {
+        throw new PluginUpdateError("Mobile Dev must be installed from its public release marketplace to update here.");
+      }
+      const result4 = await this.run(["plugin", "marketplace", "upgrade", "mobile-dev", "--json"]);
+      const upgrade = upgradeSchema.parse(result4);
+      const selected = upgrade.selectedMarketplaces.includes("mobile-dev");
+      const refreshed = upgrade.upgradedRoots.includes(marketplace.root);
+      if (upgrade.errors.length > 0 || selected === false || refreshed === false) {
+        throw new PluginUpdateError("Codex could not refresh the Mobile Dev marketplace. Try again.");
+      }
+      const listedPlugins = await this.run(["plugin", "list", "--json"]);
+      const plugins = pluginsSchema.parse(listedPlugins);
+      const plugin2 = plugins.installed.find((item) => item.pluginId === "mobile-dev@mobile-dev" && item.installed);
+      const installedVersion = releaseVersionSchema.parse(plugin2?.version);
+      const path = join10(this.profile, "plugins/cache/mobile-dev/mobile-dev", installedVersion, ".codex-plugin/plugin.json");
+      const text6 = await readFile3(path, "utf8");
+      const data = JSON.parse(text6);
+      const installed = manifestSchema.parse(data);
+      if (installed.version !== installedVersion || compareReleaseVersions(installedVersion, update.latestVersion) < 0) {
+        throw new PluginUpdateError("The new Mobile Dev version has not been installed. Try again later.");
+      }
+      const cache = { checkedAt: this.now(), latestVersion: installedVersion, installedVersion };
+      await this.saveCache(cache);
+      const elapsed = performance.now() - startedAt;
+      recordPluginUpdate("install", "updated", elapsed);
+      return this.status(cache);
+    } catch (error113) {
+      const elapsed = performance.now() - startedAt;
+      recordPluginUpdate("install", "failed", elapsed);
+      const telemetryError = new Error("The plugin update failed.");
+      captureServerError(telemetryError, "plugin.update.install");
+      if (error113 instanceof PluginUpdateError) throw error113;
+      throw new PluginUpdateError("Could not verify the Mobile Dev update. Try again.");
+    }
+  }
+  close() {
+    this.abort.abort();
+  }
+};
+function registerPluginUpdateTools(server, updates) {
+  const visibility3 = ["app"];
+  const metadata4 = { ui: { visibility: visibility3 } };
+  const outputSchema2 = { update: pluginUpdateSchema };
+  K3(server, "mobile_check_plugin_update", {
+    title: "Check Mobile Dev updates",
+    description: "Check for an installable public Mobile Dev release.",
+    inputSchema: {},
+    outputSchema: outputSchema2,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    _meta: metadata4
+  }, async () => {
+    const update = await updates.check();
+    return { content: [], structuredContent: { update } };
+  });
+  K3(server, "mobile_install_plugin_update", {
+    title: "Update Mobile Dev",
+    description: "Install the available Mobile Dev release after the user clicks Update. Codex must be quit and reopened afterward.",
+    inputSchema: {},
+    outputSchema: outputSchema2,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    _meta: metadata4
+  }, async () => {
+    try {
+      const update = await updates.install();
+      return { content: [], structuredContent: { update } };
+    } catch (error113) {
+      const message2 = error113 instanceof Error ? error113.message : "Could not update Mobile Dev. Try again.";
+      return { isError: true, content: [{ type: "text", text: message2 }] };
+    }
+  });
+}
+
+// src/shared/live-ui.ts
+var LIVE_UI_URI = "ui://mobile-dev/live";
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.js
+import tr_ch_apm_dc from "diagnostics_channel";
+
 // node_modules/@modelcontextprotocol/sdk/dist/esm/validation/ajv-provider.js
 var import_ajv = __toESM(require_ajv(), 1);
 var import_ajv_formats = __toESM(require_dist(), 1);
@@ -73632,101 +74011,6 @@ var EMPTY_COMPLETION_RESULT = {
     hasMore: false
   }
 };
-
-// node_modules/@modelcontextprotocol/ext-apps/dist/src/server/index.js
-init_v4();
-var r2 = ((Z) => typeof __require < "u" ? __require : typeof Proxy < "u" ? new Proxy(Z, { get: ($, J) => (typeof __require < "u" ? __require : $)[J] }) : Z)(function(Z) {
-  if (typeof __require < "u") return __require.apply(this, arguments);
-  throw Error('Dynamic require of "' + Z + '" is not supported');
-});
-var v2 = external_exports.union([external_exports.literal("light"), external_exports.literal("dark")]).describe("Color theme preference for the host environment.");
-var K = external_exports.union([external_exports.literal("inline"), external_exports.literal("fullscreen"), external_exports.literal("pip")]).describe("Display mode for UI presentation.");
-var QQ = external_exports.union([external_exports.literal("--color-background-primary"), external_exports.literal("--color-background-secondary"), external_exports.literal("--color-background-tertiary"), external_exports.literal("--color-background-inverse"), external_exports.literal("--color-background-ghost"), external_exports.literal("--color-background-info"), external_exports.literal("--color-background-danger"), external_exports.literal("--color-background-success"), external_exports.literal("--color-background-warning"), external_exports.literal("--color-background-disabled"), external_exports.literal("--color-text-primary"), external_exports.literal("--color-text-secondary"), external_exports.literal("--color-text-tertiary"), external_exports.literal("--color-text-inverse"), external_exports.literal("--color-text-ghost"), external_exports.literal("--color-text-info"), external_exports.literal("--color-text-danger"), external_exports.literal("--color-text-success"), external_exports.literal("--color-text-warning"), external_exports.literal("--color-text-disabled"), external_exports.literal("--color-border-primary"), external_exports.literal("--color-border-secondary"), external_exports.literal("--color-border-tertiary"), external_exports.literal("--color-border-inverse"), external_exports.literal("--color-border-ghost"), external_exports.literal("--color-border-info"), external_exports.literal("--color-border-danger"), external_exports.literal("--color-border-success"), external_exports.literal("--color-border-warning"), external_exports.literal("--color-border-disabled"), external_exports.literal("--color-ring-primary"), external_exports.literal("--color-ring-secondary"), external_exports.literal("--color-ring-inverse"), external_exports.literal("--color-ring-info"), external_exports.literal("--color-ring-danger"), external_exports.literal("--color-ring-success"), external_exports.literal("--color-ring-warning"), external_exports.literal("--font-sans"), external_exports.literal("--font-mono"), external_exports.literal("--font-weight-normal"), external_exports.literal("--font-weight-medium"), external_exports.literal("--font-weight-semibold"), external_exports.literal("--font-weight-bold"), external_exports.literal("--font-text-xs-size"), external_exports.literal("--font-text-sm-size"), external_exports.literal("--font-text-md-size"), external_exports.literal("--font-text-lg-size"), external_exports.literal("--font-heading-xs-size"), external_exports.literal("--font-heading-sm-size"), external_exports.literal("--font-heading-md-size"), external_exports.literal("--font-heading-lg-size"), external_exports.literal("--font-heading-xl-size"), external_exports.literal("--font-heading-2xl-size"), external_exports.literal("--font-heading-3xl-size"), external_exports.literal("--font-text-xs-line-height"), external_exports.literal("--font-text-sm-line-height"), external_exports.literal("--font-text-md-line-height"), external_exports.literal("--font-text-lg-line-height"), external_exports.literal("--font-heading-xs-line-height"), external_exports.literal("--font-heading-sm-line-height"), external_exports.literal("--font-heading-md-line-height"), external_exports.literal("--font-heading-lg-line-height"), external_exports.literal("--font-heading-xl-line-height"), external_exports.literal("--font-heading-2xl-line-height"), external_exports.literal("--font-heading-3xl-line-height"), external_exports.literal("--border-radius-xs"), external_exports.literal("--border-radius-sm"), external_exports.literal("--border-radius-md"), external_exports.literal("--border-radius-lg"), external_exports.literal("--border-radius-xl"), external_exports.literal("--border-radius-full"), external_exports.literal("--border-width-regular"), external_exports.literal("--shadow-hairline"), external_exports.literal("--shadow-sm"), external_exports.literal("--shadow-md"), external_exports.literal("--shadow-lg")]).describe("CSS variable keys available to MCP apps for theming.");
-var ZQ = external_exports.record(QQ.describe(`Style variables for theming MCP apps.
-
-Individual style keys are optional - hosts may provide any subset of these values.
-Values are strings containing CSS values (colors, sizes, font stacks, etc.).
-
-Note: This type uses \`Record<K, string | undefined>\` rather than \`Partial<Record<K, string>>\`
-for compatibility with Zod schema generation. Both are functionally equivalent for validation.`), external_exports.union([external_exports.string(), external_exports.undefined()]).describe(`Style variables for theming MCP apps.
-
-Individual style keys are optional - hosts may provide any subset of these values.
-Values are strings containing CSS values (colors, sizes, font stacks, etc.).
-
-Note: This type uses \`Record<K, string | undefined>\` rather than \`Partial<Record<K, string>>\`
-for compatibility with Zod schema generation. Both are functionally equivalent for validation.`)).describe(`Style variables for theming MCP apps.
-
-Individual style keys are optional - hosts may provide any subset of these values.
-Values are strings containing CSS values (colors, sizes, font stacks, etc.).
-
-Note: This type uses \`Record<K, string | undefined>\` rather than \`Partial<Record<K, string>>\`
-for compatibility with Zod schema generation. Both are functionally equivalent for validation.`);
-var $Q = external_exports.object({ method: external_exports.literal("ui/open-link"), params: external_exports.object({ url: external_exports.string().describe("URL to open in the host's browser") }) });
-var I = external_exports.object({ isError: external_exports.boolean().optional().describe("True if the host failed to open the URL (e.g., due to security policy).") }).passthrough();
-var P2 = external_exports.object({ isError: external_exports.boolean().optional().describe("True if the download failed (e.g., user cancelled or host denied).") }).passthrough();
-var w2 = external_exports.object({ isError: external_exports.boolean().optional().describe("True if the host rejected or failed to deliver the message.") }).passthrough();
-var JQ = external_exports.object({ method: external_exports.literal("ui/notifications/sandbox-proxy-ready"), params: external_exports.object({}) });
-var Y = external_exports.object({ connectDomains: external_exports.array(external_exports.string()).optional().describe(`Origins for network requests (fetch/XHR/WebSocket).
-
-- Maps to CSP \`connect-src\` directive
-- Empty or omitted \u2192 no network connections (secure default)`), resourceDomains: external_exports.array(external_exports.string()).optional().describe("Origins for static resources (images, scripts, stylesheets, fonts, media).\n\n- Maps to CSP `img-src`, `script-src`, `style-src`, `font-src`, `media-src` directives\n- Wildcard subdomains supported: `https://*.example.com`\n- Empty or omitted \u2192 no network resources (secure default)"), frameDomains: external_exports.array(external_exports.string()).optional().describe("Origins for nested iframes.\n\n- Maps to CSP `frame-src` directive\n- Empty or omitted \u2192 no nested iframes allowed (`frame-src 'none'`)"), baseUriDomains: external_exports.array(external_exports.string()).optional().describe("Allowed base URIs for the document.\n\n- Maps to CSP `base-uri` directive\n- Empty or omitted \u2192 only same origin allowed (`base-uri 'self'`)") });
-var j = external_exports.object({ camera: external_exports.object({}).optional().describe("Request camera access.\n\nMaps to Permission Policy `camera` feature."), microphone: external_exports.object({}).optional().describe("Request microphone access.\n\nMaps to Permission Policy `microphone` feature."), geolocation: external_exports.object({}).optional().describe("Request geolocation access.\n\nMaps to Permission Policy `geolocation` feature."), clipboardWrite: external_exports.object({}).optional().describe("Request clipboard write access.\n\nMaps to Permission Policy `clipboard-write` feature.") });
-var XQ = external_exports.object({ method: external_exports.literal("ui/notifications/size-changed"), params: external_exports.object({ width: external_exports.number().optional().describe("New width in pixels."), height: external_exports.number().optional().describe("New height in pixels.") }) });
-var H = external_exports.object({ method: external_exports.literal("ui/notifications/tool-input"), params: external_exports.object({ arguments: external_exports.record(external_exports.string(), external_exports.unknown().describe("Complete tool call arguments as key-value pairs.")).optional().describe("Complete tool call arguments as key-value pairs.") }) });
-var _ = external_exports.object({ method: external_exports.literal("ui/notifications/tool-input-partial"), params: external_exports.object({ arguments: external_exports.record(external_exports.string(), external_exports.unknown().describe("Partial tool call arguments (incomplete, may change).")).optional().describe("Partial tool call arguments (incomplete, may change).") }) });
-var A2 = external_exports.object({ method: external_exports.literal("ui/notifications/tool-cancelled"), params: external_exports.object({ reason: external_exports.string().optional().describe('Optional reason for the cancellation (e.g., "user action", "timeout").') }) });
-var f2 = external_exports.object({ fonts: external_exports.string().optional() });
-var u2 = external_exports.object({ variables: ZQ.optional().describe("CSS variables for theming the app."), css: f2.optional().describe("CSS blocks that apps can inject.") });
-var E = external_exports.object({ method: external_exports.literal("ui/resource-teardown"), params: external_exports.object({}) });
-var VQ = external_exports.record(external_exports.string(), external_exports.unknown());
-var O = external_exports.object({ text: external_exports.object({}).optional().describe("Host supports text content blocks."), image: external_exports.object({}).optional().describe("Host supports image content blocks."), audio: external_exports.object({}).optional().describe("Host supports audio content blocks."), resource: external_exports.object({}).optional().describe("Host supports resource content blocks."), resourceLink: external_exports.object({}).optional().describe("Host supports resource link content blocks."), structuredContent: external_exports.object({}).optional().describe("Host supports structured content.") });
-var DQ = external_exports.object({ method: external_exports.literal("ui/notifications/request-teardown"), params: external_exports.object({}).optional() });
-var d4 = external_exports.object({ experimental: external_exports.record(external_exports.string(), external_exports.record(external_exports.string(), external_exports.any()).describe("Experimental features keyed by identifier.")).optional().describe("Experimental features keyed by identifier."), openLinks: external_exports.object({}).optional().describe("Host supports opening external URLs."), downloadFile: external_exports.object({}).optional().describe("Host supports file downloads via ui/download-file."), serverTools: external_exports.object({ listChanged: external_exports.boolean().optional().describe("Host supports tools/list_changed notifications.") }).optional().describe("Host can proxy tool calls to the MCP server."), serverResources: external_exports.object({ listChanged: external_exports.boolean().optional().describe("Host supports resources/list_changed notifications.") }).optional().describe("Host can proxy resource reads to the MCP server."), logging: external_exports.object({}).optional().describe("Host accepts log messages."), sandbox: external_exports.object({ permissions: j.optional().describe("Permissions granted by the host (camera, microphone, geolocation)."), csp: Y.optional().describe("CSP domains approved by the host.") }).optional().describe("Sandbox configuration applied by the host."), updateModelContext: O.optional().describe("Host accepts context updates (ui/update-model-context) to be included in the model's context for future turns."), message: O.optional().describe("Host supports receiving content messages (ui/message) from the view."), sampling: external_exports.object({ tools: external_exports.object({}).optional().describe("Host supports tool use via `tools` and `toolChoice` parameters.") }).optional().describe("Host supports LLM sampling (sampling/createMessage) from the view.\nMirrors the MCP `ClientCapabilities.sampling` shape so hosts can pass it through.") });
-var h3 = external_exports.object({ experimental: external_exports.record(external_exports.string(), external_exports.record(external_exports.string(), external_exports.any()).describe("Experimental features keyed by identifier.")).optional().describe("Experimental features keyed by identifier."), tools: external_exports.object({ listChanged: external_exports.boolean().optional().describe("App supports tools/list_changed notifications.") }).optional().describe("App exposes MCP-style tools that the host can call."), availableDisplayModes: external_exports.array(K).optional().describe("Display modes the app supports.") });
-var LQ = external_exports.object({ method: external_exports.literal("ui/notifications/initialized"), params: external_exports.object({}).optional() });
-var WQ = external_exports.object({ csp: Y.optional().describe("Content Security Policy configuration for UI resources."), permissions: j.optional().describe("Sandbox permissions requested by the UI resource."), domain: external_exports.string().optional().describe(`Dedicated origin for view sandbox.
-
-Useful when views need stable, dedicated origins for OAuth callbacks, CORS policies, or API key allowlists.
-
-**Host-dependent:** The format and validation rules for this field are determined by each host. Servers MUST consult host-specific documentation for the expected domain format. Common patterns include:
-- Hash-based subdomains (e.g., \`{hash}.claudemcpcontent.com\`)
-- URL-derived subdomains (e.g., \`www-example-com.oaiusercontent.com\`)
-
-If omitted, host uses default sandbox origin (typically per-conversation).`), prefersBorder: external_exports.boolean().optional().describe(`Visual boundary preference - true if view prefers a visible border.
-
-Boolean requesting whether a visible border and background is provided by the host. Specifying an explicit value for this is recommended because hosts' defaults may vary.
-
-- \`true\`: request visible border + background
-- \`false\`: request no visible border + background
-- omitted: host decides border`) });
-var BQ = external_exports.object({ method: external_exports.literal("ui/request-display-mode"), params: external_exports.object({ mode: K.describe("The display mode being requested.") }) });
-var R = external_exports.object({ mode: K.describe("The display mode that was actually set. May differ from requested if not supported.") }).passthrough();
-var m4 = external_exports.union([external_exports.literal("model"), external_exports.literal("app")]).describe("Tool visibility scope - who can access the tool.");
-var GQ = external_exports.object({ resourceUri: external_exports.string().optional(), visibility: external_exports.array(m4).optional().describe(`Who can access this tool. Default: ["model", "app"]
-- "model": Tool visible to and callable by the agent
-- "app": Tool callable by the app from this server only`), csp: external_exports.never().optional(), permissions: external_exports.never().optional() });
-var dQ = external_exports.object({ mimeTypes: external_exports.array(external_exports.string()).optional().describe('Array of supported MIME types for UI resources.\nMust include `"text/html;profile=mcp-app"` for MCP Apps support.') });
-var KQ = external_exports.object({ method: external_exports.literal("ui/download-file"), params: external_exports.object({ contents: external_exports.array(external_exports.union([EmbeddedResourceSchema, ResourceLinkSchema])).describe("Resource contents to download \u2014 embedded (inline data) or linked (host fetches). Uses standard MCP resource types.") }) });
-var NQ = external_exports.object({ method: external_exports.literal("ui/message"), params: external_exports.object({ role: external_exports.literal("user").describe('Message role, currently only "user" is supported.'), content: external_exports.array(ContentBlockSchema).describe("Message content blocks (text, image, etc.).") }) });
-var YQ = external_exports.object({ method: external_exports.literal("ui/notifications/sandbox-resource-ready"), params: external_exports.object({ html: external_exports.string().describe("HTML content to load into the inner iframe."), sandbox: external_exports.string().optional().describe("Optional override for the inner iframe's sandbox attribute."), csp: Y.optional().describe("CSP configuration from resource metadata."), permissions: j.optional().describe("Sandbox permissions from resource metadata.") }) });
-var U = external_exports.object({ method: external_exports.literal("ui/notifications/tool-result"), params: CallToolResultSchema.describe("Standard MCP tool execution result.") });
-var T = external_exports.object({ toolInfo: external_exports.object({ id: RequestIdSchema.optional().describe("JSON-RPC id of the tools/call request."), tool: ToolSchema.describe("Tool definition including name, inputSchema, etc.") }).optional().describe("Metadata of the tool call that instantiated this App."), theme: v2.optional().describe("Current color theme preference."), styles: u2.optional().describe("Style configuration for theming the app."), displayMode: K.optional().describe("How the UI is currently displayed."), availableDisplayModes: external_exports.array(K).optional().describe("Display modes the host supports."), containerDimensions: external_exports.union([external_exports.object({ height: external_exports.number().describe("Fixed container height in pixels.") }), external_exports.object({ maxHeight: external_exports.union([external_exports.number(), external_exports.undefined()]).optional().describe("Maximum container height in pixels.") })]).and(external_exports.union([external_exports.object({ width: external_exports.number().describe("Fixed container width in pixels.") }), external_exports.object({ maxWidth: external_exports.union([external_exports.number(), external_exports.undefined()]).optional().describe("Maximum container width in pixels.") })])).optional().describe(`Container dimensions. Represents the dimensions of the iframe or other
-container holding the app. Specify either width or maxWidth, and either height or maxHeight.`), locale: external_exports.string().optional().describe("User's language and region preference in BCP 47 format."), timeZone: external_exports.string().optional().describe("User's timezone in IANA format."), userAgent: external_exports.string().optional().describe("Host application identifier."), platform: external_exports.union([external_exports.literal("web"), external_exports.literal("desktop"), external_exports.literal("mobile")]).optional().describe("Platform type for responsive design decisions."), deviceCapabilities: external_exports.object({ touch: external_exports.boolean().optional().describe("Whether the device supports touch input."), hover: external_exports.boolean().optional().describe("Whether the device supports hover interactions.") }).optional().describe("Device input capabilities."), safeAreaInsets: external_exports.object({ top: external_exports.number().describe("Top safe area inset in pixels."), right: external_exports.number().describe("Right safe area inset in pixels."), bottom: external_exports.number().describe("Bottom safe area inset in pixels."), left: external_exports.number().describe("Left safe area inset in pixels.") }).optional().describe("Mobile safe area boundaries in pixels.") }).passthrough();
-var k = external_exports.object({ method: external_exports.literal("ui/notifications/host-context-changed"), params: T.describe("Partial context update containing only changed fields.") });
-var jQ = external_exports.object({ method: external_exports.literal("ui/update-model-context"), params: external_exports.object({ content: external_exports.array(ContentBlockSchema).optional().describe("Context content blocks (text, image, etc.)."), structuredContent: external_exports.record(external_exports.string(), external_exports.unknown().describe("Structured content for machine-readable context data.")).optional().describe("Structured content for machine-readable context data.") }) });
-var FQ = external_exports.object({ method: external_exports.literal("ui/initialize"), params: external_exports.object({ appInfo: ImplementationSchema.describe("App identification (name and version)."), appCapabilities: h3.describe("Features and capabilities this app provides."), protocolVersion: external_exports.string().describe("Protocol version this app supports.") }) });
-var M = external_exports.object({ protocolVersion: external_exports.string().describe('Negotiated protocol version string (e.g., "2025-11-21").'), hostInfo: ImplementationSchema.describe("Host application identification and version."), hostCapabilities: d4.describe("Features and capabilities provided by the host."), hostContext: T.describe("Rich context about the host environment.") }).passthrough();
-var C = "ui/resourceUri";
-var p3 = "text/html;profile=mcp-app";
-function K3(Z, $, J, X) {
-  let V = J._meta, D2 = V.ui, L2 = V[C], W = V;
-  if (D2?.resourceUri && !L2) W = { ...V, [C]: D2.resourceUri };
-  else if (L2 && !D2?.resourceUri) W = { ...V, ui: { ...D2, resourceUri: L2 } };
-  return Z.registerTool($, { ...J, _meta: W }, X);
-}
-function N3(Z, $, J, X, V) {
-  return Z.registerResource($, J, { mimeType: p3, ...X }, V);
-}
 
 // node_modules/@openai/mcp-extensions/node_modules/zod/v4/classic/external.js
 var external_exports2 = {};
@@ -85083,11 +85367,11 @@ function _stringbool2(Classes, _params) {
   const _Boolean = Classes.Boolean ?? $ZodBoolean2;
   const _String = Classes.String ?? $ZodString2;
   const stringSchema = new _String({ type: "string", error: params.error });
-  const booleanSchema = new _Boolean({ type: "boolean", error: params.error });
+  const booleanSchema2 = new _Boolean({ type: "boolean", error: params.error });
   const codec3 = new _Codec({
     type: "pipe",
     in: stringSchema,
-    out: booleanSchema,
+    out: booleanSchema2,
     transform: ((input2, payload) => {
       let data = input2;
       if (params.case !== "sensitive")
@@ -87989,27 +88273,27 @@ function convertBaseSchema2(schema2, ctx) {
     }
     case "number":
     case "integer": {
-      let numberSchema = type === "integer" ? z2.number().int() : z2.number();
+      let numberSchema2 = type === "integer" ? z2.number().int() : z2.number();
       if (typeof schema2.minimum === "number") {
-        numberSchema = numberSchema.min(schema2.minimum);
+        numberSchema2 = numberSchema2.min(schema2.minimum);
       }
       if (typeof schema2.maximum === "number") {
-        numberSchema = numberSchema.max(schema2.maximum);
+        numberSchema2 = numberSchema2.max(schema2.maximum);
       }
       if (typeof schema2.exclusiveMinimum === "number") {
-        numberSchema = numberSchema.gt(schema2.exclusiveMinimum);
+        numberSchema2 = numberSchema2.gt(schema2.exclusiveMinimum);
       } else if (schema2.exclusiveMinimum === true && typeof schema2.minimum === "number") {
-        numberSchema = numberSchema.gt(schema2.minimum);
+        numberSchema2 = numberSchema2.gt(schema2.minimum);
       }
       if (typeof schema2.exclusiveMaximum === "number") {
-        numberSchema = numberSchema.lt(schema2.exclusiveMaximum);
+        numberSchema2 = numberSchema2.lt(schema2.exclusiveMaximum);
       } else if (schema2.exclusiveMaximum === true && typeof schema2.maximum === "number") {
-        numberSchema = numberSchema.lt(schema2.maximum);
+        numberSchema2 = numberSchema2.lt(schema2.maximum);
       }
       if (typeof schema2.multipleOf === "number") {
-        numberSchema = numberSchema.multipleOf(schema2.multipleOf);
+        numberSchema2 = numberSchema2.multipleOf(schema2.multipleOf);
       }
-      zodSchema = numberSchema;
+      zodSchema = numberSchema2;
       break;
     }
     case "boolean": {
@@ -89728,12 +90012,12 @@ var OpenAIExtensions = class {
 };
 
 // src/server/serve-emu.ts
-import { execFile as execFile4, spawn as spawn3 } from "node:child_process";
-import { promisify as promisify4 } from "node:util";
+import { execFile as execFile5, spawn as spawn3 } from "node:child_process";
+import { promisify as promisify5 } from "node:util";
 import { access as access3 } from "node:fs/promises";
 import { constants as constants2 } from "node:fs";
-import { homedir as homedir4 } from "node:os";
-import { dirname as dirname4, join as join11 } from "node:path";
+import { homedir as homedir5 } from "node:os";
+import { dirname as dirname5, join as join12 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 import { createServer } from "node:net";
 import { setTimeout as delay3 } from "node:timers/promises";
@@ -89788,13 +90072,13 @@ async function bootAndroidEmulator(options, launch = spawn) {
 }
 
 // src/server/native-logs.ts
-import { execFile as execFile3, spawn as spawn2 } from "node:child_process";
-import { promisify as promisify3 } from "node:util";
+import { execFile as execFile4, spawn as spawn2 } from "node:child_process";
+import { promisify as promisify4 } from "node:util";
 import { StringDecoder } from "node:string_decoder";
 import { setTimeout as delay2 } from "node:timers/promises";
 import { access as access2 } from "node:fs/promises";
-import { join as join10 } from "node:path";
-import { homedir as homedir3 } from "node:os";
+import { join as join11 } from "node:path";
+import { homedir as homedir4 } from "node:os";
 
 // src/server/ios-log-filter.ts
 var subsystemThresholds = /* @__PURE__ */ new Map([
@@ -89989,8 +90273,8 @@ import { constants } from "node:fs";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 
 // src/server/ios-devices.ts
-import { execFile as execFile2 } from "node:child_process";
-import { promisify as promisify2 } from "node:util";
+import { execFile as execFile3 } from "node:child_process";
+import { promisify as promisify3 } from "node:util";
 
 // src/shared/ios-devices.ts
 var text = external_exports.string();
@@ -90012,7 +90296,7 @@ var physicalIosDeviceSchema = external_exports.object({
 });
 
 // src/server/ios-devices.ts
-var execute = promisify2(execFile2);
+var execute2 = promisify3(execFile3);
 var text2 = external_exports.string();
 var identifier2 = external_exports.uuid();
 var physical = external_exports.literal("physical");
@@ -90031,7 +90315,7 @@ var devices = external_exports.array(device);
 var info = external_exports.object({ jsonVersion, outcome: success3 });
 var result = external_exports.object({ devices });
 var response = external_exports.object({ info, result });
-async function listIosDevices(signal, run = execute) {
+async function listIosDevices(signal, run = execute2) {
   signal?.throwIfAborted();
   const args = [
     "devicectl",
@@ -90113,11 +90397,11 @@ async function physicalIosLogCommand(target2, signal, discover = listIosDevices,
 }
 
 // src/server/native-logs.ts
-var execute2 = promisify3(execFile3);
+var execute3 = promisify4(execFile4);
 async function adbPath() {
-  for (const root of [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT, join10(homedir3(), "Library/Android/sdk")]) {
+  for (const root of [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT, join11(homedir4(), "Library/Android/sdk")]) {
     if (!root) continue;
-    const path = join10(root, "platform-tools/adb");
+    const path = join11(root, "platform-tools/adb");
     try {
       await access2(path);
       return path;
@@ -90127,7 +90411,7 @@ async function adbPath() {
   return "adb";
 }
 async function listAndroidLogDevices() {
-  const { stdout } = await execute2(await adbPath(), ["devices", "-l"], { timeout: 5e3, maxBuffer: 1024 * 1024 });
+  const { stdout } = await execute3(await adbPath(), ["devices", "-l"], { timeout: 5e3, maxBuffer: 1024 * 1024 });
   return stdout.split("\n").flatMap((line) => {
     const match2 = line.match(/^(\S+)\s+device(?:\s|$)(.*)/);
     return match2 ? [{ id: match2[1], name: match2[2].match(/model:(\S+)/)?.[1].replace(/_/g, " ") ?? match2[1] }] : [];
@@ -90278,7 +90562,7 @@ async function streamAndroidPackage(adb, target2, sink, signal) {
   try {
     while (!signal.aborted) {
       if (failure3) throw failure3;
-      const { stdout } = await execute2(adb, ["-s", target2.deviceId, "shell", "pidof", target2.packageName], { timeout: 4e3, signal }).catch((error113) => {
+      const { stdout } = await execute3(adb, ["-s", target2.deviceId, "shell", "pidof", target2.packageName], { timeout: 4e3, signal }).catch((error113) => {
         if (error113.code === 1) return { stdout: "" };
         throw error113;
       });
@@ -90312,7 +90596,7 @@ var SimulatorUnavailableError = class extends ExpectedOperationError {
 };
 
 // src/server/serve-emu.ts
-var execute3 = promisify4(execFile4);
+var execute4 = promisify5(execFile5);
 var androidIdSchema = external_exports.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/);
 var healthSchema = external_exports.object({ serial: androidIdSchema, codec: external_exports.string(), size: external_exports.object({ width: external_exports.number().positive(), height: external_exports.number().positive() }) });
 function androidDisplaySize(output2, video) {
@@ -90338,9 +90622,9 @@ var ServeEmu = class {
     if (baseUrl) this.external = parseBaseUrl(baseUrl, "SERVE_EMU_URL");
   }
   async emulatorPath() {
-    for (const root of [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT, join11(homedir4(), "Library/Android/sdk")]) {
+    for (const root of [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT, join12(homedir5(), "Library/Android/sdk")]) {
       if (!root) continue;
-      const path = join11(root, "emulator/emulator");
+      const path = join12(root, "emulator/emulator");
       try {
         await access3(path, constants2.X_OK);
         return path;
@@ -90354,8 +90638,8 @@ var ServeEmu = class {
       const adb = await adbPath();
       const emulator = await this.emulatorPath();
       const [devices3, avds] = await Promise.all([
-        execute3(adb, ["devices", "-l"], { timeout: 5e3, maxBuffer: 1024 * 1024 }),
-        execute3(emulator, ["-list-avds"], { timeout: 5e3, maxBuffer: 1024 * 1024 }).catch((error113) => {
+        execute4(adb, ["devices", "-l"], { timeout: 5e3, maxBuffer: 1024 * 1024 }),
+        execute4(emulator, ["-list-avds"], { timeout: 5e3, maxBuffer: 1024 * 1024 }).catch((error113) => {
           if (error113.code === "ENOENT") return { stdout: "" };
           throw error113;
         })
@@ -90372,7 +90656,7 @@ var ServeEmu = class {
           let name = model ?? match2[1];
           const emulatorDevice = /^emulator-\d+$/.test(match2[1]);
           if (emulatorDevice && match2[2] === "device") {
-            const response3 = await execute3(adb, ["-s", match2[1], "emu", "avd", "name"], { timeout: 3e3 }).catch(() => void 0);
+            const response3 = await execute4(adb, ["-s", match2[1], "emu", "avd", "name"], { timeout: 3e3 }).catch(() => void 0);
             const avdName = parseAvdName(response3?.stdout);
             if (avdName) this.avdNames.set(match2[1], avdName);
             name = avdName ?? this.avdNames.get(match2[1]) ?? name;
@@ -90433,7 +90717,7 @@ var ServeEmu = class {
         if (!status.connected) throw new Error(status.error);
         const running = status.devices.find((item) => item.kind === "emulator" && item.name === device2.name && item.state === "Booted");
         if (!running) return;
-        const response3 = await execute3(adb, ["-s", running.udid, "shell", "getprop", "sys.boot_completed"], { timeout: 3e3 }).catch(() => void 0);
+        const response3 = await execute4(adb, ["-s", running.udid, "shell", "getprop", "sys.boot_completed"], { timeout: 3e3 }).catch(() => void 0);
         if (response3?.stdout.trim() === "1") return status;
       }
     });
@@ -90444,7 +90728,7 @@ var ServeEmu = class {
     const before = await this.list();
     if (!before.connected) throw new Error(before.error);
     if (!before.devices.some((device2) => device2.udid === id)) return before;
-    await execute3(await adbPath(), ["-s", id, "emu", "kill"], { timeout: 5e3 });
+    await execute4(await adbPath(), ["-s", id, "emu", "kill"], { timeout: 5e3 });
     const backend = this.backends.get(id);
     if (backend) this.stopBackend(backend);
     this.backends.delete(id);
@@ -90534,7 +90818,7 @@ var ServeEmu = class {
     const child = spawn3(process.execPath, [cli, "--host", "127.0.0.1", "--port", url3.port, "--serial", id, "--max-fps", "30"], {
       stdio: ["ignore", "pipe", "pipe", "ipc"],
       shell: false,
-      env: { ...process.env, PATH: `${dirname4(adb)}:${process.env.PATH ?? ""}`, SERVE_EMU_UPDATE_CHECK: "0" }
+      env: { ...process.env, PATH: `${dirname5(adb)}:${process.env.PATH ?? ""}`, SERVE_EMU_UPDATE_CHECK: "0" }
     });
     this.backendContexts.set(child, context3);
     let stage2 = "process-launch";
@@ -90606,7 +90890,7 @@ var ServeEmu = class {
       this.backends.delete(id);
       if (this.disposed === false && process.env.MOBILE_DEV_TELEMETRY !== "off") {
         const checkedAt = performance.now();
-        void execute3(adb, ["devices"], { timeout: 2e3, maxBuffer: 1024 * 1024, signal: this.lifetime.signal }).then((response3) => {
+        void execute4(adb, ["devices"], { timeout: 2e3, maxBuffer: 1024 * 1024, signal: this.lifetime.signal }).then((response3) => {
           const state2 = androidDeviceState(response3.stdout, id);
           const elapsed = performance.now() - checkedAt;
           recordAndroidStartupDeviceState(state2, elapsed, context3, failure3);
@@ -90629,7 +90913,7 @@ var ServeEmu = class {
     const [tree, health, display] = await Promise.all([
       this.json(backend.url, "/api/accessibility"),
       this.health(backend.url),
-      execute3(adb, ["-s", id, "shell", "wm", "size"], { timeout: 3e3, maxBuffer: 4096 })
+      execute4(adb, ["-s", id, "shell", "wm", "size"], { timeout: 3e3, maxBuffer: 4096 })
     ]);
     return { tree, screen: androidDisplaySize(display.stdout, health.size) };
   }
@@ -91259,8 +91543,8 @@ function registerAndroidTools(server, android2, appUri, copyScreenshot, closeCpu
 }
 
 // src/server/baguette.ts
-import { execFile as execFile6, spawn as spawn4 } from "node:child_process";
-import { promisify as promisify6 } from "node:util";
+import { execFile as execFile7, spawn as spawn4 } from "node:child_process";
+import { promisify as promisify7 } from "node:util";
 import { access as access5 } from "node:fs/promises";
 import { constants as constants4 } from "node:fs";
 import { createServer as createServer2 } from "node:net";
@@ -91268,14 +91552,14 @@ import { fileURLToPath as fileURLToPath6 } from "node:url";
 import { setTimeout as delay4 } from "node:timers/promises";
 
 // src/server/baguette-runtime.ts
-import { execFile as execFile5 } from "node:child_process";
+import { execFile as execFile6 } from "node:child_process";
 import { access as access4, realpath } from "node:fs/promises";
 import { constants as constants3 } from "node:fs";
-import { basename as basename2, delimiter, dirname as dirname5, isAbsolute as isAbsolute3, join as join12, relative as relative2 } from "node:path";
-import { promisify as promisify5 } from "node:util";
+import { basename as basename3, delimiter, dirname as dirname6, isAbsolute as isAbsolute4, join as join13, relative as relative2 } from "node:path";
+import { promisify as promisify6 } from "node:util";
 var BAGUETTE_RUNTIME_TIMEOUT_MS = 5e3;
-var execute4 = promisify5(execFile5);
-async function baguetteEnvironment(executable2, signal, run = execute4) {
+var execute5 = promisify6(execFile6);
+async function baguetteEnvironment(executable2, signal, run = execute5) {
   const deadline = AbortSignal.timeout(BAGUETTE_RUNTIME_TIMEOUT_MS);
   const discoverySignal = AbortSignal.any([signal, deadline]);
   discoverySignal.throwIfAborted();
@@ -91287,8 +91571,8 @@ async function baguetteEnvironment(executable2, signal, run = execute4) {
       maxBuffer: 64 * 1024
     });
     developer = selection.stdout.trim();
-    if (isAbsolute3(developer) === false) throw new Error("Invalid developer directory.");
-    const xcodebuild = join12(developer, "usr/bin/xcodebuild");
+    if (isAbsolute4(developer) === false) throw new Error("Invalid developer directory.");
+    const xcodebuild = join13(developer, "usr/bin/xcodebuild");
     await access4(xcodebuild, constants3.X_OK);
   } catch {
     discoverySignal.throwIfAborted();
@@ -91310,7 +91594,7 @@ async function baguetteEnvironment(executable2, signal, run = execute4) {
       if (block.includes("cmd LC_LOAD_DYLIB") === false && block.includes("cmd LC_REEXPORT_DYLIB") === false) continue;
       const match2 = /^\s+name (@rpath\/libswift[^/]+\.dylib) \(offset \d+\)$/m.exec(block);
       if (match2 === null) continue;
-      const name = basename2(match2[1]);
+      const name = basename3(match2[1]);
       required3.add(name);
     }
     const scan = await run("/usr/bin/xcrun", [
@@ -91328,14 +91612,14 @@ async function baguetteEnvironment(executable2, signal, run = execute4) {
     for (const library of libraries) {
       const physicalLibrary = await realpath(library);
       const location2 = relative2(toolchainRoot, physicalLibrary);
-      if (isAbsolute3(library) === false || location2.startsWith("Toolchains/") === false) {
+      if (isAbsolute4(library) === false || location2.startsWith("Toolchains/") === false) {
         throw new Error("Swift library is outside the selected Xcode toolchain.");
       }
-      const directory = dirname5(library);
+      const directory = dirname6(library);
       if (directory.includes(delimiter)) throw new Error("Swift library directory cannot be used as a loader search path.");
       await access4(library, constants3.R_OK);
       directories.add(directory);
-      const name = basename2(library);
+      const name = basename3(library);
       discovered.add(name);
     }
     for (const name of required3) {
@@ -91583,8 +91867,8 @@ var Baguette = class {
     await this.device(udid, true);
     const executable2 = await this.executable();
     const environment = await baguetteEnvironment(executable2, this.lifecycle.signal);
-    const execute15 = promisify6(execFile6);
-    const { stdout, stderr } = await execute15(executable2, ["heal", "--udid", udid], {
+    const execute16 = promisify7(execFile7);
+    const { stdout, stderr } = await execute16(executable2, ["heal", "--udid", udid], {
       timeout: 45e3,
       maxBuffer: 1024 * 1024,
       encoding: "utf8",
@@ -91746,13 +92030,13 @@ var IosMirrorSessions = class {
 };
 
 // src/server/physical-ios-bezel.ts
-import { execFile as execFile7 } from "node:child_process";
-import { mkdtemp, readFile as readFile3, rm } from "node:fs/promises";
+import { execFile as execFile8 } from "node:child_process";
+import { mkdtemp, readFile as readFile4, rm as rm2 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join as join13 } from "node:path";
+import { join as join14 } from "node:path";
 import { fileURLToPath as fileURLToPath8 } from "node:url";
-import { promisify as promisify7 } from "node:util";
-var execute5 = promisify7(execFile7);
+import { promisify as promisify8 } from "node:util";
+var execute6 = promisify8(execFile8);
 var text3 = external_exports.string();
 var deviceTypeSchema = external_exports.object({ name: text3, modelIdentifier: text3, bundlePath: text3 });
 var deviceTypes = external_exports.array(deviceTypeSchema);
@@ -91774,16 +92058,16 @@ function pngDataUri(bytes) {
   return `data:image/png;base64,${encoded}`;
 }
 async function readMask(identifier3, run) {
-  const prefix3 = join13(tmpdir(), "mobile-dev-device-mask-");
+  const prefix3 = join14(tmpdir(), "mobile-dev-device-mask-");
   const directory = await mkdtemp(prefix3);
   try {
     const input2 = `/Library/Developer/DeviceKit/FramebufferMasks/${identifier3}.pdf`;
-    const output2 = join13(directory, "mask.png");
+    const output2 = join14(directory, "mask.png");
     await run("/usr/bin/sips", ["-s", "format", "png", input2, "--out", output2], commandOptions);
-    const bytes = await readFile3(output2);
+    const bytes = await readFile4(output2);
     return pngDataUri(bytes);
   } finally {
-    await rm(directory, { recursive: true, force: true });
+    await rm2(directory, { recursive: true, force: true });
   }
 }
 async function renderBezel(device2, run, runtime2) {
@@ -91800,7 +92084,7 @@ async function renderBezel(device2, run, runtime2) {
   });
   let selected;
   for (const type2 of candidates) {
-    const profilePath = join13(type2.bundlePath, "Contents", "Resources", "profile.plist");
+    const profilePath = join14(type2.bundlePath, "Contents", "Resources", "profile.plist");
     const profileOutput = await run("/usr/bin/plutil", ["-convert", "json", "-o", "-", profilePath], commandOptions);
     const profileJson = profileOutput.stdout.toString("utf8");
     const profilePayload = JSON.parse(profileJson);
@@ -91829,7 +92113,7 @@ async function renderBezel(device2, run, runtime2) {
   if (profile.framebufferMask !== void 0) bezel.mask = await readMask(profile.framebufferMask, run);
   return bezel;
 }
-function createPhysicalIosBezelReader(run = execute5, runtime2 = baguetteEnvironment) {
+function createPhysicalIosBezelReader(run = execute6, runtime2 = baguetteEnvironment) {
   const cache = /* @__PURE__ */ new Map();
   return (device2) => {
     const cached3 = cache.get(device2.productType);
@@ -91846,22 +92130,22 @@ function createPhysicalIosBezelReader(run = execute5, runtime2 = baguetteEnviron
 var readPhysicalIosBezel = createPhysicalIosBezelReader();
 
 // src/server/clipboard.ts
-import { execFile as execFile8 } from "node:child_process";
-import { mkdtemp as mkdtemp2, writeFile, rm as rm2 } from "node:fs/promises";
+import { execFile as execFile9 } from "node:child_process";
+import { mkdtemp as mkdtemp2, writeFile as writeFile2, rm as rm3 } from "node:fs/promises";
 import { tmpdir as tmpdir2 } from "node:os";
-import { join as join14 } from "node:path";
-import { promisify as promisify8 } from "node:util";
-var execute6 = promisify8(execFile8);
+import { join as join15 } from "node:path";
+import { promisify as promisify9 } from "node:util";
+var execute7 = promisify9(execFile9);
 async function copyPNGToClipboard(bytes) {
-  const directory = await mkdtemp2(join14(tmpdir2(), "mobile-dev-screenshot-"));
+  const directory = await mkdtemp2(join15(tmpdir2(), "mobile-dev-screenshot-"));
   try {
-    const path = join14(directory, "screenshot.png");
-    await writeFile(path, bytes, { mode: 384 });
-    await execute6("/usr/bin/osascript", ["-e", `on run argv
+    const path = join15(directory, "screenshot.png");
+    await writeFile2(path, bytes, { mode: 384 });
+    await execute7("/usr/bin/osascript", ["-e", `on run argv
 set the clipboard to (read (POSIX file (item 1 of argv)) as \xABclass PNGf\xBB)
 end run`, path], { timeout: 5e3, maxBuffer: 64 * 1024 });
   } finally {
-    await rm2(directory, { recursive: true, force: true });
+    await rm3(directory, { recursive: true, force: true });
   }
 }
 
@@ -92797,11 +93081,11 @@ function registerLogTools(server, logs, baguette, discoverIosDevices = listIosDe
 }
 
 // src/server/inspection-tools.ts
-import { execFile as execFile9 } from "node:child_process";
-import { promisify as promisify9 } from "node:util";
+import { execFile as execFile10 } from "node:child_process";
+import { promisify as promisify10 } from "node:util";
 
 // src/server/react-native-inspector.ts
-import { randomUUID } from "node:crypto";
+import { randomUUID as randomUUID2 } from "node:crypto";
 
 // src/server/react-native-snapshot.js
 function collectReactNativeTree(complete) {
@@ -93052,7 +93336,7 @@ function readSnapshot(url3, signal) {
   return new Promise((resolve5, reject) => {
     const origin = new URL(url3);
     origin.protocol = "http:";
-    const binding = `__mobile_dev_inspection_${randomUUID().replaceAll("-", "")}`;
+    const binding = `__mobile_dev_inspection_${randomUUID2().replaceAll("-", "")}`;
     const socket = new import_websocket.default(url3, { origin: origin.origin, handshakeTimeout: 3e3, maxPayload: 1024 * 1024, followRedirects: false });
     let settled = false, cleanup;
     const finish = (error113, result4) => {
@@ -93192,7 +93476,7 @@ function screenComponents(tree, scale = 1) {
 }
 
 // src/server/inspection-tools.ts
-var execute7 = promisify9(execFile9);
+var execute8 = promisify10(execFile10);
 function registerInspectionTools(server, baguette, android2) {
   const controller = new AbortController();
   K3(server, "mobile_inspect_ui", {
@@ -93225,7 +93509,7 @@ function registerInspectionTools(server, baguette, android2) {
         if (packages2.size === 1) appId = [...packages2][0];
         try {
           const adb = await adbPath();
-          const properties2 = await Promise.all(["ro.product.model", "ro.build.version.release", "ro.build.version.sdk"].map((property) => execute7(adb, ["-s", deviceId3, "shell", "getprop", property], { timeout: 3e3, maxBuffer: 4096 }).then((result4) => result4.stdout.trim())));
+          const properties2 = await Promise.all(["ro.product.model", "ro.build.version.release", "ro.build.version.sdk"].map((property) => execute8(adb, ["-s", deviceId3, "shell", "getprop", property], { timeout: 3e3, maxBuffer: 4096 }).then((result4) => result4.stdout.trim())));
           if (properties2.every(Boolean)) deviceAliases = [properties2[0], `${properties2[0]} - ${properties2[1]} - API ${properties2[2]}`];
         } catch {
         }
@@ -93279,15 +93563,15 @@ var CPU_HISTORY_SECONDS = 150;
 var CPU_MAX_SAMPLES = 600;
 
 // src/server/device-apps/apps.ts
-import { execFile as execFile11 } from "node:child_process";
-import { promisify as promisify11 } from "node:util";
-import { dirname as dirname6 } from "node:path";
+import { execFile as execFile12 } from "node:child_process";
+import { promisify as promisify12 } from "node:util";
+import { dirname as dirname7 } from "node:path";
 import { fileURLToPath as fileURLToPath9 } from "node:url";
 
 // src/server/device-apps/command.ts
-import { execFile as execFile10 } from "node:child_process";
-import { promisify as promisify10 } from "node:util";
-var execute8 = promisify10(execFile10);
+import { execFile as execFile11 } from "node:child_process";
+import { promisify as promisify11 } from "node:util";
+var execute9 = promisify11(execFile11);
 var version4 = external_exports.literal(1);
 var cause = external_exports.enum(foregroundCauses);
 var diagnosticObject2 = external_exports.object({ version: version4, cause });
@@ -93364,7 +93648,7 @@ function annotateDiscoveryCommand(error113, command2, elapsed, options) {
   setDiscoveryCommandDiagnostic(error113, diagnostic);
   return error113;
 }
-async function runDiscoveryCommand(command2, file3, args, options, run = execute8) {
+async function runDiscoveryCommand(command2, file3, args, options, run = execute9) {
   const startedAt = performance.now();
   try {
     return await run(file3, args, options);
@@ -93376,7 +93660,7 @@ async function runDiscoveryCommand(command2, file3, args, options, run = execute
 }
 
 // src/server/device-apps/apps.ts
-var execute9 = promisify11(execFile11);
+var execute10 = promisify12(execFile12);
 var text5 = external_exports.string();
 var number8 = external_exports.number();
 var integer3 = number8.int();
@@ -93413,13 +93697,13 @@ function parsePhysicalApps(apps, processes2) {
   for (const process4 of running.result.runningProcesses) {
     if (process4.executable === void 0) continue;
     const path = devicePath(process4.executable);
-    const directory = dirname6(path);
+    const directory = dirname7(path);
     const bundleId = bundles.get(directory);
     if (bundleId) result4.push({ bundleId, pid: process4.processIdentifier });
   }
   return result4;
 }
-async function runningPhysicalApps(deviceId3, signal, run = execute9) {
+async function runningPhysicalApps(deviceId3, signal, run = execute10) {
   const prefix3 = ["devicectl", "device", "info"];
   const options = ["--device", deviceId3, "--quiet", "--timeout", "10", "--omit-deprecated-fields-in-json", "--json-output", "-"];
   const settings = { encoding: "utf8", timeout: 15e3, maxBuffer: 4 * 1024 * 1024, signal };
@@ -93726,16 +94010,16 @@ var GdbConnection = class {
 };
 
 // src/server/cpu/simulator.ts
-import { execFile as execFile12, spawn as spawn5 } from "node:child_process";
+import { execFile as execFile13, spawn as spawn5 } from "node:child_process";
 import { access as access6 } from "node:fs/promises";
 import { createServer as createServer3 } from "node:net";
 import { resolve as resolve4 } from "node:path";
-import { promisify as promisify12 } from "node:util";
-var execute10 = promisify12(execFile12);
+import { promisify as promisify13 } from "node:util";
+var execute11 = promisify13(execFile13);
 async function openSimulatorDebugserver(signal) {
   if (process.platform !== "darwin") throw new Error("iOS simulator CPU monitoring requires macOS.");
   const discoverySignal = AbortSignal.any([signal, AbortSignal.timeout(5e3)]);
-  const selection = await execute10("xcode-select", ["--print-path"], { signal: discoverySignal });
+  const selection = await execute11("xcode-select", ["--print-path"], { signal: discoverySignal });
   const directory = selection.stdout.trim();
   const binary2 = resolve4(directory, "../SharedFrameworks/LLDB.framework/Resources/debugserver");
   try {
@@ -94181,12 +94465,12 @@ async function openPhysicalDebugserver(deviceId3, signal, helper = new URL("./io
 }
 
 // src/server/cpu/android.ts
-import { execFile as execFile13 } from "node:child_process";
-import { promisify as promisify13 } from "node:util";
+import { execFile as execFile14 } from "node:child_process";
+import { promisify as promisify14 } from "node:util";
 import { createHash as createHash2, randomBytes as randomBytes6 } from "node:crypto";
-import { mkdtemp as mkdtemp3, readFile as readFile4, rm as rm3, writeFile as writeFile2 } from "node:fs/promises";
+import { mkdtemp as mkdtemp3, readFile as readFile5, rm as rm4, writeFile as writeFile3 } from "node:fs/promises";
 import { tmpdir as tmpdir3 } from "node:os";
-import { join as join15 } from "node:path";
+import { join as join16 } from "node:path";
 import { StringDecoder as StringDecoder2 } from "node:string_decoder";
 
 // src/server/cpu/android-counters.ts
@@ -94248,22 +94532,22 @@ var AndroidCpuSampler = class {
 };
 
 // src/server/cpu/android.ts
-var execute11 = promisify13(execFile13);
+var execute12 = promisify14(execFile14);
 var abiSchema = external_exports.enum(["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]);
-var releaseSchema = external_exports.object({ binaries: external_exports.record(abiSchema, external_exports.object({ sha256: external_exports.string().regex(/^[a-f0-9]{64}$/) })) });
+var releaseSchema2 = external_exports.object({ binaries: external_exports.record(abiSchema, external_exports.object({ sha256: external_exports.string().regex(/^[a-f0-9]{64}$/) })) });
 var command = async (adb, args, signal) => {
-  const result4 = await execute11(adb, args, { signal, timeout: 1e4, maxBuffer: 1024 * 1024 });
+  const result4 = await execute12(adb, args, { signal, timeout: 1e4, maxBuffer: 1024 * 1024 });
   return result4.stdout;
 };
 async function loadAndroidCollector(root) {
   const manifest = new URL("release.json", root);
-  const releaseText = await readFile4(manifest, "utf8");
+  const releaseText = await readFile5(manifest, "utf8");
   const releaseJson = JSON.parse(releaseText);
-  const release2 = releaseSchema.parse(releaseJson);
+  const release2 = releaseSchema2.parse(releaseJson);
   const collector = /* @__PURE__ */ new Map();
   for (const abi of abiSchema.options) {
     const local = new URL(`${abi}/mobile-dev-cpu`, root);
-    const bytes = await readFile4(local);
+    const bytes = await readFile5(local);
     const hash3 = createHash2("sha256");
     hash3.update(bytes);
     const sha256 = hash3.digest("hex");
@@ -94284,11 +94568,11 @@ async function deployAndroidCollector(adb, deviceId3, signal, collector, run = c
   const tokenText = token.toString("hex");
   const temporary = `${remote}-${tokenText}`;
   const hostTemporary = tmpdir3();
-  const prefix3 = join15(hostTemporary, "mobile-dev-cpu-");
+  const prefix3 = join16(hostTemporary, "mobile-dev-cpu-");
   const directory = await mkdtemp3(prefix3);
-  const localPath = join15(directory, "mobile-dev-cpu");
+  const localPath = join16(directory, "mobile-dev-cpu");
   try {
-    await writeFile2(localPath, binary2.bytes, { mode: 384 });
+    await writeFile3(localPath, binary2.bytes, { mode: 384 });
     signal.throwIfAborted();
     await run(adb, ["-s", deviceId3, "push", localPath, temporary], signal);
     await run(adb, ["-s", deviceId3, "shell", `chmod 700 ${temporary} && mv ${temporary} ${remote}`], signal);
@@ -94297,7 +94581,7 @@ async function deployAndroidCollector(adb, deviceId3, signal, collector, run = c
     });
     throw error113;
   } finally {
-    await rm3(directory, { recursive: true, force: true });
+    await rm4(directory, { recursive: true, force: true });
   }
   return remote;
 }
@@ -94791,10 +95075,10 @@ function registerCpuTools(server, cpu, baguette, sources = { apps: readDeviceApp
 }
 
 // src/server/performance-recordings.ts
-import { randomUUID as randomUUID2 } from "node:crypto";
-import { mkdir, readFile as readFile5, readdir as readdir2, rename, stat as stat2, writeFile as writeFile3, rm as rm4 } from "node:fs/promises";
-import { homedir as homedir5 } from "node:os";
-import { join as join16 } from "node:path";
+import { randomUUID as randomUUID3 } from "node:crypto";
+import { mkdir as mkdir2, readFile as readFile6, readdir as readdir2, rename as rename2, stat as stat2, writeFile as writeFile4, rm as rm5 } from "node:fs/promises";
+import { homedir as homedir6 } from "node:os";
+import { join as join17 } from "node:path";
 
 // src/shared/display-fps.ts
 var MAX_DISPLAY_FRAMES_PER_INTERVAL = 4096;
@@ -95095,7 +95379,7 @@ function summarizeRecording(recording2, range) {
 }
 
 // src/server/performance-recordings.ts
-var RECORDINGS_DIRECTORY = join16(homedir5(), "Library/Application Support/mobile-dev/recordings");
+var RECORDINGS_DIRECTORY = join17(homedir6(), "Library/Application Support/mobile-dev/recordings");
 var RecordingStore = class {
   directory;
   constructor(directory = RECORDINGS_DIRECTORY) {
@@ -95103,21 +95387,21 @@ var RecordingStore = class {
   }
   async save(recording2) {
     const validated = recordingSchema.parse(recording2);
-    await mkdir(this.directory, { recursive: true, mode: 448 });
-    const filename = join16(this.directory, `${validated.id}.json`);
+    await mkdir2(this.directory, { recursive: true, mode: 448 });
+    const filename = join17(this.directory, `${validated.id}.json`);
     const temporary = `${filename}.tmp`;
     const text6 = JSON.stringify(validated);
     try {
-      await writeFile3(temporary, text6, { mode: 384 });
-      await rename(temporary, filename);
+      await writeFile4(temporary, text6, { mode: 384 });
+      await rename2(temporary, filename);
     } finally {
-      await rm4(temporary, { force: true });
+      await rm5(temporary, { force: true });
     }
   }
   async read(id) {
     const validated = recordingIdSchema.parse(id);
-    const filename = join16(this.directory, `${validated}.json`);
-    const text6 = await readFile5(filename, "utf8");
+    const filename = join17(this.directory, `${validated}.json`);
+    const text6 = await readFile6(filename, "utf8");
     const parsed = JSON.parse(text6);
     const recording2 = recordingSchema.parse(parsed);
     if (recording2.id !== validated) throw new Error("The saved recording ID does not match.");
@@ -95137,7 +95421,7 @@ var RecordingStore = class {
       const id = entry.name.slice(0, -5);
       const parsed = recordingIdSchema.safeParse(id);
       if (parsed.success === false) continue;
-      const filename = join16(this.directory, entry.name);
+      const filename = join17(this.directory, entry.name);
       const metadata4 = await stat2(filename);
       candidates.push({ id, modified: metadata4.mtimeMs });
     }
@@ -95166,7 +95450,7 @@ var PerformanceRecordings = class {
     if (this.disposed) throw new Error("The plugin server has closed.");
     const recording2 = {
       schemaVersion: 1,
-      id: randomUUID2(),
+      id: randomUUID3(),
       title: title2,
       target: target2,
       deviceName,
@@ -95639,7 +95923,7 @@ function registerRecordingTools(server, recordings, validateDevice, workspaceUri
 
 // src/server/storage-metrics.ts
 import { readdir as readdir3, stat as stat3 } from "node:fs/promises";
-import { join as join17 } from "node:path";
+import { join as join18 } from "node:path";
 async function directoryBytes(directory) {
   let entries;
   try {
@@ -95650,7 +95934,7 @@ async function directoryBytes(directory) {
   }
   let bytes = 0;
   for (const entry of entries) {
-    const path = join17(directory, entry.name);
+    const path = join18(directory, entry.name);
     if (entry.isDirectory()) bytes += await directoryBytes(path);
     else if (entry.isFile()) {
       try {
@@ -95697,8 +95981,8 @@ function startStorageMetrics(directories) {
 import { randomBytes as randomBytes9 } from "node:crypto";
 
 // src/server/fps/source.ts
-import { execFile as execFile15 } from "node:child_process";
-import { promisify as promisify15 } from "node:util";
+import { execFile as execFile16 } from "node:child_process";
+import { promisify as promisify16 } from "node:util";
 import { access as access8 } from "node:fs/promises";
 import { fileURLToPath as fileURLToPath12 } from "node:url";
 
@@ -95815,52 +96099,52 @@ async function collectorProcess(command2, args, options) {
 
 // src/server/fps/android-helper.ts
 import { createHash as createHash3, randomBytes as randomBytes8 } from "node:crypto";
-import { execFile as execFile14 } from "node:child_process";
-import { promisify as promisify14 } from "node:util";
-import { mkdtemp as mkdtemp4, readFile as readFile6, rm as rm5, writeFile as writeFile4 } from "node:fs/promises";
+import { execFile as execFile15 } from "node:child_process";
+import { promisify as promisify15 } from "node:util";
+import { mkdtemp as mkdtemp4, readFile as readFile7, rm as rm6, writeFile as writeFile5 } from "node:fs/promises";
 import { tmpdir as tmpdir4 } from "node:os";
-import { join as join18 } from "node:path";
-var execute12 = promisify14(execFile14);
+import { join as join19 } from "node:path";
+var execute13 = promisify15(execFile15);
 var abiSchema2 = external_exports.enum(["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]);
 var checksumString = external_exports.string();
 var checksum = checksumString.regex(/^[a-f0-9]{64}$/);
 var binary = external_exports.object({ sha256: checksum });
 var binaries = external_exports.record(abiSchema2, binary);
-var releaseSchema2 = external_exports.object({ binaries });
+var releaseSchema3 = external_exports.object({ binaries });
 async function deployFpsHelper(adb, deviceId3, signal, root) {
   const settings = { signal, timeout: 1e4, maxBuffer: 1024 * 1024 };
   const prefix3 = ["-s", deviceId3];
-  const raw = await execute12(adb, [...prefix3, "shell", "getprop", "ro.product.cpu.abi"], settings);
+  const raw = await execute13(adb, [...prefix3, "shell", "getprop", "ro.product.cpu.abi"], settings);
   const name = raw.stdout.trim();
   const abi = abiSchema2.parse(name);
   const manifest = new URL("release.json", root);
-  const text6 = await readFile6(manifest, "utf8");
+  const text6 = await readFile7(manifest, "utf8");
   const decoded = JSON.parse(text6);
-  const release2 = releaseSchema2.parse(decoded);
+  const release2 = releaseSchema3.parse(decoded);
   const path = new URL(`${abi}/mobile-dev-fps`, root);
-  const bytes = await readFile6(path);
+  const bytes = await readFile7(path);
   const hash3 = createHash3("sha256");
   hash3.update(bytes);
   const sha256 = hash3.digest("hex");
   if (sha256 !== release2.binaries[abi].sha256) throw new Error("The bundled Android FPS helper failed its integrity check.");
   const remote = `/data/local/tmp/mobile-dev-fps-${sha256}`;
   const temporaryRoot = tmpdir4();
-  const temporaryPrefix = join18(temporaryRoot, "mobile-dev-fps-");
+  const temporaryPrefix = join19(temporaryRoot, "mobile-dev-fps-");
   const directory = await mkdtemp4(temporaryPrefix);
-  const local = join18(directory, "mobile-dev-fps");
+  const local = join19(directory, "mobile-dev-fps");
   const token = randomBytes8(8);
   const id = token.toString("hex");
   const temporary = `${remote}-${id}`;
   try {
-    await writeFile4(local, bytes);
-    await execute12(adb, [...prefix3, "push", local, temporary], settings);
-    await execute12(adb, [...prefix3, "shell", `chmod 700 ${temporary} && mv ${temporary} ${remote}`], settings);
+    await writeFile5(local, bytes);
+    await execute13(adb, [...prefix3, "push", local, temporary], settings);
+    await execute13(adb, [...prefix3, "shell", `chmod 700 ${temporary} && mv ${temporary} ${remote}`], settings);
   } catch (error113) {
-    await execute12(adb, [...prefix3, "shell", "rm", "-f", temporary], { timeout: 3e3 }).catch(() => {
+    await execute13(adb, [...prefix3, "shell", "rm", "-f", temporary], { timeout: 3e3 }).catch(() => {
     });
     throw error113;
   } finally {
-    await rm5(directory, { recursive: true, force: true });
+    await rm6(directory, { recursive: true, force: true });
   }
   return remote;
 }
@@ -96110,7 +96394,7 @@ var FrameTimeline = class {
 };
 
 // src/server/fps/source.ts
-var execute13 = promisify15(execFile15);
+var execute14 = promisify16(execFile16);
 var fpsNumber = external_exports.number();
 var finiteFps = fpsNumber.finite();
 var nonnegativeFps = finiteFps.min(0);
@@ -96148,11 +96432,11 @@ async function startAndroid(options, root) {
   const adb = await adbPath();
   const prefix3 = ["-s", options.target.deviceId];
   const settings = { timeout: 5e3, maxBuffer: 1024 * 1024, signal: options.signal };
-  const version5 = await execute13(adb, [...prefix3, "shell", "getprop", "ro.build.version.sdk"], settings);
+  const version5 = await execute14(adb, [...prefix3, "shell", "getprop", "ro.build.version.sdk"], settings);
   const versionText = version5.stdout.trim();
   const sdk = Number(versionText);
   if (Number.isInteger(sdk) === false || sdk < 31) throw new Error("Display FPS requires Android 12 or newer (FrameTimeline).");
-  const sources = await execute13(adb, [...prefix3, "shell", "perfetto", "--query"], settings);
+  const sources = await execute14(adb, [...prefix3, "shell", "perfetto", "--query"], settings);
   if (sources.stdout.includes("android.surfaceflinger.frametimeline") === false) {
     throw new Error("This Android device does not expose the Perfetto FrameTimeline source.");
   }
@@ -96400,12 +96684,12 @@ function registerDisplayFpsTools(server, sessions, sources = { ios: listIosDevic
 }
 
 // src/server/simulator-input.ts
-import { execFile as execFile16 } from "node:child_process";
-import { promisify as promisify16 } from "node:util";
-var execute14 = promisify16(execFile16);
+import { execFile as execFile17 } from "node:child_process";
+import { promisify as promisify17 } from "node:util";
+var execute15 = promisify17(execFile17);
 var deviceHubKey = "com.apple.coredevice.dtuhidd.active";
 async function readDeviceHubState(udid) {
-  const { stdout } = await execute14("/usr/bin/xcrun", ["simctl", "spawn", udid, "notifyutil", "-g", deviceHubKey], {
+  const { stdout } = await execute15("/usr/bin/xcrun", ["simctl", "spawn", udid, "notifyutil", "-g", deviceHubKey], {
     timeout: 5e3,
     maxBuffer: 1024 * 1024,
     encoding: "utf8"
@@ -96601,7 +96885,9 @@ async function createPlugin(html2, baguette = new Baguette(), simulatorInput = n
     instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. See the Mobile Dev skill for device control, logs, and performance workflows."
   });
   instrumentMcpServer(server);
+  const updates = new PluginUpdates();
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
+  registerPluginUpdateTools(server, updates);
   const extensions = new OpenAIExtensions(server);
   registerDeviceChoiceTools(server, extensions, {
     simulators: () => baguette.start(),
@@ -96934,6 +97220,7 @@ async function createPlugin(html2, baguette = new Baguette(), simulatorInput = n
   return {
     server,
     async close() {
+      updates.close();
       stopRecordingStorageMetrics();
       await recordings.close();
       closeInspection();
@@ -96950,7 +97237,7 @@ async function createPlugin(html2, baguette = new Baguette(), simulatorInput = n
 }
 
 // src/server/index.ts
-var html = await readFile7(new URL("./app.html", import.meta.url), "utf8");
+var html = await readFile8(new URL("./app.html", import.meta.url), "utf8");
 var plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)));
 var transport2 = new StdioServerTransport();
 installTracePropagation(transport2);
@@ -96990,4 +97277,4 @@ process.on("unhandledRejection", (error113) => {
 });
 await plugin.server.connect(transport2);
 
-//# debugId=d49fa7ed-c302-5780-a5d7-edf750a5fca2
+//# debugId=eef28f95-7232-5f7a-a073-50472fbce6be
