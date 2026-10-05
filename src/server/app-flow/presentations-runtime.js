@@ -195,7 +195,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     for(let parent=fiber,count=0;parent&&count++<100;parent=parent.return){const p=parent.memoizedProps;if(hidden(p)||p?.visible===false&&(name(parent)==='Modal'||parent.tag===5&&typeof p?.onShow==='function')||p?.disabled===true||p?.accessibilityState?.disabled===true)return false;const styles=[p?.style];for(let i=0;i<styles.length&&i<30;i++){if(Array.isArray(styles[i]))styles.push(...styles[i]);else if(styles[i]?.display==='none')return false;}}
     return true;
   };
-  function index(includeEntries=false) {
+  function committedStructure() {
     const observed=observeCommits();
     let structure=observed&&structureCache;
     if(!structure){
@@ -207,7 +207,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       });
       structure={names,current,all,props};if(observed)structureCache=structure;
     }
-    const {names,current,all,props}=structure,live=new WeakMap(),boxes=new WeakMap(),states=new Map(),values=new Map(),matched=new Map(),targets=new Set(),openers=new Map();
+    return structure;
+  }
+  function index(includeEntries=false) {
+    const {names,current,all,props}=committedStructure(),live=new WeakMap(),boxes=new WeakMap(),states=new Map(),values=new Map(),matched=new Map(),targets=new Set(),openers=new Map();
     if(includeEntries)for(const action of catalog.actions){targets.add(action.component);if(action.effect.kind==='control')targets.add(action.effect.component);if(action.consumer)targets.add(action.consumer.component);}
     // Source bindings can change without a React commit. Rebuild these matches
     // from the current catalog, while reusing only the committed tree structure.
@@ -231,8 +234,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   function roots(focus,tree) {
     if(!focus)return [];
-    const props=tree?.props??new Map();
-    if(!tree)fibers(fiber=>{const p=fiber.memoizedProps;if(p&&typeof p==='object'){const list=props.get(p)??[];list.push(fiber);props.set(p,list);}});
+    const props=(tree??committedStructure()).props;
     const result=[focus];for(const projection of projected)if(projection.focus===focus||projection.focus===focus.alternate){for(const target of props.get(projection.child.props)??[])result.push(target);}
     const seen=new Set(),queue=[focus];
     for(let offset=0;offset<queue.length&&offset<12;offset++){
@@ -589,7 +591,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(!path.length)return next;
     const [first,...rest]=path;const copy=Array.isArray(value)?value.slice():{...value};copy[first]=setPath(value?.[first],rest,next);return copy;
   }
-  const nativeRecords=new Map();let commitPatch,nativeArmed=false;
+  const nativeRecords=new Map();let commitPatch,nativeArmed=false,nativeCloseRequests=0,nativeCloseRetries=0;
   function nativeHandler(key, handler, record) {
     // A newer observer can keep this wrapper as its original handler. Detach
     // the record even when the wrapper can no longer be removed from that chain.
@@ -598,8 +600,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(record){
         const status=record.status,state=key==='onShow'?'open':key==='onDismiss'?'closed':args[0]?.nativeEvent?.state;
         if(['closed','dismissed'].includes(state)){status.pending=false;status.closed=true;status.opened=false;}
-        else if(['open','opened','presented'].includes(state)){status.closed=false;status.opened=true;status.pending=!!status.closing;}
-        else if(['opening','closing'].includes(state))status.pending=true;
+        else if(['open','opened','presented'].includes(state)){status.openEvents=(status.openEvents??0)+1;status.closed=false;status.opened=true;status.pending=!!status.closing;}
+        else if(['opening','closing'].includes(state)){status.pending=true;if(state==='closing')status.dismissAcknowledged=true;}
       }
       return handler.apply(this,args);
     };
@@ -616,12 +618,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   const inside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner?.alternate)return true;return false;};
   function watchNative(focus, pending = false, ancestors = false, mounting = false) {
     const hosts=[],adapters=[],mounted=new Set();
-    fibers(fiber=>{
-      if(fiber.tag!==5&&fiber.tag!==1)return;
+    for(const fiber of committedStructure().all){
+      if(fiber.tag!==5&&fiber.tag!==1)continue;
       const canonical=fiber.tag===1?fiber.stateNode:fiber.stateNode?.canonical,field=fiber.tag===1?'props':'currentProps',props=canonical?.[field];
-      if(!props||typeof props.onShow!=='function'&&typeof props.onDismiss!=='function'&&typeof props.onStateChange!=='function')return;
+      if(!props||typeof props.onShow!=='function'&&typeof props.onDismiss!=='function'&&typeof props.onStateChange!=='function')continue;
       mounted.add(canonical);(fiber.tag===5?hosts:adapters).push({fiber,canonical,field,props});
-    });
+    }
     for(const [canonical,record]of nativeRecords)if(!mounted.has(canonical)&&!record.status.pending&&!record.status.opened){forgetNative(record);nativeRecords.delete(canonical);}
     // Idle class wrappers must not fill the bound before a newly mounted host
     // can receive native events. Keep active waiters and prefer dispatch hosts.
@@ -646,7 +648,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       nativeRecords.set(canonical,record);
     }
     const targets=nativeTargets(focus,ancestors);
-    if(pending)for(const record of targets){if(record.original?.visible===false&&!record.status.opened&&!record.status.pending)continue;record.status.pending=true;record.status.closed=false;record.status.closing=false;}
+    if(pending)for(const record of targets){if(record.original?.visible===false&&!record.status.opened&&!record.status.pending)continue;record.status.pending=true;record.status.closed=false;record.status.closing=false;record.status.dismissAcknowledged=false;}
     return targets;
   }
   function nativeTargets(focus,ancestors=false) {
@@ -670,13 +672,23 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   function beginDismissal(entry,focus,ancestors=false) {
     entry.native=watchNative(focus,false,ancestors).filter(record=>record.status.opened||record.status.pending).map(record=>record.status);
-    for(const status of entry.native){status.closing=true;status.pending=true;status.closed=false;}
+    for(const status of entry.native){status.closing=true;status.pending=true;status.closed=false;status.dismissAcknowledged=false;}
+  }
+  function requestControlClose(entry) {
+    entry.closeOpenEvents=new Map((entry.native??[]).map(status=>[status,status.openEvents??0]));
+    nativeCloseRequests++;entry.control[entry.close]();entry.closing=true;
   }
   async function waitForDismissal(entry) {
     const started=Date.now();
     while(entry.native?.some(status=>!status.closed)){
       const tree=index(),waiting=entry.native.filter(status=>!status.closed);
       if(!waiting.some(status=>[...nativeRecords.values()].some(record=>record.status===status&&tree.current.has(record.fiber))))return;
+      // A close can run before a native ref exists and silently do nothing.
+      // Retry once only after a later real open event, and only if native has
+      // not acknowledged any closing transition. An accepted close stays single.
+      if(entry.control&&!entry.closeRetried&&!waiting.some(status=>status.dismissAcknowledged)&&waiting.some(status=>status.opened&&(status.openEvents??0)>(entry.closeOpenEvents?.get(status)??0))){
+        entry.closeRetried=true;nativeCloseRetries++;requestControlClose(entry);
+      }
       if(Date.now()-started>=2000)throw new Error('Native presentation dismissal has not finished.');
       await new Promise(resolve=>later(resolve,40,resolve));
     }
@@ -814,7 +826,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         const tree=index(),connected=roots(entry.nativeFocus,tree);
         if(!connected.some(fiber=>tree.current.has(fiber))){undo.pop();continue;}
         if(!entry.closing){
-          beginDismissal(entry,entry.nativeFocus);entry.control[entry.close]();entry.closing=true;
+          beginDismissal(entry,entry.nativeFocus);requestControlClose(entry);
         }
         if(wait)await waitForDismissal(entry);
       }else{
@@ -829,7 +841,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80,resolve));
   }
-  function cleanup(){previewRefs=new WeakSet();containedImperativeHandles=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[]) {
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&tree.isVisible(fiber));
     const unique=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner)));
@@ -845,6 +857,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const connected=roots(currentFocus,tree);
     return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:viewport=>motion(currentFocus,viewport,tree,connected)};
   }
-  const diagnostics=()=>({containedImperativeHandles,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  const diagnostics=()=>({containedImperativeHandles,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
   return {collect,records,configure,list,open,portalBindings,previewPortals,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

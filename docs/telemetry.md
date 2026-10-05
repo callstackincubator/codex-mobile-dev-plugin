@@ -437,3 +437,13 @@ only when AI context is requested. Timing units and boundaries stay the same;
 query records, route params and cache keys remain local and are never telemetry
 attributes. Presentation cancellation uses the existing restoration timing and
 timeout coverage.
+
+
+Since 0.1.159, native observation and readiness share committed tree metadata.
+Native bounds and lifecycle events still update on each read or event. Existing
+presentation, restoration and command timing windows keep their names, units
+and boundaries. They also cover a single close retry after a late native open
+that has no closing acknowledgement. Close request, retry and acknowledgement
+counts remain local diagnostics; no event payload or controller data enters
+telemetry. Source catalog timing includes ranking preview bodies by unresolved
+guards, with the same capture destinations and source evidence.

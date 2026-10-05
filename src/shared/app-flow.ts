@@ -48,7 +48,7 @@ export type FlowSourceView = {
   id: string; name: string; file: string; owner: string; line: number;
   kind: 'state' | 'control' | 'branch' | 'component';
   source: {line: number; column: number; endLine: number; endColumn: number};
-  components: {file: string; component: string}[];
+  components: {file: string; component: string; guards?: number}[];
   state?: {site: string; path: string[]; value: unknown};
   control?: {component: string; prop: string; boundary: boolean; generic: boolean};
   branch?: {condition: string; side: 'true' | 'false' | 'case'};

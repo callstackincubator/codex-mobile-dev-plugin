@@ -144,7 +144,15 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
   const truth=(unit:SourceUnit,n:ts.Node,v:Origin,value:unknown,depth=0):unknown=>{
     if(depth>8)return undefined;n=unwrap(n);const readValue=origins(read(unit,n));if(readValue.some(r=>r.site.id===v.site.id&&JSON.stringify(r.path)===JSON.stringify(v.path)))return value;
     if(ts.isPrefixUnaryExpression(n)&&n.operator===ts.SyntaxKind.ExclamationToken){const a=truth(unit,n.operand,v,value,depth+1);return a===undefined?undefined:!a;}
-    if(ts.isBinaryExpression(n)){const a=truth(unit,n.left,v,value,depth+1),b=truth(unit,n.right,v,value,depth+1);if(a===undefined||b===undefined)return undefined;switch(n.operatorToken.kind){case ts.SyntaxKind.EqualsEqualsEqualsToken:case ts.SyntaxKind.EqualsEqualsToken:return a===b;case ts.SyntaxKind.ExclamationEqualsEqualsToken:case ts.SyntaxKind.ExclamationEqualsToken:return a!==b;case ts.SyntaxKind.AmpersandAmpersandToken:return a&&b;case ts.SyntaxKind.BarBarToken:return a||b;}}
+    if(ts.isBinaryExpression(n)){
+      const a=truth(unit,n.left,v,value,depth+1),b=truth(unit,n.right,v,value,depth+1),op=n.operatorToken.kind;
+      // A known false AND or true OR settles the guard even when its other
+      // operand needs live data. Do not promote that operand to preview state.
+      if(op===ts.SyntaxKind.AmpersandAmpersandToken&&((a!==undefined&&!a)||(b!==undefined&&!b)))return false;
+      if(op===ts.SyntaxKind.BarBarToken){if(a!==undefined&&a)return a;if(b!==undefined&&b)return b;}
+      if(a===undefined||b===undefined)return undefined;
+      switch(op){case ts.SyntaxKind.EqualsEqualsEqualsToken:case ts.SyntaxKind.EqualsEqualsToken:return a===b;case ts.SyntaxKind.ExclamationEqualsEqualsToken:case ts.SyntaxKind.ExclamationEqualsToken:return a!==b;case ts.SyntaxKind.AmpersandAmpersandToken:return a&&b;case ts.SyntaxKind.BarBarToken:return a||b;}
+    }
     return finite(unit,n);
   };
   const possible=(unit:SourceUnit,body:ts.Node,v:Origin,value:unknown)=>{
@@ -190,7 +198,33 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
       if(ts.isBinaryExpression(parent)&&parent.right===p&&parent.operatorToken.kind===ts.SyntaxKind.AmpersandAmpersandToken&&finite(unit,parent.left)===false)return false;
     }return true;
   };
-  const parts=(unit:SourceUnit,body:ts.Node,state?:FlowSourceView['state'])=>{const result=new Map<string,{file:string;component:string}>(),site=state&&states.find(s=>s.id===state.site);const visit=(n:ts.Node)=>{if(ts.isFunctionLike(n))return;if(ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n)){if(state&&site&&!possible(unit,n,{site,path:state.path},state.value))return;const tag=n.tagName.getText();if(/^[A-Z]/.test(tag)){const resolved=symbol(unit,tag),split=resolved.lastIndexOf('#');if(split>=0&&units.has(resolved.slice(0,split))){const item={file:relative(root,resolved.slice(0,split)),component:resolved.slice(split+1)};result.set(resolved,item);}}}ts.forEachChild(n,visit);};visit(body);return [...result.values()];};
+  const parts=(unit:SourceUnit,body:ts.Node,state?:FlowSourceView['state'])=>{
+    const result=new Map<string,FlowSourceView['components'][number]>(),site=state&&states.find(s=>s.id===state.site);
+    const visit=(n:ts.Node)=>{
+      if(ts.isFunctionLike(n))return;
+      if(ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n)){
+        const ref=state&&site?{site,path:state.path}:undefined;
+        if(ref&&!possible(unit,n,ref,state!.value))return;
+        const tag=n.tagName.getText();
+        if(/^[A-Z]/.test(tag)){
+          const resolved=symbol(unit,tag),split=resolved.lastIndexOf('#');
+          if(split>=0&&units.has(resolved.slice(0,split))){
+            let guards=0;
+            if(ref)for(let p:ts.Node=n;p.parent&&!ts.isFunctionLike(p.parent);p=p.parent){
+              const parent=p.parent;
+              const condition=ts.isConditionalExpression(parent)?parent.condition:ts.isIfStatement(parent)?parent.expression:
+                ts.isBinaryExpression(parent)&&parent.right===p&&parent.operatorToken.kind===ts.SyntaxKind.AmpersandAmpersandToken?parent.left:undefined;
+              if(condition&&truth(unit,condition,ref,state!.value)===undefined)guards++;
+            }
+            const item={file:relative(root,resolved.slice(0,split)),component:resolved.slice(split+1),...(ref?{guards}:{})},previous=result.get(resolved);
+            if(!previous||(item.guards??0)<(previous.guards??0))result.set(resolved,item);
+          }
+        }
+      }
+      ts.forEachChild(n,visit);
+    };
+    visit(body);return [...result.values()];
+  };
   const add=(unit:SourceUnit,body:ts.Node,kind:FlowSourceView['kind'],extra:Partial<FlowSourceView>)=>{
     const loc=location(unit,body),fn=owner(body);if(!fn||!reachable(unit,body))return;
     let jsx=false;walk(body,n=>{if(ts.isJsxElement(n)||ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n))jsx=true;});if(!jsx)return;
@@ -198,7 +232,7 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
     const identity=extra.state?['state',extra.state]:[file,own,loc,kind,extra.control,extra.branch];
     const id=hash(identity),existing=views.get(id);
     const renderBody=ts.isCaseClause(body)||ts.isReturnStatement(body)||ts.isBlock(body)&&body.statements.some(ts.isReturnStatement)||(()=>{for(let p=body;p.parent&&!ts.isFunctionLike(p.parent);p=p.parent){if(ts.isReturnStatement(p.parent))return true;if(ts.isJsxElement(p.parent)||ts.isJsxFragment(p.parent))return false;}return false;})();
-    if(existing){existing.renderBody||=renderBody;if(!existing.components.length&&components.length)existing.name=components[0].component;for(const p of components)if(!existing.components.some(c=>c.file===p.file&&c.component===p.component))existing.components.push(p);return;}
+    if(existing){existing.renderBody||=renderBody;if(!existing.components.length&&components.length)existing.name=components[0].component;for(const p of components){const prior=existing.components.find(c=>c.file===p.file&&c.component===p.component);if(!prior)existing.components.push(p);else if(p.guards!==undefined)prior.guards=Math.min(prior.guards??p.guards,p.guards);}return;}
     views.set(id,{id,file,owner:own,line:loc.line,source:loc,kind,name:components[0]?.component??own,components,availability:'observed-only',renderBody,...extra});
   };
   const stateBranch=(unit:SourceUnit,condition:ts.Node,body:ts.Node,side:'true'|'false')=>{

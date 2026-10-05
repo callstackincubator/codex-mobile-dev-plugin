@@ -863,6 +863,28 @@ test('committed tree metadata is reused while native geometry and state stay fre
   runtime.cleanup();const before=walks;hook.onCommitFiberRoot();assert.equal(walks,before,'Cleanup removes the observer');
 });
 
+test('native observation and readiness share one tree walk per commit',()=>{
+  let walks=0,width=100;
+  const hook={renderers:new Map(),onCommitFiberRoot(){}};
+  const app=tree(options=>installPresentationRuntime({...options,hook,fibers(visit:any,subtree?:any){if(!subtree)walks++;options.fibers(visit,subtree)}}));
+  const props={onStateChange(){}},canonical={currentProps:props,publicInstance:{getBoundingClientRect:()=>({x:0,y:0,width,height:200})}};
+  app.sheet.child={tag:5,type:'NativeHost',memoizedProps:props,stateNode:{canonical},return:app.sheet};
+  app.control.open=()=>canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});
+  try{
+    app.runtime.open('open');const before=walks;
+    width=160;hook.onCommitFiberRoot();
+    const probe=app.runtime.probeFocus(app.sheet,'Sheet');
+    assert.equal(probe.expectedReady,true);assert.equal(probe.motion().pending,false);
+    assert.equal(walks-before,1,'Native observers and readiness must share fresh committed metadata');
+    canonical.currentProps.onStateChange({nativeEvent:{state:'closing'}});
+    assert.equal(app.runtime.probeFocus(app.sheet,'Sheet').motion().pending,true,'Live native events remain uncached');
+    assert.equal(walks-before,1);
+    const native={tag:5,type:'SecondNativeHost',memoizedProps:props,stateNode:{canonical:{currentProps:props}},return:app.sheet};
+    app.sheet.child.sibling=native;hook.onCommitFiberRoot();
+    assert.equal(app.runtime.diagnostics().nativeHosts,2,'A new native host is observed on its first commit');
+  }finally{app.runtime.cleanup()}
+});
+
 test('an unavailable commit hook never caches tree structure',()=>{
   const app=tree();assert.equal(app.runtime.focusFor('Nested',app.sheet),app.nested);
   app.sheet.child=undefined;assert.equal(app.runtime.focusFor('Nested',app.sheet),undefined);
@@ -1077,6 +1099,35 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
     instance.props.onStateChange({nativeEvent:{state:'closed'}});
     await app.runtime.rollback();assert.equal(app.runtime.checkpoint(),0);
     assert.equal(calls,4);app.runtime.cleanup();assert.equal(instance.props.onStateChange,original.onStateChange);
+  });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`a close sent before native presentation exists retries after its late open event (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    let now=0,nativeReady=false;
+    const app=tree(options=>install({...options,later:callback=>setTimeout(()=>{now+=100;callback()},0)}));
+    t.mock.method(Date,'now',()=>now);
+    const instance={props:{onStateChange(){}}};
+    app.sheet.child={tag:1,type:function NativeSheet(){},memoizedProps:instance.props,stateNode:instance,return:app.sheet};
+    app.control.open=()=>instance.props.onStateChange({nativeEvent:{state:'opening'}});
+    app.control.close=()=>{
+      app.control.closes++;
+      // Native refs can mount after the imperative open. An early close is a
+      // no-op and emits no closing event, rather than starting a dismissal.
+      if(!nativeReady)return;
+      instance.props.onStateChange({nativeEvent:{state:'closing'}});
+      setTimeout(()=>instance.props.onStateChange({nativeEvent:{state:'closed'}}),0);
+    };
+    try{
+      app.runtime.open('open');
+      const closing=app.runtime.rollback();
+      await new Promise(resolve=>setTimeout(resolve,0));
+      assert.equal(app.control.closes,1);assert.equal(app.runtime.checkpoint(),1);
+      nativeReady=true;instance.props.onStateChange({nativeEvent:{state:'open'}});
+      await closing;
+      assert.equal(app.control.closes,2,'Only the late open, without a closing acknowledgement, permits another close');
+      assert.equal(app.runtime.checkpoint(),0);
+    }finally{app.runtime.cleanup()}
   });
 }
 

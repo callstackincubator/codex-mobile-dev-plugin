@@ -27,6 +27,25 @@ test('source preview plans cover finite reducer bodies without opener callbacks 
   assert.equal(result.previewPlannedViews,3);assert.equal(result.actionableViews,0);
 });
 
+test('finite state previews prefer the body selected without unrelated guards over an earlier control', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'flow-preview-target-')); t.after(() => rm(root, {recursive: true, force: true}));
+  await writeFile(join(root, 'App.tsx'), `import {useState} from 'react';
+    export function App({canDismiss}) { const [screen]=useState('start'); return <>
+      {canDismiss && screen==='start' ? <ActionGlyph/> : null}
+      {screen==='start' ? <WelcomeForm/> : <SignInForm/>}
+    </> }
+    function ActionGlyph() { return <span/> }
+    function WelcomeForm() { return <section/> }
+    function SignInForm() { return <section/> }`);
+  const graph = await scanAppFlow(root, 'ios');
+  const plan = graph.presentations!.previews!.find(p => p.effect.kind==='state' && p.effect.value==='start')!;
+  assert.equal(plan.name, 'WelcomeForm');
+  const source = graph.presentations!.views!.find(v => v.state?.value==='start')!;
+  assert.ok(source.components.some(c => c.component==='ActionGlyph'), 'Earlier guarded JSX stays in the source evidence');
+  assert.ok(source.components.some(c => c.component==='WelcomeForm'));
+  assert.equal(plan.views!.length, 1, 'One finite state still has one capture destination');
+});
+
 function runtimeFixture(t:test.TestContext,shared=false,install=installPresentationRuntime,extra?:{modules?:any[];bootstrap?:any}){
   const real={step:'start',record:{id:'observed-record'},pendingSubmit:null};let current:any,clone:any,projection:any;
   let dispatched=0,effects=0,initializers=0,walks=0;const effectKinds:string[]=[];

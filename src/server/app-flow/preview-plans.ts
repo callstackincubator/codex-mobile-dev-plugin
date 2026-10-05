@@ -25,7 +25,11 @@ export function addSourcePreviewPlans(catalog:FlowPresentations) {
       // is not evidence; protected state and boolean visibility checks remain.
       if(typeof value==='boolean'&&!/open|visible|show|view|screen|dialog|modal/i.test(field))continue;
       if(!view.components.length||view.components.every(c=>inlineBody.test(c.component)))continue;
-      const component=view.components.find(c=>!inlineBody.test(c.component)&&c.component!=='default')?.component??view.name;
+      // One finite value can also guard a back button or a status icon. Prefer
+      // the body needing the fewest unrelated conditions, while retaining each
+      // branch/component as evidence and keeping the same capture destination.
+      const component=view.components.filter(c=>!inlineBody.test(c.component)&&c.component!=='default')
+        .sort((a,b)=>(a.guards??0)-(b.guards??0))[0]?.component??view.name;
       action={...base,name:component,component,effect:{kind:'state',...view.state}};
       if(site.owner!==view.owner||site.file!==view.file){
         const component=catalog.views?.find(v=>v.kind==='component'&&v.owner===view.owner&&v.file===view.file);
