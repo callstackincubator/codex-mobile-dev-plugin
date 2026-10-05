@@ -4,7 +4,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   const bindings = new Map(), patches = [], effectPatches = [], undo = [];
   let collected = [];
   const entries = new Map(), entryKeys = new Map(); let entrySources = new WeakMap();
-  let lastScheduled = 0, structureCache, sourceRoot;
+  let lastScheduled = 0, lastExactScheduled = 0, lastFallbackScheduled = 0, structureCache, sourceRoot;
   const portalEffects=new Map();let portalOwners=new WeakMap(),approvedPortals=new WeakSet(),syncingPortals=false;
   let previewRefs=new WeakSet(),containedImperativeHandles=0;
   let catalog = {states:[],actions:[]};
@@ -106,28 +106,32 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     for(const module of modules?.values?.()??[]){
       if(module.isInitialized&&typeof module.verboseName==='string')initialized.set(modulePath(module.verboseName),module.publicModule?.exports);
     }
-    for(const site of states)for(const owner of new Set([site.owner,...(site.owners??[])])){
-      const target=targets.get(owner)??{types:new Set(),fallback:false};
-      const exports=sourceModule(initialized,site.file), matches=[];
-      // Read data exports only. Never initialize a project module or invoke a
-      // getter to identify one of several unrelated same-named Providers.
-      const descriptors=exports&&(typeof exports==='object'||typeof exports==='function')?Object.getOwnPropertyDescriptors(exports):{};
-      for(const [key,descriptor]of Object.entries(descriptors)){
-        if(!('value'in descriptor))continue;
-        const type=descriptor.value;
-        const data=key=>{if(!type||(typeof type!=='object'&&typeof type!=='function'))return;const d=Object.getOwnPropertyDescriptor(type,key);return d&&'value'in d?d.value:undefined;};
-        const body=data('render')??data('type')??type;
-        if((key===owner||body?.displayName===owner||body?.name===owner)&&typeof body==='function')matches.push(type,body);
+    for(const site of states){
+      const qualified=site.ownerSites??[];
+      const sources=[{owner:site.owner,file:site.file},...qualified,...(site.owners??[]).filter(owner=>!qualified.some(source=>source.owner===owner)).map(owner=>({owner,file:site.file}))];
+      for(const {owner,file}of sources){
+        const target=targets.get(owner)??{types:new Set(),fallback:false};
+        const exports=sourceModule(initialized,file), matches=[];
+        // Read data exports only. Never initialize a project module or invoke a
+        // getter to identify one of several unrelated same-named Providers.
+        const descriptors=exports&&(typeof exports==='object'||typeof exports==='function')?Object.getOwnPropertyDescriptors(exports):{};
+        for(const [key,descriptor]of Object.entries(descriptors)){
+          if(!('value'in descriptor))continue;
+          const type=descriptor.value;
+          const data=key=>{if(!type||(typeof type!=='object'&&typeof type!=='function'))return;const d=Object.getOwnPropertyDescriptor(type,key);return d&&'value'in d?d.value:undefined;};
+          const body=data('render')??data('type')??type;
+          if((key===owner||body?.displayName===owner||body?.name===owner)&&typeof body==='function')matches.push(type,body);
+        }
+        if(typeof exports==='function'&&exports.name===owner)matches.push(exports);
+        if(matches.length)for(const type of matches)target.types.add(type);else target.fallback=true;
+        targets.set(owner,target);
       }
-      if(typeof exports==='function'&&exports.name===owner)matches.push(exports);
-      if(matches.length)for(const type of matches)target.types.add(type);else target.fallback=true;
-      targets.set(owner,target);
     }
     return targets;
   }
   async function collect(states = catalog.states, actions = catalog.actions, projectRoot = sourceRoot) {
     if(typeof projectRoot==='string')sourceRoot=modulePath(projectRoot).replace(/\/$/,'');
-    catalog={states,actions};lastScheduled=0;
+    catalog={states,actions};lastScheduled=lastExactScheduled=lastFallbackScheduled=0;
     if(!patchHooks())return records(0);
     try {
       const mounted=new Set(committedStructure().all);
@@ -143,7 +147,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(!collecting.size)return records(0);
       for(const fiber of collecting){
         for(const renderer of hook.renderers.values())if(renderer.rendererPackageName==='react-native-renderer'&&typeof renderer.scheduleUpdate==='function'){
-          try{renderer.scheduleUpdate(fiber);lastScheduled++;}catch{}break;
+          try{renderer.scheduleUpdate(fiber);lastScheduled++;const target=targets.get(name(fiber));if(target?.types.has(fiber.type)||target?.types.has(fiber.elementType))lastExactScheduled++;else lastFallbackScheduled++;}catch{}break;
         }
       }
       if(lastScheduled)await new Promise(resolve=>later(resolve,80,resolve));
@@ -594,19 +598,52 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(!path.length)return next;
     const [first,...rest]=path;const copy=Array.isArray(value)?value.slice():{...value};copy[first]=setPath(value?.[first],rest,next);return copy;
   }
-  const nativeRecords=new Map();let commitPatch,nativeArmed=false,nativeCloseRequests=0,nativeCloseRetries=0;
+  const nativeRecords=new Map(),nativeClassCallbacks=new Map();let nativeCallbackOrigins=new WeakMap();
+  let commitPatch,nativeArmed=false,nativeCloseRequests=0,nativeCloseRetries=0;
+  function forgetClassCallbacks(instance,record) {
+    for(const [key,handler]of record.handlers){
+      if(Object.getOwnPropertyDescriptor(instance,key)?.value===handler.wrapped)Object.defineProperty(instance,key,handler.descriptor);
+      for(const detach of handler.detach)detach();
+    }
+    record.handlers.clear();nativeClassCallbacks.delete(instance);
+  }
+  function watchClassCallbacks(instance,props,status) {
+    let record=nativeClassCallbacks.get(instance);
+    // A class can cache a bound event handler before passing it to a native
+    // view. Keep this wrapper stable across props commits, so the cached native
+    // callback still reports its real lifecycle event. Never read accessors.
+    for(const key of ['onShow','onDismiss','onStateChange']){
+      if(typeof props[key]!=='function')continue;
+      const descriptor=Object.getOwnPropertyDescriptor(instance,key),prior=record?.handlers.get(key);
+      if(prior&&descriptor?.value===prior.wrapped)continue;
+      if(prior){for(const detach of prior.detach)detach();record.handlers.delete(key);}
+      if(!descriptor||!('value'in descriptor)||!descriptor.writable||typeof descriptor.value!=='function')continue;
+      if(!record){if(nativeClassCallbacks.size>=200)continue;record={status,handlers:new Map()};nativeClassCallbacks.set(instance,record);}
+      const handler={descriptor,status:record.status,detach:[]};
+      handler.wrapped=nativeHandler(key,descriptor.value,handler);
+      try{Object.defineProperty(instance,key,{...descriptor,value:handler.wrapped});}catch{for(const detach of handler.detach)detach();continue;}
+      record.handlers.set(key,handler);nativeCallbackOrigins.set(handler.wrapped,record.status);
+    }
+    if(record&&!record.handlers.size)forgetClassCallbacks(instance,record);
+    return record?.status;
+  }
   function nativeHandler(key, handler, record) {
     // A newer observer can keep this wrapper as its original handler. Detach
     // the record even when the wrapper can no longer be removed from that chain.
     record.detach.push(()=>{record=undefined;});
     return function(...args){
-      if(record){
-        const status=record.status,state=key==='onShow'?'open':key==='onDismiss'?'closed':args[0]?.nativeEvent?.state;
+      const status=record?.status,event=args[0],previous=status?.dispatch;
+      const duplicate=previous?.key===key&&previous.event===event;
+      if(status&&!duplicate){
+        // Deduplicate only a synchronous forwarding chain. Native can pool and
+        // reuse an event object for a later, different lifecycle transition.
+        status.dispatch={key,event};
+        const state=key==='onShow'?'open':key==='onDismiss'?'closed':event?.nativeEvent?.state;
         if(['closed','dismissed'].includes(state)){status.pending=false;status.closed=true;status.opened=false;}
         else if(['open','opened','presented'].includes(state)){status.openEvents=(status.openEvents??0)+1;status.closed=false;status.opened=true;status.pending=!!status.closing;}
         else if(['opening','closing'].includes(state)){status.pending=true;if(state==='closing')status.dismissAcknowledged=true;}
       }
-      return handler.apply(this,args);
+      try{return handler.apply(this,args);}finally{if(status&&!duplicate)status.dispatch=previous;}
     };
   }
   function forgetNative(record) {
@@ -627,7 +664,14 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(!props||typeof props.onShow!=='function'&&typeof props.onDismiss!=='function'&&typeof props.onStateChange!=='function')continue;
       mounted.add(canonical);(fiber.tag===5?hosts:adapters).push({fiber,canonical,field,props});
     }
+    for(const [instance,record]of nativeClassCallbacks)if(!mounted.has(instance))forgetClassCallbacks(instance,record);
     for(const [canonical,record]of nativeRecords)if(!mounted.has(canonical)&&!record.status.pending&&!record.status.opened){forgetNative(record);nativeRecords.delete(canonical);}
+    // Register cached class callbacks before matching hosts which forward them.
+    // Both boundaries share one status and deduplicate the same event object.
+    for(const {canonical,props}of adapters){
+      const status=nativeRecords.get(canonical)?.status??{pending:mounting&&props.visible!==false&&typeof props.onShow==='function',opened:props.visible===true,closed:false,closing:false};
+      watchClassCallbacks(canonical,props,status);
+    }
     // Idle class wrappers must not fill the bound before a newly mounted host
     // can receive native events. Keep active waiters and prefer dispatch hosts.
     for(const {fiber,canonical,field,props}of [...hosts,...adapters]){
@@ -640,7 +684,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         const idle=fiber.tag===5&&[...nativeRecords.values()].find(record=>record.fiber?.tag===1&&!record.status.pending&&!record.status.opened);
         if(!idle)continue;const key=idle.canonical;forgetNative(idle);nativeRecords.delete(key);
       }
-      const status=previous?.status??{pending:mounting&&props.visible!==false&&typeof props.onShow==='function',opened:props.visible===true,closed:false,closing:false};
+      const forwarded=['onShow','onDismiss','onStateChange'].map(key=>nativeCallbackOrigins.get(props[key])).filter(Boolean);
+      const shared=forwarded.length&&forwarded.every(status=>status===forwarded[0])?forwarded[0]:undefined;
+      const status=nativeClassCallbacks.get(canonical)?.status??shared??previous?.status??{pending:mounting&&props.visible!==false&&typeof props.onShow==='function',opened:props.visible===true,closed:false,closing:false};
       if(previous)forgetNative(previous);
       const record={canonical,field,fiber,original:props,visible:props.visible,status,detach:[]};
       const patched={...props};
@@ -735,7 +781,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const error=projected.some(record=>record.failed&&(focus===record.focus||roots(record.focus).includes(focus)))?'The temporary presentation preview failed.':undefined;
     return {pending,signature:JSON.stringify(boxes),error};
   }
-  function clearNative(){structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();}
+  function clearNative(){structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();for(const [instance,record]of nativeClassCallbacks)forgetClassCallbacks(instance,record);nativeCallbackOrigins=new WeakMap();}
   function open(id,focus) {
     if(undo.some(entry=>entry.closing))return {error:'A native presentation is still dismissing.'};
     armNative();
@@ -860,6 +906,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const connected=roots(currentFocus,tree);
     return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:viewport=>motion(currentFocus,viewport,tree,connected)};
   }
-  const diagnostics=()=>({containedImperativeHandles,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  const diagnostics=()=>({lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
   return {collect,records,configure,list,open,portalBindings,previewPortals,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

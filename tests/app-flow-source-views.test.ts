@@ -31,6 +31,8 @@ test('finite reducer fields cross tuple contexts, returned custom hooks and JSX 
   const site=catalog.viewStates!.find(s=>s.owner==='useFlow')!;
   assert.deepEqual(new Set(catalog.views!.filter(v=>v.state?.site===site.id).map(v=>v.state?.value)),new Set(['start','verify','done']));
   assert.ok(catalog.views!.filter(v=>v.state?.site===site.id).every(v=>v.state?.path.join('.')==='step'));
+  assert.ok(site.ownerSites?.some(owner=>owner.file==='state.tsx'&&owner.owner==='Provider'));
+  assert.ok(site.ownerSites?.some(owner=>owner.file==='App.tsx'&&owner.owner==='App'));
   assert.equal(catalog.actions.length,0);assert.equal(catalog.states.length,0);
 });
 

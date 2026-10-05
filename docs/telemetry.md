@@ -466,3 +466,19 @@ measurements include this work with the same boundaries and units.
 Initialized Metro export lookup accepts relative paths and absolute paths under
 the selected project root. Binding and preview-open timings still include this
 lookup with the same units and boundaries. Module paths and exports stay local.
+
+Source catalog timing also covers rejecting progress-only preview branches.
+Their source evidence stays available. The existing scan and preview-plan
+measurements keep their names, units and boundaries; conditions stay local.
+
+Custom hook consumer matching keeps the consumer module separate from the hook
+module. Existing binding timings include this lookup. Local diagnostics separate
+exact and fallback scheduled updates; source paths remain local.
+
+Cached native class lifecycle callbacks now share completion state with hosts
+that forward those same callbacks. Tracking keeps each callback stable through
+props commits and restores its original descriptor during cleanup. Native open
+and dismissal checks still wait for real events. The existing App Flow
+restoration and binding timings keep their names, milliseconds and boundaries.
+The local callback count helps distinguish missing listeners from a slow native
+transition; no callback, event, class identity or app props enter Sentry.

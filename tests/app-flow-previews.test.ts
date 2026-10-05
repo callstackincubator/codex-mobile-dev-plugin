@@ -47,6 +47,28 @@ test('finite state previews prefer the body selected without unrelated guards ov
 });
 
 
+test('request progress branches stay source evidence and do not become UI selector previews',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'flow-preview-progress-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await writeFile(join(root,'App.tsx'), `import {useState} from 'react';
+    export function App({pending,isLoading,busy}){const [mode]=useState('edit');return <>
+      {pending && mode==='edit' ? <ProgressGlyph/> : null}
+      {!!isLoading && mode==='check' ? <ProgressGlyph/> : null}
+      {busy===true && mode==='send' ? <ProgressGlyph/> : null}
+      {!pending && mode==='edit' ? <EditForm/> : null}
+      {isLoading===false && mode==='check' ? <CheckForm/> : null}
+      {busy!==true && mode==='send' ? <SendForm/> : null}
+    </>}
+    export function Optional({pending}){const [mode]=useState('edit');return mode==='edit'||pending?<OptionalForm/>:null}
+    function ProgressGlyph(){return <span/>}function EditForm(){return <section/>}
+    function OptionalForm(){return <section/>}function CheckForm(){return <section/>}function SendForm(){return <section/>}`);
+  const graph=await scanAppFlow(root,'ios'),catalog=graph.presentations!;
+  const plans=catalog.previews!.filter(p=>p.effect.kind==='state');
+  assert.deepEqual(plans.map(p=>p.component).sort(),['CheckForm','EditForm','OptionalForm','SendForm']);
+  assert.ok(catalog.views!.some(v=>v.components.some(c=>c.component==='ProgressGlyph')),'Progress branches remain source evidence');
+  assert.ok(plans.every(p=>p.component!=='ProgressGlyph'));
+});
+
+
 test('a local reducer form keeps its body when a nested row callback uses the same selector first', async t => {
   const root=await mkdtemp(join(tmpdir(),'flow-preview-rows-'));t.after(()=>rm(root,{recursive:true,force:true}));
   await writeFile(join(root,'App.tsx'), `import {useReducer} from 'react';
@@ -297,6 +319,26 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
     renderer.scheduleUpdate=(fiber:any)=>{scheduled.push(fiber);return update(fiber)};
     await configure(app,'/workspace/demo');
     assert.deepEqual(scheduled,[app.owner],'A same-named component from another module must not be rerendered');
+    assert.equal(app.runtime.list().length,1);
+    assert.equal(app.counts.dispatched,0);
+  });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`custom hook consumers use their own module paths (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    const providerExports:any={};
+    const app=runtimeFixture(t,true,install,{modules:[
+      [3,{isInitialized:true,verboseName:'/workspace/demo/State.tsx',publicModule:{exports:{useFlow:function useFlow(){}}}}],
+      [4,{isInitialized:true,verboseName:'/workspace/demo/Provider.tsx',publicModule:{exports:providerExports}}],
+    ]});
+    providerExports.Provider=app.owner.type;
+    app.site.file='State.tsx';app.site.ownerSites=[{owner:'Provider',file:'Provider.tsx'}];
+    const unrelated:any={type:function Provider(){},return:app.host,memoizedProps:{},memoizedState:{memoizedState:{step:'start'},next:null}};
+    app.owner.sibling=unrelated;
+    const renderer=app.hook.renderers.get(1),scheduled:any[]=[],update=renderer.scheduleUpdate;
+    renderer.scheduleUpdate=(fiber:any)=>{scheduled.push(fiber);return update(fiber)};
+    await configure(app,'/workspace/demo');
+    assert.deepEqual(scheduled,[app.owner],'A custom hook must not collect unrelated same-named providers');
     assert.equal(app.runtime.list().length,1);
     assert.equal(app.counts.dispatched,0);
   });

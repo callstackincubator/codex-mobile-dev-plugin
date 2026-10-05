@@ -1591,3 +1591,63 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
   }
  });
 }
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+ test(`cached class lifecycle callbacks survive props commits and finish dismissal (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+  const app=tree(install),events:string[]=[],originalProps={onStateChange(){assert.fail('The cached handler does not read current props')}};
+  const instance:any={props:originalProps,onStateChange(event:any){assert.equal(this,instance);events.push(event.nativeEvent.state)}};
+  const original=Object.getOwnPropertyDescriptor(instance,'onStateChange');
+  const adapter:any={tag:1,type:function SheetAdapter(){},stateNode:instance,memoizedProps:originalProps,return:app.sheet};app.sheet.child=adapter;
+  const hook:any={renderers:new Map(),onCommitFiberRoot(){}};
+  const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??app.root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+  const runtime=install({hook,fibers,hidden:()=>false,later:setTimeout});
+  configureFixture(runtime,{states:[],actions:[app.action]});
+  let cached:any,canonical:any;
+  app.control.open=()=>{
+   cached=instance.onStateChange;
+   const props={onStateChange:cached};canonical={currentProps:props};
+   adapter.child={tag:5,type:'NativeSheet',memoizedProps:props,stateNode:{canonical},return:adapter};
+   hook.onCommitFiberRoot();cached.call(instance,{nativeEvent:{state:'opening'}});
+   instance.props={...originalProps};hook.onCommitFiberRoot();cached.call(instance,{nativeEvent:{state:'open'}});
+  };
+  app.control.close=()=>{
+   app.control.closes++;
+   instance.props={...originalProps};hook.onCommitFiberRoot();cached.call(instance,{nativeEvent:{state:'closing'}});
+   setTimeout(()=>cached.call(instance,{nativeEvent:{state:'closed'}}),20);
+  };
+  try{
+   assert.equal(runtime.open('open').error,undefined);
+   assert.equal(runtime.motion(app.sheet).pending,false,'The cached open callback must reach readiness');
+   const closing=runtime.rollback();await new Promise(resolve=>setTimeout(resolve,5));
+   assert.equal(runtime.checkpoint(),1,'Keep the checkpoint until the real closed event');
+   await closing;assert.equal(app.control.closes,1);assert.equal(runtime.checkpoint(),0);
+   assert.deepEqual(events,['opening','open','closing','closed']);
+   assert.deepEqual(Object.getOwnPropertyDescriptor(instance,'onStateChange'),original);
+   assert.equal(runtime.diagnostics().nativeRecords,0);
+   cached.call(instance,{nativeEvent:{state:'open'}});assert.equal(events.length,5);
+  }finally{runtime.cleanup();app.runtime.cleanup()}
+ });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+ test(`reused native event objects still report later transitions (${install===installPresentationRuntime?'normal':'shared loops'})`,()=>{
+  const app=tree(install),props={onStateChange(){}},canonical={currentProps:props};
+  app.sheet.child={tag:5,type:'NativeSheet',stateNode:{canonical},memoizedProps:props,return:app.sheet};
+  const event={nativeEvent:{state:'opening'}};
+  try{
+   app.runtime.open('open');canonical.currentProps.onStateChange(event);assert.equal(app.runtime.motion(app.sheet).pending,true);
+   event.nativeEvent.state='open';canonical.currentProps.onStateChange(event);assert.equal(app.runtime.motion(app.sheet).pending,false);
+   event.nativeEvent.state='closing';canonical.currentProps.onStateChange(event);assert.equal(app.runtime.motion(app.sheet).pending,true);
+   event.nativeEvent.state='closed';canonical.currentProps.onStateChange(event);assert.equal(app.runtime.motion(app.sheet).pending,false);
+  }finally{app.runtime.cleanup()}
+ });
+ test(`cached lifecycle tracking skips class accessors and readonly callbacks (${install===installPresentationRuntime?'normal':'shared loops'})`,()=>{
+  const app=tree(install),props={onStateChange(){},onShow(){}},instance:any={props};let reads=0;
+  Object.defineProperty(instance,'onStateChange',{get(){reads++;throw Error('Never evaluate a class accessor')},configurable:true});
+  Object.defineProperty(instance,'onShow',{value(){},writable:false,configurable:true});
+  const before=Object.getOwnPropertyDescriptors(instance);
+  app.sheet.child={tag:1,type:function SheetAdapter(){},stateNode:instance,memoizedProps:props,return:app.sheet};
+  try{app.runtime.open('open');assert.equal(reads,0);}finally{app.runtime.cleanup()}
+  assert.deepEqual(Object.getOwnPropertyDescriptors(instance),before);assert.equal(reads,0);
+ });
+}

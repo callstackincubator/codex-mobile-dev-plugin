@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import ts from 'typescript';
 import type {FlowPresentationAction,FlowPresentations,FlowStateSite} from '../../shared/app-flow.ts';
 
 // Only finite presentation selectors become hook previews. Query results,
@@ -7,6 +8,34 @@ const protectedField=/token|password|secret|authorization|cookie|credential|auth
 const inlineBody=/^(?:View|Text|Button|Icon|Avatar|Fragment|ActivityIndicator)$|Skeleton|Shimmer|Loading|Spinner|EmptyState|ErrorMessage/;
 const destination=(action:FlowPresentationAction)=>JSON.stringify(action.effect.kind==='state'?[action.effect.site,action.effect.path,action.effect.value]:[action.file,action.owner,action.effect]);
 const id=(key:string)=>`preview-${createHash('sha256').update(key).digest('hex').slice(0,20)}`;
+
+// A UI selector cannot reveal a progress-only branch without changing a
+// separate request flag. Keep its source evidence, but do not queue it as a view.
+function requiresProgress(branch:import('../../shared/app-flow.ts').FlowSourceView['branch']) {
+  if(!branch||branch.side==='case')return false;
+  const ast=ts.createSourceFile('condition.ts',`const condition=(${branch.condition});`,ts.ScriptTarget.Latest,true);
+  const statement=ast.statements[0];
+  if(!statement||!ts.isVariableStatement(statement))return false;
+  const expression=statement.declarationList.declarations[0]?.initializer;if(!expression)return false;
+  const progress=/^(?:is)?(?:pending|loading|fetching|submitting|mutating|busy)$/i;
+  const required=(node:ts.Expression,positive:boolean):boolean=>{
+    if(ts.isParenthesizedExpression(node))return required(node.expression,positive);
+    if(ts.isPrefixUnaryExpression(node)&&node.operator===ts.SyntaxKind.ExclamationToken)return required(node.operand,!positive);
+    if(ts.isIdentifier(node)||ts.isPropertyAccessExpression(node))return positive&&progress.test(ts.isIdentifier(node)?node.text:node.name.text);
+    if(!ts.isBinaryExpression(node))return false;
+    const op=node.operatorToken.kind;
+    if(op===ts.SyntaxKind.AmpersandAmpersandToken||op===ts.SyntaxKind.BarBarToken){
+      const a=required(node.left,positive),b=required(node.right,positive);
+      return (op===ts.SyntaxKind.AmpersandAmpersandToken)===positive?a||b:a&&b;
+    }
+    if(op!==ts.SyntaxKind.EqualsEqualsEqualsToken&&op!==ts.SyntaxKind.ExclamationEqualsEqualsToken)return false;
+    const boolean=(value:ts.Expression)=>value.kind===ts.SyntaxKind.TrueKeyword?true:value.kind===ts.SyntaxKind.FalseKeyword?false:undefined;
+    const left=boolean(node.left),right=boolean(node.right),value=left??right;
+    if(value===undefined)return false;
+    return required(left===undefined?node.left:node.right,(op===ts.SyntaxKind.EqualsEqualsEqualsToken)===positive?value:!value);
+  };
+  return required(expression,branch.side==='true');
+}
 
 /** Compile conservative, source-bound preview plans. A plan is not proof that
  * its hook/control is mounted or that its real data can render a screenshot. */
@@ -27,6 +56,7 @@ export function addSourcePreviewPlans(catalog:FlowPresentations) {
       // Keep each render origin separate. A row callback can use the same
       // selector before the full form, but cannot serve as that form's owner.
       const candidates=(view.renders??[view]).flatMap(render=>{
+        if(requiresProgress(render.branch))return [];
         if(typeof value==='boolean'&&!/open|visible|show|view|screen|dialog|modal/i.test(field)&&
           !(render.renderBody&&booleanSelectors.has(JSON.stringify([view.state!.site,view.state!.path]))))return [];
         const target=render.components.filter(c=>!inlineBody.test(c.component)&&c.component!=='default')

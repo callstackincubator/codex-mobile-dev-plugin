@@ -108,7 +108,12 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
   // pass reads source facts; no project expression or handler runs.
   const consumers=(value:Value,fn:Fn|undefined,depth=0)=>{
     if(!value||!fn||depth>8)return;const own=name(fn);if(!/^[A-Z]/.test(own)&&own!=='default')return;
-    const sources=origins(value);if(sources.length){for(const v of sources){const owners=v.site.owners??=[];if(!owners.includes(own))owners.push(own);}}
+    const sources=origins(value);
+    if(sources.length)for(const v of sources){
+      const owners=v.site.owners??=[];if(!owners.includes(own))owners.push(own);
+      const ownerSites=v.site.ownerSites??=[],file=relative(root,fnUnits.get(fn)?.file??fn.getSourceFile().fileName);
+      if(!ownerSites.some(site=>site.file===file&&site.owner===own))ownerSites.push({file,owner:own});
+    }
     else for(const v of Object.values(value))consumers(v,fn,depth+1);
   };
   for(let pass=0;pass<6;pass++)for(const [unit,list]of nodes)for(const n of list){
@@ -298,7 +303,7 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
     const callback=renderFn!==fn;
     const render={file,owner:name(renderFn),line:loc.line,source:loc,
       components:components.map(component=>({...component,...(callback?{guards:(component.guards??0)+(fn.parameters.length?1:0)}:{})})),
-      renderBody:!callback&&renderBody,...(callback?{callbackOwner:own}:{})};
+      renderBody:!callback&&renderBody,...(callback?{callbackOwner:own}:{}),...(extra.branch?{branch:extra.branch}:{})};
     if(existing){existing.renders!.push(render);existing.renderBody||=renderBody;if(!existing.components.length&&components.length)existing.name=components[0].component;for(const p of components){const prior=existing.components.find(c=>c.file===p.file&&c.component===p.component);if(!prior)existing.components.push(p);else if(p.guards!==undefined)prior.guards=Math.min(prior.guards??p.guards,p.guards);}return;}
     views.set(id,{id,file,owner:own,line:loc.line,source:loc,kind,name:components[0]?.component??own,components:components.map(component=>({...component})),availability:'observed-only',renderBody,renders:[render],...extra});
   };

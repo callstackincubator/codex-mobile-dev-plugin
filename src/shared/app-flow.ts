@@ -31,7 +31,7 @@ export type FlowNode = {
 };
 export type FlowEdge = { from: string; to: string; kind: "contains" | "navigation"; owner?: string; via?: "link" | "call"; guarded?: boolean; file?: string; line?: number };
 export type FlowLink = { target: string; owner: string; params?: FlowParams; guarded: boolean };
-export type FlowStateSite = { id: string; file: string; line: number; column: number; endLine: number; endColumn?: number; owner: string; paths: string[][]; hook?: 'useState' | 'useReducer'; valueName?: string; owners?: string[] };
+export type FlowStateSite = { id: string; file: string; line: number; column: number; endLine: number; endColumn?: number; owner: string; paths: string[][]; hook?: 'useState' | 'useReducer'; valueName?: string; owners?: string[]; ownerSites?: {file: string; owner: string}[] };
 export type FlowPresentationAction = {
   id: string; file: string; line: number; owner: string; component: string; prop: string; name: string;
   source?: { line: number; column: number; endLine: number; endColumn: number };
@@ -55,7 +55,7 @@ export type FlowSourceView = {
   availability: 'observed-only';
   renderBody?: boolean;
   /** Render sites sharing one finite state; keep callbacks distinct from form owners. */
-  renders?: {file: string; owner: string; line: number; source: FlowSourceView['source']; components: FlowSourceView['components']; renderBody: boolean; callbackOwner?: string}[];
+  renders?: {file: string; owner: string; line: number; source: FlowSourceView['source']; components: FlowSourceView['components']; renderBody: boolean; callbackOwner?: string; branch?: FlowSourceView['branch']}[];
   /** Exported owner whose ordinary initial render needs no supplied props. */
   mount?: {export:string};
   entries?: {file: string; line: number; owner: string; source?: {line: number; column: number; endLine: number; endColumn: number}}[];
