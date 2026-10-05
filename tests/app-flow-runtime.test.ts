@@ -6,9 +6,9 @@ import { WebSocketServer } from 'ws';
 import { once } from 'node:events';
 import { FlowConnection } from '../src/server/app-flow/connection.ts';
 import { installPresentationRuntime } from '../src/server/app-flow/presentations-runtime.js';
-import {FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
+import {FlowRuntimeFailure,FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
 
-function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, clearTimeout}) {
+function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, clearTimeout}, presentations = false) {
   let state:any = {index:0,routeNames:['Home','Profile'],routes:[{name:'Home'}]};
   const original = state;
   const navigation = { getState:()=>state, isFocused:()=>true, dispatch(action:any){
@@ -21,7 +21,7 @@ function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, cl
   fiber.child=native;
   function sync(){fiber.memoizedProps.route=state.routes[state.index ?? 0]}
   const context=vm.createContext({...timers,Date,Map,Set,JSON,Math,Object,Array,String,__REACT_DEVTOOLS_GLOBAL_HOOK__:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer'}]]),getFiberRoots:()=>[{current:fiber}]}});
-  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000)`,context);
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,${presentations?installPresentationRuntime.toString():'undefined'})`,context);
   const invoke=(command:any)=>new Promise<any>(resolve=>context.flow.invoke(command,resolve));
   t.after(async()=>{if(context.flow)await invoke({type:'restore'})});
   return {context,invoke,getState:()=>state,original,navigation,fiber,native};
@@ -293,6 +293,73 @@ test('runtime acknowledgements identify the stalled step and missing inspectors 
   t.after(()=>connection.close({restore:false}));
   await assert.rejects(connection.invoke({type:'presentation-collect'},20),error=>error instanceof FlowRuntimeTimeout&&/collecting presentation bindings/.test(error.message));
   await assert.rejects(connection.invoke({type:'heartbeat'},200),/inspector is no longer installed/);
+});
+
+test('presentation setup stops on a failed collection and names rejected or malformed stages',async t=>{
+  const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
+  t.after(()=>new Promise<void>(resolve=>{for(const socket of server.clients)socket.terminate();server.close(()=>resolve())}));
+  const commands:string[]=[];let failing='presentation-collect';
+  server.on('connection',socket=>{
+    let binding='';
+    socket.on('message',bytes=>{
+      const message=JSON.parse(bytes.toString());
+      if(message.method==='Runtime.addBinding')binding=message.params.name;
+      if(message.id>0){socket.send(JSON.stringify({id:message.id,result:{}}));return;}
+      vm.runInNewContext(message.params.expression,{
+        [message.params.objectGroup]:{invoke(command:any,reply:any){commands.push(command.type);reply(command.type===failing?{error:'private app exception'}:command.type==='presentation-collect'?{bindings:[]}:{})}},
+        [binding]:(payload:string)=>socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload}})),
+      });
+    });
+  });
+  const address=server.address()as {port:number},connection=new FlowConnection(`ws://127.0.0.1:${address.port}`);
+  t.after(()=>connection.close({restore:false}));
+  const setup={type:'presentation-setup',projectRoot:'/app',catalog:{states:[],actions:[]}};
+  await assert.rejects(connection.invoke(setup),error=>error instanceof FlowRuntimeFailure&&error.operation==='presentation-collect'&&!error.message.includes('private')&&error.detail==='private app exception');
+  assert.deepEqual(commands,['presentation-collect'],'A failed collection must never bind an empty catalog');
+  failing='presentation-configure';
+  await assert.rejects(connection.invoke(setup),error=>error instanceof FlowRuntimeFailure&&error.operation==='presentation-configure');
+  failing='none';
+  await assert.rejects(connection.invoke({type:'presentations'}),error=>error instanceof FlowRuntimeFailure&&error.operation==='presentations'&&/invalid response/.test(error.message));
+});
+
+test('a connection sends presentation plans once and fresh connections seed their own runtime',async t=>{
+  const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
+  t.after(()=>new Promise<void>(resolve=>{for(const socket of server.clients)socket.terminate();server.close(()=>resolve())}));
+  const commands:any[]=[];
+  server.on('connection',socket=>{
+    let binding='';
+    socket.on('message',bytes=>{
+      const message=JSON.parse(bytes.toString());if(message.method==='Runtime.addBinding')binding=message.params.name;
+      if(message.id>0){socket.send(JSON.stringify({id:message.id,result:{}}));return;}
+      vm.runInNewContext(message.params.expression,{
+        [message.params.objectGroup]:{invoke(command:any,reply:any){commands.push(command);reply(command.type==='presentation-collect'?{bindings:[]}:{})}},
+        [binding]:(payload:string)=>socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload}})),
+      });
+    });
+  });
+  const address=server.address()as {port:number},url=`ws://127.0.0.1:${address.port}`;
+  const catalog={states:[],actions:[{id:'immutable',effect:{kind:'state'}}]};
+  const command={type:'presentation-setup',projectRoot:'/app',catalog};
+  const first=new FlowConnection(url);t.after(()=>first.close({restore:false}));
+  await first.invoke(command);await first.invoke(command);await first.close({restore:false});
+  const next=new FlowConnection(url);t.after(()=>next.close({restore:false}));await next.invoke(command);
+  const collections=commands.filter(command=>command.type==='presentation-collect');
+  assert.deepEqual(collections.map(command=>command.actions?.length),[1,undefined,1]);
+  assert.ok(commands.filter(command=>command.type==='presentation-configure').every(command=>command.catalog===undefined));
+});
+
+test('recovery releases a cancelled collection wait and restores React exports', {timeout:1000}, async t=>{
+  const app=runtime(t,false,{setTimeout,clearTimeout},true);
+  app.fiber.type=function Home(){};
+  const react={createElement(){},useState(){return [0,()=>{}]},useReducer(){return [0,()=>{}]}};
+  const original=react.useState;
+  app.context.__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}]])};
+  app.context.__REACT_DEVTOOLS_GLOBAL_HOOK__.renderers.get(1).scheduleUpdate=()=>{};
+  const pending=app.invoke({type:'presentation-collect',states:[{id:'local-state',owner:'Home'}],actions:[]});
+  assert.notEqual(react.useState,original);
+  await app.invoke({type:'resume'});
+  await pending;
+  assert.equal(react.useState,original);
 });
 
 

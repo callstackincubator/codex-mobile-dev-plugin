@@ -68,28 +68,29 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return true;
   }
   function unpatchPreviewEffects(){for(const p of effectPatches)if(p.react[p.key]===p.wrapped)p.react[p.key]=p.original;effectPatches.length=0;}
-  async function collect(states, actions = catalog.actions) {
+  async function collect(states = catalog.states, actions = catalog.actions) {
     catalog={states,actions};
     if(!patchHooks())return records(0);
-    const mounted=new Set();fibers(fiber=>mounted.add(fiber));
-    for(const [id,binding]of bindings)if(!mounted.has(binding.fiber)&&!mounted.has(binding.fiber.alternate))bindings.delete(id);
-    const tracked=fiber=>{const record=owners.get(fiber)??owners.get(fiber.alternate);return record&&[...record.values()].some(id=>bindings.has(id));};
-    const targets=new Set(states.flatMap(site=>[site.owner,...(site.owners??[])])),missing=new Set();
-    for(const fiber of mounted){if(fiber.tag===14)continue;const owner=name(fiber);if(targets.has(owner)&&!tracked(fiber))missing.add(owner);}
-    const names=collecting=missing;
-    if(!names.size){unpatch();return records(0);}
-    const scheduled=new Set();
-    fibers(fiber=>{
-      if(!names.has(name(fiber))||scheduled.has(fiber))return;
-      for(const renderer of hook.renderers.values())if(renderer.rendererPackageName==='react-native-renderer'&&typeof renderer.scheduleUpdate==='function'){
-        scheduled.add(fiber);try{renderer.scheduleUpdate(fiber);}catch{}break;
-      }
-    });
-    if(scheduled.size)await new Promise(resolve=>later(resolve,80));
-    // Hooks stay patched only through this bounded render pass. No background
-    // observer, timer, dispatcher replacement, or app source change remains.
-    unpatch(); collecting.clear();
-    return records(0);
+    try {
+      const mounted=new Set();fibers(fiber=>mounted.add(fiber));
+      for(const [id,binding]of bindings)if(!mounted.has(binding.fiber)&&!mounted.has(binding.fiber.alternate))bindings.delete(id);
+      const tracked=fiber=>{const record=owners.get(fiber)??owners.get(fiber.alternate);return record&&[...record.values()].some(id=>bindings.has(id));};
+      const targets=new Set(states.flatMap(site=>[site.owner,...(site.owners??[])])),missing=new Set();
+      for(const fiber of mounted){if(fiber.tag===14)continue;const owner=name(fiber);if(targets.has(owner)&&!tracked(fiber))missing.add(owner);}
+      const names=collecting=missing;
+      if(!names.size)return records(0);
+      const scheduled=new Set();
+      fibers(fiber=>{
+        if(!names.has(name(fiber))||scheduled.has(fiber))return;
+        for(const renderer of hook.renderers.values())if(renderer.rendererPackageName==='react-native-renderer'&&typeof renderer.scheduleUpdate==='function'){
+          scheduled.add(fiber);try{renderer.scheduleUpdate(fiber);}catch{}break;
+        }
+      });
+      if(scheduled.size)await new Promise(resolve=>later(resolve,80,resolve));
+      // Hooks stay patched only through this bounded render pass. No background
+      // observer, timer, dispatcher replacement, or app source change remains.
+      return records(0);
+    } finally { unpatch(); collecting.clear(); }
   }
   function records(offset) {
     // Later pages read the same collection. Rewalking a changing React tree for
@@ -110,7 +111,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(!record&&entries.size<1500){record={id:`entry-${++sequence}`,kind:'entry',fiber,stack:source.stack,source:!source.stack?{file:source.fileName,line:source.lineNumber,column:Math.max(0,(source.columnNumber??1)-1)}:undefined,actions:new Set()};entrySources.set(source,record);entries.set(record.id,record);}
     if(record){record.fiber=fiber;entries.set(record.id,record);}return record;
   }
-  function configure(next,matches,checked=[]){catalog=next;for(const match of matches){const binding=bindings.get(match.binding);if(binding)binding.site=match.site;else entries.get(match.binding)?.actions.add(match.site);}for(const id of checked){const binding=bindings.get(id)??entries.get(id);if(binding)binding.checked=true;}}
+  function configure(next=catalog,matches,checked=[]){catalog=next;for(const match of matches){const binding=bindings.get(match.binding);if(binding)binding.site=match.site;else entries.get(match.binding)?.actions.add(match.site);}for(const id of checked){const binding=bindings.get(id)??entries.get(id);if(binding)binding.checked=true;}}
   const descendants = (fiber,callback) => fibers(callback,fiber);
   function attached(fiber){let measurable=false,shown=false;descendants(fiber,child=>{if(shown)return false;if(child.tag!==5)return;try{const native=child.stateNode?.canonical?.publicInstance??child.stateNode;if(typeof native?.getBoundingClientRect!=='function')return;measurable=true;const box=native.getBoundingClientRect();if(box?.width>0&&box?.height>0)shown=true;}catch{}});return !measurable||shown;}
   const activeAncestors = fiber => {

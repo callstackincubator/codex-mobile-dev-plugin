@@ -58,7 +58,8 @@ export function registerLogTools(server: McpServer, logs: LogSessions, baguette:
     }
     if (options.metro) parseBaseUrl(options.metro.url, "Metro URL");
     const id = logs.open(options);
-    return { content: [{ type: "text", text: "Log stream started." }], structuredContent: { options }, _meta: { sessionId: id, logsUri: `logs://mobile-dev/${id}/batch?after=0` } };
+    const session = { sessionId: id, logsUri: `logs://mobile-dev/${id}/batch?after=0` };
+    return { content: [{ type: "text", text: "Log stream started." }], structuredContent: { options, ...session }, _meta: session };
   }));
 
   registerAppTool(server, "mobile_read_logs", {

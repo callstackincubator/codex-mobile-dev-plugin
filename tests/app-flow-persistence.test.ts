@@ -177,3 +177,17 @@ test('Stop from another MCP process interrupts a long readiness wait', async t =
   assert.equal(result.phase, 'stopped');
   assert.equal(result.nodes[0].image, undefined);
 });
+
+test('closing a run waits for an in-flight control read before releasing its files', {timeout:3000}, async t=>{
+  const directory=await fixture(t);let opening=false,reading=false,reads=0,settled=false;
+  let release!:(value:any[])=>void;
+  const owner=new AppFlowRuns({directory,scan:async()=>graph(),connect:backend([],async()=>{opening=true;return new Promise(()=>{})})});
+  t.mock.method((owner as any).store,'commands',async()=>{if(++reads!==2)return [];reading=true;return new Promise(resolve=>{release=resolve})});
+  const {id}=owner.start(input);
+  try {
+    while(!opening||!reading)await delay(5);
+    const done=(owner as any).sessions.get(id).done.then(()=>{settled=true});
+    owner.stop(id);await delay(10);assert.equal(settled,false);
+    release([]);await done;assert.equal(settled,true);
+  } finally { release?.([]);await owner.close(); }
+});

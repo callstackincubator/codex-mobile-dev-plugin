@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scanAppFlow } from '../src/server/app-flow/scan.ts';
@@ -87,6 +87,12 @@ test('controller capture calls only the matched open/close methods and rolls bac
   assert.equal(app.runtime.checkpoint(),1);
   await app.runtime.rollback(0,false);assert.equal(app.control.closes,1);assert.equal(app.runtime.checkpoint(),0);
   app.runtime.cleanup();assert.equal(app.runtime.list().length,0);
+});
+
+test('binding updates and later collections retain the installed presentation plans',async()=>{
+  const app=tree();app.runtime.configure(undefined,[]);await app.runtime.collect();
+  assert.equal(app.runtime.list().length,1);assert.equal(app.runtime.open('open').focus,app.sheet);
+  await app.runtime.rollback(0,false);assert.equal(app.control.opens,1);app.runtime.cleanup();
 });
 
 test('runtime rejects disabled entries, unmet props and ambiguous controller instances',()=>{
@@ -219,6 +225,16 @@ test('state hook tracking restores only its presentation field and leaves no wra
   configureFixture(runtime,{states:[site],actions:[{...app.action,effect:{kind:'state',site:'state',path:['panel'],value:true}}]},[{binding:stateBinding.id,site:'state'}],refreshed.bindings.map(binding=>binding.id));
   runtime.open('open');assert.equal(state.panel,true);setter((value:any)=>({...value,other:2}));
   await runtime.rollback(0,false);assert.deepEqual(state,{panel:false,other:2});runtime.cleanup();
+});
+
+test('a failed tree collection always restores the original hook exports',async t=>{
+  const react={createElement(){},useState(){return [0,()=>{}]},useReducer(){return [0,()=>{}]}};
+  const state=react.useState,reducer=react.useReducer,previous=(globalThis as any).__r;
+  (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}]])};
+  t.after(()=>{(globalThis as any).__r=previous});
+  const runtime=installPresentationRuntime({hook:{renderers:new Map()},fibers(){throw Error('tree read failed')},hidden:()=>false,later:setTimeout});
+  await assert.rejects(runtime.collect([]),/tree read failed/);
+  assert.equal(react.useState,state);assert.equal(react.useReducer,reducer);runtime.cleanup();
 });
 
 test('presentation binding pages keep one snapshot while new entries mount',()=>{
@@ -540,7 +556,61 @@ test('a second discovery timeout after reconnect keeps captured routes and conti
   }});
   const run=runs.start({projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'fixture',metroUrl:'http://127.0.0.1:8081',useAi:false});
   while(flowRunning(runs.read(run.id)))await new Promise(resolve=>setTimeout(resolve,5));
-  const saved=runs.read(run.id);assert.equal(saved.phase,'complete');assert.equal(saved.error,undefined);
+  const saved=runs.read(run.id);assert.equal(saved.phase,'partial');assert.equal(saved.error,undefined);
   assert.equal(saved.nodes.filter(node=>node.status==='captured').length,2);assert.equal(connections,2);
-  assert.ok(saved.warnings.some(w=>w.includes('completed map was kept')));await runs.close();
+  assert.ok(saved.warnings.some(w=>w.includes('partial map was kept')));
+  assert.equal(saved.discoveryFailures?.length,1);assert.equal(saved.discoveryFailures?.[0].nodeId,'Home');await runs.close();
+});
+
+test('failed discovery retries after fresh routes and discovers sheets without replacing their screenshots',async t=>{
+  const directory=await fixture(t,{}),events:string[]=[];let active='Home',collections=0;
+  const action:any={id:'sheet',owner:'Home',file:'App.tsx',component:'Button',prop:'onPress',name:'Sheet',line:1,effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};
+  const nodes:any[]=['Home','Search'].map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending',entry:true}));
+  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>({
+    runtime:{async close(){},async invoke(command:any){
+      if(command.type==='inspect')return {available:true};
+      if(command.type==='open'){active=command.path[0];events.push(`open:${active}`);return {ready:true,name:active,active:[active],signature:active};}
+      if(command.type==='verify')return {found:true,active:[command.name]};
+      if(command.type==='presentation-setup'&&active==='Home'&&++collections===1)throw Error('temporary discovery failure');
+      if(command.type==='presentations')return active==='Home'?[action]:[];
+      if(command.type==='presentation-open')active='Sheet';
+      if(command.type==='presentation-rollback')active='Home';
+      if(command.type==='presentation-view')return {key:active,ready:true,found:true,signature:active,active:[active]};
+      return {};
+    }},async screenshot(){events.push(`capture:${active}`);return Buffer.from(active)},
+  })});
+  t.after(()=>runs.close());
+  const input:any={projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'fixture',metroUrl:'http://127.0.0.1:8081',useAi:false};
+  const run=runs.start(input);while(flowRunning(runs.read(run.id)))await new Promise(resolve=>setTimeout(resolve,5));
+  const saved=runs.read(run.id);assert.equal(saved.phase,'complete');assert.deepEqual(saved.discoveryFailures,[]);
+  assert.equal(saved.nodes.filter(node=>node.status==='captured').length,3);
+  assert.ok(events.indexOf('open:Search')<events.lastIndexOf('open:Home'));
+  assert.equal(events.filter(event=>event==='capture:Search').length,1);
+  assert.equal(events.filter(event=>event==='capture:Home').length,2,'one original route screenshot and one baseline check before opening the sheet');
+  assert.ok(!saved.warnings.some(warning=>warning.includes('partial map')));
+});
+
+test('extending a captured route discovers newly available sheets and keeps its original image',async t=>{
+  const directory=await fixture(t,{});let active='Home',available=false,shots=0;
+  const action:any={id:'sheet',owner:'Home',file:'App.tsx',component:'Button',prop:'onPress',name:'Sheet',line:1,effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};
+  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes:[{id:'Home',name:'Home',kind:'screen',path:['Home'],required:[],status:'pending',entry:true}],edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>({
+    runtime:{async close(){},async invoke(command:any){
+      if(command.type==='inspect')return {available:true};
+      if(command.type==='open'){active='Home';return {ready:true,name:active,active:[active],signature:active};}
+      if(command.type==='verify')return {found:true,active:[command.name]};
+      if(command.type==='presentations')return available&&active==='Home'?[action]:[];
+      if(command.type==='presentation-open')active='Sheet';
+      if(command.type==='presentation-rollback')active='Home';
+      if(command.type==='presentation-view')return {key:active,ready:true,found:true,signature:active,active:[active]};
+      return {};
+    }},async screenshot(){return Buffer.from(`${active}:${++shots}`)},
+  })});
+  t.after(()=>runs.close());
+  const input:any={projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'fixture',metroUrl:'http://127.0.0.1:8081',useAi:false};
+  const run=runs.start(input);while(flowRunning(runs.read(run.id)))await new Promise(resolve=>setTimeout(resolve,5));
+  const image=await readFile(join(directory,run.id,'Home.png'));
+  available=true;await runs.extend(run.id,input);while(flowRunning(runs.read(run.id)))await new Promise(resolve=>setTimeout(resolve,5));
+  const saved=runs.read(run.id);assert.equal(saved.phase,'complete');assert.equal(saved.nodes.filter(node=>node.status==='captured').length,2);
+  assert.equal(saved.nodes.find(node=>node.id==='Home')?.captureAttempts,1);
+  assert.deepEqual(await readFile(join(directory,run.id,'Home.png')),image);
 });

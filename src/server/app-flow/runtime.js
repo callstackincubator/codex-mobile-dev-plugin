@@ -8,8 +8,10 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
   const observed = new Map();
   const transitions = new Map();
   const waitTimers = new Set(), paintFrames = new Set();
-  const later = (callback, ms) => {
-    const timer = setTimeout(() => { waitTimers.delete(timer); callback(); }, ms);
+  const cancelledWaits = new Map();
+  const later = (callback, ms, onCancel) => {
+    const timer = setTimeout(() => { waitTimers.delete(timer); cancelledWaits.delete(timer); callback(); }, ms);
+    if(onCancel)cancelledWaits.set(timer,onCancel);
     waitTimers.add(timer); return timer;
   };
   const frame = callback => {
@@ -21,6 +23,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
     for (const timer of waitTimers) clearTimeout(timer);
     for (const id of paintFrames) globalThis.cancelAnimationFrame?.(id);
     waitTimers.clear(); paintFrames.clear();
+    for(const resolve of cancelledWaits.values())resolve();cancelledWaits.clear();
   };
   let transitionAt = 0;
   const sensitive = /token|password|secret|authorization|cookie|^(__proto__|constructor|prototype)$/i;
@@ -414,7 +417,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         if (command.type === 'heartbeat') { reply({ alive: true }); return; }
         if (command.type === 'observe') { reply(observe()); return; }
         if (observing) { reply({ error: 'Recording observes screens; navigation commands are disabled.' }); return; }
-        if (command.type === 'presentation-collect') { if (!presentations) { reply({bindings:[]}); return; } void presentations.collect(command.states ?? [],command.actions ?? []).then(reply, () => reply({error:'Presentation bindings could not be read.'})); return; }
+        if (command.type === 'presentation-collect') { if (!presentations) { reply({bindings:[]}); return; } void presentations.collect(command.states,command.actions).then(reply, error => reply({error:'Presentation bindings could not be read.',detail:String(error?.message??error).slice(0,1000)})); return; }
         if (command.type === 'presentation-bindings') { reply(presentations?.records(command.offset ?? 0) ?? {bindings:[]}); return; }
         if (command.type === 'presentation-configure') { presentations?.configure(command.catalog, command.matches ?? [], command.checked ?? []); reply({}); return; }
         if (command.type === 'presentations') { reply(presentations?.list(presentationFocus) ?? []); return; }

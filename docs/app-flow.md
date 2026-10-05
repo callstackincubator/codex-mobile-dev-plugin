@@ -69,16 +69,21 @@ such as marking content read. It cannot undo
 those effects or arbitrary application state changes.
 
 Presentation discovery shares one React tree lookup per check and reads fresh
-hook values on the next check. A second discovery failure after reconnection
-keeps saved screenshots and lets the route queue continue. Runtime timeout
-messages name the inspector step that failed. Saved maps include the plugin
-version that started the run.
+hook values on the next check. Failed discovery keeps saved screenshots and
+retries after untouched routes, with at most three attempts per route. Mapping
+more screens rechecks captured routes for new local forms and sheets without
+replacing their screenshots. A map with unresolved discovery failures ends as
+`partial`, with the failed step in `discoveryFailures`; it does not report ready.
+Bounded runtime exception details stay in the local map for diagnosis.
+Saved maps include the plugin version that started the run.
 
 ## Automatic local forms and sheets
 
 The runner binds hook calls and JSX entries to exact source locations through Metro symbolication.
 React hook exports stay wrapped for one bounded render pass, then return to their
-original functions. It previews only presentation fields with finite source values.
+original functions, including when collection throws or a recovery cancels its
+wait. Each connection sends the fixed presentation plans once, then sends only
+new binding records. It previews only presentation fields with finite source values.
 Injected wrappers keep separate function scopes so Hermes preserves each hook
 primitive and native completion handler.
 It does not change auth/session fields, create accounts, sign out, type fake input,

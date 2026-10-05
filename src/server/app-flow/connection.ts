@@ -3,7 +3,7 @@ import { WebSocket } from "ws";
 import { installFlowRuntime } from "./runtime.js";
 import { installPresentationRuntime } from './presentations-runtime.js';
 import { bindPresentationSites } from './presentations-bindings.ts';
-import {FlowRuntimeMetrics,FlowRuntimeTimeout,runtimeOperation} from './runtime-metrics.ts';
+import {FlowRuntimeFailure,FlowRuntimeMetrics,FlowRuntimeTimeout,runtimeOperation} from './runtime-metrics.ts';
 
 /** A reconnect can reuse the runtime lease and original navigation state. */
 export class FlowConnection {
@@ -20,6 +20,7 @@ export class FlowConnection {
   private heartbeatFailures = 0;
   private metroBase: string;
   private metrics:FlowRuntimeMetrics;
+  private presentationCatalog?:import('../../shared/app-flow.ts').FlowPresentations;
 
   constructor(url: string, sessionId = randomUUID(), platform?:'ios'|'android') {
     this.metrics=new FlowRuntimeMetrics(platform);
@@ -39,7 +40,7 @@ export class FlowConnection {
         if (message.method === "Runtime.bindingCalled" && message.params?.name === this.binding) {
           const value = JSON.parse(message.params.payload); this.finish(value.id, value.result);
         } else if (message.id) {
-          if (message.error || message.result?.exceptionDetails) this.finish(message.id, undefined, new Error("The React Native runtime rejected App Flow inspection."));
+          if (message.error || message.result?.exceptionDetails) this.finish(message.id, undefined, new FlowRuntimeFailure(this.pending.get(message.id)?.operation??'other','was rejected',message.result?.exceptionDetails?.exception?.description??message.result?.exceptionDetails?.text??message.error?.message));
           else if (message.id > 0) this.finish(message.id, message.result);
         }
       } catch { this.fail(new Error("Metro returned an invalid App Flow response.")); }
@@ -80,17 +81,29 @@ export class FlowConnection {
     await this.ready;
     if (command.type === 'presentation-setup') {
       const catalog = command.catalog as import('../../shared/app-flow.ts').FlowPresentations;
-      let page = await this.invoke({ type: 'presentation-collect', states: catalog.states, actions: catalog.actions }, 2500);
+      let page = await this.invoke({ type: 'presentation-collect', ...(this.presentationCatalog===catalog?{}:{states:catalog.states,actions:catalog.actions}) }, 2500);
       const bindings = [];
       for (let i=0;i<30;i++) { bindings.push(...(page.bindings ?? [])); if (page.next === undefined) break; page = await this.invoke({type:'presentation-bindings',offset:page.next},1500); }
-      const matches = await bindPresentationSites(this.metroBase, command.projectRoot as string, bindings, catalog.states, catalog.actions);
-      await this.invoke({ type: 'presentation-configure', catalog, matches, checked: bindings.map(binding => binding.id) }, 1000);
+      let matches;
+      const sourceStarted=performance.now();
+      try { matches = await bindPresentationSites(this.metroBase, command.projectRoot as string, bindings, catalog.states, catalog.actions); }
+      catch(error) { throw new FlowRuntimeFailure('presentation-symbolicate','failed',error instanceof Error?error.message:undefined); }
+      finally { this.metrics.record('presentation-symbolicate',performance.now()-sourceStarted,false); }
+      // collect already installed the immutable plans. Repeating their source
+      // in each evaluate makes Hermes parse the whole catalog twice per route.
+      await this.invoke({ type: 'presentation-configure', matches, checked: bindings.map(binding => binding.id) }, 1000);
+      this.presentationCatalog=catalog;
       return { bindings: matches.length };
     }
     const id = -(++this.sequence);
     const expression = `(()=>{const runtime=globalThis[${JSON.stringify(this.key)}],reply=result=>globalThis[${JSON.stringify(this.binding)}]?.(JSON.stringify({id:${id},result}));if(!runtime?.invoke){reply({runtimeUnavailable:true});return;}runtime.invoke(${JSON.stringify(command)},reply);})()`;
     const result=await this.send("Runtime.evaluate", { expression, silent: true, returnByValue: true, objectGroup: this.key }, timeout, id,runtimeOperation(command.type));
     if(result?.runtimeUnavailable)throw new Error('App Flow inspector is no longer installed. Reconnecting.');
+    if (['presentation-collect','presentation-bindings','presentation-configure','presentation-active','presentations'].includes(String(command.type))) {
+      if(result?.error)throw new FlowRuntimeFailure(String(command.type),'was rejected',result.detail??result.error);
+      if(['presentation-active','presentations'].includes(String(command.type))&&!Array.isArray(result))throw new FlowRuntimeFailure(String(command.type),'returned an invalid response');
+      if(['presentation-collect','presentation-bindings'].includes(String(command.type))&&!Array.isArray(result?.bindings))throw new FlowRuntimeFailure(String(command.type),'returned an invalid response');
+    }
     return result;
   }
   close(options?: { restore?: boolean }): Promise<void> { return this.closing ??= this.dispose(options?.restore !== false); }

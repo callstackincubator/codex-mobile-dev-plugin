@@ -7,6 +7,7 @@ import type { FlowBackend } from './runs.ts';
 import { blankFlowFrame } from './frame.ts';
 import { MeasurementWindow } from '../../shared/telemetry.ts';
 import { captureServerError } from '../telemetry.ts';
+import { FlowRuntimeFailure } from './runtime-metrics.ts';
 
 type View = { key: string; ready: boolean; found: boolean; signature: string; motion?: string; title?: string; active: string[]; loading?: boolean; transitioning?: boolean; error?: string };
 type Action = { id: string; name: string; file: string; line: number };
@@ -18,6 +19,7 @@ export class FlowPresentationCapture {
   readonly bindingTimings = new MeasurementWindow();
   readonly discoveryTimings = new MeasurementWindow();
   private visited = new Set<string>();
+  readonly failures = new Map<string,{nodeId:string;operation:string;message:string;detail?:string}>();
   private previous?: {key:string;bytes:Buffer};
   rememberFrame(bytes:Buffer) { this.previous={key:"",bytes}; }
   private catalog: FlowPresentations;
@@ -26,6 +28,7 @@ export class FlowPresentationCapture {
     this.run=run; this.root=root; this.directory=directory; this.signal=signal; this.changed=changed;
     const catalog=run.presentations;
     this.catalog = {states: [...new Map([...(catalog?.states??[]),...(catalog?.previewStates??[])].map(site=>[site.id,site])).values()], actions: [...(catalog?.actions??[]),...(catalog?.previews??[])]};
+    for(const failure of run.discoveryFailures??[])if(run.nodes.some(node=>node.id===failure.nodeId))this.failures.set(failure.nodeId,failure);
   }
   get enabled() { return this.catalog.actions.length > 0; }
   async setup(backend: FlowBackend) {
@@ -131,8 +134,13 @@ export class FlowPresentationCapture {
       }
       this.visited.add(base.id);
       await this.changed();
-    } catch (error) { this.visited.delete(base.id); throw error; }
-    finally { this.discoveryTimings.record(performance.now() - started); }
+      this.failures.delete(base.id);
+    } catch (error) {
+      this.visited.delete(base.id);
+      this.failures.set(base.id,{nodeId:base.id,operation:error instanceof FlowRuntimeFailure?error.operation:'other',message:error instanceof FlowRuntimeFailure?error.message:'App Flow presentation discovery failed.',detail:error instanceof FlowRuntimeFailure?error.detail:undefined});
+      throw error;
+    }
+    finally { this.run.discoveryFailures=[...this.failures.values()];this.run.revision++;this.discoveryTimings.record(performance.now() - started); }
   }
   async retry(backend: FlowBackend, node: FlowNode) {
     const plan = node.presentation!;

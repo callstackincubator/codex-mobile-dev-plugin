@@ -7,13 +7,23 @@ const operations:Record<string,string>={
   open:'opening a route', verify:'checking a screenshot', observe:'observing the app',
   'presentation-collect':'collecting presentation bindings', 'presentation-bindings':'reading presentation bindings',
   'presentation-configure':'binding presentation source', 'presentation-active':'reading presentation state',
+  'presentation-symbolicate':'resolving presentation source',
   presentations:'finding presentation entries', 'presentation-view':'checking presentation readiness',
   'presentation-open':'opening a presentation', 'presentation-project':'projecting a presentation',
   'presentation-rollback':'restoring a presentation', 'presentation-checkpoint':'reading a presentation checkpoint',
 };
 export const runtimeOperation=(value:unknown)=>typeof value==='string'&&Object.hasOwn(operations,value)?value:'other';
-export class FlowRuntimeTimeout extends Error {
-  constructor(operation:string){super(`App Flow runtime timed out while ${operations[runtimeOperation(operation)]??'running an inspector command'}.`);}
+export class FlowRuntimeFailure extends Error {
+  readonly operation:string;
+  readonly detail?:string;
+  constructor(operation:string, reason='failed', detail?:unknown) {
+    super(`App Flow runtime ${reason} while ${operations[runtimeOperation(operation)]??'running an inspector command'}.`);
+    this.operation=runtimeOperation(operation);
+    if(typeof detail==='string')this.detail=detail.slice(0,1000);
+  }
+}
+export class FlowRuntimeTimeout extends FlowRuntimeFailure {
+  constructor(operation:string){super(operation,'timed out');}
 }
 /** Fixed operation names and bounded samples. Never retain commands or app data. */
 export class FlowRuntimeMetrics {

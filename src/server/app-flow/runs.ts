@@ -14,6 +14,7 @@ import { FlowStore, type FlowLease, type SavedFlow } from './store.ts';
 import { FlowPresentationCapture } from './presentations.ts';
 import { recordFlow } from './recording.ts';
 import { PLUGIN_VERSION } from '../../shared/version.ts';
+import { FlowRuntimeFailure } from './runtime-metrics.ts';
 
 export type FlowStart = { projectRoot: string; platform: "ios" | "android"; deviceId: string; targetId: string; metroUrl: string; useAi: boolean };
 export type RuntimeInfo = FlowEvidence & { available: boolean; data?: unknown[] };
@@ -28,6 +29,7 @@ export type FlowDependencies = {
 };
 type Active = { run: FlowRun; input: FlowStart; abort: AbortController; done?: Promise<void>; runtime?: FlowRuntime; info?: RuntimeInfo; target?: FlowTargetIdentity; saving?: Promise<void>; savedRevision?: number; checkpoints?: MeasurementWindow; lease?: FlowLease; writing: Set<Promise<void>>; settled: boolean };
 const maxAttempts = 3;
+const discoveryWarning="Presentation discovery failed on some screens. The partial map was kept.";
 export const FLOW_DIRECTORY = join(homedir(), "Library/Application Support/mobile-dev/app-flow");
 
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -263,10 +265,11 @@ export class AppFlowRuns {
     const sessionStarted = Date.now();
     run.captureStartedAt = sessionStarted;
     let checkingStop = false, stopReadErrorReported = false;
+    let stopCheck:Promise<void>|undefined;
     const stopTimer = setInterval(() => {
       if (checkingStop || signal.aborted) return;
       checkingStop = true;
-      void this.store.commands(run.id).then(commands => {
+      stopCheck=this.store.commands(run.id).then(commands => {
         if (commands.some(item => item.command.type === 'stop')) this.stop(run.id);
       }).catch(() => { if (!stopReadErrorReported) { stopReadErrorReported = true; captureServerError(new Error('App Flow control request could not be read.'), 'app_flow.control'); } }).finally(() => { checkingStop = false; });
     }, 500);
@@ -342,6 +345,8 @@ export class AppFlowRuns {
       run.phase = "capturing"; run.revision++;
       await mkdir(join(this.directory, run.id), { recursive: true, mode: 0o700 });
       presentations = new FlowPresentationCapture(run, input.projectRoot, this.directory, signal, save);
+      const pendingDiscovery=new Map<string,number>();
+      if(resume&&presentations.enabled)for(const node of run.nodes)if(node.status==='captured'&&!node.presentation&&node.kind==='screen')pendingDiscovery.set(node.id,0);
       if (!active.info?.available) {
         try { await presentations.baseline(backend); }
         catch (error) {
@@ -368,14 +373,34 @@ export class AppFlowRuns {
           try { await presentations.retry(backend, node); }
           catch (error) {
             if (signal.aborted) throw error;
-            node.status = (node.captureAttempts ?? 0) < maxAttempts ? 'pending' : 'timed-out';
-            node.reason = 'Presentation capture was interrupted.';
+            if(node.status!=='captured'){
+              node.status = (node.captureAttempts ?? 0) < maxAttempts ? 'pending' : 'timed-out';
+              node.reason = 'Presentation capture was interrupted.';
+            }
             try { await backend.runtime.invoke({type: 'heartbeat'}, 1000); }
-            catch { await reconnect(); node.captureAttempts = Math.max(0, (node.captureAttempts ?? 1) - 1); node.status = 'pending'; }
+            catch { await reconnect(); if(node.status!=='captured'){node.captureAttempts = Math.max(0, (node.captureAttempts ?? 1) - 1); node.status = 'pending';} }
           }
           continue;
         }
         if (!node) {
+          const entry=[...pendingDiscovery].filter(([,attempts])=>attempts<maxAttempts).sort((a,b)=>a[1]-b[1])[0];
+          if(entry){
+            const [id,attempts]=entry,base=run.nodes.find(node=>node.id===id);
+            pendingDiscovery.set(id,attempts+1);
+            if(!base){pendingDiscovery.delete(id);continue;}
+            try {
+              const opened=await abortable(backend.runtime.invoke({type:'open',path:base.path,params:base.params,expo:base.component==='expo-router',timeoutMs:2000,loadingTimeoutMs:10000},10500),signal);
+              if(!opened.ready)throw new FlowRuntimeFailure('open');
+              discovery?.reveal(base,opened);
+              await abortable(presentations.explore(backend,base),signal);pendingDiscovery.delete(id);
+            } catch(error) {
+              if(signal.aborted)throw error;
+              if(!presentations.failures.has(id))presentations.failures.set(id,{nodeId:id,operation:error instanceof FlowRuntimeFailure?error.operation:'other',message:error instanceof FlowRuntimeFailure?error.message:'App Flow presentation discovery failed.'});
+              try { await backend.runtime.invoke({type:'heartbeat'},1000); } catch { await reconnect(); }
+            }
+            run.discoveryFailures=[...presentations.failures.values()];run.revision++;await save();
+            continue;
+          }
           if (run.ai === "waiting") {
             const unresolved = run.nodes.some(node => node.status === "needs-data");
             if (unresolved && this.dependencies.resolve) {
@@ -461,7 +486,7 @@ export class AppFlowRuns {
         const routeCaptureMs=capturedTarget?performance.now()-started:undefined;
         if (capturedTarget) {
           if (presentations.enabled) {
-            try { if(previousFrame)presentations.rememberFrame(previousFrame.bytes);await presentations.explore(backend, node); }
+            try { if(previousFrame)presentations.rememberFrame(previousFrame.bytes);await presentations.explore(backend, node);pendingDiscovery.delete(node.id); }
             catch (error) {
               if (signal.aborted) throw error;
               try {
@@ -476,8 +501,9 @@ export class AppFlowRuns {
                 // screenshot and let the queue retry other routes.
                 if(signal.aborted)throw recoveryError;
               }
-              const warning="Some presentation entries could not be captured automatically. The completed map was kept.";
-              if(!run.warnings.includes(warning)){run.warnings.push(warning);captureServerError(new Error("App Flow presentation capture failed."),"app_flow.presentation");}
+              run.discoveryFailures=[...presentations.failures.values()];run.revision++;
+              if(presentations.failures.has(node.id))pendingDiscovery.set(node.id,1);
+              if(!run.warnings.includes(discoveryWarning)){run.warnings.push(discoveryWarning);captureServerError(new Error("App Flow presentation capture failed."),"app_flow.presentation");}
             }
           }
         }
@@ -501,7 +527,11 @@ export class AppFlowRuns {
         }
         node.captureMs = routeCaptureMs??performance.now() - started; captureTimings.record(node.captureMs); run.revision++;
       }
-      if (!signal.aborted) run.phase = "complete";
+      if (!signal.aborted) {
+        run.discoveryFailures=[...presentations.failures.values()];
+        run.phase = run.discoveryFailures.length ? "partial" : "complete";
+        if(!run.discoveryFailures.length)run.warnings=run.warnings.filter(warning=>warning!==discoveryWarning);
+      }
     } catch (error) {
       if (!signal.aborted) {
         run.phase = "failed"; run.error = error instanceof Error ? error.message : "App Flow failed.";
@@ -510,6 +540,7 @@ export class AppFlowRuns {
     } finally {
       clearInterval(stopTimer);
       abort.abort();
+      await stopCheck;
       if (flowRunning(run)) run.phase = "stopped";
       const finalPhase = run.phase;
       run.phase = "finishing";

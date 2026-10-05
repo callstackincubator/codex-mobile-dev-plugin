@@ -59,7 +59,8 @@ export type FlowGraph = { presentations?: FlowPresentations; sourceHash?: string
 export type FlowRun = FlowGraph & {
   id: string;
   pluginVersion?: string;
-  phase: "scanning" | "connecting" | "reconnecting" | "capturing" | "recording" | "finishing" | "complete" | "stopped" | "failed";
+  phase: "scanning" | "connecting" | "reconnecting" | "capturing" | "recording" | "finishing" | "complete" | "partial" | "stopped" | "failed";
+  discoveryFailures?: {nodeId:string;operation:string;message:string;detail?:string}[];
   groups?: { id: string; name: string }[];
   recording?: { groupId: string; message: string };
   startedAt: number;

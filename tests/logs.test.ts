@@ -141,9 +141,11 @@ test("MCP log sessions validate devices and expose batches without browser netwo
   assert.equal(invalid.isError, true); assert.equal(sink, undefined);
   const opened = await client.callTool({ name: "mobile_logs_session", arguments: { options: { native: { platform: "ios", deviceId: UDID, process: "Example" } } } });
   assert.equal(opened.isError, undefined); sink!.log(record);
+  assert.equal(opened.structuredContent?.sessionId,opened._meta?.sessionId);
+  assert.equal(opened.structuredContent?.logsUri,opened._meta?.logsUri);
   const batch = await client.readResource({ uri: opened._meta?.logsUri as string });
   assert.equal(JSON.parse(batch.contents[0].text as string).entries[0].message, record.message);
-  const next = await client.callTool({ name: "mobile_read_logs", arguments: { sessionId: opened._meta?.sessionId, after: 1 } });
+  const next = await client.callTool({ name: "mobile_read_logs", arguments: { sessionId: opened.structuredContent?.sessionId, after: 1 } });
   assert.deepEqual(next.structuredContent?.entries, []);
   const keepAlive = await client.callTool({ name: "mobile_logs_keep_alive", arguments: { sessionId: opened._meta?.sessionId } });
   assert.equal(keepAlive.isError, undefined);
