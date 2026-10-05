@@ -23,7 +23,7 @@ var ExecError = class extends Error {
   code;
 };
 var SYSTEM_CLOCK = {
-  now: Date.now,
+  now: performance.now.bind(performance),
   setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
   clearTimeout: (timer) => clearTimeout(timer)
 };
@@ -56,7 +56,7 @@ function normalizedOptions(options, defaultMaxBuffer) {
   if (lane !== "interactive" && lane !== "default" && lane !== "background") {
     throw new TypeError("lane must be interactive, default, or background");
   }
-  return { timeout, maxBuffer, signal: options.signal, lane };
+  return { timeout, maxBuffer, signal: options.signal, lane, measureTiming: options.measureTiming === true };
 }
 function abortError(signal) {
   return new ExecError("aborted", "command was aborted", {
@@ -205,6 +205,7 @@ var ProcessExecutor = class {
       encoding,
       state: "queued",
       submittedAt: this.#clock.now(),
+      startedAt: null,
       resolve,
       deadlineTimer: null,
       abortListener: null,
@@ -239,6 +240,7 @@ var ProcessExecutor = class {
   #start(job) {
     if (job.state !== "queued") return;
     job.state = "active";
+    if (job.opts.measureTiming) job.startedAt = this.#clock.now();
     this.#active.set(job.id, job);
     this.#totals.started++;
     let child;
@@ -335,7 +337,9 @@ var ProcessExecutor = class {
     this.#dispose(job);
     this.#totals.settled++;
     this.#totals.failed++;
-    job.resolve(emptyResult(job.encoding, error, timedOut));
+    const result = emptyResult(job.encoding, error, timedOut);
+    this.#attachTiming(job, result);
+    job.resolve(result);
     this.#drain();
   }
   #finishActive(job, status, signal) {
@@ -353,6 +357,7 @@ var ProcessExecutor = class {
       error: job.terminalError
     };
     const succeeded = status === 0 && !result.error;
+    this.#attachTiming(job, result);
     this.#totals.settled++;
     if (succeeded) this.#totals.succeeded++;
     else this.#totals.failed++;
@@ -368,6 +373,14 @@ var ProcessExecutor = class {
       job.opts.signal.removeEventListener("abort", job.abortListener);
       job.abortListener = null;
     }
+  }
+  #attachTiming(job, result) {
+    if (job.opts.measureTiming === false) return;
+    const endedAt = this.#clock.now();
+    const startedAt = job.startedAt ?? endedAt;
+    const queueMs = Math.max(0, startedAt - job.submittedAt);
+    const executionMs = Math.max(0, endedAt - startedAt);
+    result.timing = { queueMs, executionMs, spawned: job.child !== null };
   }
   #canStartLane(lane) {
     if (this.#active.size >= this.#maxActive) return false;
@@ -887,6 +900,111 @@ async function ensureScrcpyServer() {
   return SCRCPY_SERVER_PATH;
 }
 
+// runtimes/serve-emu/src/startup-diagnostics.ts
+var StartupTimeoutError = class extends Error {
+};
+function startupErrorOutcome(error) {
+  if (error instanceof StartupTimeoutError) return "timeout";
+  if (error instanceof Error && error.name === "AbortError") return "aborted";
+  if (error instanceof Error && "code" in error) {
+    if (error.code === "ENOENT" || error.code === "EACCES") return "spawn-error";
+    if (error.code === "aborted") return "aborted";
+  }
+  return "error";
+}
+function adbStartupOutcome(result) {
+  if (result.timedOut) return "timeout";
+  if (result.status === 0 && result.error == null) return "ok";
+  const detail = `${result.stderr} ${result.stdout}`;
+  if (/\bunauthorized\b/i.test(detail)) return "unauthorized";
+  if (/\bdevice offline\b/i.test(detail)) return "offline";
+  if (/\b(?:device .* not found|no devices?)\b/i.test(detail)) return "missing";
+  if (/\bclosed\b/i.test(detail)) return "closed";
+  if (result.error && "code" in result.error) {
+    if (result.error.code === "aborted") return "aborted";
+    if (result.error.code === "ENOENT" || result.error.code === "EACCES") return "spawn-error";
+  }
+  if (result.error) return "error";
+  return result.status === 0 ? "ok" : "nonzero";
+}
+var StartupDiagnostics = class {
+  report;
+  stages = /* @__PURE__ */ new Map();
+  completed = false;
+  failure;
+  activeStage = "locate-server";
+  cleaning = false;
+  constructor(report) {
+    this.report = report;
+  }
+  begin(stage) {
+    this.activeStage = stage;
+    let summary = this.stages.get(stage);
+    if (summary === void 0) {
+      summary = { stage, samples: 0, totalMs: 0, maxMs: 0, timedSamples: 0, spawnedSamples: 0, queueMs: 0, executionMs: 0, outcomes: {} };
+      this.stages.set(stage, summary);
+      this.report({ type: "mobile-dev/android-startup", stage });
+    }
+    return summary;
+  }
+  fail(stage, outcome) {
+    if (this.failure || this.completed) return;
+    this.failure = { stage, outcome };
+    this.report({ type: "mobile-dev/android-startup-failure", stage, outcome });
+  }
+  enter(stage) {
+    if (this.completed === false) this.begin(stage);
+  }
+  abort() {
+    this.fail(this.activeStage, "aborted");
+  }
+  failCurrent(error) {
+    const outcome = startupErrorOutcome(error);
+    this.fail(this.activeStage, outcome);
+  }
+  addTiming(summary, timing) {
+    if (timing === void 0) return;
+    summary.timedSamples++;
+    if (timing.spawned) summary.spawnedSamples++;
+    summary.queueMs += timing.queueMs;
+    summary.executionMs += timing.executionMs;
+  }
+  async measure(stage, operation, classify, failureTiming) {
+    if (this.completed) return operation();
+    const summary = this.begin(stage);
+    const started = performance.now();
+    let outcome = "ok";
+    try {
+      const result = await operation();
+      if (classify) {
+        const classification = classify(result);
+        outcome = classification.outcome;
+        this.addTiming(summary, classification.timing);
+      }
+      return result;
+    } catch (error) {
+      outcome = startupErrorOutcome(error);
+      const timing = failureTiming?.();
+      this.addTiming(summary, timing);
+      this.fail(stage, outcome);
+      throw error;
+    } finally {
+      const duration = performance.now() - started;
+      summary.samples++;
+      summary.totalMs += duration;
+      summary.maxMs = Math.max(summary.maxMs, duration);
+      summary.outcomes[outcome] = (summary.outcomes[outcome] ?? 0) + 1;
+    }
+  }
+  finish(outcome) {
+    if (this.completed) return;
+    if (outcome === "failed" && this.failure === void 0) this.fail(this.activeStage, "error");
+    this.completed = true;
+    const stages = Array.from(this.stages.values());
+    this.report({ type: "mobile-dev/android-startup-complete", outcome, failedStage: this.failure?.stage, failure: this.failure?.outcome, stages });
+  }
+};
+
 // runtimes/serve-emu/src/scrcpy.ts
 var DEVICE_JAR_CACHE_PATH = `/data/local/tmp/serve-emu-scrcpy-server-v${SCRCPY_VERSION}.jar`;
 var DEFAULT_TIMEOUTS = {
@@ -925,13 +1043,15 @@ function abortError2(signal, fallback) {
 function throwIfAborted(signal, fallback) {
   if (signal.aborted) throw abortError2(signal, fallback);
 }
-function runtimeFor(deps) {
+function runtimeFor(deps, diagnostics) {
   return {
+    diagnostics,
     ensureServer: deps.ensureServer ?? ensureScrcpyServer,
     serverFingerprint: deps.serverFingerprint ?? (async (path) => createHash("sha256").update(await readFile(path)).digest("hex")),
     runAdb: deps.runAdb ?? (async (serial, args, opts) => execText("adb", ["-s", serial, ...args], {
       timeout: opts.timeoutMs,
-      signal: opts.signal
+      signal: opts.signal,
+      measureTiming: diagnostics !== void 0
     })),
     spawnAdb: deps.spawnAdb ?? ((serial, args) => spawn3("adb", ["-s", serial, ...args], {
       stdio: ["ignore", "pipe", "pipe"]
@@ -944,13 +1064,17 @@ function runtimeFor(deps) {
     clearTimer: deps.clearTimer ?? ((timer) => clearTimeout(timer))
   };
 }
-async function withDeadline(runtime, parentSignal, timeoutMs, label, operation, settleAfterAbortMs = 0) {
+async function withDeadline(runtime, parentSignal, timeoutMs, label, operation, settleAfterAbortMs = 0, stage) {
+  if (stage && runtime.diagnostics) {
+    const run = () => withDeadline(runtime, parentSignal, timeoutMs, label, operation, settleAfterAbortMs);
+    return runtime.diagnostics.measure(stage, run);
+  }
   const controller = new AbortController();
   const abortFromParent = () => controller.abort(abortError2(parentSignal, `${label} aborted`));
   parentSignal?.addEventListener("abort", abortFromParent, { once: true });
   if (parentSignal?.aborted) abortFromParent();
   const timer = runtime.setTimer(
-    () => controller.abort(new Error(`${label} timed out after ${timeoutMs}ms`)),
+    () => controller.abort(new StartupTimeoutError(`${label} timed out after ${timeoutMs}ms`)),
     timeoutMs
   );
   try {
@@ -1002,18 +1126,42 @@ function deviceUnavailable(result) {
   );
 }
 async function runAdbRaw(runtime, serial, args, timeoutMs, signal) {
-  return withDeadline(
+  let settledResult;
+  const run = () => withDeadline(
     runtime,
     signal,
     timeoutMs,
     `adb ${args.join(" ")}`,
-    (commandSignal) => runtime.runAdb(serial, args, { timeoutMs, signal: commandSignal }),
+    async (commandSignal) => {
+      settledResult = await runtime.runAdb(serial, args, { timeoutMs, signal: commandSignal });
+      return settledResult;
+    },
     ADB_CANCELLATION_SETTLE_MS
   );
+  if (runtime.diagnostics === void 0) return run();
+  const stage = adbStartupStage(args, runtime.diagnostics.cleaning);
+  return runtime.diagnostics.measure(stage, run, (result) => {
+    const outcome = adbStartupOutcome(result);
+    return { outcome, timing: result.timing };
+  }, () => settledResult?.timing);
+}
+function adbStartupStage(args, cleaning) {
+  if (args[0] === "forward") return cleaning ? "cleanup-forward" : "forward-socket";
+  if (args[0] === "push") return "push-server";
+  if (args[1] === "test") return "cache-probe";
+  if (args[1] === "mv") return "publish-cache";
+  if (args[1] === "cp") return "copy-server";
+  if (args[1] === "rm") return "cleanup-jars";
+  return "socket-poll";
 }
 async function runAdbChecked(runtime, serial, args, timeoutMs, signal) {
   const result = await runAdbRaw(runtime, serial, args, timeoutMs, signal);
-  if (result.status !== 0) throw commandFailure(serial, args, result);
+  if (result.status !== 0) {
+    const stage = adbStartupStage(args, runtime.diagnostics?.cleaning === true);
+    const outcome = adbStartupOutcome(result);
+    runtime.diagnostics?.fail(stage, outcome);
+    throw commandFailure(serial, args, result);
+  }
   return result.stdout;
 }
 function forwardedPorts(output2, serial, target) {
@@ -1188,6 +1336,8 @@ async function waitForAbstractSocketAsync(runtime, timeouts, serial, name, signa
     if (result.status === 0 && result.stdout.includes(`@${name}`)) return;
     const detail = `${result.stderr ?? ""} ${result.stdout ?? ""}`;
     if (/\b(offline|unauthorized|not found|no devices?)\b/i.test(detail)) {
+      const outcome = adbStartupOutcome(result);
+      runtime.diagnostics?.fail("socket-poll", outcome);
       throw commandFailure(
         serial,
         ["shell", "cat", "/proc/net/unix"],
@@ -1468,7 +1618,8 @@ function parseVideoPreamble(buf) {
   );
 }
 async function startScrcpy(opts, deps = {}) {
-  const runtime = runtimeFor(deps);
+  const diagnostics = opts.onStartupDiagnostics ? new StartupDiagnostics(opts.onStartupDiagnostics) : void 0;
+  const runtime = runtimeFor(deps, diagnostics);
   const timeouts = { ...DEFAULT_TIMEOUTS, ...deps.timeouts };
   const { serial } = opts;
   const maxFps = opts.maxFps ?? SCRCPY_DEFAULTS.maxFps;
@@ -1497,6 +1648,7 @@ async function startScrcpy(opts, deps = {}) {
   let closeWithReason;
   const externalAbort = () => {
     const reason = abortError2(opts.signal, "scrcpy startup aborted");
+    diagnostics?.abort();
     startupController.abort(reason);
     if (startupComplete) {
       void closeWithReason(reason).catch((err) => {
@@ -1522,7 +1674,7 @@ async function startScrcpy(opts, deps = {}) {
     }
     const child = proc;
     const paths = jarPaths;
-    closeTask = (async () => {
+    const cleanup = async () => {
       const cleanupErrors = [];
       if (child && !childSettled) {
         try {
@@ -1576,7 +1728,11 @@ async function startScrcpy(opts, deps = {}) {
       if (cleanupErrors.length > 0) {
         throw new AggregateError(cleanupErrors, "scrcpy cleanup failed");
       }
-    })();
+    };
+    if (diagnostics) {
+      diagnostics.cleaning = true;
+      closeTask = diagnostics.measure("cleanup", cleanup);
+    } else closeTask = cleanup();
     return closeTask;
   };
   opts.signal?.addEventListener("abort", externalAbort, { once: true });
@@ -1588,14 +1744,18 @@ async function startScrcpy(opts, deps = {}) {
       startupController.signal,
       timeouts.pushMs,
       "locating scrcpy server",
-      () => runtime.ensureServer()
+      () => runtime.ensureServer(),
+      0,
+      "locate-server"
     );
     const fingerprint = await withDeadline(
       runtime,
       startupController.signal,
       timeouts.pushMs,
       "hashing scrcpy server",
-      () => runtime.serverFingerprint(jar)
+      () => runtime.serverFingerprint(jar),
+      0,
+      "hash-server"
     );
     const cacheKey = fingerprint.slice(0, 24);
     jarPaths = {
@@ -1622,6 +1782,7 @@ async function startScrcpy(opts, deps = {}) {
       startupController.signal
     );
     throwIfAborted(startupController.signal, "scrcpy startup aborted");
+    diagnostics?.enter("launch-server");
     proc = runtime.spawnAdb(serial, [
       "shell",
       `CLASSPATH=${jarPaths.working}`,
@@ -1647,11 +1808,15 @@ async function startScrcpy(opts, deps = {}) {
         resolve();
         if (!startupComplete) startupController.abort(startupError);
       };
-      proc.once(
-        "error",
-        (err) => settle(new Error(`scrcpy process failed during startup: ${err.message}`))
-      );
+      proc.once("error", (err) => {
+        diagnostics?.fail("launch-server", "spawn-error");
+        settle(new Error(`scrcpy process failed during startup: ${err.message}`));
+      });
       proc.once("exit", (code, signal) => {
+        if (startupComplete === false && startupController.signal.aborted === false) {
+          const outcome = code === 0 ? "closed" : "nonzero";
+          diagnostics?.fail("launch-server", outcome);
+        }
         const suffix = stderrTail.trim() ? `: ${stderrTail.trim()}` : "";
         settle(
           new Error(
@@ -1679,14 +1844,18 @@ async function startScrcpy(opts, deps = {}) {
         serial,
         `scrcpy_${scid}`,
         signal
-      )
+      ),
+      0,
+      "socket-ready"
     );
     videoSock = await withDeadline(
       runtime,
       startupController.signal,
       timeouts.connectMs,
       "connecting scrcpy video socket",
-      (signal) => runtime.connect(localPort, timeouts.connectMs, signal)
+      (signal) => runtime.connect(localPort, timeouts.connectMs, signal),
+      0,
+      "connect-video"
     );
     throwIfAborted(startupController.signal, "scrcpy startup aborted");
     controlSock = await withDeadline(
@@ -1694,7 +1863,9 @@ async function startScrcpy(opts, deps = {}) {
       startupController.signal,
       timeouts.connectMs,
       "connecting scrcpy control socket",
-      (signal) => runtime.connect(localPort, timeouts.connectMs, signal)
+      (signal) => runtime.connect(localPort, timeouts.connectMs, signal),
+      0,
+      "connect-control"
     );
     throwIfAborted(startupController.signal, "scrcpy startup aborted");
     controlSock.on("data", () => {
@@ -1705,7 +1876,9 @@ async function startScrcpy(opts, deps = {}) {
       startupController.signal,
       timeouts.preambleMs,
       "reading scrcpy video preamble",
-      () => reader.read(81, "header")
+      () => reader.read(81, "header"),
+      0,
+      "video-preamble"
     );
     throwIfAborted(startupController.signal, "scrcpy startup aborted");
     const preamble = parseVideoPreamble(preambleBytes);
@@ -1718,6 +1891,7 @@ async function startScrcpy(opts, deps = {}) {
     }
     reader.prepend(preamble.extra);
     startupComplete = true;
+    diagnostics?.finish("ready");
     return {
       transport: "scrcpy",
       meta: {
@@ -1738,16 +1912,19 @@ async function startScrcpy(opts, deps = {}) {
     };
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
+    diagnostics?.failCurrent(error);
     startupController.abort(error);
     try {
       await closeWithReason(error);
     } catch (cleanupError) {
+      diagnostics?.finish("failed");
       throw new AggregateError(
         [error, cleanupError],
         error.message,
         { cause: error }
       );
     }
+    diagnostics?.finish("failed");
     throw err;
   }
 }
@@ -8981,6 +9158,11 @@ async function startServer(opts, dependencies = {}) {
 }
 
 // runtimes/serve-emu/src/cli.ts
+var startupReportSent;
+async function exitAfterDiagnostics(code) {
+  await startupReportSent;
+  process.exit(code);
+}
 var argv = process.argv.slice(2);
 var { values } = parseArgs({
   args: argv,
@@ -9148,11 +9330,31 @@ async function main() {
     return stopping;
   };
   process.once("SIGINT", () => {
-    void stop().catch((err) => console.error("Shutdown cleanup failed:", err)).finally(() => process.exit(0));
+    void stop().catch((err) => console.error("Shutdown cleanup failed:", err)).finally(() => exitAfterDiagnostics(0));
   });
   process.once("SIGTERM", () => {
-    void stop().catch((err) => console.error("Shutdown cleanup failed:", err)).finally(() => process.exit(0));
+    void stop().catch((err) => console.error("Shutdown cleanup failed:", err)).finally(() => exitAfterDiagnostics(0));
   });
+  let initialStartup = true;
+  const report = (message) => {
+    if (process.connected === false || process.send === void 0) return;
+    const send = process.send.bind(process);
+    if (message.type === "mobile-dev/android-startup-complete") {
+      startupReportSent = new Promise((resolve) => {
+        send(message, () => resolve());
+      });
+    } else send(message, () => {
+    });
+  };
+  process.channel?.unref();
+  const dependencies = {
+    startScrcpy(options) {
+      const enabled = initialStartup && process.connected && process.env.MOBILE_DEV_TELEMETRY !== "off";
+      initialStartup = false;
+      const onStartupDiagnostics = enabled ? report : void 0;
+      return startScrcpy({ ...options, onStartupDiagnostics });
+    }
+  };
   startupTask = startServer({
     serial,
     port,
@@ -9169,7 +9371,7 @@ async function main() {
     maxActiveUploads,
     maxQueuedUploads,
     uploadQueueTimeoutMs
-  });
+  }, dependencies);
   try {
     activeServer = await startupTask;
   } catch (err) {
@@ -9200,7 +9402,7 @@ async function main() {
     }
   }
 }
-await main().catch((err) => {
+await main().catch(async (err) => {
   console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
-  process.exit(1);
+  await exitAfterDiagnostics(1);
 });

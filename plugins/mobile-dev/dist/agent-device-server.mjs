@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="34904e4b-f4fe-5ebe-ad1f-227b7aaf33f0")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="a25f91b6-95fe-5d45-8ce1-b9c678e3c23a")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -2228,20 +2228,20 @@ var require_resolve = __commonJS({
       return false;
     }
     function countKeys(schema) {
-      let count2 = 0;
+      let count3 = 0;
       for (const key in schema) {
         if (key === "$ref")
           return Infinity;
-        count2++;
+        count3++;
         if (SIMPLE_INLINED.has(key))
           continue;
         if (typeof schema[key] == "object") {
-          (0, util_1.eachItem)(schema[key], (sch) => count2 += countKeys(sch));
+          (0, util_1.eachItem)(schema[key], (sch) => count3 += countKeys(sch));
         }
-        if (count2 === Infinity)
+        if (count3 === Infinity)
           return Infinity;
       }
-      return count2;
+      return count3;
     }
     function getFullPath(resolver, id = "", normalize2) {
       if (normalize2 !== false)
@@ -5723,8 +5723,8 @@ var require_contains = __commonJS({
         cxt.result(valid, () => cxt.reset());
         function validateItemsWithCount() {
           const schValid = gen.name("_valid");
-          const count2 = gen.let("count", 0);
-          validateItems(schValid, () => gen.if(schValid, () => checkLimits(count2)));
+          const count3 = gen.let("count", 0);
+          validateItems(schValid, () => gen.if(schValid, () => checkLimits(count3)));
         }
         function validateItems(_valid, block) {
           gen.forRange("i", 0, len, (i2) => {
@@ -5737,16 +5737,16 @@ var require_contains = __commonJS({
             block();
           });
         }
-        function checkLimits(count2) {
-          gen.code((0, codegen_1._)`${count2}++`);
+        function checkLimits(count3) {
+          gen.code((0, codegen_1._)`${count3}++`);
           if (max === void 0) {
-            gen.if((0, codegen_1._)`${count2} >= ${min}`, () => gen.assign(valid, true).break());
+            gen.if((0, codegen_1._)`${count3} >= ${min}`, () => gen.assign(valid, true).break());
           } else {
-            gen.if((0, codegen_1._)`${count2} > ${max}`, () => gen.assign(valid, false).break());
+            gen.if((0, codegen_1._)`${count3} > ${max}`, () => gen.assign(valid, false).break());
             if (min === 1)
               gen.assign(valid, true);
             else
-              gen.if((0, codegen_1._)`${count2} >= ${min}`, () => gen.assign(valid, true));
+              gen.if((0, codegen_1._)`${count3} >= ${min}`, () => gen.assign(valid, true));
           }
         }
       }
@@ -13405,13 +13405,13 @@ function updateRateLimits(limits, { statusCode, headers }, now = safeDateNow()) 
   const retryAfterHeader = headers?.["retry-after"];
   if (rateLimitHeader) {
     for (const limit of rateLimitHeader.trim().split(",")) {
-      const [retryAfter, categories, , , namespaces] = limit.split(":", 5);
+      const [retryAfter, categories2, , , namespaces] = limit.split(":", 5);
       const headerDelay = parseInt(retryAfter, 10);
       const delay = (!isNaN(headerDelay) ? headerDelay : 60) * 1e3;
-      if (!categories) {
+      if (!categories2) {
         updatedRateLimits.all = now + delay;
       } else {
-        for (const category of categories.split(";")) {
+        for (const category of categories2.split(";")) {
           if (category === "metric_bucket") {
             if (!namespaces || namespaces.split(";").includes("custom")) {
               updatedRateLimits[category] = now + delay;
@@ -13989,11 +13989,11 @@ var Client = class {
   /**
    * Record on the client that an event got dropped (ie, an event that will not be sent to Sentry).
    */
-  recordDroppedEvent(reason, category, count2 = 1) {
+  recordDroppedEvent(reason, category, count3 = 1) {
     if (this._options.sendClientReports) {
       const key = `${reason}:${category}`;
-      DEBUG_BUILD && debug.log(`Recording outcome: "${key}"${count2 > 1 ? ` (${count2} times)` : ""}`);
-      this._outcomes[key] = (this._outcomes[key] || 0) + count2;
+      DEBUG_BUILD && debug.log(`Recording outcome: "${key}"${count3 > 1 ? ` (${count3} times)` : ""}`);
+      this._outcomes[key] = (this._outcomes[key] || 0) + count3;
     }
   }
   /**
@@ -38897,7 +38897,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // src/shared/version.ts
-var PLUGIN_VERSION = "0.1.121";
+var PLUGIN_VERSION = "0.1.131";
 
 // src/shared/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -38905,6 +38905,55 @@ function isAnonymousUserId(value) {
 }
 function isTelemetrySessionId(value) {
   return typeof value === "string" && /^run_[a-f0-9]{32}$/.test(value);
+}
+
+// src/shared/device-apps-command-diagnostics.ts
+var diagnostics2 = /* @__PURE__ */ new WeakMap();
+function getDiscoveryCommandDiagnostic(error63) {
+  if (error63 === null || typeof error63 !== "object") return;
+  return diagnostics2.get(error63);
+}
+function discoveryCommandTags(error63) {
+  const diagnostic = getDiscoveryCommandDiagnostic(error63);
+  if (diagnostic === void 0) return {};
+  const tags = {
+    discovery_command: diagnostic.command,
+    discovery_cause: diagnostic.cause,
+    discovery_termination: diagnostic.termination
+  };
+  if (diagnostic.signal !== void 0) tags.discovery_signal = diagnostic.signal;
+  return tags;
+}
+
+// src/shared/error-reporting.ts
+var ExpectedOperationError = class extends Error {
+  outcome;
+  constructor(outcome, message) {
+    super(message);
+    this.outcome = outcome;
+  }
+};
+function expectedOutcome(error63) {
+  if (error63 instanceof ExpectedOperationError) return error63.outcome;
+  const command = getDiscoveryCommandDiagnostic(error63);
+  if (command?.termination === "deadline") return;
+  if (command?.cause === "cancelled") return "cancelled";
+  if (error63 instanceof Error && error63.name === "AbortError") return "cancelled";
+}
+var categories = /* @__PURE__ */ new WeakMap();
+function errorCategory(error63) {
+  if (error63 === null || typeof error63 !== "object") return "unknown";
+  const command = getDiscoveryCommandDiagnostic(error63);
+  if (command?.termination === "deadline" || command?.cause.endsWith("_timeout")) return "timeout";
+  const category = categories.get(error63);
+  if (category !== void 0) return category;
+  if ("code" in error63 && (error63.code === -32001 || error63.code === "ETIMEDOUT")) return "timeout";
+  if ("name" in error63 && error63.name === "TimeoutError") return "timeout";
+  if ("message" in error63 && typeof error63.message === "string") {
+    if (error63.message.includes("thread not found:")) return "host_thread_missing";
+    if (error63.message === "CancelledError" || error63.message.endsWith(": CancelledError")) return "cancellation";
+  }
+  return "unexpected";
 }
 
 // src/shared/telemetry.ts
@@ -38956,7 +39005,22 @@ function scrubText(text) {
   scrubbed = scrubbed.replace(/https?:\/\/[^\s"')]+/g, "[url]");
   return scrubbed.slice(0, 512);
 }
-function scrubErrorEvent(event) {
+function scrubErrorEvent(event, hint) {
+  if (expectedOutcome(hint?.originalException) !== void 0) return null;
+  const category = errorCategory(hint?.originalException);
+  const operation = event.tags?.operation;
+  if (operation) {
+    const operationName = String(operation);
+    event.fingerprint = ["{{default}}", operationName, category];
+    for (const tag of ["resource_kind", "discovery_stage", "discovery_failure", "discovery_command", "discovery_cause"]) {
+      const value = event.tags?.[tag];
+      if (value !== void 0) {
+        const dimension = String(value);
+        event.fingerprint.push(dimension);
+      }
+    }
+  }
+  if (category !== "unexpected") event.tags = { ...event.tags, error_category: category };
   delete event.request;
   const userId = event.user?.id;
   if (isAnonymousUserId(userId)) event.user = { id: userId };
@@ -40065,14 +40129,14 @@ function codePointLength(str) {
   const units = str.length;
   if (!highSurrogate.test(str))
     return units;
-  let count2 = units;
+  let count3 = units;
   for (let i2 = 0; i2 < units - 1; i2++) {
     if ((str.charCodeAt(i2) & 64512) === 55296 && (str.charCodeAt(i2 + 1) & 64512) === 56320) {
-      count2--;
+      count3--;
       i2++;
     }
   }
-  return count2;
+  return count3;
 }
 function getLengthableOrigin(input2) {
   if (Array.isArray(input2))
@@ -44427,8 +44491,8 @@ function az_default() {
 }
 
 // node_modules/zod/v4/locales/be.js
-function getBelarusianPlural(count2, one, few, many) {
-  const absCount = Math.abs(count2);
+function getBelarusianPlural(count3, one, few, many) {
+  const absCount = Math.abs(count3);
   const lastDigit = absCount % 10;
   const lastTwoDigits = absCount % 100;
   if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
@@ -47075,8 +47139,8 @@ function hu_default() {
 }
 
 // node_modules/zod/v4/locales/hy.js
-function getArmenianPlural(count2, one, many) {
-  return Math.abs(count2) === 1 ? one : many;
+function getArmenianPlural(count3, one, many) {
+  return Math.abs(count3) === 1 ? one : many;
 }
 function withDefiniteArticle(word) {
   if (!word)
@@ -49814,8 +49878,8 @@ function ro_default() {
 }
 
 // node_modules/zod/v4/locales/ru.js
-function getRussianPlural(count2, one, few, many) {
-  const absCount = Math.abs(count2);
+function getRussianPlural(count3, one, few, many) {
+  const absCount = Math.abs(count3);
   const lastDigit = absCount % 10;
   const lastTwoDigits = absCount % 100;
   if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
@@ -62983,14 +63047,59 @@ var Server = class extends Protocol {
   }
 };
 
-// src/server/simulator-unavailable.ts
-var SimulatorUnavailableError = class extends Error {
-};
+// src/server/telemetry.ts
+import { AsyncLocalStorage as AsyncLocalStorage3 } from "node:async_hooks";
 
 // src/server/native-telemetry.ts
 var transport;
 async function closeNativeTelemetry() {
   if (transport !== void 0) await transport.flush(2e3);
+}
+
+// src/shared/simulator-definition-diagnostics.ts
+var stages = external_exports.enum([
+  "simulator_lookup",
+  "profile_read",
+  "profile_parse",
+  "profile_chrome_identifier",
+  "panel_lookup",
+  "chrome_lookup",
+  "chrome_read",
+  "chrome_parse",
+  "composite_read",
+  "composite_layout",
+  "composite_rasterize",
+  "screen_geometry",
+  "slice_read",
+  "slice_rasterize",
+  "assembly",
+  "response"
+]);
+var failures = external_exports.enum(["missing", "permission_denied", "unreadable", "invalid", "unsupported", "failed", "unavailable", "unclassified"]);
+var states = external_exports.enum(["Creating", "Shutdown", "Booting", "Booted", "ShuttingDown", "missing", "unreachable", "unknown"]);
+var diagnostics3 = /* @__PURE__ */ new WeakMap();
+function getDefinitionDiagnostic(error63) {
+  if (error63 === null || typeof error63 !== "object") return;
+  return diagnostics3.get(error63);
+}
+function definitionDiagnosticTags(error63) {
+  const diagnostic = getDefinitionDiagnostic(error63);
+  if (diagnostic === void 0) return {};
+  return {
+    definition_stage: diagnostic.stage,
+    definition_failure: diagnostic.failure,
+    definition_model: diagnostic.model,
+    definition_runtime: diagnostic.runtime,
+    definition_device_state: diagnostic.state,
+    definition_device_before: diagnostic.deviceBefore,
+    definition_device_after: diagnostic.deviceAfter,
+    definition_panel: diagnostic.panel,
+    definition_xcode_version: diagnostic.xcodeVersion,
+    definition_backend_version: diagnostic.backendVersion,
+    definition_backend_source: diagnostic.backendSource,
+    definition_backend_mode: diagnostic.backendMode,
+    definition_cached_failure: diagnostic.cachedFailure
+  };
 }
 
 // src/shared/protocol.ts
@@ -63036,15 +63145,17 @@ var platform2 = external_exports.enum(["ios", "android"]);
 var kind = external_exports.enum(["physical", "simulator", "unknown"]);
 var diagnosticObject = external_exports.object({ stage, failure: failure2, platform: platform2, kind });
 var deviceAppsDiagnosticSchema = diagnosticObject.strict();
-var diagnostics2 = /* @__PURE__ */ new WeakMap();
+var diagnostics4 = /* @__PURE__ */ new WeakMap();
 function getDeviceAppsDiagnostic(error63) {
   if (error63 === null || typeof error63 !== "object") return;
-  return diagnostics2.get(error63);
+  return diagnostics4.get(error63);
 }
 function deviceAppsDiagnosticTags(error63) {
   const diagnostic = getDeviceAppsDiagnostic(error63);
-  if (diagnostic === void 0) return {};
+  const commandTags = discoveryCommandTags(error63);
+  if (diagnostic === void 0) return commandTags;
   return {
+    ...commandTags,
     discovery_stage: diagnostic.stage,
     discovery_failure: diagnostic.failure,
     device_platform: diagnostic.platform,
@@ -63052,41 +63163,174 @@ function deviceAppsDiagnosticTags(error63) {
   };
 }
 
-// src/server/telemetry.ts
-function captureServerError(error63, operation) {
-  if (error63 instanceof SimulatorUnavailableError) return;
-  if (error63 instanceof Error && error63.name === "AbortError") return;
-  const diagnosticTags = deviceAppsDiagnosticTags(error63);
-  captureException(error63, { tags: { ...diagnosticTags, operation } });
+// runtimes/serve-emu/src/startup-diagnostics.ts
+var startupStages = [
+  "locate-server",
+  "hash-server",
+  "cache-probe",
+  "push-server",
+  "publish-cache",
+  "copy-server",
+  "forward-socket",
+  "launch-server",
+  "socket-ready",
+  "socket-poll",
+  "connect-video",
+  "connect-control",
+  "video-preamble",
+  "cleanup",
+  "cleanup-forward",
+  "cleanup-jars"
+];
+var startupOutcomes = ["ok", "nonzero", "timeout", "aborted", "offline", "unauthorized", "missing", "closed", "spawn-error", "error"];
+
+// src/shared/android-startup-diagnostics.ts
+var stageSchema = external_exports.enum(startupStages);
+var outcomeSchema = external_exports.enum(startupOutcomes);
+var measurement = external_exports.number().finite().min(0).max(6e7);
+var count2 = external_exports.number().int().min(0).max(1e4);
+var stageSummary = external_exports.object({
+  stage: stageSchema,
+  samples: count2,
+  totalMs: measurement,
+  maxMs: measurement,
+  timedSamples: count2,
+  spawnedSamples: count2,
+  queueMs: measurement,
+  executionMs: measurement,
+  outcomes: external_exports.partialRecord(outcomeSchema, count2)
+}).strict().refine((value) => {
+  const outcomes = Object.values(value.outcomes);
+  let samples = 0;
+  for (const count3 of outcomes) samples += count3 ?? 0;
+  return samples === value.samples && value.timedSamples <= value.samples && value.spawnedSamples <= value.timedSamples && value.maxMs <= value.totalMs;
+});
+var androidStartupMessageSchema = external_exports.discriminatedUnion("type", [
+  external_exports.object({ type: external_exports.literal("mobile-dev/android-startup"), stage: stageSchema }).strict(),
+  external_exports.object({ type: external_exports.literal("mobile-dev/android-startup-failure"), stage: stageSchema, outcome: outcomeSchema }).strict(),
+  external_exports.object({
+    type: external_exports.literal("mobile-dev/android-startup-complete"),
+    outcome: external_exports.enum(["ready", "failed"]),
+    failedStage: stageSchema.optional(),
+    failure: outcomeSchema.optional(),
+    stages: external_exports.array(stageSummary).max(startupStages.length).refine((values) => {
+      const names = values.map((value) => value.stage);
+      const stages2 = new Set(names);
+      return stages2.size === values.length;
+    })
+  }).strict()
+]);
+var startupErrors = /* @__PURE__ */ new WeakMap();
+function androidStartupDiagnosticTags(error63) {
+  if (error63 instanceof Error === false) return {};
+  const diagnostic = startupErrors.get(error63);
+  if (diagnostic === void 0) return {};
+  const { startup, context: context2 } = diagnostic;
+  return {
+    android_startup_stage: startup.stage,
+    android_startup_outcome: startup.outcome,
+    android_device_state_before: context2.stateBefore,
+    device_platform: "android",
+    device_kind: context2.deviceKind,
+    android_transport: context2.transport,
+    android_cleanup_overlap: context2.stoppingBackends > 0 ? "yes" : "no"
+  };
 }
+
+// src/server/telemetry.ts
+function captureServerError(error63, operation, options) {
+  const outcome = options?.signal?.aborted ? "cancelled" : expectedOutcome(error63);
+  const diagnosticTags = deviceAppsDiagnosticTags(error63);
+  const definitionTags = definitionDiagnosticTags(error63);
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  public_api_exports.count("server.error.outcome", 1, { attributes: { operation, outcome: outcome ?? "unexpected", ...diagnosticTags } });
+  if (outcome !== void 0) return;
+  if (options?.report === false) {
+    public_api_exports.count("server.error.repeated", 1, { attributes: { operation, ...diagnosticTags } });
+    return;
+  }
+  const androidTags = androidStartupDiagnosticTags(error63);
+  const command = getDiscoveryCommandDiagnostic(error63);
+  const contexts = command ? { device_apps_command: {
+    elapsed_ms: command.elapsed_ms,
+    deadline_ms: command.deadline_ms,
+    exit_status: command.exit_status
+  } } : void 0;
+  captureException(error63, { tags: { ...diagnosticTags, ...definitionTags, ...androidTags, operation }, contexts });
+}
+var requestReporting = new AsyncLocalStorage3();
+var resourceKinds = {
+  "logs:": "logs",
+  "cpu:": "cpu",
+  "display-fps:": "display_fps",
+  "mobile-frame:": "simulator_video",
+  "android-stream:": "android_video",
+  "ios-video:": "ios_video",
+  "ui:": "ui"
+};
+var allowedContext = {
+  surface: ["logs", "performance", "simulator", "recording", "comparison"],
+  view: ["panel", "workspace", "recording", "comparison"],
+  layout: ["ios", "android", "both", "none"],
+  device_platform: ["ios", "android", "mixed"],
+  device_kind: ["physical", "simulator", "emulator", "none"]
+};
 function installTracePropagation(transport3) {
+  const send = transport3.send.bind(transport3);
+  transport3.send = async (message, options) => {
+    const reporting = requestReporting.getStore();
+    const session = reporting?.sessionResponse;
+    const response = "result" in message || "error" in message;
+    if (response && session) {
+      reporting.sessionResponse = void 0;
+      session.release();
+      try {
+        await send(message, options);
+      } catch (error63) {
+        await session.close();
+        throw error63;
+      }
+      return;
+    }
+    await send(message, options);
+  };
   const start = transport3.start.bind(transport3);
   transport3.start = async () => {
     const receive = transport3.onmessage;
     transport3.onmessage = (message, extra) => {
-      if ("method" in message && message.params?._meta) {
-        const meta3 = message.params._meta;
+      if ("method" in message) {
+        const meta3 = message.params?._meta ?? {};
         const sentryTrace = typeof meta3["sentry-trace"] === "string" ? meta3["sentry-trace"] : void 0;
         const baggage = typeof meta3.baggage === "string" ? meta3.baggage : void 0;
         continueTrace({ sentryTrace, baggage }, () => {
           withIsolationScope2((scope) => {
+            const reporting = { accounted: false };
+            scope.addEventProcessor((event) => {
+              const mechanisms = event.exception?.values ?? [];
+              const automatic = mechanisms.find((value) => value.mechanism?.type === "auto.ai.mcp_server");
+              const errorType = automatic?.mechanism?.data?.error_type;
+              if (errorType === "protocol" && reporting.accounted) return null;
+              return event;
+            });
             const context2 = meta3[TELEMETRY_META_KEY];
             const attributes = {};
             if (context2 !== null && typeof context2 === "object") {
-              const allowed = {
-                surface: ["logs", "performance", "simulator", "recording", "comparison"],
-                view: ["panel", "workspace", "recording", "comparison"],
-                layout: ["ios", "android", "both", "none"],
-                device_platform: ["ios", "android", "mixed"],
-                device_kind: ["physical", "simulator", "emulator", "none"]
-              };
               for (const [key, value] of Object.entries(context2)) {
-                if (typeof value === "string" && allowed[key]?.includes(value)) attributes[key] = value;
+                if (typeof value === "string" && allowedContext[key]?.includes(value)) attributes[key] = value;
               }
             }
             scope.setAttributes(attributes);
             scope.setTags(attributes);
-            receive?.(message, extra);
+            if (message.method === "resources/read") {
+              scope.setTag("operation", "resources.read");
+              const uri = message.params?.uri;
+              if (typeof uri === "string") {
+                const prefix = uri.split(":", 1)[0];
+                const kind2 = resourceKinds[`${prefix}:`] ?? "unknown";
+                scope.setTag("resource_kind", kind2);
+              }
+            }
+            requestReporting.run(reporting, () => receive?.(message, extra));
           });
         });
         return;
@@ -63441,4 +63685,4 @@ try {
   await close2();
 }
 
-//# debugId=34904e4b-f4fe-5ebe-ad1f-227b7aaf33f0
+//# debugId=a25f91b6-95fe-5d45-8ce1-b9c678e3c23a

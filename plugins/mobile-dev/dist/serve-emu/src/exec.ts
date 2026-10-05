@@ -4,6 +4,7 @@ import {
   type ChildProcessByStdio,
 } from "node:child_process";
 import type { Readable } from "node:stream";
+import type { StartupTiming } from "./startup-diagnostics.ts";
 
 // Node serves HTTP and pumps video on one JS thread. All short-lived adb and
 // emulator commands go through this bounded executor so request bursts cannot
@@ -42,6 +43,7 @@ export type ExecOpts = {
   maxBuffer?: number;
   signal?: AbortSignal;
   lane?: ExecLane;
+  measureTiming?: boolean;
 };
 
 export type ExecResult<T extends string | Buffer> = {
@@ -51,6 +53,7 @@ export type ExecResult<T extends string | Buffer> = {
   stderr: string;
   timedOut: boolean;
   error: Error | null;
+  timing?: StartupTiming;
 };
 
 export type ExecSnapshot = {
@@ -100,7 +103,7 @@ export type ProcessExecutorOptions = {
 };
 
 const SYSTEM_CLOCK: ExecClock = {
-  now: Date.now,
+  now: performance.now.bind(performance),
   setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
   clearTimeout: (timer) =>
     clearTimeout(timer as ReturnType<typeof setTimeout>),
@@ -122,6 +125,7 @@ type NormalizedExecOpts = {
   maxBuffer: number;
   signal?: AbortSignal;
   lane: ExecLane;
+  measureTiming: boolean;
 };
 
 type ExecJob = {
@@ -132,6 +136,7 @@ type ExecJob = {
   encoding: ExecEncoding;
   state: JobState;
   submittedAt: number;
+  startedAt: number | null;
   resolve: (result: ExecResult<ExecOutput>) => void;
   deadlineTimer: unknown | null;
   abortListener: (() => void) | null;
@@ -185,7 +190,7 @@ function normalizedOptions(
   ) {
     throw new TypeError("lane must be interactive, default, or background");
   }
-  return { timeout, maxBuffer, signal: options.signal, lane };
+  return { timeout, maxBuffer, signal: options.signal, lane, measureTiming: options.measureTiming === true };
 }
 
 function abortError(signal: AbortSignal): ExecError {
@@ -386,6 +391,7 @@ export class ProcessExecutor {
       encoding,
       state: "queued",
       submittedAt: this.#clock.now(),
+      startedAt: null,
       resolve,
       deadlineTimer: null,
       abortListener: null,
@@ -424,6 +430,7 @@ export class ProcessExecutor {
   #start(job: ExecJob): void {
     if (job.state !== "queued") return;
     job.state = "active";
+    if (job.opts.measureTiming) job.startedAt = this.#clock.now();
     this.#active.set(job.id, job);
     this.#totals.started++;
 
@@ -535,7 +542,9 @@ export class ProcessExecutor {
     this.#dispose(job);
     this.#totals.settled++;
     this.#totals.failed++;
-    job.resolve(emptyResult(job.encoding, error, timedOut));
+    const result = emptyResult(job.encoding, error, timedOut);
+    this.#attachTiming(job, result);
+    job.resolve(result);
     this.#drain();
   }
 
@@ -562,6 +571,7 @@ export class ProcessExecutor {
       error: job.terminalError,
     };
     const succeeded = status === 0 && !result.error;
+    this.#attachTiming(job, result);
     this.#totals.settled++;
     if (succeeded) this.#totals.succeeded++;
     else this.#totals.failed++;
@@ -578,6 +588,15 @@ export class ProcessExecutor {
       job.opts.signal.removeEventListener("abort", job.abortListener);
       job.abortListener = null;
     }
+  }
+
+  #attachTiming(job: ExecJob, result: ExecResult<ExecOutput>): void {
+    if (job.opts.measureTiming === false) return;
+    const endedAt = this.#clock.now();
+    const startedAt = job.startedAt ?? endedAt;
+    const queueMs = Math.max(0, startedAt - job.submittedAt);
+    const executionMs = Math.max(0, endedAt - startedAt);
+    result.timing = { queueMs, executionMs, spawned: job.child !== null };
   }
 
   #canStartLane(lane: ExecLane): boolean {

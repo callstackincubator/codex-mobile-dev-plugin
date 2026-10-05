@@ -6,6 +6,8 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { SCRCPY_VERSION, ensureScrcpyServer } from "../scripts/fetch-scrcpy.ts";
 import { execText } from "./exec.ts";
+import { StartupDiagnostics, StartupTimeoutError, adbStartupOutcome } from "./startup-diagnostics.ts";
+import type { StartupReporter, StartupStage, StartupTiming } from "./startup-diagnostics.ts";
 
 // Canonical scrcpy wire layouts and upgrade checklist: ../docs/protocol.md
 const DEVICE_JAR_CACHE_PATH =
@@ -52,6 +54,7 @@ export type StartOpts = {
   maxSize?: number;
   keyFrameInterval?: number;
   repeatFrameMs?: number;
+  onStartupDiagnostics?: StartupReporter;
 };
 
 export type AdbCommandResult = {
@@ -60,9 +63,11 @@ export type AdbCommandResult = {
   stderr: string;
   timedOut?: boolean;
   error?: Error | null;
+  timing?: StartupTiming;
 };
 
 export type ScrcpyRuntime = {
+  diagnostics?: StartupDiagnostics;
   ensureServer: () => Promise<string>;
   serverFingerprint: (path: string) => Promise<string>;
   runAdb: (
@@ -168,8 +173,9 @@ function throwIfAborted(signal: AbortSignal, fallback: string): void {
   if (signal.aborted) throw abortError(signal, fallback);
 }
 
-function runtimeFor(deps: ScrcpyDependencies): ScrcpyRuntime {
+function runtimeFor(deps: ScrcpyDependencies, diagnostics?: StartupDiagnostics): ScrcpyRuntime {
   return {
+    diagnostics,
     ensureServer: deps.ensureServer ?? ensureScrcpyServer,
     serverFingerprint:
       deps.serverFingerprint ??
@@ -181,6 +187,7 @@ function runtimeFor(deps: ScrcpyDependencies): ScrcpyRuntime {
         execText("adb", ["-s", serial, ...args], {
           timeout: opts.timeoutMs,
           signal: opts.signal,
+          measureTiming: diagnostics !== undefined,
         })),
     spawnAdb:
       deps.spawnAdb ??
@@ -206,14 +213,19 @@ async function withDeadline<T>(
   label: string,
   operation: (signal: AbortSignal) => Promise<T>,
   settleAfterAbortMs = 0,
+  stage?: StartupStage,
 ): Promise<T> {
+  if (stage && runtime.diagnostics) {
+    const run = () => withDeadline(runtime, parentSignal, timeoutMs, label, operation, settleAfterAbortMs);
+    return runtime.diagnostics.measure(stage, run);
+  }
   const controller = new AbortController();
   const abortFromParent = () =>
     controller.abort(abortError(parentSignal!, `${label} aborted`));
   parentSignal?.addEventListener("abort", abortFromParent, { once: true });
   if (parentSignal?.aborted) abortFromParent();
   const timer = runtime.setTimer(
-    () => controller.abort(new Error(`${label} timed out after ${timeoutMs}ms`)),
+    () => controller.abort(new StartupTimeoutError(`${label} timed out after ${timeoutMs}ms`)),
     timeoutMs,
   );
 
@@ -285,15 +297,34 @@ async function runAdbRaw(
   timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<AdbCommandResult> {
-  return withDeadline(
+  let settledResult: AdbCommandResult | undefined;
+  const run = () => withDeadline(
     runtime,
     signal,
     timeoutMs,
     `adb ${args.join(" ")}`,
-    (commandSignal) =>
-      runtime.runAdb(serial, args, { timeoutMs, signal: commandSignal }),
+    async (commandSignal) => {
+      settledResult = await runtime.runAdb(serial, args, { timeoutMs, signal: commandSignal });
+      return settledResult;
+    },
     ADB_CANCELLATION_SETTLE_MS,
   );
+  if (runtime.diagnostics === undefined) return run();
+  const stage = adbStartupStage(args, runtime.diagnostics.cleaning);
+  return runtime.diagnostics.measure(stage, run, result => {
+    const outcome = adbStartupOutcome(result);
+    return { outcome, timing: result.timing };
+  }, () => settledResult?.timing);
+}
+
+function adbStartupStage(args: string[], cleaning: boolean): StartupStage {
+  if (args[0] === "forward") return cleaning ? "cleanup-forward" : "forward-socket";
+  if (args[0] === "push") return "push-server";
+  if (args[1] === "test") return "cache-probe";
+  if (args[1] === "mv") return "publish-cache";
+  if (args[1] === "cp") return "copy-server";
+  if (args[1] === "rm") return "cleanup-jars";
+  return "socket-poll";
 }
 
 async function runAdbChecked(
@@ -304,7 +335,12 @@ async function runAdbChecked(
   signal?: AbortSignal,
 ): Promise<string> {
   const result = await runAdbRaw(runtime, serial, args, timeoutMs, signal);
-  if (result.status !== 0) throw commandFailure(serial, args, result);
+  if (result.status !== 0) {
+    const stage = adbStartupStage(args, runtime.diagnostics?.cleaning === true);
+    const outcome = adbStartupOutcome(result);
+    runtime.diagnostics?.fail(stage, outcome);
+    throw commandFailure(serial, args, result);
+  }
   return result.stdout;
 }
 
@@ -537,6 +573,8 @@ async function waitForAbstractSocketAsync(
     if (result.status === 0 && result.stdout.includes(`@${name}`)) return;
     const detail = `${result.stderr ?? ""} ${result.stdout ?? ""}`;
     if (/\b(offline|unauthorized|not found|no devices?)\b/i.test(detail)) {
+      const outcome = adbStartupOutcome(result);
+      runtime.diagnostics?.fail("socket-poll", outcome);
       throw commandFailure(
         serial,
         ["shell", "cat", "/proc/net/unix"],
@@ -889,7 +927,8 @@ export async function startScrcpy(
   opts: StartOpts,
   deps: ScrcpyDependencies = {},
 ): Promise<ScrcpySession> {
-  const runtime = runtimeFor(deps);
+  const diagnostics = opts.onStartupDiagnostics ? new StartupDiagnostics(opts.onStartupDiagnostics) : undefined;
+  const runtime = runtimeFor(deps, diagnostics);
   const timeouts = { ...DEFAULT_TIMEOUTS, ...deps.timeouts };
   const { serial } = opts;
   const maxFps = opts.maxFps ?? SCRCPY_DEFAULTS.maxFps;
@@ -922,6 +961,7 @@ export async function startScrcpy(
 
   const externalAbort = () => {
     const reason = abortError(opts.signal!, "scrcpy startup aborted");
+    diagnostics?.abort();
     startupController.abort(reason);
     if (startupComplete) {
       void closeWithReason(reason).catch((err) => {
@@ -946,7 +986,7 @@ export async function startScrcpy(
 
     const child = proc;
     const paths = jarPaths;
-    closeTask = (async () => {
+    const cleanup = async () => {
       const cleanupErrors: unknown[] = [];
       if (child && !childSettled) {
         try {
@@ -1004,7 +1044,11 @@ export async function startScrcpy(
       if (cleanupErrors.length > 0) {
         throw new AggregateError(cleanupErrors, "scrcpy cleanup failed");
       }
-    })();
+    };
+    if (diagnostics) {
+      diagnostics.cleaning = true;
+      closeTask = diagnostics.measure("cleanup", cleanup);
+    } else closeTask = cleanup();
     return closeTask;
   };
 
@@ -1019,6 +1063,7 @@ export async function startScrcpy(
       timeouts.pushMs,
       "locating scrcpy server",
       () => runtime.ensureServer(),
+      0, "locate-server",
     );
     const fingerprint = await withDeadline(
       runtime,
@@ -1026,6 +1071,7 @@ export async function startScrcpy(
       timeouts.pushMs,
       "hashing scrcpy server",
       () => runtime.serverFingerprint(jar),
+      0, "hash-server",
     );
     const cacheKey = fingerprint.slice(0, 24);
     jarPaths = {
@@ -1055,6 +1101,7 @@ export async function startScrcpy(
 
     // Samsung encoders crash on long app_process command lines. The pinned
     // server already enables control, metadata, and cleanup by default.
+    diagnostics?.enter("launch-server");
     proc = runtime.spawnAdb(serial, [
       "shell",
       `CLASSPATH=${jarPaths.working}`,
@@ -1082,10 +1129,15 @@ export async function startScrcpy(
         resolve();
         if (!startupComplete) startupController.abort(startupError);
       };
-      proc!.once("error", (err) =>
-        settle(new Error(`scrcpy process failed during startup: ${err.message}`)),
-      );
+      proc!.once("error", (err) => {
+        diagnostics?.fail("launch-server", "spawn-error");
+        settle(new Error(`scrcpy process failed during startup: ${err.message}`));
+      });
       proc!.once("exit", (code, signal) => {
+        if (startupComplete === false && startupController.signal.aborted === false) {
+          const outcome = code === 0 ? "closed" : "nonzero";
+          diagnostics?.fail("launch-server", outcome);
+        }
         const suffix = stderrTail.trim() ? `: ${stderrTail.trim()}` : "";
         settle(
           new Error(
@@ -1115,6 +1167,7 @@ export async function startScrcpy(
           `scrcpy_${scid}`,
           signal,
         ),
+      0, "socket-ready",
     );
 
     videoSock = await withDeadline(
@@ -1123,6 +1176,7 @@ export async function startScrcpy(
       timeouts.connectMs,
       "connecting scrcpy video socket",
       (signal) => runtime.connect(localPort!, timeouts.connectMs, signal),
+      0, "connect-video",
     );
     throwIfAborted(startupController.signal, "scrcpy startup aborted");
     controlSock = await withDeadline(
@@ -1131,6 +1185,7 @@ export async function startScrcpy(
       timeouts.connectMs,
       "connecting scrcpy control socket",
       (signal) => runtime.connect(localPort!, timeouts.connectMs, signal),
+      0, "connect-control",
     );
     throwIfAborted(startupController.signal, "scrcpy startup aborted");
     controlSock.on("data", () => {});
@@ -1142,6 +1197,7 @@ export async function startScrcpy(
       timeouts.preambleMs,
       "reading scrcpy video preamble",
       () => reader.read(81, "header"),
+      0, "video-preamble",
     );
     throwIfAborted(startupController.signal, "scrcpy startup aborted");
     const preamble = parseVideoPreamble(preambleBytes);
@@ -1154,6 +1210,7 @@ export async function startScrcpy(
     }
     reader.prepend(preamble.extra);
     startupComplete = true;
+    diagnostics?.finish("ready");
 
     return {
       transport: "scrcpy",
@@ -1175,16 +1232,19 @@ export async function startScrcpy(
     };
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
+    diagnostics?.failCurrent(error);
     startupController.abort(error);
     try {
       await closeWithReason(error);
     } catch (cleanupError) {
+      diagnostics?.finish("failed");
       throw new AggregateError(
         [error, cleanupError],
         error.message,
         { cause: error },
       );
     }
+    diagnostics?.finish("failed");
     throw err;
   }
 }
