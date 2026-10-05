@@ -46,6 +46,101 @@ test('finite state previews prefer the body selected without unrelated guards ov
   assert.equal(plan.views!.length, 1, 'One finite state still has one capture destination');
 });
 
+
+test('a local reducer form keeps its body when a nested row callback uses the same selector first', async t => {
+  const root=await mkdtemp(join(tmpdir(),'flow-preview-rows-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await writeFile(join(root,'App.tsx'), `import {useReducer} from 'react';
+    export function App(){const [{page}]=useReducer(reducer,{page:0});
+      const renderItem=()=>page===1?<MemberRow/>:null;
+      return page===1?<MemberForm/>:<StartForm/>;
+    }
+    function MemberRow(){return <span/>}
+    function MemberForm(){return <section/>}
+    function StartForm(){return <section/>}`);
+  const graph=await scanAppFlow(root,'ios');
+  const plan=graph.presentations!.previews!.find(p=>p.effect.kind==='state'&&p.effect.value===1);
+  assert.ok(plan,'The nested callback must not hide the form preview');
+  assert.equal(plan.owner,'App');assert.equal(plan.component,'MemberForm');
+  assert.equal(plan.consumer,undefined,'A local hook needs no shared consumer binding');
+  const view=graph.presentations!.views!.find(v=>v.id===plan.views![0])!;
+  assert.ok(view.components.some(c=>c.component==='MemberRow'),'Row evidence remains in the catalog');
+  assert.ok(view.components.some(c=>c.component==='MemberForm'));
+  assert.equal(graph.presentations!.previews!.filter(p=>p.effect.kind==='state'&&p.effect.value===1).length,1);
+});
+
+test('a shared reducer form uses a source-bound consumer instead of an earlier list callback in another file', async t => {
+  const root=await mkdtemp(join(tmpdir(),'flow-preview-consumer-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await writeFile(join(root,'App.tsx'), `import {createContext,useReducer} from 'react';
+    import {Form} from './Form';export const Context=createContext(null);
+    export function App(){const [state]=useReducer(reducer,{page:'start'});
+      const renderItem=()=>state.page==='members'?<MemberRow/>:null;
+      return <Context.Provider value={state}><Form/></Context.Provider>}
+    function MemberRow(){return <span/>}`);
+  await writeFile(join(root,'Form.tsx'), `import {useContext} from 'react';import {Context} from './App';
+    export function Form(){const state=useContext(Context);return state.page==='members'?<MemberForm/>:<StartForm/>}
+    function MemberForm(){return <section/>} function StartForm(){return <section/>}`);
+  const graph=await scanAppFlow(root,'ios');
+  const plan=graph.presentations!.previews!.find(p=>p.effect.kind==='state'&&p.effect.value==='members');
+  assert.ok(plan,'A real form consumer needs a preview even when an earlier callback has no component entry');
+  assert.equal(plan.file,'Form.tsx');assert.equal(plan.owner,'Form');assert.equal(plan.component,'MemberForm');
+  assert.equal(plan.consumer?.component,'Form');assert.equal(plan.consumer?.entries[0].owner,'App');
+  const view=graph.presentations!.views!.find(v=>v.id===plan.views![0])!;
+  assert.ok(view.components.some(c=>c.file==='App.tsx'&&c.component==='MemberRow'));
+});
+
+test('a boolean body selector with a proven UI setter does not depend on its spelling', async t => {
+  const root=await mkdtemp(join(tmpdir(),'flow-preview-boolean-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await writeFile(join(root,'App.tsx'), `import {useState} from 'react';
+    export function App(){const [override,setOverride]=useState(false);if(override)return <Content/>;return <Warning><Button onPress={()=>setOverride(true)}/></Warning>}
+    function Content(){return <section/>} function Warning(){return <section/>} function Button(){return <button/>}
+    function Account(){const [authenticated]=useState(false);return authenticated?<Content/>:<Warning/>}`);
+  const graph=await scanAppFlow(root,'ios');
+  const plans=graph.presentations!.previews!.filter(p=>p.effect.kind==='state');
+  assert.deepEqual(plans.map(p=>p.effect.kind==='state'&&p.effect.value).sort(),[false,true]);
+  assert.ok(plans.every(p=>p.owner==='App'));
+});
+
+
+test('a sheet controller passed only to callbacks is not an extra native presentation target', async t => {
+  const root=await mkdtemp(join(tmpdir(),'flow-preview-control-owner-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await writeFile(join(root,'App.tsx'), `import {useImperativeHandle,useRef} from 'react';
+    export function App(){const control=useControl(),otherControl=useControl();return <Sheet control={control} otherControl={otherControl}/>}
+    function Sheet({control,otherControl}){return <Outer control={control}><Body otherControl={otherControl}/></Outer>}
+    function Outer({control,children}){const ref=useRef(null);useImperativeHandle(control.ref,()=>({open:()=>ref.current.present(),close:()=>ref.current.dismiss()}));return <NativeSheet ref={ref}>{children}</NativeSheet>}
+    function Body({otherControl}){return <Button onPress={()=>otherControl.open()}/>}`);
+  const graph=await scanAppFlow(root,'ios');
+  const previews=graph.presentations!.previews!.filter(p=>p.file==='App.tsx'&&p.owner==='App'&&p.effect.kind==='control');
+  assert.deepEqual(previews.map(p=>p.effect.kind==='control'&&p.effect.prop),['control']);
+  const source=graph.presentations!.views!.find(v=>v.control?.prop==='otherControl'&&v.owner==='App')!;
+  assert.ok(source,'An outbound controller still remains source evidence');assert.equal(source.control!.boundary,false);
+});
+
+
+test('a cached header renders through its enclosing form without requiring a list row or footer data', async t => {
+  const root=await mkdtemp(join(tmpdir(),'flow-preview-header-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await writeFile(join(root,'App.tsx'), `import {useMemo,useReducer} from 'react';
+    export function App({members}){const [{page}]=useReducer(reducer,{page:0});
+      const renderItem=({item})=>page===1?<MemberRow item={item}/>:null;
+      const header=useMemo(()=>page===1?<SearchForm/>:null,[page]);
+      return <List header={header} renderItem={renderItem}>{page===1&&members.length>0?<Footer/>:null}</List>;
+    }
+    function MemberRow(){return <span/>} function SearchForm(){return <section/>} function Footer(){return <footer/>}`);
+  const graph=await scanAppFlow(root,'ios');
+  const plan=graph.presentations!.previews!.find(p=>p.effect.kind==='state'&&p.effect.value===1)!;
+  assert.equal(plan.owner,'App');assert.equal(plan.component,'SearchForm');assert.equal(plan.consumer,undefined);
+});
+
+
+test('a spread keeps unknown controller ownership eligible for runtime discovery', async t => {
+  const root=await mkdtemp(join(tmpdir(),'flow-preview-control-spread-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await writeFile(join(root,'App.tsx'), `import {useImperativeHandle} from 'react';
+    export function App(){const control=useControl(),otherControl=useControl();return <Sheet control={control} otherControl={otherControl}/>}
+    function Sheet(props){return <><Outer control={props.control}/><Other {...props}/></>}
+    function Outer({control}){useImperativeHandle(control.ref,()=>({open(){},close(){}}));return <section/>}`);
+  const graph=await scanAppFlow(root,'ios');
+  assert.ok(graph.presentations!.previews!.some(p=>p.owner==='App'&&p.effect.kind==='control'&&p.effect.prop==='otherControl'));
+});
+
 function runtimeFixture(t:test.TestContext,shared=false,install=installPresentationRuntime,extra?:{modules?:any[];bootstrap?:any}){
   const real={step:'start',record:{id:'observed-record'},pendingSubmit:null};let current:any,clone:any,projection:any;
   let dispatched=0,effects=0,initializers=0,walks=0;const effectKinds:string[]=[];

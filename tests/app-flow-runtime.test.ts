@@ -116,6 +116,17 @@ for (const command of ['resume', 'restore']) {
   });
 }
 
+test('navigation diagnostics count retained stack routes without returning their names or params',async t=>{
+  const app=runtime(t);await app.invoke({type:'inspect'});
+  const state=app.getState();state.type='tab';state.routes.push({name:'private-route',params:{secret:'private-data'},state:{type:'stack',routes:[{name:'private-one'},{name:'private-two'}]}});
+  const counts=await app.invoke({type:'diagnostics'});
+  assert.equal(counts.navigationRoutes,4);assert.equal(counts.navigationStacks,1);assert.equal(counts.largestStack,2);
+  assert.equal(counts.navigationTruncated,false);assert.equal(JSON.stringify(counts).includes('private'),false);
+  state.routes.at(-1).state.routes[0].state=state;
+  assert.equal((await app.invoke({type:'diagnostics'})).navigationRoutes,4,'Cycles do not repeat retained routes');
+  delete state.routes.at(-1).state.routes[0].state;
+});
+
 test('focused lookup keeps scanning content and links after finding the first native bounds',async t=>{
   const app=runtime(t);
   const box=()=>({x:0,y:0,width:100,height:200});

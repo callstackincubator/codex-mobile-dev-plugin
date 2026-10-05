@@ -190,6 +190,68 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
     }
     return {export:isDefault?'default':own};
   };
+  const controlOwners=new WeakMap<Fn,Map<string,boolean|undefined>>();
+  const parameterCache=new WeakMap<Fn,Map<string,string[]>>();
+  const parameterBindings=(fn:Fn)=>{
+    const cached=parameterCache.get(fn);if(cached)return cached;
+    const result=new Map<string,string[]>();
+    const visit=(binding:ts.BindingName,path:string[])=>{
+      if(ts.isIdentifier(binding)){result.set(binding.text,path);return;}
+      for(const [index,item]of binding.elements.entries())if(ts.isBindingElement(item)&&!item.dotDotDotToken){
+        const key=item.propertyName?.getText().replace(/^['"]|['"]$/g,'')??(ts.isArrayBindingPattern(binding)?String(index):item.name.getText());
+        visit(item.name,[...path,key]);
+      }
+    };
+    if(fn.parameters[0])visit(fn.parameters[0].name,[]);parameterCache.set(fn,result);return result;
+  };
+  const parameterPath=(unit:SourceUnit,fn:Fn,node:ts.Node,seen=new Set<ts.Node>()):string[]|undefined=>{
+    node=unwrap(node);if(seen.has(node))return;seen=new Set(seen).add(node);
+    if(ts.isIdentifier(node)){
+      for(let parent=node.parent;parent;parent=parent.parent)if(scopes.get(parent)?.has(node.text)){
+        if(parent===fn){const bound=parameterBindings(fn).get(node.text);if(bound)return bound;}
+        const value=initializers.get(parent)?.get(node.text);return value?parameterPath(unit,fn,value,seen):undefined;
+      }
+    }
+    if(ts.isPropertyAccessExpression(node)||ts.isElementAccessExpression(node)){
+      const path=parameterPath(unit,fn,node.expression,seen),key=ts.isPropertyAccessExpression(node)?node.name.text:
+        node.argumentExpression&&ts.isStringLiteralLike(node.argumentExpression)?node.argumentExpression.text:undefined;
+      if(path&&key!==undefined)return [...path,key];
+    }
+  };
+  const ownsControl=(unit:SourceUnit,fn:Fn,prop:string,seen=new Set<string>()):boolean|undefined=>{
+    const key=`${unit.file}#${name(fn)}:${prop}`;if(seen.has(key))return;seen=new Set(seen).add(key);
+    const cached=controlOwners.get(fn);if(cached?.has(prop))return cached.get(prop);
+    let owned=false,unknown=false,jsx=false;
+    walk(fn.body,node=>{
+      if(ts.isCallExpression(node)&&symbol(unit,node.expression.getText())==='react#useImperativeHandle'&&node.arguments[0]&&
+        parameterPath(unit,fn,node.arguments[0])?.[0]===prop)owned=true;
+      if(!ts.isJsxOpeningElement(node)&&!ts.isJsxSelfClosingElement(node))return;
+      jsx=true;
+      for(const attribute of node.attributes.properties)if(ts.isJsxSpreadAttribute(attribute)){
+        const path=parameterPath(unit,fn,attribute.expression);if(path&&(!path.length||path[0]===prop))unknown=true;
+      }
+      for(const attribute of attrs(node)){
+        const targetProp=attribute.name.getText(),value=expr(attribute);
+        if(!value||/^on[A-Z]/.test(targetProp)||parameterPath(unit,fn,value)?.[0]!==prop)continue;
+        if(targetProp==='ref'){owned=true;continue;}
+        const target=functions.get(symbol(unit,node.tagName.getText()));
+        const result=target?ownsControl(fnUnits.get(target)!,target,targetProp,seen):undefined;
+        if(result===true)owned=true;else if(result===undefined)unknown=true;
+      }
+    });
+    const result=owned?true:unknown||!jsx?undefined:false;
+    const values=cached??new Map<string,boolean|undefined>();values.set(prop,result);controlOwners.set(fn,values);return result;
+  };
+  const outboundControl=(unit:SourceUnit,node:ts.JsxOpeningLikeElement,prop:string)=>{
+    const target=functions.get(symbol(unit,node.tagName.getText()));if(!target)return false;
+    const targetUnit=fnUnits.get(target)!;if(ownsControl(targetUnit,target,prop)!==false)return false;
+    // Reject only a proven sibling controller on a component with its own
+    // native/ref boundary. Opaque third-party and custom hook controls retain
+    // their runtime discovery path.
+    const props=new Set([...parameterBindings(target).values()].map(path=>path[0]).filter(Boolean));
+    walk(target.body,child=>{if(ts.isPropertyAccessExpression(child)){const path=parameterPath(targetUnit,target,child);if(path?.[0])props.add(path[0]);}});
+    return [...props].some(other=>other!==prop&&ownsControl(targetUnit,target,other)===true);
+  };
   const views=new Map<string,FlowSourceView>();
   const reachable=(unit:SourceUnit,node:ts.Node)=>{
     for(let p=node;p.parent;p=p.parent){const parent=p.parent;
@@ -232,8 +294,13 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
     const identity=extra.state?['state',extra.state]:[file,own,loc,kind,extra.control,extra.branch];
     const id=hash(identity),existing=views.get(id);
     const renderBody=ts.isCaseClause(body)||ts.isReturnStatement(body)||ts.isBlock(body)&&body.statements.some(ts.isReturnStatement)||(()=>{for(let p=body;p.parent&&!ts.isFunctionLike(p.parent);p=p.parent){if(ts.isReturnStatement(p.parent))return true;if(ts.isJsxElement(p.parent)||ts.isJsxFragment(p.parent))return false;}return false;})();
-    if(existing){existing.renderBody||=renderBody;if(!existing.components.length&&components.length)existing.name=components[0].component;for(const p of components){const prior=existing.components.find(c=>c.file===p.file&&c.component===p.component);if(!prior)existing.components.push(p);else if(p.guards!==undefined)prior.guards=Math.min(prior.guards??p.guards,p.guards);}return;}
-    views.set(id,{id,file,owner:own,line:loc.line,source:loc,kind,name:components[0]?.component??own,components,availability:'observed-only',renderBody,...extra});
+    let renderFn=fn;for(let parent=fn;!(/^[A-Z]/.test(name(parent))||defaultExport(parent));){const enclosing=owner(parent);if(!enclosing)break;renderFn=parent=enclosing;}
+    const callback=renderFn!==fn;
+    const render={file,owner:name(renderFn),line:loc.line,source:loc,
+      components:components.map(component=>({...component,...(callback?{guards:(component.guards??0)+(fn.parameters.length?1:0)}:{})})),
+      renderBody:!callback&&renderBody,...(callback?{callbackOwner:own}:{})};
+    if(existing){existing.renders!.push(render);existing.renderBody||=renderBody;if(!existing.components.length&&components.length)existing.name=components[0].component;for(const p of components){const prior=existing.components.find(c=>c.file===p.file&&c.component===p.component);if(!prior)existing.components.push(p);else if(p.guards!==undefined)prior.guards=Math.min(prior.guards??p.guards,p.guards);}return;}
+    views.set(id,{id,file,owner:own,line:loc.line,source:loc,kind,name:components[0]?.component??own,components:components.map(component=>({...component})),availability:'observed-only',renderBody,renders:[render],...extra});
   };
   const stateBranch=(unit:SourceUnit,condition:ts.Node,body:ts.Node,side:'true'|'false')=>{
     let predicate=unwrap(condition),invert=side==='false';
@@ -275,7 +342,7 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
         // and result-driven dialogs are catalogued even without a UI callback.
         if(/^(?:control|.*Control|controller|ref)$/.test(prop)){
           let boundary=true;for(let p:ts.Node|undefined=n.parent;p&&p!==owner(n);p=p.parent)if(ts.isJsxElement(p)&&p.openingElement!==n&&attrs(p.openingElement).some(a=>/^(?:control|.*Control|controller|ref)$/.test(a.name.getText())))boundary=false;
-          add(unit,n,'control',{control:{component:n.tagName.getText().split('.').at(-1)!,prop,boundary,generic:n.tagName.getText().includes('.')}});
+          add(unit,n,'control',{control:{component:n.tagName.getText().split('.').at(-1)!,prop,boundary:boundary&&!outboundControl(unit,n,prop),generic:n.tagName.getText().includes('.')}});
         }
         const index=attrs(n).find(p=>p.name.getText()==='index');
         if(index)for(const v of origins(read(unit,e))){const value=finite(unit,expr(index));if(value!==undefined){v.site.paths.push(v.path);add(unit,n,'state',{state:{site:v.site.id,path:v.path,value}});}}

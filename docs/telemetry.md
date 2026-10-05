@@ -447,3 +447,13 @@ that has no closing acknowledgement. Close request, retry and acknowledgement
 counts remain local diagnostics; no event payload or controller data enters
 telemetry. Source catalog timing includes ranking preview bodies by unresolved
 guards, with the same capture destinations and source evidence.
+
+Source catalog timing also covers choosing among render sites for a finite UI
+selector. The catalog keeps list callbacks separate from form owners. Existing
+scan and preview-plan measurements keep their units and boundaries; source
+locations, state values and component data remain local.
+
+Controller ownership checks and callback owner selection stay inside the source
+catalog timing. Local diagnostics add bounded route and stack counts to compare
+navigation retention with mounted React tree growth. They return no route names,
+params or app content and do not add telemetry fields.

@@ -13,6 +13,9 @@ const id=(key:string)=>`preview-${createHash('sha256').update(key).digest('hex')
 export function addSourcePreviewPlans(catalog:FlowPresentations) {
   const sites=new Map((catalog.viewStates??[]).map(site=>[site.id,site]));
   const plans=new Map<string,FlowPresentationAction>();
+  const booleanSelectors=new Set(catalog.actions.filter(action=>action.effect.kind==='state'&&typeof action.effect.value==='boolean')
+    .map(action=>action.effect.kind==='state'?JSON.stringify([action.effect.site,action.effect.path]):''));
+  const ownersBySource=new Map((catalog.views??[]).filter(view=>view.kind==='component').map(view=>[JSON.stringify([view.file,view.owner]),view]));
   for(const view of catalog.views??[]){
     const base={id:'',file:view.file,line:view.line,owner:view.owner,component:view.name,prop:'',name:view.name,preview:true,views:[view.id]};
     let action:FlowPresentationAction|undefined;
@@ -21,22 +24,25 @@ export function addSourcePreviewPlans(catalog:FlowPresentations) {
       if(!site?.hook||!field||view.state.path.some(part=>protectedField.test(part)||/^(?:auth|user)$/.test(part))||protectedField.test(field)||protectedField.test(site.valueName??'')||/^use.*(?:Session|Account|Auth|Query|Mutation)/.test(site.owner))continue;
       const value=view.state.value;
       if(!['string','number','boolean'].includes(typeof value)||typeof value==='number'&&!Number.isFinite(value))continue;
-      // The branch proves this finite value selects a UI body. Field spelling
-      // is not evidence; protected state and boolean visibility checks remain.
-      if(typeof value==='boolean'&&!/open|visible|show|view|screen|dialog|modal/i.test(field))continue;
-      if(!view.components.length||view.components.every(c=>inlineBody.test(c.component)))continue;
-      // One finite value can also guard a back button or a status icon. Prefer
-      // the body needing the fewest unrelated conditions, while retaining each
-      // branch/component as evidence and keeping the same capture destination.
-      const component=view.components.filter(c=>!inlineBody.test(c.component)&&c.component!=='default')
-        .sort((a,b)=>(a.guards??0)-(b.guards??0))[0]?.component??view.name;
-      action={...base,name:component,component,effect:{kind:'state',...view.state}};
-      if(site.owner!==view.owner||site.file!==view.file){
-        const component=catalog.views?.find(v=>v.kind==='component'&&v.owner===view.owner&&v.file===view.file);
-        const entries=component?.entries?.flatMap(entry=>entry.source?[{file:entry.file,owner:entry.owner,source:entry.source}]:[])??[];
-        if(!entries.length)continue;
-        action.consumer={component:view.owner,entries};
-      }
+      // Keep each render origin separate. A row callback can use the same
+      // selector before the full form, but cannot serve as that form's owner.
+      const candidates=(view.renders??[view]).flatMap(render=>{
+        if(typeof value==='boolean'&&!/open|visible|show|view|screen|dialog|modal/i.test(field)&&
+          !(render.renderBody&&booleanSelectors.has(JSON.stringify([view.state!.site,view.state!.path]))))return [];
+        const target=render.components.filter(c=>!inlineBody.test(c.component)&&c.component!=='default')
+          .sort((a,b)=>(a.guards??0)-(b.guards??0))[0];
+        const component=target?.component;
+        if(!component)return [];
+        const local=site.owner===render.owner&&site.file===render.file;
+        const entries=local?undefined:ownersBySource.get(JSON.stringify([render.file,render.owner]))?.entries
+          ?.flatMap(entry=>entry.source?[{file:entry.file,owner:entry.owner,source:entry.source}]:[]);
+        if(!local&&!entries?.length)return [];
+        return [{render,component,local,entries,rank:(render.renderBody?0:2)+(local?0:1),guards:target?.guards??0}];
+      }).sort((a,b)=>a.rank-b.rank||a.guards-b.guards);
+      const selected=candidates[0];if(!selected)continue;
+      const {render,component,entries}=selected;
+      action={...base,file:render.file,line:render.line,owner:render.owner,name:component,component,effect:{kind:'state',...view.state},
+        ...(!selected.local?{consumer:{component:render.owner,entries:entries!}}:{})};
     }else if(view.control?.boundary){
       // Method discovery happens on the exact mounted controller. It requires
       // a known open/close pair and a zero-argument opening function.

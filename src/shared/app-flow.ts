@@ -54,6 +54,8 @@ export type FlowSourceView = {
   branch?: {condition: string; side: 'true' | 'false' | 'case'};
   availability: 'observed-only';
   renderBody?: boolean;
+  /** Render sites sharing one finite state; keep callbacks distinct from form owners. */
+  renders?: {file: string; owner: string; line: number; source: FlowSourceView['source']; components: FlowSourceView['components']; renderBody: boolean; callbackOwner?: string}[];
   /** Exported owner whose ordinary initial render needs no supplied props. */
   mount?: {export:string};
   entries?: {file: string; line: number; owner: string; source?: {line: number; column: number; endLine: number; endColumn: number}}[];

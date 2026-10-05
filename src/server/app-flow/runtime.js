@@ -163,6 +163,19 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
     try { return root?.getRootState?.() ?? root?.getState?.(); }
     catch { /* Local forms can unmount and later replace the navigator. */ }
   }
+  function navigationCounts() {
+    const stack=[navigatorState()],seen=new Set();let navigationRoutes=0,navigationStacks=0,largestStack=0,truncated=false;
+    while(stack.length&&seen.size<1000){
+      const state=stack.pop();if(!state||typeof state!=='object'||seen.has(state))continue;seen.add(state);
+      if(!Array.isArray(state.routes))continue;navigationRoutes+=state.routes.length;
+      if(state.type==='stack'){navigationStacks++;largestStack=Math.max(largestStack,state.routes.length);}
+      if(state.routes.length>1000)truncated=true;
+      for(const route of state.routes.slice(0,1000))if(route?.state){
+        if(stack.length+seen.size>=1000){truncated=true;break;}stack.push(route.state);
+      }
+    }
+    return {navigationRoutes,navigationStacks,largestStack,navigationTruncated:truncated||stack.length>0};
+  }
   const hidden = props => props?.hidden === true || props?.mode === 'hidden' || props?.activityState === 0 || props?.route && props.navigation?.isFocused && !props.navigation.isFocused();
   function visible() {
     const links = [], components = new Set(), destinations = new Set(), live = new Set();
@@ -517,7 +530,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         if (command.type === 'heartbeat') { reply({ alive: true }); return; }
         if (command.type === 'diagnostics') {
           let mountedFibers=0,mountedHosts=0;fibers(fiber=>{mountedFibers++;if(fiber.tag===5)mountedHosts++;});
-          reply({mountedFibers,mountedHosts,transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,lastPresentationProbe,presentations:presentations?.diagnostics?.()});return;
+          reply({mountedFibers,mountedHosts,...navigationCounts(),transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,lastPresentationProbe,presentations:presentations?.diagnostics?.()});return;
         }
         if (command.type === 'context-data') { reply(contextData()); return; }
         if (command.type === 'observe') { reply(observe()); return; }
