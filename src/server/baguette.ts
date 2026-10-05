@@ -11,6 +11,7 @@ import { errorMessage, normalizeDevices, parseBaseUrl, udidSchema } from "../sha
 import type { Status } from "../shared/protocol.ts";
 import { buttonMarginsSchema } from "../shared/bezel.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { ExpectedOperationError } from "../shared/error-reporting.ts";
 import { baguetteEnvironment } from "./baguette-runtime.ts";
 
 export const definitionSchema = z.object({
@@ -107,7 +108,7 @@ export class Baguette {
       if (code !== "ECONNREFUSED") throw error;
     }
     if (process.platform !== "darwin" || process.arch !== "arm64") {
-      throw new Error("Starting Baguette requires an Apple Silicon Mac with Xcode 26 or later.");
+      throw new ExpectedOperationError("unsupported_platform", "Starting Baguette requires an Apple Silicon Mac with Xcode 26 or later.");
     }
     if (this.child) throw new Error("Baguette is already starting. Wait and refresh the device list.");
 

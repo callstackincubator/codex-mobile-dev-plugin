@@ -1,3 +1,4 @@
+import { ExpectedOperationError } from "../shared/error-reporting.ts";
 import { randomBytes } from "node:crypto";
 import { WebSocket } from "ws";
 import { errorMessage, streamMessageSchema } from "../shared/protocol.ts";
@@ -173,7 +174,7 @@ export class StreamSessions {
     const session = this.sessions.get(id);
     if (!session || session.expires < Date.now()) {
       if (session) this.closeSession(id);
-      throw new Error("The simulator stream expired or closed.");
+      throw new ExpectedOperationError("session_expired", "The simulator stream expired or closed.");
     }
     session.expires = Date.now() + this.idleTimeout;
     this.checkFirstFrame(session);

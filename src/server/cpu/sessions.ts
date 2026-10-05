@@ -1,3 +1,4 @@
+import { ExpectedOperationError } from "../../shared/error-reporting.ts";
 import { randomBytes } from "node:crypto";
 import type { z } from "zod";
 import type { CpuBatch, CpuTarget, MemoryMetric } from "../../shared/cpu.ts";
@@ -94,7 +95,7 @@ export class CpuSessions {
 
   async read(id: string, after: number, waitMs = 1000): Promise<CpuBatch> {
     const session = this.sessions.get(id);
-    if (session === undefined) throw new Error("This CPU session expired or closed. Reconnect the performance panel.");
+    if (session === undefined) throw new ExpectedOperationError("session_expired", "This CPU session expired or closed. Reconnect the performance panel.");
     session.expires = Date.now() + 300000;
     return session.buffer.read(after, waitMs);
   }

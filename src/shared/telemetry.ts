@@ -1,6 +1,7 @@
 import type { init } from "@sentry/react";
 import { PLUGIN_VERSION } from "./version.ts";
 import { isAnonymousUserId, isTelemetrySessionId } from "./telemetry-identity.ts";
+import { errorCategory, expectedOutcome } from "./error-reporting.ts";
 
 export const SENTRY_UI_DSN = "https://09bfb50068dbab86252bbb5489ce38ce@o4512180958068736.ingest.de.sentry.io/4512181027471440";
 export const SENTRY_SERVER_DSN = "https://2ee03a9449e1f1b48e3e7c7606b6f562@o4512180958068736.ingest.de.sentry.io/4512181033173072";
@@ -20,6 +21,7 @@ export type Surface = "logs" | "performance" | "simulator" | "recording" | "comp
 export type TelemetryAttributes = Record<string, string | number | boolean>;
 type Options = NonNullable<Parameters<typeof init>[0]>;
 type ErrorEvent = Parameters<NonNullable<Options["beforeSend"]>>[0];
+type ErrorHint = Parameters<NonNullable<Options["beforeSend"]>>[1];
 type StreamedSpanJSON = Parameters<NonNullable<Options["beforeSendSpan"]>>[0];
 type Metric = Parameters<NonNullable<Options["beforeSendMetric"]>>[0];
 
@@ -53,7 +55,30 @@ export function scrubText(text: string): string {
   return scrubbed.slice(0, 512);
 }
 
-export function scrubErrorEvent(event: ErrorEvent): ErrorEvent {
+export function errorReportSignature(error: unknown, tags: Record<string, string>): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const scrubbed = scrubText(message);
+  const category = errorCategory(error);
+  const name = error instanceof Error ? error.name : "unknown";
+  return [category, name, scrubbed, tags.discovery_stage, tags.discovery_failure, tags.device_platform, tags.device_kind].join("|");
+}
+
+export function scrubErrorEvent(event: ErrorEvent, hint?: ErrorHint): ErrorEvent | null {
+  if (expectedOutcome(hint?.originalException) !== undefined) return null;
+  const category = errorCategory(hint?.originalException);
+  const operation = event.tags?.operation;
+  if (operation) {
+    const operationName = String(operation);
+    event.fingerprint = ["{{default}}", operationName, category];
+    for (const tag of ["resource_kind", "discovery_stage", "discovery_failure"]) {
+      const value = event.tags?.[tag];
+      if (value !== undefined) {
+        const dimension = String(value);
+        event.fingerprint.push(dimension);
+      }
+    }
+  }
+  if (category !== "unexpected") event.tags = { ...event.tags, error_category: category };
   delete event.request;
   const userId = event.user?.id;
   if (isAnonymousUserId(userId)) event.user = { id: userId };

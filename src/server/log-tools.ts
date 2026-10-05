@@ -1,3 +1,4 @@
+import { ExpectedOperationError } from "../shared/error-reporting.ts";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
@@ -13,6 +14,7 @@ import { listIosDevices } from "./ios-devices.ts";
 import { physicalIosLogDevice } from "./physical-ios-logs.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { captureServerError } from "./telemetry.ts";
+import { parseResourceInput } from "./resource-input.ts";
 
 const sessionId = z.string().regex(/^[a-f0-9]{64}$/);
 const sequence = z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -31,7 +33,13 @@ function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
 export function registerLogTools(server: McpServer, logs: LogSessions, baguette: Baguette, discoverIosDevices = listIosDevices) {
   server.registerResource("log-batch", new ResourceTemplate("logs://mobile-dev/{sessionId}/batch?after={sequence}", { list: undefined }), {
     mimeType: "application/json", description: "Read a batch from an authorized Mobile Dev log session. Idle sessions expire after five minutes.",
-  }, async (uri, variables) => ({ contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(await logs.read(sessionId.parse(variables.sessionId), sequence.parse(variables.sequence))) }] }));
+  }, async (uri, variables) => {
+    const id = parseResourceInput(sessionId, variables.sessionId);
+    const after = parseResourceInput(sequence, variables.sequence);
+    const batch = await logs.read(id, after);
+    const text = JSON.stringify(batch);
+    return { contents: [{ uri: uri.href, mimeType: "application/json", text }] };
+  });
 
   registerAppTool(server, "mobile_log_sources", {
     title: "Find log sources", description: "List connected Android devices and inspector targets at an existing local Metro URL. Does not start a dev server. Select a target explicitly before streaming Metro logs.",
@@ -54,7 +62,7 @@ export function registerLogTools(server: McpServer, logs: LogSessions, baguette:
       else await baguette.device(options.native.deviceId, true);
     }
     if (options.native?.platform === "android" && !(await listAndroidLogDevices()).some(device => device.id === options.native?.deviceId)) {
-      throw new Error("The selected Android device is absent or unauthorized. Refresh log sources.");
+      throw new ExpectedOperationError("device_unavailable", "The selected Android device is absent or unauthorized. Refresh log sources.");
     }
     if (options.metro) parseBaseUrl(options.metro.url, "Metro URL");
     const id = logs.open(options);

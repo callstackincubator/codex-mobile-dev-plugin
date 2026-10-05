@@ -1,11 +1,13 @@
+import { parseResourceInput } from "./resource-input.ts";
+import { openRequestSession } from "./request-session.ts";
+import type { ServerRequestContext } from "./request-session.ts";
 import { addToolIcons, PHONE_ICONS } from "./tool-icons.ts";
 import type { UIResource } from "./ui-resource.ts";
 import { LIVE_UI_URI } from "../shared/live-ui.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { wrapMcpServerWithSentry } from "@sentry/node";
 import { PLUGIN_VERSION } from "../shared/version.ts";
 import { SENTRY_ORIGIN } from "../shared/telemetry.ts";
-import { captureServerError } from "./telemetry.ts";
+import { captureServerError, instrumentMcpServer } from "./telemetry.ts";
 import { resolveTelemetryEnvironment } from "./telemetry-environment.ts";
 import { getTelemetryIdentity } from "./telemetry-identity.ts";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
@@ -98,11 +100,11 @@ function result(data: Record<string, unknown>, message: string): CallToolResult 
   return { content: [{ type: "text", text: message }], structuredContent: data };
 }
 
-function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
-  return async (input: T): Promise<CallToolResult> => {
-    try { return await handler(input); }
+function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) {
+  return async (input: T, context: ServerRequestContext): Promise<CallToolResult> => {
+    try { return await handler(input, context); }
     catch (error) {
-      captureServerError(error, "simulator.tool");
+      captureServerError(error, "simulator.tool", { signal: context.signal });
       return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { retryable: !(error instanceof SimulatorUnavailableError) } };
     }
   };
@@ -117,7 +119,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
     instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. See the Mobile Dev skill for device control, logs, and performance workflows.",
   });
-  wrapMcpServerWithSentry(server, { recordInputs: false, recordOutputs: false });
+  instrumentMcpServer(server);
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
   const extensions = new OpenAIExtensions(server);
   registerDeviceChoiceTools(server, extensions, {
@@ -230,9 +232,10 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   const frameTemplate = new ResourceTemplate("mobile-frame://{sessionId}/latest{?after}", { list: undefined });
   server.registerResource("simulator-latest-frame", frameTemplate, { mimeType: "image/jpeg" }, async (uri, variables, extra) => {
-    const sessionId = sessionIdSchema.parse(variables.sessionId);
+    const sessionId = parseResourceInput(sessionIdSchema, variables.sessionId);
     const cursor = uri.searchParams.get("after") ?? "0";
-    const after = z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).parse(cursor);
+    const cursorSchema = z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+    const after = parseResourceInput(cursorSchema, cursor);
     try {
       const read = await streams.frame(sessionId, after, extra.signal);
       const timings = { serverWaitMs: read.serverWaitMs, serverStartedAt: read.serverStartedAt, serverPreparedAt: read.serverPreparedAt };
@@ -384,11 +387,12 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     inputSchema: { ...deviceInput, fps: z.number().int().min(1).max(60).default(60) },
     annotations: write,
     _meta: { ui: { resourceUri: APP_URI, visibility: ["app"] } },
-  }, guarded(async ({ udid, fps }: { udid: string; fps: number }) => {
+  }, guarded(async ({ udid, fps }: { udid: string; fps: number }, context) => {
+    context.signal.throwIfAborted();
     const definition = await baguette.definition(udid);
     const bezel = await readBezel(baguette, udid, definition.screen);
     const { inputStatus, inputRepairMessage } = await panelInputStatus(udid);
-    const sessionId = await streams.open(udid, fps);
+    const sessionId = await openRequestSession(context.signal, () => streams.open(udid, fps), id => streams.closeSession(id));
     return {
       ...result({ udid, definition, fps, inputStatus, ...(inputRepairMessage ? { inputRepairMessage } : {}) }, `Stream ready for ${definition.identity.name}.`),
       _meta: { ...(bezel ? { bezel } : {}), sessionId, frameUri: `mobile-frame://${sessionId}/latest?after=0` },

@@ -1,3 +1,5 @@
+import { parseResourceInput } from "../resource-input.ts";
+import { ExpectedOperationError } from "../../shared/error-reporting.ts";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
@@ -37,7 +39,7 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: 
     if (device.platform === "ios" && device.kind === "physical") {
       const devices = await sources.iosDevices();
       const connected = devices.find(candidate => candidate.udid === device.deviceId && candidate.state === "connected" && candidate.pairingState === "paired");
-      if (connected === undefined) throw new Error("Connect the paired iPhone and enable Developer Mode to monitor CPU and memory.");
+      if (connected === undefined) throw new ExpectedOperationError("device_unavailable", "Connect the paired iPhone and enable Developer Mode to monitor CPU and memory.");
       return connected.name;
     }
     if (device.platform === "ios") {
@@ -47,15 +49,15 @@ export function registerCpuTools(server: McpServer, cpu: CpuSessions, baguette: 
     const devices = await sources.androidDevices();
     const connected = devices.find(candidate => candidate.id === device.deviceId);
     if (connected === undefined) {
-      throw new Error("The Android device is offline or unauthorized. Connect and authorize it through ADB.");
+      throw new ExpectedOperationError("device_unavailable", "The Android device is offline or unauthorized. Connect and authorize it through ADB.");
     }
     return connected.name;
   }
   server.registerResource("cpu-batch", new ResourceTemplate("cpu://mobile-dev/{sessionId}/batch?after={sequence}", { list: undefined }), {
     mimeType: "application/json", description: "Read live process and thread CPU plus main-process memory samples from an authorized Mobile Dev performance session.",
   }, async (uri, variables) => {
-    const id = sessionId.parse(variables.sessionId);
-    const after = sequence.parse(variables.sequence);
+    const id = parseResourceInput(sessionId, variables.sessionId);
+    const after = parseResourceInput(sequence, variables.sequence);
     const batch = await cpu.read(id, after);
     const text = JSON.stringify(batch);
     return { contents: [{ uri: uri.href, mimeType: "application/json", text }] };

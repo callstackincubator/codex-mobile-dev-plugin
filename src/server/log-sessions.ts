@@ -1,3 +1,4 @@
+import { ExpectedOperationError } from "../shared/error-reporting.ts";
 import { randomBytes } from "node:crypto";
 import type { LogBatch, LogOptions } from "../shared/logs.ts";
 import { logOptionsSchema } from "../shared/logs.ts";
@@ -41,7 +42,7 @@ export class LogSessions {
 
   private touch(id: string): Session {
     const session = this.sessions.get(id);
-    if (!session) throw new Error("This log session expired or closed. Reopen the log panel.");
+    if (!session) throw new ExpectedOperationError("session_expired", "This log session expired or closed. Reopen the log panel.");
     session.expires = Date.now() + 5 * 60 * 1000;
     return session;
   }

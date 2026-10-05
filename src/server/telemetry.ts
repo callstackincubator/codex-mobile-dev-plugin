@@ -1,7 +1,9 @@
 import * as Sentry from "@sentry/node";
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { McpServer, ResourceTemplate, ResourceMetadata, ReadResourceCallback, ReadResourceTemplateCallback, RegisteredResource, RegisteredResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { MeasurementWindow, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY } from "../shared/telemetry.ts";
-import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
+import { ExpectedOperationError, expectedOutcome } from "../shared/error-reporting.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
 import { deviceAppsDiagnosticTags } from "../shared/device-apps-diagnostics.ts";
 import { androidStartupDiagnosticTags } from "../shared/android-startup-diagnostics.ts";
@@ -105,39 +107,147 @@ export class IOSLogProcessingTelemetry {
   }
 }
 
-export function captureServerError(error: unknown, operation: string) {
-  if (error instanceof SimulatorUnavailableError) return;
-  if (error instanceof Error && error.name === "AbortError") return;
+export function captureServerError(error: unknown, operation: string, options?: { report?: boolean; signal?: AbortSignal }) {
+  const outcome = options?.signal?.aborted ? "cancelled" : expectedOutcome(error);
   const diagnosticTags = deviceAppsDiagnosticTags(error);
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  Sentry.metrics.count("server.error.outcome", 1, { attributes: { operation, outcome: outcome ?? "unexpected", ...diagnosticTags } });
+  if (outcome !== undefined) return;
+  if (options?.report === false) {
+    Sentry.metrics.count("server.error.repeated", 1, { attributes: { operation, ...diagnosticTags } });
+    return;
+  }
   const androidTags = androidStartupDiagnosticTags(error);
   Sentry.captureException(error, { tags: { ...diagnosticTags, ...androidTags, operation } });
 }
 
+type RequestReporting = { accounted: boolean; sessionResponse?: { release: () => void; close: () => Promise<void> } };
+const requestReporting = new AsyncLocalStorage<RequestReporting>();
+
+export function registerRequestSessionResponse(release: () => void, close: () => Promise<void>) {
+  const reporting = requestReporting.getStore();
+  if (reporting) reporting.sessionResponse = { release, close };
+}
+
+function recordResourceFailure(error: unknown, signal: AbortSignal): Error {
+  let normalized: Error;
+  if (signal.aborted) normalized = new ExpectedOperationError("cancelled", "Resource read cancelled.");
+  else if (error instanceof Error) normalized = error;
+  else {
+    const message = String(error);
+    normalized = new Error(message);
+  }
+  const reporting = requestReporting.getStore();
+  if (reporting) reporting.accounted = true;
+  if (process.env.MOBILE_DEV_TELEMETRY !== "off") {
+    const outcome = expectedOutcome(normalized) ?? "unexpected";
+    Sentry.metrics.count("server.error.outcome", 1, { attributes: { operation: "resources.read", outcome } });
+  }
+  return normalized;
+}
+
+export function instrumentMcpServer(server: McpServer) {
+  const register = server.server.setRequestHandler.bind(server.server);
+  server.server.setRequestHandler = (schema, handler) => {
+    register(schema, async (request, extra) => {
+      const reporting = requestReporting.getStore();
+      try {
+        return await handler(request, extra);
+      } catch (error) {
+        const accounted = reporting?.accounted === true;
+        if (reporting) {
+          reporting.accounted = true;
+        }
+        if (accounted === false && extra.signal.aborted === false) captureServerError(error, "mcp.request");
+        throw error;
+      }
+    });
+  };
+  Sentry.wrapMcpServerWithSentry(server, { recordInputs: false, recordOutputs: false });
+  const registerResource = server.registerResource.bind(server);
+  function resource(name: string, uri: string, metadata: ResourceMetadata, handler: ReadResourceCallback): RegisteredResource;
+  function resource(name: string, uri: ResourceTemplate, metadata: ResourceMetadata, handler: ReadResourceTemplateCallback): RegisteredResourceTemplate;
+  function resource(name: string, uri: string | ResourceTemplate, metadata: ResourceMetadata, handler: ReadResourceCallback | ReadResourceTemplateCallback) {
+    // Each overload pairs its URI kind with the corresponding callback signature.
+    if (typeof uri === "string") {
+      const read = handler as ReadResourceCallback;
+      const wrapped: ReadResourceCallback = async (url, extra) => {
+        try { return await read(url, extra); }
+        catch (error) { throw recordResourceFailure(error, extra.signal); }
+      };
+      return registerResource(name, uri, metadata, wrapped);
+    }
+    const read = handler as ReadResourceTemplateCallback;
+    const wrapped: ReadResourceTemplateCallback = async (url, variables, extra) => {
+      try { return await read(url, variables, extra); }
+      catch (error) { throw recordResourceFailure(error, extra.signal); }
+    };
+    return registerResource(name, uri, metadata, wrapped);
+  }
+  server.registerResource = resource;
+}
+
+const resourceKinds: Record<string, string> = {
+  "logs:": "logs", "cpu:": "cpu", "display-fps:": "display_fps", "mobile-frame:": "simulator_video",
+  "android-stream:": "android_video", "ios-video:": "ios_video", "ui:": "ui",
+};
+const allowedContext: Record<string, readonly string[]> = {
+  surface: ["logs", "performance", "simulator", "recording", "comparison"], view: ["panel", "workspace", "recording", "comparison"], layout: ["ios", "android", "both", "none"],
+  device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"],
+};
+
 export function installTracePropagation(transport: Transport) {
+  const send = transport.send.bind(transport);
+  transport.send = async (message, options) => {
+    const reporting = requestReporting.getStore();
+    const session = reporting?.sessionResponse;
+    const response = "result" in message || "error" in message;
+    if (response && session) {
+      reporting.sessionResponse = undefined;
+      session.release();
+      try { await send(message, options); }
+      catch (error) { await session.close(); throw error; }
+      return;
+    }
+    await send(message, options);
+  };
   const start = transport.start.bind(transport);
   transport.start = async () => {
     const receive = transport.onmessage;
     transport.onmessage = (message, extra) => {
-      if ("method" in message && message.params?._meta) {
-        const meta = message.params._meta;
+      if ("method" in message) {
+        const meta = message.params?._meta ?? {};
         const sentryTrace = typeof meta["sentry-trace"] === "string" ? meta["sentry-trace"] : undefined;
         const baggage = typeof meta.baggage === "string" ? meta.baggage : undefined;
         Sentry.continueTrace({ sentryTrace, baggage }, () => {
           Sentry.withIsolationScope(scope => {
+            const reporting: RequestReporting = { accounted: false };
+            scope.addEventProcessor(event => {
+              const mechanisms = event.exception?.values ?? [];
+              const automatic = mechanisms.find(value => value.mechanism?.type === "auto.ai.mcp_server");
+              const errorType = automatic?.mechanism?.data?.error_type;
+              if (errorType === "protocol" && reporting.accounted) return null;
+              return event;
+            });
             const context = meta[TELEMETRY_META_KEY];
             const attributes: Record<string, string> = {};
             if (context !== null && typeof context === "object") {
-              const allowed: Record<string, readonly string[]> = {
-                surface: ["logs", "performance", "simulator", "recording", "comparison"], view: ["panel", "workspace", "recording", "comparison"], layout: ["ios", "android", "both", "none"],
-                device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"],
-              };
               for (const [key, value] of Object.entries(context)) {
-                if (typeof value === "string" && allowed[key]?.includes(value)) attributes[key] = value;
+                if (typeof value === "string" && allowedContext[key]?.includes(value)) attributes[key] = value;
               }
             }
             scope.setAttributes(attributes);
             scope.setTags(attributes);
-            receive?.(message, extra);
+            if (message.method === "resources/read") {
+              scope.setTag("operation", "resources.read");
+              const uri = message.params?.uri;
+              if (typeof uri === "string") {
+                const prefix = uri.split(":", 1)[0];
+                const kind = resourceKinds[`${prefix}:`] ?? "unknown";
+                scope.setTag("resource_kind", kind);
+              }
+            }
+            requestReporting.run(reporting, () => receive?.(message, extra));
           });
         });
         return;

@@ -1,3 +1,4 @@
+import { ExpectedOperationError } from "../shared/error-reporting.ts";
 import { createRequire as createNativeRequire } from "node:module";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -14,7 +15,7 @@ export type OpenCapture = (udid: string) => Promise<NativeCapture>;
 
 let addon: NativeAddon | undefined;
 async function openCapture(udid: string) {
-  if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("Physical iOS mirroring requires an Apple Silicon Mac.");
+  if (process.platform !== "darwin" || process.arch !== "arm64") throw new ExpectedOperationError("unsupported_platform", "Physical iOS mirroring requires an Apple Silicon Mac.");
   if (addon === undefined) {
     const root = import.meta.url.endsWith("/server.mjs") ? "./ios-mirror/" : "../../vendor/ios-mirror/";
     const url = new URL(`${root}darwin-arm64.node`, import.meta.url);
@@ -65,7 +66,7 @@ export class IosMirrorSessions {
     const session = this.sessions.get(id);
     if (session === undefined || session.expires < Date.now()) {
       void this.closeSession(id);
-      throw new Error("The physical device stream expired or closed.");
+      throw new ExpectedOperationError("session_expired", "The physical device stream expired or closed.");
     }
     session.expires = Date.now() + 300000;
     return session;
@@ -77,7 +78,7 @@ export class IosMirrorSessions {
     session.reading = true;
     try {
       const batch = await session.capture.read();
-      if (session.closed) throw new Error("The physical device stream closed.");
+      if (session.closed) throw new ExpectedOperationError("session_closed", "The physical device stream closed.");
       if (session.generation !== batch.generation) session.generation = undefined;
       if (batch.frames.some(frame => frame.key)) session.generation = batch.generation;
       if (batch.configuration) {

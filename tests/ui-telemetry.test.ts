@@ -392,3 +392,89 @@ test("shared app discovery measures the active context and excludes cancelled or
   assert.equal(metrics[0].attributes.device_platform.value, "ios");
   assert.equal(metrics[0].value, 30);
 });
+
+test("stream retries preserve active failures, separate grouping, and exclude confirmed teardown", async t => {
+  const root = process.cwd();
+  const built = await build({
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts";', resolveDir: root, loader: "ts" },
+    bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
+    define: { "process.env.NODE_ENV": '"production"' },
+  });
+  const html = `<head><meta name="mobile-dev-environment" content="release">${identityMeta}</head>`;
+  const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
+  t.after(() => dom.window.close());
+  const window = dom.window;
+  Object.defineProperty(window.performance, "getEntriesByType", { value: () => [] });
+  Object.defineProperty(window.performance, "getEntries", { value: () => [] });
+  const bodies: string[] = [];
+  window.fetch = async (_url, options) => {
+    const body = String(options?.body ?? "");
+    bodies.push(body);
+    return new Response("", { status: 200 });
+  };
+  window.eval(built.outputFiles[0].text);
+  const api = window.Telemetry;
+  let outcome = "thread";
+  const teardown = new window.AbortController();
+  const app = {
+    async callServerTool() {
+      if (outcome === "ready") return { content: [] };
+      if (outcome === "teardown") teardown.abort();
+      const message = outcome === "thread" ? "MCP error -32600: thread not found: abcdef0123456789abcdef0123456789" : "MCP error -32000: CancelledError";
+      const error = new window.Error(message);
+      error.name = "McpError";
+      api.setUiSurface("logs");
+      throw error;
+    },
+  };
+  api.startUiTelemetry(app);
+  api.setUiSurface("simulator");
+  const controller = new window.AbortController();
+  const request = { name: "mobile_stream_session", arguments: { udid: "PRIVATE_DEVICE" } };
+  const options = { signal: controller.signal };
+  const initialFailure = app.callServerTool(request, options);
+  await assert.rejects(initialFailure);
+  const repeatedFailure = app.callServerTool(request, options);
+  await assert.rejects(repeatedFailure);
+  outcome = "ready";
+  await app.callServerTool(request, options);
+  outcome = "thread";
+  const recoveredFailure = app.callServerTool(request, options);
+  await assert.rejects(recoveredFailure);
+  outcome = "cancelled";
+  const activeCancellation = app.callServerTool(request, options);
+  await assert.rejects(activeCancellation);
+  outcome = "teardown";
+  const cancelledFailure = app.callServerTool(request, { signal: teardown.signal });
+  await assert.rejects(cancelledFailure);
+  const timeout = new window.Error("Request timed out");
+  timeout.name = "TimeoutError";
+  api.captureUiError(timeout, "active.timeout");
+  api.flushUiMeasurements();
+  await api.stopUiTelemetry();
+  const events = [];
+  for (const body of bodies) {
+    const lines = body.split("\n");
+    for (let index = 1; index < lines.length - 1; index += 2) {
+      const header = JSON.parse(lines[index]);
+      if (header.type === "event") {
+        const event = JSON.parse(lines[index + 1]);
+        events.push(event);
+      }
+    }
+  }
+  assert.equal(events.length, 4);
+  assert.equal(events[0].tags.surface, "simulator", "Use the request's starting surface after context changes.");
+  assert.equal(events[0].tags.error_category, "host_thread_missing");
+  assert.equal(events[1].tags.error_category, "host_thread_missing", "Recovery permits the same failure to report again.");
+  assert.equal(events[2].tags.error_category, "cancellation", "Cancellation during an active operation remains reportable.");
+  assert.notDeepEqual(events[0].fingerprint, events[2].fingerprint);
+  assert.equal(events[3].tags.error_category, "timeout");
+  const captured = bodies.join("\n");
+  contains(captured, "ui.stream.open_repeated");
+  contains(captured, "ui.operation.expected.cancelled");
+  contains(captured, "ui.action.result");
+  contains(captured, "PRIVATE_DEVICE", false);
+  contains(captured, "abcdef0123456789abcdef0123456789", false);
+  contains(captured, '"environment":"release"');
+});

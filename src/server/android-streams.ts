@@ -1,3 +1,4 @@
+import { ExpectedOperationError } from "../shared/error-reporting.ts";
 import { randomBytes } from "node:crypto";
 import { WebSocket } from "ws";
 import { videoPacket } from "../shared/android-video.ts";
@@ -24,12 +25,12 @@ export function androidInput(value: unknown): Record<string, unknown> {
       const button = buttons[input.button];
       if (button) return { type: button };
       if (input.button === "volume-up" || input.button === "volume-down") return { type: "key", keycode: input.button === "volume-up" ? 24 : 25 };
-      throw new Error("This hardware button is not supported on Android.");
+      throw new ExpectedOperationError("invalid_input", "This hardware button is not supported on Android.");
     }
     case "key": {
       const keys: Record<string, number> = { Enter: 66, Escape: 4, Backspace: 67, Tab: 61, Space: 62, ArrowUp: 19, ArrowDown: 20, ArrowLeft: 21, ArrowRight: 22 };
       const keycode = keys[input.code] ?? (input.code.startsWith("Key") ? input.code.charCodeAt(3) - 65 + 29 : input.code.startsWith("Digit") ? Number(input.code.slice(5)) + 7 : undefined);
-      if (keycode === undefined) throw new Error("This key is not supported on Android.");
+      if (keycode === undefined) throw new ExpectedOperationError("invalid_input", "This key is not supported on Android.");
       const modifiers = input.modifiers ?? [];
       const metaState = (modifiers.includes("shift") ? 1 : 0) | (modifiers.includes("option") ? 2 : 0) | (modifiers.includes("control") || modifiers.includes("command") ? 4096 : 0);
       return { type: "key", keycode, metaState };
@@ -122,14 +123,15 @@ export class AndroidStreams {
   async reset(id: string) {
     const session = this.session(id);
     await this.backend.assertDevice(session.deviceId, session.url);
-    if (!this.sessions.has(id) || session.socket.readyState !== WebSocket.OPEN) throw new Error("The Android stream disconnected.");
+    if (this.sessions.has(id) === false) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
+    if (session.socket.readyState !== WebSocket.OPEN) throw new Error("The Android stream disconnected.");
     if (session.error) throw new Error(session.error);
     this.resetVideo(session);
   }
 
   private session(id: string) {
     const session = this.sessions.get(id);
-    if (!session || session.expires < Date.now()) { this.closeSession(id); throw new Error("The Android stream expired or closed."); }
+    if (!session || session.expires < Date.now()) { this.closeSession(id); throw new ExpectedOperationError("session_expired", "The Android stream expired or closed."); }
     session.expires = Date.now() + 300000;
     return session;
   }
@@ -143,7 +145,7 @@ export class AndroidStreams {
         const timer = setTimeout(done, 1000); session.waiters.add(done);
       });
     }
-    if (!this.sessions.has(id)) throw new Error("The Android stream closed.");
+    if (!this.sessions.has(id)) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
     if (session.error) throw new Error(session.error);
     if (session.waitingForKey) this.requestKey(session);
     const packets = session.packets.filter(packet => packet.sequence > after);
@@ -154,7 +156,7 @@ export class AndroidStreams {
   async input(id: string, messages: unknown[]) {
     const session = this.session(id);
     await this.backend.assertDevice(session.deviceId, session.url);
-    if (!this.sessions.has(id)) throw new Error("The Android stream closed.");
+    if (!this.sessions.has(id)) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
     if (session.error || session.socket.readyState !== WebSocket.OPEN) throw new Error(session.error ?? "The Android stream disconnected.");
     // Validate the full batch before sending any input.
     const validated = messages.map(androidInput);

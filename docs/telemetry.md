@@ -2,6 +2,55 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Since 0.1.128, MCP resource failures retain one original handler exception. Resource
+callbacks normalize thrown values and classify aborted reads before the Sentry
+SDK observes them. A request-scoped reporting flag excludes the generated
+JSON-RPC exception only after that same request's failure has been accounted
+for. Unowned protocol failures and transport failures remain reportable. Guarded
+tools retain their original server capture and `isError` response semantics.
+
+Expected outcomes are classified at their source with bounded typed reasons:
+session expiry/explicit closure, unavailable or unauthorized devices, explicit
+unsupported platform checks, and invalid user/resource input. The shared
+`beforeSend` also applies this classification to automatic SDK captures. Existing
+AbortError exclusions remain. Backend response validation, startup failures,
+missing bundled dependencies, active-operation timeouts, and collector crashes
+are not suppressed by these classifications. UI stream opening now carries the
+reconnect abort signal; cancellation without an aborted operation and host
+“thread not found” failures remain reportable.
+Cancelled stream requests close sessions that finish opening after cancellation
+or before a discarded response. Unexpected cleanup failures retain their own
+`stream.cancel_cleanup` capture. Response delivery releases cancellation ownership;
+failed response delivery closes its undelivered session. Physical iOS mirror startup now also captures
+unexpected server errors before returning the existing visible failure.
+
+Server discovery failures no longer create a second generic UI exception. The
+UI retains its visible error, `ui.device_apps.discovery_failure` counts, and
+`ui.device_apps.discovery` timing, and reports its own transport/response defects
+with bounded classification and a fixed message. Server discovery and UI-only
+discovery failures report once per continuous failure signature. Each local
+failure table holds at most 64 entries and starts a new episode after success,
+a signature change, or five minutes without a failure. UI selection/visibility
+changes also reset their discovery episode. Stream-opening transport retries
+share an episode only within the same reconnect abort signal. Device/session
+keys and signature strings stay local and never enter Sentry payloads.
+
+`server.error.outcome` counts expected and unexpected outcomes; its operation,
+outcome and optional discovery attributes are bounded product classifications.
+`server.error.repeated`, `ui.device_apps.discovery_repeated`, and
+`ui.stream.open_repeated` count failures omitted from exception reporting.
+`ui.operation.expected.<reason>` counts UI lifecycle outcomes. These counters use
+the existing SDK/UI aggregate collection. `ui.action.result` now also counts
+rejected calls and explicit cancellation, using the request's starting context.
+Error fingerprints extend default stack grouping with operation, bounded error
+category, resource kind, and available discovery stage/failure. Anonymous IDs
+are excluded from grouping and metrics. UI SDK consecutive-event deduplication
+is replaced by explicit episode ownership so recovery and separate operations
+can report the same exception shape again. Existing scrubbing, installation
+attribution, opt-out, release/environment metadata, trace propagation, frequent
+trace exclusions, and performance measurement boundaries are unchanged. No
+native telemetry or symbols change in this reporting work.
+
 Since 0.1.113, failed screenshot attachments display a panel notice instead of
 failing silently. Existing `screenshot.attach` error capture retains the original
 exception and operation, and screenshot-capture measurements keep their current
@@ -124,7 +173,7 @@ measurement boundaries are introduced.
 
 Since 0.1.117, Android's bundled serve-emu backend runs under Node.js. Existing MCP error capture, sampled tool traces, UI readiness, and input acknowledgement measurements remain on the active paths. `android.backend.startup.samples` and `android.backend.startup.duration` measure owned backend launches from process spawn through matching device health readiness or startup failure, in milliseconds, with a fixed `outcome` of `ready` or `failed`. These measure plugin backend startup, excluding emulator boot. They carry only product attributes, never device IDs, process diagnostics, paths, or input content, and honor telemetry opt-out. The child backend retains its local frame, queue, and recovery diagnostics without emitting per-frame Sentry events.
 
-Since 0.1.127, owned Android launches also send bounded startup diagnostics to
+Since 0.1.128, owned Android launches also send bounded startup diagnostics to
 the parent over Node IPC. The child sends at most one progress message per fixed
 stage, one first-failure message, and one aggregate completion message. No SDK is
 initialized in the child. Summaries are strictly validated before telemetry;

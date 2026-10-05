@@ -1,3 +1,5 @@
+import { parseResourceInput } from "../resource-input.ts";
+import { ExpectedOperationError } from "../../shared/error-reporting.ts";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
@@ -41,20 +43,20 @@ export function registerDisplayFpsTools(server: McpServer, sessions: DisplayFpsS
   async function validate(target: DisplayFpsTarget) {
     if (target.platform === "android") {
       const devices = await sources.android();
-      if (devices.some(device => device.id === target.deviceId) === false) throw new Error("Connect and authorize the Android device through ADB.");
+      if (devices.some(device => device.id === target.deviceId) === false) throw new ExpectedOperationError("device_unavailable", "Connect and authorize the Android device through ADB.");
       return;
     }
     const devices = await sources.ios();
     const device = devices.find(device => device.udid === target.deviceId);
-    if (device === undefined) throw new Error("Display FPS is available on physical iOS devices, not simulators.");
-    if (device.state !== "connected") throw new Error("Connect the paired iPhone to monitor Display FPS.");
+    if (device === undefined) throw new ExpectedOperationError("invalid_input", "Display FPS is available on physical iOS devices, not simulators.");
+    if (device.state !== "connected") throw new ExpectedOperationError("device_unavailable", "Connect the paired iPhone to monitor Display FPS.");
   }
   const template = new ResourceTemplate("display-fps://mobile-dev/{sessionId}/batch?after={sequence}", { list: undefined });
   server.registerResource("display-fps-batch", template, {
     mimeType: "application/json", description: "Read device-wide Display FPS. Samples use the server's monotonic clock in seconds.",
   }, async (uri, variables) => {
-    const id = sessionId.parse(variables.sessionId);
-    const after = sequence.parse(variables.sequence);
+    const id = parseResourceInput(sessionId, variables.sessionId);
+    const after = parseResourceInput(sequence, variables.sequence);
     const batch = await sessions.read(id, after);
     const text = JSON.stringify(batch);
     return { contents: [{ uri: uri.href, mimeType: "application/json", text }] };

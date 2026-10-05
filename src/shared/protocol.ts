@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ExpectedOperationError } from "./error-reporting.ts";
 import type { PhysicalIosDevice } from "./ios-devices.ts";
 import type { PhysicalAndroidDevice } from "./android-devices.ts";
 
@@ -59,10 +60,12 @@ export function normalizeDevices(payload: unknown): SimulatorDevice[] {
 }
 
 export function parseBaseUrl(value: string, label = "BAGUETTE_URL"): URL {
-  const url = new URL(value);
+  let url: URL;
+  try { url = new URL(value); }
+  catch { throw new ExpectedOperationError("invalid_input", `${label} must be a valid HTTP origin.`); }
   if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)
       || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
-    throw new Error(`${label} must be a loopback HTTP origin, such as http://127.0.0.1:8421.`);
+    throw new ExpectedOperationError("invalid_input", `${label} must be a loopback HTTP origin, such as http://127.0.0.1:8421.`);
   }
   return url;
 }

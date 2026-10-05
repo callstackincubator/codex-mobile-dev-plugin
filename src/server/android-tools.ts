@@ -1,3 +1,7 @@
+import { parseResourceInput } from "./resource-input.ts";
+import { openRequestSession } from "./request-session.ts";
+import type { ServerRequestContext } from "./request-session.ts";
+import { ExpectedOperationError } from "../shared/error-reporting.ts";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
@@ -14,11 +18,11 @@ const deviceInput = { deviceId: androidIdSchema.describe("An Android serial or a
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 const read = { ...write, readOnlyHint: true };
 function result(data: object, text: string): CallToolResult { return { content: [{ type: "text", text }], structuredContent: { ...data } }; }
-function guarded<T>(handler: (input: T) => Promise<CallToolResult>) {
-  return async (input: T): Promise<CallToolResult> => {
-    try { return await handler(input); }
+function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promise<CallToolResult>) {
+  return async (input: T, context: ServerRequestContext): Promise<CallToolResult> => {
+    try { return await handler(input, context); }
     catch (error) {
-      captureServerError(error, "android.tool");
+      captureServerError(error, "android.tool", { signal: context.signal });
       return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { retryable: !(error instanceof SimulatorUnavailableError) } };
     }
   };
@@ -51,7 +55,7 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
     inputSchema: { ...deviceInput, input: inputSchema }, annotations: write,
   }, guarded(async ({ deviceId, input }: { deviceId: string; input: unknown }) => {
     const message = androidInput(input);
-    if (message.type === "touch") throw new Error("Use tap or swipe for direct Android input. Touch events need an active panel stream.");
+    if (message.type === "touch") throw new ExpectedOperationError("invalid_input", "Use tap or swipe for direct Android input. Touch events need an active panel stream.");
     const backend = await android.start(deviceId);
     const type = message.type as string;
     const path = ["home", "back", "recents", "power"].includes(type) ? "/api/key" : `/api/${type}`;
@@ -87,15 +91,19 @@ export function registerAndroidTools(server: McpServer, android: ServeEmu, appUr
   server.registerResource("android-video", new ResourceTemplate("android-stream://mobile-dev/{sessionId}/video?after={sequence}", { list: undefined }), {
     mimeType: "application/json", description: "Read H.264 packets from an authorized Android panel stream.",
   }, async (uri, variables) => {
-    const batch = await streams.batch(sessionIdSchema.parse(variables.sessionId), z.coerce.number().int().nonnegative().parse(variables.sequence));
+    const id = parseResourceInput(sessionIdSchema, variables.sessionId);
+    const cursorSchema = z.coerce.number().int().nonnegative();
+    const after = parseResourceInput(cursorSchema, variables.sequence);
+    const batch = await streams.batch(id, after);
     return { contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(batch) }] };
   });
   registerAppTool(server, "mobile_android_stream_session", {
     title: "Connect Android stream", description: "Start bundled serve-emu for the selected running device and relay H.264 through MCP.",
     inputSchema: deviceInput, annotations: write, _meta: { ui: { resourceUri: appUri, visibility: ["app"] } },
-  }, guarded(async ({ deviceId }: { deviceId: string }) => {
+  }, guarded(async ({ deviceId }: { deviceId: string }, context) => {
+    context.signal.throwIfAborted();
     const definition = await android.definition(deviceId);
-    const sessionId = await streams.open(deviceId);
+    const sessionId = await openRequestSession(context.signal, () => streams.open(deviceId), id => streams.closeSession(id));
     return { ...result({ deviceId, definition }, `Stream ready for ${definition.identity.name}.`), _meta: { sessionId, frameUri: `android-stream://mobile-dev/${sessionId}/video?after=0` } };
   }));
   registerAppTool(server, "mobile_android_stream_input", {

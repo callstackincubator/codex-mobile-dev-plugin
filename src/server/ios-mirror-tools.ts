@@ -1,3 +1,6 @@
+import { parseResourceInput } from "./resource-input.ts";
+import { openRequestSession } from "./request-session.ts";
+import { ExpectedOperationError } from "../shared/error-reporting.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
@@ -21,7 +24,7 @@ export function registerIosMirrorTools(server: McpServer, appUri: string, sessio
   server.registerResource("ios-physical-video", new ResourceTemplate("ios-video://mobile-dev/{sessionId}/video", { list: undefined }), {
     title: "Physical iOS device video", mimeType: "application/json",
   }, async (uri, variables) => {
-    const id = sessionId.parse(variables.sessionId);
+    const id = parseResourceInput(sessionId, variables.sessionId);
     const batch = await sessions.batch(id);
     const text = JSON.stringify(batch);
     return { contents: [{ uri: uri.href, mimeType: "application/json", text }] };
@@ -30,15 +33,19 @@ export function registerIosMirrorTools(server: McpServer, appUri: string, sessio
   registerAppTool(server, "mobile_ios_mirror_session", {
     title: "Mirror physical iOS device", description: "Open an interactive HEVC screen stream for a connected, paired iPhone or iPad over USB or Wi-Fi. Supports pointer taps and drags.",
     inputSchema: { udid: z.string().regex(/^[A-Fa-f0-9-]{8,64}$/) }, annotations, _meta: { ui: { resourceUri: appUri, visibility: ["app"] } },
-  }, async ({ udid }) => {
+  }, async ({ udid }, context) => {
     try {
+      context.signal.throwIfAborted();
       const devices = await discover();
       const device = devices.find(device => device.udid === udid);
-      if (device === undefined || device.state !== "connected") throw new Error("The physical iOS device is no longer connected.");
+      if (device === undefined || device.state !== "connected") throw new ExpectedOperationError("device_unavailable", "The physical iOS device is no longer connected.");
       const bezel = await readBezel(device);
-      const id = await sessions.open(udid);
+      const id = await openRequestSession(context.signal, () => sessions.open(udid), id => sessions.closeSession(id));
       return { content: [{ type: "text", text: `Mirroring ${device.name}.` }], structuredContent: { name: device.name }, _meta: { bezel, sessionId: id, frameUri: `ios-video://mobile-dev/${id}/video` } };
-    } catch (error) { return { isError: true, content: [{ type: "text", text: errorMessage(error) }] }; }
+    } catch (error) {
+      captureServerError(error, "mobile_ios_mirror_session", { signal: context.signal });
+      return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
+    }
   });
 
   registerAppTool(server, "mobile_ios_mirror_input", {

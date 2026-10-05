@@ -1,3 +1,4 @@
+import { ExpectedOperationError } from "../../shared/error-reporting.ts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { dirname } from "node:path";
@@ -76,7 +77,7 @@ export function parseRunningApps(output: string): DeviceApp[] {
 }
 
 export async function runningSimulatorApps(deviceId: string, signal?: AbortSignal): Promise<DeviceApp[]> {
-  if (process.platform !== "darwin") throw new Error("iOS CPU monitoring requires macOS and Xcode.");
+  if (process.platform !== "darwin") throw new ExpectedOperationError("unsupported_platform", "iOS CPU monitoring requires macOS and Xcode.");
   const result = await execute("xcrun", ["simctl", "spawn", deviceId, "launchctl", "list"], { timeout: 5000, maxBuffer: 1024 * 1024, signal });
   return parseRunningApps(result.stdout);
 }

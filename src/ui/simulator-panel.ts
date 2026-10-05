@@ -489,7 +489,7 @@ export function createSimulatorPanel(
     const closeTool = physicalIos ? "mobile_ios_mirror_close" : streamPlatform === "android" ? "mobile_android_stream_close" : "mobile_stream_close";
     const openTool = physicalIos ? "mobile_ios_mirror_session" : streamPlatform === "android" ? "mobile_android_stream_session" : "mobile_stream_session";
     const arguments_ = physicalIos ? { udid } : streamPlatform === "android" ? { deviceId: udid } : { udid, fps: 60 };
-    const result = await call(openTool, arguments_, { timeout: 45000 });
+    const result = await call(openTool, arguments_, { signal, timeout: 45000 });
     const id = result._meta?.sessionId;
     const frameUri = result._meta?.frameUri;
     if (typeof id !== "string" || typeof frameUri !== "string") throw new StopReconnectError("The plugin did not return a stream session.");

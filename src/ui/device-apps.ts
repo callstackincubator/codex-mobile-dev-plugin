@@ -3,9 +3,11 @@ import type { SimulatorDevice } from "../shared/protocol.ts";
 import { errorMessage } from "../shared/protocol.ts";
 import { deviceAppsSchema } from "../shared/device-apps.ts";
 import type { DeviceApps } from "../shared/device-apps.ts";
-import { deviceAppsDiagnostic, deviceAppsDiagnosticSchema, setDeviceAppsDiagnostic, DEVICE_APPS_DIAGNOSTIC_META } from "../shared/device-apps-diagnostics.ts";
-import type { DeviceAppsDiagnostic, DeviceAppsStage } from "../shared/device-apps-diagnostics.ts";
+import { deviceAppsDiagnostic, setDeviceAppsDiagnostic, deviceAppsDiagnosticTags } from "../shared/device-apps-diagnostics.ts";
+import type { DeviceAppsStage } from "../shared/device-apps-diagnostics.ts";
 import { captureUiError, countUiEvent, recordUiTiming, getUiTelemetryAttributes } from "./telemetry.ts";
+import { FailureEpisodes, errorCategory, setErrorCategory } from "../shared/error-reporting.ts";
+import { errorReportSignature } from "../shared/telemetry.ts";
 
 export type DeviceAppsSnapshot = DeviceApps & {
   device?: SimulatorDevice;
@@ -26,6 +28,7 @@ export class DeviceAppsStore {
   private available = false;
   private disposed = false;
   private discovery?: Discovery;
+  private readonly failures = new FailureEpisodes();
   private timer?: ReturnType<typeof setInterval>;
   private listeners = new Set<() => void>();
   private snapshot: DeviceAppsSnapshot = { apps: [], foregroundApp: null, discovering: false, ready: false, error: "" };
@@ -73,6 +76,7 @@ export class DeviceAppsStore {
   }
 
   private cancel() {
+    this.failures.clear();
     const discovery = this.discovery;
     this.discovery = undefined;
     discovery?.abort.abort();
@@ -110,7 +114,6 @@ export class DeviceAppsStore {
     const startedAt = performance.now();
     const telemetryContext = getUiTelemetryAttributes();
     let stage: DeviceAppsStage = "transport";
-    let serverDiagnostic: DeviceAppsDiagnostic | undefined;
     try {
       const result = await this.app.callServerTool({ name: "mobile_performance_sources", arguments: parameters }, {
         signal: discovery.abort.signal, timeout: 45000,
@@ -118,23 +121,29 @@ export class DeviceAppsStore {
       if (this.discovery !== discovery) return;
       if (result.isError) {
         stage = "discovery";
-        const parsedDiagnostic = deviceAppsDiagnosticSchema.safeParse(result._meta?.[DEVICE_APPS_DIAGNOSTIC_META]);
-        if (parsedDiagnostic.success) serverDiagnostic = parsedDiagnostic.data;
         const texts = result.content.filter(item => item.type === "text");
         const message = texts.map(item => item.text).join("\n");
         throw new Error(message);
       }
       stage = "response";
       const data = deviceAppsSchema.parse(result.structuredContent);
+      this.failures.recover("discovery");
       this.update({ ...data, ready: true, error: "" });
     } catch (error) {
       if (this.discovery !== discovery) return;
       this.update({ apps: [], foregroundApp: null, ready: false, error: errorMessage(error) });
       if (getUiTelemetryAttributes() === telemetryContext) countUiEvent("ui.device_apps.discovery_failure");
-      const failure = new Error("Selected-device app discovery failed.");
-      const diagnostic = serverDiagnostic ?? deviceAppsDiagnostic(error, stage, platform, device.kind);
-      setDeviceAppsDiagnostic(failure, diagnostic);
-      captureUiError(failure, "device_apps.discover");
+      if (stage !== "discovery") {
+        const failure = new Error("Selected-device app discovery failed.");
+        const category = errorCategory(error);
+        setErrorCategory(failure, category);
+        const diagnostic = deviceAppsDiagnostic(error, stage, platform, device.kind);
+        setDeviceAppsDiagnostic(failure, diagnostic);
+        const tags = deviceAppsDiagnosticTags(failure);
+        const signature = errorReportSignature(error, tags);
+        if (this.failures.shouldReport("discovery", signature)) captureUiError(failure, "device_apps.discover", telemetryContext);
+        else countUiEvent("ui.device_apps.discovery_repeated", 1, telemetryContext);
+      }
     } finally {
       if (this.discovery === discovery) {
         const elapsed = performance.now() - startedAt;

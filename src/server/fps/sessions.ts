@@ -1,3 +1,4 @@
+import { ExpectedOperationError } from "../../shared/error-reporting.ts";
 import { randomBytes } from "node:crypto";
 import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES } from "../../shared/cpu.ts";
 import type { CpuPhase } from "../../shared/cpu.ts";
@@ -85,7 +86,7 @@ export class DisplayFpsSessions {
   }
   async read(id: string, after: number, waitMs = 1000): Promise<DisplayFpsBatch> {
     const session = this.sessions.get(id);
-    if (session === undefined) throw new Error("This Display FPS session expired or closed.");
+    if (session === undefined) throw new ExpectedOperationError("session_expired", "This Display FPS session expired or closed.");
     session.expires = Date.now() + 300000;
     if (after >= session.revision && waitMs > 0 && session.stopping === undefined) {
       await new Promise<void>(resolve => {

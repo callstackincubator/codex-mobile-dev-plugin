@@ -3,10 +3,12 @@ import type { App } from "@modelcontextprotocol/ext-apps";
 import {
   MeasurementWindow, SENTRY_RELEASE, SENTRY_UI_DSN, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY,
   isFrequentTool, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, validateTelemetryEnvironment,
+  errorReportSignature,
 } from "../shared/telemetry.ts";
 import type { Surface, TelemetryAttributes } from "../shared/telemetry.ts";
 import { validateTelemetryIdentity } from "../shared/telemetry-identity.ts";
 import { deviceAppsDiagnosticTags, getDeviceAppsDiagnostic } from "../shared/device-apps-diagnostics.ts";
+import { FailureEpisodes, expectedOutcome } from "../shared/error-reporting.ts";
 
 export { ErrorBoundary } from "@sentry/react";
 
@@ -42,8 +44,12 @@ export function setUiGauge(name: string, value: number) {
   if (running && Number.isFinite(value)) gauges.set(name, value);
 }
 
-export function countUiEvent(name: string, value = 1) {
+export function countUiEvent(name: string, value = 1, context = attributes) {
   if (running === false) return;
+  if (context !== attributes) {
+    Sentry.metrics.count(name, value, { attributes: context });
+    return;
+  }
   const previous = counts.get(name) ?? 0;
   counts.set(name, previous + value);
 }
@@ -113,13 +119,22 @@ export function getUiTelemetryAttributes(): TelemetryAttributes {
   return attributes;
 }
 
-export function captureUiError(error: unknown, operation: string) {
+export function captureUiError(error: unknown, operation: string, context = attributes) {
   if (running === false) return;
-  if (error instanceof Error && error.name === "AbortError") return;
+  const outcome = expectedOutcome(error);
+  if (outcome !== undefined) {
+    countUiEvent(`ui.operation.expected.${outcome}`, 1, context);
+    return;
+  }
   const diagnostic = getDeviceAppsDiagnostic(error);
   if (diagnostic?.failure === "cancelled") return;
   const diagnosticTags = deviceAppsDiagnosticTags(error);
-  Sentry.captureException(error, { tags: { ...diagnosticTags, operation, surface } });
+  const contextTags: Record<string, string> = {};
+  for (const key of ["surface", "view", "layout", "device_platform", "device_kind"]) {
+    const value = context[key];
+    if (typeof value === "string") contextTags[key] = value;
+  }
+  Sentry.captureException(error, { tags: { ...contextTags, ...diagnosticTags, operation } });
 }
 
 export function markUiSurfaceReady(startedAt: number) {
@@ -176,7 +191,11 @@ export function startUiTelemetry(app: App) {
     enabled,
     initialScope: identity ? { user: { id: identity.userId }, tags: { telemetry_session: identity.sessionId } } : undefined,
     dataCollection: { userInfo: false, genAI: { inputs: false, outputs: false } },
-    integrations: [browserTracing],
+    integrations: defaults => {
+      const selected = defaults.filter(integration => integration.name !== "Dedupe");
+      selected.push(browserTracing);
+      return selected;
+    },
     tracePropagationTargets: [],
     tracesSampler: context => sampleTrace(context.name, context.inheritOrSampleWith),
     beforeSend: scrubErrorEvent,
@@ -212,6 +231,8 @@ export function startUiTelemetry(app: App) {
   }
 
   const call = app.callServerTool.bind(app);
+  const retryFailures = new WeakMap<AbortSignal, FailureEpisodes>();
+  const streamOpenTools = new Set(["mobile_stream_session", "mobile_android_stream_session", "mobile_ios_mirror_session"]);
   app.callServerTool = (params, options) => {
     if (isFrequentTool(params.name)) return call(params, options);
     const operationAttributes = attributes;
@@ -223,9 +244,30 @@ export function startUiTelemetry(app: App) {
         const result = await call(request, options);
         const outcome = result.isError ? "error" : "success";
         Sentry.metrics.count("ui.action.result", 1, { attributes: { ...operationAttributes, action: params.name, outcome } });
+        if (result.isError === false || result.isError === undefined) {
+          const signal = options?.signal;
+          if (signal) retryFailures.get(signal)?.recover(params.name);
+        }
         return result;
       } catch (error) {
-        if (options?.signal?.aborted === false || options?.signal === undefined) captureUiError(error, params.name);
+        const signal = options?.signal;
+        const outcome = signal?.aborted ? "cancelled" : "error";
+        Sentry.metrics.count("ui.action.result", 1, { attributes: { ...operationAttributes, action: params.name, outcome } });
+        if (signal?.aborted) countUiEvent("ui.operation.expected.cancelled", 1, operationAttributes);
+        else {
+          let report = true;
+          if (signal && streamOpenTools.has(params.name)) {
+            let episodes = retryFailures.get(signal);
+            if (episodes === undefined) {
+              episodes = new FailureEpisodes();
+              retryFailures.set(signal, episodes);
+            }
+            const signature = errorReportSignature(error, {});
+            report = episodes.shouldReport(params.name, signature);
+          }
+          if (report) captureUiError(error, params.name, operationAttributes);
+          else countUiEvent("ui.stream.open_repeated", 1, operationAttributes);
+        }
         throw error;
       }
     });

@@ -10,7 +10,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, TELEMETRY_META_KEY } from "../src/shared/telemetry.ts";
-import { captureServerError, installTracePropagation, IOSLogProcessingTelemetry, recordAndroidBackendStartup } from "../src/server/telemetry.ts";
+import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup } from "../src/server/telemetry.ts";
+import { ExpectedOperationError, FailureEpisodes } from "../src/shared/error-reporting.ts";
+import { parseResourceInput } from "../src/server/resource-input.ts";
+import { openRequestSession } from "../src/server/request-session.ts";
+import { registerDeviceAppsTool } from "../src/server/device-apps/tools.ts";
 import { directoryBytes } from "../src/server/storage-metrics.ts";
 import { SimulatorUnavailableError } from "../src/server/simulator-unavailable.ts";
 import { registerDeviceChoiceTools } from "../src/server/device-choice-tools.ts";
@@ -392,6 +396,134 @@ test("Node runtime metrics report CPU, memory and event-loop measurements with c
   contains(encoded, '"component":{"value":"server"');
 });
 
+test("MCP reporting retains original failures once and keeps unowned protocol and transport errors", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, environment: "release",
+    beforeSend: scrubErrorEvent, beforeSendSpan: scrubSpan,
+    tracesSampler: context => sampleTrace(context.name, context.inheritOrSampleWith),
+    initialScope: { user: { id: "anon_0123456789abcdef0123456789abcdef" }, tags: { telemetry_session: "run_1234567890abcdef1234567890abcdef" } },
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const server = new McpServer({ name: "reporting-test", version: "1" });
+  instrumentMcpServer(server);
+  server.registerResource("unexpected", "logs://unexpected", {}, async () => { throw new Error("Unexpected resource failure"); });
+  server.registerResource("expiry", "logs://expiry", {}, async () => { throw new ExpectedOperationError("session_expired", "This log session expired or closed."); });
+  server.registerResource("unavailable", "logs://unavailable", {}, async () => { throw new SimulatorUnavailableError("Expected unavailable device"); });
+  const numberSchema = z.number();
+  server.registerResource("input", "logs://input", {}, async () => { parseResourceInput(numberSchema, "PRIVATE_INPUT"); return { contents: [] }; });
+  server.registerResource("response", "logs://response", {}, async () => { numberSchema.parse("PRIVATE_RESPONSE"); return { contents: [] }; });
+  server.registerResource("primitive", "logs://primitive", {}, async () => { throw "Plain thrown failure"; });
+  server.registerTool("guarded", {}, async () => {
+    const error = new Error("Guarded failure");
+    captureServerError(error, "guarded");
+    return { isError: true, content: [] };
+  });
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  installTracePropagation(serverTransport);
+  t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const reads = ["unexpected", "expiry", "unavailable", "input", "response", "primitive"].map(name => client.readResource({ uri: `logs://${name}` }));
+  const results = await Promise.allSettled(reads);
+  const rejected = results.every(result => result.status === "rejected");
+  assert.equal(rejected, true);
+  await client.callTool({ name: "guarded" });
+  await Sentry.flush();
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const eventItems = items.filter(item => item[0].type === "event");
+  const events = eventItems.map(item => item[1]);
+  assert.equal(events.length, 4);
+  const encoded = JSON.stringify(events);
+  contains(encoded, "Unexpected resource failure");
+  contains(encoded, "ZodError");
+  contains(encoded, "Guarded failure");
+  contains(encoded, "JsonRpcError", false);
+  contains(encoded, "session expired", false);
+  contains(encoded, "PRIVATE", false);
+  contains(encoded, '"environment":"release"');
+  contains(encoded, '"user":{"id":"anon_0123456789abcdef0123456789abcdef"}');
+  contains(encoded, '"operation":"resources.read"');
+  const spans = items.filter(item => item[0].type === "span");
+  const encodedSpans = JSON.stringify(spans);
+  contains(encodedSpans, "resources/read", false);
+  await serverTransport.send({ jsonrpc: "2.0", id: 123456, error: { code: -32603, message: "Unowned protocol failure" } });
+  const transportFailure = new Error("Unexpected transport failure");
+  serverTransport.onerror?.(transportFailure);
+  await Sentry.flush();
+  const afterItems = envelopes.flatMap(envelope => envelope[1]);
+  const afterEvents = afterItems.filter(item => item[0].type === "event");
+  assert.equal(afterEvents.length, 6);
+  const after = JSON.stringify(afterEvents);
+  contains(after, "Unowned protocol failure");
+  contains(after, "Unexpected transport failure");
+});
+
+test("discovery reports the first failure per episode and counts repeated and expected outcomes", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const server = new McpServer({ name: "discovery-reporting-test", version: "1" });
+  instrumentMcpServer(server);
+  let outcome = "timeout";
+  registerDeviceAppsTool(server, async () => {
+    if (outcome === "ready") return { apps: [], foregroundApp: null };
+    if (outcome === "offline") throw new ExpectedOperationError("device_unavailable", "Device offline");
+    const error = new Error(`Discovery ${outcome}`);
+    if (outcome === "timeout") error.name = "TimeoutError";
+    throw error;
+  });
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  installTracePropagation(serverTransport);
+  t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const request = { name: "mobile_performance_sources", arguments: { platform: "android", deviceId: "PRIVATE_DEVICE" } };
+  for (const next of ["timeout", "timeout", "different", "ready", "timeout", "offline"]) {
+    outcome = next;
+    await client.callTool(request);
+  }
+  await Sentry.flush();
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const events = items.filter(item => item[0].type === "event");
+  assert.equal(events.length, 3);
+  const encoded = JSON.stringify(envelopes);
+  contains(encoded, "server.error.repeated");
+  contains(encoded, "server.error.outcome");
+  contains(encoded, "device_unavailable");
+  contains(encoded, "PRIVATE_DEVICE", false);
+  const capturedEvents = JSON.stringify(events);
+  contains(capturedEvents, "Device offline", false);
+});
+
+test("failure episode memory is bounded and inactivity starts a new episode", () => {
+  const episodes = new FailureEpisodes();
+  const first = episodes.shouldReport("a", "first", 0);
+  const repeated = episodes.shouldReport("a", "first", 1);
+  const changed = episodes.shouldReport("a", "changed", 2);
+  const inactive = episodes.shouldReport("a", "changed", 300002);
+  assert.equal(first, true);
+  assert.equal(repeated, false);
+  assert.equal(changed, true);
+  assert.equal(inactive, true);
+  episodes.recover("a");
+  const recovered = episodes.shouldReport("a", "changed", 300003);
+  assert.equal(recovered, true);
+  for (let index = 0; index < 64; index++) {
+    const key = String(index);
+    episodes.shouldReport(key, "failure", 300004);
+  }
+  const evicted = episodes.shouldReport("a", "changed", 300005);
+  assert.equal(evicted, true);
+  episodes.clear();
+  const cleared = episodes.shouldReport("a", "changed", 300006);
+  assert.equal(cleared, true);
+});
+
 test("Android startup diagnostics retain stage, device state and anonymous error attribution without private content", async t => {
   const { recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } = await import("../src/server/telemetry.ts");
   const { setAndroidStartupDiagnostic } = await import("../src/shared/android-startup-diagnostics.ts");
@@ -440,4 +572,139 @@ test("Android startup diagnostics retain stage, device state and anonymous error
   await Sentry.flush();
   const afterOptOut = JSON.stringify(envelopes);
   assert.equal(afterOptOut, sent);
+});
+
+test("resource teardown is classified before automatic SDK capture", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const server = new McpServer({ name: "cancel-reporting-test", version: "1" });
+  instrumentMcpServer(server);
+  let started: () => void = () => {};
+  const opening = new Promise<void>(resolve => { started = resolve; });
+  server.registerResource("cancel", "logs://cancel", {}, async (_uri, extra) => {
+    await new Promise<void>((_resolve, reject) => {
+      extra.signal.addEventListener("abort", () => {
+        const error = new Error("Deliberate teardown rejected the active read");
+        reject(error);
+      }, { once: true });
+      started();
+    });
+    return { contents: [] };
+  });
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  installTracePropagation(serverTransport);
+  t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const abort = new AbortController();
+  const pending = client.readResource({ uri: "logs://cancel" }, { signal: abort.signal });
+  const rejection = assert.rejects(pending);
+  await opening;
+  abort.abort();
+  await rejection;
+  await new Promise<void>(resolve => setImmediate(resolve));
+  await Sentry.flush();
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const events = items.filter(item => item[0].type === "event");
+  assert.equal(events.length, 0);
+  const encoded = JSON.stringify(envelopes);
+  contains(encoded, "server.error.outcome");
+  contains(encoded, "cancelled");
+  contains(encoded, "Deliberate teardown", false);
+});
+
+test("cancelled stream requests close late sessions while delivered sessions remain open", async t => {
+  const closed: string[] = [];
+  const server = new McpServer({ name: "stream-cancellation-test", version: "1" });
+  let finishOpen: (id: string) => void = () => {};
+  let started: () => void = () => {};
+  let settled: () => void = () => {};
+  const opening = new Promise<string>(resolve => { finishOpen = resolve; });
+  const startedOpening = new Promise<void>(resolve => { started = resolve; });
+  const cancelledOpeningSettled = new Promise<void>(resolve => { settled = resolve; });
+  server.registerTool("late", { inputSchema: {} }, async (_input, context) => {
+    try {
+      await openRequestSession(context.signal, () => { started(); return opening; }, id => { closed.push(id); });
+      return { content: [] };
+    } finally { settled(); }
+  });
+  server.registerTool("ready", { inputSchema: {} }, async (_input, context) => {
+    const id = await openRequestSession(context.signal, async () => "delivered", id => { closed.push(id); });
+    return { content: [{ type: "text", text: id }] };
+  });
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  let failResponse = false;
+  const send = serverTransport.send.bind(serverTransport);
+  serverTransport.send = async (message, options) => {
+    if (failResponse && "result" in message) throw new Error("Test response delivery failed");
+    await send(message, options);
+  };
+  installTracePropagation(serverTransport);
+  t.after(async () => { await client.close(); await server.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const abort = new AbortController();
+  const pending = client.callTool({ name: "late", arguments: {} }, undefined, { signal: abort.signal });
+  const rejection = assert.rejects(pending);
+  await startedOpening;
+  abort.abort();
+  await rejection;
+  finishOpen("late");
+  await cancelledOpeningSettled;
+  assert.deepEqual(closed, ["late"]);
+  const delivered = new AbortController();
+  const result = await client.callTool({ name: "ready", arguments: {} }, undefined, { signal: delivered.signal });
+  assert.equal(result.isError, undefined);
+  delivered.abort();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.deepEqual(closed, ["late"]);
+  let failed: () => void = () => {};
+  const failedResponse = new Promise<void>(resolve => { failed = resolve; });
+  server.server.onerror = () => { failed(); };
+  failResponse = true;
+  const failedAbort = new AbortController();
+  const failedCall = client.callTool({ name: "ready", arguments: {} }, undefined, { signal: failedAbort.signal });
+  const failedRejection = assert.rejects(failedCall);
+  await failedResponse;
+  assert.deepEqual(closed, ["late", "delivered"]);
+  failedAbort.abort();
+  await failedRejection;
+});
+
+test("cancellation during stream response preparation closes the session and retains cleanup failures", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  const closed: string[] = [];
+  const prepared = new AbortController();
+  const id = await openRequestSession(prepared.signal, async () => "prepared", id => { closed.push(id); });
+  assert.equal(id, "prepared");
+  prepared.abort();
+  assert.deepEqual(closed, ["prepared"]);
+  const late = new AbortController();
+  const opening = openRequestSession(late.signal, async () => { late.abort(); return "late"; }, () => {
+    throw new Error("Unexpected stream cleanup failure");
+  });
+  await assert.rejects(opening, { outcome: "cancelled" });
+  const alreadyCancelled = new AbortController();
+  alreadyCancelled.abort();
+  let opened = false;
+  const prevented = openRequestSession(alreadyCancelled.signal, async () => { opened = true; return "unexpected"; }, () => {});
+  await assert.rejects(prevented, { name: "AbortError" });
+  assert.equal(opened, false);
+  await Sentry.flush();
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const events = items.filter(item => item[0].type === "event");
+  assert.equal(events.length, 1);
+  const encoded = JSON.stringify(events);
+  contains(encoded, "stream.cancel_cleanup");
+  contains(encoded, "Unexpected stream cleanup failure");
 });

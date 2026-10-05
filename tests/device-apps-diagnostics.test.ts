@@ -159,7 +159,7 @@ test("diagnostic metadata rejects unknown values and extra fields rather than fo
   }
 });
 
-test("UI discovery reports validated server diagnostics and separates transport and malformed responses", async t => {
+test("UI discovery leaves server errors with the server and reports transport and malformed responses", async t => {
   const root = process.cwd();
   const built = await build({ stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { DeviceAppsStore } from "./src/ui/device-apps.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
@@ -198,6 +198,17 @@ test("UI discovery reports validated server diagnostics and separates transport 
   reject(timeout);
   await pending;
   pending = store.refresh();
+  reject(timeout);
+  await pending;
+  pending = store.refresh();
+  resolve({ content: [], structuredContent: { apps: [], foregroundApp: null } });
+  await pending;
+  pending = store.refresh();
+  const recoveredTimeout = new dom.window.Error("PRIVATE_TRANSPORT");
+  recoveredTimeout.name = "TimeoutError";
+  reject(recoveredTimeout);
+  await pending;
+  pending = store.refresh();
   resolve({ content: [], structuredContent: { apps: "PRIVATE_RESPONSE" } });
   await pending;
   pending = store.refresh();
@@ -214,6 +225,8 @@ test("UI discovery reports validated server diagnostics and separates transport 
   const captured = bodies.join("\n");
   const includesPrivate = captured.includes("PRIVATE");
   assert.equal(includesPrivate, false);
+  const includesRepeated = captured.includes("ui.device_apps.discovery_repeated");
+  assert.equal(includesRepeated, true);
   const events = bodies.flatMap(body => {
     const lines = body.split("\n");
     const items = [];
@@ -226,12 +239,11 @@ test("UI discovery reports validated server diagnostics and separates transport 
     }
     return items;
   });
-  assert.equal(events.length, 4);
+  assert.equal(events.length, 3);
   const diagnosticTags = events.map(event => ({ stage: event.tags.discovery_stage, failure: event.tags.discovery_failure,
     platform: event.tags.device_platform, kind: event.tags.device_kind, surface: event.tags.surface }));
   assert.deepEqual(diagnosticTags, [
-    { stage: "foreground", failure: "command_failed", platform: "ios", kind: "physical", surface: "logs" },
-    { stage: "discovery", failure: "unknown", platform: "ios", kind: "physical", surface: "logs" },
+    { stage: "transport", failure: "timeout", platform: "ios", kind: "physical", surface: "logs" },
     { stage: "transport", failure: "timeout", platform: "ios", kind: "physical", surface: "logs" },
     { stage: "response", failure: "invalid_response", platform: "ios", kind: "physical", surface: "logs" },
   ]);
