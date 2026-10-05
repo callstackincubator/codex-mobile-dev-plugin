@@ -457,3 +457,8 @@ Controller ownership checks and callback owner selection stay inside the source
 catalog timing. Local diagnostics add bounded route and stack counts to compare
 navigation retention with mounted React tree growth. They return no route names,
 params or app content and do not add telemetry fields.
+
+Presentation binding passes also reuse the committed tree structure when React
+has not committed a change. Hook and entry matches still update for each source
+binding pass, and native bounds remain live. Existing binding and discovery
+measurements include this work with the same boundaries and units.

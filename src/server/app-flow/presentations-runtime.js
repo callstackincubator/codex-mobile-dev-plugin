@@ -124,10 +124,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return targets;
   }
   async function collect(states = catalog.states, actions = catalog.actions) {
-    catalog={states,actions};lastScheduled=0;structureCache=undefined;
+    catalog={states,actions};lastScheduled=0;
     if(!patchHooks())return records(0);
     try {
-      const mounted=new Set();fibers(fiber=>mounted.add(fiber));
+      const mounted=new Set(committedStructure().all);
       for(const [id,binding]of bindings)if(!mounted.has(binding.fiber)&&!mounted.has(binding.fiber.alternate))bindings.delete(id);
       const tracked=fiber=>{const record=owners.get(fiber)??owners.get(fiber.alternate);return record&&[...record.values()].some(id=>bindings.has(id));};
       const targets=collectionTargets(states);
@@ -157,7 +157,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // components and callbacks have identical names. Never invoke the callback.
     const targets=new Map();for(const action of catalog.actions){if(action.effect.kind==='mount')continue;for(const [component,owner]of [[action.component,action.owner],...(action.effect.kind==='control'&&action.effect.target?[[action.effect.component,action.effect.target.owner]]:[]),...(action.consumer?.entries??[]).map(entry=>[action.consumer.component,entry.owner])]){const names=targets.get(component)??new Set();names.add(owner);targets.set(component,names);}}
     const mounted=new Set(), candidates=[];
-    fibers(fiber=>{mounted.add(fiber);const names=targets.get(name(fiber));if(!names)return;for(let parent=fiber.return,n=0;parent&&n++<100;parent=parent.return)if(names.has(name(parent))){candidates.push(fiber);break;}});
+    for(const fiber of committedStructure().all){mounted.add(fiber);const names=targets.get(name(fiber));if(!names)continue;for(let parent=fiber.return,n=0;parent&&n++<100;parent=parent.return)if(names.has(name(parent))){candidates.push(fiber);break;}}
     // Free stale sites before adding newly mounted ones. Repeated JSX instances
     // share source evidence, but lookup still checks each live owner/control.
     for(const [id,record]of entries){
@@ -188,7 +188,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     if(record){record.fiber=fiber;record.fibers.add(fiber);}return record;
   }
-  function configure(next=catalog,matches,checked=[]){structureCache=undefined;catalog=next;for(const match of matches){const binding=bindings.get(match.binding);if(binding)binding.site=match.site;else entries.get(match.binding)?.actions.add(match.site);}for(const id of checked){const binding=bindings.get(id)??entries.get(id);if(binding)binding.checked=true;}}
+  function configure(next=catalog,matches,checked=[]){catalog=next;for(const match of matches){const binding=bindings.get(match.binding);if(binding)binding.site=match.site;else entries.get(match.binding)?.actions.add(match.site);}for(const id of checked){const binding=bindings.get(id)??entries.get(id);if(binding)binding.checked=true;}}
   const descendants = (fiber,callback) => fibers(callback,fiber);
   function attached(fiber,boxes){let measurable=false,shown=false;descendants(fiber,child=>{if(shown)return false;if(child.tag!==5)return;let measured=boxes?.get(child);if(!measured){measured={measurable:false,shown:false};try{const native=child.stateNode?.canonical?.publicInstance??child.stateNode;if(typeof native?.getBoundingClientRect==='function'){measured.measurable=true;const box=native.getBoundingClientRect();measured.shown=box?.width>0&&box?.height>0;}}catch{}boxes?.set(child,measured);}measurable||=measured.measurable;shown||=measured.shown;});return !measurable||shown;}
   const activeAncestors = fiber => {

@@ -141,7 +141,7 @@ test('a spread keeps unknown controller ownership eligible for runtime discovery
   assert.ok(graph.presentations!.previews!.some(p=>p.owner==='App'&&p.effect.kind==='control'&&p.effect.prop==='otherControl'));
 });
 
-function runtimeFixture(t:test.TestContext,shared=false,install=installPresentationRuntime,extra?:{modules?:any[];bootstrap?:any}){
+function runtimeFixture(t:test.TestContext,shared=false,install=installPresentationRuntime,extra?:{modules?:any[];bootstrap?:any;hook?:any}){
   const real={step:'start',record:{id:'observed-record'},pendingSubmit:null};let current:any,clone:any,projection:any;
   let dispatched=0,effects=0,initializers=0,walks=0;const effectKinds:string[]=[];
   function View(){}function Modal(){}function Provider(){}function Wizard(){}function Form(){}function Start(){}function Verify(){}
@@ -170,10 +170,11 @@ function runtimeFixture(t:test.TestContext,shared=false,install=installPresentat
     clone.child={type:snapshot.step==='verify'?Verify:Start,return:clone,memoizedProps:{}};
     modal.props.onShow();current=undefined;
   }};
-  const runtime=install({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});t.after(()=>runtime.cleanup());
+  const hook=extra?.hook??{};hook.renderers=new Map([[1,renderer]]);
+  const runtime=install({hook,fibers,hidden:()=>false,later:setTimeout});t.after(()=>runtime.cleanup());
   const site:any={id:'state',file:'App.tsx',line:1,column:0,endLine:1,owner:shared?'useFlow':'Wizard',owners:shared?['Provider']:[],paths:[['step']],hook:'useReducer'};
   const action:any={id:'preview',file:'App.tsx',line:2,owner:shared?'Form':'Wizard',name:'Verify',component:'Verify',prop:'',preview:true,views:['verified-body'],effect:{kind:'state',site:'state',path:['step'],value:'verify'},...(shared?{consumer:{component:'Form',entries:[{file:'App.tsx',owner:'Provider',source:{line:5,column:0,endLine:5,endColumn:10}}]}}:{})};
-  return {runtime,site,action,real,owner,host,form,context,react,originals,originalChildren,effectKinds,get walks(){return walks},get clone(){return clone},get projection(){return projection},get counts(){return {dispatched,effects,initializers}},setCurrent:(fiber:any)=>{current=fiber}};
+  return {runtime,site,action,real,owner,host,form,context,react,originals,originalChildren,effectKinds,hook,get walks(){return walks},get clone(){return clone},get projection(){return projection},get counts(){return {dispatched,effects,initializers}},setCurrent:(fiber:any)=>{current=fiber}};
 }
 
 async function configure(app:ReturnType<typeof runtimeFixture>){
@@ -284,6 +285,19 @@ test('many preview plans share one mounted-tree lookup and see fresh state on th
   before=app.walks;assert.equal(app.runtime.list().length,127);assert.equal(app.walks-before,1);
   before=app.walks;app.runtime.activeViews(app.owner);assert.equal(app.walks-before,1);
 });
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`unchanged presentation binding passes reuse committed structure (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    let commits=0;const hook={onCommitFiberRoot(){commits++}};
+    const app=runtimeFixture(t,false,install,{hook});await configure(app);assert.equal(app.runtime.list().length,1);
+    const before=app.walks;await configure(app);assert.equal(app.runtime.list().length,1);
+    assert.equal(app.walks-before,0,'Source binding updates alone do not change the committed tree');
+    app.owner.memoizedState.memoizedState.step='verify';hook.onCommitFiberRoot();
+    const changed=app.walks;assert.equal(app.runtime.list().length,0);
+    assert.equal(app.walks-changed,1,'A real commit still needs a fresh tree');assert.equal(commits,1);
+    app.runtime.cleanup();assert.equal(hook.onCommitFiberRoot.name,'onCommitFiberRoot');
+  });
+}
 
 test('a source-only preview uses the capture queue and a failed body does not stop its siblings',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'preview-capture-'));t.after(()=>rm(directory,{recursive:true,force:true}));

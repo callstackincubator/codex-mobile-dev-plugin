@@ -1085,6 +1085,8 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
     const instance={props:original};
     const native:any={tag:1,type:function NativeSheet(){},memoizedProps:original,stateNode:instance,return:app.sheet,child:app.nested};
     app.sheet.child=native;app.nested.return=native;
+    // Mounting the native boundary emits a commit in React.
+    hook.onCommitFiberRoot();
     app.runtime.open('open');instance.props.onStateChange({nativeEvent:{state:'open'}});
     app.runtime.focused(app.nested);
     app.control.close=()=>{app.control.closes++;instance.props.onStateChange({nativeEvent:{state:'closing'}})};
