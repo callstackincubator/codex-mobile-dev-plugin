@@ -482,3 +482,23 @@ and dismissal checks still wait for real events. The existing App Flow
 restoration and binding timings keep their names, milliseconds and boundaries.
 The local callback count helps distinguish missing listeners from a slow native
 transition; no callback, event, class identity or app props enter Sentry.
+
+Source-bound controller lookup now starts from the matched source instances. It
+keeps the existing ambiguity and visibility checks. Sibling sheet captures can
+reuse a route only after native restoration and a fresh matching base view.
+Existing presentation, binding, discovery and restoration timings include these
+paths with the same names, units and boundaries. View signatures and source
+entries remain local; this change adds no telemetry attributes.
+
+Temporary previews contain useSyncExternalStore subscriptions as well as public
+effects. They still read the real store snapshot, and original app subscriptions
+keep running. The bounded local diagnostics include the contained subscription
+count. Existing preview-open, binding and restoration timings cover setup and
+cleanup; snapshot data, callbacks and stores never enter telemetry.
+
+Private hook owners can now bind their JSX creation source before runtime forces
+a render. Presentation setup includes up to two source-binding passes, first
+for owner identity and then for its hook sites. Existing setup and command
+timings include both passes. Their names, units and enclosing boundaries stay
+the same; per-command counts can rise because setup now verifies private owners
+first. Source locations and component identities remain local.

@@ -11,7 +11,7 @@ import { FlowRuntimeFailure } from './runtime-metrics.ts';
 
 type View = { key: string; ready: boolean; found: boolean; signature: string; motion?: string; title?: string; active: string[]; loading?: boolean; transitioning?: boolean; reason?: string; error?: string };
 type Action = { id: string; name: string; file: string; line: number };
-type RetainedBranch = { backend: FlowBackend; base: string; actions: string[]; projections: string[]; frames: {level:number;view:View}[] };
+type RetainedBranch = { backend: FlowBackend; base: string; actions: string[]; projections: string[]; frames: {level:number;view:View}[]; baseView?:View };
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24);
 
 /** Discover live presentation entries, then capture them through the shared queue. */
@@ -52,18 +52,21 @@ export class FlowPresentationCapture {
   private async reuse(backend: FlowBackend,node: FlowNode,timeout: number) {
     const branch=this.retained,depth=this.reuseDepth(node);
     this.retained=undefined;
-    if(!branch||branch.backend!==backend||!depth)return;
+    if(!branch||branch.backend!==backend||branch.base!==this.baseKey(node)||!depth&&!branch.baseView)return;
     const current:View=await backend.runtime.invoke({type:'presentation-view'},2000);
     const checkpoint=await backend.runtime.invoke({type:'presentation-checkpoint'},2000);
     if(checkpoint?.level!==branch.frames.at(-1)!.level||!this.sameView(current,branch.frames.at(-1)!.view))return;
-    const kept=branch.frames[depth-1];
+    const kept=depth?branch.frames[depth-1]:undefined;
     if(depth<branch.actions.length){
-      const restored=await backend.runtime.invoke({type:'presentation-rollback',level:kept.level},10000);
+      const restored=await backend.runtime.invoke({type:'presentation-rollback',level:kept?.level??0},10000);
       if(restored?.error)throw new FlowRuntimeFailure('presentation-rollback');
     }
     const view=depth===branch.actions.length?current:await this.settled(backend,timeout);
-    if(!this.sameView(view,kept.view))return;
-    return {actions:branch.actions.slice(0,depth),frames:branch.frames.slice(0,depth),view};
+    // Sibling sheets share their route only after the native sheet has closed
+    // and its fresh base view still matches. Changed content or motion replays
+    // normal navigation, with the same screenshot verification as before.
+    if(!this.sameView(view,kept?.view??branch.baseView!))return;
+    return {actions:branch.actions.slice(0,depth),frames:branch.frames.slice(0,depth),view,baseView:branch.baseView};
   }
   rememberFrame(bytes:Buffer) { this.previous={key:"",bytes}; }
   private catalog: FlowPresentations;
@@ -205,7 +208,7 @@ export class FlowPresentationCapture {
       this.signal.throwIfAborted();
       const reused=retainCompleted?await this.reuse(backend,node,timeout):undefined;
       const actions=reused?.actions??[],frames=reused?.frames??[];
-      let view:View|undefined=reused?.view;
+      let view:View|undefined=reused?.view,baseView:View|undefined=reused?.baseView;
       if(!reused){
         this.discardBranch();
         const restored=await backend.runtime.invoke({type:'presentation-rollback',level:0},10000);
@@ -221,6 +224,7 @@ export class FlowPresentationCapture {
         const available: Action[] = await backend.runtime.invoke({type: 'presentations'}, 2000);
         if (!available.some(action => action.id === id)) { node.status = 'blocked'; node.reason = 'The presentation entry is no longer available in this app state.'; return; }
         const before: View = await backend.runtime.invoke({type: 'presentation-view'}, 2000);
+        if(!actions.length&&before.ready&&before.found&&!before.loading&&!before.transitioning)baseView=before;
         const opened = await backend.runtime.invoke({type: 'presentation-open', id}, 2000);
         if (opened.error) { node.status = 'blocked'; node.reason = 'The presentation entry could not be opened.'; return; }
         if (plan.projections?.includes(id)) {
@@ -249,7 +253,7 @@ export class FlowPresentationCapture {
           const checkpoint=await backend.runtime.invoke({type:'presentation-checkpoint'},2000);
           if(current.ready&&current.found&&!current.loading&&!current.transitioning&&Number.isInteger(checkpoint?.level)&&checkpoint.level>=frames.at(-1)!.level){
             frames[frames.length-1]={level:checkpoint.level,view:current};
-            this.retained={backend,base:this.baseKey(node),actions,projections:plan.projections?.slice()??[],frames};retained=true;
+            this.retained={backend,base:this.baseKey(node),actions,projections:plan.projections?.slice()??[],frames,baseView};retained=true;
           }
         }
       } else { node.status = 'pending'; node.reason ??= 'The presentation did not finish rendering.'; }

@@ -1,10 +1,25 @@
 # Bluesky source inventory and extraction comparison
 
-The reviewed list contains **260 distinct views**. Plugin 0.1.137 has a distinct source match for **all 260**. There are no missing, container-only or ambiguous reference rows. The comparison has a strict mode that fails if any reviewed view loses its match.
+The reviewed list contains **260 distinct views**. Plugin 0.1.163 has a distinct source match for **all 260**. There are no missing, container-only or ambiguous reference rows. The comparison has a strict mode that fails if any reviewed view loses its match.
 
-Of the 260 matches, **164 have a route or UI action**, **75 have new UI preview plans**, and **21 have source evidence only**. That gives 239 views with a planned capture path. Plans still need live source bindings, real data and settled content. They do not establish that 239 screenshots can be taken in the current session.
+Of the 260 matches, **164 have a route or UI action**, **81 have UI preview plans**, and **15 have source evidence only**. That gives 245 views with a planned capture path. Plans still need live source bindings, real data and settled content. They do not establish that 245 screenshots can be taken in the current session.
 
-This audit uses the clean iOS checkout at `2d8e349afd92d2be3ff31f298bc27ab0d82c61cc`. The scan read 2,371 files in 4.65 seconds. The comparison does not change or execute target app code.
+This audit uses the clean iOS checkout at `2d8e349afd92d2be3ff31f298bc27ab0d82c61cc`. The 0.1.163 scan read 2,371 files in 4.01 seconds. The comparison does not change or execute target app code.
+
+The latest live attempt used 0.1.162, run
+`37232018-1ae9-486c-a9f0-da2abee2cd2e`. It saved automatic PNGs for
+**101 of 260 reviewed views**, 77 live views and 24 UI previews. The map has
+121 raw screenshots; those do not count as 121 reviewed views. The attempt
+stopped after repeated runtime failures, including 18 installation timeouts and
+37 missed heartbeats. It did not complete the full test.
+
+Version 0.1.163 binds private hook owners through their JSX source before forcing
+a render. It also avoids scans of unrelated same-named sheet instances, reuses a
+sibling sheet's base only after native restoration and a fresh matching view,
+and contains temporary external-store subscriptions while keeping the original
+app's subscription. All 318 App Flow and telemetry behavior tests pass. The new
+source scan retains all 260 matches and 245 planned paths. Live capture coverage
+and speed for 0.1.163 remain unverified.
 
 The saved 0.1.136 run `4e553412-6f1f-49a1-a036-a154a48b2088` has verified
 automatic screenshots for **2 of 260 views**, Home and Search. It has no captured

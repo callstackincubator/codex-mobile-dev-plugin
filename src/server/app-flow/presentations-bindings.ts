@@ -22,6 +22,12 @@ export async function bindPresentationSites(base: string, root: string, bindings
       // Only the first project frame owns this JSX. Ancestor render frames must
       // not turn a nested or unrelated button into a presentation entry.
       if(resolvedEntries.has(binding.id))return;resolvedEntries.add(binding.id);
+      for(const site of states)for(const entry of site.ownerEntries??[]){
+        const loc=entry.source,line=frame.lineNumber!,column=frame.column;
+        if(entry.component!==binding.owner||entry.file!==file||line<loc.line||line>loc.endLine)continue;
+        if(column===undefined||line===loc.line&&column<loc.column||line===loc.endLine&&column>=loc.endColumn)continue;
+        matches.push({binding:binding.id,site:`owner:${site.id}:${entry.component}`});
+      }
       for(const action of actions){
         if(action.effect?.kind==='mount')continue;
         const sites=[{file:action.file,loc:action.source,id:action.id}];

@@ -83,19 +83,23 @@ export class FlowConnection {
     if (command.type === 'presentation-setup') {
       this.presentationRoot=command.projectRoot as string;
       const catalog = command.catalog as import('../../shared/app-flow.ts').FlowPresentations;
-      let page = await this.invoke({ type: 'presentation-collect', ...(this.presentationCatalog===catalog?{}:{states:catalog.states,actions:catalog.actions,projectRoot:command.projectRoot}) }, 2500);
-      const bindings = [];
-      for (let i=0;i<30;i++) { bindings.push(...(page.bindings ?? [])); if (page.next === undefined) break; page = await this.invoke({type:'presentation-bindings',offset:page.next},1500); }
-      let matches;
-      const sourceStarted=performance.now();
-      try { matches = await bindPresentationSites(this.metroBase, command.projectRoot as string, bindings, catalog.states, catalog.actions); }
-      catch(error) { throw new FlowRuntimeFailure('presentation-symbolicate','failed',error instanceof Error?error.message:undefined); }
-      finally { this.metrics.record('presentation-symbolicate',performance.now()-sourceStarted,false); }
-      // collect already installed the immutable plans. Repeating their source
-      // in each evaluate makes Hermes parse the whole catalog twice per route.
-      await this.invoke({ type: 'presentation-configure', matches, checked: bindings.map(binding => binding.id) }, 1000);
-      this.presentationCatalog=catalog;
-      return { bindings: matches.length };
+      let matched=0;
+      for(let pass=0;pass<2;pass++){
+        let page = await this.invoke({ type: 'presentation-collect', ...(this.presentationCatalog===catalog?{}:{states:catalog.states,actions:catalog.actions,projectRoot:command.projectRoot}) }, 2500);
+        const bindings = [];
+        for (let i=0;i<30;i++) { bindings.push(...(page.bindings ?? [])); if (page.next === undefined) break; page = await this.invoke({type:'presentation-bindings',offset:page.next},1500); }
+        let matches;
+        const sourceStarted=performance.now();
+        try { matches = await bindPresentationSites(this.metroBase, command.projectRoot as string, bindings, catalog.states, catalog.actions); }
+        catch(error) { throw new FlowRuntimeFailure('presentation-symbolicate','failed',error instanceof Error?error.message:undefined); }
+        finally { this.metrics.record('presentation-symbolicate',performance.now()-sourceStarted,false); }
+        // Private owners first bind their JSX identity, then collect hooks from
+        // only that verified component. The immutable catalog stays installed.
+        await this.invoke({ type: 'presentation-configure', matches, checked: bindings.map(binding => binding.id) }, 1000);
+        this.presentationCatalog=catalog;matched+=matches.length;
+        if(!matches.some(match=>match.site.startsWith('owner:')))break;
+      }
+      return { bindings: matched };
     }
     const id = -(++this.sequence);
     const expression = `(()=>{const runtime=globalThis[${JSON.stringify(this.key)}],reply=result=>globalThis[${JSON.stringify(this.binding)}]?.(JSON.stringify({id:${id},result}));if(!runtime?.invoke){reply({runtimeUnavailable:true});return;}runtime.invoke(${JSON.stringify(command)},reply);})()`;

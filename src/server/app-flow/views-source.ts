@@ -357,5 +357,13 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
   const entries=new Map<string,NonNullable<FlowSourceView['entries']>>();
   for(const [unit,list]of nodes)for(const n of list)if((ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n))&&reachable(unit,n)){let target=symbol(unit,n.tagName.getText());const fn=owner(n),callee=functions.get(target);if(callee)target=`${fnUnits.get(callee)!.file}#${name(callee)}`;if(!fn)continue;const list=entries.get(target)??[],source=location(unit,n);list.push({file:relative(root,unit.file),line:source.line,owner:name(fn),source});entries.set(target,list);}
   for(const view of views.values())if(view.kind==='component')view.entries=entries.get(`${root}/${view.file}#${view.owner}`)??[];
+  // Private functions cannot be found through module exports. Their actual JSX
+  // callers let Metro prove the function before runtime forces a hook render.
+  for(const site of states){
+    const sources=[{file:site.file,owner:site.owner},...(site.ownerSites??[])];
+    const callers=sources.flatMap(source=>(entries.get(`${root}/${source.file}#${source.owner}`)??[])
+      .flatMap(entry=>entry.source?[{component:source.owner,file:entry.file,owner:entry.owner,source:entry.source}]:[]));
+    if(callers.length)site.ownerEntries=[...new Map(callers.map(entry=>[JSON.stringify(entry),entry])).values()];
+  }
   return {states:states.filter(site=>site.paths.length),views:[...views.values()]};
 }

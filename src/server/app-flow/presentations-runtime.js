@@ -6,7 +6,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   const entries = new Map(), entryKeys = new Map(); let entrySources = new WeakMap();
   let lastScheduled = 0, lastExactScheduled = 0, lastFallbackScheduled = 0, structureCache, sourceRoot;
   const portalEffects=new Map();let portalOwners=new WeakMap(),approvedPortals=new WeakSet(),syncingPortals=false;
-  let previewRefs=new WeakSet(),containedImperativeHandles=0;
+  let previewRefs=new WeakSet(),containedImperativeHandles=0,containedSubscriptions=0;
   let catalog = {states:[],actions:[]};
   const name = fiber => { const type=fiber.type?.render??fiber.type?.type??fiber.type;return type?.displayName??type?.name; };
   const current = () => {
@@ -82,12 +82,23 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       return original(ref,create,deps);
     };
   }
+  const noSubscription=()=>()=>{};
+  function previewSnapshotWrapper(original) {
+    return (subscribe,getSnapshot,getServerSnapshot)=>{
+      // This hook creates subscription effects inside React. Containing public
+      // useEffect alone does not stop a copied query/store observer subscribing.
+      // Keep its hook order and real snapshot reads; the app's own subscriptions
+      // continue normally and can update the shared store.
+      if(previewOwner(current()?.fiber)){containedSubscriptions++;subscribe=noSubscription;}
+      return original(subscribe,getSnapshot,getServerSnapshot);
+    };
+  }
   function patchPreviewEffects(react) {
     if(effectPatches.length)return true;
-    for(const key of ['useEffect','useLayoutEffect','useInsertionEffect','useRef','useImperativeHandle']){
+    for(const key of ['useEffect','useLayoutEffect','useInsertionEffect','useRef','useImperativeHandle','useSyncExternalStore']){
       if(typeof react[key]!=='function')continue;
       if(!Object.getOwnPropertyDescriptor(react,key)?.writable){unpatchPreviewEffects();return false;}
-      const original=react[key],wrapped=key==='useRef'?previewRefWrapper(original):key==='useImperativeHandle'?previewHandleWrapper(original):effectWrapper(original);
+      const original=react[key],wrapped=key==='useRef'?previewRefWrapper(original):key==='useImperativeHandle'?previewHandleWrapper(original):key==='useSyncExternalStore'?previewSnapshotWrapper(original):effectWrapper(original);
       try{react[key]=wrapped;}catch{unpatchPreviewEffects();return false;}effectPatches.push({react,key,original,wrapped});
     }
     return true;
@@ -123,7 +134,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
           if((key===owner||body?.displayName===owner||body?.name===owner)&&typeof body==='function')matches.push(type,body);
         }
         if(typeof exports==='function'&&exports.name===owner)matches.push(exports);
-        if(matches.length)for(const type of matches)target.types.add(type);else target.fallback=true;
+        if(matches.length)for(const type of matches)target.types.add(type);
+        else if(site.ownerEntries?.some(entry=>entry.component===owner)){
+          for(const record of entries.values())if(record.actions.has(`owner:${site.id}:${owner}`))for(const fiber of record.fibers){
+            if(name(fiber)===owner){if(fiber.type)target.types.add(fiber.type);if(fiber.elementType)target.types.add(fiber.elementType);}
+          }
+        }else target.fallback=true;
         targets.set(owner,target);
       }
     }
@@ -163,8 +179,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // JSX creation stacks identify the actual entry, even when unrelated
     // components and callbacks have identical names. Never invoke the callback.
     const targets=new Map();for(const action of catalog.actions){if(action.effect.kind==='mount')continue;for(const [component,owner]of [[action.component,action.owner],...(action.effect.kind==='control'&&action.effect.target?[[action.effect.component,action.effect.target.owner]]:[]),...(action.consumer?.entries??[]).map(entry=>[action.consumer.component,entry.owner])]){const names=targets.get(component)??new Set();names.add(owner);targets.set(component,names);}}
+    const ownerNames=new Set(catalog.states.flatMap(site=>(site.ownerEntries??[]).map(entry=>entry.component)));
     const mounted=new Set(), candidates=[];
-    for(const fiber of committedStructure().all){mounted.add(fiber);const names=targets.get(name(fiber));if(!names)continue;for(let parent=fiber.return,n=0;parent&&n++<100;parent=parent.return)if(names.has(name(parent))){candidates.push(fiber);break;}}
+    for(const fiber of committedStructure().all){mounted.add(fiber);if(ownerNames.has(name(fiber))){candidates.push(fiber);continue;}const names=targets.get(name(fiber));if(!names)continue;for(let parent=fiber.return,n=0;parent&&n++<100;parent=parent.return)if(names.has(name(parent))){candidates.push(fiber);break;}}
     // Free stale sites before adding newly mounted ones. Repeated JSX instances
     // share source evidence, but lookup still checks each live owner/control.
     for(const [id,record]of entries){
@@ -227,8 +244,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     for(const binding of bindings.values())if(binding.site&&current.has(binding.fiber)){const list=states.get(binding.site)??[];list.push(binding);states.set(binding.site,list);}
     if(includeEntries)for(const action of catalog.actions){
       if(action.preview||action.effect.kind!=='control')continue;
-      for(const fiber of names.get(action.effect.component)??[]){
-        if(action.effect.target&&!(matched.get(`${action.id}:target`)??[]).includes(fiber))continue;
+      const targets=action.effect.target?matched.get(`${action.id}:target`)??[]:names.get(action.effect.component)??[];
+      for(const fiber of targets){
+        if(name(fiber)!==action.effect.component)continue;
         const value=controlValue(fiber,action.effect.prop);if(!value)continue;
         const list=openers.get(value)??[];if(!list.includes(action))list.push(action);openers.set(value,list);
       }
@@ -553,7 +571,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       return {owner,binding};
     }
     if(action.effect.kind==='control'){
-      const targets=(tree.names.get(action.effect.component)??[]).filter(fiber=>tree.inside(fiber,owner)&&(!action.effect.target||(tree.entries.get(`${action.id}:target`)??[]).includes(fiber))).flatMap(fiber=>{
+      const candidates=action.effect.target?tree.entries.get(`${action.id}:target`)??[]:tree.names.get(action.effect.component)??[];
+      const targets=candidates.filter(fiber=>name(fiber)===action.effect.component&&tree.inside(fiber,owner)).flatMap(fiber=>{
         const value=action.effect.prop==='ref'?fiber.ref?.current??fiber.memoizedProps?.ref?.current:fiber.memoizedProps?.[action.effect.prop];
         const close=(Array.isArray(action.effect.close)?action.effect.close:[action.effect.close]).find(key=>typeof value?.[key]==='function');
         return value&&typeof value[action.effect.method]==='function'&&close?[{fiber,value,close}]:[];
@@ -890,7 +909,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80,resolve));
   }
-  function cleanup(){sourceRoot=undefined;nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){sourceRoot=undefined;nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[]) {
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&tree.isVisible(fiber));
     const unique=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner)));
@@ -906,6 +925,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const connected=roots(currentFocus,tree);
     return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:viewport=>motion(currentFocus,viewport,tree,connected)};
   }
-  const diagnostics=()=>({lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  const diagnostics=()=>({lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
   return {collect,records,configure,list,open,portalBindings,previewPortals,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

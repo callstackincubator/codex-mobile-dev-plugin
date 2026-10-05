@@ -141,6 +141,33 @@ test('presentation lookup skips native bounds for source plans absent from a bus
   app.runtime.cleanup();
 });
 
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`source-bound controls do not scan unrelated same-named instances (${install===installPresentationRuntime?'normal':'shared loops'})`,()=>{
+    const app=tree(install);
+    app.sheet._debugSource={fileName:'App.tsx',lineNumber:2,columnNumber:1};
+    app.action.effect.target={file:'App.tsx',owner:'App',line:2};
+    let tail=app.sheet;
+    for(let i=0;i<400;i++){
+      const other:any={type:app.sheet.type,_debugSource:{fileName:'Other.tsx',lineNumber:i+10,columnNumber:1},memoizedProps:{control:{open(){},close(){}}},return:app.root};
+      tail.sibling=other;tail=other;
+    }
+    const entries=app.runtime.records(0).bindings;
+    const target=entries.find((entry:any)=>entry.source?.file==='App.tsx'&&entry.source?.line===2);
+    assert.ok(target);
+    app.runtime.configure({states:[],actions:[app.action]},[{binding:target.id,site:'open:target'}],entries.map((entry:any)=>entry.id));
+    const includes=Array.prototype.includes;let rejectedCandidates=0;
+    Array.prototype.includes=function(value:any,...rest:any[]){
+      if(this.length===1&&this[0]===app.sheet&&value?.type===app.sheet.type&&value!==app.sheet)rejectedCandidates++;
+      return includes.call(this,value,...rest);
+    };
+    try{
+      assert.deepEqual(app.runtime.list().map((entry:any)=>entry.id),['open']);
+      assert.equal(rejectedCandidates,0,'An exact source target must select its own instances before controller lookup');
+      assert.equal(app.runtime.open('open').focus,app.sheet);
+    }finally{Array.prototype.includes=includes;app.runtime.cleanup();}
+  });
+}
+
 test('a lookup shares native bounds across related owners and refreshes them on the next call',()=>{
   const app=tree();let measured=0,height=20;
   app.button.child={tag:5,type:'NativeButton',memoizedProps:{},stateNode:{getBoundingClientRect(){measured++;return {width:10,height}}},return:app.button};
@@ -952,6 +979,36 @@ test('related sheets retain a verified parent and use actual projection checkpoi
   assert.ok(capture.restorationTimings.take(),'Deferred branch restoration remains measured');
 });
 
+test('sibling sheets reuse their settled base only after restoration and a fresh view check',async t=>{
+  for(const changed of [false,true]){
+    const root=await fixture(t,{});await mkdir(join(root,'run'));const events:any[]=[];let stack:string[]=[],baseVersion='';
+    const make=(id:string)=>({id,name:id,kind:'screen',path:[],required:[],status:'pending',presentation:{basePath:['Home'],baseParams:{id:'observed'},actions:[id]}} as any);
+    const first=make('first'),second=make('second');
+    const run:any={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[first,second],edges:[],presentations:{states:[],actions:[]}};
+    const view=()=>({key:stack.join('/')||'Home',signature:stack.length?stack.join('/'):baseVersion,ready:true,found:true,motion:'settled'});
+    const backend:any={screenshot:async()=>Buffer.from(view().key),runtime:{async invoke(command:any){
+      events.push(command);
+      if(command.type==='open'){stack=[];baseVersion='';return {ready:true};}
+      if(command.type==='presentation-rollback'){stack.length=command.level??0;if(changed&&first.status==='captured')baseVersion='new base content';return {};}
+      if(command.type==='presentation-checkpoint')return {level:stack.length};
+      if(command.type==='presentation-open')stack.push(command.id);
+      if(command.type==='presentations')return ['first','second'].map(id=>({id}));
+      if(command.type==='presentation-view')return view();
+      return {};
+    }}};
+    const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
+    await capture.retry(backend,first,true);await capture.retry(backend,second,true);
+    assert.ok(run.nodes.every((node:any)=>node.status==='captured'&&node.image));
+    assert.equal(events.filter(event=>event.type==='open').length,changed?2:1,'Changed base content requires normal navigation');
+    const close=events.findIndex((event,index)=>index>events.findIndex(event=>event.type==='presentation-open')&&event.type==='presentation-rollback');
+    const next=events.findIndex(event=>event.type==='presentation-open'&&event.id==='second');
+    assert.ok(close>=0&&next>close);
+    assert.ok(events.slice(close+1,next).some(event=>event.type==='presentation-view'),'Restoring the base must be followed by a live readiness check');
+    await capture.leave(backend);assert.deepEqual(stack,[]);
+    assert.ok(capture.restorationTimings.take());
+  }
+});
+
 test('parent reuse requires unchanged view, checkpoint, base, projection and backend',async t=>{
   for(const changed of ['signature','motion','checkpoint','base','projection','backend','loading']){
     const root=await fixture(t,{});await mkdir(join(root,'run'));let stack:string[]=[],version='',motion='',ready=true,opens=0,extra=0;
@@ -1039,17 +1096,25 @@ test('an unmounted form renders with live context while its temporary effects st
     const react=(React as any).default??React,dom=new JSDOM('<div id="root"></div>');
     const previous={window:(globalThis as any).window,document:(globalThis as any).document,require:(globalThis as any).__r};
     (globalThis as any).window=dom.window;(globalThis as any).document=dom.window.document;
-    const Context=react.createContext(undefined),observed={label:'Observed record'};
-    let current:any,clone:any,effects=0,initializers=0;
+    const Context=react.createContext(undefined),observed={label:'Observed record'},originalSnapshotHook=react.useSyncExternalStore;
+    let current:any,clone:any,effects=0,initializers=0,subscriptions=0,appSubscriptions=0,appUnsubscribes=0;
     function View({children}:any){return react.createElement('div',null,children)}
     function Modal({children,onShow}:any){onShow();return children}
     const rendered=createRoot(dom.window.document.getElementById('root')!);
     const root:any={tag:3,stateNode:(rendered as any)._internalRoot};
     const provider:any={tag:10,type:Context.Provider,memoizedProps:{value:observed},return:root};
-    const host:any={tag:5,type:View,memoizedProps:{children:react.createElement('span',null,'Original app')},return:provider};root.child=provider;provider.child=host;
+    const host:any={tag:5,type:View,memoizedProps:{children:react.createElement(OriginalApp)},return:provider};root.child=provider;provider.child=host;
+    const appFiber:any={type:OriginalApp,memoizedProps:{},return:host};
+    const appSubscribe=()=>{appSubscriptions++;return ()=>{appUnsubscribes++}};
+    function OriginalApp(){
+      current=appFiber;const snapshot=react.useSyncExternalStore(appSubscribe,()=>observed,()=>observed);current=undefined;
+      assert.equal(snapshot,observed);return react.createElement('span',null,'Original app');
+    }
     function HiddenForm(props:any){
       clone={type:HiddenForm,elementType:HiddenForm,memoizedProps:props,pendingProps:props,return:host};host.child=clone;current=clone;
       const value=react.useContext(Context);
+      const snapshot=react.useSyncExternalStore(()=>{subscriptions++;return ()=>{}},()=>observed,()=>observed);
+      assert.equal(snapshot,observed,'The preview reads the real store snapshot');
       const [step]=react.useState(()=>{initializers++;return 'start'});
       react.useEffect(()=>{effects++},[]);react.useLayoutEffect(()=>{effects++},[]);
       current=undefined;return react.createElement('span',null,value.label+' '+step);
@@ -1064,11 +1129,11 @@ test('an unmounted form renders with live context while its temporary effects st
       render();runtime.configure({states:[],actions:[action]},[]);
       assert.equal(runtime.open('mount').error,undefined);runtime.focused(clone);
       assert.equal(dom.window.document.getElementById('root')!.textContent,'Original appObserved record start');
-      assert.equal(initializers,1,'Ordinary form defaults run without fabricated state');assert.equal(effects,0);
+      assert.equal(initializers,1,'Ordinary form defaults run without fabricated state');assert.equal(effects,0);assert.equal(subscriptions,0,'React internal subscription effects cannot run for a temporary preview');assert.equal(appSubscriptions,1,'The original app still owns its store subscription');assert.equal(appUnsubscribes,0,'Preview mounting does not unsubscribe the original app');
       assert.equal(provider.memoizedProps.value,observed);assert.deepEqual(runtime.activeViews(clone),['owner-body']);
       assert.deepEqual(runtime.list(),[],'The mounted form cannot bootstrap a duplicate');
       await runtime.rollback(0,false);assert.equal(dom.window.document.getElementById('root')!.textContent,'Original app');
-      assert.equal(runtime.checkpoint(),0);
+      assert.equal(runtime.checkpoint(),0);assert.equal(react.useSyncExternalStore,originalSnapshotHook,'Restoration releases the subscription wrapper');
     }finally{runtime.cleanup();flushSync(()=>rendered.unmount());await new Promise(resolve=>setTimeout(resolve,20));dom.window.close();(globalThis as any).window=previous.window;(globalThis as any).document=previous.document;(globalThis as any).__r=previous.require;}
   }
 });

@@ -8,6 +8,7 @@ import {scanAppFlow} from '../src/server/app-flow/scan.ts';
 import {FlowStore} from '../src/server/app-flow/store.ts';
 import {installPresentationRuntime} from '../src/server/app-flow/presentations-runtime.js';
 import {bindPresentationSites} from '../src/server/app-flow/presentations-bindings.ts';
+import {sharedLoopRuntime} from './app-flow-runtime-fixtures.ts';
 import {compareViewReference} from '../scripts/lib/compare-app-flow-views.mjs';
 
 async function fixture(t:test.TestContext,files:Record<string,string>){
@@ -34,6 +35,35 @@ test('finite reducer fields cross tuple contexts, returned custom hooks and JSX 
   assert.ok(site.ownerSites?.some(owner=>owner.file==='state.tsx'&&owner.owner==='Provider'));
   assert.ok(site.ownerSites?.some(owner=>owner.file==='App.tsx'&&owner.owner==='App'));
   assert.equal(catalog.actions.length,0);assert.equal(catalog.states.length,0);
+});
+
+test('private hook owners are collected only after their own JSX source has been verified',async t=>{
+  const root=await fixture(t,{
+    'Forms.tsx':`import {useState} from 'react';function Inner(){const [step]=useState('start');return step==='start'?<Start/>:<Finish/>}export function Outer(){return <Inner/>}`,
+    'Other.tsx':`function Inner(){return <Unrelated/>}export function Other(){return <Inner/>}`,
+  });
+  const catalog=(await scanAppFlow(root,'ios')).presentations!;
+  const site=catalog.viewStates!.find(site=>site.file==='Forms.tsx'&&site.owner==='Inner')!;
+  const own=site.ownerEntries?.find(entry=>entry.file==='Forms.tsx'&&entry.component==='Inner');assert.ok(own);
+  for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+    function Inner(){}const OtherInner=function Inner(){};
+    const wanted:any={type:Inner,memoizedProps:{},memoizedState:null,_debugSource:{fileName:join(root,'Forms.tsx'),lineNumber:own.source.line,columnNumber:own.source.column+1}};
+    const unrelated:any={type:OtherInner,memoizedProps:{},memoizedState:null,_debugSource:{fileName:join(root,'Other.tsx'),lineNumber:1,columnNumber:1}};
+    const react={createElement(){},useState(){return [false,()=>{}]},useReducer(){}};let live:any;const calls:any[]=[];
+    const modules=new Map([[1,{isInitialized:true,publicModule:{exports:react}}]]);
+    const previous=(globalThis as any).__r;(globalThis as any).__r={getModules:()=>modules};t.after(()=>{(globalThis as any).__r=previous});
+    const renderer={rendererPackageName:'react-native-renderer',getCurrentFiber:()=>live,scheduleUpdate(fiber:any){calls.push(fiber);live=fiber;react.useState();live=undefined;}};
+    const runtime=install({hook:{renderers:new Map([[1,renderer]])},fibers(visit:any){visit(wanted);visit(unrelated)},hidden:()=>false,later:setTimeout});t.after(()=>runtime.cleanup());
+    const first=await runtime.collect([site],[],root);
+    assert.deepEqual(calls,[],'Private owners must not be forced before source proof arrives');
+    const matches=await bindPresentationSites('http://127.0.0.1:8081',root,first.bindings,[site]);
+    assert.equal(matches.filter(match=>match.site===`owner:${site.id}:Inner`).length,1);
+    runtime.configure({states:[site],actions:[]},matches,first.bindings.map(binding=>binding.id));
+    const second=await runtime.collect();
+    assert.deepEqual(calls,[wanted]);assert.equal(second.bindings.filter(binding=>binding.kind==='useState').length,1);
+    await runtime.collect();assert.deepEqual(calls,[wanted],'Already tracked owners are not rendered twice');
+    runtime.cleanup();(globalThis as any).__r=previous;
+  }
 });
 
 test('enum fallback and early return retain their own body and exact finite state',async t=>{
