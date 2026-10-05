@@ -511,6 +511,11 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         if (command.type === 'presentation-configure') { presentations?.configure(command.catalog, command.matches ?? [], command.checked ?? []); reply({}); return; }
         if (command.type === 'presentations') { reply(presentations?.list(presentationFocus) ?? []); return; }
         if (command.type === 'presentation-active') { reply(presentations?.activeViews(presentationFocus) ?? []); return; }
+        if (command.type === 'presentation-portals') {
+          const result=presentations?.previewPortals(command.ids??[],presentationFocus);
+          if(!result||result.error){reply(result??{error:'Temporary portal preview is unavailable.'});return;}
+          presentationObservation=undefined;later(()=>{try{reply({...presentationView(),...result,portalBindings:presentations?.portalBindings(presentationFocus)});}catch(error){reply({error:'Presentation inspection is unavailable.',detail:String(error?.message??error).slice(0,1000)});}},80);return;
+        }
         if (command.type === 'presentation-view') { reply(presentationView()); return; }
         if (command.type === 'presentation-checkpoint') { reply({level:presentations?.checkpoint()??0}); return; }
         if (command.type === 'presentation-rollback') { const level=command.level??0; void (presentations?.rollback(level) ?? Promise.resolve()).then(() => {while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined;reply({});}, () => reply({error:'Presentation restoration failed.'})); return; }
@@ -527,7 +532,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
               presentationFocus = result.focus;
               if (!presentationFocus) presentationFocus=presentations?.focusFor(result.name,result.scope);
               if (!presentationFocus) { reply({ error: 'The presentation target did not mount.' }); return; }
-              presentations?.focused(presentationFocus); reply(presentationView());
+              presentations?.focused(presentationFocus); reply({...presentationView(),portalBindings:presentations?.portalBindings(presentationFocus)});
             } catch(error) { reply({error:'Presentation inspection is unavailable.',detail:String(error?.message??error).slice(0,1000)}); }
           }, 80);
           return;

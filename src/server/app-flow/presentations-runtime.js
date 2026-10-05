@@ -5,6 +5,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   let collected = [];
   const entries = new Map(), entryKeys = new Map(); let entrySources = new WeakMap();
   let lastScheduled = 0, structureCache;
+  const portalEffects=new Map();let portalOwners=new WeakMap(),approvedPortals=new WeakSet(),syncingPortals=false;
   let catalog = {states:[],actions:[]};
   const name = fiber => { const type=fiber.type?.render??fiber.type?.type??fiber.type;return type?.displayName??type?.name; };
   const current = () => {
@@ -38,7 +39,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   function effectWrapper(original) {
     return (callback,deps)=>{
       const fiber=current()?.fiber;
-      const preview=projected.some(record=>{for(let p=fiber,count=0;p&&count++<100;p=p.return)if((p.pendingProps??p.memoizedProps)===record.child.props)return true;return false;});
+      const preview=previewOwner(fiber),props=fiber?.pendingProps??fiber?.memoizedProps;
+      if(preview&&props?.children?.props&&typeof fiber.type==='function'){
+        let record=portalOwners.get(fiber)??portalOwners.get(fiber.alternate);
+        if(!record&&portalEffects.size<50){record={id:`portal-${++sequence}`,fiber,preview,stack:new Error().stack};portalEffects.set(record.id,record);}
+        if(record){record.fiber=fiber;portalOwners.set(fiber,record);}
+      }
       return original(preview?()=>{}:callback,deps);
     };
   }
@@ -67,6 +73,11 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       react[key]=wrapped;effectPatches.push({react,key,original,wrapped});
     }
     return true;
+  }
+  function previewOwner(fiber){
+    for(let index=projected.length-1;index>=0;index--){const record=projected[index];
+      for(let p=fiber,count=0;p&&count++<100;p=p.return){const props=p.pendingProps??p.memoizedProps;if(props===record.child.props||record.portals?.some(portal=>props===portal.child.props))return record;}
+    }
   }
   function unpatchPreviewEffects(){for(const p of effectPatches)if(p.react[p.key]===p.wrapped)p.react[p.key]=p.original;effectPatches.length=0;}
   function collectionTargets(states) {
@@ -279,7 +290,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(parent.tag!==10||!parent.memoizedProps||!('value'in parent.memoizedProps))continue;
       const provider=parent.elementType??parent.type;if(provider)content=react.createElement(provider,{value:preview?.providers?.get(parent)??parent.memoizedProps.value},content);
     }
-    const record={root,renderer,react,props,focus,child,seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:false,dismissed:false,failed:false};
+    const record={root,renderer,react,props,focus,child,content,portals:[],seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:false,dismissed:false,failed:false};
     class PreviewBoundary extends react.Component {
       constructor(props){super(props);this.state={failed:false};}
       static getDerivedStateFromError(){return {failed:true};}
@@ -291,7 +302,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       for(const key of ['presentationStyle','transparent','statusBarTranslucent','navigationBarTranslucent','hardwareAccelerated','supportedOrientations'])if(key in parent.memoizedProps)modalProps[key]=parent.memoizedProps[key];
       break;
     }
-    const modal=react.createElement(native.Modal,{transparent:false,...modalProps,visible:true,animationType:'none',onShow:()=>{record.shown=true;},onDismiss:()=>{record.dismissed=true;}},react.createElement(PreviewBoundary,null,content));
+    const modal=react.createElement(native.Modal,{key:`mobile-flow-preview-${++sequence}`,transparent:false,...modalProps,visible:true,animationType:'none',onShow:()=>{record.shown=true;},onDismiss:()=>{record.dismissed=true;}},react.createElement(PreviewBoundary,null,content));
     const children=Array.isArray(props.children)?props.children:[props.children];
     record.element=modal;record.next={...props,children:react.createElement(react.Fragment,null,...children,modal)};
     if(preview&&!patchPreviewEffects(react))return {error:'Temporary preview effects cannot be contained.'};
@@ -304,6 +315,62 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     structureCache=undefined;renderer.overrideProps(root,[],record.next);
     if(record.seed)record.seedTimer=later(()=>{if(!projected.includes(record))return;if(!record.seed.applied)record.failed=true;if(!collecting.size&&!projected.some(p=>p.seed&&!p.seed.applied&&!p.failed))unpatch();},1000);
     return {name:name(focus),focus};
+  }
+  function portalBindings(focus){
+    const tree=index(),scope=roots(focus,tree),result=[];
+    for(const record of portalEffects.values()){
+      const fiber=tree.current.get(record.fiber),child=fiber?.memoizedProps?.children;
+      if(!fiber||fiber.child||!child?.props||!projected.includes(record.preview)||!scope.some(root=>tree.inside(fiber,root)))continue;
+      if(record.preview.portals.some(portal=>portal.id===record.id))continue;
+      if((tree.props.get(child.props)??[]).some(target=>target.type===child.type||target.elementType===child.type))continue;
+      record.fiber=fiber;
+      result.push({id:record.id,owner:name(fiber),kind:'portal',stack:approvedPortals.has(fiber.type)?'':record.stack,approved:approvedPortals.has(fiber.type)});
+    }
+    return result;
+  }
+  function updatePortalPreview(record){
+    const tree=index(),root=tree.current.get(record.root)??record.root,props=root.memoizedProps;
+    const children=props?.children?.props?.children;
+    if(!Array.isArray(children)||!children.includes(record.element))return false;
+    const body=record.react.createElement(record.react.Fragment,null,record.content,...record.portals.map(portal=>portal.element));
+    const boundary=record.react.cloneElement(record.element.props.children,{},body);
+    const modal=record.react.cloneElement(record.element,{},boundary);
+    record.next={...props,children:record.react.createElement(record.react.Fragment,null,...children.map(child=>child===record.element?modal:child))};
+    record.element=modal;record.root=root;structureCache=undefined;record.renderer.overrideProps(root,[],record.next);return true;
+  }
+  function portalElement(record,fiber,child,id){
+    let element=child;const seen=new Set();
+    for(let parent=fiber.return;parent&&!seen.has(parent);parent=parent.return){
+      seen.add(parent);if(parent.tag!==10||!parent.memoizedProps||!('value'in parent.memoizedProps))continue;
+      const provider=parent.elementType??parent.type;if(provider)element=record.react.createElement(provider,{value:parent.memoizedProps.value},element);
+    }
+    return record.react.createElement(record.react.Fragment,{key:id},element);
+  }
+  function previewPortals(ids,focus){
+    const available=new Set(portalBindings(focus).map(binding=>binding.id)),changed=new Set();
+    for(const id of ids){
+      if(!available.has(id))continue;const portal=portalEffects.get(id),fiber=portal.fiber,child=fiber.memoizedProps.children,record=portal.preview;
+      approvedPortals.add(fiber.type);record.portals.push({...portal,child,element:portalElement(record,fiber,child,portal.id)});changed.add(record);
+    }
+    for(const record of changed)if(!updatePortalPreview(record))return {error:'The temporary portal preview is no longer mounted.'};
+    return {portals:changed.size};
+  }
+  function syncPortalPreviews(){
+    if(syncingPortals||!portalEffects.size)return;syncingPortals=true;
+    try{
+      const tree=index(),changed=new Set();
+      for(const [id,portal]of portalEffects){
+        const fiber=tree.current.get(portal.fiber);
+        if(fiber&&!fiber.child&&fiber.memoizedProps?.children?.props){
+          portal.fiber=fiber;const attached=portal.preview.portals.find(item=>item.id===id),child=fiber.memoizedProps.children;
+          if(attached&&attached.child!==child){attached.child=child;attached.element=portalElement(portal.preview,fiber,child,id);changed.add(portal.preview);}
+          continue;
+        }
+        portalEffects.delete(id);const record=portal.preview,next=record.portals.filter(item=>item.id!==id);
+        if(next.length!==record.portals.length){record.portals=next;changed.add(record);}
+      }
+      for(const record of changed)if(projected.includes(record)&&!undo.some(entry=>entry.projection===record&&entry.closing))updatePortalPreview(record);
+    }finally{syncingPortals=false;}
   }
   // Copy one proven shared-state reference into the preview's props/provider.
   // Getters, class instances and ambiguous primitive matches stay untouched.
@@ -567,7 +634,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // the old callback and observe the current chain before reusing metadata.
     if(commitPatch){commitPatch.state.callback=undefined;commitPatch=undefined;structureCache=undefined;}
     if(typeof hook?.onCommitFiberRoot!=='function')return false;
-    const patch=commitHandler(hook.onCommitFiberRoot,()=>{structureCache=undefined;if(nativeArmed)watchNative(undefined,false,false,true);});
+    const patch=commitHandler(hook.onCommitFiberRoot,()=>{structureCache=undefined;if(nativeArmed){watchNative(undefined,false,false,true);syncPortalPreviews();}});
     try{hook.onCommitFiberRoot=patch.wrapped;}catch{patch.state.callback=undefined;return false;}
     if(hook.onCommitFiberRoot!==patch.wrapped){patch.state.callback=undefined;return false;}
     commitPatch=patch;return true;
@@ -647,7 +714,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
             // Keep Modal mounted while native dismissal runs. Unmounting first
             // removes React Native's event listener before onDismiss can run.
             const modal=record.react.cloneElement(record.element,{visible:false});
-            const children=record.react.cloneElement(record.next.children,{},record.next.children.props.children.map(child=>child===record.element?modal:child));
+            const children=record.react.cloneElement(record.next.children,{},...record.next.children.props.children.map(child=>child===record.element?modal:child));
             record.renderer.overrideProps(record.root,[],{...props,children});
           }else record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
           entry.closing=true;
@@ -664,7 +731,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
           const props=record.root.memoizedProps??record.props;structureCache=undefined;
           record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
         }
-        const index=projected.indexOf(record);if(index>=0)projected.splice(index,1);
+        for(const [id,portal]of portalEffects)if(portal.preview===record)portalEffects.delete(id);record.portals.length=0;const index=projected.indexOf(record);if(index>=0)projected.splice(index,1);
         releasePreviewErrors();if(record.seed)unpatch();if(!projected.length)unpatchPreviewEffects();
       }else if(entry.control){
         if(!entry.closing){
@@ -683,7 +750,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80));
   }
-  function cleanup(){for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[]) {
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&tree.isVisible(fiber));
     const unique=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner)));
@@ -693,6 +760,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const tree=index(),currentFocus=focus&&tree.current.get(focus),connected=roots(currentFocus,tree);
     return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:viewport=>motion(currentFocus,viewport,tree,connected)};
   }
-  const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length});
-  return {collect,records,configure,list,open,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
+  const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  return {collect,records,configure,list,open,portalBindings,previewPortals,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

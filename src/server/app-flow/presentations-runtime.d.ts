@@ -9,6 +9,8 @@ export function installPresentationRuntime(options: {
   configure(catalog: FlowPresentations, matches: {binding: string; site: string}[], checked?: string[]): void;
   list(focus?: any): {id: string; name: string; file: string; line: number}[];
   open(id: string, focus?: any): {name?: string; focus?: any; scope?: any; expected?: string; error?: string};
+  portalBindings(focus?:any): (PresentationBinding&{approved:boolean})[];
+  previewPortals(ids:string[],focus?:any): {portals?:number;error?:string};
   activeViews(focus?: any): string[];
   rollback(level?: number, wait?: boolean): Promise<void>;
   cleanup(): void; motion(focus?: any, viewport?: {x: number; y: number; width: number; height: number}): {pending: boolean; signature: string};

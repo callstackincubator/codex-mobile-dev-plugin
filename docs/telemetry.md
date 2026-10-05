@@ -386,3 +386,13 @@ hosts priority within its existing bound. Dismissal waits exclude unopened child
 sheets. Finite UI selectors no longer depend on field spelling. Existing
 presentation, restoration, discovery and runtime timings cover these paths with
 the same names, milliseconds and privacy rules; no app content enters telemetry.
+
+Since 0.1.153, source-verified temporary portal children render inside the existing
+preview modal. The new fixed `presentation-portals` operation measures its
+inspector acknowledgement in milliseconds. `presentation-symbolicate` also
+covers portal source verification; it keeps the same unit and local-source
+boundary. Overall presentation capture still includes source verification, native
+readiness and screenshot work. Existing command timings keep their boundaries.
+Portal binding stacks, source, copied context and child content stay local and
+never enter metrics or Sentry attributes. Cleanup releases portal bindings and
+previews with their parent projection.

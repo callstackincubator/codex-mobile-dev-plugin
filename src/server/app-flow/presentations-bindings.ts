@@ -1,4 +1,6 @@
 import { relative, isAbsolute } from 'node:path';
+import {readFile,realpath,stat} from 'node:fs/promises';
+import {sourceUiPortal} from './portal-source.ts';
 import type { FlowStateSite, FlowPresentationAction } from '../../shared/app-flow.ts';
 import type { PresentationBinding } from './presentations-runtime.js';
 
@@ -10,9 +12,11 @@ export async function bindPresentationSites(base: string, root: string, bindings
   const references: {owner:PresentationBinding;index:number}[] = [];
   const resolved: Frame[] = [];
   const origin=new URL(base).origin;
+  const portalFrames:{binding:string;frame:Frame}[]=[],portalSources=new Map<string,string>();
   const matches: {binding:string;site:string}[] = [], resolvedEntries=new Set<string>(), resolvedStates=new Set<string>();
   const matchFrame=(binding:PresentationBinding,frame:Frame)=>{
     if(!frame.file||!Number.isInteger(frame.lineNumber))return;
+    if(binding.kind==='portal'){portalFrames.push({binding:binding.id,frame});return;}
     const file=relative(root,frame.file.replace(/^file:\/\//,''));if(isAbsolute(file)||file.startsWith('..')||file.split(/[\\/]/).includes('node_modules'))return;
     if(binding.kind==='entry'){
       // Only the first project frame owns this JSX. Ancestor render frames must
@@ -58,5 +62,15 @@ export async function bindPresentationSites(base: string, root: string, bindings
   // Shared creation stacks need one lookup per exact frame. Replay each owner's
   // original frame order so an ancestor cannot claim a nested JSX entry.
   for(const reference of references){const frame=resolved[reference.index];if(frame)matchFrame(reference.owner,frame);}
+  const matchedPortals=new Set<string>();
+  for(const {binding,frame}of portalFrames){
+    if(matchedPortals.has(binding))continue;
+    try{
+      const file=await realpath(frame.file!.replace(/^file:\/\//,'')),local=relative(await realpath(root),file);
+      if(isAbsolute(local)||local.startsWith('..')||(await stat(file)).size>512_000)continue;
+      let source=portalSources.get(file);if(source===undefined){source=await readFile(file,'utf8');portalSources.set(file,source);}
+      if(sourceUiPortal(source,frame.lineNumber!,frame.column??0)){matches.push({binding,site:'portal'});matchedPortals.add(binding);}
+    }catch{/* Unknown or unavailable source never enables a portal preview. */}
+  }
   return matches;
 }
