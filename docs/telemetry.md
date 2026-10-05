@@ -275,3 +275,40 @@ SENTRY_ORG=your_organization_slug
 ```
 
 That file is also listed in `.worktreeinclude` for local worktrees. Use the organization slug, rather than a team slug, for `SENTRY_ORG`. `npm run sentry:upload` reads the file in preference to shell settings, creates the shared release in all three projects, uploads JavaScript maps and native debug files, and finalizes the release. Rebuild native helpers and run `npm run build` before uploading so symbols and maps match the packaged code. Runtime reporting needs only the public DSNs; it does not need this token. Build and upload are separate commands. `npm run test:native-telemetry` verifies a real isolated crash, Rust panic privacy, metrics, opt-out and the Android relay transport against a local receiver.
+
+Since 0.1.130, simulator definition HTTP 404 errors retain their existing message,
+`simulator.tool` operation, UI surface context, anonymous installation/session
+attribution, trace propagation and retry behavior. Baguette adds a versioned local
+`definition_diagnostic` object at the actual failure boundary. Server error tags
+`definition_stage` and `definition_failure` distinguish simulator lookup, profile
+read/parsing/missing chrome identifier, panel lookup, chrome read/parsing,
+composite read/layout/rasterization, missing screen geometry, slice
+read/rasterization, and final assembly. Read failures distinguish missing files,
+permission denial and other unreadable files. `definition_cached_failure` marks
+negative-cache hits, which retain the original asset failure stage/category even
+when another bezel route populated the cache. No raw filesystem errors are sent.
+
+`definition_model` accepts only a fixed allowlist of public Apple device-type
+names (never renamed simulator names); unknown models become `unknown`.
+`definition_runtime` and `definition_xcode_version` accept only bounded numeric
+version strings. The Xcode version comes from the Xcode selected by Baguette's
+existing developer-directory resolver, rather than the plugin build toolchain.
+`definition_panel` and `definition_device_state` describe the backend's request
+snapshot. `definition_backend_version` accepts the pinned Baguette version;
+`definition_backend_source=pinned` verifies the diagnostic's source commit against
+the plugin's pin, and `definition_backend_mode` distinguishes embedded and external
+backends. These are error tags only, not performance attributes or identifiers.
+
+`definition_device_before` records the successful booted-device validation.
+After a definition 404, the server performs one bounded device-list read (up to
+two seconds) and adds `definition_device_after`: a lifecycle state, `missing`,
+`unreachable`, or `unknown`. This is later evidence, not proof of the exact state
+when the definition failed. It performs no boot, repair or definition retry.
+Existing connection timings include this failure-only diagnostic read. A missing,
+unrecognized, malformed, oversized (over 4 KiB) or interrupted diagnostic response
+is tagged `response/unclassified`; the original HTTP error remains intact. The
+body is never attached to Sentry. Device IDs, local paths, raw response bodies,
+logs, arbitrary names and credentials remain excluded. Collection uses the
+existing centralized Sentry initialization, environment and telemetry opt-out.
+Native rebuilds retain matching Baguette dSYMs, and release uploads continue to
+upload those symbols with the plugin release.

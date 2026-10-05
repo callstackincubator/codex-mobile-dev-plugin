@@ -396,6 +396,39 @@ test("Node runtime metrics report CPU, memory and event-loop measurements with c
   contains(encoded, '"component":{"value":"server"');
 });
 
+test("definition failure tags survive Sentry scrubbing with surface, release and anonymous attribution", async t => {
+  const { parseDefinitionDiagnostic, setDefinitionDiagnostic } = await import("../src/shared/simulator-definition-diagnostics.ts");
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent,
+    environment: "release", release: "mobile-dev@definition-test",
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  const error = new Error("Baguette returned HTTP 404 for /simulators/B5C969F6-58A4-4C31-AB12-FB9E56D681DE/definition.json.");
+  const diagnostic = parseDefinitionDiagnostic({ definition_diagnostic: {
+    schema: "1", stage: "chrome_parse", failure: "invalid", model: "iPhone 17", runtime: "iOS 27.0",
+    state: "Booted", panel: "primary", xcode_version: "27.0", private: "PRIVATE_RESPONSE",
+  } });
+  diagnostic.deviceAfter = "Booted";
+  setDefinitionDiagnostic(error, diagnostic);
+  const userId = "anon_" + "a".repeat(32);
+  Sentry.withScope(scope => {
+    scope.setTag("surface", "simulator");
+    scope.setUser({ id: userId });
+    captureServerError(error, "simulator.tool");
+  });
+  await Sentry.flush();
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const events = items.filter(item => item[0].type === "event");
+  assert.equal(events.length, 1);
+  const encoded = JSON.stringify(events[0]);
+  for (const expected of ["chrome_parse", "invalid", "iPhone 17", "simulator", "release", "mobile-dev@definition-test"]) contains(encoded, expected);
+  contains(encoded, "PRIVATE_", false);
+  contains(encoded, "B5C969F6", false);
+  contains(encoded, userId);
+});
+
 test("MCP reporting retains original failures once and keeps unowned protocol and transport errors", async t => {
   const envelopes: Envelope[] = [];
   Sentry.init({

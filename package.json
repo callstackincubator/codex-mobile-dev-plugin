@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.129",
+  "version": "0.1.130",
   "private": true,
   "type": "module",
   "engines": {
@@ -24,6 +24,7 @@
     "test:cpu-cache": "node scripts/smoke-cpu-cache.mjs",
     "test:agent-device": "node scripts/smoke-agent-device.mjs",
     "check:mcp-budget": "node scripts/mcp-tool-budget.mjs",
+    "test:definition-diagnostics": "node scripts/smoke-definition-diagnostics.mjs",
     "test:reconnect": "node scripts/smoke-reconnect.mjs",
     "test:logs": "node scripts/smoke-logs.mjs",
     "test:ios-logs": "node scripts/smoke-logs.mjs --physical",

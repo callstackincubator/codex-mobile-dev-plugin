@@ -1,4 +1,5 @@
 import { addForegroundTimeoutDiagnostics } from "./baguette-foreground-diagnostics.mjs";
+import { addDefinitionDiagnostics } from "./baguette-definition-diagnostics.mjs";
 import { removeBaguetteToolchainRpaths } from "./baguette-rpaths.mjs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -16,11 +17,13 @@ export async function baguetteTelemetrySourceHash() {
   await nativeTelemetrySourceHash(hash);
   const script = await readFile("scripts/rebuild-baguette.mjs");
   hash.update(script);
+  const definitionScript = await readFile("scripts/baguette-definition-diagnostics.mjs");
+  hash.update(definitionScript);
   const foregroundScript = await readFile("scripts/baguette-foreground-diagnostics.mjs");
   hash.update(foregroundScript);
   const rpathScript = await readFile("scripts/baguette-rpaths.mjs");
   hash.update(rpathScript);
-  for (const file of ["ForegroundCommand.swift", "ForegroundFailure.swift", "foreground-method.swift"]) {
+  for (const file of ["ForegroundCommand.swift", "ForegroundFailure.swift", "foreground-method.swift", "DefinitionDiagnostics.swift", "DefinitionDiagnosticsTests.swift"]) {
     const contents = await readFile(`native/baguette/${file}`);
     hash.update(contents);
   }
@@ -105,15 +108,19 @@ export async function rebuildBaguette(sourceDirectory) {
     if (commit.trim() !== release.rebuild.sourceCommit) throw new Error("Baguette source does not match the pinned commit.");
     const { stdout: changes } = await execute("git", ["-C", source, "status", "--porcelain", "--untracked-files=no"]);
     if (changes.trim()) throw new Error("Baguette source has changes. Rebuild from the pinned source.");
+    const sourceHash = await baguetteTelemetrySourceHash();
     const sdk = await buildNativeSentry();
     await addBaguetteTelemetry(source, sdk);
     await addForegroundDetection(source);
+    await addDefinitionDiagnostics(source, release);
     console.log(`Rebuilding Baguette ${release.version} with ${swift.trim().split("\n")[0]}…`);
     try {
       await execute("xcrun", ["swift", "build", "-c", "release", "--product", "Baguette"], {
         cwd: source, timeout: 600000, maxBuffer: 20 * 1024 * 1024,
       });
     } catch (error) { throw new Error(`Baguette build failed. ${String(error.stderr ?? error.message).slice(-5000)}`); }
+    const completedSourceHash = await baguetteTelemetrySourceHash();
+    if (completedSourceHash !== sourceHash) throw new Error("Baguette integration sources changed during compilation. Run the rebuild again.");
     const executable = join(source, ".build/release/Baguette");
     await removeBaguetteToolchainRpaths(executable);
     await saveNativeSymbols(executable, "Baguette");
@@ -135,7 +142,7 @@ export async function rebuildBaguette(sourceDirectory) {
     const binarySha256 = createHash("sha256").update(await readFile(target)).digest("hex");
     await writeFile("vendor/baguette/release.json", JSON.stringify({ ...release, build: {
       sourceCommit: commit.trim(), swift: swift.trim(), binarySha256,
-      telemetrySourceSHA256: await baguetteTelemetrySourceHash(),
+      telemetrySourceSHA256: sourceHash,
     } }, null, 2) + "\n");
     console.log(`Bundled runtime rebuilt; SHA-256 ${binarySha256}.`);
   } finally { if (temporary) await rm(temporary, { recursive: true, force: true }); }

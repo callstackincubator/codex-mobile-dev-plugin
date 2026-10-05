@@ -5,6 +5,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { MeasurementWindow, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY } from "../shared/telemetry.ts";
 import { ExpectedOperationError, expectedOutcome } from "../shared/error-reporting.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
+import { definitionDiagnosticTags } from "../shared/simulator-definition-diagnostics.ts";
 import { deviceAppsDiagnosticTags } from "../shared/device-apps-diagnostics.ts";
 import { getDiscoveryCommandDiagnostic } from "../shared/device-apps-command-diagnostics.ts";
 import { androidStartupDiagnosticTags } from "../shared/android-startup-diagnostics.ts";
@@ -111,6 +112,7 @@ export class IOSLogProcessingTelemetry {
 export function captureServerError(error: unknown, operation: string, options?: { report?: boolean; signal?: AbortSignal }) {
   const outcome = options?.signal?.aborted ? "cancelled" : expectedOutcome(error);
   const diagnosticTags = deviceAppsDiagnosticTags(error);
+  const definitionTags = definitionDiagnosticTags(error);
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   Sentry.metrics.count("server.error.outcome", 1, { attributes: { operation, outcome: outcome ?? "unexpected", ...diagnosticTags } });
   if (outcome !== undefined) return;
@@ -122,7 +124,7 @@ export function captureServerError(error: unknown, operation: string, options?: 
   const command = getDiscoveryCommandDiagnostic(error);
   const contexts = command ? { device_apps_command: { elapsed_ms: command.elapsed_ms, deadline_ms: command.deadline_ms,
     exit_status: command.exit_status } } : undefined;
-  Sentry.captureException(error, { tags: { ...diagnosticTags, ...androidTags, operation }, contexts });
+  Sentry.captureException(error, { tags: { ...diagnosticTags, ...definitionTags, ...androidTags, operation }, contexts });
 }
 
 type RequestReporting = { accounted: boolean; sessionResponse?: { release: () => void; close: () => Promise<void> } };

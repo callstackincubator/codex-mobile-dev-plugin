@@ -10,6 +10,7 @@ import { z } from "zod";
 import { errorMessage, normalizeDevices, parseBaseUrl, udidSchema } from "../shared/protocol.ts";
 import type { Status } from "../shared/protocol.ts";
 import { buttonMarginsSchema } from "../shared/bezel.ts";
+import { definitionDeviceState, getDefinitionDiagnostic, parseDefinitionDiagnostic, setDefinitionDiagnostic } from "../shared/simulator-definition-diagnostics.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { ExpectedOperationError } from "../shared/error-reporting.ts";
 import { baguetteEnvironment } from "./baguette-runtime.ts";
@@ -47,7 +48,16 @@ export class Baguette {
         this.lifecycle.signal, AbortSignal.timeout(timeout), ...(options.signal ? [options.signal] : []),
       ]),
     });
-    if (!response.ok) throw new Error(`Baguette returned HTTP ${response.status} for ${path}.`);
+    if (response.ok === false) {
+      const error = new Error(`Baguette returned HTTP ${response.status} for ${path}.`);
+      if (response.status === 404 && /^\/simulators\/[^/]+\/definition\.json$/.test(path)) {
+        const payload = await readDefinitionFailure(response);
+        const diagnostic = parseDefinitionDiagnostic(payload);
+        diagnostic.backendMode = this.embedded ? "embedded" : "external";
+        setDefinitionDiagnostic(error, diagnostic);
+      }
+      throw error;
+    }
     const payload = await response.json();
     if (payload?.ok === false) throw new Error(payload.error ?? "Baguette rejected the request.");
     return payload;
@@ -170,7 +180,21 @@ export class Baguette {
 
   async definition(udid: string) {
     await this.device(udid, true);
-    return definitionSchema.parse(await this.json(`/simulators/${udid}/definition.json`));
+    try {
+      const payload = await this.json(`/simulators/${udid}/definition.json`);
+      return definitionSchema.parse(payload);
+    } catch (error) {
+      const diagnostic = getDefinitionDiagnostic(error);
+      if (diagnostic !== undefined) {
+        diagnostic.deviceBefore = "Booted";
+        const status = await this.status();
+        const device = status.devices.find(item => item.udid === udid);
+        if (status.connected === false) diagnostic.deviceAfter = "unreachable";
+        else if (device === undefined) diagnostic.deviceAfter = "missing";
+        else diagnostic.deviceAfter = definitionDeviceState(device.state);
+      }
+      throw error;
+    }
   }
 
   async changeDeviceState(udid: string, action: "boot" | "shutdown", timeout = 120000): Promise<Status> {
@@ -223,5 +247,30 @@ export class Baguette {
     this.lifecycle.abort();
     this.child?.kill("SIGTERM");
     this.child = undefined;
+  }
+}
+
+async function readDefinitionFailure(response: Response): Promise<unknown> {
+  const reader = response.body?.getReader();
+  if (reader === undefined) return;
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > 4096) return;
+      chunks.push(chunk.value);
+    }
+    const bytes = Buffer.concat(chunks);
+    const text = bytes.toString("utf8");
+    return JSON.parse(text);
+  } catch {
+    return;
+  } finally {
+    const cancellation = reader.cancel();
+    await cancellation.catch(() => {});
+    reader.releaseLock();
   }
 }
