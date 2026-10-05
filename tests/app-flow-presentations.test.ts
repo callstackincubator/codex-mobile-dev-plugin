@@ -15,8 +15,12 @@ import { flushSync } from 'react-dom';
 import { JSDOM } from 'jsdom';
 import {sharedLoopRuntime} from './app-flow-runtime-fixtures.ts';
 
+const fixtureRuns=new Map<test.TestContext,AppFlowRuns[]>();
+function flowRuns(t:test.TestContext,options:ConstructorParameters<typeof AppFlowRuns>[0]){
+  const runs=new AppFlowRuns(options),pending=fixtureRuns.get(t)??[];pending.push(runs);fixtureRuns.set(t,pending);return runs;
+}
 async function fixture(t: test.TestContext, files: Record<string,string>) {
-  const root=await mkdtemp(join(tmpdir(),'presentation-test-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const root=await mkdtemp(join(tmpdir(),'presentation-test-'));t.after(async()=>{await Promise.all((fixtureRuns.get(t)??[]).map(runs=>runs.close()));fixtureRuns.delete(t);await rm(root,{recursive:true,force:true});});
   for(const [file,source]of Object.entries(files)){await mkdir(join(root,file,'..'),{recursive:true});await writeFile(join(root,file),source);}
   return root;
 }
@@ -213,7 +217,7 @@ test('presentation retries yield to untouched screens and retain all three readi
   t.mock.method(performance,'now',()=>clock);
   const actions:any[]=['Slow','Quick'].map(name=>({id:name,name,file:'Home.tsx',line:1,owner:'Home',component:'Button',prop:'onPress',effect:{kind:'control',component:name,prop:'control',method:'open',close:['close']}}));
   const nodes:any[]=['Home','Search'].map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending'}));
-  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions}}),connect:async()=>({
+  const runs=flowRuns(t,{directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions}}),connect:async()=>({
     screenshot:async()=>Buffer.from(key),runtime:{async close(){},async invoke(command:any){
       if(command.type==='inspect')return {available:true};
       if(command.type==='open'){key=command.path.at(-1);if(command.timeoutMs===1000)events.push(key);}
@@ -227,6 +231,7 @@ test('presentation retries yield to untouched screens and retain all three readi
   t.after(()=>runs.close());
   const run=runs.start({projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'target',metroUrl:'http://127.0.0.1:8081',useAi:false});
   for(let i=0;i<300&&flowRunning(runs.read(run.id));i++)await new Promise(resolve=>setTimeout(resolve,10));
+  await runs.close();
   const result=runs.read(run.id);
   assert.equal(result.phase,'complete');
   assert.deepEqual(events,['Home','Search','Slow:1','Quick:1','Slow:2','Slow:3']);
@@ -490,7 +495,7 @@ test('apps without a navigator map local forms and resume a nested sheet after d
   const directory=await mkdtemp(join(tmpdir(),'presentation-test-'));let connections=0,opens=0;
   const actions:any[]=[{id:'login',name:'Login',file:'App.tsx',line:1,owner:'App',component:'Button',prop:'onPress',effect:{kind:'state',site:'step',path:[],value:1}},
     {id:'sheet',name:'Options',file:'Login.tsx',line:2,owner:'Login',component:'Button',prop:'onPress',effect:{kind:'control',component:'Options',prop:'controller',method:'show',close:['hide']}}];
-  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes:[],edges:[],presentations:{states:[],actions}}),connect:async()=>{
+  const runs=flowRuns(t,{directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes:[],edges:[],presentations:{states:[],actions}}),connect:async()=>{
     const generation=++connections;const stack:string[]=[];let offline=false;
     return {target:{appId:'example.app'},screenshot:async()=>Buffer.from(stack.join('/')||'welcome'),runtime:{async close(){stack.length=0},async invoke(command:any){
       if(offline)throw Error('disconnected');
@@ -513,7 +518,7 @@ test('apps without a navigator map local forms and resume a nested sheet after d
 
 test('a standalone form maps without a navigator or any injectable transitions',async t=>{
   const directory=await fixture(t,{});
-  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes:[],edges:[]}),connect:async()=>({screenshot:async()=>Buffer.from('login form'),runtime:{async close(){},async invoke(command:any){
+  const runs=flowRuns(t,{directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes:[],edges:[]}),connect:async()=>({screenshot:async()=>Buffer.from('login form'),runtime:{async close(){},async invoke(command:any){
     if(command.type==='inspect')return {available:false};
     if(command.type==='presentation-view')return {key:'login',signature:'login form',title:'Sign in',ready:true,found:true};
     return {};
@@ -608,7 +613,7 @@ test('a second discovery timeout after reconnect keeps captured routes and conti
   const directory=await fixture(t,{});let connections=0,discoveryFailed=false;
   const action:any={id:'dialog',owner:'Home',file:'App.tsx',component:'Button',prop:'onPress',name:'Dialog',line:1,effect:{kind:'control',component:'Dialog',prop:'control',method:'open',close:'close'}};
   const nodes:any[]=['Home','Search'].map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending',entry:true}));
-  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>{
+  const runs=flowRuns(t,{directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>{
     const generation=++connections;
     return {runtime:{async close(){},async invoke(command:any){
       if(['inspect','resume','recover'].includes(command.type))return {available:true};
@@ -633,7 +638,7 @@ test('failed discovery retries after fresh routes and discovers sheets without r
   const directory=await fixture(t,{}),events:string[]=[];let active='Home',collections=0;
   const action:any={id:'sheet',owner:'Home',file:'App.tsx',component:'Button',prop:'onPress',name:'Sheet',line:1,effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};
   const nodes:any[]=['Home','Search'].map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending',entry:true}));
-  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>({
+  const runs=flowRuns(t,{directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>({
     runtime:{async close(){},async invoke(command:any){
       if(command.type==='inspect')return {available:true};
       if(command.type==='open'){active=command.path[0];events.push(`open:${active}`);return {ready:true,name:active,active:[active],signature:active};}
@@ -665,7 +670,7 @@ test('failed discovery retries after fresh routes and discovers sheets without r
 test('extending a captured route discovers newly available sheets and keeps its original image',async t=>{
   const directory=await fixture(t,{});let active='Home',available=false,shots=0;
   const action:any={id:'sheet',owner:'Home',file:'App.tsx',component:'Button',prop:'onPress',name:'Sheet',line:1,effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};
-  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes:[{id:'Home',name:'Home',kind:'screen',path:['Home'],required:[],status:'pending',entry:true}],edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>({
+  const runs=flowRuns(t,{directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes:[{id:'Home',name:'Home',kind:'screen',path:['Home'],required:[],status:'pending',entry:true}],edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>({
     runtime:{async close(){},async invoke(command:any){
       if(command.type==='inspect')return {available:true};
       if(command.type==='open'){active='Home';return {ready:true,name:active,active:[active],signature:active};}
@@ -807,7 +812,7 @@ test('newly discovered routes run before sheets at the same attempt count',async
   const directory=await fixture(t,{}),events:string[]=[];let key='Home';
   const action:any={id:'sheet',name:'Sheet',file:'Home.tsx',line:1,owner:'Home',component:'Button',prop:'onPress',effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};
   const nodes:any[]=['Home','Search','Settings'].map(name=>({id:name,name,kind:'screen',path:[name],urls:[`/${name.toLowerCase()}`],required:[],status:'pending'}));
-  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>({
+  const runs=flowRuns(t,{directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>({
     screenshot:async()=>Buffer.from(key),runtime:{async close(){},async invoke(c:any){
       if(c.type==='inspect')return {available:true,active:['Home'],entries:[['Home'],['Search']],registrations:nodes.map(n=>({name:n.name,path:n.path}))};
       if(c.type==='open'){key=c.path.at(-1);events.push(key);return {ready:true,found:true,active:[key],signature:key,links:key==='Search'?['/settings']:[]};}
@@ -1097,8 +1102,8 @@ test('a focused sheet body dismisses before its temporary parent modal unmounts'
   let modal:any;
   const renderer={rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){
     fiber.memoizedProps=props;
-    if(props.children?.type===React.Fragment)modal=props.children.props.children.at(-1);
-    else {events.push('parent unmounted');assert.ok(events.includes('child dismissed'));modal.props.onDismiss();}
+    if(props.children?.type===React.Fragment){modal=props.children.props.children.at(-1);if(modal.props.visible===false){events.push('parent hidden');assert.ok(events.includes('child dismissed'));modal.props.onDismiss();}}
+    else {events.push('parent unmounted');assert.ok(events.includes('parent hidden'));}
   }};
   (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:{...React}}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}]])};
   t.after(()=>{(globalThis as any).__r=previous});
@@ -1109,7 +1114,7 @@ test('a focused sheet body dismisses before its temporary parent modal unmounts'
   app.control.close=()=>{events.push('child close');setTimeout(()=>{events.push('child dismissed');instance.props.onStateChange({nativeEvent:{state:'closed'}})},20)};
   runtime.open('open');runtime.focused(app.nested);
   await runtime.rollback();
-  assert.deepEqual(events,['child close','child dismissed','parent unmounted']);assert.equal(runtime.checkpoint(),0);
+  assert.deepEqual(events,['child close','child dismissed','parent hidden','parent unmounted']);assert.equal(runtime.checkpoint(),0);
   runtime.cleanup();app.runtime.cleanup();
 });
 
@@ -1130,7 +1135,8 @@ test('a shown iOS preview keeps its restore record until Modal.onDismiss',async 
     if(platform==='ios'){
       await assert.rejects(runtime.rollback(),/modal dismissal has not finished/);
       assert.equal(runtime.checkpoint(),1);assert.equal(runtime.diagnostics().projections,1);
-      modal.props.onDismiss();await runtime.rollback();assert.equal(updates,2);
+      assert.equal(wrapper.memoizedProps.children.props.children.at(-1).props.visible,false);
+      modal.props.onDismiss();await runtime.rollback();assert.equal(updates,3);
     }else await runtime.rollback();
     assert.equal(runtime.checkpoint(),0);runtime.cleanup();app.runtime.cleanup();
   }
@@ -1186,5 +1192,42 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
     assert.equal(app.runtime.checkpoint(),1);assert.equal(app.runtime.diagnostics().dismissalWaiters,1);
     await closing;assert.equal(app.runtime.checkpoint(),0);assert.equal(events,2);assert.equal(app.control.closes,1);
     assert.equal(instance.props,props);assert.equal(canonical.currentProps,props);app.runtime.cleanup();
+  });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresentationRuntime)]){
+  test(`shared sheet wrappers retain source evidence without reopening a controller (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+    const app=tree(install);app.action.views=['outer-body'];
+    app.nested.memoizedProps={control:app.control};
+    const button:any={type:app.button.type,_debugSource:{fileName:'App.tsx',lineNumber:3,columnNumber:1},memoizedProps:{onPress(){}},return:app.sheet,sibling:app.nested};app.sheet.child=button;
+    const alias={...app.action,id:'alias',line:3,owner:'Sheet',name:'Nested',views:['inner-body'],effect:{kind:'control',component:'Nested',prop:'control',method:'open',close:'close'}};
+    configureFixture(app.runtime,{states:[],actions:[app.action,alias]});
+    app.runtime.open('open');assert.equal(app.control.opens,1);assert.equal(app.runtime.checkpoint(),1);
+    assert.deepEqual(app.runtime.list(app.sheet),[]);
+    assert.deepEqual(app.runtime.activeViews(app.sheet).sort(),['inner-body','outer-body']);
+    assert.equal(app.runtime.open('alias',app.sheet).alreadyOpen,true);
+    assert.equal(app.control.opens,1);assert.equal(app.runtime.checkpoint(),1);
+    await app.runtime.rollback();assert.equal(app.control.closes,1);
+    assert.equal(app.runtime.list(app.sheet).some((a:any)=>a.id==='alias'),true,'A genuinely closed controller remains available');
+    assert.deepEqual(app.action.views,['outer-body'],'Observed aliases do not mutate the source catalog');app.runtime.cleanup();
+  });
+  test(`iOS preview hides while mounted before its dismiss callback (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    const app=tree(),events:string[]=[];function View(){}function Modal(){}
+    const wrapper:any={type:View,memoizedProps:{children:React.createElement(app.root.type)},child:app.root};app.root.return=wrapper;
+    const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??wrapper];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+    let mounted=false;
+    const renderer={rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){
+      fiber.memoizedProps=props;
+      if(props.children?.type===React.Fragment){const modal=props.children.props.children.at(-1);mounted=true;
+        if(modal.props.visible){events.push('shown');modal.props.onShow();}
+        else {events.push('hidden');setTimeout(()=>{assert.equal(mounted,true);events.push('dismissed');modal.props.onDismiss()},20);}
+      }else {assert.ok(events.includes('dismissed'),'An unmounted Modal cannot deliver its dismissal callback');mounted=false;events.push('removed');}
+    }};
+    const previous=(globalThis as any).__r;t.after(()=>{(globalThis as any).__r=previous});
+    (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:{...React}}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}]])};
+    const runtime=install({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});
+    assert.equal(runtime.project(app.root,{}).error,undefined);const closing=runtime.rollback();
+    await new Promise(resolve=>setTimeout(resolve,5));assert.equal(runtime.checkpoint(),1);assert.equal(mounted,true);
+    await closing;assert.deepEqual(events,['shown','hidden','dismissed','removed']);assert.equal(runtime.checkpoint(),0);runtime.cleanup();app.runtime.cleanup();
   });
 }

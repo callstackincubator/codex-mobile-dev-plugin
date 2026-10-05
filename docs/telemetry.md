@@ -374,3 +374,9 @@ host events and dismissal waiters, and use the new inspector while reconnect
 cleanup is pending. These bounded counts contain no app content. Existing runtime,
 presentation, reconnect and restoration measurements keep their names, units and
 boundaries; no new per-event telemetry is sent.
+
+Since 0.1.151, runtime and manifest versions must match before a build starts.
+Controller aliases share one open/close checkpoint; their source bindings stay
+local and refer to the same captured body. Temporary iOS modals hide while mounted,
+wait for onDismiss, then unmount. Existing presentation, restoration and runtime
+measurements cover these active paths with the same names, units and privacy rules.

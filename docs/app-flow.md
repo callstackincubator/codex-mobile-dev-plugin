@@ -261,3 +261,8 @@ restore checkpoint if the event is late. It waits on a pending close when it
 reconnects, without repeating the close call. Idle child sheets do not count as
 pending animations. Temporary iOS previews wait for `Modal.onDismiss`; Android
 previews do not depend on that iOS-only event.
+
+Shared sheet wrappers that use the same live controller map one body. The mapper
+keeps each wrapper's source evidence without opening or closing that controller
+twice. For temporary iOS modal previews, cleanup sets visible to false while the
+modal remains mounted, waits for its native dismissal callback, then removes it.

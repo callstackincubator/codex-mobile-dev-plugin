@@ -279,7 +279,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(parent.tag!==10||!parent.memoizedProps||!('value'in parent.memoizedProps))continue;
       const provider=parent.elementType??parent.type;if(provider)content=react.createElement(provider,{value:preview?.providers?.get(parent)??parent.memoizedProps.value},content);
     }
-    const record={root,renderer,props,focus,child,seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:false,dismissed:false,failed:false};
+    const record={root,renderer,react,props,focus,child,seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:false,dismissed:false,failed:false};
     class PreviewBoundary extends react.Component {
       constructor(props){super(props);this.state={failed:false};}
       static getDerivedStateFromError(){return {failed:true};}
@@ -441,9 +441,24 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
   };
   let lastAvailable=0;
-  const list = focus => {const tree=index(true),scope=roots(focus,tree),seen=new Set();const result=catalog.actions.filter(action=>{const found=find(action,tree,focus,scope);if(!found)return false;const key=found.target?.value??JSON.stringify(action.effect.kind==='mount'?['mount',action.effect.file,action.effect.export]:[action.effect.site,action.effect.path,action.effect.value]);if(seen.has(key))return false;seen.add(key);return true;}).map(action=>({id:action.id,name:action.name,file:action.file,line:action.line}));lastAvailable=result.length;return result;};
+  const list = focus => {
+    const tree=index(true),scope=roots(focus,tree),seen=new Set();
+    const result=catalog.actions.filter(action=>{
+      const found=find(action,tree,focus,scope);if(!found)return false;
+      const key=found.target?.value??JSON.stringify(action.effect.kind==='mount'?['mount',action.effect.file,action.effect.export]:[action.effect.site,action.effect.path,action.effect.value]);
+      const opened=found.target&&undo.find(entry=>entry.control===key);
+      if(opened){
+        if(opened===undo[undo.length-1])opened.views=[...new Set([...(opened.views??[]),...(action.views??[])])];
+        return false;
+      }
+      if(seen.has(key))return false;seen.add(key);return true;
+    }).map(action=>({id:action.id,name:action.name,file:action.file,line:action.line}));
+    lastAvailable=result.length;return result;
+  };
   function activeViews(focus) {
     const tree=index(),visual=visualFocus(focus,tree),ids=new Set();
+    const opened=undo[undo.length-1];
+    if(opened?.control&&focus&&roots(opened.nativeFocus,tree).some(root=>tree.inside(visual,root)))for(const id of opened.views??[])ids.add(id);
     for(const record of projected){if(record.failed)continue;for(let p=visual,n=0;p&&n++<100;p=p.return)if((p.pendingProps??p.memoizedProps)===record.child.props){for(const id of record.views??[])ids.add(id);break;}}
     for(const action of catalog.actions){
       if(!action.views?.length||action.effect.kind!=='state')continue;
@@ -596,7 +611,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     if(action.effect.kind==='control'){
       const {fiber,value,close}=found.target;
-      armNative(fiber);undo.push({control:value,close,focus:fiber,nativeFocus:fiber,views:action.views});value[found.target.method??action.effect.method]();
+      const opened=undo.find(entry=>entry.control===value);
+      if(opened){if(opened===undo[undo.length-1])opened.views=[...new Set([...(opened.views??[]),...(action.views??[])])];return {name:action.name,focus:fiber,alreadyOpen:true};}
+      armNative(fiber);undo.push({control:value,close,focus:fiber,nativeFocus:fiber,views:action.views?.slice()});value[found.target.method??action.effect.method]();
       return {name:action.name,focus:fiber};
     }
     return {error:'Unsupported presentation transition.'};
@@ -615,7 +632,14 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         const record=entry.projection;clearTimeout(record.seedTimer);
         if(!entry.closing){
           const props=record.root.memoizedProps??record.props;
-          structureCache=undefined;record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
+          structureCache=undefined;
+          if(wait&&record.ios&&record.shown){
+            // Keep Modal mounted while native dismissal runs. Unmounting first
+            // removes React Native's event listener before onDismiss can run.
+            const modal=record.react.cloneElement(record.element,{visible:false});
+            const children=record.react.cloneElement(record.next.children,{},record.next.children.props.children.map(child=>child===record.element?modal:child));
+            record.renderer.overrideProps(record.root,[],{...props,children});
+          }else record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
           entry.closing=true;
         }
         // React Native emits Modal.onDismiss on iOS only. Retain the restore
@@ -625,6 +649,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
             if(Date.now()-started>=2000)throw new Error('Temporary modal dismissal has not finished.');
             await new Promise(resolve=>later(resolve,40));
           }
+        }
+        if(wait&&record.ios&&record.shown){
+          const props=record.root.memoizedProps??record.props;structureCache=undefined;
+          record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
         }
         const index=projected.indexOf(record);if(index>=0)projected.splice(index,1);
         releasePreviewErrors();if(record.seed)unpatch();if(!projected.length)unpatchPreviewEffects();

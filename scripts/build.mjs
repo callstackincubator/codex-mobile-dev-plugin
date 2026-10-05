@@ -1,3 +1,4 @@
+import { releaseMetadata } from './release-metadata.mjs';
 import { fpsSourceHash } from "./build-fps.mjs";
 import { iosMirrorSourceHash } from "./build-ios-mirror.mjs";
 import { iosLogsSourceHash } from "./build-ios-logs.mjs";
@@ -14,6 +15,8 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 
+const manifest = JSON.parse(await readFile('.codex-plugin/plugin.json', 'utf8'));
+await releaseMetadata(`v${manifest.version}`);
 const telemetryEnvironment = telemetryBuildEnvironment();
 await mkdir("dist", { recursive: true });
 await access("vendor/baguette/Baguette");

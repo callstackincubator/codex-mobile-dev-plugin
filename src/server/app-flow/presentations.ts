@@ -157,11 +157,11 @@ export class FlowPresentationCapture {
     try {
       // Newly mounted forms can introduce hooks absent from the initial tree.
       await this.setup(backend);
+      const available: Action[] = await backend.runtime.invoke({type: 'presentations'}, 2000);
       if(this.catalog.actions.some(action=>action.views?.length)){
         const active=await backend.runtime.invoke({type:'presentation-active'},2000);
         if(Array.isArray(active)&&active.length){base.sourceViews=[...new Set([...(base.sourceViews??[]),...active])];this.run.revision++;}
       }
-      const available: Action[] = await backend.runtime.invoke({type: 'presentations'}, 2000);
       for (const action of available) {
         const source = this.catalog.actions.find(item => item.id === action.id);
         if (!source) continue;
