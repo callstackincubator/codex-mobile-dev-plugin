@@ -88,7 +88,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
     }
   }
   const presentations = presentationFactory?.({ hook, fibers, hidden: props => hidden(props), later });
-  let presentationFocus, presentationObservation, presentationExpected, lastProbe;
+  let presentationFocus, presentationObservation, presentationExpected, lastProbe, lastPresentationProbe;
   const presentationFrames = [];
   function navigation(value) {
     if (!value || typeof value !== 'object' || typeof value.getState !== 'function' || typeof value.dispatch !== 'function') return;
@@ -398,20 +398,33 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
     return { key, ready, active: path, title: visual.title ?? component, signature: visual.signature, loading: visual.loading };
   }
   function presentationView() {
+    const start=Date.now(),probe=lastPresentationProbe={stage:'focus',focusMs:0,expectedMs:0,visualMs:0,visibleMs:0,motionMs:0,totalMs:0};
     if(presentationFocus){let current;fibers(fiber=>{if(fiber===presentationFocus||fiber===presentationFocus.alternate)current=fiber;});presentationFocus=current;}
-    const visualFocus=presentations?.visualFocus(presentationFocus)??presentationFocus;
-    const expectedReady=!presentationExpected||!!presentations?.focusFor(presentationExpected,visualFocus);
+    const presentationProbe=presentations?.probeFocus?.(presentationFocus,presentationExpected);
+    const visualFocus=presentationProbe?.visualFocus??presentations?.visualFocus(presentationFocus)??presentationFocus;
+    probe.focusMs=Date.now()-start;probe.stage='expected';let before=Date.now();
+    // A portal's visual body can live outside its logical owner. Check the
+    // expected component in the owner's connected roots, then inspect pixels
+    // in the native body. A detached or missing body still cannot be ready.
+    const expectedReady=presentationProbe?.expectedReady??(!presentationExpected||!!presentations?.focusFor(presentationExpected,presentationFocus));
+    probe.expectedMs=Date.now()-before;probe.stage='visual';before=Date.now();
     const visual = visualSignature(undefined, true, visualFocus);
-    const live = visible(), now = Date.now();
+    probe.visualMs=Date.now()-before;probe.stage='visible';before=Date.now();
+    const live = visible();
+    probe.visibleMs=Date.now()-before;probe.stage='motion';before=Date.now();
     const componentTree = visual.components;
-    const nativeMotion=presentations?.motion(presentationFocus,visual.bounds);
+    const nativeMotion=presentationProbe?.motion(visual.bounds)??presentations?.motion(presentationFocus,visual.bounds);
+    probe.motionMs=Date.now()-before;
     if(nativeMotion){visual.signature+=nativeMotion.signature;visual.motion=JSON.stringify([visual.motion,nativeMotion.signature]);}
-    const key = JSON.stringify([active(root?.getRootState?.() ?? root?.getState?.()), visual.components?.sort(), visual.title]);
-    if (!presentationObservation || presentationObservation.key !== key || presentationObservation.signature !== visual.signature || visual.loading || live.transitioning || nativeMotion?.pending || !expectedReady) {
+    const key = JSON.stringify([active(root?.getRootState?.() ?? root?.getState?.()), visual.components?.sort(), visual.title]),now=Date.now();
+    const keyChanged=presentationObservation?.key!==key,signatureChanged=presentationObservation?.signature!==visual.signature;
+    if (!presentationObservation || keyChanged || signatureChanged || visual.loading || live.transitioning || nativeMotion?.pending || !expectedReady) {
       const next = presentationObservation = { key, signature: visual.signature, since: now, painted: false };
       frame(() => frame(() => { if (presentationObservation === next) next.painted = true; }));
     }
-    return { ...visual, key, active: active(root?.getRootState?.() ?? root?.getState?.()), ready: expectedReady && !nativeMotion?.error && visual.found && visual.content > 0 && !visual.loading && !live.transitioning && !nativeMotion?.pending && presentationObservation.painted && now - presentationObservation.since >= 160, ...live, nativePending:nativeMotion?.pending, error:nativeMotion?.error, components:componentTree };
+    const reason=!expectedReady?'target':nativeMotion?.error?'preview-error':!visual.found?'missing':!visual.content?'empty':visual.loading?'loading':live.transitioning?'transition':nativeMotion?.pending?'native':!presentationObservation.painted?'paint':now-presentationObservation.since<160?'settling':undefined;
+    Object.assign(probe,{stage:'done',totalMs:Date.now()-start,expectedReady,found:visual.found,hosts:visual.hosts,content:visual.content,loading:visual.loading,transitioning:live.transitioning,nativePending:!!nativeMotion?.pending,painted:presentationObservation.painted,quietMs:now-presentationObservation.since,keyChanged,signatureChanged,reason});
+    return { ...visual, key, active: active(root?.getRootState?.() ?? root?.getState?.()), ready: !reason, reason, ...live, nativePending:nativeMotion?.pending, error:nativeMotion?.error, components:componentTree };
   }
   function returnToStart() {
     const path = active(original);
@@ -454,7 +467,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         if (command.type === 'heartbeat') { reply({ alive: true }); return; }
         if (command.type === 'diagnostics') {
           let mountedFibers=0,mountedHosts=0;fibers(fiber=>{mountedFibers++;if(fiber.tag===5)mountedHosts++;});
-          reply({mountedFibers,mountedHosts,transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,presentations:presentations?.diagnostics?.()});return;
+          reply({mountedFibers,mountedHosts,transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,lastPresentationProbe,presentations:presentations?.diagnostics?.()});return;
         }
         if (command.type === 'observe') { reply(observe()); return; }
         if (observing) { reply({ error: 'Recording observes screens; navigation commands are disabled.' }); return; }

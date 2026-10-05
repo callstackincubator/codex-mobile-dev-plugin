@@ -9,7 +9,7 @@ import { MeasurementWindow } from '../../shared/telemetry.ts';
 import { captureServerError } from '../telemetry.ts';
 import { FlowRuntimeFailure } from './runtime-metrics.ts';
 
-type View = { key: string; ready: boolean; found: boolean; signature: string; motion?: string; title?: string; active: string[]; loading?: boolean; transitioning?: boolean; error?: string };
+type View = { key: string; ready: boolean; found: boolean; signature: string; motion?: string; title?: string; active: string[]; loading?: boolean; transitioning?: boolean; reason?: string; error?: string };
 type Action = { id: string; name: string; file: string; line: number };
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24);
 
@@ -121,6 +121,10 @@ export class FlowPresentationCapture {
         const effect = source.effect;
         const destination = effect.kind === 'state' ? [effect.site, effect.path, effect.value] : [source.file, source.owner, effect];
         const id = `presentation-${hash(destination)}`;
+        // Controller-only entries can remain available while already open.
+        // Discover their children without putting this captured parent back
+        // into its own queue or resetting its attempts.
+        if(id===base.id)continue;
         let node = this.run.nodes.find(item => item.id === id);
         if (!node) {
           node = {id, name: source.name, kind: 'screen', path: [], required: [], status: 'pending', file: source.file, line: source.line,
@@ -147,14 +151,14 @@ export class FlowPresentationCapture {
     const attempt = Math.min(node.captureAttempts ?? 0, 2);
     const timeout = [6000, 10000, 20000][attempt];
     const started = performance.now();
-    node.captureAttempts = attempt + 1; node.status = 'capturing'; node.reason = undefined; this.run.revision++;
+    node.captureAttempts = attempt + 1; node.status = 'capturing'; node.reason = undefined; node.failure=undefined; this.run.revision++;
     await this.changed();
     try {
       this.signal.throwIfAborted();
       await backend.runtime.invoke({type: 'presentation-rollback', level: 0}, 10000);
       if (plan.basePath.length) {
         const base = await backend.runtime.invoke({type: 'open', path: plan.basePath, params: plan.baseParams, expo: plan.expo, timeoutMs: 2000, loadingTimeoutMs: 10000}, 10500);
-        if (!base.ready) { node.status = 'pending'; node.reason = 'The presentation entry route has not settled.'; return; }
+        if (!base.ready) { node.status = 'pending'; node.reason = 'The presentation entry route has not settled.'; node.failure={operation:'open',detail:base.reason}; return; }
       }
       if (plan.actions.length) this.rememberFrame(await backend.screenshot(AbortSignal.any([this.signal, AbortSignal.timeout(2000)])));
       let view: View | undefined;
@@ -171,7 +175,7 @@ export class FlowPresentationCapture {
         }
         view = await this.settled(backend, timeout);
         if (view.key === before.key&&view.signature===before.signature) { node.status = 'blocked'; node.reason = 'The entry did not open a new presentation.'; return; }
-        if (!view.ready) { node.status = view.error?'blocked':'pending'; node.reason = view.error?'The temporary UI preview could not render with real app data.':'The presentation did not finish rendering.'; return; }
+        if (!view.ready) { node.status = view.error?'blocked':'pending'; node.reason = view.error?'The temporary UI preview could not render with real app data.':'The presentation did not finish rendering.'; node.failure={operation:'presentation-view',detail:view.reason}; return; }
       }
       view ??= await this.settled(backend, timeout);
       if (plan.entryKey && view.key !== plan.entryKey) { node.status = 'blocked'; node.reason = 'The app entry state has changed. Start a fresh map.'; return; }

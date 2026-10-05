@@ -215,6 +215,17 @@ results stay local. Existing runtime, binding, discovery and readiness metrics
 still measure the active paths after source deduplication and exact owner lookup.
 Names, units, surface attribution and cleanup stay unchanged.
 
+Since 0.1.145, `screenshot` is a fixed runtime timing operation. It measures
+fetching and validating a device PNG, including failed attempts. It excludes
+React readiness and screenshot comparison. The existing bounded runtime windows,
+units and flushes apply. Screenshot errors keep bounded local evidence in the map;
+telemetry receives only operation names, timings and timeout counts.
+Local presentation diagnostics show stage durations and readiness flags, with a
+fixed reason such as loading, transition or paint. They contain no app content.
+Shared presentation indexes and detached observer cleanup preserve the existing
+binding, discovery and readiness measurement boundaries. No per-frame events
+or new user dimensions enter telemetry.
+
 Since 0.1.140, presentation lookup rejects absent source-bound entries before
 checking native layout and shares native bounds within one synchronous lookup.
 The existing `presentations` runtime round trip and presentation discovery

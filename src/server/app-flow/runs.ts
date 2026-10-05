@@ -380,7 +380,7 @@ export class AppFlowRuns {
         signal.throwIfAborted();
         for (const node of run.nodes) attempts.set(node.id, node.captureAttempts ?? 0);
         const node = run.nodes.filter(item => item.kind === 'screen' && item.status === 'pending' && (attempts.get(item.id) ?? 0) < maxAttempts)
-          .sort((a, b) => (attempts.get(a.id) ?? 0) - (attempts.get(b.id) ?? 0))[0];
+          .sort((a, b) => (attempts.get(a.id) ?? 0) - (attempts.get(b.id) ?? 0) || Number(!!a.presentation)-Number(!!b.presentation))[0];
         if (node?.presentation) {
           run.retrying = (node.captureAttempts ?? 0) > 0;
           if (run.retrying) retries++;
@@ -390,6 +390,7 @@ export class AppFlowRuns {
             if(node.status!=='captured'){
               node.status = (node.captureAttempts ?? 0) < maxAttempts ? 'pending' : 'timed-out';
               node.reason = error instanceof FlowRuntimeFailure ? error.message : 'Presentation capture was interrupted.';
+              node.failure={operation:error instanceof FlowRuntimeFailure?error.operation:'other',detail:error instanceof FlowRuntimeFailure?error.detail:error instanceof Error?error.message.slice(0,1000):undefined};
             }
             try { await backend.runtime.invoke({type: 'heartbeat'}, 1000); }
             catch { await reconnect(); if(node.status!=='captured'){node.captureAttempts = Math.max(0, (node.captureAttempts ?? 1) - 1); node.status = 'pending';} }
@@ -434,7 +435,7 @@ export class AppFlowRuns {
         if (run.retrying) retries++;
         const timeoutMs = [1000, 2000, 4000][attempt - 1];
         const loadingTimeoutMs = [6000, 10000, 20000][attempt - 1];
-        node.status = "capturing"; run.revision++;
+        node.status = "capturing"; node.failure=undefined; run.revision++;
         const started = performance.now();
         let capturedTarget=false;
         try {
@@ -495,6 +496,7 @@ export class AppFlowRuns {
           }
         } catch (error) {
           if (signal.aborted || error instanceof FlowAppFailure) throw error;
+          node.failure={operation:error instanceof FlowRuntimeFailure?error.operation:'other',detail:error instanceof FlowRuntimeFailure?error.detail:error instanceof Error?error.message.slice(0,1000):undefined};
           node.status = "timed-out"; node.reason = error instanceof FlowRuntimeFailure ? error.message : error instanceof Error && error.message === "Native screen is blank." ? "The native screen is blank. It was not saved as a preview." : error instanceof Error && error.message === "Native frame did not change." ? "The device still shows the previous screen. Close any native overlay and try again." : "Capture or runtime acknowledgement timed out.";
         }
         const routeCaptureMs=capturedTarget?performance.now()-started:undefined;

@@ -8,7 +8,7 @@ import { FlowConnection } from '../src/server/app-flow/connection.ts';
 import { installPresentationRuntime } from '../src/server/app-flow/presentations-runtime.js';
 import {FlowAppFailure,FlowRuntimeFailure,FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
 
-function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, clearTimeout}, presentations = false, globals = {}) {
+function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, clearTimeout}, presentations: boolean | ((options:any)=>any) = false, globals = {}) {
   let state:any = {index:0,routeNames:['Home','Profile'],routes:[{name:'Home'}]};
   const original = state;
   const navigation = { getState:()=>state, isFocused:()=>true, dispatch(action:any){
@@ -21,7 +21,7 @@ function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, cl
   fiber.child=native;
   function sync(){fiber.memoizedProps.route=state.routes[state.index ?? 0]}
   const context=vm.createContext({...timers,...globals,Date,Map,Set,JSON,Math,Object,Array,String,__REACT_DEVTOOLS_GLOBAL_HOOK__:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer'}]]),getFiberRoots:()=>[{current:fiber}]}});
-  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,${presentations?installPresentationRuntime.toString():'undefined'})`,context);
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,${typeof presentations==='function'?presentations.toString():presentations?installPresentationRuntime.toString():'undefined'})`,context);
   const invoke=(command:any)=>new Promise<any>(resolve=>context.flow.invoke(command,resolve));
   t.after(async()=>{if(context.flow)await invoke({type:'restore'})});
   return {context,invoke,getState:()=>state,original,navigation,fiber,native};
@@ -692,4 +692,24 @@ test('a mounted native transition still blocks readiness until its end event',as
   const timer=setTimeout(()=>{completed=true;listeners.get('transitionEnd')!()},160);t.after(()=>clearTimeout(timer));
   const opened=await app.invoke({type:'open',path:['Profile'],timeoutMs:700});
   assert.equal(completed,true);assert.equal(opened.ready,true);assert.ok(opened.readinessMs>=160);
+});
+
+
+test('presentation readiness checks the expected logical owner before inspecting its portal body',async t=>{
+  const factory=()=>({
+    open(){return {focus:(globalThis as any).logical,expected:'Sheet'};},
+    visualFocus(){return (globalThis as any).portal;},
+    focusFor(_name:any,scope:any){return scope===(globalThis as any).logical?scope:undefined;},
+    motion(){return {pending:false,signature:'[]'};},focused(){},checkpoint(){return 0;},cleanup(){},
+  });
+  const app=runtime(t,false,undefined,factory);
+  app.context.logical=app.fiber;
+  const body:any={type:function PortalBody(){},memoizedProps:{},return:app.fiber};
+  const host:any={tag:5,type:'Text',memoizedProps:{children:'Loaded sheet'},stateNode:app.native.stateNode,return:body};body.child=host;app.native.sibling=body;app.context.portal=body;
+  await app.invoke({type:'presentation-open',id:'sheet'});
+  await new Promise(resolve=>setTimeout(resolve,200));
+  const view=await app.invoke({type:'presentation-view'});
+  assert.equal(view.ready,true);assert.equal(view.reason,undefined);assert.ok(view.signature.includes('Loaded sheet'));
+  const probe=(await app.invoke({type:'diagnostics'})).lastPresentationProbe;
+  assert.equal(probe.expectedReady,true);assert.equal(probe.found,true);assert.equal(probe.stage,'done');assert.ok(probe.totalMs>=probe.visualMs);
 });

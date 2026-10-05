@@ -18,6 +18,8 @@ export type FlowNode = {
   params?: FlowParams;
   status: FlowStatus;
   reason?: string;
+  /** Local failure evidence only. Never send it to telemetry. */
+  failure?: {operation:string;detail?:string};
   image?: string;
   imageSourceHash?: string;
   captureMs?: number;

@@ -212,3 +212,23 @@ test('capture comparison counts verified automatic images once and separates UI 
   result=compareFlowCapture(graph,comparison,run,new Set(['home','step']));assert.equal(result.automaticCapturedViews,1);
   assert.throws(()=>compareFlowCapture(graph,comparison,{...run,sourceHash:'old'},new Set()),/source differs/);
 });
+
+
+test('an open controller cannot requeue its own captured preview during child discovery',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'preview-self-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+  const id='00000000-0000-0000-0000-000000000000';await mkdir(join(directory,id));
+  const action:any={id:'sheet',file:'App.tsx',line:1,owner:'App',component:'Sheet',prop:'',name:'Sheet',preview:true,effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};
+  const run:any={id,sourceHash:'source',revision:0,nodes:[],edges:[],presentations:{states:[],actions:[],previews:[action],previewStates:[]}};
+  const base:any={id:'entry',name:'Home',kind:'screen',path:[],required:[],status:'captured'};run.nodes.push(base);
+  let opened=false,shots=0;
+  const backend:any={screenshot:async()=>Buffer.from(`frame-${shots++}`),runtime:{async invoke(c:any){
+    if(c.type==='presentations')return [action];
+    if(c.type==='presentation-open')opened=true;
+    if(c.type==='presentation-rollback')opened=false;
+    return {key:opened?'sheet':'home',signature:opened?'sheet':'home',ready:true,found:true,active:[]};
+  }}};
+  const capture=new FlowPresentationCapture(run,directory,directory,new AbortController().signal,async()=>{});
+  await capture.explore(backend,base);const sheet=run.nodes[1];await capture.retry(backend,sheet);
+  assert.equal(sheet.status,'captured');assert.equal(sheet.captureAttempts,1);assert.ok(sheet.image);
+  assert.equal(run.nodes.length,2);assert.equal(run.edges.length,1);assert.equal(opened,false);
+});

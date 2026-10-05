@@ -68,12 +68,15 @@ heartbeats stop for 10 seconds. Navigation can still trigger ordinary app effect
 such as marking content read. It cannot undo
 those effects or arbitrary application state changes.
 
+At the same attempt count, newly found routes run before queued sheets.
 Presentation discovery shares one React tree lookup per check and reads fresh
 hook values on the next check. Source plans without a mounted, source-bound
 entry skip native layout checks. Related owners share native bounds within
 that synchronous lookup; the next lookup reads fresh bounds. Motion signatures
 read at most 24 accepted host rectangles and still check later hosts for native
-transition events. Retry status retains the fixed name of a failed runtime step.
+transition events. Retry status retains the fixed name of a failed runtime or device screenshot step.
+Local failure evidence preserves the bounded error detail. Presentation diagnostics
+separate focus, loading, transition, native motion and paint waits.
 Readiness stops measuring plain hosts after its 250-entry signature is full and
 visible content is proven. It still checks every later loader, initial query,
 heading and opacity animation. Host/content counts describe the sampled hosts.
@@ -107,6 +110,9 @@ wait. Each connection sends the fixed presentation plans once, then sends only
 new binding records. Repeated JSX instances share one exact creation-source match;
 lookup still checks each mounted owner and controller, so duplicate live controls
 remain ambiguous. Collection frees unmounted sources before adding new ones.
+Cleanup disables capture callbacks even when another observer retains a wrapper;
+that wrapper still forwards the app's original handler. Collection skips a forced
+render when current React hook metadata proves the owner has no state hooks.
 When Metro exposes an initialized module's owner export, hook collection uses
 that component identity. Private or unavailable exports keep the name fallback.
 It previews only presentation fields with finite source values.
@@ -121,10 +127,13 @@ hide. They do not create the backend state needed to use or submit a form.
 Mounted entries, disabled props, and simple prop conditions limit which transitions
 run. A controller must have one matching live instance and a matching close method.
 Ambiguous instances and opening arguments that require unknown data stay out.
+An open controller cannot requeue its own captured preview while discovering children.
 The runner follows nested views in place, captures each once, and connects it to
 its parent. It checks visible loading, opacity, native bounds, and available native
 show/state-change events. JavaScript portals match through React element props
-identity. Each branch restores its presentation fields and closes its sheets before
+identity. Expected components match within their logical owner and connected portal
+roots; pixel checks use the native body. One readiness sample shares a mounted index
+for these checks and preserves ancestor geometry and native completion events. Each branch restores its presentation fields and closes its sheets before
 continuing. Failed previews get two automatic retries; saved plans let **Retry**
 reopen the same entry route and presentation chain later.
 

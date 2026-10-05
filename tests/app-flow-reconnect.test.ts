@@ -141,3 +141,16 @@ test('route and presentation retries preserve the failed runtime step in their s
   assert.equal(route.status,'timed-out');assert.match(route.reason!,/opening a route/);assert.equal(route.captureAttempts,3);
   assert.equal(sheet.status,'timed-out');assert.match(sheet.reason!,/checking presentation readiness/);assert.equal(sheet.captureAttempts,3);
 });
+
+
+test('a native screenshot failure keeps its own step and local evidence',async t=>{
+  const {FlowRuntimeFailure}=await import('../src/server/app-flow/runtime-metrics.ts');
+  const g=graph();g.nodes=g.nodes.slice(0,1);
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>g,connect:async()=>({runtime:{async invoke(c){
+    if(c.type==='inspect')return {available:true};
+    return {ready:true,active:['Home'],name:'Home',signature:'Home',found:true};
+  },async close(){}},async screenshot(){throw new FlowRuntimeFailure('screenshot','failed','Screenshot failed with HTTP 503.')}})});
+  const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
+  const node=runs.read(run.id).nodes[0];assert.equal(node.status,'timed-out');assert.equal(node.captureAttempts,3);
+  assert.match(node.reason!,/device screenshot/);assert.deepEqual(node.failure,{operation:'screenshot',detail:'Screenshot failed with HTTP 503.'});
+});

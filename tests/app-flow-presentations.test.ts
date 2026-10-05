@@ -745,3 +745,98 @@ test('hook collection selects initialized source exports among same-named owners
   const page=await runtime.collect([{id:'state',file:'State.tsx',owner:'Provider'}] as any);
   assert.deepEqual(calls,[wanted]);assert.equal(page.bindings.length,1);assert.equal(runtime.diagnostics().lastScheduled,1);runtime.cleanup();
 });
+
+
+test('absent presentation plans inspect each live source once',()=>{
+  const app=tree();let reads=0;
+  for(let i=0;i<320;i++){
+    const source={fileName:'App.tsx',lineNumber:1,columnNumber:1};
+    app.root.child={...app.button,get _debugSource(){reads++;return source},sibling:app.root.child};
+  }
+  const absent=Array.from({length:500},(_,i)=>({...app.action,id:`absent-${i}`,file:'Other.tsx',line:i+1}));
+  configureFixture(app.runtime,{states:[],actions:absent});reads=0;
+  assert.deepEqual(app.runtime.list(app.root),[]);assert.equal(reads,320);
+  app.runtime.cleanup();
+});
+
+test('cleanup disables its commit observer when another observer wraps it',()=>{
+  const hook:any={renderers:new Map(),onCommitFiberRoot(){calls++}};let calls=0;
+  const app=tree(options=>installPresentationRuntime({...options,hook}));
+  app.runtime.open('open');const mapper=hook.onCommitFiberRoot;
+  hook.onCommitFiberRoot=(...args:any[])=>mapper(...args);
+  app.runtime.cleanup();
+  const props={onShow(){}};const canonical={currentProps:props};
+  app.sheet.child={tag:5,memoizedProps:props,stateNode:{canonical},return:app.sheet};
+  hook.onCommitFiberRoot();assert.equal(calls,1);assert.equal(canonical.currentProps,props);
+  assert.equal(app.runtime.diagnostics().nativeRecords,0,'An inactive observer cannot repopulate its records after cleanup');
+});
+
+test('native wrappers kept by another observer release their capture record',()=>{
+  const app=tree();let calls=0;
+  const original={onShow(){calls++}};const canonical={currentProps:original};
+  app.sheet.child={tag:5,memoizedProps:original,stateNode:{canonical},return:app.sheet};
+  app.runtime.open('open');const mapper=canonical.currentProps.onShow;
+  const external={onShow(event:any){mapper(event)}};canonical.currentProps=external;
+  app.runtime.cleanup();assert.equal(canonical.currentProps,external);
+  external.onShow({get nativeEvent(){assert.fail('A detached capture wrapper must forward without inspecting the event')}});
+  assert.equal(calls,1);assert.equal(app.runtime.diagnostics().nativeRecords,0);
+});
+
+test('hook collection does not force owners whose current render has no state hooks',async t=>{
+  const app=tree(),calls:any[]=[];app.root._debugHookTypes=['useContext','useRef'];
+  const react={createElement(){},useState(){},useReducer(){}};
+  const previous=(globalThis as any).__r;(globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}]])};t.after(()=>{(globalThis as any).__r=previous});
+  const hook={renderers:new Map([[1,{rendererPackageName:'react-native-renderer',scheduleUpdate(fiber:any){calls.push(fiber)}}]])};
+  const runtime=installPresentationRuntime({hook,fibers(visit:any){visit(app.root)},hidden:()=>false,later:setTimeout});
+  await runtime.collect([{id:'state',file:'App.tsx',owner:'App'}] as any);assert.deepEqual(calls,[]);runtime.cleanup();app.runtime.cleanup();
+});
+
+
+test('expected components remain scoped to the logical owner across a portal',()=>{
+  const app=tree(),props={children:'portal content'},element={type:function PortalBody(){},props};
+  app.sheet.child={type:function Portal(){},memoizedProps:{children:element},return:app.sheet};
+  const body:any={type:element.type,memoizedProps:props,return:app.root};app.sheet.sibling=body;
+  assert.equal(app.runtime.focusFor('PortalBody',app.sheet),body);
+  assert.equal(app.runtime.focusFor('Sheet',app.sheet),app.sheet);
+  assert.equal(app.runtime.focusFor('Sheet',body),undefined,'The visual body must not claim its disconnected owner');
+  assert.equal(app.runtime.focusFor('PortalBody',app.button),undefined,'Unrelated owners must not claim the portal');
+  app.runtime.cleanup();
+});
+
+test('newly discovered routes run before sheets at the same attempt count',async t=>{
+  const directory=await fixture(t,{}),events:string[]=[];let key='Home';
+  const action:any={id:'sheet',name:'Sheet',file:'Home.tsx',line:1,owner:'Home',component:'Button',prop:'onPress',effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};
+  const nodes:any[]=['Home','Search','Settings'].map(name=>({id:name,name,kind:'screen',path:[name],urls:[`/${name.toLowerCase()}`],required:[],status:'pending'}));
+  const runs=new AppFlowRuns({directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>({
+    screenshot:async()=>Buffer.from(key),runtime:{async close(){},async invoke(c:any){
+      if(c.type==='inspect')return {available:true,active:['Home'],entries:[['Home'],['Search']],registrations:nodes.map(n=>({name:n.name,path:n.path}))};
+      if(c.type==='open'){key=c.path.at(-1);events.push(key);return {ready:true,found:true,active:[key],signature:key,links:key==='Search'?['/settings']:[]};}
+      if(c.type==='presentations')return key==='Home'?[action]:[];
+      if(c.type==='presentation-open'){key='Sheet';events.push(key);}
+      if(c.type==='presentation-rollback')key='Home';
+      return {key,ready:true,found:true,active:[key],signature:key};
+    }}
+  })});
+  t.after(()=>runs.close());
+  const run=runs.start({projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'target',metroUrl:'http://127.0.0.1:8081',useAi:false});
+  for(let i=0;i<300&&flowRunning(runs.read(run.id));i++)await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(runs.read(run.id).phase,'complete');
+  assert.deepEqual(events.slice(0,4),['Home','Search','Settings','Home']);
+  assert.equal(events[4],'Sheet');
+  assert.ok(runs.read(run.id).nodes.every(n=>n.status==='captured'));
+});
+
+
+test('one presentation probe shares its mounted index and avoids scanning offscreen bodies for motion',()=>{
+  const app=tree();let outsideVisits=0;
+  const outside:any={type:function OtherScreen(){},memoizedProps:{},return:app.root};app.sheet.sibling=outside;
+  let tail=outside;
+  for(let i=0;i<400;i++){
+    const child:any={tag:5,type:'View',memoizedProps:{},return:outside,stateNode:{canonical:{publicInstance:{getBoundingClientRect(){outsideVisits++;return {x:0,y:0,width:100,height:100};}}}}};
+    if(tail===outside)outside.child=child;else tail.sibling=child;tail=child;
+  }
+  const probe=app.runtime.probeFocus(app.sheet,'Sheet');
+  assert.equal(probe.expectedReady,true);assert.equal(probe.visualFocus,app.sheet);
+  assert.equal(probe.motion().pending,false);assert.equal(outsideVisits,0);
+  app.runtime.cleanup();
+});

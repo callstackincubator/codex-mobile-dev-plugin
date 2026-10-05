@@ -5,7 +5,7 @@ const operations:Record<string,string>={
   install:'installing the inspector', binding:'connecting the inspector', heartbeat:'checking the connection',
   inspect:'reading navigation', resume:'resuming the inspector', recover:'restoring navigation', restore:'closing the inspector',
   open:'opening a route', verify:'checking a screenshot', observe:'observing the app',
-  diagnostics:'reading inspector diagnostics',
+  diagnostics:'reading inspector diagnostics', screenshot:'taking a device screenshot',
   'presentation-collect':'collecting presentation bindings', 'presentation-bindings':'reading presentation bindings',
   'presentation-configure':'binding presentation source', 'presentation-active':'reading presentation state',
   'presentation-symbolicate':'resolving presentation source',
