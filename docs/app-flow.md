@@ -266,3 +266,10 @@ Shared sheet wrappers that use the same live controller map one body. The mapper
 keeps each wrapper's source evidence without opening or closing that controller
 twice. For temporary iOS modal previews, cleanup sets visible to false while the
 modal remains mounted, waits for its native dismissal callback, then removes it.
+
+Native event observation reserves space for actual hosts when idle class wrappers
+fill its cache. It releases detached idle wrappers and waits for dismissal only
+when a boundary opened or is still opening. Restoring an inline panel does not
+wait for closed sheets declared inside that panel. Finite string and number UI
+selectors can use any field name; protected state and boolean visibility checks
+still apply. Previewing a selector does not supply missing data.

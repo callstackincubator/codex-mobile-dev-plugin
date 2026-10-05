@@ -4,7 +4,6 @@ import type {FlowPresentationAction,FlowPresentations,FlowStateSite} from '../..
 // Only finite presentation selectors become hook previews. Query results,
 // identity fields and request/submit flags remain evidence, never capture state.
 const protectedField=/token|password|secret|authorization|cookie|credential|authenticated|loggedin|signedin|session|identity|currentuser|accesskey|verified|captcha|challenge|account|mutation|submit|fetch|loading|pending|error|success|result|^data$|^status$|^(__proto__|constructor|prototype)$/i;
-const selectorField=/step|screen|view|form|stage|page|panel|dialog|modal|phase|^id$/i;
 const inlineBody=/^(?:View|Text|Button|Icon|Avatar|Fragment|ActivityIndicator)$|Skeleton|Shimmer|Loading|Spinner|EmptyState|ErrorMessage/;
 const destination=(action:FlowPresentationAction)=>JSON.stringify(action.effect.kind==='state'?[action.effect.site,action.effect.path,action.effect.value]:[action.file,action.owner,action.effect]);
 const id=(key:string)=>`preview-${createHash('sha256').update(key).digest('hex').slice(0,20)}`;
@@ -22,7 +21,8 @@ export function addSourcePreviewPlans(catalog:FlowPresentations) {
       if(!site?.hook||!field||view.state.path.some(part=>protectedField.test(part)||/^(?:auth|user)$/.test(part))||protectedField.test(field)||protectedField.test(site.valueName??'')||/^use.*(?:Session|Account|Auth|Query|Mutation)/.test(site.owner))continue;
       const value=view.state.value;
       if(!['string','number','boolean'].includes(typeof value)||typeof value==='number'&&!Number.isFinite(value))continue;
-      if(!selectorField.test(field))continue;
+      // The branch proves this finite value selects a UI body. Field spelling
+      // is not evidence; protected state and boolean visibility checks remain.
       if(typeof value==='boolean'&&!/open|visible|show|view|screen|dialog|modal/i.test(field))continue;
       if(!view.components.length||view.components.every(c=>inlineBody.test(c.component)))continue;
       const component=view.components.find(c=>!inlineBody.test(c.component)&&c.component!=='default')?.component??view.name;

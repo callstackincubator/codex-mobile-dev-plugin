@@ -1231,3 +1231,52 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
     await closing;assert.deepEqual(events,['shown','hidden','dismissed','removed']);assert.equal(runtime.checkpoint(),0);runtime.cleanup();app.runtime.cleanup();
   });
 }
+
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresentationRuntime)]){
+  test(`native hosts retain close events when idle adapters fill the observer cache (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+    const hook={renderers:new Map(),onCommitFiberRoot(){}},app=tree(options=>install({...options,hook}));
+    let tail=app.button,events=0;
+    const props={onStateChange(){events++}},instance={props};
+    for(let i=0;i<240;i++){
+      const idle:any={tag:1,type:function IdleAdapter(){},memoizedProps:props,stateNode:{props},return:app.root};
+      tail.sibling=idle;tail=idle;
+    }
+    tail.sibling=app.sheet;
+    const canonical={currentProps:props,publicInstance:{getBoundingClientRect:()=>({x:0,y:0,width:100,height:200})}};
+    const adapter:any={tag:1,type:function CachedAdapter(){},memoizedProps:props,stateNode:instance,return:app.sheet};
+    const host:any={tag:5,type:'NativeSheetHost',memoizedProps:props,stateNode:{canonical},return:adapter,child:app.nested};
+    app.control.open=()=>{
+      app.sheet.child=adapter;adapter.child=host;app.nested.return=host;
+      hook.onCommitFiberRoot();canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});
+    };
+    app.control.close=()=>{app.control.closes++;setTimeout(()=>canonical.currentProps.onStateChange({nativeEvent:{state:'closed'}}),20)};
+    app.runtime.open('open');assert.equal(app.runtime.diagnostics().nativeHosts,1);
+    assert.ok(app.runtime.diagnostics().nativeRecords<=200);assert.equal(app.runtime.motion(app.sheet).pending,false);
+    // Removing idle siblings releases their props without losing this close.
+    app.button.sibling=app.sheet;hook.onCommitFiberRoot();assert.ok(app.runtime.diagnostics().nativeRecords<=2);
+    app.runtime.focused(app.nested);const closing=app.runtime.rollback();
+    await new Promise(resolve=>setTimeout(resolve,5));assert.equal(app.runtime.diagnostics().dismissalWaiters,1);
+    await closing;assert.equal(app.runtime.checkpoint(),0);assert.equal(app.control.closes,1);assert.equal(events,2);
+    assert.equal(canonical.currentProps,props);app.runtime.cleanup();
+  });
+
+  test(`restoring an inline panel does not wait for its unopened native descendants (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    const app=tree();let state=false,current:any;
+    const setter=(update:any)=>{state=update(state);app.root.memoizedState={memoizedState:state,next:null}};
+    const react={createElement(){},useState(){return [state,setter]},useReducer(){}};
+    const previous=(globalThis as any).__r;(globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}]])};
+    t.after(()=>{(globalThis as any).__r=previous});
+    const props={onStateChange(){assert.fail('An idle child does not open or close')}};
+    const canonical={currentProps:props};app.nested.child={tag:5,type:'IdleNativeSheet',memoizedProps:props,stateNode:{canonical},return:app.nested};
+    const renderer={rendererPackageName:'react-native-renderer',getCurrentFiber:()=>current,scheduleUpdate(){current=app.root;app.root.memoizedState=null;react.useState();app.root.memoizedState={memoizedState:state,next:null};current=undefined}};
+    const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??app.root];while(stack.length){const fiber=stack.pop();if(fiber!==subtree&&fiber.sibling)stack.push(fiber.sibling);if(visit(fiber)!==false&&fiber.child)stack.push(fiber.child)}};
+    const runtime=install({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});t.after(()=>runtime.cleanup());
+    const site:any={id:'state',file:'App.tsx',line:1,column:0,endLine:1,owner:'App',paths:[[]]};
+    const page=await runtime.collect([site]);const binding=page.bindings.find(b=>b.kind==='useState');assert.ok(binding);
+    configureFixture(runtime,{states:[site],actions:[{...app.action,effect:{kind:'state',site:'state',path:[],value:true}}]},[{binding:binding.id,site:'state'}],page.bindings.map(b=>b.id));
+    runtime.open('open');assert.equal(state,true);runtime.focused(app.nested);
+    await runtime.rollback();assert.equal(state,false);assert.equal(runtime.checkpoint(),0);assert.equal(runtime.diagnostics().nativeRecords,0);
+    assert.equal(canonical.currentProps,props);app.runtime.cleanup();
+  });
+}

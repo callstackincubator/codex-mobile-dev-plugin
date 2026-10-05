@@ -276,3 +276,17 @@ test('unmounted previews use initialized exact data exports and keep each owner 
     app.host.memoizedProps={style:{display:'none'}};assert.deepEqual(app.runtime.list(),[]);
   }
 });
+
+
+test('finite UI body selectors do not depend on the hook field name',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'flow-preview-fields-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await writeFile(join(root,'App.tsx'),`import {useState} from 'react';enum Pane {People,Name}
+    export function App(){const [mode]=useState('people');return mode==='people'?<People/>:mode==='name'?<Name/>:null}
+    export function Group(){const [choice]=useState(Pane.People);return choice===Pane.People?<Members/>:choice===Pane.Name?<Title/>:null}
+    export function Request(){const [status]=useState('ready');return status==='ready'?<Form/>:<Receipt/>}
+    export function Account(){const [account]=useState({mode:'start'});return account.mode==='start'?<Welcome/>:<Profile/>}
+    export function Business(){const [enabled]=useState(false);return enabled?<Done/>:<Form/>}`);
+  const graph=await scanAppFlow(root,'ios');const plans=graph.presentations!.previews!.filter(p=>p.effect.kind==='state');
+  assert.deepEqual(plans.map(p=>p.name).sort(),['Members','Name','People','Title']);
+  assert.ok(plans.every(p=>p.owner==='App'||p.owner==='Group'));
+});

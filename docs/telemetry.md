@@ -380,3 +380,9 @@ Controller aliases share one open/close checkpoint; their source bindings stay
 local and refer to the same captured body. Temporary iOS modals hide while mounted,
 wait for onDismiss, then unmount. Existing presentation, restoration and runtime
 measurements cover these active paths with the same names, units and privacy rules.
+
+Since 0.1.152, native observation releases detached idle records and gives dispatch
+hosts priority within its existing bound. Dismissal waits exclude unopened child
+sheets. Finite UI selectors no longer depend on field spelling. Existing
+presentation, restoration, discovery and runtime timings cover these paths with
+the same names, milliseconds and privacy rules; no app content enters telemetry.

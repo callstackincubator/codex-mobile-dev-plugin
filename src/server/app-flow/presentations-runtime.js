@@ -482,8 +482,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return function(...args){
       if(record){
         const status=record.status,state=key==='onShow'?'open':key==='onDismiss'?'closed':args[0]?.nativeEvent?.state;
-        if(['closed','dismissed'].includes(state)){status.pending=false;status.closed=true;}
-        else if(['open','opened','presented'].includes(state)){status.closed=false;status.pending=!!status.closing;}
+        if(['closed','dismissed'].includes(state)){status.pending=false;status.closed=true;status.opened=false;}
+        else if(['open','opened','presented'].includes(state)){status.closed=false;status.opened=true;status.pending=!!status.closing;}
         else if(['opening','closing'].includes(state))status.pending=true;
       }
       return handler.apply(this,args);
@@ -500,23 +500,33 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   const inside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner?.alternate)return true;return false;};
   function watchNative(focus, pending = false, ancestors = false, mounting = false) {
+    const hosts=[],adapters=[],mounted=new Set();
     fibers(fiber=>{
       if(fiber.tag!==5&&fiber.tag!==1)return;
       const canonical=fiber.tag===1?fiber.stateNode:fiber.stateNode?.canonical,field=fiber.tag===1?'props':'currentProps',props=canonical?.[field];
       if(!props||typeof props.onShow!=='function'&&typeof props.onDismiss!=='function'&&typeof props.onStateChange!=='function')return;
+      mounted.add(canonical);(fiber.tag===5?hosts:adapters).push({fiber,canonical,field,props});
+    });
+    for(const [canonical,record]of nativeRecords)if(!mounted.has(canonical)&&!record.status.pending&&!record.status.opened){forgetNative(record);nativeRecords.delete(canonical);}
+    // Idle class wrappers must not fill the bound before a newly mounted host
+    // can receive native events. Keep active waiters and prefer dispatch hosts.
+    for(const {fiber,canonical,field,props}of [...hosts,...adapters]){
       const previous=nativeRecords.get(canonical);
-      if(previous?.patched===props){previous.fiber=fiber;return;}
-      if(nativeRecords.size>=200&&!previous)return;
-      const status=previous?.status??{pending:mounting&&typeof props.onShow==='function',closed:false,closing:false};
+      if(previous?.patched===props){previous.fiber=fiber;continue;}
+      if(nativeRecords.size>=200&&!previous){
+        const idle=fiber.tag===5&&[...nativeRecords.values()].find(record=>record.fiber?.tag===1&&!record.status.pending&&!record.status.opened);
+        if(!idle)continue;const key=idle.canonical;forgetNative(idle);nativeRecords.delete(key);
+      }
+      const status=previous?.status??{pending:mounting&&typeof props.onShow==='function',opened:props.visible===true,closed:false,closing:false};
       if(previous)forgetNative(previous);
       const record={canonical,field,fiber,original:props,status,detach:[]};
       const patched={...props};
       for(const key of ['onShow','onDismiss','onStateChange'])if(typeof props[key]==='function'){
         patched[key]=nativeHandler(key,props[key],record);
       }
-      record.patched=patched;try{canonical[field]=patched;}catch{forgetNative(record);nativeRecords.delete(canonical);return;}
+      record.patched=patched;try{canonical[field]=patched;}catch{forgetNative(record);nativeRecords.delete(canonical);continue;}
       nativeRecords.set(canonical,record);
-    });
+    }
     const targets=nativeTargets(focus,ancestors);
     if(pending)for(const record of targets){record.status.pending=true;record.status.closed=false;record.status.closing=false;}
     return targets;
@@ -541,7 +551,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return boundaries.filter(record=>!boundaries.some(other=>other!==record&&inside(record.fiber,other.fiber)));
   }
   function beginDismissal(entry,focus,ancestors=false) {
-    entry.native=watchNative(focus,false,ancestors).map(record=>record.status);
+    entry.native=watchNative(focus,false,ancestors).filter(record=>record.status.opened||record.status.pending).map(record=>record.status);
     for(const status of entry.native){status.closing=true;status.pending=true;status.closed=false;}
   }
   async function waitForDismissal(entry) {
