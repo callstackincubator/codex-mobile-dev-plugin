@@ -7,6 +7,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   let lastScheduled = 0, lastExactScheduled = 0, lastFallbackScheduled = 0, structureCache, sourceRoot;
   const portalEffects=new Map();let portalOwners=new WeakMap(),approvedPortals=new WeakSet(),syncingPortals=false;
   let previewRefs=new WeakSet(),containedImperativeHandles=0,containedSubscriptions=0;
+  const queryPatches=[],querySnapshots=new Map();let reusedQueryResults=0;
   let catalog = {states:[],actions:[]};
   const name = fiber => { const type=fiber.type?.render??fiber.type?.type??fiber.type;return type?.displayName??type?.name; };
   const current = () => {
@@ -48,6 +49,69 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       }
       return original(preview?()=>{}:callback,deps);
     };
+  }
+  function queryResultWrapper(original,readQuery,patchState) {
+    return function(options,...args){
+      const result=original.call(this,options,...args);if(!patchState.active)return result;
+      const fiber=current()?.fiber;
+      if(!fiber)return result;
+      let query;try{query=readQuery.call(this);}catch{return result;}
+      // An observer changing keys can still own its previous query. Only the
+      // exact current cache entry and representation can supply a real result.
+      const state=query&&Object.getOwnPropertyDescriptor(query,'state')?.value;
+      const hash=query&&Object.getOwnPropertyDescriptor(query,'queryHash')?.value;
+      const optionHash=options&&Object.getOwnPropertyDescriptor(options,'queryHash')?.value;
+      if(!state||typeof hash!=='string'||hash!==optionHash||!result||typeof result!=='object')return result;
+      const select=Object.getOwnPropertyDescriptor(options,'select')?.value;
+      const placeholder=Object.getOwnPropertyDescriptor(options,'placeholderData')?.value;
+      const enabled=Object.getOwnPropertyDescriptor(options,'enabled')?.value;
+      const records=querySnapshots.get(query)??[];
+      if(previewOwner(fiber)){
+        const matched=records.filter(record=>record.state===state&&record.select===select&&record.placeholder===placeholder&&record.enabled===enabled);
+        if(matched.length===1){
+          const snapshot=Object.getOwnPropertyDescriptors(matched[0].result),next=Object.getOwnPropertyDescriptors(result);
+          // Mount history may differ in a temporary instance. Every other data
+          // and status value must still agree with the current library read.
+          // Time-based staleness and changed observer options must not reuse an
+          // old ready result. Methods and promises belong to observer instances.
+          const keys=new Set([...Object.keys(snapshot),...Object.keys(next)]);
+          const same=[...keys].every(key=>{
+            if(['isFetchedAfterMount','refetch','promise'].includes(key))return true;
+            const a=snapshot[key],b=next[key];return a&&b&&'value'in a&&'value'in b&&a.value===b.value;
+          });
+          if(same){reusedQueryResults++;return matched[0].result;}
+        }
+        return result;
+      }
+      // Keep the plain framework result before trackResult creates a proxy.
+      // No accessor, query callback, fetch, subscription or cache write runs.
+      const descriptors=Object.getOwnPropertyDescriptors(result);
+      const value=key=>descriptors[key]&&'value'in descriptors[key]?descriptors[key].value:undefined;
+      if(value('data')===undefined||value('isPending')!==false||value('isFetching')!==false||value('isError')!==false||value('isPlaceholderData')!==false)return result;
+      const record={state,select,placeholder,enabled,result};
+      const kept=records.filter(previous=>previous.state===state&&!(previous.select===select&&previous.placeholder===placeholder&&previous.enabled===enabled));
+      kept.push(record);querySnapshots.delete(query);querySnapshots.set(query,kept.slice(-4));
+      if(querySnapshots.size>200)querySnapshots.delete(querySnapshots.keys().next().value);
+      return result;
+    };
+  }
+  function patchQueryResults() {
+    for(const module of globalThis.__r?.getModules?.()?.values?.()??[]){
+      if(!module.isInitialized||typeof module.verboseName!=='string'||!/(?:^|\/)@tanstack\/query-core\/(?:src|build\/[^/]+)\/queryObserver\.[cm]?[jt]s$/.test(modulePath(module.verboseName)))continue;
+      const exports=module.publicModule?.exports,descriptor=exports&&Object.getOwnPropertyDescriptor(exports,'QueryObserver');
+      const prototype=descriptor&&'value'in descriptor&&descriptor.value?.prototype;
+      if(!prototype||queryPatches.some(patch=>patch.prototype===prototype))continue;
+      const method=Object.getOwnPropertyDescriptor(prototype,'getOptimisticResult');
+      const read=Object.getOwnPropertyDescriptor(prototype,'getCurrentQuery');
+      if(!method?.writable||typeof method.value!=='function'||typeof read?.value!=='function')continue;
+      const original=method.value,state={active:true},wrapped=queryResultWrapper(original,read.value,state);
+      try{Object.defineProperty(prototype,'getOptimisticResult',{...method,value:wrapped});}catch{continue;}
+      queryPatches.push({prototype,descriptor:method,original,wrapped,state});
+    }
+  }
+  function unpatchQueryResults(){
+    for(const patch of queryPatches){patch.state.active=false;if(Object.getOwnPropertyDescriptor(patch.prototype,'getOptimisticResult')?.value===patch.wrapped)Object.defineProperty(patch.prototype,'getOptimisticResult',patch.descriptor);}
+    queryPatches.length=0;querySnapshots.clear();reusedQueryResults=0;
   }
   function patchHooks() {
     if(patches.length)return true;
@@ -147,7 +211,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   async function collect(states = catalog.states, actions = catalog.actions, projectRoot = sourceRoot) {
     if(typeof projectRoot==='string')sourceRoot=modulePath(projectRoot).replace(/\/$/,'');
-    catalog={states,actions};lastScheduled=lastExactScheduled=lastFallbackScheduled=0;
+    catalog={states,actions};lastScheduled=lastExactScheduled=lastFallbackScheduled=0;patchQueryResults();
     if(!patchHooks())return records(0);
     try {
       const mounted=new Set(committedStructure().all);
@@ -909,7 +973,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80,resolve));
   }
-  function cleanup(){sourceRoot=undefined;nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){sourceRoot=undefined;nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[]) {
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&tree.isVisible(fiber));
     const unique=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner)));
@@ -925,6 +989,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const connected=roots(currentFocus,tree);
     return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:viewport=>motion(currentFocus,viewport,tree,connected)};
   }
-  const diagnostics=()=>({lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  const diagnostics=()=>({lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,reusedQueryResults,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
   return {collect,records,configure,list,open,portalBindings,previewPortals,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

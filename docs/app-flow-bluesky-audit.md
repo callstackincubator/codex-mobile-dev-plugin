@@ -1,25 +1,31 @@
 # Bluesky source inventory and extraction comparison
 
-The reviewed list contains **260 distinct views**. Plugin 0.1.163 has a distinct source match for **all 260**. There are no missing, container-only or ambiguous reference rows. The comparison has a strict mode that fails if any reviewed view loses its match.
+The reviewed list contains **260 distinct views**. Plugin 0.1.164 has a distinct source match for **all 260**. There are no missing, container-only or ambiguous reference rows. The comparison has a strict mode that fails if any reviewed view loses its match.
 
 Of the 260 matches, **164 have a route or UI action**, **81 have UI preview plans**, and **15 have source evidence only**. That gives 245 views with a planned capture path. Plans still need live source bindings, real data and settled content. They do not establish that 245 screenshots can be taken in the current session.
 
-This audit uses the clean iOS checkout at `2d8e349afd92d2be3ff31f298bc27ab0d82c61cc`. The 0.1.163 scan read 2,371 files in 4.01 seconds. The comparison does not change or execute target app code.
+This audit uses the clean iOS checkout at `2d8e349afd92d2be3ff31f298bc27ab0d82c61cc`. The 0.1.164 scan retains the same 2,371-file inventory. The comparison does not change or execute target app code.
 
-The latest live attempt used 0.1.162, run
-`37232018-1ae9-486c-a9f0-da2abee2cd2e`. It saved automatic PNGs for
-**101 of 260 reviewed views**, 77 live views and 24 UI previews. The map has
-121 raw screenshots; those do not count as 121 reviewed views. The attempt
-stopped after repeated runtime failures, including 18 installation timeouts and
-37 missed heartbeats. It did not complete the full test.
+The latest live attempt used 0.1.163, run
+`90d853d2-0e9e-41c5-8499-b127b7df8fd8`. It saved automatic PNGs for
+**79 of 260 reviewed views**, 65 live views and 14 UI previews. The map has
+91 raw screenshots. It stopped after 605.9 seconds with repeated runtime
+readiness and restoration failures. This was an incomplete attempt, not a
+full coverage result. The first sampling window recorded app physical footprint
+rising from 0.83 to 2.61 GB, with mean CPU of 70.2 percent. Simulator Display FPS
+was unavailable. Those samples do not prove a memory leak or its cause.
 
-Version 0.1.163 binds private hook owners through their JSX source before forcing
-a render. It also avoids scans of unrelated same-named sheet instances, reuses a
-sibling sheet's base only after native restoration and a fresh matching view,
-and contains temporary external-store subscriptions while keeping the original
-app's subscription. All 318 App Flow and telemetry behavior tests pass. The new
-source scan retains all 260 matches and 245 planned paths. Live capture coverage
-and speed for 0.1.163 remain unverified.
+Version 0.1.164 lets temporary forms reuse an exact settled TanStack Query
+result already observed in the live app. The cache entry, current cache state,
+selection, placeholder, enabled condition and other data/status fields must
+still match. It adds no fetch, subscription or cache write. The app retains its
+own query subscriptions, and cleanup restores the framework method. A test
+against the app's actual QueryObserver implementation fails on the old runtime
+and passes with this fix in normal and shared loop execution. All 322 App Flow,
+telemetry and release behavior tests pass. Live capture coverage and speed for
+0.1.164 remain unverified. Required preview props, reducer data payloads and
+cold-query inputs still need broader real-data resolution; the AI-facing
+resolver currently accepts navigator params only.
 
 The saved 0.1.136 run `4e553412-6f1f-49a1-a036-a154a48b2088` has verified
 automatic screenshots for **2 of 260 views**, Home and Search. It has no captured

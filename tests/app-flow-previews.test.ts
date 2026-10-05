@@ -492,3 +492,61 @@ test('finite UI body selectors do not depend on the hook field name',async t=>{
   assert.deepEqual(plans.map(p=>p.name).sort(),['Members','Name','People','Title']);
   assert.ok(plans.every(p=>p.owner==='App'||p.owner==='Group'));
 });
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`temporary query reads reuse only a current settled result (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    const query:any={queryHash:'record',state:{data:{id:'real-record'}}};
+    const observed={data:query.state.data,isPending:false,isFetching:false,isError:false,isPlaceholderData:false,isFetchedAfterMount:true};
+    let cold={...observed,isFetchedAfterMount:false};
+    let reads=0,temporary=false;
+    class QueryObserver {
+      getCurrentQuery(){return query}
+      getOptimisticResult(_options:any){reads++;return temporary?cold:observed}
+    }
+    const original=QueryObserver.prototype.getOptimisticResult;
+    const app=runtimeFixture(t,false,install,{modules:[[3,{verboseName:'node_modules/@tanstack/query-core/build/modern/queryObserver.js',isInitialized:true,publicModule:{exports:{QueryObserver}}}]]});
+    await configure(app);const observer=new QueryObserver(),options={queryHash:'record'};
+    app.setCurrent(app.owner);assert.equal(observer.getOptimisticResult(options),observed);app.setCurrent(undefined);
+    assert.equal(app.runtime.open('preview').error,undefined);
+    temporary=true;app.setCurrent(app.clone);const before=reads;
+    assert.equal(observer.getOptimisticResult(options),observed,'Reuse the exact real result, including its actual lifecycle flags');
+    assert.equal(reads,before+1,'Only the ordinary library read runs');
+    assert.equal(app.runtime.diagnostics().reusedQueryResults,1);
+    const unchanged=cold;cold={...cold,data:{id:'changed-data'}};
+    assert.equal(observer.getOptimisticResult(options),cold,'Changed data cannot borrow a previous ready result');cold=unchanged;
+    assert.equal(observer.getOptimisticResult({...options,select:()=>{throw Error('never select')}}),cold,'Different selection cannot borrow another representation');
+    assert.equal(observer.getOptimisticResult({...options,placeholderData:{id:'other'}}),cold,'Different placeholder data keeps its own result');
+    assert.equal(observer.getOptimisticResult({...options,enabled:false}),cold,'A different enabled condition keeps its own result');
+    query.state={data:query.state.data};
+    assert.equal(observer.getOptimisticResult(options),cold,'A changed cache state invalidates the observed result');
+    assert.equal(observer.getOptimisticResult({queryHash:'other-record'}),cold,'A changing query key cannot borrow the old observer result');
+    app.setCurrent(undefined);await app.runtime.rollback(0,false);app.runtime.cleanup();
+    assert.equal(QueryObserver.prototype.getOptimisticResult,original);
+    assert.equal(app.runtime.diagnostics().querySnapshots,0);
+    assert.equal(app.runtime.diagnostics().reusedQueryResults,0);
+  });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`query observation stays bounded and detaches through a later wrapper (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    class QueryObserver {
+      query:any;result:any;
+      constructor(index:number){this.query={queryHash:String(index),state:{data:{id:index}}};this.result={data:this.query.state.data,isPending:false,isFetching:false,isError:false,isPlaceholderData:false};}
+      getCurrentQuery(){return this.query}
+      getOptimisticResult(_options:any){return this.result}
+    }
+    const original=QueryObserver.prototype.getOptimisticResult;
+    const app=runtimeFixture(t,false,install,{modules:[[3,{verboseName:'node_modules/@tanstack/query-core/src/queryObserver.ts',isInitialized:true,publicModule:{exports:{QueryObserver}}}]]});
+    await configure(app);app.setCurrent(app.owner);
+    for(let index=0;index<220;index++){const observer=new QueryObserver(index);observer.getOptimisticResult({queryHash:observer.query.queryHash});}
+    assert.equal(app.runtime.diagnostics().querySnapshots,200);
+    const wrapped=QueryObserver.prototype.getOptimisticResult;
+    const replacement=function(this:QueryObserver,options:any){return wrapped.call(this,options)};
+    QueryObserver.prototype.getOptimisticResult=replacement;
+    app.runtime.cleanup();assert.equal(QueryObserver.prototype.getOptimisticResult,replacement,'Cleanup preserves a later framework observer');
+    const observer=new QueryObserver(999);assert.equal(observer.getOptimisticResult({queryHash:'999'}),observer.result);
+    assert.equal(app.runtime.diagnostics().querySnapshots,0,'A forwarded old wrapper cannot collect after cleanup');
+    assert.equal(app.runtime.diagnostics().reusedQueryResults,0);
+    app.setCurrent(undefined);QueryObserver.prototype.getOptimisticResult=original;
+  });
+}

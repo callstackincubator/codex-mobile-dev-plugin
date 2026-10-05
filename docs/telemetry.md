@@ -502,3 +502,14 @@ for owner identity and then for its hook sites. Existing setup and command
 timings include both passes. Their names, units and enclosing boundaries stay
 the same; per-command counts can rise because setup now verifies private owners
 first. Source locations and component identities remain local.
+
+Since 0.1.164, temporary forms can reuse a real settled TanStack Query result
+when its exact cache entry, current cache state, selection, placeholder, enabled
+condition and remaining data/status fields still agree. The mapper keeps at most
+200 entries with four representations each, releases them on runtime cleanup,
+and restores the original framework method. It does not fetch, subscribe, write
+the cache or invent a request result. Existing presentation setup, readiness,
+capture and restoration timing windows include this work with the same names
+and units. Snapshot count and reuse count are local diagnostics only. Query
+keys, values, methods, IDs and source paths remain inside the app runtime and
+never enter telemetry.
