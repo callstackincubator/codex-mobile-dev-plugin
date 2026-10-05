@@ -104,7 +104,12 @@ The runner binds hook calls and JSX entries to exact source locations through Me
 React hook exports stay wrapped for one bounded render pass, then return to their
 original functions, including when collection throws or a recovery cancels its
 wait. Each connection sends the fixed presentation plans once, then sends only
-new binding records. It previews only presentation fields with finite source values.
+new binding records. Repeated JSX instances share one exact creation-source match;
+lookup still checks each mounted owner and controller, so duplicate live controls
+remain ambiguous. Collection frees unmounted sources before adding new ones.
+When Metro exposes an initialized module's owner export, hook collection uses
+that component identity. Private or unavailable exports keep the name fallback.
+It previews only presentation fields with finite source values.
 Injected wrappers keep separate function scopes so Hermes preserves each hook
 primitive and native completion handler.
 It does not change auth/session fields, create accounts, sign out, type fake input,

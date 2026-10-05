@@ -664,3 +664,32 @@ test('CDP binding replies turn a fatal app error into a fixed capture failure',a
   await assert.rejects(connection.invoke({type:'verify'}),error=>error instanceof FlowAppFailure&&error.operation==='verify'&&error.detail===undefined);
   await connection.close();
 });
+
+
+test('readiness diagnostics separate native layout work from the tree scan',async t=>{
+  const app=runtime(t);
+  await app.invoke({type:'verify',name:'Home'});
+  const {lastProbe}=await app.invoke({type:'diagnostics'});
+  assert.equal(lastProbe.layoutReads,1);assert.equal(lastProbe.opacityReads,0);assert.equal(lastProbe.fibers,2);
+  assert.ok(lastProbe.totalMs>=lastProbe.layoutMs);assert.equal(Object.keys(lastProbe).length,5);
+});
+
+
+test('a detached busy navigator cannot keep its replacement waiting forever',async t=>{
+  const app=runtime(t),listeners=new Map<string,()=>void>(),removed:string[]=[];
+  (app.navigation as any).addListener=(event:string,listener:()=>void)=>{listeners.set(event,listener);return ()=>removed.push(event)};
+  await app.invoke({type:'inspect'});listeners.get('transitionStart')!();
+  app.fiber.memoizedProps.navigation={...app.navigation,addListener(){return ()=>{}}};
+  const opened=await app.invoke({type:'open',path:['Profile'],timeoutMs:500});
+  assert.equal(opened.ready,true);assert.deepEqual(removed,['transitionStart','transitionEnd']);
+});
+
+test('a mounted native transition still blocks readiness until its end event',async t=>{
+  const app=runtime(t),listeners=new Map<string,()=>void>();
+  (app.navigation as any).addListener=(event:string,listener:()=>void)=>{listeners.set(event,listener);return ()=>{}};
+  await app.invoke({type:'inspect'});listeners.get('transitionStart')!();
+  let completed=false;
+  const timer=setTimeout(()=>{completed=true;listeners.get('transitionEnd')!()},160);t.after(()=>clearTimeout(timer));
+  const opened=await app.invoke({type:'open',path:['Profile'],timeoutMs:700});
+  assert.equal(completed,true);assert.equal(opened.ready,true);assert.ok(opened.readinessMs>=160);
+});

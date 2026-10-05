@@ -208,6 +208,13 @@ inspector count read; its result stays local. Readiness and presentation timings
 still include the full check after plain-host and unrelated-owner layout reads
 are skipped. Host/content counts now describe the readiness sample, rather than
 all visible hosts. Those counts are not telemetry measurements.
+Since 0.1.144, local diagnostics also separate the latest readiness check's tree
+count, native layout reads/time and opacity reads. They include unique JSX source
+and live-instance counts, plus the last hook render count. These fixed numeric
+results stay local. Existing runtime, binding, discovery and readiness metrics
+still measure the active paths after source deduplication and exact owner lookup.
+Names, units, surface attribution and cleanup stay unchanged.
+
 Since 0.1.140, presentation lookup rejects absent source-bound entries before
 checking native layout and shares native bounds within one synchronous lookup.
 The existing `presentations` runtime round trip and presentation discovery

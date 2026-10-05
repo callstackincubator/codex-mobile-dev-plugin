@@ -88,7 +88,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
     }
   }
   const presentations = presentationFactory?.({ hook, fibers, hidden: props => hidden(props), later });
-  let presentationFocus, presentationObservation, presentationExpected;
+  let presentationFocus, presentationObservation, presentationExpected, lastProbe;
   const presentationFrames = [];
   function navigation(value) {
     if (!value || typeof value !== 'object' || typeof value.getState !== 'function' || typeof value.dispatch !== 'function') return;
@@ -204,6 +204,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
   }
   function visualSignature(name, wholeApp = false, focus) {
     let hosts = 0, content = 0, screen = focus, loadingReason, bounds, title;
+    const started=Date.now(),probe={fibers:0,layoutReads:0,layoutMs:0,opacityReads:0,totalMs:0};
     const signature = [], motion = [], motionSources = new Set(), motionStyles = new Set(), components = new Set();
     if (!wholeApp) fibers(fiber => {
       const props = fiber.memoizedProps;
@@ -245,7 +246,11 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
       let result;
       try {
         const native = fiber.stateNode?.canonical?.publicInstance ?? fiber.stateNode;
-        const value = native?.getBoundingClientRect?.();
+        let value;
+        if(typeof native?.getBoundingClientRect==='function'){
+          probe.layoutReads++;const before=Date.now();
+          try{value=native.getBoundingClientRect();}finally{probe.layoutMs+=Date.now()-before;}
+        }
         if (value && value.width > 0 && value.height > 0) result = value;
       } catch { /* Older renderers do not expose native bounds. */ }
       rects.set(fiber,result); return result;
@@ -317,6 +322,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
           if (motionSources.has(source) || motionSources.size >= 32) continue;
           motionSources.add(source);
           try {
+            probe.opacityReads++;
             const value = typeof source.getSync === 'function' ? source.getSync() : source.value;
             if (typeof value === 'number' && Number.isFinite(value)) motion.push(value);
           } catch { /* A detached animated view may no longer expose its value. */ }
@@ -324,6 +330,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
       }
     };
     if (screen || wholeApp) fibers(fiber => {
+      probe.fibers++;
       const props = fiber.memoizedProps;
       if (inactive(fiber)) return false;
       if (props?.style) animatedOpacity(fiber);
@@ -367,6 +374,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
       if (text || props.source || props.src || props.accessibilityLabel) content++;
       if (signature.length < 250) signature.push([typeof fiber.type === 'string' ? fiber.type : '', text, !!props.source]);
     }, screen);
+    probe.totalMs=Date.now()-started;lastProbe=probe;
     if (motion.length) signature.push(['opacity', motion]);
     return { found: wholeApp ? hosts > 0 : !!screen, loading: !!loadingReason, loadingReason, hosts, content, bounds, motion: motion.length ? JSON.stringify(motion) : undefined, title: typeof title === 'string' ? title.slice(0, 80) : undefined, components: wholeApp ? [...components] : undefined, signature: JSON.stringify(signature) };
   }
@@ -446,7 +454,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         if (command.type === 'heartbeat') { reply({ alive: true }); return; }
         if (command.type === 'diagnostics') {
           let mountedFibers=0,mountedHosts=0;fibers(fiber=>{mountedFibers++;if(fiber.tag===5)mountedHosts++;});
-          reply({mountedFibers,mountedHosts,transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,presentations:presentations?.diagnostics?.()});return;
+          reply({mountedFibers,mountedHosts,transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,presentations:presentations?.diagnostics?.()});return;
         }
         if (command.type === 'observe') { reply(observe()); return; }
         if (observing) { reply({ error: 'Recording observes screens; navigation commands are disabled.' }); return; }
@@ -558,6 +566,10 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
           if (!matches || !visual.found || !visual.hosts || visual.loading || visual.signature !== previous) { quietSince = now; painted = false; painting = false; paintTicket++; }
           previous = visual.signature;
           if (matches && visual.found && !watched) { visible(); watched = true; }
+          // A native reset can unmount a busy navigator before transitionEnd.
+          // Refresh subscriptions while busy so detached listeners cannot hold
+          // readiness forever; mounted transitions must still finish.
+          if ([...transitions.values()].some(record => record.busy)) visible();
           const transitioning = [...transitions.values()].some(record => record.busy);
           if (transitioning) { quietSince = now; painted = false; painting = false; paintTicket++; }
           if (now - quietSince >= 80 && visual.content && !transitioning && now - transitionAt >= 32) {

@@ -3,7 +3,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   let sequence = 0, owners = new WeakMap(), collecting = new Set();
   const bindings = new Map(), patches = [], effectPatches = [], undo = [];
   let collected = [];
-  const entries = new Map(); let entrySources = new WeakMap();
+  const entries = new Map(), entryKeys = new Map(); let entrySources = new WeakMap();
+  let lastScheduled = 0;
   let catalog = {states:[],actions:[]};
   const name = fiber => { const type=fiber.type?.render??fiber.type?.type??fiber.type;return type?.displayName??type?.name; };
   const current = () => {
@@ -20,7 +21,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       args=kind==='useReducer'?[args[0],value,()=>value]:[()=>value];
     }
     const result=original(...args);
-    if(!collecting.has(name(live.fiber)))return result;
+    if(!collecting.has(live.fiber)&&!collecting.has(live.fiber.alternate))return result;
     if(!Array.isArray(result)||typeof result[1]!=='function')return result;
     let record=owners.get(live.fiber)??owners.get(live.fiber.alternate);
     if(!record){record=new Map();owners.set(live.fiber,record);}else owners.set(live.fiber,record);
@@ -68,25 +69,51 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return true;
   }
   function unpatchPreviewEffects(){for(const p of effectPatches)if(p.react[p.key]===p.wrapped)p.react[p.key]=p.original;effectPatches.length=0;}
+  function collectionTargets(states) {
+    const targets=new Map(), modules=globalThis.__r?.getModules?.();
+    const initialized=new Map();
+    for(const module of modules?.values?.()??[]){
+      if(module.isInitialized&&typeof module.verboseName==='string')initialized.set(module.verboseName.replaceAll('\\','/').replace(/^\.\//,''),module.publicModule?.exports);
+    }
+    for(const site of states)for(const owner of new Set([site.owner,...(site.owners??[])])){
+      const target=targets.get(owner)??{types:new Set(),fallback:false};
+      const exports=initialized.get(site.file), matches=[];
+      // Read data exports only. Never initialize a project module or invoke a
+      // getter to identify one of several unrelated same-named Providers.
+      const descriptors=exports&&(typeof exports==='object'||typeof exports==='function')?Object.getOwnPropertyDescriptors(exports):{};
+      for(const [key,descriptor]of Object.entries(descriptors)){
+        if(!('value'in descriptor))continue;
+        const type=descriptor.value;
+        const data=key=>{if(!type||(typeof type!=='object'&&typeof type!=='function'))return;const d=Object.getOwnPropertyDescriptor(type,key);return d&&'value'in d?d.value:undefined;};
+        const body=data('render')??data('type')??type;
+        if((key===owner||body?.displayName===owner||body?.name===owner)&&typeof body==='function')matches.push(type,body);
+      }
+      if(typeof exports==='function'&&exports.name===owner)matches.push(exports);
+      if(matches.length)for(const type of matches)target.types.add(type);else target.fallback=true;
+      targets.set(owner,target);
+    }
+    return targets;
+  }
   async function collect(states = catalog.states, actions = catalog.actions) {
-    catalog={states,actions};
+    catalog={states,actions};lastScheduled=0;
     if(!patchHooks())return records(0);
     try {
       const mounted=new Set();fibers(fiber=>mounted.add(fiber));
       for(const [id,binding]of bindings)if(!mounted.has(binding.fiber)&&!mounted.has(binding.fiber.alternate))bindings.delete(id);
       const tracked=fiber=>{const record=owners.get(fiber)??owners.get(fiber.alternate);return record&&[...record.values()].some(id=>bindings.has(id));};
-      const targets=new Set(states.flatMap(site=>[site.owner,...(site.owners??[])])),missing=new Set();
-      for(const fiber of mounted){if(fiber.tag===14)continue;const owner=name(fiber);if(targets.has(owner)&&!tracked(fiber))missing.add(owner);}
-      const names=collecting=missing;
-      if(!names.size)return records(0);
-      const scheduled=new Set();
-      fibers(fiber=>{
-        if(!names.has(name(fiber))||scheduled.has(fiber))return;
+      const targets=collectionTargets(states);
+      for(const fiber of mounted){
+        if(fiber.tag===14||tracked(fiber))continue;
+        const target=targets.get(name(fiber));
+        if(target&&(target.fallback||target.types.has(fiber.type)||target.types.has(fiber.elementType)))collecting.add(fiber);
+      }
+      if(!collecting.size)return records(0);
+      for(const fiber of collecting){
         for(const renderer of hook.renderers.values())if(renderer.rendererPackageName==='react-native-renderer'&&typeof renderer.scheduleUpdate==='function'){
-          scheduled.add(fiber);try{renderer.scheduleUpdate(fiber);}catch{}break;
+          try{renderer.scheduleUpdate(fiber);lastScheduled++;}catch{}break;
         }
-      });
-      if(scheduled.size)await new Promise(resolve=>later(resolve,80,resolve));
+      }
+      if(lastScheduled)await new Promise(resolve=>later(resolve,80,resolve));
       // Hooks stay patched only through this bounded render pass. No background
       // observer, timer, dispatcher replacement, or app source change remains.
       return records(0);
@@ -99,8 +126,15 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // JSX creation stacks identify the actual entry, even when unrelated
     // components and callbacks have identical names. Never invoke the callback.
     const targets=new Map();for(const action of catalog.actions){for(const [component,owner]of [[action.component,action.owner],...(action.effect.kind==='control'&&action.effect.target?[[action.effect.component,action.effect.target.owner]]:[]),...(action.consumer?.entries??[]).map(entry=>[action.consumer.component,entry.owner])]){const names=targets.get(component)??new Set();names.add(owner);targets.set(component,names);}}
-    const mounted=new Set();fibers(fiber=>{mounted.add(fiber);const names=targets.get(name(fiber));if(!names)return;for(let parent=fiber.return,n=0;parent&&n++<100;parent=parent.return)if(names.has(name(parent))){entry(fiber);break;}});
-    for(const [id,record]of entries)if(!mounted.has(record.fiber)&&!mounted.has(record.fiber.alternate))entries.delete(id);
+    const mounted=new Set(), candidates=[];
+    fibers(fiber=>{mounted.add(fiber);const names=targets.get(name(fiber));if(!names)return;for(let parent=fiber.return,n=0;parent&&n++<100;parent=parent.return)if(names.has(name(parent))){candidates.push(fiber);break;}});
+    // Free stale sites before adding newly mounted ones. Repeated JSX instances
+    // share source evidence, but lookup still checks each live owner/control.
+    for(const [id,record]of entries){
+      if(![...record.fibers].some(fiber=>mounted.has(fiber)||mounted.has(fiber.alternate))){entries.delete(id);entryKeys.delete(record.key);record.fiber=undefined;}
+      record.fibers.clear();
+    }
+    for(const fiber of candidates)entry(fiber);
     collected=[...bindings.values(),...entries.values()].filter(b=>!b.site&&!b.checked).map(b=>({id:b.id,kind:b.kind,owner:name(b.fiber),stack:(b.stack??'').slice(0,8000),source:b.source}));
     return page(0);
   }
@@ -108,8 +142,21 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   function entry(fiber){
     const source=fiber._debugStack??fiber._debugSource;if(!source||typeof source!=='object')return;
     let record=entrySources.get(source);
-    if(!record&&entries.size<1500){record={id:`entry-${++sequence}`,kind:'entry',fiber,stack:source.stack,source:!source.stack?{file:source.fileName,line:source.lineNumber,column:Math.max(0,(source.columnNumber??1)-1)}:undefined,actions:new Set()};entrySources.set(source,record);entries.set(record.id,record);}
-    if(record){record.fiber=fiber;entries.set(record.id,record);}return record;
+    if(record&&entries.get(record.id)!==record){
+      const existing=entryKeys.get(record.key);
+      if(existing)record=existing;
+      else if(entries.size<1500){entries.set(record.id,record);entryKeys.set(record.key,record);}
+      else record=undefined;
+    }
+    if(!record){
+      const stack=typeof source.stack==='string'?source.stack.slice(0,8000):undefined;
+      const location=!stack?{file:source.fileName,line:source.lineNumber,column:Math.max(0,(source.columnNumber??1)-1)}:undefined;
+      const key=JSON.stringify([name(fiber),stack??location]);
+      record=entryKeys.get(key);
+      if(!record&&entries.size<1500){record={id:`entry-${++sequence}`,key,kind:'entry',fiber,stack,source:location,actions:new Set(),fibers:new Set()};entryKeys.set(key,record);entries.set(record.id,record);}
+      if(record)entrySources.set(source,record);
+    }
+    if(record){record.fiber=fiber;record.fibers.add(fiber);}return record;
   }
   function configure(next=catalog,matches,checked=[]){catalog=next;for(const match of matches){const binding=bindings.get(match.binding);if(binding)binding.site=match.site;else entries.get(match.binding)?.actions.add(match.site);}for(const id of checked){const binding=bindings.get(id)??entries.get(id);if(binding)binding.checked=true;}}
   const descendants = (fiber,callback) => fibers(callback,fiber);
@@ -418,7 +465,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80));
   }
-  function cleanup(){for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;clearNative();unpatch();unpatchPreviewEffects();bindings.clear();entries.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
-  const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativePending:[...nativeRecords.values()].filter(r=>r.pending).length,checkpoints:undo.length,projections:projected.length});
+  function cleanup(){for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;clearNative();unpatch();unpatchPreviewEffects();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativePending:[...nativeRecords.values()].filter(r=>r.pending).length,checkpoints:undo.length,projections:projected.length});
   return {collect,records,configure,list,open,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, focusFor:(name_,scope)=>{const tree=index();const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||tree.inside(fiber,scope)||tree.inside(fiber,scope.alternate))&&tree.isVisible(fiber));const unique=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner)));return unique.length===1?unique[0]:undefined;}, focused:focus=>{if(undo.length)undo[undo.length-1].focus=focus;}, checkpoint:()=>undo.length};
 }

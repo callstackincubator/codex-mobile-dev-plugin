@@ -293,12 +293,12 @@ test('a failed tree collection always restores the original hook exports',async 
 
 test('presentation binding pages keep one snapshot while new entries mount',()=>{
   const app=tree();let walks=0;
-  for(let index=0;index<120;index++)app.root.child={type:app.button.type,return:app.root,sibling:app.root.child,_debugSource:{fileName:'App.tsx',lineNumber:1,columnNumber:1},memoizedProps:app.button.memoizedProps};
+  for(let index=0;index<120;index++)app.root.child={type:app.button.type,return:app.root,sibling:app.root.child,_debugSource:{fileName:'App.tsx',lineNumber:index+2,columnNumber:1},memoizedProps:app.button.memoizedProps};
   const fibers=(visit:any)=>{walks++;const stack=[app.root];while(stack.length){const fiber=stack.pop();if(fiber.sibling)stack.push(fiber.sibling);if(visit(fiber)!==false&&fiber.child)stack.push(fiber.child)}};
   const runtime=installPresentationRuntime({hook:{renderers:new Map()},fibers,hidden:()=>false,later:setTimeout});
   runtime.configure({states:[],actions:[app.action]},[]);
   const first=runtime.records(0);assert.equal(first.bindings.length,100);
-  app.root.child={type:app.button.type,return:app.root,sibling:app.root.child,_debugSource:{fileName:'App.tsx',lineNumber:1,columnNumber:1},memoizedProps:app.button.memoizedProps};
+  app.root.child={type:app.button.type,return:app.root,sibling:app.root.child,_debugSource:{fileName:'App.tsx',lineNumber:123,columnNumber:1},memoizedProps:app.button.memoizedProps};
   const next=runtime.records(first.next);
   assert.equal(walks,1);assert.equal(next.bindings.length,21);
   assert.equal(new Set([...first.bindings,...next.bindings].map(binding=>binding.id)).size,121);
@@ -706,4 +706,42 @@ test('motion limits native layout reads while retaining transition events beyond
     assert.equal(boxes.length,24);assert.deepEqual(boxes.map((box:any)=>box[0]),Array.from({length:24},(_,i)=>i));
     app.runtime.cleanup();assert.equal(last.currentProps.onStateChange,original);
   }
+});
+
+
+test('repeated feed entries share source evidence without starving a later sheet',()=>{
+  for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+    const app=tree(install),sheetAction={...app.action,id:'tail',file:'Tail.tsx',line:2};
+    const tail={...app.button,_debugSource:{fileName:'Tail.tsx',lineNumber:2,columnNumber:1},memoizedProps:{onPress(){}},sibling:app.sheet};
+    app.root.child=tail;
+    for(let i=0;i<2000;i++)app.root.child={...app.button,_debugSource:{fileName:'App.tsx',lineNumber:1,columnNumber:1},memoizedProps:{onPress(){}},sibling:app.root.child};
+    configureFixture(app.runtime,{states:[],actions:[app.action,sheetAction]});
+    assert.equal(app.runtime.diagnostics().entries,2);
+    assert.equal(app.runtime.diagnostics().entryInstances,2001);
+    assert.deepEqual(app.runtime.list().map(a=>a.id),['tail'],'Distinct live callbacks remain ambiguous; the later source still works');
+    app.runtime.cleanup();assert.equal(app.runtime.diagnostics().entryInstances,0);
+  }
+});
+
+test('unmounted source entries release capacity before the next collection',()=>{
+  const app=tree();app.root.child=app.sheet;
+  for(let i=0;i<1500;i++)app.root.child={...app.button,_debugSource:{fileName:'App.tsx',lineNumber:i+2,columnNumber:1},sibling:app.root.child};
+  app.runtime.records(0);assert.equal(app.runtime.diagnostics().entries,1500);
+  app.root.child=app.button;app.button.sibling=app.sheet;
+  configureFixture(app.runtime,{states:[],actions:[app.action]});
+  assert.equal(app.runtime.diagnostics().entries,1);assert.equal(app.runtime.list().length,1);app.runtime.cleanup();
+});
+
+test('hook collection selects initialized source exports among same-named owners',async t=>{
+  function Provider(){} const OtherProvider=function Provider(){};
+  const wanted:any={type:Provider,memoizedProps:{},memoizedState:null},other:any={type:OtherProvider,memoizedProps:{},memoizedState:null};
+  const react={createElement(){},useState(){return [false,()=>{}]},useReducer(){}};
+  let live:any;const calls:any[]=[];
+  const modules=new Map([[1,{isInitialized:true,publicModule:{exports:react}}],[2,{verboseName:'State.tsx',isInitialized:true,publicModule:{exports:{Provider}}}],
+    [3,{verboseName:'Other.tsx',isInitialized:true,publicModule:{exports:{Provider:OtherProvider}}}],[4,{verboseName:'Never.tsx',isInitialized:false,get publicModule(){assert.fail('Uninitialized modules must not run')}}]]);
+  const previous=(globalThis as any).__r;(globalThis as any).__r={getModules:()=>modules};t.after(()=>{(globalThis as any).__r=previous});
+  const renderer={rendererPackageName:'react-native-renderer',getCurrentFiber:()=>live,scheduleUpdate(fiber:any){calls.push(fiber);live=fiber;react.useState();live=undefined;}};
+  const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,renderer]])},fibers(visit:any){visit(wanted);visit(other)},hidden:()=>false,later:setTimeout});
+  const page=await runtime.collect([{id:'state',file:'State.tsx',owner:'Provider'}] as any);
+  assert.deepEqual(calls,[wanted]);assert.equal(page.bindings.length,1);assert.equal(runtime.diagnostics().lastScheduled,1);runtime.cleanup();
 });

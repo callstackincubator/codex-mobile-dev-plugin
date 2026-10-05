@@ -99,6 +99,22 @@ fixed-name command totals and bounded inspector counts expose the next failed
 stage without collecting app content. These changes have functional coverage;
 their live speed and broader capture coverage still need verification.
 
+The loaded **0.1.143** run, `60218872-6f2d-4941-8a6f-c252d8aa9871`,
+stopped after **300.0 seconds** with eight saved route PNGs and no sheets or
+state previews. This was a stopped diagnosis, not a full coverage run. PNG
+headers and source hashes match; their content has not all been checked.
+The early inspector snapshot hit the 1,500-entry cap, with 19,478 mounted
+fibers. Later reads showed repeated install/recovery timeouts. Source
+symbolication used 0.6 seconds in total and does not explain the stalls.
+
+Version 0.1.144 shares exact JSX source matches across repeated instances,
+frees stale entries before collection and uses initialized owner exports when
+available to avoid rendering unrelated same-named components. It keeps
+owner/controller ambiguity checks. Busy transition checks remove detached
+navigation subscriptions while still waiting for active transitions. New
+local numeric diagnostics separate native layout work from tree traversal.
+These changes pass functional tests; 0.1.144 live results remain pending.
+
 Version 0.1.142 keeps the fixed operation name in retry status. Its sheet motion
 check stops reading bounds once the 24 rectangles used in its signature are
 filled, while still checking later hosts for pending transition events. A
