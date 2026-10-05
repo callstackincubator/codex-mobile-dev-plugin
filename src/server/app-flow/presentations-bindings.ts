@@ -19,6 +19,7 @@ export async function bindPresentationSites(base: string, root: string, bindings
       // not turn a nested or unrelated button into a presentation entry.
       if(resolvedEntries.has(binding.id))return;resolvedEntries.add(binding.id);
       for(const action of actions){
+        if(action.effect?.kind==='mount')continue;
         const sites=[{file:action.file,loc:action.source,id:action.id}];
         if(action.effect?.kind==='control'&&action.effect.target)sites.push({file:action.effect.target.file,loc:action.effect.target.source,id:`${action.id}:target`});
         for(const entry of action.consumer?.entries??[])sites.push({file:entry.file,loc:entry.source,id:`${action.id}:consumer`});

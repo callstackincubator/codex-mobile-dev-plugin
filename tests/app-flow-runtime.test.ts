@@ -736,3 +736,35 @@ test('LogBox detection never initializes modules or treats a disabled inspector 
   const app=runtime(t,false,undefined,false,{__r:{getModules:()=>new Map([[1,module],[2,disabled]])}});
   assert.equal((await app.invoke({type:'inspect'})).available,true);assert.equal(initializations,0);
 });
+
+
+test('opening a route replaces a detached helper even when it still reads valid state',async t=>{
+  const app=runtime(t);await app.invoke({type:'inspect'});
+  const live={...app.navigation};
+  app.navigation.dispatch=()=>{assert.fail('Detached navigation must never dispatch')};
+  app.fiber.memoizedProps.navigation=live;
+  const opened=await app.invoke({type:'open',path:['Profile'],timeoutMs:500});
+  assert.equal(opened.ready,true);assert.deepEqual(Array.from(opened.active),['Profile']);
+});
+
+test('bounded stack replacement dispatches through its current mounted helper',async t=>{
+  const app=runtime(t);
+  let leaf:any={type:'stack',key:'current-stack',index:0,routeNames:['Home','Profile'],routes:[{name:'Home',key:'home'}]};
+  let state:any={type:'tab',key:'tabs',index:0,routeNames:['HomeTab'],routes:[{name:'HomeTab',state:leaf}]};
+  let replaces=0;
+  app.navigation.getState=()=>state;
+  app.navigation.dispatch=(action:any)=>{
+    assert.notEqual(action.type,'REPLACE','The parent cannot dispatch through a detached child listener');
+    if(action.type==='RESET'){state=action.payload;leaf=state.routes[0].state;}
+  };
+  const live={getState:()=>leaf,getParent:()=>app.navigation,isFocused:()=>true,dispatch(action:any){
+    assert.equal(action.type,'REPLACE');assert.equal(action.target,leaf.key);replaces++;
+    leaf={...leaf,routes:[{key:`leaf-${replaces}`,name:action.payload.name,params:action.payload.params}]};
+    state={...state,routes:[{name:'HomeTab',state:leaf}]};app.fiber.memoizedProps.route=leaf.routes[0];
+  }};
+  app.fiber.memoizedProps={navigation:live,route:leaf.routes[0]};
+  await app.invoke({type:'inspect'});
+  const opened=await app.invoke({type:'open',path:['HomeTab','Profile'],params:{id:'real-id'},timeoutMs:500});
+  assert.equal(opened.ready,true);assert.equal(replaces,1);assert.equal(leaf.routes.length,1);
+  assert.deepEqual(Array.from(opened.active),['HomeTab','Profile']);
+});

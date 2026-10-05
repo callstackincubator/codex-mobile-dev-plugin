@@ -126,7 +126,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(offset>0)return page(offset);
     // JSX creation stacks identify the actual entry, even when unrelated
     // components and callbacks have identical names. Never invoke the callback.
-    const targets=new Map();for(const action of catalog.actions){for(const [component,owner]of [[action.component,action.owner],...(action.effect.kind==='control'&&action.effect.target?[[action.effect.component,action.effect.target.owner]]:[]),...(action.consumer?.entries??[]).map(entry=>[action.consumer.component,entry.owner])]){const names=targets.get(component)??new Set();names.add(owner);targets.set(component,names);}}
+    const targets=new Map();for(const action of catalog.actions){if(action.effect.kind==='mount')continue;for(const [component,owner]of [[action.component,action.owner],...(action.effect.kind==='control'&&action.effect.target?[[action.effect.component,action.effect.target.owner]]:[]),...(action.consumer?.entries??[]).map(entry=>[action.consumer.component,entry.owner])]){const names=targets.get(component)??new Set();names.add(owner);targets.set(component,names);}}
     const mounted=new Set(), candidates=[];
     fibers(fiber=>{mounted.add(fiber);const names=targets.get(name(fiber));if(!names)return;for(let parent=fiber.return,n=0;parent&&n++<100;parent=parent.return)if(names.has(name(parent))){candidates.push(fiber);break;}});
     // Free stale sites before adding newly mounted ones. Repeated JSX instances
@@ -263,9 +263,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     let root;if(ancestor)fibers(fiber=>{if(fiber===ancestor||fiber===ancestor.alternate)root=fiber;});
     for(const renderer of hook.renderers.values())if(root&&renderer.rendererPackageName==='react-native-renderer'&&typeof renderer.overrideProps==='function')return {root,renderer,react,native};
   }
-  function project(focus, preview) {
+  function project(focus, preview, mountedContext) {
     if(!focus||!preview&&(!undo.length||projected.some(p=>p.focus===focus||p.focus===focus.alternate)))return {error:'This view cannot be projected.'};
-    const context=projectionRoot(focus);if(!context)return {error:'This renderer cannot project a local view.'};
+    const context=mountedContext??projectionRoot(focus);if(!context)return {error:'This renderer cannot project a local view.'};
     const type=focus.elementType??focus.type;
     if(!type||typeof type==='string')return {error:'No component view to project.'};
     const {root,renderer,react,native}=context,props=root.memoizedProps;
@@ -279,7 +279,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(parent.tag!==10||!parent.memoizedProps||!('value'in parent.memoizedProps))continue;
       const provider=parent.elementType??parent.type;if(provider)content=react.createElement(provider,{value:preview?.providers?.get(parent)??parent.memoizedProps.value},content);
     }
-    const record={root,renderer,props,focus,child,seed:preview?.seed,views:preview?.views,shown:false,dismissed:false,failed:false};
+    const record={root,renderer,props,focus,child,seed:preview?.seed,views:preview?.views,mount:preview?.mount,shown:false,dismissed:false,failed:false};
     class PreviewBoundary extends react.Component {
       constructor(props){super(props);this.state={failed:false};}
       static getDerivedStateFromError(){return {failed:true};}
@@ -348,8 +348,36 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const value=state?.memoizedState;tree?.values.set(binding,value);return value;
   }
   const controlValue=(fiber,prop)=>prop==='ref'?fiber.ref?.current??fiber.memoizedProps?.ref?.current:fiber.memoizedProps?.[prop];
+  function mountedExport(action,tree) {
+    if(!tree.modules){
+      tree.modules=new Map();
+      for(const module of globalThis.__r?.getModules?.()?.values?.()??[]){
+        if(!module.isInitialized||typeof module.verboseName!=='string')continue;
+        tree.modules.set(module.verboseName.replaceAll('\\','/').replace(/^\.\//,''),module.publicModule?.exports);
+      }
+    }
+    const exports=tree.modules.get(action.effect.file);
+    if(!exports||(typeof exports!=='object'&&typeof exports!=='function'))return;
+    const descriptor=Object.getOwnPropertyDescriptor(exports,action.effect.export);
+    const type=descriptor&&'value'in descriptor?descriptor.value:action.effect.export==='default'&&typeof exports==='function'?exports:undefined;
+    const data=key=>{if(!type||(typeof type!=='object'&&typeof type!=='function'))return;const d=Object.getOwnPropertyDescriptor(type,key);return d&&'value'in d?d.value:undefined;};
+    const body=data('render')??data('type')??type;
+    const display=body&&Object.getOwnPropertyDescriptor(body,'displayName'),named=body&&Object.getOwnPropertyDescriptor(body,'name');
+    if(typeof body!=='function'||((display&&'value'in display?display.value:undefined)??(named&&'value'in named?named.value:undefined))!==action.owner)return;
+    if(tree.all.some(fiber=>fiber.type===type||fiber.elementType===type||fiber.type===body))return;
+    return type;
+  }
   const find = (action,tree=index(true),focus,scope=roots(focus,tree)) => {
     const inScope=fiber=>!focus||scope.some(root=>tree.inside(fiber,root));
+    if(action.preview&&action.effect.kind==='mount'){
+      // Bootstrap owners at a route boundary, never inside an unrelated sheet.
+      if(focus||projected.length)return;
+      const type=mountedExport(action,tree);if(!type)return;
+      const context=tree.all.find(fiber=>fiber.tag===5&&tree.isVisible(fiber));
+      const projection=context&&projectionRoot(context);
+      if(projection)return {type,context,projection};
+      return;
+    }
     if(action.preview&&action.effect.kind==='state'){
       const candidates=(tree.states.get(action.effect.site)??[]).filter(b=>['useState','useReducer'].includes(b.kind));
       const found=[];
@@ -413,7 +441,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
   };
   let lastAvailable=0;
-  const list = focus => {const tree=index(true),scope=roots(focus,tree),seen=new Set();const result=catalog.actions.filter(action=>{const found=find(action,tree,focus,scope);if(!found)return false;const key=found.target?.value??JSON.stringify([action.effect.site,action.effect.path,action.effect.value]);if(seen.has(key))return false;seen.add(key);return true;}).map(action=>({id:action.id,name:action.name,file:action.file,line:action.line}));lastAvailable=result.length;return result;};
+  const list = focus => {const tree=index(true),scope=roots(focus,tree),seen=new Set();const result=catalog.actions.filter(action=>{const found=find(action,tree,focus,scope);if(!found)return false;const key=found.target?.value??JSON.stringify(action.effect.kind==='mount'?['mount',action.effect.file,action.effect.export]:[action.effect.site,action.effect.path,action.effect.value]);if(seen.has(key))return false;seen.add(key);return true;}).map(action=>({id:action.id,name:action.name,file:action.file,line:action.line}));lastAvailable=result.length;return result;};
   function activeViews(focus) {
     const tree=index(),visual=visualFocus(focus,tree),ids=new Set();
     for(const record of projected){if(record.failed)continue;for(let p=visual,n=0;p&&n++<100;p=p.return)if((p.pendingProps??p.memoizedProps)===record.child.props){for(const id of record.views??[])ids.add(id);break;}}
@@ -513,6 +541,11 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   function open(id,focus) {
     armNative();
     const action=catalog.actions.find(a=>a.id===id),found=action&&find(action,index(true),focus);if(!found)return {error:'This presentation entry is not currently available.'};
+    if(action.effect.kind==='mount'){
+      const owner={type:found.type,elementType:found.type,memoizedProps:{},return:found.context};
+      const result=project(owner,{views:action.views,mount:true},found.projection);
+      return result.error?result:{name:action.owner,expected:action.owner};
+    }
     if(action.effect.kind==='state'){
       if(action.preview)return {...previewState(action,found),expected:action.name};
       const b=found.binding;let previous=hookValue(b);for(const part of action.effect.path)previous=previous?.[part];
@@ -565,5 +598,5 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:viewport=>motion(currentFocus,viewport,tree,connected)};
   }
   const diagnostics=()=>({bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeRecords:nativeRecords.size,nativePending:[...nativeRecords.values()].filter(r=>r.pending).length,checkpoints:undo.length,projections:projected.length});
-  return {collect,records,configure,list,open,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length)undo[undo.length-1].focus=focus;}, checkpoint:()=>undo.length};
+  return {collect,records,configure,list,open,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

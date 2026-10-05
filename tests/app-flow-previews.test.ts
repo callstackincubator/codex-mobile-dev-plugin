@@ -27,29 +27,30 @@ test('source preview plans cover finite reducer bodies without opener callbacks 
   assert.equal(result.previewPlannedViews,3);assert.equal(result.actionableViews,0);
 });
 
-function runtimeFixture(t:test.TestContext,shared=false,install=installPresentationRuntime){
+function runtimeFixture(t:test.TestContext,shared=false,install=installPresentationRuntime,extra?:{modules?:any[];bootstrap?:any}){
   const real={step:'start',record:{id:'observed-record'},pendingSubmit:null};let current:any,clone:any,projection:any;
   let dispatched=0,effects=0,initializers=0,walks=0;const effectKinds:string[]=[];
   function View(){}function Modal(){}function Provider(){}function Wizard(){}function Form(){}function Start(){}function Verify(){}
   const originalChildren={type:Wizard,props:{}};
-  const host:any={type:View,memoizedProps:{children:originalChildren}};
+  const host:any={tag:5,type:View,memoizedProps:{children:originalChildren}};
   const owner:any={type:shared?Provider:Wizard,return:host,memoizedProps:{},memoizedState:{memoizedState:real,next:null}};host.child=owner;
   const context:any={tag:10,type:{},return:owner,memoizedProps:{value:[real,()=>{}]}};
   const form:any={type:Form,return:context,memoizedProps:{},_debugSource:{fileName:'App.tsx',lineNumber:5,columnNumber:1}};
   if(shared){owner.child=context;context.child=form;form.child={type:Start,return:form,memoizedProps:{}};}else owner.child={type:Start,return:owner,memoizedProps:{}};
   const reducer=(fn:any,initial:any,init?:any)=>{const state=current===owner?real:init?init(initial):initial;current.memoizedState={memoizedState:state,next:null};return [state,()=>{dispatched++;fn(state,{})}];};
-  const react:any={createElement(type:any,props:any,...children:any[]){return {type,props:{...props,...(children.length?{children:children.length===1?children[0]:children}:{})}}},Component:class{},Fragment:Symbol(),useState(initial:any){const value=typeof initial==='function'?initial():initial;return [value,()=>{}]},useReducer:reducer,useEffect(callback:any){effectKinds.push('useEffect');callback()},useLayoutEffect(callback:any){effectKinds.push('useLayoutEffect');callback()},useInsertionEffect(callback:any){effectKinds.push('useInsertionEffect');callback()}};
+  const react:any={createElement(type:any,props:any,...children:any[]){return {type,props:{...props,...(children.length?{children:children.length===1?children[0]:children}:{})}}},Component:class{},Fragment:Symbol(),useState(initial:any){const value=typeof initial==='function'?initial():initial;if(current)current.memoizedState={memoizedState:value,next:null};return [value,()=>{}]},useReducer:reducer,useEffect(callback:any){effectKinds.push('useEffect');callback()},useLayoutEffect(callback:any){effectKinds.push('useLayoutEffect');callback()},useInsertionEffect(callback:any){effectKinds.push('useInsertionEffect');callback()}};
   const originals={useReducer:react.useReducer,useEffect:react.useEffect,useLayoutEffect:react.useLayoutEffect};
   const native={View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}};
-  const prior=(globalThis as any).__r;(globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}],[2,{isInitialized:true,publicModule:{exports:native}}]])};t.after(()=>{(globalThis as any).__r=prior});
+  const prior=(globalThis as any).__r;(globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}],[2,{isInitialized:true,publicModule:{exports:native}}],...(extra?.modules??[])])};t.after(()=>{(globalThis as any).__r=prior});
   const fibers=(visit:any,subtree?:any)=>{if(!subtree)walks++;const stack=[subtree??host];while(stack.length){const fiber=stack.pop();if(fiber!==subtree&&fiber.sibling)stack.push(fiber.sibling);if(visit(fiber)!==false&&fiber.child)stack.push(fiber.child)}};
   const renderer:any={rendererPackageName:'react-native-renderer',getCurrentFiber:()=>current,scheduleUpdate(fiber:any){current=fiber;fiber.memoizedState=null;react.useReducer(()=>{throw Error('never dispatch')},real);current=undefined;},overrideProps(fiber:any,_path:any,props:any){
     fiber.memoizedProps=props;const modal=props.children?.props?.children?.at?.(-1);
     if(!modal||modal.type!==Modal){owner.sibling=undefined;clone=undefined;projection=undefined;return;}
     let child=modal.props.children.props.children;projection=child;
-    while(child.type!==Wizard&&child.type!==Form)child=child.props.children;
+    while(child.type!==Wizard&&child.type!==Form&&child.type!==extra?.bootstrap)child=child.props.children;
     clone={type:child.type,return:host,pendingProps:child.props,memoizedProps:child.props,memoizedState:null};owner.sibling=clone;current=clone;
-    if(!shared)react.useReducer(()=>{throw Error('never dispatch')},{},()=>{initializers++;throw Error('never initialize with business code')});
+    if(child.type===extra?.bootstrap)react.useState({step:'start'});
+    else if(!shared)react.useReducer(()=>{throw Error('never dispatch')},{},()=>{initializers++;throw Error('never initialize with business code')});
     react.useEffect(()=>effects++);react.useLayoutEffect(()=>effects++);
     const snapshot=shared?projection.props.value[0]:clone.memoizedState.memoizedState;
     clone.child={type:snapshot.step==='verify'?Verify:Start,return:clone,memoizedProps:{}};
@@ -231,4 +232,47 @@ test('an open controller cannot requeue its own captured preview during child di
   await capture.explore(backend,base);const sheet=run.nodes[1];await capture.retry(backend,sheet);
   assert.equal(sheet.status,'captured');assert.equal(sheet.captureAttempts,1);assert.ok(sheet.image);
   assert.equal(run.nodes.length,2);assert.equal(run.edges.length,1);assert.equal(opened,false);
+});
+
+
+test('unmounted owner plans require an export with optional props, including inherited members',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'preview-owners-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await writeFile(join(root,'Props.ts'),`export interface Base {record:string};export interface ImportedRequired extends Base {label?:string};export interface ImportedOptional {label?:string}`);
+  await writeFile(join(root,'App.tsx'),`import {useState} from 'react';import type {ImportedRequired,ImportedOptional} from './Props';
+    interface Base {optional?:boolean};type Props={onClose?:()=>void};interface Optional extends Props {label?:string};
+    interface Required {record:string};interface HiddenRequired extends Required {label?:string};
+    export function OptionalForm({onClose}:Optional){const [screen]=useState<'start'|'next'>('start');return screen==='start'?<Start/>:<Next/>}
+    export function RequiredForm({record}:HiddenRequired){const [screen]=useState<'start'|'next'>('start');return screen==='start'?<Start/>:<Next/>}
+    export function ImportedForm(props:ImportedOptional){const [screen]=useState<'start'|'next'>('start');return screen==='start'?<Start/>:<Next/>}
+    export function ImportedDataForm(props:ImportedRequired){const [screen]=useState<'start'|'next'>('start');return screen==='start'?<Start/>:<Next/>}
+    export function UnknownForm(props:Unknown){const [screen]=useState<'start'|'next'>('start');return screen==='start'?<Start/>:<Next/>}
+    function PrivateForm(){const [screen]=useState<'start'|'next'>('start');return screen==='start'?<Start/>:<Next/>}
+    export default function DefaultForm(){const [screen]=useState<'start'|'next'>('start');return screen==='start'?<Start/>:<Next/>}`);
+  const graph=await scanAppFlow(root,'ios');
+  const plans=graph.presentations!.previews!.filter(p=>p.effect.kind==='mount');
+  assert.deepEqual(plans.map(p=>p.owner).sort(),['DefaultForm','ImportedForm','OptionalForm']);
+  assert.equal(plans.find(p=>p.owner==='DefaultForm')!.effect.kind==='mount'&&(plans.find(p=>p.owner==='DefaultForm')!.effect as any).export,'default');
+  for(const plan of plans){assert.equal(plan.views!.length,1);assert.equal(graph.presentations!.views!.find(v=>v.id===plan.views![0])!.kind,'component');}
+});
+
+test('unmounted previews use initialized exact data exports and keep each owner distinct',async t=>{
+  for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+    function Welcome(){}function OtherWelcome(){}
+    const exports:any={Welcome,OtherWelcome};Object.defineProperty(exports,'Getter',{get(){assert.fail('Never invoke an export getter')}});
+    const modules=[[3,{verboseName:'Forms.tsx',isInitialized:true,publicModule:{exports}}],
+      [4,{verboseName:'Never.tsx',isInitialized:false,get publicModule(){assert.fail('Never initialize a module')}}]];
+    const app=runtimeFixture(t,false,install,{modules,bootstrap:Welcome});
+    const mount=(id:string,owner:string,file='Forms.tsx',exported=owner):any=>({id,file,line:1,owner,component:owner,name:owner,prop:'',preview:true,views:[`${id}-body`],effect:{kind:'mount',file,export:exported}});
+    const actions=[mount('welcome','Welcome'),mount('other','OtherWelcome'),mount('wrong','Welcome','Other.tsx'),mount('getter','Getter'),mount('never','Welcome','Never.tsx')];
+    app.runtime.configure({states:[],actions},[]);
+    assert.deepEqual(app.runtime.list().map(a=>a.id),['welcome','other']);
+    assert.equal(app.runtime.open('welcome').error,undefined);assert.equal(app.clone.type,Welcome);
+    assert.deepEqual(app.clone.memoizedProps,{});assert.deepEqual(app.counts,{dispatched:0,effects:0,initializers:0});
+    app.runtime.focused(app.clone);
+    assert.deepEqual(app.runtime.activeViews(app.clone),['welcome-body']);
+    assert.deepEqual(app.runtime.list(app.clone),[],'A child form cannot bootstrap another unrelated owner');
+    await app.runtime.rollback(0,false);assert.equal(app.clone,undefined);assert.equal(app.host.memoizedProps.children,app.originalChildren);
+    assert.deepEqual(app.runtime.list().map(a=>a.id),['welcome','other']);
+    app.host.memoizedProps={style:{display:'none'}};assert.deepEqual(app.runtime.list(),[]);
+  }
 });

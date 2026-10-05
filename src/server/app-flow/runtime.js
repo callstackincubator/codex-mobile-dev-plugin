@@ -116,6 +116,24 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
       if (nav.getState()?.routeNames?.length && !root) { root = nav; original ??= nav.getRootState?.() ?? nav.getState(); }
     } catch { /* Detached navigation objects are ignored. */ }
   }
+  function refreshNavigation() {
+    // A detached helper can still read current container state while dispatching
+    // through its old navigator. Bind again from the committed, visible tree.
+    root=undefined;
+    fibers(fiber=>{
+      const props=fiber.memoizedProps;if(hidden(props))return false;
+      navigation(props?.navigation);navigation(props?.value);
+    });
+  }
+  function navigationFor(key) {
+    let result;
+    fibers(fiber=>{
+      const props=fiber.memoizedProps;if(hidden(props))return false;
+      const nav=props?.navigation;
+      try{if(nav?.getState?.()?.key===key&&typeof nav.dispatch==='function')result=nav;}catch{}
+    });
+    return result;
+  }
   function navigatorState() {
     try { return root?.getRootState?.() ?? root?.getState?.(); }
     catch { /* Local forms can unmount and later replace the navigator. */ }
@@ -543,6 +561,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
           later(check, 80); return;
         }
         if (command.type === 'verify') { reply({ active: active(root?.getRootState?.() ?? root?.getState?.()), ...visualSignature(command.name), ...visible() }); return; }
+        if(command.type==='open')refreshNavigation();
         if (command.type === 'open' && !navigatorState()?.routeNames?.length) { reply({ready: false, reason: 'The navigator is remounting. This screen will be retried.'}); return; }
         if (command.type !== 'open' || !root) { reply({ error: 'No mounted navigator found. Use Record a flow for screens outside navigation.' }); return; }
         cancelWaits();
@@ -567,7 +586,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
           visible();
           const selected = leaf?.routes?.[leaf.index ?? 0];
           if (leaf?.type === 'stack' && leaf.key && leaf.routeNames?.includes(expected)) {
-            if (selected?.name !== expected || command.params) root.dispatch({ type: 'REPLACE', target: leaf.key, payload: { name: expected, params: command.params } });
+            if (selected?.name !== expected || command.params) (navigationFor(leaf.key)??root).dispatch({ type: 'REPLACE', target: leaf.key, payload: { name: expected, params: command.params } });
           } else {
             let params = command.params ?? {};
             for (let index = path.length - 1; index > 0; index--) params = { screen: path[index], params, initial: false };

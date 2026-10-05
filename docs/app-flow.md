@@ -240,3 +240,16 @@ automatic PNGs. It separates live captures from temporary UI previews, excludes
 recorded steps, and requires the scan and each image to have the same local source
 hash. A child screenshot never counts as a screenshot of its parent. Source hashes
 and view identities stay local.
+
+An unmounted finite form can also enter the preview queue when its source export
+accepts omitted props. Runtime lookup requires that exact export from an already
+initialized Metro module. It does not run module factories or export getters.
+Required props and unknown prop types stay out. The temporary owner copies live
+context, renders its ordinary initial state, contains effects, and exposes its
+local form steps to the same queue. Each child still needs a separate settled
+capture. Mounting a form does not satisfy its backend conditions.
+
+Before opening a route, the runtime finds the current mounted navigation helpers.
+A detached helper can keep reading container state while dispatching through an
+old navigator. Stack replacement uses the helper for the current stack key.
+This preserves bounded mounted screens without retrying a stale dispatcher.

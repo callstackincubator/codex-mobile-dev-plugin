@@ -43,6 +43,16 @@ export function addSourcePreviewPlans(catalog:FlowPresentations) {
     if(existing){existing.views!.push(view.id);continue;}
     action.id=id(key);plans.set(key,action);
   }
+  // A finite form owner may never mount in this session. Preview only an
+  // exported owner with an ordinary render that accepts omitted props. Its
+  // local steps are discovered after it mounts; no module factory is executed.
+  const owners=new Set([...plans.values()].filter(plan=>plan.effect.kind==='state').map(plan=>JSON.stringify([plan.file,plan.owner])));
+  for(const view of catalog.views??[]){
+    if(view.kind!=='component'||!view.mount||!owners.has(JSON.stringify([view.file,view.owner]))||protectedField.test(view.owner))continue;
+    const effect={kind:'mount' as const,file:view.file,export:view.mount.export};
+    const key=JSON.stringify([view.file,view.owner,effect]);
+    plans.set(key,{id:id(key),file:view.file,line:view.line,owner:view.owner,component:view.owner,prop:'',name:view.owner,preview:true,views:[view.id],effect});
+  }
   // Retain source state metadata when the older, opener-based scan has the same
   // hook. Custom-hook consumer names let runtime tracking find its actual owner.
   const states=new Map<string,FlowStateSite>();

@@ -151,6 +151,37 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
     for(let p=body;p.parent&&!ts.isFunctionLike(p.parent);p=p.parent){const parent=p.parent;if(ts.isConditionalExpression(parent)){const b=truth(unit,parent.condition,v,value);if(b!==undefined&&(parent.whenTrue===p&&!b||parent.whenFalse===p&&b))return false;}if(ts.isBinaryExpression(parent)&&parent.right===p&&parent.operatorToken.kind===ts.SyntaxKind.AmpersandAmpersandToken){const b=truth(unit,parent.left,v,value);if(b!==undefined&&!b)return false;}}
     return true;
   };
+  const mountable=(unit:SourceUnit,fn:Fn):FlowSourceView['mount']=>{
+    const own=name(fn);if(!/^[A-Z]/.test(own))return;
+    const isDefault=defaultExport(fn);
+    let exported=!!fn.modifiers?.some(m=>m.kind===ts.SyntaxKind.ExportKeyword);
+    for(let parent:ts.Node=fn;parent.parent&&!ts.isFunctionLike(parent.parent);parent=parent.parent){
+      if(ts.isVariableStatement(parent))exported||=!!parent.modifiers?.some(m=>m.kind===ts.SyntaxKind.ExportKeyword);
+    }
+    if(!exported&&!isDefault)return;
+    // Omitted props must fit every inherited member. Unknown types and
+    // required callbacks/data cannot be filled with made-up values.
+    const optional=(type:ts.TypeNode|ts.InterfaceDeclaration|undefined,seen=new Set<string>()):boolean=>{
+      if(!type)return false;
+      const context=units.get(type.getSourceFile().fileName);if(!context)return false;
+      if(ts.isTypeReferenceNode(type)){
+        const key=symbol(context,type.typeName.getText());if(seen.has(key))return false;
+        return optional(types.get(key),new Set(seen).add(key));
+      }
+      if(ts.isIntersectionTypeNode(type))return type.types.every(part=>optional(part,seen));
+      if(!ts.isTypeLiteralNode(type)&&!ts.isInterfaceDeclaration(type))return false;
+      if(type.members.some(member=>!ts.isPropertySignature(member)||!member.questionToken))return false;
+      if(ts.isInterfaceDeclaration(type)&&type.heritageClauses?.some(clause=>clause.types.some(base=>{
+        const key=symbol(context,base.expression.getText());return seen.has(key)||!optional(types.get(key),new Set(seen).add(key));
+      })))return false;
+      return true;
+    };
+    for(const parameter of fn.parameters){
+      if(parameter.dotDotDotToken)return;
+      if(!parameter.initializer&&!parameter.questionToken&&!optional(parameter.type))return;
+    }
+    return {export:isDefault?'default':own};
+  };
   const views=new Map<string,FlowSourceView>();
   const reachable=(unit:SourceUnit,node:ts.Node)=>{
     for(let p=node;p.parent;p=p.parent){const parent=p.parent;
@@ -202,7 +233,7 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
       if(other){add(unit,other,'branch',{branch:{condition:n.expression.getText(),side:'false'}});stateBranch(unit,n.expression,other,'false');}
     }
     if(ts.isSwitchStatement(n))for(const v of origins(read(unit,n.expression)))for(const c of n.caseBlock.clauses)if(ts.isCaseClause(c)){const value=finite(unit,c.expression);if(value!==undefined){v.site.paths.push(v.path);add(unit,c,'state',{state:{site:v.site.id,path:v.path,value},branch:{condition:n.expression.getText(),side:'case'}});}}
-    if(ts.isFunctionLike(n)&&'body'in n&&n.body&&(/^[A-Z]/.test(name(n as Fn))||defaultExport(n as Fn)))add(unit,n.body,'component',{owner:name(n as Fn),name:name(n as Fn)});
+    if(ts.isFunctionLike(n)&&'body'in n&&n.body&&(/^[A-Z]/.test(name(n as Fn))||defaultExport(n as Fn)))add(unit,n.body,'component',{owner:name(n as Fn),name:name(n as Fn),mount:mountable(unit,n as Fn)});
     if(ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n)){
       for(const a of attrs(n)){
         const prop=a.name.getText(),e=expr(a);if(!e||/^on[A-Z]/.test(prop))continue;

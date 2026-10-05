@@ -352,3 +352,10 @@ metrics still include each checkpoint read and rollback. Surface and platform
 attributes stay unchanged. Caught temporary preview failures report a fixed
 `app_flow.presentation` error without app messages, inputs or component data.
 Root handlers forward all other errors and detach preview records on cleanup.
+
+Since 0.1.148, source catalog timing includes optional-prop owner mount plans.
+Presentation timing includes exact initialized export lookup, temporary mounting
+and the same readiness and screenshot checks. Route command timing includes
+rebinding the current mounted navigator before dispatch. Existing metric names,
+units, surface attributes and bounded windows stay unchanged. Export identities,
+provider values, app data and source paths stay local.

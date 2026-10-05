@@ -41,7 +41,7 @@ export type FlowPresentationAction = {
   preview?: boolean;
   views?: string[];
   consumer?: {component: string; entries: {file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}}[]};
-  effect: { kind: 'state'; site: string; path: string[]; value: unknown } | { kind: 'control'; component: string; prop: string; method: string; close: string | string[]; target?: {file: string; owner: string; line: number; source: {line: number; column: number; endLine: number; endColumn: number}} };
+  effect: { kind:'mount'; file:string; export:string } | { kind: 'state'; site: string; path: string[]; value: unknown } | { kind: 'control'; component: string; prop: string; method: string; close: string | string[]; target?: {file: string; owner: string; line: number; source: {line: number; column: number; endLine: number; endColumn: number}} };
 };
 export type FlowUiCondition = { prop: string[] } | { value: unknown } | { op: '!' | '&&' | '||' | '===' | '!==' | '==' | '!='; args: FlowUiCondition[] };
 export type FlowSourceView = {
@@ -54,6 +54,8 @@ export type FlowSourceView = {
   branch?: {condition: string; side: 'true' | 'false' | 'case'};
   availability: 'observed-only';
   renderBody?: boolean;
+  /** Exported owner whose ordinary initial render needs no supplied props. */
+  mount?: {export:string};
   entries?: {file: string; line: number; owner: string; source?: {line: number; column: number; endLine: number; endColumn: number}}[];
 };
 export type FlowPresentations = { states: FlowStateSite[]; actions: FlowPresentationAction[]; previews?: FlowPresentationAction[]; previewStates?: FlowStateSite[]; views?: FlowSourceView[]; viewStates?: FlowStateSite[] };
