@@ -80,6 +80,7 @@ function fixture(t: TestContext) {
   let androidGeneration = 1;
   let emptyAndroidFrame = false;
   let failAndroidDecode = false;
+  let initialFramesHeld = false;
   const document = Object.assign(new EventTarget(), { visibilityState: "visible", createElement: () => new Element() });
   class Decoder {
     state = "configured";
@@ -183,7 +184,7 @@ function fixture(t: TestContext) {
       const id = address.protocol === "mobile-frame:" ? address.hostname : address.pathname.split("/")[1];
       if (!reads.has(id)) {
         reads.add(id);
-        return frameResult(uri, id, 1);
+        if (initialFramesHeld === false) return frameResult(uri, id, 1);
       }
       return new Promise((resolve, reject) => {
         const abort = () => { pendingReads.delete(id); reject(new Error("Aborted")); };
@@ -220,6 +221,7 @@ function fixture(t: TestContext) {
       pendingReads.get(id)!(sequence);
     },
     waitingForFrame(platform: "ios" | "android") { return [...pendingReads.keys()].some(id => id.startsWith(platform)); },
+    holdInitialFrames() { initialFramesHeld = true; },
     failAndroidDecode() { failAndroidDecode = true; },
     missTiming() { observeFrames = false; }, invalidFrame() { invalidFrame = true; },
     failPhysicalCapture(message: string) { physicalCaptureError = message; },
@@ -486,18 +488,32 @@ test("physical iOS capture errors stay visible and clear when mirroring recovers
 
 test("screenshot attachment failures remain visible until the next action on both platforms", async t => {
   const f = fixture(t);
+  f.holdInitialFrames();
   for (const platform of [f.ios, f.android]) {
     await platform.panel.load();
     const screenshot = platform.element("screenshot");
     const notice = platform.element("notice");
     const message = platform.element("notice-message");
     await waitFor(() => screenshot.disabled === false);
+    const devicePlatform = platform.panel.platform;
+    await waitFor(() => f.waitingForFrame(devicePlatform));
+    const screen = platform.element("screen");
+    assert.equal(screen.draws, 0);
     const attached = f.screenshots.length;
     f.failScreenshotAttachment("MCP error -32000: Maximum call stack size exceeded");
     dispatch(screenshot, "click");
     await waitFor(() => notice.hidden === false && screenshot.disabled === false);
     assert.match(message.textContent, /screenshot.*not.*attached.*chat/i);
     assert.equal(f.screenshots.length, attached);
+    f.frame(devicePlatform, 1);
+    await waitFor(() => screen.draws > 0);
+    assert.equal(notice.hidden, false);
+    assert.match(message.textContent, /screenshot.*not.*attached.*chat/i);
+    const pickerElement = platform.element("devices");
+    const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+    await picker.refresh?.();
+    assert.equal(notice.hidden, false);
+    assert.match(message.textContent, /screenshot.*not.*attached.*chat/i);
     f.failScreenshotAttachment("");
     dispatch(screenshot, "click");
     await waitFor(() => f.screenshots.length === attached + 1 && screenshot.disabled === false);

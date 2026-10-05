@@ -77,9 +77,11 @@ export function createSimulatorPanel(
   let toolsAvailable = false;
   let disposed = false;
   let disposing: Promise<void> | undefined;
+  let screenshotAttachmentError = "";
 
   function notice(message = "") {
-    if (!message) message = inputRepairMessage || (inputBlocked ? "Simulator input is blocked. Ask Codex to repair it." : discoveryError);
+    if (screenshotAttachmentError) message = screenshotAttachmentError;
+    else if (message.length === 0) message = inputRepairMessage || (inputBlocked ? "Simulator input is blocked. Ask Codex to repair it." : discoveryError);
     element("notice-message").textContent = message;
     element("notice").title = message;
     element("notice").classList?.toggle("text-destructive", inputBlocked);
@@ -275,6 +277,7 @@ export function createSimulatorPanel(
 
   async function action(callback: () => Promise<void>) {
     if (busy || disposed) return;
+    screenshotAttachmentError = "";
     busy = true; controls(); notice();
     try { await callback(); } catch (error) { notice(error instanceof Error ? error.message : String(error)); }
     finally {
@@ -891,7 +894,8 @@ export function createSimulatorPanel(
       try { await panelContext.attachScreenshot({ id: crypto.randomUUID(), data: image.data, simulator }); }
       catch (error) {
         captureUiError(error, "screenshot.attach");
-        notice("The screenshot could not be attached to chat.");
+        screenshotAttachmentError = "The screenshot could not be attached to chat.";
+        notice();
         return;
       }
     } catch (error) {
