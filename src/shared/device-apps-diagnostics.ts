@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { errorMessage } from "./protocol.ts";
+import { getDiscoveryCommandDiagnostic, discoveryCommandTags } from "./device-apps-command-diagnostics.ts";
 
 export const DEVICE_APPS_DIAGNOSTIC_META = "mobile-dev/device-apps-diagnostic";
 
@@ -16,6 +17,10 @@ const diagnostics = new WeakMap<object, DeviceAppsDiagnostic>();
 
 function classifyFailure(error: unknown): DeviceAppsDiagnostic["failure"] {
   if (error === null || typeof error !== "object") return "unknown";
+  const command = getDiscoveryCommandDiagnostic(error);
+  if (command?.cause === "cancelled") return "cancelled";
+  if (command?.termination === "deadline" || command?.cause.endsWith("_timeout")) return "timeout";
+  if (command?.termination === "output_limit") return "command_failed";
   if ("name" in error && error.name === "AbortError") return "cancelled";
   if ("code" in error && error.code === "ENOENT") return "missing_executable";
   if ("code" in error && (error.code === "ETIMEDOUT" || error.code === -32001)) return "timeout";
@@ -46,8 +51,9 @@ export function getDeviceAppsDiagnostic(error: unknown): DeviceAppsDiagnostic | 
 
 export function deviceAppsDiagnosticTags(error: unknown): Record<string, string> {
   const diagnostic = getDeviceAppsDiagnostic(error);
-  if (diagnostic === undefined) return {};
-  return { discovery_stage: diagnostic.stage, discovery_failure: diagnostic.failure,
+  const commandTags = discoveryCommandTags(error);
+  if (diagnostic === undefined) return commandTags;
+  return { ...commandTags, discovery_stage: diagnostic.stage, discovery_failure: diagnostic.failure,
     device_platform: diagnostic.platform, device_kind: diagnostic.kind };
 }
 

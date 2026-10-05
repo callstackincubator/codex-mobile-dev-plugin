@@ -5,11 +5,13 @@ import { constants } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join, relative } from "node:path";
 import { promisify } from "node:util";
 
+export const BAGUETTE_RUNTIME_TIMEOUT_MS = 5000;
+
 const execute = promisify(execFile);
 type RuntimeCommand = (command: string, args: string[], options: ExecFileOptions & { encoding: "utf8"; signal: AbortSignal }) => Promise<{ stdout: string }>;
 
 export async function baguetteEnvironment(executable: string, signal: AbortSignal, run: RuntimeCommand = execute): Promise<NodeJS.ProcessEnv> {
-  const deadline = AbortSignal.timeout(5000);
+  const deadline = AbortSignal.timeout(BAGUETTE_RUNTIME_TIMEOUT_MS);
   const discoverySignal = AbortSignal.any([signal, deadline]);
   discoverySignal.throwIfAborted();
   let developer: string;

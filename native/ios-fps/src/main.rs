@@ -161,7 +161,13 @@ async fn main() {
     let result = match mode.as_str() {
         "fps" => run(&udid).await,
         "debugserver" => debugserver(&udid).await,
-        "foreground" => foreground::run(&udid).await,
+        "foreground" => {
+            let detected = foreground::run(&udid).await;
+            detected.map_err(|failure| {
+                failure.report();
+                failure.message
+            })
+        },
         _ => Err("Expected fps, debugserver or foreground".into()),
     };
     mobile_dev_telemetry::close();

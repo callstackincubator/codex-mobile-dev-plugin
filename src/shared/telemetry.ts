@@ -60,7 +60,8 @@ export function errorReportSignature(error: unknown, tags: Record<string, string
   const scrubbed = scrubText(message);
   const category = errorCategory(error);
   const name = error instanceof Error ? error.name : "unknown";
-  return [category, name, scrubbed, tags.discovery_stage, tags.discovery_failure, tags.device_platform, tags.device_kind].join("|");
+  return [category, name, scrubbed, tags.discovery_stage, tags.discovery_failure, tags.device_platform, tags.device_kind,
+    tags.discovery_command, tags.discovery_cause, tags.discovery_termination].join("|");
 }
 
 export function scrubErrorEvent(event: ErrorEvent, hint?: ErrorHint): ErrorEvent | null {
@@ -70,7 +71,7 @@ export function scrubErrorEvent(event: ErrorEvent, hint?: ErrorHint): ErrorEvent
   if (operation) {
     const operationName = String(operation);
     event.fingerprint = ["{{default}}", operationName, category];
-    for (const tag of ["resource_kind", "discovery_stage", "discovery_failure"]) {
+    for (const tag of ["resource_kind", "discovery_stage", "discovery_failure", "discovery_command", "discovery_cause"]) {
       const value = event.tags?.[tag];
       if (value !== undefined) {
         const dimension = String(value);

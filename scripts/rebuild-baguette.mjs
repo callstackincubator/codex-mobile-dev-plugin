@@ -1,3 +1,4 @@
+import { addForegroundTimeoutDiagnostics } from "./baguette-foreground-diagnostics.mjs";
 import { removeBaguetteToolchainRpaths } from "./baguette-rpaths.mjs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -15,9 +16,11 @@ export async function baguetteTelemetrySourceHash() {
   await nativeTelemetrySourceHash(hash);
   const script = await readFile("scripts/rebuild-baguette.mjs");
   hash.update(script);
+  const foregroundScript = await readFile("scripts/baguette-foreground-diagnostics.mjs");
+  hash.update(foregroundScript);
   const rpathScript = await readFile("scripts/baguette-rpaths.mjs");
   hash.update(rpathScript);
-  for (const file of ["ForegroundCommand.swift", "foreground-method.swift"]) {
+  for (const file of ["ForegroundCommand.swift", "ForegroundFailure.swift", "foreground-method.swift"]) {
     const contents = await readFile(`native/baguette/${file}`);
     hash.update(contents);
   }
@@ -69,12 +72,15 @@ async function addForegroundDetection(source) {
   await writeFile(entrypoint, updated);
   const commandPath = join(source, "Sources/Baguette/App/Commands/ForegroundCommand.swift");
   await copyFile("native/baguette/ForegroundCommand.swift", commandPath);
+  const failurePath = join(source, "Sources/Baguette/App/Commands/ForegroundFailure.swift");
+  await copyFile("native/baguette/ForegroundFailure.swift", failurePath);
   const adapterPath = join(source, "Sources/Baguette/Infrastructure/Accessibility/AXPTranslatorAccessibility.swift");
   const adapter = await readFile(adapterPath, "utf8");
   const adapterMarker = "    // MARK: - Accessibility";
   if (adapter.includes(adapterMarker) === false) throw new Error("The pinned Baguette accessibility adapter changed.");
   const method = await readFile("native/baguette/foreground-method.swift", "utf8");
-  const withForeground = adapter.replace(adapterMarker, method + adapterMarker);
+  const withTimeoutDiagnostics = addForegroundTimeoutDiagnostics(adapter);
+  const withForeground = withTimeoutDiagnostics.replace(adapterMarker, method + adapterMarker);
   await writeFile(adapterPath, withForeground);
 }
 

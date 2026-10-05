@@ -5,6 +5,24 @@ use plist::Value;
 const SERVICE: &str = "com.apple.accessibility.axAuditDaemon.remoteserver.shim.remote";
 type Client = RemoteServerClient<Box<dyn ReadWrite>>;
 
+#[derive(Debug, PartialEq)]
+pub struct ForegroundFailure {
+    pub cause: &'static str,
+    pub message: String,
+}
+
+impl ForegroundFailure {
+    fn new(cause: &'static str, message: impl Into<String>) -> Self {
+        let message = message.into();
+        Self { cause, message }
+    }
+
+    pub fn report(&self) {
+        let diagnostic = serde_json::json!({ "version": 1, "cause": self.cause });
+        eprintln!("mobile-dev-foreground-error:{diagnostic}");
+    }
+}
+
 fn field<'a>(value: &'a Value, name: &str) -> Result<&'a Value, String> {
     let dictionary = value.as_dictionary();
     let dictionary = dictionary.ok_or("Invalid iPhone accessibility element")?;
@@ -62,7 +80,7 @@ async fn cleanup(client: &mut Client) -> Result<(), String> {
     match failure { Some(error) => Err(error), None => Ok(()) }
 }
 
-async fn query(client: &mut Client) -> Result<Option<u32>, String> {
+async fn query(client: &mut Client) -> Result<Option<u32>, ForegroundFailure> {
     let mut capabilities = plist::Dictionary::new();
     let connection = "com.apple.private.DTXConnection".into();
     let connection_version = Value::from(1u64);
@@ -71,8 +89,10 @@ async fn query(client: &mut Client) -> Result<Option<u32>, String> {
     let compression_version = Value::from(2u64);
     capabilities.insert(compression, compression_version);
     let capabilities = Value::Dictionary(capabilities);
-    send(client, "_notifyOfPublishedCapabilities:", vec![capabilities], false).await?;
-    cleanup(client).await?;
+    let published = send(client, "_notifyOfPublishedCapabilities:", vec![capabilities], false).await;
+    published.map_err(|message| ForegroundFailure::new("query_failed", message))?;
+    let cleaned = cleanup(client).await;
+    cleaned.map_err(|message| ForegroundFailure::new("cleanup_failed", message))?;
     let commands = [
         ("deviceInspectorEnable:", Value::Boolean(true)),
         ("deviceSetAppMonitoringEnabled:", Value::Boolean(true)),
@@ -80,52 +100,67 @@ async fn query(client: &mut Client) -> Result<Option<u32>, String> {
         ("deviceInspectorSetMonitoredEventType:", Value::from(0u64)),
     ];
     for (selector, argument) in commands {
-        send(client, selector, vec![argument], false).await?;
+        let configured = send(client, selector, vec![argument], false).await;
+        configured.map_err(|message| ForegroundFailure::new("query_failed", message))?;
     }
     let root = Value::from(0u64);
-    send(client, "deviceFetchSpecialElement:", vec![root], true).await?;
+    let requested = send(client, "deviceFetchSpecialElement:", vec![root], true).await;
+    requested.map_err(|message| ForegroundFailure::new("query_failed", message))?;
     loop {
         let received = client.read_message(0).await;
-        let message = received.map_err(|error| error.to_string())?;
+        let message = received.map_err(|error| {
+            let message = error.to_string();
+            ForegroundFailure::new("query_failed", message)
+        })?;
         // This session has one request expecting a reply; unsolicited app events have index zero.
         let header = message.message_header.serialize();
         let index_bytes = [header[20], header[21], header[22], header[23]];
         let conversation = u32::from_le_bytes(index_bytes);
         if conversation != 1 { continue; }
         let data = message.data.as_ref();
-        return element_pid(data);
+        let pid = element_pid(data);
+        return pid.map_err(|message| ForegroundFailure::new("invalid_response", message));
     }
 }
 
-async fn inspect(client: &mut Client, cancellation: impl Future<Output = ()>, timeout: Duration) -> Result<Option<u32>, String> {
+async fn inspect(client: &mut Client, cancellation: impl Future<Output = ()>, timeout: Duration) -> Result<Option<u32>, ForegroundFailure> {
     let operation = query(client);
     let result = tokio::select! {
         received = tokio::time::timeout(timeout, operation) => {
             match received {
                 Ok(result) => result,
-                Err(_) => Err("Timed out detecting the foreground iPhone app".into()),
+                Err(_) => Err(ForegroundFailure::new("query_timeout", "Timed out detecting the foreground iPhone app")),
             }
         },
-        _ = cancellation => Err("iPhone app detection cancelled".into()),
+        _ = cancellation => Err(ForegroundFailure::new("cancelled", "iPhone app detection cancelled")),
     };
     let finishing = cleanup(client);
     let cleanup_timeout = Duration::from_secs(2);
     let finished = tokio::time::timeout(cleanup_timeout, finishing).await;
     let pid = result?;
-    finished.map_err(|_| "Timed out closing iPhone app detection")??;
+    let cleaned = finished.map_err(|_| ForegroundFailure::new("cleanup_timeout", "Timed out closing iPhone app detection"))?;
+    cleaned.map_err(|message| ForegroundFailure::new("cleanup_failed", message))?;
     Ok(pid)
 }
 
-pub async fn run(udid: &str) -> Result<(), String> {
+pub async fn run(udid: &str) -> Result<(), ForegroundFailure> {
     let signal_kind = tokio::signal::unix::SignalKind::terminate();
     let signal = tokio::signal::unix::signal(signal_kind);
-    let mut termination = signal.map_err(|error| error.to_string())?;
+    let mut termination = signal.map_err(|error| {
+        let message = error.to_string();
+        ForegroundFailure::new("query_failed", message)
+    })?;
     let connecting = crate::connect(udid);
     let connection_timeout = Duration::from_secs(7);
     let connection = tokio::time::timeout(connection_timeout, connecting).await;
-    let (handshake, mut adapter) = connection.map_err(|_| "Timed out connecting to the iPhone for app detection")??;
+    let connected = connection.map_err(|_| ForegroundFailure::new("connection_timeout", "Timed out connecting to the iPhone for app detection"))?;
+    let (handshake, mut adapter) = connected.map_err(|message| {
+        let unavailable = message.starts_with("Connect the paired iPhone and enable Developer Mode.");
+        let cause = if unavailable { "device_not_found" } else { "connection_failed" };
+        ForegroundFailure::new(cause, message)
+    })?;
     let service = handshake.services.get(SERVICE);
-    let service = service.ok_or("The iPhone does not expose foreground app detection")?;
+    let service = service.ok_or_else(|| ForegroundFailure::new("unsupported_service", "The iPhone does not expose foreground app detection"))?;
     let opening = async {
         let connected = adapter.connect(service.port).await;
         let stream = connected.map_err(|error| error.to_string())?;
@@ -140,7 +175,8 @@ pub async fn run(udid: &str) -> Result<(), String> {
     };
     let opening_timeout = Duration::from_secs(3);
     let opened = tokio::time::timeout(opening_timeout, opening).await;
-    let mut client = opened.map_err(|_| "Timed out opening iPhone app detection")??;
+    let opened = opened.map_err(|_| ForegroundFailure::new("service_open_timeout", "Timed out opening iPhone app detection"))?;
+    let mut client = opened.map_err(|message| ForegroundFailure::new("service_open_failed", message))?;
     let cancellation = async {
         termination.recv().await;
     };
@@ -268,9 +304,12 @@ mod tests {
             match scenario {
                 0 => assert_eq!(result, Ok(Some(23931))),
                 1 => assert_eq!(result, Ok(None)),
-                3 => assert_eq!(result, Err("Timed out detecting the foreground iPhone app".into())),
-                4 => assert_eq!(result, Err("iPhone app detection cancelled".into())),
-                _ => assert!(result.is_err()),
+                3 => assert_eq!(result, Err(ForegroundFailure::new("query_timeout", "Timed out detecting the foreground iPhone app"))),
+                4 => assert_eq!(result, Err(ForegroundFailure::new("cancelled", "iPhone app detection cancelled"))),
+                _ => {
+                    let failure = result.unwrap_err();
+                    assert_eq!(failure.cause, "invalid_response");
+                },
             }
             let commands = device.await.unwrap();
             let cleanup = &commands[commands.len() - 3..];

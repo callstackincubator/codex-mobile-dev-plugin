@@ -20,7 +20,7 @@ const androidFpsBinaries = androidAbis.map(abi => `${abi}/mobile-dev-fps`);
 const androidCpuBinaries = androidAbis.map(abi => `${abi}/mobile-dev-cpu`);
 
 export const nativeHelpers = [
-  { name: "baguette", command: "vendor:baguette", scripts: ["vendor-baguette.mjs", "rebuild-baguette.mjs", "baguette-rpaths.mjs"],
+  { name: "baguette", command: "vendor:baguette", scripts: ["vendor-baguette.mjs", "rebuild-baguette.mjs", "baguette-foreground-diagnostics.mjs", "baguette-rpaths.mjs"],
     inputs: ["vendor/baguette-release.json"], tools: ["darwin", "swift"],
     symbols: [".sentry/native/darwin-arm64/Baguette.dSYM"], binaries: ["Baguette", "Baguette_Baguette.bundle"] },
   { name: "ios-fps", command: "rebuild:ios-fps", scripts: ["build-fps.mjs"], inputs: [], tools: ["darwin", "rust"],

@@ -1,3 +1,5 @@
+import { getDiscoveryCommandDiagnostic } from "./device-apps-command-diagnostics.ts";
+
 export type ExpectedOutcome = "session_expired" | "session_closed" | "cancelled" | "device_unavailable" | "unsupported_platform" | "invalid_input";
 
 export class ExpectedOperationError extends Error {
@@ -11,6 +13,9 @@ export class ExpectedOperationError extends Error {
 
 export function expectedOutcome(error: unknown): ExpectedOutcome | undefined {
   if (error instanceof ExpectedOperationError) return error.outcome;
+  const command = getDiscoveryCommandDiagnostic(error);
+  if (command?.termination === "deadline") return;
+  if (command?.cause === "cancelled") return "cancelled";
   if (error instanceof Error && error.name === "AbortError") return "cancelled";
 }
 
@@ -23,6 +28,8 @@ export function setErrorCategory(error: object, category: ErrorCategory) {
 
 export function errorCategory(error: unknown): ErrorCategory {
   if (error === null || typeof error !== "object") return "unknown";
+  const command = getDiscoveryCommandDiagnostic(error);
+  if (command?.termination === "deadline" || command?.cause.endsWith("_timeout")) return "timeout";
   const category = categories.get(error);
   if (category !== undefined) return category;
   if ("code" in error && (error.code === -32001 || error.code === "ETIMEDOUT")) return "timeout";

@@ -6,6 +6,7 @@ import { MeasurementWindow, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY } from "..
 import { ExpectedOperationError, expectedOutcome } from "../shared/error-reporting.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
 import { deviceAppsDiagnosticTags } from "../shared/device-apps-diagnostics.ts";
+import { getDiscoveryCommandDiagnostic } from "../shared/device-apps-command-diagnostics.ts";
 import { androidStartupDiagnosticTags } from "../shared/android-startup-diagnostics.ts";
 import type { AndroidStartupSummary, AndroidStartupContext, AndroidStartupFailure, AndroidDeviceState } from "../shared/android-startup-diagnostics.ts";
 
@@ -118,7 +119,10 @@ export function captureServerError(error: unknown, operation: string, options?: 
     return;
   }
   const androidTags = androidStartupDiagnosticTags(error);
-  Sentry.captureException(error, { tags: { ...diagnosticTags, ...androidTags, operation } });
+  const command = getDiscoveryCommandDiagnostic(error);
+  const contexts = command ? { device_apps_command: { elapsed_ms: command.elapsed_ms, deadline_ms: command.deadline_ms,
+    exit_status: command.exit_status } } : undefined;
+  Sentry.captureException(error, { tags: { ...diagnosticTags, ...androidTags, operation }, contexts });
 }
 
 type RequestReporting = { accounted: boolean; sessionResponse?: { release: () => void; close: () => Promise<void> } };

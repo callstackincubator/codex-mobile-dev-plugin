@@ -1,12 +1,10 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { runDiscoveryCommand, annotateDiscoveryCommand } from "./command.ts";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { adbPath } from "../native-logs.ts";
-import { baguetteEnvironment } from "../baguette-runtime.ts";
+import { baguetteEnvironment, BAGUETTE_RUNTIME_TIMEOUT_MS } from "../baguette-runtime.ts";
 import type { ForegroundApp } from "../../shared/device-apps.ts";
 
-const execute = promisify(execFile);
 const number = z.number();
 const integer = number.int();
 const positive = integer.positive();
@@ -18,7 +16,7 @@ const schema = response.strict();
 export async function foregroundPhysicalPid(deviceId: string, signal?: AbortSignal,
   helper = new URL("./ios-fps/mobile-dev-ios-fps", import.meta.url)): Promise<number | null> {
   const path = fileURLToPath(helper);
-  const result = await execute(path, ["foreground", deviceId], { encoding: "utf8", timeout: 20000, maxBuffer: 4096, signal });
+  const result = await runDiscoveryCommand("ios_physical_foreground", path, ["foreground", deviceId], { encoding: "utf8", timeout: 20000, maxBuffer: 4096, signal });
   const decoded: unknown = JSON.parse(result.stdout);
   const foreground = schema.parse(decoded);
   return foreground.pid;
@@ -28,8 +26,15 @@ export async function foregroundSimulatorPid(deviceId: string, signal?: AbortSig
   helper = new URL("./baguette/Baguette", import.meta.url), runtime = baguetteEnvironment): Promise<number | null> {
   const path = fileURLToPath(helper);
   const cancellation = signal ?? AbortSignal.timeout(10000);
-  const environment = await runtime(path, cancellation);
-  const result = await execute(path, ["foreground", "--udid", deviceId], {
+  const startedAt = performance.now();
+  let environment: NodeJS.ProcessEnv;
+  try { environment = await runtime(path, cancellation); }
+  catch (error) {
+    const elapsed = performance.now() - startedAt;
+    const annotated = annotateDiscoveryCommand(error, "ios_simulator_runtime", elapsed, { encoding: "utf8", timeout: BAGUETTE_RUNTIME_TIMEOUT_MS, maxBuffer: 4096, signal: cancellation });
+    throw annotated;
+  }
+  const result = await runDiscoveryCommand("ios_simulator_foreground", path, ["foreground", "--udid", deviceId], {
     encoding: "utf8", timeout: 10000, maxBuffer: 4096, signal: cancellation, env: environment,
   });
   const decoded: unknown = JSON.parse(result.stdout);
@@ -59,7 +64,7 @@ export function parseAndroidForegroundPackage(output: string): string | null {
 
 export async function foregroundAndroidPackage(deviceId: string, signal?: AbortSignal): Promise<string | null> {
   const adb = await adbPath();
-  const result = await execute(adb, ["-s", deviceId, "shell", "dumpsys", "activity", "activities"], {
+  const result = await runDiscoveryCommand("android_foreground_activity", adb, ["-s", deviceId, "shell", "dumpsys", "activity", "activities"], {
     encoding: "utf8", timeout: 5000, maxBuffer: 4 * 1024 * 1024, signal,
   });
   return parseAndroidForegroundPackage(result.stdout);
@@ -69,7 +74,7 @@ export async function foregroundAndroidApp(deviceId: string, signal?: AbortSigna
   const bundleId = await foregroundAndroidPackage(deviceId, signal);
   if (bundleId === null) return null;
   const adb = await adbPath();
-  const result = await execute(adb, ["-s", deviceId, "shell", "pidof", bundleId], {
+  const result = await runDiscoveryCommand("android_foreground_pid", adb, ["-s", deviceId, "shell", "pidof", bundleId], {
     encoding: "utf8", timeout: 5000, maxBuffer: 4096, signal,
   });
   const output = result.stdout.trim();

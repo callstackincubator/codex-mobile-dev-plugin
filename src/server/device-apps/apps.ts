@@ -6,9 +6,10 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { DeviceApp } from "../../shared/device-apps.ts";
 import { adbPath } from "../native-logs.ts";
+import { runDiscoveryCommand } from "./command.ts";
 
 const execute = promisify(execFile);
-type DeviceCommand = (file: string, args: string[], options: { encoding: "utf8"; timeout: number; maxBuffer: number; signal?: AbortSignal }) => Promise<{ stdout: string }>;
+type DeviceCommand = (file: string, args: string[], options: { encoding: "utf8"; timeout: number; maxBuffer: number; signal?: AbortSignal }) => Promise<{ stdout: string; stderr?: string }>;
 
 const text = z.string();
 const number = z.number();
@@ -59,8 +60,8 @@ export async function runningPhysicalApps(deviceId: string, signal?: AbortSignal
   const prefix = ["devicectl", "device", "info"];
   const options = ["--device", deviceId, "--quiet", "--timeout", "10", "--omit-deprecated-fields-in-json", "--json-output", "-"];
   const settings: Parameters<DeviceCommand>[2] = { encoding: "utf8", timeout: 15000, maxBuffer: 4 * 1024 * 1024, signal };
-  const installed = run("/usr/bin/xcrun", [...prefix, "apps", "--no-include-default-apps", ...options], settings);
-  const running = run("/usr/bin/xcrun", [...prefix, "processes", ...options], settings);
+  const installed = runDiscoveryCommand("ios_physical_apps", "/usr/bin/xcrun", [...prefix, "apps", "--no-include-default-apps", ...options], settings, run);
+  const running = runDiscoveryCommand("ios_physical_processes", "/usr/bin/xcrun", [...prefix, "processes", ...options], settings, run);
   const results = await Promise.all([installed, running]);
   return parsePhysicalApps(results[0].stdout, results[1].stdout);
 }
@@ -78,7 +79,7 @@ export function parseRunningApps(output: string): DeviceApp[] {
 
 export async function runningSimulatorApps(deviceId: string, signal?: AbortSignal): Promise<DeviceApp[]> {
   if (process.platform !== "darwin") throw new ExpectedOperationError("unsupported_platform", "iOS CPU monitoring requires macOS and Xcode.");
-  const result = await execute("xcrun", ["simctl", "spawn", deviceId, "launchctl", "list"], { timeout: 5000, maxBuffer: 1024 * 1024, signal });
+  const result = await runDiscoveryCommand("ios_simulator_apps", "xcrun", ["simctl", "spawn", deviceId, "launchctl", "list"], { encoding: "utf8", timeout: 5000, maxBuffer: 1024 * 1024, signal });
   return parseRunningApps(result.stdout);
 }
 
@@ -105,10 +106,10 @@ export async function runningDeviceApps(deviceId: string, signal?: AbortSignal, 
   const adb = await adbPath();
   let packages = packageLists.get(deviceId);
   if (packages === undefined || packages.expires < Date.now()) {
-    const result = await execute(adb, ["-s", deviceId, "shell", "pm", "list", "packages", "-3"], { signal, timeout: 5000, maxBuffer: 1024 * 1024 });
+    const result = await runDiscoveryCommand("android_packages", adb, ["-s", deviceId, "shell", "pm", "list", "packages", "-3"], { encoding: "utf8", signal, timeout: 5000, maxBuffer: 1024 * 1024 });
     packages = { expires: Date.now() + 30000, output: result.stdout };
     packageLists.set(deviceId, packages);
   }
-  const processes = await execute(adb, ["-s", deviceId, "shell", "ps", "-A", "-o", "PID,NAME"], { signal, timeout: 5000, maxBuffer: 1024 * 1024 });
+  const processes = await runDiscoveryCommand("android_processes", adb, ["-s", deviceId, "shell", "ps", "-A", "-o", "PID,NAME"], { encoding: "utf8", signal, timeout: 5000, maxBuffer: 1024 * 1024 });
   return parseAndroidApps(packages.output, processes.stdout);
 }

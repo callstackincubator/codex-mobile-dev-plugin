@@ -10,13 +10,21 @@ struct ForegroundCommand: AsyncParsableCommand {
     @OptionGroup var options: DeviceOption
 
     func run() async throws {
+        do { try readForeground() }
+        catch {
+            ForegroundFailure.report(error)
+            throw error
+        }
+    }
+
+    private func readForeground() throws {
         let simulators = CoreSimulators(deviceSetPath: options.deviceSet)
         guard let simulator = simulators.find(udid: options.udid) else {
-            throw ValidationError("Selected simulator not found")
+            throw ForegroundFailure(cause: .deviceNotFound, message: "Selected simulator not found")
         }
         let accessibility = simulator.accessibility()
         guard let translator = accessibility as? AXPTranslatorAccessibility else {
-            throw ValidationError("Simulator foreground detection is unavailable")
+            throw ForegroundFailure(cause: .bridgeUnavailable, message: "Simulator foreground detection is unavailable")
         }
         let pid = try translator.foregroundPid()
         let value: Any

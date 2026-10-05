@@ -2,6 +2,26 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Since 0.1.129, discovery command failures retain bounded `discovery_command`, `discovery_cause`,
+`discovery_termination`, and optional `discovery_signal` tags. Failed exception
+contexts contain only numeric `elapsed_ms`, `deadline_ms`, and an optional exit
+status from 0 to 255. Command identifiers are fixed product enums. Foreground
+helpers emit a versioned, strictly validated error-code record on stderr;
+connection, service opening, query, response, and cleanup failures stay distinct.
+Helper-owned timeouts count as timeouts even when the helper exits with status 1.
+Parent deadlines, explicit cancellation, native signals, missing executables, and
+output limits retain separate classifications. Known simctl/ADB lifecycle text
+is classified locally into fixed causes; text never enters these diagnostics.
+
+The existing discovery stage/failure tags, exception-text and Node system-error
+scrubbing, anonymous error attribution, telemetry opt-out, UI discovery metrics,
+and trace exclusions remain. Server episode signatures and error fingerprints
+also distinguish command/cause; numeric timing and exit status do not become
+metric attributes, episode keys, or grouping dimensions. This diagnostic change
+preserves command deadlines, retry intervals, and discovery concurrency. Native
+Baguette and iOS FPS helpers are rebuilt with matching debug symbols; their
+shared Sentry initialization and aggregate measurements remain unchanged.
+
 Since 0.1.128, MCP resource failures retain one original handler exception. Resource
 callbacks normalize thrown values and classify aborted reads before the Sentry
 SDK observes them. A request-scoped reporting flag excludes the generated
