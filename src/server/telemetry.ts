@@ -4,12 +4,69 @@ import { MeasurementWindow, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY } from "..
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
 import { deviceAppsDiagnosticTags } from "../shared/device-apps-diagnostics.ts";
+import { androidStartupDiagnosticTags } from "../shared/android-startup-diagnostics.ts";
+import type { AndroidStartupSummary, AndroidStartupContext, AndroidStartupFailure, AndroidDeviceState } from "../shared/android-startup-diagnostics.ts";
 
 export function recordAndroidBackendStartup(duration: number, outcome: "ready" | "failed") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };
   Sentry.metrics.count("android.backend.startup.samples", 1, { attributes });
   Sentry.metrics.gauge("android.backend.startup.duration", duration, { unit: "millisecond", attributes });
+}
+
+function androidStartupAttributes(context: AndroidStartupContext) {
+  return {
+    component: "server", surface: "simulator", device_platform: "android",
+    device_kind: context.deviceKind, android_transport: context.transport,
+    android_device_state_before: context.stateBefore,
+  };
+}
+
+export function recordAndroidStartupStages(summary: AndroidStartupSummary, context: AndroidStartupContext) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const product = androidStartupAttributes(context);
+  for (const stage of summary.stages) {
+    if (stage.samples === 0) continue;
+    const attributes = { ...product, stage: stage.stage, outcome: summary.outcome };
+    const mean = stage.totalMs / stage.samples;
+    Sentry.metrics.count("android.backend.startup.stage.samples", stage.samples, { attributes });
+    Sentry.metrics.gauge("android.backend.startup.stage.mean", mean, { unit: "millisecond", attributes });
+    Sentry.metrics.gauge("android.backend.startup.stage.max", stage.maxMs, { unit: "millisecond", attributes });
+    for (const [commandOutcome, samples] of Object.entries(stage.outcomes)) {
+      if (samples === undefined || samples === 0) continue;
+      const outcomeAttributes = { ...attributes, command_outcome: commandOutcome };
+      Sentry.metrics.count("android.backend.startup.stage.outcomes", samples, { attributes: outcomeAttributes });
+    }
+    if (stage.timedSamples > 0) {
+      Sentry.metrics.count("android.backend.startup.execution.spawned", stage.spawnedSamples, { attributes });
+      const queueMean = stage.queueMs / stage.timedSamples;
+      const executionMean = stage.executionMs / stage.timedSamples;
+      Sentry.metrics.gauge("android.backend.startup.queue.mean", queueMean, { unit: "millisecond", attributes });
+      Sentry.metrics.gauge("android.backend.startup.execution.mean", executionMean, { unit: "millisecond", attributes });
+    }
+  }
+}
+
+export function recordAndroidStartupContext(context: AndroidStartupContext) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = androidStartupAttributes(context);
+  Sentry.metrics.gauge("android.backend.startup.active_backends", context.activeBackends, { attributes });
+  Sentry.metrics.gauge("android.backend.startup.stopping_backends", context.stoppingBackends, { attributes });
+  Sentry.metrics.gauge("android.backend.startup.in_flight", context.startingBackends, { attributes });
+}
+
+export function recordAndroidStartupDeviceState(state: AndroidDeviceState, duration: number, context: AndroidStartupContext, failure: AndroidStartupFailure) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const product = androidStartupAttributes(context);
+  const attributes = { ...product, android_device_state_after: state, stage: failure.stage, command_outcome: failure.outcome };
+  Sentry.metrics.count("android.backend.startup.device_state.samples", 1, { attributes });
+  Sentry.metrics.gauge("android.backend.startup.device_state.duration", duration, { unit: "millisecond", attributes });
+}
+
+export function recordAndroidBackendStop(duration: number, context: AndroidStartupContext) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = androidStartupAttributes(context);
+  Sentry.metrics.gauge("android.backend.process_shutdown.duration", duration, { unit: "millisecond", attributes });
 }
 
 export class IOSLogProcessingTelemetry {
@@ -52,7 +109,8 @@ export function captureServerError(error: unknown, operation: string) {
   if (error instanceof SimulatorUnavailableError) return;
   if (error instanceof Error && error.name === "AbortError") return;
   const diagnosticTags = deviceAppsDiagnosticTags(error);
-  Sentry.captureException(error, { tags: { ...diagnosticTags, operation } });
+  const androidTags = androidStartupDiagnosticTags(error);
+  Sentry.captureException(error, { tags: { ...diagnosticTags, ...androidTags, operation } });
 }
 
 export function installTracePropagation(transport: Transport) {

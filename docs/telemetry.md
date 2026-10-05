@@ -124,6 +124,45 @@ measurement boundaries are introduced.
 
 Since 0.1.117, Android's bundled serve-emu backend runs under Node.js. Existing MCP error capture, sampled tool traces, UI readiness, and input acknowledgement measurements remain on the active paths. `android.backend.startup.samples` and `android.backend.startup.duration` measure owned backend launches from process spawn through matching device health readiness or startup failure, in milliseconds, with a fixed `outcome` of `ready` or `failed`. These measure plugin backend startup, excluding emulator boot. They carry only product attributes, never device IDs, process diagnostics, paths, or input content, and honor telemetry opt-out. The child backend retains its local frame, queue, and recovery diagnostics without emitting per-frame Sentry events.
 
+Since 0.1.127, owned Android launches also send bounded startup diagnostics to
+the parent over Node IPC. The child sends at most one progress message per fixed
+stage, one first-failure message, and one aggregate completion message. No SDK is
+initialized in the child. Summaries are strictly validated before telemetry;
+arguments, output, paths, device names, serials, socket/session identifiers and
+credentials are never included. Collection stops after initial scrcpy readiness
+or startup rollback, and telemetry opt-out disables child collection and the
+post-failure device check. Existing overall startup metrics and sampled MCP
+trace boundaries remain unchanged; timeout values and retry behavior are unchanged.
+
+`android.backend.startup.stage.samples`, `.stage.mean`, `.stage.max` and
+`.stage.outcomes` distinguish server lookup/hash, cache probe, push/cache
+publication/copy, forwarding, socket readiness/polling, socket connections,
+video preamble and rollback. Socket readiness measures the whole wait; socket
+polling measures individual commands aggregated into one summary. Stage durations
+include cancellation settling. `.queue.mean` and `.execution.mean` distinguish
+executor admission wait from local ADB process lifetime through pipe closure;
+`.execution.spawned` counts measured commands that actually spawned. These are
+monotonic plugin timings in milliseconds, not device-only execution latency.
+Measurements are aggregated per stage per launch, never sent per poll or frame.
+
+`.active_backends`, `.in_flight` and `.stopping_backends` count owned active,
+starting and stopping backends in this MCP process. `android.backend.process_shutdown.duration`
+measures SIGTERM to local child exit; it does not establish remote scrcpy exit.
+`.device_state.samples` and `.device_state.duration` record a bounded, asynchronous
+ADB device-list check after failure, with only online/offline/unauthorized/missing/
+unknown state. The before-state comes from the existing online-device preflight.
+An unavailable or failed check records unknown, never inferred device state.
+The check does not delay the failed tool response and is cancelled on disposal.
+
+All diagnostics explicitly use the simulator surface and Android device platform,
+with emulator/physical kind and emulator/wired/localNetwork/unknown transport.
+Errors retain their original message and stack plus fixed `android_startup_stage`,
+`android_startup_outcome`, `android_device_state_before`, `android_transport` and
+`android_cleanup_overlap` tags. Existing anonymous error attribution, environment,
+release, scrubbing and opt-out remain in the parent. Installation and process-session
+IDs never enter performance measurements. These diagnostics distinguish failure
+mechanisms; they do not by themselves identify the cause of an ADB stall.
+
 Unhandled JavaScript errors and rejected promises, React render errors, and handled MCP tool failures produce issues. Expected stopped-device errors and cancelled operations are excluded. Sentry traces 10% of ordinary tool actions, continuing the UI trace through the MCP bridge. Frame reads, polling, discovery and pointer input are excluded from trace sampling. The SDK does not record MCP arguments or results.
 
 Native device requests retain the ordinary sampled MCP trace. `device_picker.prepare`

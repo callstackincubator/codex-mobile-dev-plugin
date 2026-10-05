@@ -4,7 +4,8 @@ import { parseArgs } from "node:util";
 import { randomBytes } from "node:crypto";
 import { pickDevice } from "./adb.ts";
 import { listAvds, listRunningAvds, startEmulator } from "./emulator.ts";
-import { SCRCPY_DEFAULTS } from "./scrcpy.ts";
+import { SCRCPY_DEFAULTS, startScrcpy } from "./scrcpy.ts";
+import type { StartupReporter } from "./startup-diagnostics.ts";
 import {
   DEFAULT_HOST,
   DEFAULT_MAX_ACTIVE_UPLOADS,
@@ -14,6 +15,13 @@ import {
   DEFAULT_UPLOAD_QUEUE_TIMEOUT_MS,
   startServer,
 } from "./server.ts";
+import type { ServerDependencies } from "./server.ts";
+
+let startupReportSent: Promise<void> | undefined;
+async function exitAfterDiagnostics(code: number) {
+  await startupReportSent;
+  process.exit(code);
+}
 
 const argv = process.argv.slice(2);
 const { values } = parseArgs({
@@ -206,14 +214,31 @@ async function main() {
   process.once("SIGINT", () => {
     void stop()
       .catch((err) => console.error("Shutdown cleanup failed:", err))
-      .finally(() => process.exit(0));
+      .finally(() => exitAfterDiagnostics(0));
   });
   process.once("SIGTERM", () => {
     void stop()
       .catch((err) => console.error("Shutdown cleanup failed:", err))
-      .finally(() => process.exit(0));
+      .finally(() => exitAfterDiagnostics(0));
   });
 
+  let initialStartup = true;
+  const report: StartupReporter = message => {
+    if (process.connected === false || process.send === undefined) return;
+    const send = process.send.bind(process);
+    if (message.type === "mobile-dev/android-startup-complete") {
+      startupReportSent = new Promise(resolve => { send(message, () => resolve()); });
+    } else send(message, () => {});
+  };
+  process.channel?.unref();
+  const dependencies: ServerDependencies = {
+    startScrcpy(options) {
+      const enabled = initialStartup && process.connected && process.env.MOBILE_DEV_TELEMETRY !== "off";
+      initialStartup = false;
+      const onStartupDiagnostics = enabled ? report : undefined;
+      return startScrcpy({ ...options, onStartupDiagnostics });
+    },
+  };
   startupTask = startServer({
     serial,
     port,
@@ -230,7 +255,7 @@ async function main() {
     maxActiveUploads,
     maxQueuedUploads,
     uploadQueueTimeoutMs,
-  });
+  }, dependencies);
   try {
     activeServer = await startupTask;
   } catch (err) {
@@ -266,7 +291,7 @@ async function main() {
   }
 }
 
-await main().catch((err) => {
+await main().catch(async (err) => {
   console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
-  process.exit(1);
+  await exitAfterDiagnostics(1);
 });

@@ -14,7 +14,9 @@ import { adbPath } from "./native-logs.ts";
 import { errorMessage, parseBaseUrl } from "../shared/protocol.ts";
 import type { SimulatorDevice, Status } from "../shared/protocol.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
-import { recordAndroidBackendStartup } from "./telemetry.ts";
+import { recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
+import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "../shared/android-startup-diagnostics.ts";
+import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "../shared/android-startup-diagnostics.ts";
 
 const execute = promisify(execFile);
 export const androidIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/);
@@ -37,6 +39,8 @@ export class ServeEmu {
   private readonly booting = new Map<string, Promise<Status>>();
   private readonly lifetime = new AbortController();
   private readonly starting = new Map<string, Promise<Backend>>();
+  private readonly stopping = new Set<ChildProcess>();
+  private readonly backendContexts = new WeakMap<ChildProcess, AndroidStartupContext>();
   private disposed = false;
   private readonly external?: URL;
 
@@ -152,7 +156,8 @@ export class ServeEmu {
     if (!before.connected) throw new Error(before.error);
     if (!before.devices.some(device => device.udid === id)) return before;
     await execute(await adbPath(), ["-s", id, "emu", "kill"], { timeout: 5000 });
-    this.backends.get(id)?.child?.kill("SIGTERM");
+    const backend = this.backends.get(id);
+    if (backend) this.stopBackend(backend);
     this.backends.delete(id);
     const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(15000)]);
     while (true) {
@@ -193,11 +198,11 @@ export class ServeEmu {
   }
 
   private async ensureStarted(id: string): Promise<Backend> {
-    await this.device(id, true);
+    const device = await this.device(id, true);
     const existing = this.backends.get(id);
     if (existing) {
       try { if ((await this.health(existing.url)).serial === id) return existing; } catch { /* Restart our failed backend. */ }
-      existing.child?.kill("SIGTERM"); this.backends.delete(id);
+      this.stopBackend(existing); this.backends.delete(id);
     }
     const candidate = this.external ?? new URL("http://127.0.0.1:3300");
     try {
@@ -216,10 +221,39 @@ export class ServeEmu {
     if (this.disposed) throw new Error("The plugin server has closed.");
     const url = new URL(`http://127.0.0.1:${address.port}`);
     const startedAt = performance.now();
+    const context: AndroidStartupContext = {
+      deviceKind: device.kind === "physical" ? "physical" : "emulator",
+      transport: device.kind === "physical" ? device.transportType ?? "unknown" : "emulator",
+      stateBefore: "online", activeBackends: 0, stoppingBackends: this.stopping.size,
+      startingBackends: this.starting.size,
+    };
+    for (const backend of this.backends.values()) if (backend.child) context.activeBackends++;
+    recordAndroidStartupContext(context);
+    const adb = await adbPath();
     const child = spawn(process.execPath, [cli, "--host", "127.0.0.1", "--port", url.port, "--serial", id, "--max-fps", "30"], {
-      stdio: ["ignore", "pipe", "pipe"], shell: false,
-      env: { ...process.env, PATH: `${dirname(await adbPath())}:${process.env.PATH ?? ""}`, SERVE_EMU_UPDATE_CHECK: "0" },
+      stdio: ["ignore", "pipe", "pipe", "ipc"], shell: false,
+      env: { ...process.env, PATH: `${dirname(adb)}:${process.env.PATH ?? ""}`, SERVE_EMU_UPDATE_CHECK: "0" },
     });
+    this.backendContexts.set(child, context);
+    let stage: AndroidStartupFailure["stage"] = "process-launch";
+    let summary: AndroidStartupSummary | undefined;
+    let observedFailure: AndroidStartupFailure | undefined;
+    let parentOutcome: AndroidStartupFailure["outcome"] = "unknown";
+    const onDiagnostic = (message: unknown) => {
+      if (process.env.MOBILE_DEV_TELEMETRY === "off" || summary) return;
+      const parsed = androidStartupMessageSchema.safeParse(message);
+      if (parsed.success === false) return;
+      if (parsed.data.type === "mobile-dev/android-startup") stage = parsed.data.stage;
+      else if (parsed.data.type === "mobile-dev/android-startup-failure") observedFailure = { stage: parsed.data.stage, outcome: parsed.data.outcome };
+      else {
+        summary = parsed.data;
+        if (summary.outcome === "ready") stage = "health-readiness";
+        recordAndroidStartupStages(summary, context);
+        child.off("message", onDiagnostic);
+      }
+    };
+    child.on("message", onDiagnostic);
+    child.once("close", () => child.off("message", onDiagnostic));
     const backend = { url, child };
     this.backends.set(id, backend);
     let launchError: Error | undefined;
@@ -232,8 +266,14 @@ export class ServeEmu {
     try {
       const deadline = Date.now() + 30000;
       while (Date.now() < deadline && !this.disposed) {
-        if (launchError) throw new Error(`Cannot start the bundled Node.js serve-emu runtime. ${launchError.message}`);
-        if (child.exitCode !== null || child.signalCode !== null) throw new Error(`serve-emu exited before it became ready. ${diagnostics.trim()}`);
+        if (launchError) {
+          parentOutcome = "spawn-error";
+          throw new Error(`Cannot start the bundled Node.js serve-emu runtime. ${launchError.message}`);
+        }
+        if (child.exitCode !== null || child.signalCode !== null) {
+          parentOutcome = "error";
+          throw new Error(`serve-emu exited before it became ready. ${diagnostics.trim()}`);
+        }
         try {
           const health = await this.health(url);
           if (health.serial === id) {
@@ -244,12 +284,29 @@ export class ServeEmu {
         } catch { /* Wait for scrcpy startup. */ }
         await delay(250);
       }
+      parentOutcome = this.disposed ? "aborted" : "timeout";
       throw new Error(`serve-emu did not become ready within 30 seconds. ${diagnostics.trim()}`);
     } catch (error) {
       const duration = performance.now() - startedAt;
       recordAndroidBackendStartup(duration, "failed");
-      child.kill("SIGTERM");
+      const failure: AndroidStartupFailure = {
+        stage: summary?.failedStage ?? observedFailure?.stage ?? stage,
+        outcome: summary?.failure ?? observedFailure?.outcome ?? parentOutcome,
+      };
+      setAndroidStartupDiagnostic(error, failure, context);
+      this.stopBackend(backend);
       this.backends.delete(id);
+      if (this.disposed === false && process.env.MOBILE_DEV_TELEMETRY !== "off") {
+        const checkedAt = performance.now();
+        void execute(adb, ["devices"], { timeout: 2000, maxBuffer: 1024 * 1024, signal: this.lifetime.signal }).then(response => {
+          const state = androidDeviceState(response.stdout, id);
+          const elapsed = performance.now() - checkedAt;
+          recordAndroidStartupDeviceState(state, elapsed, context, failure);
+        }, () => {
+          const elapsed = performance.now() - checkedAt;
+          recordAndroidStartupDeviceState("unknown", elapsed, context, failure);
+        });
+      }
       throw error;
     }
   }
@@ -274,7 +331,23 @@ export class ServeEmu {
   dispose() {
     this.disposed = true;
     this.lifetime.abort();
-    for (const backend of this.backends.values()) backend.child?.kill("SIGTERM");
+    for (const backend of this.backends.values()) this.stopBackend(backend);
     this.backends.clear();
+  }
+
+  private stopBackend(backend: Backend) {
+    const child = backend.child;
+    if (child === undefined) return;
+    const context = this.backendContexts.get(child);
+    if (context && child.pid !== undefined && child.exitCode === null && child.signalCode === null && this.stopping.has(child) === false && process.env.MOBILE_DEV_TELEMETRY !== "off") {
+      this.stopping.add(child);
+      const started = performance.now();
+      child.once("exit", () => {
+        this.stopping.delete(child);
+        const duration = performance.now() - started;
+        recordAndroidBackendStop(duration, context);
+      });
+    }
+    child.kill("SIGTERM");
   }
 }

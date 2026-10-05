@@ -1,6 +1,6 @@
 import test, { before, after } from "node:test";
 import assert from "node:assert/strict";
-import { ChildProcess, execFile } from "node:child_process";
+import { ChildProcess, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { Socket, createServer } from "node:net";
 import { once } from "node:events";
@@ -12,6 +12,8 @@ import { build } from "esbuild";
 import { WebSocket } from "ws";
 import { buildServeEmu } from "../scripts/build-serve-emu.mjs";
 import type { ScrcpySession, VideoPacket } from "../runtimes/serve-emu/src/scrcpy.ts";
+import { androidStartupMessageSchema } from "../src/shared/android-startup-diagnostics.ts";
+import type { StartupMessage } from "../runtimes/serve-emu/src/startup-diagnostics.ts";
 
 const execute = promisify(execFile);
 let directory: string;
@@ -226,4 +228,59 @@ test("built Android CLI runs with Node.js and no Bun on PATH", async () => {
     env: { ...process.env, PATH: "/usr/bin:/bin", BUN_PATH: "/missing/bun" },
   });
   assert.match(result.stdout, /host an Android device/);
+});
+
+test("packaged CLI sends validated failure and cleanup diagnostics over IPC, including cancellation and opt-out", async t => {
+  const outputDirectory = join(directory, "ipc-cli");
+  const cli = await buildServeEmu(outputDirectory);
+  const commands = join(directory, "adb-fixture");
+  await mkdir(commands);
+  const adb = join(commands, "adb");
+  const program = `#!/usr/bin/env node
+const args = process.argv.slice(4);
+if (args[0] === 'forward' && args[1] === 'tcp:0') process.stdout.write('28000');
+else if (args.includes('app_process')) setInterval(() => {}, 1000);
+else if (args[1] === 'cat') {
+  if (process.env.TEST_ADB_FAILURE === 'missing') { process.stderr.write('device private-device-id not found'); process.exitCode = 1; }
+  else setInterval(() => {}, 1000);
+}
+`;
+  await writeFile(adb, program, { mode: 0o755 });
+  for (const mode of ["delay", "missing", "cancel", "opt-out"] as const) {
+    await t.test(mode, async () => {
+      const messages: StartupMessage[] = [];
+      const child = spawn(process.execPath, [cli, "--serial", "private-device-id", "--port", "0"], {
+        stdio: ["ignore", "pipe", "pipe", "ipc"],
+        env: { ...process.env, PATH: `${commands}:${process.env.PATH ?? ""}`, TEST_ADB_FAILURE: mode === "opt-out" ? "missing" : mode, MOBILE_DEV_TELEMETRY: mode === "opt-out" ? "off" : "on" },
+      });
+      let stderr = "";
+      child.stdout.resume();
+      child.stderr.on("data", chunk => { stderr += chunk; });
+      child.on("message", message => {
+        const parsed = androidStartupMessageSchema.safeParse(message);
+        assert.equal(parsed.success, true);
+        if (parsed.success === false) return;
+        messages.push(parsed.data);
+        if (mode === "cancel" && parsed.data.type === "mobile-dev/android-startup" && parsed.data.stage === "socket-poll") child.kill("SIGTERM");
+      });
+      const timer = setTimeout(() => child.kill("SIGKILL"), 10000);
+      const result = await once(child, "close");
+      clearTimeout(timer);
+      assert.equal(result[0], mode === "cancel" ? 0 : 1, stderr);
+      if (mode === "opt-out") { assert.equal(messages.length, 0); return; }
+      const summary = messages.find(message => message.type === "mobile-dev/android-startup-complete");
+      assert.ok(summary);
+      assert.equal(summary.type, "mobile-dev/android-startup-complete");
+      assert.equal(summary.outcome, "failed");
+      assert.equal(summary.failedStage, "socket-poll");
+      const expected = mode === "delay" ? "timeout" : mode === "missing" ? "missing" : "aborted";
+      assert.equal(summary.failure, expected);
+      const cleanup = summary.stages.find(stage => stage.stage === "cleanup");
+      assert.equal(cleanup?.outcomes.ok, 1);
+      const serialized = JSON.stringify(messages);
+      const containsSerial = serialized.includes("private-device-id");
+      assert.equal(containsSerial, false);
+      assert.ok(messages.length <= 18);
+    });
+  }
 });

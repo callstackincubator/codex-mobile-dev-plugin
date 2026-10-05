@@ -391,3 +391,53 @@ test("Node runtime metrics report CPU, memory and event-loop measurements with c
   }
   contains(encoded, '"component":{"value":"server"');
 });
+
+test("Android startup diagnostics retain stage, device state and anonymous error attribution without private content", async t => {
+  const { recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } = await import("../src/server/telemetry.ts");
+  const { setAndroidStartupDiagnostic } = await import("../src/shared/android-startup-diagnostics.ts");
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, environment: "release", release: "mobile-dev@test",
+    beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
+    initialScope: { user: { id: "anon_0123456789abcdef0123456789abcdef" }, tags: { telemetry_session: "run_0123456789abcdef0123456789abcdef", device_platform: "ios", device_kind: "simulator" } },
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  const context = { deviceKind: "physical", transport: "localNetwork", stateBefore: "online", activeBackends: 2, stoppingBackends: 1, startingBackends: 1 } as const;
+  const failure = { stage: "socket-poll", outcome: "timeout" } as const;
+  recordAndroidStartupContext(context);
+  recordAndroidStartupStages({
+    type: "mobile-dev/android-startup-complete", outcome: "failed", failedStage: failure.stage, failure: failure.outcome,
+    stages: [{ stage: "socket-poll", samples: 2, totalMs: 2200, maxMs: 2000, timedSamples: 2, spawnedSamples: 2, queueMs: 20, executionMs: 2180, outcomes: { ok: 1, timeout: 1 } }],
+  }, context);
+  recordAndroidStartupDeviceState("offline", 5, context, failure);
+  recordAndroidBackendStop(80, context);
+  const error = new Error("Android backend startup failed");
+  setAndroidStartupDiagnostic(error, failure, context);
+  captureServerError(error, "android.tool");
+  await Sentry.flush();
+  const sent = JSON.stringify(envelopes);
+  for (const name of ["stage.mean", "stage.max", "stage.outcomes", "queue.mean", "execution.mean", "execution.spawned", "device_state.samples", "active_backends", "stopping_backends", "in_flight"]) contains(sent, `android.backend.startup.${name}`);
+  contains(sent, "android.backend.process_shutdown.duration");
+  contains(sent, "android_startup_stage");
+  contains(sent, "socket-poll");
+  contains(sent, "android_device_state_after");
+  contains(sent, "offline");
+  contains(sent, '"device_platform":"android"');
+  contains(sent, '"device_kind":"physical"');
+  contains(sent, "anon_0123456789abcdef0123456789abcdef");
+  contains(sent, "mobile-dev@test");
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  t.after(() => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+  });
+  recordAndroidStartupContext(context);
+  recordAndroidStartupDeviceState("offline", 5, context, failure);
+  recordAndroidBackendStop(80, context);
+  recordAndroidStartupStages({ type: "mobile-dev/android-startup-complete", outcome: "ready", stages: [] }, context);
+  await Sentry.flush();
+  const afterOptOut = JSON.stringify(envelopes);
+  assert.equal(afterOptOut, sent);
+});
