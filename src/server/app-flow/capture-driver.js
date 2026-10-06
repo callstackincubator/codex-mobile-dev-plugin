@@ -109,7 +109,7 @@ export function createCaptureDriver(runtime, registry, probe) {
       owner=registry.find(target)?.owner;
       if(!owner)return {ready:false,found:false,reason:'The exact source view has not mounted.'};
     }
-    return probe({owner:owner?.id,target,component:branch.at(-1)?.component,path:job.path,params:job.params,expo:job.expo});
+    return probe({owner:owner?.id,target,ownerScope:branch.at(-1)?.ownerScope,component:branch.at(-1)?.component,path:job.path,params:job.params,expo:job.expo});
   };
   const same=(before,after)=>before?.ready && after?.ready && before.key===after.key && before.signature===after.signature && before.motion===after.motion;
   async function closePreview() {
@@ -181,7 +181,7 @@ export function createCaptureDriver(runtime, registry, probe) {
             branch.push({id: action.id, owner, undo: stateUndo(owner, setter, before)});
             setter(next);
           }
-          if(action.expected)branch.at(-1).target=`${action.expected.file}:${action.expected.source.line}:${action.expected.source.column}:entry`;
+          if(action.expected){branch.at(-1).target=`${action.expected.file}:${action.expected.source.line}:${action.expected.source.column}:entry`;branch.at(-1).ownerScope=action.expected.scope==='owner';}
           else branch.at(-1).component=action.name;
         } else {
           let control = value.control;

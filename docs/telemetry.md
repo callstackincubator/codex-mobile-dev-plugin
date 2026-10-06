@@ -708,3 +708,10 @@ measurements retain their names, units and boundaries. Reusing changed parent
 content still measures fresh route checks and screenshot verification. Route
 parameters and the matching proof remain local; no new telemetry attributes or
 per-frame events were added.
+
+App Flow keeps the existing presentation binding and runtime timing boundaries
+when prepared builds supply committed state directly. Local diagnostics add
+`lastCompiledBindings` to distinguish these reads from forced render collection.
+No state values, source paths, or bindings enter telemetry. Commands that reach
+the app after their calibrated deadline count in the existing
+`app_flow.runtime.timeouts` measurement for the original operation.

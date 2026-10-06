@@ -18,9 +18,11 @@ export class FlowConnection {
   private heartbeatPending = false;
   private heartbeatFailures = 0;
   private lastReply = 0;
+  private appClockOffset?:number;
   private metroBase: string;
   private metrics:FlowRuntimeMetrics;
   private presentationRoot?:string;
+  private presentationHash?:string;
   private presentationCatalog?:import('../../shared/app-flow.ts').FlowPresentations;
   private captureListeners = new Set<(event: any) => void>();
   onCapture(listener: (event:any) => void) { this.captureListeners.add(listener); return () => this.captureListeners.delete(listener); }
@@ -43,7 +45,7 @@ export class FlowConnection {
         if (message.method === "Runtime.bindingCalled" && message.params?.name === this.binding) {
           const value = JSON.parse(message.params.payload);
           if (value.capture) { for (const listener of this.captureListeners) listener(value.capture); }
-          else this.finish(value.id, value.result);
+          else this.finish(value.id, value.result, value.result?.commandExpired ? new FlowRuntimeTimeout(this.pending.get(value.id)?.operation??'other') : undefined);
         } else if (message.id) {
           if (message.error || message.result?.exceptionDetails) this.finish(message.id, undefined, new FlowRuntimeFailure(this.pending.get(message.id)?.operation??'other','was rejected',message.result?.exceptionDetails?.exception?.description??message.result?.exceptionDetails?.text??message.error?.message));
           else if (message.id > 0) this.finish(message.id, message.result);
@@ -56,7 +58,12 @@ export class FlowConnection {
       await this.send("Runtime.addBinding", { name: this.binding }, 2000,undefined,'binding');
       const [runtimeSource,presentationSource,queueSource,driverSource,transitionSource] = await flowRuntimeSource();
       // esbuild keepNames may introduce __name inside serialized functions.
-      await this.send("Runtime.evaluate", { expression: `(()=>{const __name=(value)=>value;for(const name of Object.keys(globalThis))if(name.startsWith(${JSON.stringify(`${this.key}_reply_`)})&&name!==${JSON.stringify(this.binding)})delete globalThis[name];(${runtimeSource})(${JSON.stringify(this.key)},10000,${presentationSource},${queueSource},${driverSource},${transitionSource});})()`, silent: true, returnByValue: true, objectGroup: this.key }, 2000,undefined,'install');
+      const installStarted=performance.now();
+      const installed=await this.send("Runtime.evaluate", { expression: `(()=>{const __name=(value)=>value;for(const name of Object.keys(globalThis))if(name.startsWith(${JSON.stringify(`${this.key}_reply_`)})&&name!==${JSON.stringify(this.binding)})delete globalThis[name];(${runtimeSource})(${JSON.stringify(this.key)},10000,${presentationSource},${queueSource},${driverSource},${transitionSource});return {clock:globalThis.performance?.now?.()??Date.now()};})()`, silent: true, returnByValue: true, objectGroup: this.key }, 2000,undefined,'install');
+      const appClock=installed?.result?.value?.clock;
+      // Use the app's monotonic clock. The send-side bound includes transit
+      // time, so clock skew or a slow handshake cannot expire fresh commands.
+      if(typeof appClock==='number'&&Number.isFinite(appClock))this.appClockOffset=appClock-installStarted;
       if (!this.closing && !this.closed) {
         this.heartbeat = setInterval(() => {
           // Every runtime command renews the lease. Recent replies already
@@ -92,10 +99,11 @@ export class FlowConnection {
     if (command.type === 'capture-start') command = {...command, binding:this.binding};
     if (command.type === 'presentation-setup') {
       this.presentationRoot=command.projectRoot as string;
+      this.presentationHash=command.sourceHash as string;
       const catalog = command.catalog as import('../../shared/app-flow.ts').FlowPresentations;
       let matched=0;
       for(let pass=0;pass<2;pass++){
-        let page = await this.invoke({ type: 'presentation-collect', ...(this.presentationCatalog===catalog?{}:{states:catalog.states,actions:catalog.actions,projectRoot:command.projectRoot}) }, 2500);
+        let page = await this.invoke({ type: 'presentation-collect', ...(this.presentationCatalog===catalog?{}:{states:catalog.states,actions:catalog.actions,projectRoot:command.projectRoot,sourceHash:command.sourceHash}) }, 2500);
         const bindings = [];
         for (let i=0;i<30;i++) { bindings.push(...(page.bindings ?? [])); if (page.next === undefined) break; page = await this.invoke({type:'presentation-bindings',offset:page.next},1500); }
         if(!bindings.length){this.presentationCatalog=catalog;break;}
@@ -113,7 +121,8 @@ export class FlowConnection {
       return { bindings: matched };
     }
     const id = -(++this.sequence);
-    const expression = `(()=>{const runtime=globalThis[${JSON.stringify(this.key)}],reply=result=>globalThis[${JSON.stringify(this.binding)}]?.(JSON.stringify({id:${id},result}));if(!runtime?.invoke){reply({runtimeUnavailable:true});return;}runtime.invoke(${JSON.stringify(command)},reply);})()`;
+    const deadline=this.appClockOffset===undefined?undefined:performance.now()+timeout+this.appClockOffset;
+    const expression = `(()=>{const runtime=globalThis[${JSON.stringify(this.key)}],reply=result=>globalThis[${JSON.stringify(this.binding)}]?.(JSON.stringify({id:${id},result}));${deadline===undefined?'':`if((globalThis.performance?.now?.()??Date.now())>${deadline}){reply({commandExpired:true});return;}`}if(!runtime?.invoke){reply({runtimeUnavailable:true});return;}runtime.invoke(${JSON.stringify(command)},reply);})()`;
     let result=await this.send("Runtime.evaluate", { expression, silent: true, returnByValue: true, objectGroup: this.key }, timeout, id,runtimeOperation(command.type));
     if(result?.runtimeUnavailable)throw new Error('App Flow inspector is no longer installed. Reconnecting.');
     if(result?.appFailed)throw new FlowAppFailure(String(command.type));
@@ -137,7 +146,7 @@ export class FlowConnection {
     if (command.type==='presentation-open' && !result?.error && this.presentationCatalog?.actions.some(action=>action.id===command.id&&action.expected)) {
       // A hidden branch can create its JSX only after its temporary state is
       // seeded. Bind that new entry before checking its capture readiness.
-      await this.invoke({type:'presentation-setup',catalog:this.presentationCatalog,projectRoot:this.presentationRoot},5000);
+      await this.invoke({type:'presentation-setup',catalog:this.presentationCatalog,projectRoot:this.presentationRoot,sourceHash:this.presentationHash},5000);
       result=await this.invoke({type:'presentation-view'},2000);
     }
     if (['presentation-collect','presentation-bindings','presentation-configure','presentation-active','presentations','presentation-rollback','presentation-portals','presentation-effects'].includes(String(command.type))) {

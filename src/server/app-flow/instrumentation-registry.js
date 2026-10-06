@@ -46,6 +46,7 @@ export function createFlowRegistry(preparePreview) {
       if(projection && scoped.some(match=>match.value.kind==='control' && matches.some(other=>!other.owner.preview && other.value.kind==='control' && other.value.control===match.value.control)))return undefined;
       return scoped.length === 1 ? scoped[0] : undefined;
     },
+    matchingOwners(sourceHash) { return typeof sourceHash==='string'&&sourceHash ? [...owners.values()].filter(owner=>owner.mounted&&owner.sourceHash===sourceHash) : []; },
     inventory() {
       const counts = new Map();
       for (const owner of owners.values()) for (const id of owner.entries.keys()) counts.set(id, (counts.get(id) || 0) + 1);

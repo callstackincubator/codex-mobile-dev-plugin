@@ -98,7 +98,7 @@ export class FlowPresentationCapture {
     if (!this.enabled) return;
     this.signal.throwIfAborted();
     const start = performance.now();
-    const result = await backend.runtime.invoke({type: 'presentation-setup', catalog: this.catalog, projectRoot: this.root}, 5000);
+    const result = await backend.runtime.invoke({type: 'presentation-setup', catalog: this.catalog, projectRoot: this.root, sourceHash:this.run.sourceHash}, 5000);
     if (result?.error) throw new Error('Presentation source binding is unavailable.');
     this.bindingTimings.record(performance.now() - start);
   }

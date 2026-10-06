@@ -171,3 +171,21 @@ test('a verified navigation frame avoids a second settling wait only while it st
   controller.abort();await assert.rejects(third,/stopped/);
   await driver.restore();
 });
+
+
+test('prepared form readiness keeps the exact branch marker and waits for sibling loading',async()=>{
+  const registry=createFlowRegistry(),owner=registry.create('App.tsx#Form','hash');
+  let state=0,loading=true;const target='App.tsx:4:0:entry';
+  registry.stage(owner,'step',{kind:'state',hook:'useState',tuple:[state,(value:number)=>{state=value;registry.stage(owner,target,{kind:'entry'});registry.commit(owner);} ]});registry.commit(owner);
+  const driver=createCaptureDriver({invoke(){}},registry,(query:any)=>{
+    if(query.nativeStart||query.nativeStop)return {};
+    assert.equal(query.owner,owner.id);assert.equal(query.target,target);assert.equal(query.ownerScope,true);
+    return {ready:!loading,found:true,content:1,loading,key:'form',signature:loading?'loading':'complete'};
+  });
+  const signal=new AbortController().signal,job={id:'form',path:[],actions:[{id:'step',name:'Field',expected:{file:'App.tsx',source:{line:4,column:0},scope:'owner'},effect:{kind:'state',site:'step',path:[],value:1}}]};
+  let done=false;const opened=driver.open(job,signal).then((value:any)=>{done=true;return value});
+  await delay(200);assert.equal(done,false,'A ready label cannot hide the pending form field');
+  loading=false;registry.commit(owner);assert.equal((await opened).ready,true);
+  owner.entries.delete(target);assert.equal(driver.verify(job).ready,false,'The owner alone cannot replace exact branch evidence');
+  await driver.restore();assert.equal(state,0);
+});

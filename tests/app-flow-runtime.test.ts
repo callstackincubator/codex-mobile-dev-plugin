@@ -1180,3 +1180,31 @@ test('presentation reuse proves the current route and real params, including nes
   assert.equal((await read(['/(tabs)/Profile/index'],{id:'observed'},true)).routeMatches,true);
   assert.equal((await app.invoke({type:'presentation-view'})).routeMatches,undefined);
 });
+
+
+test('an expired debugger request cannot mutate the app after recovery has moved on',async t=>{
+  const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
+  t.after(()=>new Promise<void>(resolve=>{for(const client of server.clients)client.terminate();server.close(()=>resolve())}));
+  let binding='',opened=0;const evaluations:Promise<void>[]=[];
+  server.on('connection',socket=>socket.on('message',bytes=>{
+    const message=JSON.parse(bytes.toString());
+    if(message.method==='Runtime.addBinding')binding=message.params.name;
+    if(message.id>0){socket.send(JSON.stringify({id:message.id,result:message.method==='Runtime.evaluate'?{result:{value:{clock:Date.now()+3600000}}}:{}}));return;}
+    // Model an overloaded app thread: the CDP message was received, but it
+    // reaches JavaScript only after the caller's command deadline.
+    evaluations.push(new Promise(resolve=>setTimeout(()=>{
+      vm.runInNewContext(message.params.expression,{
+        Date:{now:()=>Date.now()+3600000},
+        [message.params.objectGroup]:{invoke(_command:any,reply:any){opened++;reply({ready:true})}},
+        [binding]:(payload:string)=>socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload}})),
+      });resolve();
+    },60)));
+  }));
+  const connection=new FlowConnection(`ws://127.0.0.1:${(server.address()as {port:number}).port}`);
+  t.after(()=>connection.close({restore:false}));
+  await assert.rejects(connection.invoke({type:'presentation-open',id:'old-view'},20),FlowRuntimeTimeout);
+  await Promise.all(evaluations);
+  assert.equal(opened,0,'A timed-out opening must not run late against a recovered app');
+  assert.equal((await connection.invoke({type:'presentation-open',id:'fresh-view'},200)).ready,true);
+  assert.equal(opened,1,'The calibrated device clock must still admit a fresh request');
+});

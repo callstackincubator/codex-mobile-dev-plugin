@@ -9,6 +9,7 @@ import {installPresentationRuntime} from '../src/server/app-flow/presentations-r
 import {bindPresentationSites} from '../src/server/app-flow/presentations-bindings.ts';
 import {compareViewReference,presentationDestination} from '../scripts/lib/compare-app-flow-views.mjs';
 import {compareFlowCapture} from '../scripts/lib/compare-app-flow-capture.mjs';
+import {createFlowRegistry} from '../src/server/app-flow/instrumentation-registry.js';
 import {FlowPresentationCapture} from '../src/server/app-flow/presentations.ts';
 
 test('source preview plans cover finite reducer bodies without opener callbacks and exclude business flags',async t=>{
@@ -846,6 +847,7 @@ test('a finite preview retains the exact JSX target location when its component 
   const graph=await scanAppFlow(root,'ios');
   const plan:any=graph.presentations!.previews!.find(p=>p.effect.kind==='state'&&p.effect.value==='verify');
   assert.ok(plan.expected,'Repeated helpers need a source target, not a component-name guess');
+  assert.equal(plan.expected.scope,'owner','A fragment of fields needs the full form readiness scope');
   assert.equal(plan.expected.component,'Caption');assert.equal(plan.expected.file,'App.tsx');assert.equal(plan.expected.owner,'App');
   const loc=plan.expected.source,lines=source.split('\n');
   assert.equal(lines[loc.line-1].slice(loc.column,loc.endColumn),'<Caption>');
@@ -870,3 +872,65 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]) {
     await app.runtime.rollback(0,false);
   });
 }
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]) {
+  test(`a field proves its source branch while readiness covers the temporary form (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    const app=runtimeFixture(t,false,install);
+    app.action.expected={component:'Verify',file:'App.tsx',owner:'Wizard',scope:'owner',source:{line:4,column:0,endLine:4,endColumn:12}};
+    await configure(app,'/app');const opened=app.runtime.open('preview');
+    assert.equal(opened.expected.scope,'owner');
+    const label=app.clone.child;label._debugSource={fileName:'/app/App.tsx',lineNumber:4,columnNumber:1};
+    const loadingField={type:function LoadingField(){},return:app.clone,memoizedProps:{loading:true}};label.sibling=loadingField;
+    const page=app.runtime.records(0),matches=await bindPresentationSites('http://localhost:8081','/app',page.bindings,[],[app.action]);
+    app.runtime.configure({states:[app.site],actions:[app.action]},matches,page.bindings.map(b=>b.id));
+    const probe=app.runtime.probeFocus(app.owner,opened.expected);
+    assert.equal(probe.expectedReady,true);
+    assert.equal(probe.visualFocus,app.clone,'The original app and a single field are both outside the intended readiness scope');
+    app.clone.child=loadingField;
+    assert.equal(app.runtime.probeFocus(app.owner,opened.expected).expectedReady,false,'The full owner must not impersonate a missing branch');
+    await app.runtime.rollback(0,false);
+  });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]) {
+  test(`prepared state collection reads committed hooks without forcing a render (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    const app=runtimeFixture(t,false,install),registry=createFlowRegistry(),prior=(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__;
+    (globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__=registry;t.after(()=>{(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__=prior});
+    const owner=registry.create('App.tsx#Wizard','fresh'),setter=()=>assert.fail('Discovery must not dispatch');
+    app.owner.memoizedState.queue={dispatch:setter};
+    registry.stage(owner,'state',{kind:'state',hook:'useReducer',tuple:[app.real,setter]});registry.commit(owner);
+    const page=await app.runtime.collect([app.site],[app.action],'/app','fresh');
+    assert.deepEqual(page.bindings,[],'Exact compiled bindings need no stack symbolication');
+    assert.equal(app.runtime.diagnostics().lastCompiledBindings,1);assert.equal(app.runtime.diagnostics().lastScheduled,0);
+    assert.equal(app.react.useReducer,app.originals.useReducer,'Read-only discovery must not wrap React hooks');
+    assert.equal(app.runtime.list().length,1);
+    assert.equal(app.runtime.open('preview').error,undefined,'The original capture path still supports the prepared state');
+    assert.equal(app.clone.memoizedState.memoizedState.step,'verify');
+    await app.runtime.rollback(0,false);
+    app.host.child=undefined;
+    await app.runtime.collect();assert.equal(app.runtime.diagnostics().bindings,0,'Unmounted prepared owners release their Fiber references');
+  });
+}
+
+for(const mismatch of ['source hash','owner','hook value','setter']) {
+  test(`a mismatched ${mismatch} cannot supply a prepared binding`,async t=>{
+    const app=runtimeFixture(t),registry=createFlowRegistry(),prior=(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__;
+    (globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__=registry;t.after(()=>{(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__=prior});
+    const setter=()=>{};app.owner.memoizedState.queue={dispatch:setter};
+    const owner=registry.create(mismatch==='owner'?'Other.tsx#Wizard':'App.tsx#Wizard',mismatch==='source hash'?'old':'fresh');
+    registry.stage(owner,'state',{kind:'state',hook:'useReducer',tuple:[mismatch==='hook value'?{step:'other'}:app.real,mismatch==='setter'?()=>{}:setter]});registry.commit(owner);
+    await app.runtime.collect([app.site],[app.action],'/app','fresh');
+    assert.equal(app.runtime.diagnostics().lastCompiledBindings,0);
+    assert.equal(app.runtime.diagnostics().lastScheduled,1,'Unproven state must keep ordinary source collection');
+  });
+}
+
+test('a prepared binding does not hide other state sites in the same owner',async t=>{
+  const app=runtimeFixture(t),registry=createFlowRegistry(),prior=(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__;
+  (globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__=registry;t.after(()=>{(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__=prior});
+  const setter=()=>{};app.owner.memoizedState.queue={dispatch:setter};
+  const owner=registry.create('App.tsx#Wizard','fresh');registry.stage(owner,'state',{kind:'state',hook:'useReducer',tuple:[app.real,setter]});registry.commit(owner);
+  await app.runtime.collect([app.site,{...app.site,id:'another-state'}],[app.action],'/app','fresh');
+  assert.equal(app.runtime.diagnostics().lastCompiledBindings,1);
+  assert.equal(app.runtime.diagnostics().lastScheduled,1,'Partial prepared coverage must not suppress source collection');
+});

@@ -132,5 +132,16 @@ seconds before we stopped it. It reconnected once after delayed sheet cleanup,
 so the earlier prepared-batch result does not establish default-path reliability.
 Four isolated Starter Pack dialogs took 23.5 seconds on that build. One captured;
 three kept showing loaders because their opening recipes lacked prepared data.
-The 0.1.183 changes still need an installed-build live test. Full coverage,
-duplicate removal and aggregate one-second captures remain open.
+A fresh 0.1.183 default run saved 120 captures in 676.7 seconds before Stop,
+with repeated runtime timeouts. These saved images have not all been checked.
+Its app footprint grew from 805 MB to about 2.6 GB; the old process had reached
+41.9 GB across earlier runs. The fresh run shows memory use alone does not explain
+the stalls. Full coverage, duplicate removal and one-second captures remain open.
+
+Version 0.1.184 prepared state discovery checks the build's source hash, state site, setter, and
+committed hook value before reusing a binding. It needs no forced app render or
+stack lookup for those sites. Unprepared or mismatched sites keep source-based
+collection. A partial form branch still needs its exact JSX entry, but loading
+and motion checks cover the whole temporary form, including sibling fields.
+Debugger requests carry a deadline calibrated to the app's clock. An expired
+request cannot open a view later while the mapper recovers another view.

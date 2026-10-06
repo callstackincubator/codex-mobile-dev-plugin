@@ -4,7 +4,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   const bindings = new Map(), patches = [], effectPatches = [], undo = [];
   let collected = [];
   const entries = new Map(), entryKeys = new Map(); let entrySources = new WeakMap();
-  let lastScheduled = 0, lastExactScheduled = 0, lastFallbackScheduled = 0, structureCache, sourceRoot;
+  let lastScheduled = 0, lastExactScheduled = 0, lastFallbackScheduled = 0, lastCompiledBindings = 0, structureCache, sourceRoot, sourceHash;
   const portalEffects=new Map();let portalOwners=new WeakMap(),approvedPortals=new WeakSet(),syncingPortals=false;
   let previewRefs=new WeakSet(),containedImperativeHandles=0,containedSubscriptions=0,preservedRootFragments=0;
   const uiEffects=new Map();let uiEffectOwners=new WeakMap(),openedUiEffects=0;
@@ -34,7 +34,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(!record){record=new Map();owners.set(live.fiber,record);}else owners.set(live.fiber,record);
     let id=record.get(index),binding=id&&bindings.get(id);
     if(!binding&&bindings.size<1500){id=String(++sequence);record.set(index,id);binding={id,index,kind,stack:new Error().stack,fiber:live.fiber,renderer:live.renderer,setter:result[1]};bindings.set(id,binding);}
-    if(binding){binding.fiber=live.fiber;binding.setter=result[1];}
+    if(binding){binding.fiber=live.fiber;binding.setter=result[1];binding.prepared=false;}
     // Do not wrap setters or keep a second callback in the app. Restoration uses
     // the exact hook index collected during this render, including custom hooks.
     return result;
@@ -288,7 +288,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       const qualified=site.ownerSites??[];
       const sources=[{owner:site.owner,file:site.file},...qualified,...(site.owners??[]).filter(owner=>!qualified.some(source=>source.owner===owner)).map(owner=>({owner,file:site.file}))];
       for(const {owner,file}of sources){
-        const target=targets.get(owner)??{types:new Set(),fallback:false};
+        const target=targets.get(owner)??{types:new Set(),sites:new Set(),fallback:false};target.sites.add(site.id);
         const exports=sourceModule(initialized,file), matches=[];
         // Read data exports only. Never initialize a project module or invoke a
         // getter to identify one of several unrelated same-named Providers.
@@ -312,22 +312,59 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     return targets;
   }
-  async function collect(states = catalog.states, actions = catalog.actions, projectRoot = sourceRoot) {
+  function collectPreparedStates(states,mounted) {
+    lastCompiledBindings=0;
+    const registry=globalThis.__MOBILE_DEV_FLOW_REGISTRY__;
+    if(!sourceHash||typeof registry?.matchingOwners!=='function')return;
+    const sites=new Map(states.map(site=>[site.id,site])),setters=new Map();
+    for(const owner of registry.matchingOwners(sourceHash))for(const [id,value]of owner.entries){
+      const site=sites.get(id);
+      if(!site||owner.source!==`${site.file}#${site.owner}`||value.kind!=='state'||!['useState','useReducer'].includes(value.hook)||typeof value.tuple?.[1]!=='function')continue;
+      const setter=value.tuple[1],previous=setters.get(setter);
+      // A setter cannot prove two source sites. Ambiguous or stale values
+      // fall back to the ordinary source binding path.
+      setters.set(setter,previous?{ambiguous:true}:{site,value});
+    }
+    if(!setters.size)return;
+    const renderer=[...(hook?.renderers?.values?.()??[])].find(value=>value.rendererPackageName==='react-native-renderer');
+    if(!renderer)return;
+    for(const fiber of mounted){
+      let index=0;
+      for(let state=fiber.memoizedState;state&&index<300;state=state.next,index++){
+        const match=setters.get(state.queue?.dispatch);
+        if(!match||match.ambiguous||!Object.is(state.memoizedState,match.value.tuple[0]))continue;
+        let record=owners.get(fiber)??owners.get(fiber.alternate);
+        if(!record)record=new Map();owners.set(fiber,record);
+        let id=record.get(index),binding=id&&bindings.get(id);
+        if(!binding){if(bindings.size>=1500)continue;id=String(++sequence);record.set(index,id);binding={id,index};bindings.set(id,binding);}
+        Object.assign(binding,{kind:match.value.hook,site:match.site.id,fiber,renderer,setter:state.queue.dispatch,prepared:true});
+        lastCompiledBindings++;
+      }
+    }
+  }
+  async function collect(states = catalog.states, actions = catalog.actions, projectRoot = sourceRoot, preparedHash = sourceHash) {
     if(typeof projectRoot==='string')sourceRoot=modulePath(projectRoot).replace(/\/$/,'');
+    sourceHash=preparedHash;
     catalog={states,actions};lastScheduled=lastExactScheduled=lastFallbackScheduled=0;patchQueryResults();
-    if(!patchHooks())return records(0);
     try {
       const mounted=new Set(committedStructure().all);
       for(const [id,binding]of bindings)if(!mounted.has(binding.fiber)&&!mounted.has(binding.fiber.alternate))bindings.delete(id);
-      const tracked=fiber=>{const record=owners.get(fiber)??owners.get(fiber.alternate);return record&&[...record.values()].some(id=>bindings.has(id));};
+      collectPreparedStates(states,mounted);
+      const tracked=(fiber,target)=>{
+        const record=owners.get(fiber)??owners.get(fiber.alternate),found=record&&[...record.values()].map(id=>bindings.get(id)).filter(Boolean);
+        if(!found?.length)return false;
+        // A normal collection sees every hook. A prepared read only sees its
+        // proven sites; keep collecting if this owner has another state site.
+        return found.some(binding=>!binding.prepared)||!!target&&[...target.sites].every(site=>found.some(binding=>binding.site===site));
+      };
       const targets=collectionTargets(states);
       for(const fiber of mounted){
-        if(fiber.tag===14||tracked(fiber))continue;
+        if(fiber.tag===14)continue;
         if(Array.isArray(fiber._debugHookTypes)&&!fiber._debugHookTypes.some(kind=>kind==='useState'||kind==='useReducer'))continue;
-        const target=targets.get(name(fiber));
+        const target=targets.get(name(fiber));if(tracked(fiber,target))continue;
         if(target&&(target.fallback||target.types.has(fiber.type)||target.types.has(fiber.elementType)))collecting.add(fiber);
       }
-      if(!collecting.size)return records(0);
+      if(!collecting.size||!patchHooks())return records(0);
       for(const fiber of collecting){
         for(const renderer of hook.renderers.values())if(renderer.rendererPackageName==='react-native-renderer'&&typeof renderer.scheduleUpdate==='function'){
           try{renderer.scheduleUpdate(fiber);lastScheduled++;const target=targets.get(name(fiber));if(target?.types.has(fiber.type)||target?.types.has(fiber.elementType))lastExactScheduled++;else lastFallbackScheduled++;}catch{}break;
@@ -1156,7 +1193,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       return result.error?result:{name:action.owner,expected:action.owner};
     }
     if(action.effect.kind==='state'){
-      if(action.preview)return {...previewState(action,found),expected:action.expected?{component:action.expected.component,entry:`${action.id}:expected`}:action.name};
+      if(action.preview)return {...previewState(action,found),expected:action.expected?{component:action.expected.component,scope:action.expected.scope,entry:`${action.id}:expected`}:action.name};
       const b=found.binding;let previous=hookValue(b);for(const part of action.effect.path)previous=previous?.[part];
       undo.push({binding:b,path:action.effect.path,value:previous,nativeDismiss:previous==null||previous===false});
       // Guard discovery only supplies finite presentation values. No session,
@@ -1257,7 +1294,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80,resolve));
   }
-  function cleanup(){canonicalControls=new WeakMap();captureRoots.clear();releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=undefined;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){canonicalControls=new WeakMap();captureRoots.clear();releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=sourceHash=undefined;lastCompiledBindings=0;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[],entryId) {
     connected=bodyRoots(scope,tree,connected);
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&(!entryId||entry(fiber,false)?.actions.has(entryId))&&tree.isVisible(fiber));
@@ -1276,7 +1313,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // A local UI state can belong to a provider above the entire application.
     // Read the proven destination body and its native ancestors, so background
     // feeds and unrelated animations neither delay nor impersonate this view.
-    const body=expectedFocus||currentFocus,visualScope=expectedFocus?roots(expectedFocus,tree):connected;
+    // A branch can contain several fields or only alter part of a form. Its
+    // exact JSX entry proves the branch exists; readiness still needs the
+    // whole temporary form so a label cannot hide a loading sibling.
+    const ownerScope=expected?.scope==='owner'&&expectedFocus;
+    const body=ownerScope?currentFocus:expectedFocus||currentFocus;
+    const visualScope=ownerScope?bodyRoots(currentFocus,tree,connected):expectedFocus?roots(expectedFocus,tree):connected;
     return {focus:currentFocus,visualFocus:visualScope.at(-1)??body,expectedReady:(!focus||!!currentFocus)&&(!expected||!!expectedFocus),motion:(viewport,geometry)=>motion(body,viewport,tree,visualScope,geometry)};
   }
   function nativeWaiters() {
@@ -1290,6 +1332,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     return result.map(item=>item.value);
   }
-  const diagnostics=()=>({nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  const diagnostics=()=>({nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
   return {structure:committedStructure,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,collect,records,configure,list,open,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

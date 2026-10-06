@@ -40,7 +40,7 @@ export type FlowPresentationAction = {
   guard?: FlowUiCondition;
   preview?: boolean;
   views?: string[];
-  expected?: {component: string; file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}};
+  expected?: {scope?: 'owner'; component: string; file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}};
   handoffs?: {file: string; owner: string; component: string; prop: string; source: {line: number; column: number; endLine: number; endColumn: number}; contextPath: string[]; close: string}[];
   consumer?: {component: string; entries: {file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}}[]};
   effect: { kind:'mount'; file:string; export:string } | { kind: 'state'; site: string; path: string[]; value: unknown } | { kind: 'control'; component: string; prop: string; method: string; close: string | string[]; target?: {file: string; owner: string; line: number; source: {line: number; column: number; endLine: number; endColumn: number}} };

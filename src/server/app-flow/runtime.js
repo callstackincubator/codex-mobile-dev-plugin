@@ -566,6 +566,12 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
               const id = target.target ? `${target.owner}:${target.target}` : target.owner;
               fibers(fiber => { if (fiber.tag === 12 && fiber.memoizedProps?.id === id) { focus = fiber; return stopWalk; } });
               if (!focus) return {ready:false,found:false,key:id};
+              if(target.ownerScope&&target.target){
+                let owner=focus.return;
+                while(owner&&!(owner.tag===12&&owner.memoizedProps?.id===target.owner))owner=owner.return;
+                if(!owner)return {ready:false,found:false,key:id};
+                focus=owner;
+              }
             }
             if(target.nativeStart){presentations?.captureNative?.(focus);return {armed:true};}
             if(target.nativeStop){presentations?.captureNative?.(focus,true);return {released:true};}
@@ -617,7 +623,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (command.type === 'context-data') { reply(contextData()); return; }
         if (command.type === 'observe') { reply(observe()); return; }
         if (observing) { reply({ error: 'Recording observes screens; navigation commands are disabled.' }); return; }
-        if (command.type === 'presentation-collect') { if (!presentations) { reply({bindings:[]}); return; } void presentations.collect(command.states,command.actions,command.projectRoot).then(reply, error => reply({error:'Presentation bindings could not be read.',detail:String(error?.message??error).slice(0,1000)})); return; }
+        if (command.type === 'presentation-collect') { if (!presentations) { reply({bindings:[]}); return; } void presentations.collect(command.states,command.actions,command.projectRoot,command.sourceHash).then(reply, error => reply({error:'Presentation bindings could not be read.',detail:String(error?.message??error).slice(0,1000)})); return; }
         if (command.type === 'presentation-bindings') { reply(presentations?.records(command.offset ?? 0) ?? {bindings:[]}); return; }
         if (command.type === 'presentation-configure') { presentations?.configure(command.catalog, command.matches ?? [], command.checked ?? []); reply({}); return; }
         if (command.type === 'presentations') { reply(presentations?.list(presentationFocus) ?? []); return; }
