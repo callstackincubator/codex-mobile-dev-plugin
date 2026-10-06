@@ -145,3 +145,28 @@ collection. A partial form branch still needs its exact JSX entry, but loading
 and motion checks cover the whole temporary form, including sibling fields.
 Debugger requests carry a deadline calibrated to the app's clock. An expired
 request cannot open a view later while the mapper recovers another view.
+
+
+A default 0.1.184 run saved 131 images in 562.2 seconds before Stop, with no
+automatic reconnect. Its app footprint reached 2.8 GB during the run. Some
+copied form steps still used the wrong native window, so this count does not
+prove 131 correct views or completion of the speed goal.
+
+Version 0.1.185 renders copied steps inside their existing native sheet when
+an exact content slot is available. The original owner stays mounted and its
+body stays hidden until cleanup. Ambiguous slots fail instead of opening a
+second window with sheet-local coordinates. Nested native sheets keep their
+own container. A source-proven return along the same finite state selector
+links to its captured ancestor rather than adding another capture. Changed
+fields, controls, route data and parents still require their own view.
+The default queue starts with the current route, then keeps the existing
+coverage and retry rules.
+
+Live checks of the inline runtime placed the password form inside its sheet,
+but one saved image clipped its bottom buttons during resizing. Native sheet
+previews now compare consecutive screenshot frames within the existing capture
+deadline. This last gate and server-side return deduplication still need a live
+check. A moving backdrop may keep full-frame comparison from settling; this
+is an open limitation, not evidence of correct capture. Prepared capture queues
+still require a capture host inside a native sheet and do not yet share this
+inline path. Do not use that smaller queue as proof of default-run coverage.

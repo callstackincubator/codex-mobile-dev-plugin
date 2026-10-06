@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import * as Sentry from "@sentry/node";
-import { flowRunning, missingFlowParams, publicFlowRun, flowProgressRun, type FlowParams, type FlowResolution, type FlowRun } from "../../shared/app-flow.ts";
+import { flowRunning, missingFlowParams, publicFlowRun, flowProgressRun, type FlowParams, type FlowResolution, type FlowRun, type FlowNode } from "../../shared/app-flow.ts";
 import { blankFlowFrame } from "./frame.ts";
 import { FlowReachability, type FlowEvidence } from "./reachability.ts";
 import type { scanAppFlow } from "./scan.ts";
@@ -464,6 +464,10 @@ export class AppFlowRuns {
       if (!resume) run.ai = input.useAi ? "waiting" : "off";
       const attempts = new Map(run.nodes.map(node => [node.id, node.captureAttempts ?? 0]));
       const interruptions = new Map<string, number>();
+      // Start with the already mounted route before leaving it for another
+      // entry. This also lets its sheets reuse their live parent immediately.
+      const initialPath = JSON.stringify(active.info?.active);
+      const initialRoute = (node: FlowNode) => !node.presentation && JSON.stringify(node.path) === initialPath;
 
       while (!signal.aborted) {
         await this.drain(active);
@@ -471,7 +475,7 @@ export class AppFlowRuns {
         signal.throwIfAborted();
         for (const node of run.nodes) attempts.set(node.id, node.captureAttempts ?? 0);
         const node = run.nodes.filter(item => item.kind === 'screen' && item.status === 'pending' && (attempts.get(item.id) ?? 0) < maxAttempts)
-          .sort((a, b) => (attempts.get(a.id) ?? 0) - (attempts.get(b.id) ?? 0) || presentations.priority(b)-presentations.priority(a) || Number(!!a.presentation)-Number(!!b.presentation))[0];
+          .sort((a, b) => (attempts.get(a.id) ?? 0) - (attempts.get(b.id) ?? 0) || presentations.priority(b)-presentations.priority(a) || Number(initialRoute(b))-Number(initialRoute(a)) || Number(!!a.presentation)-Number(!!b.presentation))[0];
         if (node?.presentation) {
           run.retrying = (node.captureAttempts ?? 0) > 0;
           if (run.retrying) retries++;

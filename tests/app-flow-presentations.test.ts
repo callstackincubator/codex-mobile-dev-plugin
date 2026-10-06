@@ -1948,22 +1948,20 @@ test('one live controller keeps its canonical destination across different entry
   }finally{app.runtime.cleanup()}
 });
 
-for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresentationRuntime)])test(`preview content keeps its measured native sheet coordinates (${install===installPresentationRuntime?'normal':'shared loops'})`,t=>{
+for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresentationRuntime)])test(`sheet-local coordinates cannot place an ambiguous step in a screen window (${install===installPresentationRuntime?'normal':'shared loops'})`,t=>{
   const app=tree(install),previous=(globalThis as any).__r;
   function View(){}function Modal(){}
   const props={onStateChange(){},backgroundColor:'#fefefe'},canonical={currentProps:props};
   const sheet:any={tag:5,type:'NativeSheet',memoizedProps:props,stateNode:{canonical}};
   const original=React.createElement(app.root.type),container:any={type:View,memoizedProps:{children:original},return:sheet,child:app.root};sheet.child=container;app.root.return=container;
   app.sheet.child={tag:5,type:'TextInput',memoizedProps:{},return:app.sheet,stateNode:{getBoundingClientRect:()=>({x:24,y:280,width:354,height:240})}};
-  let modal:any;
   const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??sheet];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
   (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:{...React}}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}]])};
-  const runtime=install({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',overrideProps(_fiber:any,_path:any,next:any){modal=next.children.props.children.at(-1);assert.equal(next.children.props.children[0],original)}}]])},fibers,hidden:()=>false,later:setTimeout});
+  const runtime=install({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',overrideProps(){assert.fail('No second window may use sheet-local coordinates')}}]])},fibers,hidden:()=>false,later:setTimeout});
   t.after(()=>{runtime.cleanup();app.runtime.cleanup();(globalThis as any).__r=previous});
   runtime.captureNative(app.sheet);canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});
-  assert.equal(runtime.project(app.sheet,{views:['step']}).error,undefined);
-  assert.equal(modal.props.transparent,true);assert.equal(modal.props.presentationStyle,'overFullScreen');
-  assert.deepEqual(modal.props.children.props.children.props.style,{position:'absolute',left:24,top:280,width:354,minHeight:240,backgroundColor:'#fefefe'});
+  assert.match(runtime.project(app.sheet,{views:['step']}).error,/exact content slot/);
+  assert.equal(runtime.checkpoint(),0);assert.equal(container.memoizedProps.children,original);
 });
 
 test('route handoff waits for its first presentation probe and children reuse the verified parent image', async t => {
@@ -2048,5 +2046,60 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
     assert.equal(canonical.currentProps.onLoadStart,original.onLoadStart);
   } finally {runtime.cleanup();}
   assert.equal(hook.onCommitFiberRoot,originalCommit);
+ });
+}
+
+for(const difference of ['none','uncaptured','missing-image','different-view','different-params','other-field','other-site','other-control','different-parent','different-group']){
+ test(`returning to a captured finite state retains the proven ancestor (${difference})`,async t=>{
+  const directory=await fixture(t,{});
+  const enter:any={id:'next',file:'Wizard.tsx',line:2,owner:'Wizard',component:'Step',prop:'',name:'Next',views:['next-view'],preview:true,effect:{kind:'state',site:'wizard-step',path:['step'],value:'next'}};
+  const back:any={...enter,id:'back',views:['first-view'],effect:{...enter.effect,value:'first'}};
+  const parent:any={id:'form',name:'Wizard',kind:'screen',path:[],required:[],status:'captured',image:'mobile-flow://run/form',sourceViews:['first-view'],presentation:{actions:['open'],basePath:['Home'],baseParams:{id:'real-record'}}};
+  const base:any={...parent,id:'step',name:'Next',sourceViews:['next-view'],presentation:{...parent.presentation,actions:['open','next']}};
+  if(difference==='uncaptured')parent.status='pending';
+  if(difference==='missing-image')delete parent.image;
+  if(difference==='different-view')parent.sourceViews=['other-view'];
+  if(difference==='different-params')parent.presentation.baseParams={id:'different-record'};
+  if(difference==='other-field')enter.effect={...enter.effect,path:['choice']};
+  if(difference==='other-site')enter.effect={...enter.effect,site:'other-step'};
+  if(difference==='other-control')enter.effect={kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'};
+  if(difference==='different-parent')parent.presentation.actions=['other-open'];
+  if(difference==='different-group')base.groupId='other-state';
+  const run:any={id:'run',revision:0,nodes:[parent,base],edges:[],presentations:{states:[],actions:[enter,back]}};
+  const capture=new FlowPresentationCapture(run,directory,directory,new AbortController().signal,async()=>{});
+  const backend:any={runtime:{async invoke(command:any){if(command.type==='presentations')return [back];if(command.type==='presentation-active')return ['next-view'];return {};}}};
+  await capture.explore(backend,base);
+  if(difference==='none'){
+    assert.equal(run.nodes.length,2,'The return adds an edge instead of a screenshot job');
+    assert.deepEqual(run.edges,[{from:'step',to:'form',kind:'navigation'}]);assert.equal(parent.status,'captured');
+  }else{
+    assert.equal(run.nodes.length,3,'Distinct or unverified contexts need their own capture');
+    assert.equal(run.nodes.at(-1).status,'pending');assert.equal(run.edges[0].to,run.nodes.at(-1).id);
+  }
+ });
+}
+
+for(const nativePreview of [false,true]){
+ test(`native sheet resize needs stable pixels after React settles (${nativePreview?'native sheet':'ordinary view'})`,async t=>{
+  const root=await fixture(t,{});await mkdir(join(root,'run'));
+  const node:any={id:'step',name:'Form',kind:'screen',path:[],required:[],status:'pending',presentation:{actions:['step'],basePath:['Home'],preview:true}};
+  const run:any={id:'run',revision:0,nodes:[node],edges:[],presentations:{states:[],actions:[]}};
+  let opened=false;
+  const backend:any={runtime:{async invoke(c:any){
+    if(c.type==='open')return {ready:true};
+    if(c.type==='presentations')return [{id:'step'}];
+    if(c.type==='presentation-open')opened=true;
+    if(c.type==='presentation-rollback')opened=false;
+    if(c.type==='presentation-view')return {key:opened?'step':'Home',signature:opened?'form':'home',motion:'stable Yoga layout',ready:true,found:true,active:['Home'],nativePreview:opened&&nativePreview};
+    return {};
+  }}};
+  // The fake native sequence changes until frame three, after React
+  // geometry has already settled. Compare consecutive fresh screenshots.
+  let frame=0;backend.screenshot=async()=>Buffer.from(!opened?'base':++frame===1?'resize frame one':frame===2?'resize frame two':'complete form');
+  const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
+  await capture.retry(backend,node);
+  assert.equal(node.status,'captured');
+  assert.equal((await readFile(join(root,'run','step.png'))).toString(),nativePreview?'complete form':'resize frame one');
+  assert.equal(frame,nativePreview?4:1,'Ordinary views do not pay for extra native resize samples');
  });
 }

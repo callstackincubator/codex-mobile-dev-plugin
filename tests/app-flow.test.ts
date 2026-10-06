@@ -361,3 +361,20 @@ test('cached scans read current contents, additions, removals, aliases and platf
   assert.notEqual((await scanAppFlow(root,'android')).sourceHash,first.sourceHash);
   const stopped=new AbortController();stopped.abort();await assert.rejects(scanAppFlow(root,'android',stopped.signal));
 });
+
+
+test("capture starts at the mounted route and still captures every other entry", async t => {
+  const directory=await fixture(t,{}),opened:string[]=[];
+  const routes:FlowGraph={files:1,scanMs:1,warnings:[],edges:[],nodes:['Home','Account','Search'].map(name=>({id:name,name,kind:'screen',path:[name],entry:true,required:[],status:'pending'}))};
+  let current='Account';
+  const runs=new AppFlowRuns({directory,scan:async()=>routes,connect:async()=>({
+    runtime:{async invoke(command){
+      if(command.type==='inspect')return {available:true,active:['Account'],entries:[['Home'],['Search']]};
+      if(command.type==='open'){current=(command.path as string[])[0];opened.push(current);}
+      return {ready:true,found:true,active:[current],name:current,signature:current};
+    },async close(){}},async screenshot(){return Buffer.from(current);}
+  })});
+  const run=runs.start(start);await waitForRun(runs,run.id);await runs.close();
+  assert.deepEqual(opened,['Account','Home','Search']);
+  assert.ok(runs.read(run.id).nodes.every(node=>node.status==='captured'));
+});

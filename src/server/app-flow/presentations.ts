@@ -2,14 +2,14 @@ import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { FlowNode, FlowPresentations, FlowRun } from '../../shared/app-flow.ts';
+import type { FlowNode, FlowPresentationAction, FlowPresentations, FlowRun } from '../../shared/app-flow.ts';
 import type { FlowBackend } from './runs.ts';
 import { blankFlowFrame } from './frame.ts';
 import { MeasurementWindow } from '../../shared/telemetry.ts';
 import { captureServerError } from '../telemetry.ts';
 import { FlowRuntimeFailure } from './runtime-metrics.ts';
 
-type View = { routeMatches?: boolean; nativePending?: boolean; key: string; ready: boolean; found: boolean; signature: string; motion?: string; title?: string; active: string[]; loading?: boolean; transitioning?: boolean; reason?: string; error?: string };
+type View = { routeMatches?: boolean; nativePending?: boolean; nativePreview?: boolean; key: string; ready: boolean; found: boolean; signature: string; motion?: string; title?: string; active: string[]; loading?: boolean; transitioning?: boolean; reason?: string; error?: string };
 type Action = { id: string; canonicalId?: string; aliases?:string[]; views?:string[]; name: string; file: string; line: number };
 type RetainedBranch = { backend: FlowBackend; base: string; actions: string[]; projections: string[]; frames: {level:number;view:View}[]; baseView?:View };
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24);
@@ -132,11 +132,17 @@ export class FlowPresentationCapture {
       await delay(100, undefined, {signal: captureSignal});
       bytes = await backend.screenshot(captureSignal);
     }
+    // UIKit can resize an existing sheet after React geometry has settled.
+    // Those copied bodies need two equal native frames; React-only readiness
+    // cannot prove that the sheet has finished moving or clipping its content.
+    let priorNativeFrame:Buffer|undefined;
+    if(view.nativePreview){priorNativeFrame=bytes;bytes=await backend.screenshot(captureSignal);}
     let verified: View = await backend.runtime.invoke({type: 'presentation-view'}, 2000);
     let motion = view.motion;
     const same = () => verified.key === view.key && verified.ready && verified.found && !verified.loading && !verified.transitioning;
-    while (same() && verified.motion !== motion) {
+    while (same() && (verified.motion !== motion || priorNativeFrame&&!bytes.equals(priorNativeFrame))) {
       motion = verified.motion;
+      if(view.nativePreview)priorNativeFrame=bytes;
       await delay(40, undefined, {signal: captureSignal});
       bytes = await backend.screenshot(captureSignal);
       verified = await backend.runtime.invoke({type: 'presentation-view'}, 2000);
@@ -173,6 +179,24 @@ export class FlowPresentationCapture {
     }
     return true;
   }
+  private capturedStateAncestor(base: FlowNode, action: FlowPresentationAction) {
+    const effect=action.effect,plan=base.presentation;
+    if(effect.kind!=='state'||!action.views?.length||!plan)return;
+    const sameSelector=(id:string)=>{
+      const step=this.catalog.actions.find(item=>item.id===id)?.effect;
+      return step?.kind==='state'&&step.site===effect.site&&JSON.stringify(step.path)===JSON.stringify(effect.path);
+    };
+    return this.run.nodes.find(candidate=>{
+      const previous=candidate.presentation;
+      if(candidate.status!=='captured'||!candidate.image||!previous||candidate.groupId!==base.groupId||this.baseKey(candidate)!==this.baseKey(base))return false;
+      if(!action.views!.every(view=>candidate.sourceViews?.includes(view)))return false;
+      if(previous.actions.length>=plan.actions.length||!previous.actions.every((id,index)=>plan.actions[index]===id))return false;
+      // A proven return along one finite UI selector can reuse its captured
+      // ancestor. Other state changes, controls or real-data contexts can make
+      // the same source body a different view, so retain those destinations.
+      return plan.actions.slice(previous.actions.length).every(sameSelector);
+    });
+  }
   async explore(backend: FlowBackend, base: FlowNode) {
     if (!this.enabled || this.visited.has(base.id)) return;
     const started = performance.now();
@@ -187,6 +211,8 @@ export class FlowPresentationCapture {
       for (const action of available) {
         const source = this.catalog.actions.find(item => item.id === action.id);
         if (!source) continue;
+        const ancestor=this.capturedStateAncestor(base,source);
+        if(ancestor){this.edge(base,ancestor);continue;}
         const canonical=this.catalog.actions.find(item=>item.id===action.canonicalId)??source;
         const effect = canonical.effect;
         const destination = effect.kind === 'state' ? [effect.site, effect.path, effect.value] : [canonical.file, canonical.owner, effect];

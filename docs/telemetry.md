@@ -715,3 +715,15 @@ when prepared builds supply committed state directly. Local diagnostics add
 No state values, source paths, or bindings enter telemetry. Commands that reach
 the app after their calibrated deadline count in the existing
 `app_flow.runtime.timeouts` measurement for the original operation.
+
+
+Since 0.1.185, temporary form steps can reuse the native sheet's content slot.
+Presentation capture timings include any extra native screenshot checks while
+that sheet resizes. Binding, discovery, restoration and screenshot timing names,
+units and boundaries stay unchanged. Captured return steps now add a map edge
+without another capture, so capture counts reflect fewer duplicate jobs.
+`inlineProjections` and the native-preview readiness flag are local diagnostics;
+no source IDs, form values, images or native rectangles enter telemetry.
+Owned style overrides restore during rollback and cleanup without overwriting
+later app changes. Existing telemetry behavior tests cover the unchanged
+aggregation and scrubbing paths; runtime tests cover preview cleanup.

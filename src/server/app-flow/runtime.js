@@ -501,7 +501,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     const reason=!expectedReady?'target':nativeMotion?.error?'preview-error':!visual.found?'missing':!visual.content?'empty':visual.loading?'loading':live.transitioning?'transition':nativeMotion?.pending?'native':!presentationObservation.painted?'paint':now-presentationObservation.since<160?'settling':undefined;
     Object.assign(probe,{stage:'done',totalMs:Date.now()-start,expectedReady,found:visual.found,hosts:visual.hosts,content:visual.content,loading:visual.loading,transitioning:live.transitioning,nativePending:!!nativeMotion?.pending,painted:presentationObservation.painted,quietMs:now-presentationObservation.since,keyChanged,signatureChanged,reason});
     const state=root?.getRootState?.()??root?.getState?.();
-    return { ...visual, key, active: active(state), routeMatches:expectedRoute?.path?.length?matchesRoute(state,expectedRoute):undefined, ready: !reason, reason, ...live, nativePending:nativeMotion?.pending, error:nativeMotion?.error, components:componentTree };
+    return { ...visual, key, active: active(state), routeMatches:expectedRoute?.path?.length?matchesRoute(state,expectedRoute):undefined, ready: !reason, reason, ...live, nativePending:nativeMotion?.pending, nativePreview:nativeMotion?.nativePreview, error:nativeMotion?.error, components:componentTree };
   }
   function sameRouteParams(before,next,depth=0,budget={left:200}) {
     if(Object.is(before,next))return true;
