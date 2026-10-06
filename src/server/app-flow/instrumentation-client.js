@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {View} from 'react-native';
 import {createFlowRegistry} from './instrumentation-registry.js';
+import {capturePreviewContext} from './instrumentation-context.js';
 import {installPreparedRuntime} from './prepared-runtime.js';
 
 if (typeof __MOBILE_DEV_FLOW_FINGERPRINT__ === 'string') {
@@ -8,7 +9,7 @@ if (typeof __MOBILE_DEV_FLOW_FINGERPRINT__ === 'string') {
 }
 
 const key = '__MOBILE_DEV_FLOW_REGISTRY__';
-export const registry = globalThis[key] ??= createFlowRegistry();
+export const registry = globalThis[key] ??= createFlowRegistry((owner, projection, failed) => capturePreviewContext(owner.id, PreviewError, projection, failed));
 const Preview = React.createContext(null);
 const reducerSetters=new WeakMap();
 const seedAction=Symbol('flow-preview-state');
@@ -63,10 +64,12 @@ class PreviewError extends React.Component {
 function CaptureHost({owner,children}) {
   const projection=React.useSyncExternalStore(registry.subscribe,()=>registry.projection,()=>undefined);
   const active=projection?.host===owner.id;
+  let content=active ? React.createElement(projection.type,projection.props) : null;
+  if(active) for(const provider of projection.providers ?? []) content=React.createElement(provider.type,{value:provider.value},content);
   return React.createElement(View,{style:{flex:1}},
     React.createElement(View,{style:{flex:1,opacity:active?0:1},pointerEvents:active?'none':'auto',accessibilityElementsHidden:active,importantForAccessibility:active?'no-hide-descendants':'auto'},children),
     active ? React.createElement(View,{style:{position:'absolute',top:0,left:0,right:0,bottom:0}},
       React.createElement(React.Profiler,{id:'flow-preview',onRender:()=>{}},
         React.createElement(Preview.Provider,{value:projection},
-          React.createElement(PreviewError,{key:projection.source},React.createElement(projection.type,projection.props))))) : null);
+          React.createElement(PreviewError,{key:projection.source,projection},content)))) : null);
 }

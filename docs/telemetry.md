@@ -694,3 +694,9 @@ hidden, and release them on unmount or cleanup. Local `imageObservers` and
 `pendingImages` counts help check retention; they contain no image sources.
 A capture can reuse navigation's paint proof after a fresh matching content and
 motion probe. Capture durations still include all work that actually ran.
+
+Prepared previews retain provider values locally and contain render failures only
+from their exact temporary boundary. Existing capture duration and
+`app_flow.previews_blocked` counts cover failures on this path. App root errors
+still reach the original handler. Preview cleanup restores that handler and
+releases its context references; no provider values or error text enter telemetry.

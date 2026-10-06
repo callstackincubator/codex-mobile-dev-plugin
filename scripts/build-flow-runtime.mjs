@@ -1,4 +1,4 @@
-import {mkdir,writeFile,copyFile} from 'node:fs/promises';
+import {mkdir,writeFile,copyFile,readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {build,transform} from 'esbuild';
 import {installFlowRuntime} from '../src/server/app-flow/runtime.js';
@@ -12,7 +12,8 @@ export async function buildFlowRuntime(directory = 'dist/app-flow') {
   await mkdir(directory,{recursive:true});
   await copyFile('src/server/app-flow/instrumentation-plugin.cjs',`${directory}/instrumentation-plugin.cjs`);
   const factories=[installFlowRuntime,installPresentationRuntime,createCaptureQueue,createCaptureDriver,createTransitionMode];
-  const fingerprint=createHash('sha256').update([...factories,installPreparedRuntime].map(fn=>fn.toString()).join('\n')).digest('hex');
+  const clientSources=await Promise.all(['instrumentation-client.js','instrumentation-registry.js','instrumentation-context.js'].map(file=>readFile(new URL(`../src/server/app-flow/${file}`,import.meta.url),'utf8')));
+  const fingerprint=createHash('sha256').update([...factories,installPreparedRuntime].map(fn=>fn.toString()).concat(clientSources).join('\n')).digest('hex');
   await build({define:{__MOBILE_DEV_FLOW_FINGERPRINT__:JSON.stringify(fingerprint)},entryPoints:['src/server/app-flow/instrumentation-client.js'],outfile:`${directory}/instrumentation-client.cjs`,bundle:true,format:'cjs',platform:'neutral',target:'es2022',external:['react','react-native'],minify:false});
   // Hermes' debugger evaluator lowers raw async functions differently from
   // bundled app code. Compile closures here so values survive await/loop exits.

@@ -93,3 +93,25 @@ is pending; the runtime must not reset parent navigation or replace the queue in
 that state. A retry keeps the original native close observer instead of issuing
 a second close. Normal captures add no delay. Existing capture-stop and restore
 operation timings and handled-error reporting cover this path.
+
+Version 0.1.182 bundles the capture and discovery runtime through Metro when the
+prepared build matches its source fingerprint. Unprepared or older builds retain
+the injected path. The fingerprint covers runtime factories and the preview
+client. Ready route captures reuse the navigation readiness proof only when fresh
+content and motion probes still match. Hidden tabs retain completed image events;
+returning to a loaded tab does not start a false wait for another load event.
+
+Prepared previews copy the committed owner's actual React provider values,
+including providers below the capture host. The values stay inside the app.
+Temporary render errors belong to that exact preview boundary and fail its view;
+the app root keeps reporting unrelated errors. Unmount restores the root handler
+and releases provider references. A component whose owner unmounts while a cold
+module loads cannot start a preview.
+
+The 0.1.182 runtime on the 0.1.181 server captured the fixed 20-view selection in
+25.6 seconds with no reconnects or runtime timeouts. A prior injected-runtime run
+took 76.5 seconds and captured 17. Reloading changed the mounted tree between some
+tests, so this is an observed result, not an isolated measure of compilation. A
+controlled fallback test on the same warmed app captured 18 in 38.8 seconds, with
+two false image waits. The image fix removes those waits while preserving checks
+for real new loads. The full coverage and one-second-per-view goals remain open.
