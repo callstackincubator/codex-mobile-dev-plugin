@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import ts from 'typescript';
-import type {FlowPresentationAction,FlowPresentations,FlowStateSite} from '../../shared/app-flow.ts';
+import type {FlowGraph,FlowPresentationAction,FlowPresentations,FlowStateSite} from '../../shared/app-flow.ts';
 
 // Only finite presentation selectors become hook previews. Query results,
 // identity fields and request/submit flags remain evidence, never capture state.
@@ -39,7 +39,7 @@ function requiresProgress(branch:import('../../shared/app-flow.ts').FlowSourceVi
 
 /** Compile conservative, source-bound preview plans. A plan is not proof that
  * its hook/control is mounted or that its real data can render a screenshot. */
-export function addSourcePreviewPlans(catalog:FlowPresentations) {
+export function addSourcePreviewPlans(catalog:FlowPresentations, navigators:FlowGraph['nodes']=[]) {
   const sites=new Map((catalog.viewStates??[]).map(site=>[site.id,site]));
   const plans=new Map<string,FlowPresentationAction>();
   const booleanSelectors=new Set(catalog.actions.filter(action=>action.effect.kind==='state'&&typeof action.effect.value==='boolean')
@@ -92,6 +92,37 @@ export function addSourcePreviewPlans(catalog:FlowPresentations) {
     const effect={kind:'mount' as const,file:view.file,export:view.mount.export};
     const key=JSON.stringify([view.file,view.owner,effect]);
     plans.set(key,{id:id(key),file:view.file,line:view.line,owner:view.owner,component:view.owner,prop:'',name:view.owner,preview:true,views:[view.id],effect});
+  }
+  // A gate above navigation can return a complete page without a local UI
+  // selector. Render its exported body as a contained preview using the live
+  // context. The gate's account/request condition remains unchanged.
+  const componentViews=new Map<string,NonNullable<FlowPresentations['views']>[number]>();
+  const sourceKey=(file:string,component:string)=>JSON.stringify([file,component]);
+  for(const view of catalog.views??[])if(view.kind==='component'){
+    componentViews.set(sourceKey(view.file,view.owner),view);
+    if(view.mount)componentViews.set(sourceKey(view.file,view.mount.export),view);
+  }
+  const parents=new Map<string,Set<string>>();
+  for(const view of catalog.views??[])if(view.kind==='component')for(const child of view.components){
+    const target=componentViews.get(sourceKey(child.file,child.component));
+    const key=sourceKey(target?.file??child.file,target?.owner??child.component);
+    const owners=parents.get(key)??new Set<string>();owners.add(sourceKey(view.file,view.owner));parents.set(key,owners);
+  }
+  const navigationOwners=new Set<string>();
+  for(const navigator of navigators)if(navigator.kind==='navigator'&&navigator.file){
+    const component=navigator.definition?.split('#').at(-1)??navigator.component??navigator.name;
+    navigationOwners.add(sourceKey(navigator.file,component));
+  }
+  const queue=[...navigationOwners];
+  for(let index=0;index<queue.length;index++)for(const parent of parents.get(queue[index])??[])if(!navigationOwners.has(parent)){navigationOwners.add(parent);queue.push(parent);}
+  for(const branch of catalog.views??[]){
+    if(branch.kind!=='branch'||!branch.branch||branch.components.length!==1||!navigationOwners.has(sourceKey(branch.file,branch.owner))||!protectedField.test(branch.branch.condition)||requiresProgress(branch.branch))continue;
+    const target=branch.components[0],body=componentViews.get(sourceKey(target.file,target.component));
+    if(!body?.mount||inlineBody.test(body.owner))continue;
+    const effect={kind:'mount' as const,file:body.file,export:body.mount.export};
+    const key=JSON.stringify([body.file,body.owner,effect]),existing=plans.get(key);
+    if(existing){existing.views=[...new Set([...(existing.views??[]),body.id,branch.id])];continue;}
+    plans.set(key,{id:id(key),file:body.file,line:body.line,owner:body.owner,component:body.owner,prop:'',name:body.owner,preview:true,views:[body.id,branch.id],effect});
   }
   // Retain source state metadata when the older, opener-based scan has the same
   // hook. Custom-hook consumer names let runtime tracking find its actual owner.

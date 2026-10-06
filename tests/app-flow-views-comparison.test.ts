@@ -70,3 +70,15 @@ test('distinct props on a shared wrapper retain distinct destinations', () => {
   assert.equal(result.matchedViews, 2);
   assert.equal(result.collisions.length, 0);
 });
+
+
+test('exported body preview plans retain their exact source identity and entry',()=>{
+  const view={id:'body',kind:'component',file:'Guard.tsx',owner:'BlockedPage',entries:[{file:'App.tsx',line:8}]};
+  const preview={id:'preview',file:'Guard.tsx',owner:'BlockedPage',preview:true,views:['body','unknown'],effect:{kind:'mount',file:'Guard.tsx',export:'BlockedPage'}};
+  const source={nodes:[],edges:[],presentations:{actions:[],states:[],previews:[preview],views:[view]}};
+  const reference={views:[row('blocked',[{component:{file:'Guard.tsx',name:'BlockedPage',entry:{file:'App.tsx',line:8}}}]),
+    row('other-entry',[{component:{file:'Guard.tsx',name:'BlockedPage',entry:{file:'App.tsx',line:20}}}])]};
+  const result=compareViewReference(source,reference,()=>[]);
+  assert.equal(result.previewPlannedViews,1);assert.equal(result.rows[0].coverage,'preview');
+  assert.equal(result.rows[1].status,'missing');assert.equal(result.collisions.length,0);
+});

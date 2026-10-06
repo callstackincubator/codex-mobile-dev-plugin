@@ -451,16 +451,20 @@ test('native projection keeps deep live contexts, contains render errors and res
   assert.deepEqual(app.root.memoizedProps,{children:'original',marker:2});assert.equal(app.control.closes,1);runtime.cleanup();
 });
 
-test('adding a preview preserves app instances for single and array root children',async()=>{
-  for(const shape of ['single','array','siblings']){
-    const app=tree(),dom=new JSDOM('<div id="root"></div>');let mounts=0;
+for(const install of [installPresentationRuntime,sharedLoopRuntime()])test(`adding a preview preserves app instances for root child shapes (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+  for(const shape of ['single','array','siblings','fragment','fragment-siblings','keyed-fragment','nested-fragment']){
+    const app=tree(install),dom=new JSDOM('<div id="root"></div>');let mounts=0;
     const previous={window:(globalThis as any).window,document:(globalThis as any).document,require:(globalThis as any).__r};
     (globalThis as any).window=dom.window;(globalThis as any).document=dom.window.document;
     function View({children}:any){return React.createElement('div',null,children);}
     function Modal(){return null;}
     function AppState(){const [instance]=React.useState(()=>++mounts);return React.createElement('span',null,instance);}
     const element=React.createElement(AppState,{key:'app'});
-    const children=shape==='single'?element:shape==='array'?[element]:[element,React.createElement('span',{key:'sibling'},'Sibling')];
+    const siblings=[element,React.createElement('span',{key:'sibling'},'Sibling')];
+    const fragment=React.createElement(React.Fragment,null,element);
+    const children=shape==='single'?element:shape==='array'?[element]:shape==='siblings'?siblings:
+      shape==='fragment'?fragment:shape==='fragment-siblings'?React.createElement(React.Fragment,null,...siblings):
+      shape==='keyed-fragment'?React.createElement(React.Fragment,{key:'root'},element):React.createElement(React.Fragment,null,fragment);
     app.root.type=View;app.root.memoizedProps={children};
     function App(){}const owner:any={type:App,memoizedProps:{},child:app.button,return:app.root};
     app.root.child=owner;app.button.return=owner;app.sheet.return=owner;
@@ -469,13 +473,17 @@ test('adding a preview preserves app instances for single and array root childre
     const rendered=createRoot(dom.window.document.getElementById('root')!);
     const render=()=>flushSync(()=>rendered.render(React.createElement(View,app.root.memoizedProps)));
     const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??app.root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
-    const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){fiber.memoizedProps=props;render();}}]])},fibers,hidden:()=>false,later:setTimeout});
+    const runtime=install({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){fiber.memoizedProps=props;render();}}]])},fibers,hidden:()=>false,later:setTimeout});
     try{
-      render();configureFixture(runtime,{states:[],actions:[app.action]});runtime.open('open');
-      assert.equal(runtime.project(app.sheet).error,undefined);
-      assert.equal(mounts,1,`${shape} app children keep their state when a preview opens`);
-      await runtime.rollback(0,false);
-      assert.equal(mounts,1,`${shape} app children keep their state when the preview closes`);
+      render();configureFixture(runtime,{states:[],actions:[app.action]});
+      for(let pass=0;pass<3;pass++){
+        runtime.open('open');assert.equal(runtime.project(app.sheet).error,undefined);
+        assert.equal(mounts,1,`${shape} app children keep their state when a preview opens`);
+        await runtime.rollback(0,false);
+        assert.equal(mounts,1,`${shape} app children keep their state when the preview closes`);
+      }
+      assert.equal(runtime.diagnostics().preservedRootFragments,['fragment','fragment-siblings','nested-fragment'].includes(shape)?3:0);
+      runtime.cleanup();assert.equal(runtime.diagnostics().preservedRootFragments,0);
     }finally{
       runtime.cleanup();flushSync(()=>rendered.unmount());await new Promise(resolve=>setTimeout(resolve,20));dom.window.close();
       (globalThis as any).window=previous.window;(globalThis as any).document=previous.document;(globalThis as any).__r=previous.require;

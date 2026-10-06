@@ -539,3 +539,11 @@ Existing setup, readiness, capture and restoration windows retain their names,
 units and boundaries. Preview query reads and rejection counts stay local, clear
 on cleanup, and never enter telemetry. Query values and observer references
 remain inside the app runtime.
+
+Since 0.1.168, temporary preview insertion preserves React's child level when
+the app root uses an unkeyed Fragment. Existing presentation setup, readiness,
+capture and restoration timings keep their names, units and boundaries. The
+local diagnostic count `preservedRootFragments` counts preview insertions that
+keep this child level and clears on cleanup. It contains no app data and does
+not enter telemetry. Source catalog timing also covers exported guard-page
+preview plans above navigators; these plans never change account conditions.

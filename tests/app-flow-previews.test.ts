@@ -662,3 +662,39 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
     assert.deepEqual(app.runtime.diagnostics().queryPreviewRejections,{missing:0,representation:0,fields:0});
   });
 }
+
+test('exported guard bodies above a navigator get previews without changing account conditions',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'flow-guard-body-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await writeFile(join(root,'App.tsx'),`import {createNativeStackNavigator} from '@react-navigation/native-stack';
+    const Stack=createNativeStackNavigator();
+    export function Routes(){return <Stack.Navigator><Stack.Screen name="Home" component={Home}/></Stack.Navigator>}
+    export function App({account}){return account.status==='disabled'?<DisabledPage/>:<Wrapper/>}
+    function Wrapper(){return <Routes/>}
+    export function DisabledPage(){return <Text>Account disabled</Text>}
+    function Home(){return <View/>}`);
+  const graph=await scanAppFlow(root,'ios'),plan=graph.presentations!.previews!.find(p=>p.effect.kind==='mount'&&p.owner==='DisabledPage');
+  assert.ok(plan,'A source gate above navigation has a real body preview');
+  assert.equal(plan.preview,true);assert.equal(plan.effect.kind,'mount');
+  assert.ok(plan.views!.some(id=>graph.presentations!.views!.find(v=>v.id===id)?.kind==='branch'));
+  assert.ok(!graph.presentations!.previews!.some(p=>p.effect.kind==='state'&&p.file==='App.tsx'),'No account-state mutation becomes a capture plan');
+});
+
+test('guard body previews exclude unrelated rows, required props, unexported bodies and progress',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'flow-guard-body-limits-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await writeFile(join(root,'App.tsx'),`import {createNativeStackNavigator} from '@react-navigation/native-stack';
+    const Stack=createNativeStackNavigator();
+    function Routes(){return <Stack.Navigator><Stack.Screen name="Home" component={Home}/></Stack.Navigator>}
+    export function App({account,pending,error}){return <>
+      {account.status==='required'?<RequiredPage record={account}/>:null}
+      {account.status==='private'?<PrivatePage/>:null}
+      {pending?<ProgressPage/>:null}<Routes/>
+    </>}
+    export function RequiredPage({record}:{record:object}){return <Text>Required</Text>}
+    function PrivatePage(){return <Text>Private</Text>}
+    export function ProgressPage(){return <Text>Waiting</Text>}
+    export function Row({error}){return error?<RowBadge/>:null}
+    export function RowBadge(){return <Text>Badge</Text>}
+    function Home(){return <View/>}`);
+  const graph=await scanAppFlow(root,'ios');
+  assert.ok(!graph.presentations!.previews!.some(p=>['RequiredPage','PrivatePage','ProgressPage','RowBadge'].includes(p.owner)));
+});

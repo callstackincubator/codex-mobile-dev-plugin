@@ -435,7 +435,7 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
   const catalog = scanSourceViews(units, root, (unit, name) => symbol(units.get(unit.file)!, name));
   graph.presentations.views = catalog.views;
   graph.presentations.viewStates = catalog.states;
-  addSourcePreviewPlans(graph.presentations);
+  addSourcePreviewPlans(graph.presentations,graph.nodes);
   graph.catalogMs = performance.now() - catalogStarted;
   const sourceHash=createHash('sha256').update(platform);for(const unit of [...units.values()].sort((a,b)=>a.file.localeCompare(b.file))){sourceHash.update(relative(root,unit.file));sourceHash.update('\0');sourceHash.update(unit.ast.text);sourceHash.update('\0');}graph.sourceHash=sourceHash.digest('hex');
   // Source facts remain separate. Only finite presentation selectors and exact

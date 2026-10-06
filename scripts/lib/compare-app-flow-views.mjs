@@ -17,11 +17,13 @@ const controlMatches = (selector, target) => (selector.prop === undefined || sel
 export function compareViewReference(graph, reference, targetsForAction) {
   const states = new Map([...(graph.presentations?.states ?? []),...(graph.presentations?.viewStates ?? [])].map(site => [site.id, site]));
   const groups = new Map();
+  const viewsById=new Map((graph.presentations?.views??[]).map(view=>[view.id,view]));
   for (const action of [...(graph.presentations?.actions ?? []),...(graph.presentations?.previews??[])]) {
     const key = presentationDestination(action);
     const group = groups.get(key) ?? { key, actions: [], targets: [], executable: action.preview?'preview':'action' };
     if(!action.preview)group.executable='action';
     group.actions.push(action);
+    group.views=[...new Map([...(group.views??[]),...(action.views??[]).flatMap(id=>viewsById.has(id)?[viewsById.get(id)]:[])].map(view=>[view.id,view])).values()];
     if (action.effect.kind === 'control') group.targets.push(...targetsForAction(action));
     groups.set(key, group);
   }
