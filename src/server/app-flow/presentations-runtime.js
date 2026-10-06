@@ -3,7 +3,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   let sequence = 0, owners = new WeakMap(), collecting = new Set();
   const bindings = new Map(), patches = [], effectPatches = [], undo = [];
   let collected = [];
-  const entries = new Map(), entryKeys = new Map(); let entrySources = new WeakMap();
+  const entries = new Map(), entryKeys = new Map(); let entrySources = new WeakMap(), preparedEntries = new WeakMap();
+  let preparedStructure, preparedCatalog, preparedRevision, preparedHash, lastCompiledEntries = 0;
   let lastScheduled = 0, lastExactScheduled = 0, lastFallbackScheduled = 0, lastCompiledBindings = 0, structureCache, sourceRoot, sourceHash;
   const portalEffects=new Map();let portalOwners=new WeakMap(),approvedPortals=new WeakSet(),syncingPortals=false;
   let previewRefs=new WeakSet(),containedImperativeHandles=0,containedSubscriptions=0,preservedRootFragments=0;
@@ -389,6 +390,47 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       return records(0);
     } finally { unpatch(); collecting.clear(); }
   }
+  function bindPreparedEntries(structure) {
+    const registry=globalThis.__MOBILE_DEV_FLOW_REGISTRY__,revision=registry?.revision;
+    if(typeof revision==='number'&&preparedStructure===structure&&preparedCatalog===catalog&&preparedRevision===revision&&preparedHash===sourceHash)return;
+    preparedStructure=structure;preparedCatalog=catalog;preparedRevision=revision;preparedHash=sourceHash;
+    preparedEntries=new WeakMap();lastCompiledEntries=0;
+    if(!sourceHash||typeof registry?.matchingOwners!=='function')return;
+    const sites=new Map();
+    const add=(target,id)=>{
+      if(!target?.source)return;
+      const marker=`${target.file}:${target.source.line}:${target.source.column}`;
+      const list=sites.get(marker)??[];list.push({source:`${target.file}#${target.owner}`,component:target.component,id});sites.set(marker,list);
+    };
+    for(const site of catalog.states)for(const target of site.ownerEntries??[])add(target,`owner:${site.id}:${target.component}`);
+    for(const action of catalog.actions){
+      if(action.effect.kind==='mount')continue;
+      add(action,action.id);
+      if(action.expected)add(action.expected,`${action.id}:expected`);
+      if(action.effect.kind==='control'&&action.effect.target)add({...action.effect.target,component:action.effect.component},`${action.id}:target`);
+      for(const target of action.consumer?.entries??[])add({...target,component:action.consumer.component},`${action.id}:consumer`);
+      for(const [index,target]of (action.handoffs??[]).entries())add(target,`${action.id}:handoff:${index}`);
+    }
+    const markers=new Map();
+    for(const owner of registry.matchingOwners(sourceHash))for(const [id,value]of owner.entries??[]){
+      if(!owner.mounted||value.kind!=='entry'&&value.kind!=='control')continue;
+      const targets=(sites.get(id.slice(0,id.lastIndexOf(':')))??[]).filter(target=>target.source===owner.source);
+      if(targets.length)markers.set(`${owner.id}:${id}`,targets);
+    }
+    for(const marker of structure.all){
+      if(marker.tag!==12)continue;
+      const targets=markers.get(marker.memoizedProps?.id);if(!targets)continue;
+      // Each marker wraps one exact JSX element. Adjacent markers may nest,
+      // but matching must never descend into the component's rendered body.
+      let fiber=marker.child;
+      for(let depth=0;fiber?.tag===12&&depth<8;depth++)fiber=fiber.child;
+      if(!fiber||fiber.sibling)continue;
+      const matches=targets.filter(target=>target.component===name(fiber));if(!matches.length)continue;
+      let record=preparedEntries.get(fiber);
+      if(!record){record={actions:new Set()};preparedEntries.set(fiber,record);lastCompiledEntries++;}
+      for(const target of matches)record.actions.add(target.id);
+    }
+  }
   function records(offset) {
     // Later pages read the same collection. Rewalking a changing React tree for
     // each page repeats source work and can shift entries across page offsets.
@@ -397,8 +439,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // components and callbacks have identical names. Never invoke the callback.
     const targets=new Map();for(const action of catalog.actions){if(action.effect.kind==='mount')continue;for(const [component,owner]of [[action.component,action.owner],...(action.effect.kind==='control'&&action.effect.target?[[action.effect.component,action.effect.target.owner]]:[]),...(action.consumer?.entries??[]).map(entry=>[action.consumer.component,entry.owner]),...(action.handoffs??[]).map(entry=>[entry.component,entry.owner])]){const names=targets.get(component)??new Set();names.add(owner);targets.set(component,names);}}
     const ownerNames=new Set(catalog.states.flatMap(site=>(site.ownerEntries??[]).map(entry=>entry.component)));
+    const structure=committedStructure();bindPreparedEntries(structure);
     const mounted=new Set(), candidates=[];
-    for(const fiber of committedStructure().all){
+    for(const fiber of structure.all){
       mounted.add(fiber);
       // A portal moves an entry away from its source owner's physical parents.
       // Bind exact JSX first; logical owner checks still gate discovery/opening.
@@ -416,6 +459,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   const page=offset=>({bindings:collected.slice(offset,offset+100),next:offset+100<collected.length?offset+100:undefined});
   function entry(fiber,create=true){
+    const prepared=preparedEntries.get(fiber);if(prepared)return prepared;
     const source=fiber._debugStack??fiber._debugSource;if(!source||typeof source!=='object')return;
     let record=entrySources.get(source);
     if(record&&entries.get(record.id)!==record){
@@ -495,7 +539,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return structure;
   }
   function index(includeEntries=false) {
-    const {names,current,all,props}=committedStructure(),live=new WeakMap(),boxes=new WeakMap(),states=new Map(),values=new Map(),matched=new Map(),targets=new Set(),openers=new Map();
+    const structure=committedStructure();bindPreparedEntries(structure);
+    const {names,current,all,props}=structure,live=new WeakMap(),boxes=new WeakMap(),states=new Map(),values=new Map(),matched=new Map(),targets=new Set(),openers=new Map();
     if(includeEntries)for(const action of catalog.actions){targets.add(action.component);if(action.effect.kind==='control')targets.add(action.effect.component);if(action.consumer)targets.add(action.consumer.component);for(const handoffSite of action.handoffs??[])targets.add(handoffSite.component);}
     // Source bindings can change without a React commit. Rebuild these matches
     // from the current catalog, while reusing only the committed tree structure.
@@ -1596,7 +1641,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80,resolve));
   }
-  function cleanup(){pendingHandoff=undefined;canonicalControls=new WeakMap();captureRoots.clear();releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=sourceHash=undefined;lastCompiledBindings=0;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected){restoreInlineBody(record);clearTimeout(record.seedTimer);}projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){preparedStructure=preparedCatalog=preparedRevision=preparedHash=undefined;preparedEntries=new WeakMap();lastCompiledEntries=0;pendingHandoff=undefined;canonicalControls=new WeakMap();captureRoots.clear();releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=sourceHash=undefined;lastCompiledBindings=0;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected){restoreInlineBody(record);clearTimeout(record.seedTimer);}projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[],entryId) {
     connected=bodyRoots(scope,tree,connected);
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&(!entryId||entry(fiber,false)?.actions.has(entryId))&&tree.isVisible(fiber));
@@ -1604,9 +1649,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return unique.length===1?unique[0]:undefined;
   }
   function probeFocus(focus,expected) {
-    const tree=index();let currentFocus=focus&&tree.current.get(focus),pendingProjection;
+    const tree=index();let currentFocus=focus&&tree.current.get(focus);
     if(focus&&!currentFocus){
-      const record=pendingProjection=[...projected].reverse().find(record=>record.focus===focus||record.focus===focus.alternate||record.child.props===(focus.pendingProps??focus.memoizedProps));
+      const record=[...projected].reverse().find(record=>record.focus===focus||record.focus===focus.alternate||record.child.props===(focus.pendingProps??focus.memoizedProps));
       const bodies=record?(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type):[];
       if(bodies.length===1)currentFocus=bodies[0];
     }
@@ -1619,7 +1664,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // exact JSX entry proves the branch exists; readiness still needs the
     // whole temporary form so a label cannot hide a loading sibling.
     const ownerScope=expected?.scope==='owner'&&expectedFocus;
-    const retained=currentFocus??(pendingProjection?focus:undefined);
+    // Keep the requested identity even if its owner unmounts. Dropping it
+    // would make the next probe accept the surrounding app as this view.
+    const retained=currentFocus??focus;
     const body=ownerScope?currentFocus:expectedFocus||retained;
     const visualScope=ownerScope?bodyRoots(currentFocus,tree,connected):expectedFocus?roots(expectedFocus,tree):connected;
     return {focus:retained,visualFocus:visualScope.at(-1)??body,expectedReady:(!focus||!!currentFocus)&&(!expected||!!expectedFocus),motion:(viewport,geometry)=>motion(body,viewport,tree,visualScope,geometry)};
@@ -1635,6 +1682,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     return result.map(item=>item.value);
   }
-  const diagnostics=()=>({inlineProjections:projected.filter(record=>record.inline).length,nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  const diagnostics=()=>({inlineProjections:projected.filter(record=>record.inline).length,nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,lastCompiledEntries,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
   return {structure:committedStructure,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,collect,records,configure,list,prepare,open,handoff,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

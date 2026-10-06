@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {prepareCaptureBuild,restoreCaptureBuild} from '../src/server/app-flow/capture-build.ts';
-import {captureManifest,captureRecipeNodes} from '../src/server/app-flow/capture-manifest.ts';
+import {captureManifest,captureRecipeNodes,instrumentationManifest} from '../src/server/app-flow/capture-manifest.ts';
 const require=createRequire(import.meta.url);
 const {transformSync}=require('@babel/core');
 const plugin=require('../src/server/app-flow/instrumentation-plugin.cjs');
@@ -81,4 +81,18 @@ test('instrumented destructured props preserve mutable parameter bindings',()=>{
   new Function('require','module','exports',commonjs)(()=>flow,module,module.exports);
   assert.equal((module.exports as any).List({style:4}),6);
   assert.equal((module.exports as any).List({}),3);
+});
+
+test('prepared manifest marks openers, consumers and owner entries as well as native controls',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'flow-markers-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await writeFile(join(root,'App.tsx'),'export function App() {}');
+  const location=(line:number)=>({line,column:0,endLine:line,endColumn:20});
+  const at=(line:number)=>({file:'App.tsx',owner:'App',component:'Sheet',source:location(line)});
+  const graph:any={nodes:[],presentations:{states:[{id:'step',file:'App.tsx',owner:'App',ownerEntries:[at(4)]}],actions:[{
+    id:'open',...at(1),effect:{kind:'control',component:'Sheet',prop:'control',target:at(2)},expected:at(2),consumer:{component:'Sheet',entries:[at(3)]},
+  }]}};
+  const manifest=await instrumentationManifest(root,graph);
+  assert.deepEqual(manifest.files['App.tsx'].controls.map(entry=>entry.id).sort(),[
+    'App.tsx:1:0:entry','App.tsx:2:0:control','App.tsx:2:0:entry','App.tsx:3:0:entry','App.tsx:4:0:entry',
+  ]);
 });

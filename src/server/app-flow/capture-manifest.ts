@@ -72,8 +72,17 @@ export async function instrumentationManifest(projectRoot: string, graph: FlowGr
   const catalog = graph.presentations;
   const mounts: InstrumentationManifest['mounts'] = [];
   const states = new Map([...(catalog?.states ?? []), ...(catalog?.previewStates ?? [])].map(site => [site.id, site]));
-  for (const site of states.values()) (files[site.file] ??= {hash: '', states: [], controls: []}).states.push(site);
+  const marker=(file:string,owner:string,source:NonNullable<FlowPresentationAction['source']>)=>{
+    const unit=files[file]??={hash:'',states:[],controls:[]},id=`${file}:${source.line}:${source.column}:entry`;
+    if(!unit.controls.some(control=>control.id===id))unit.controls.push({id,owner,prop:'',source});
+  };
+  for (const site of states.values()) {
+    (files[site.file] ??= {hash: '', states: [], controls: []}).states.push(site);
+    for(const entry of site.ownerEntries??[])marker(entry.file,entry.owner,entry.source);
+  }
   for (const action of [...(catalog?.actions ?? []), ...(catalog?.previews ?? [])]) {
+    if(action.effect.kind!=='mount'&&action.source)marker(action.file,action.owner,action.source);
+    for(const entry of action.consumer?.entries??[])marker(entry.file,entry.owner,entry.source);
     for(const target of action.handoffs??[]) {
       const unit=files[target.file]??={hash:'',states:[],controls:[]};
       const id=`${target.file}:${target.source.line}:${target.source.column}:handoff`;

@@ -817,3 +817,10 @@ boundaries. No metric was added per render or query update. Provider values,
 store snapshots, form state and input props remain inside the app and are not
 sent to telemetry. Existing App Flow and telemetry behavior tests cover this
 execution path and its cleanup.
+
+Prepared JSX entry binding uses the existing `presentation-collect` and
+`presentation-symbolicate` timing boundaries. Its committed-entry count appears
+only in local App Flow diagnostics. Binding caches reset during cleanup. No
+source locations, component data or new per-probe events enter telemetry. The
+lost-target readiness check and resolved base-route params retain existing
+capture and failure measurements.

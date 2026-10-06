@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { type FlowDependencies, type FlowStart } from '../src/server/app-flow/runs.ts';
+import {captureManifest} from '../src/server/app-flow/capture-manifest.ts';
 import { FlowStore } from '../src/server/app-flow/store.ts';
 import { flowRunning, type FlowGraph } from '../src/shared/app-flow.ts';
 
@@ -228,4 +229,24 @@ test('closing a run waits for an in-flight control read before releasing its fil
     owner.stop(id);await delay(10);assert.equal(settled,false);
     release([]);await done;assert.equal(settled,true);
   } finally { release?.([]);await owner.close(); }
+});
+
+test('real data resolves the presentation base route and survives a saved map without changing unrelated recipes',async t=>{
+  const directory=await fixture(t),runs=new AppFlowRuns({directory,scan:async()=>graph(),connect:backend([])});
+  t.after(()=>runs.close());
+  const {id}=runs.start(input);await finished(runs,id);
+  const active=(runs as any).sessions.get(id);
+  const node={id:'sheet',name:'Details',kind:'screen',path:[],required:['id'],params:{mode:'view'},status:'needs-data',presentation:{actions:[],basePath:['Profile'],baseParams:{mode:'view',scope:'observed'}}};
+  active.run.nodes.push(node,{...structuredClone(node),id:'other',presentation:{...structuredClone(node.presentation),basePath:['Collection']}},{...structuredClone(node),id:'captured',status:'captured',image:'mobile-flow://saved/image'});
+  const context=runs.context(id).routes.find(route=>route.nodeId==='sheet')!;
+  assert.deepEqual(context.path,['Profile']);assert.deepEqual(context.params,{mode:'view',scope:'observed'});
+  runs.resolve(id,[{nodeId:'sheet',params:{id:'real-id'}},{nodeId:'captured',params:{id:'other-id'}}]);
+  const resolved=runs.read(id),job=captureManifest(resolved,resolved.nodes,['sheet']).jobs[0];
+  assert.equal(job.blocked,undefined);assert.deepEqual(job.path,['Profile']);
+  assert.deepEqual(job.params,{mode:'view',scope:'observed',id:'real-id'});
+  assert.equal(resolved.nodes.find(node=>node.id==='other')!.status,'needs-data');
+  assert.equal(resolved.nodes.find(node=>node.id==='captured')!.image,'mobile-flow://saved/image');
+  await new FlowStore(directory).save({run:resolved,input});
+  const saved=(await new FlowStore(directory).load(id)).run;
+  assert.deepEqual(captureManifest(saved,saved.nodes,['sheet']).jobs[0].params,job.params);
 });

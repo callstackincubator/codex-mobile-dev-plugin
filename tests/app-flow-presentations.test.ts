@@ -1998,3 +1998,74 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()])test(`reta
   assert.equal(app.runtime.open('open').focus,app.sheet);
   app.runtime.cleanup();
 });
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()])test(`prepared JSX markers bind committed entries without stacks (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+  const previous=(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__,app=tree(install);
+  t.after(()=>{app.runtime.cleanup();(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__=previous;});
+  delete app.button._debugSource;
+  const source={line:1,column:0,endLine:1,endColumn:20},target={line:2,column:0,endLine:2,endColumn:20};
+  app.action.source=source;app.action.effect.target={file:'App.tsx',owner:'App',source:target};
+  app.action.expected={file:'App.tsx',owner:'App',component:'Sheet',source:target};
+  const entries=new Map([['App.tsx:1:0:entry',{kind:'entry'}],['App.tsx:2:0:control',{kind:'control'}],['App.tsx:2:0:entry',{kind:'entry'}]]);
+  const owner={id:'owner-1',mounted:true,source:'App.tsx#App',entries};
+  let hash='build',revision=0;
+  (globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__={get revision(){return revision},matchingOwners:(expected:string)=>expected===hash?[owner]:[]};
+  const wrap=(fiber:any,id:string)=>{const marker:any={tag:12,memoizedProps:{id:`owner-1:${id}`},child:fiber,return:app.root};fiber.return=marker;fiber.sibling=undefined;return marker;};
+  const button=wrap(app.button,'App.tsx:1:0:entry'),sheet=wrap(wrap(app.sheet,'App.tsx:2:0:control'),'App.tsx:2:0:entry');
+  app.root.child=button;button.sibling=sheet;
+  const result=await app.runtime.collect([], [app.action], '/app', 'build');
+  assert.deepEqual(result.bindings,[],'Exact prepared sites need no symbolication');
+  assert.equal(app.runtime.diagnostics().lastCompiledEntries,2);
+  assert.equal(app.runtime.list().length,1);
+  assert.equal(app.runtime.prepare('open').available,true);
+  assert.equal(app.runtime.open('open').focus,app.sheet);
+  assert.equal(app.runtime.probeFocus(app.sheet,{component:'Sheet',entry:'open:expected'}).expectedReady,true);
+  await app.runtime.rollback(0,false);assert.equal(app.control.closes,1);
+  hash='stale';revision++;
+  assert.deepEqual(app.runtime.list(),[],'A marker from another prepared build cannot authorize opening');
+  hash='build';owner.source='other.tsx#App';revision++;
+  assert.deepEqual(app.runtime.list(),[],'Same component name in another file is insufficient');
+  owner.source='App.tsx#App';owner.mounted=false;revision++;
+  assert.deepEqual(app.runtime.list(),[],'Unmounted registry entries cannot authorize opening');
+  owner.mounted=true;revision++;
+  assert.equal(app.runtime.list().length,1);
+  const nested:any={...app.button,return:app.nested,sibling:undefined};app.nested.child=nested;
+  assert.equal(app.runtime.probeFocus(app.sheet,{component:'Button',entry:'open'}).expectedReady,false,'A marker cannot match a same-named descendant');
+  entries.delete('App.tsx:2:0:control');entries.delete('App.tsx:2:0:entry');revision++;
+  assert.deepEqual(app.runtime.list(),[],'A new registry commit must invalidate the old match');
+});
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()])test(`prepared entries keep repeated controllers ambiguous (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+  const previous=(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__,app=tree(install);
+  t.after(()=>{app.runtime.cleanup();(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__=previous;});
+  delete app.button._debugSource;
+  app.action.source={line:1,column:0,endLine:1,endColumn:20};app.action.effect.target={file:'App.tsx',owner:'App',source:{line:2,column:0,endLine:2,endColumn:20}};
+  const owner={id:'owner',mounted:true,source:'App.tsx#App',entries:new Map([['App.tsx:1:0:entry',{kind:'entry'}],['App.tsx:2:0:control',{kind:'control'}]])};
+  (globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__={revision:1,matchingOwners:()=>[owner]};
+  const wrap=(fiber:any,id:string)=>{const marker:any={tag:12,memoizedProps:{id:`owner:${id}`},child:fiber,return:app.root};fiber.return=marker;fiber.sibling=undefined;return marker;};
+  const button=wrap(app.button,'App.tsx:1:0:entry'),sheet=wrap(app.sheet,'App.tsx:2:0:control');
+  const otherControl={open(){assert.fail('Must not choose a repeated controller')},close(){}};
+  const duplicate=wrap({...app.sheet,memoizedProps:{control:otherControl},child:undefined},'App.tsx:2:0:control');
+  app.root.child=button;button.sibling=sheet;sheet.sibling=duplicate;
+  await app.runtime.collect([], [app.action], '/app', 'build');
+  assert.equal(app.runtime.diagnostics().lastCompiledEntries,3);
+  assert.equal(app.runtime.prepare('open').available,false);
+  assert.deepEqual(app.runtime.list(),[]);
+});
+
+test('a lost presentation target cannot become an unrestricted app capture on the next probe',()=>{
+  const app=tree();
+  const mounted=app.runtime.probeFocus(app.sheet);
+  assert.equal(mounted.expectedReady,true);
+  app.button.sibling=undefined;
+  let focus:any=app.sheet;
+  for(let attempt=0;attempt<3;attempt++){
+    const probe=app.runtime.probeFocus(focus);
+    assert.equal(probe.expectedReady,false);
+    assert.equal(probe.focus,app.sheet,'Retain the requested target until the caller restores its checkpoint');
+    focus=probe.focus;
+  }
+  app.button.sibling=app.sheet;
+  assert.equal(app.runtime.probeFocus(focus).expectedReady,true);
+  app.runtime.cleanup();
+});

@@ -7,7 +7,7 @@ coverage. The target is 260 reviewed views in 260 seconds. Source matches and
 unit tests do not establish that result.
 
 The latest development check after 0.1.191 attempted the same 20 selected views
-in 49.4 seconds, including 0.35 seconds of preparation. Inspection of every saved
+in 49.7 seconds, including 0.35 seconds of preparation. Inspection of every saved
 image accepted 13 distinct views. One report image had an invalid subject; two
 report steps timed out; two signup steps, hosting-provider selection and discard
 confirmation lacked usable state or an opening binding. No reconnect or runtime
@@ -29,13 +29,25 @@ opener may use another independently reachable source entry only when both name
 the same destination and exact state update and resolve to one live setter. This
 never runs an event handler.
 
-The next gate is still all 20 correct images. Signup needs proven local state
-updates from real query data. Report steps need a valid subject and the choices
-that their form requires; changing a step number alone is not enough. Resolve
-those inputs and remaining openers before another full-map sweep. Timing from a
-recent mixed run also shows about 6.5 seconds spent collecting and resolving
-source bindings. Exact prepared JSX entries are the next speed target after the
-correctness gate; readiness checks must remain.
+Prepared JSX markers now bind exact committed source entries directly. They
+check the build hash, owner, source location and current instance, and retain
+stack-based binding for unprepared entries. This reduced collection time from
+3.05 to 2.49 seconds in the fixed check, but total capture time did not improve.
+Resolved route data now updates a sheet's base route as well as its map node;
+this server change has behavior coverage but still needs a live check.
+
+A focused dialog check exposed a false capture: opening a control inside a
+copied login form removed its target, and readiness then accepted the surrounding
+account-selection page. Readiness now keeps the requested target identity until
+restoration. The same focused check rejected the wrong image. The alternative
+opening change that exposed this failure is held back.
+
+The next gate is still all 20 correct images. First keep copied forms mounted
+through provider updates and prove their nested dialogs. Then supply proven
+local state from real query data for signup and valid subjects and choices for
+report steps. Changing a step number alone is not enough. Repeat only the
+failing subset after a relevant change, then the fixed gate. Do not run another
+full-map sweep while this gate fails; keep all readiness checks.
 
 When changing Babel instrumentation, restart the existing Metro once with its
 transform cache cleared, then reload the app. In this test a JavaScript reload
