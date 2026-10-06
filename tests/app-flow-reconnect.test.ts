@@ -23,7 +23,7 @@ test('disconnect saves progress, reconnects to the same run, and resumes the int
     let screen='Home';
     return {target,runtime:{async invoke(command){
       if(command.type==='inspect'||command.type==='resume')return {available:true};
-      if(command.type==='recover'){if(generation===1)throw Error('disconnected');return {recovered:true};}
+      if(command.type==='recover'||command.type==='heartbeat'){if(generation===1)throw Error('disconnected');return {recovered:true};}
       if(command.type==='open'){screen=(command.path as string[])[0];if(generation===1&&screen==='Profile')throw Error('disconnected');return {ready:true,active:[screen],name:screen,signature:screen};}
       return {found:true,active:[screen]};
     },async close(options){closures.push(options?.restore!==false)}},async screenshot(){shots.push(screen);return Buffer.from(screen)}};
@@ -49,6 +49,49 @@ test('Stop cancels reconnect backoff and saves the existing map',async t=>{
   }});
   const run=runs.start(input);await until(()=>connections===2);runs.stop(run.id);await runs.close();
   assert.equal(runs.read(run.id).phase,'stopped');assert.equal(connections,2);
+});
+
+test('slow recovery with a healthy connection retries the route without reinstalling or blaming the app',async t=>{
+  const {FlowRuntimeTimeout}=await import('../src/server/app-flow/runtime-metrics.ts');
+  const opens:string[]=[],shots:string[]=[];let connections=0,recoveries=0,heartbeats=0,screen='Home';
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>graph(),connect:async()=>{
+    connections++;
+    return {runtime:{async invoke(command){
+      if(command.type==='inspect')return {available:true};
+      if(command.type==='open'){
+        screen=(command.path as string[])[0];opens.push(screen);
+        if(screen==='Profile'&&opens.filter(name=>name==='Profile').length<3)throw new FlowRuntimeTimeout('open');
+        return {ready:true,active:[screen],name:screen,signature:screen};
+      }
+      if(command.type==='recover'){recoveries++;throw new FlowRuntimeTimeout('recover');}
+      if(command.type==='heartbeat'){heartbeats++;return {alive:true};}
+      return {found:true,active:[screen]};
+    },async close(){}},async screenshot(){shots.push(screen);return Buffer.from(screen)}};
+  }});
+  const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
+  assert.equal(connections,1);assert.equal(recoveries,2);assert.equal(heartbeats,2);
+  assert.deepEqual(shots,['Home','Settings','Profile']);
+  assert.equal(runs.read(run.id).nodes.find(n=>n.name==='Profile')?.captureAttempts,3);
+  assert.equal(runs.read(run.id).phase,'complete');
+});
+
+test('Stop preserves a failed route reason while cancelling the next route',async t=>{
+  let opening=false,release!:()=>void;
+  const wait=new Promise<void>(resolve=>{release=resolve});
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>graph(),connect:async()=>({
+    runtime:{async invoke(command){
+      if(command.type==='inspect')return {available:true};
+      if(command.type==='open'){
+        if((command.path as string[])[0]==='Home')return {ready:false,reason:'Screen is still loading (data).'};
+        opening=true;await wait;return {ready:false};
+      }
+      return {recovered:true};
+    },async close(){}},async screenshot(){throw Error('Unready screens must not capture')},
+  })});
+  t.after(async()=>{release();await runs.close()});
+  const run=runs.start(input);await until(()=>opening);runs.stop(run.id);release();await runs.close();
+  assert.equal(runs.read(run.id).nodes.find(n=>n.name==='Home')?.reason,'Screen is still loading (data).');
+  assert.equal(runs.read(run.id).nodes.find(n=>n.name==='Profile')?.reason,'Run stopped.');
 });
 
 test('the unfiltered registration graph is never published during connection setup',async t=>{

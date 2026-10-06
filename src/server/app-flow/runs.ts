@@ -321,7 +321,7 @@ export class AppFlowRuns {
     const captureTimings = new MeasurementWindow();
     const readinessTimings = new MeasurementWindow(), loadingTimings = new MeasurementWindow();
     const reconnectTimings = new MeasurementWindow();
-    let reconnects = 0;
+    let reconnects = 0, recoveryContinuations = 0;
     let retries = 0;
     const attributes = { surface: "app-flow", device_platform: input.platform };
     const runtimeMetrics=active.runtimeMetrics=new FlowRuntimeMetrics(input.platform);
@@ -333,6 +333,21 @@ export class AppFlowRuns {
       if (signal.aborted) { await connected.runtime.close(); signal.throwIfAborted(); }
       return connected;
     }), signal);
+    const recoverNavigation = async (runtime: FlowBackend['runtime']) => {
+      try {
+        const result=await abortable(runtime.invoke({type:'recover'},2500),signal);
+        if(result?.error)throw new FlowRuntimeFailure('recover','was rejected',result.error);
+      }
+      catch (error) {
+        if(signal.aborted||error instanceof FlowAppFailure)throw error;
+        // A delayed render/transition is not a disconnected debugger. Keep the
+        // inspector when it still answers; the next open cancels stale waits
+        // and must pass its own route, native motion and content checks.
+        const reply=await abortable(runtime.invoke({type:'heartbeat'},2500),signal);
+        if(reply?.alive!==true)throw new FlowRuntimeFailure('heartbeat','returned an invalid response');
+        recoveryContinuations++;
+      }
+    };
     const reconnect = async () => {
       run.phase = "reconnecting"; run.revision++; reconnects++;
       await Promise.allSettled(active.writing);
@@ -353,7 +368,7 @@ export class AppFlowRuns {
             if (!info?.available && !presentations) throw new Error("Waiting for the app's navigation container.");
             const restored=await next.runtime.invoke({type: "presentation-rollback"}, 10000);
             if(restored?.error)throw new FlowRuntimeFailure('presentation-rollback');
-            if (info?.available) await abortable(next.runtime.invoke({ type: "recover" }, 2500), signal);
+            if (info?.available) await recoverNavigation(next.runtime);
             signal.throwIfAborted();
             backend = next; active.runtime = next.runtime; active.info = info; active.target = next.target;
             previousFrame = undefined;
@@ -508,7 +523,7 @@ export class AppFlowRuns {
         if (run.retrying) retries++;
         const timeoutMs = [1000, 2000, 4000][attempt - 1];
         const loadingTimeoutMs = [6000, 10000, 20000][attempt - 1];
-        node.status = "capturing"; node.failure=undefined; run.revision++;
+        node.status = "capturing"; node.failure=undefined; node.reason=undefined; run.revision++;
         const started = performance.now();
         let capturedTarget=false;
         try {
@@ -602,7 +617,7 @@ export class AppFlowRuns {
           // Final restoration belongs to close(); a last failed screen must not
           // turn an otherwise finished map into a connection failure.
           if (more) {
-            try { await backend.runtime.invoke({ type: "recover" }, 2500); }
+            try { await recoverNavigation(backend.runtime); }
             catch (error) {
               if(error instanceof FlowAppFailure)throw error;
               const interrupted = (interruptions.get(node.id) ?? 0) + 1;
@@ -635,7 +650,7 @@ export class AppFlowRuns {
       const finalPhase = run.phase;
       run.phase = "finishing";
 
-      for (const node of run.nodes) if (node.kind === "screen" && ["pending", "capturing"].includes(node.status)) { node.status = "timed-out"; node.reason = "Run stopped."; }
+      for (const node of run.nodes) if (node.kind === "screen" && ["pending", "capturing"].includes(node.status)) { node.status = "timed-out"; node.reason ??= "Run stopped."; }
       if (["waiting", "resolving"].includes(run.ai)) run.ai = "unavailable";
       run.revision++;
       presentations?.discardBranch();
@@ -676,6 +691,7 @@ export class AppFlowRuns {
         Sentry.metrics.gauge('app_flow.previews_captured',run.nodes.filter(node=>node.presentation?.preview&&node.status==='captured').length,{attributes});
         Sentry.metrics.gauge('app_flow.previews_blocked',run.nodes.filter(node=>node.presentation?.preview&&node.status==='blocked').length,{attributes});
         Sentry.metrics.gauge("app_flow.reconnects", reconnects, { attributes });
+        Sentry.metrics.gauge('app_flow.recovery_continuations',recoveryContinuations,{attributes});
         Sentry.metrics.gauge('app_flow.retries', retries, { attributes });
       }
     }

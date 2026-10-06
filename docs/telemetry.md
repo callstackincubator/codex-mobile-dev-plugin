@@ -672,3 +672,11 @@ redundant by recent command replies. Local diagnostics report `transitionModules
 and `transitionOptions` for temporary React Navigation animation overrides.
 These counters contain no app data. Loading and native dismissal checks remain
 active, and stopping or the runtime watchdog restores the framework exports.
+
+Since 0.1.181, `recover` settles the current navigator without reopening and
+measuring the starting screen. The next capture still checks its target's
+content, motion and native paint. Runtime and reconnect timing boundaries and
+units stay unchanged. `app_flow.recovery_continuations` counts slow recovery
+commands after which the same inspector answers a heartbeat and continues;
+these no longer count as reconnects. The count flushes once per run with the
+existing surface and platform attributes. It contains no app data.

@@ -55,7 +55,8 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     for (const timer of waitTimers) clearTimeout(timer);
     for (const id of paintFrames) globalThis.cancelAnimationFrame?.(id);
     waitTimers.clear(); paintFrames.clear();
-    for(const resolve of cancelledWaits.values())resolve();cancelledWaits.clear();
+    const cancelled=[...cancelledWaits.values()];cancelledWaits.clear();
+    for(const resolve of cancelled)resolve();
   };
   let transitionAt = 0;
   const sensitive = /token|password|secret|authorization|cookie|^(__proto__|constructor|prototype)$/i;
@@ -129,7 +130,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     }
   }
   const presentations = presentationFactory?.({ hook, fibers, hidden: props => hidden(props), later });
-  let presentationFocus, presentationObservation, presentationExpected, lastProbe, lastPresentationProbe;
+  let presentationFocus, presentationObservation, presentationExpected, lastProbe, lastPresentationProbe, lastOpenProbe;
   const presentationFrames = [];
   function navigation(value) {
     if (!value || typeof value !== 'object' || typeof value.getState !== 'function' || typeof value.dispatch !== 'function') return;
@@ -510,14 +511,6 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     if(keys.length>200||keys.length!==Object.keys(b).length)return false;
     return keys.every(key=>a[key]&&b[key]&&'value'in a[key]&&'value'in b[key]&&sameRouteParams(a[key].value,b[key].value,depth+1,budget));
   }
-  function returnToStart() {
-    const path = active(original);
-    let leaf = original;
-    while (leaf?.routes?.length) { const route = leaf.routes[leaf.index ?? 0]; if (!route?.state) { leaf = route; break; } leaf = route.state; }
-    let params = leaf?.params ?? {};
-    for (let index = path.length - 1; index > 0; index--) params = { screen: path[index], params, initial: false };
-    if (path.length) root.dispatch({ type: 'NAVIGATE', payload: { name: path[0], params } });
-  }
   async function restore() {
     if (stopped) return;
     if (captureQueue) await captureQueue.stop();
@@ -612,7 +605,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (command.type === 'capture-stop') { void captureQueue?.stop().then(() => reply({stopped:true}), () => reply({error:'Capture state could not be restored.'})); if(!captureQueue)reply({stopped:true}); return; }
         if (command.type === 'diagnostics') {
           let mountedFibers=0,mountedHosts=0;fibers(fiber=>{mountedFibers++;if(fiber.tag===5)mountedHosts++;});
-          reply({mountedFibers,mountedHosts,...navigationCounts(),...transitionMode?.diagnostics(),transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,lastPresentationProbe,presentations:presentations?.diagnostics?.()});return;
+          reply({mountedFibers,mountedHosts,...navigationCounts(),...transitionMode?.diagnostics(),transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,lastOpenProbe,lastPresentationProbe,presentations:presentations?.diagnostics?.()});return;
         }
         if (command.type === 'context-data') { reply(contextData()); return; }
         if (command.type === 'observe') { reply(observe()); return; }
@@ -682,21 +675,28 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (!navigatorState()?.routeNames?.length) inspect();
         if (command.type === 'recover') {
           cancelWaits();
-          const ticket = ++generation, started = Date.now(), path = active(original);
-          returnToStart();
-          // Wait for recovery to finish before dispatching another native transition.
+          const ticket = ++generation, started = Date.now();
+          refreshNavigation();
+          // The next open replaces the current leaf and checks its content.
+          // Returning to the starting feed here mounts and measures it again,
+          // even when the connection and current navigator are healthy.
+          let previous, painted=false, painting=false, paintTicket=0, finished=false;
+          const complete=value=>{if(finished)return;finished=true;cancelWaits();reply(value);};
           const check = () => {
             if (ticket !== generation || stopped) return;
             try {
-              const actual = active(root.getRootState?.() ?? root.getState());
-              const visual = visualSignature(path[path.length - 1]);
-              if ((Date.now() - started >= 240 && JSON.stringify(actual) === JSON.stringify(path) && visual.found && visual.content && !visual.loading) || Date.now() - started >= 1200) {
-                reply({ recovered: JSON.stringify(actual) === JSON.stringify(path) }); return;
+              const state=navigatorState(),path=JSON.stringify(active(state)),live=visible();
+              if(path!==previous||live.transitioning){paintTicket++;painted=painting=false;}
+              previous=path;
+              if(state?.routeNames?.length&&!live.transitioning&&Date.now()-transitionAt>=32){
+                if(painted){complete({recovered:true});return;}
+                if(!painting){painting=true;const paint=++paintTicket;frame(()=>frame(()=>{if(paint===paintTicket)painted=true;}));}
               }
-              later(check, 80);
-            } catch { reply({ recovered: false }); }
+              if(Date.now()-started>=1200){complete({recovered:false,reason:'Navigation has not settled.'});return;}
+              later(check,40,()=>complete({recovered:false,reason:'Navigation recovery was cancelled.'}));
+            } catch { complete({ recovered: false }); }
           };
-          later(check, 80); return;
+          check(); return;
         }
         if (command.type === 'verify') { reply({ active: active(root?.getRootState?.() ?? root?.getState?.()), ...visualSignature(command.name), ...visible() }); return; }
         if(command.type==='open')refreshNavigation();
@@ -733,7 +733,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         }
         const started = Date.now();
         let previous, quietSince = started, watched = false, sawLoading = false, loadingMs = 0, sampledAt = started, wasLoading = false;
-        let paintTicket = 0, painting = false, painted = false;
+        let paintTicket = 0, painting = false, painted = false, settleUntil;
         const complete = value => { cancelWaits(); reply(value); };
         function check() {
           try {
@@ -759,6 +759,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           if ([...transitions.values()].some(record => record.busy)) visible();
           const transitioning = [...transitions.values()].some(record => record.busy);
           if (transitioning) { quietSince = now; painted = false; painting = false; paintTicket++; }
+          lastOpenProbe={elapsedMs:now-started,quietMs:now-quietSince,matches,found:visual.found,content:visual.content,loading:visual.loading,transitioning,painted};
           if (now - quietSince >= 80 && visual.content && !transitioning && now - transitionAt >= 32) {
             if (painted) { complete({ ready: true, active: actual, name, signature: previous, motion: visual.motion, readinessMs: now - started, loadingMs, ...visible() }); return; }
             if (!painting) {
@@ -767,7 +768,15 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
             }
           }
           const deadline = sawLoading ? Math.max(command.timeoutMs, command.loadingTimeoutMs ?? command.timeoutMs) : command.timeoutMs;
-          if (now - started >= deadline) { complete({ ready: false, active: actual, redirected: !routeMatches && visualSignature(actual[actual.length - 1]).found, reason: !matches ? 'Navigation redirected or the target did not mount.' : visual.loading ? `Screen is still loading (${visual.loadingReason}).` : transitioning ? 'Native transition did not finish.' : !visual.content ? 'Screen has no visible content yet.' : 'Screen did not settle in time.', readinessMs: now - started, loadingMs, ...visible() }); return; }
+          if (now - started >= deadline) {
+            // A loaded screen can reach the short deadline just as its paint
+            // check starts. Finish that check in place instead of reopening the
+            // route on another attempt. Unfinished loading/motion never passes,
+            // and changing content cannot extend this bounded grace repeatedly.
+            const settling=!sawLoading&&matches&&visual.found&&visual.content&&!transitioning;
+            if(settling&&settleUntil===undefined)settleUntil=now+500;
+            if(!settling||now>=settleUntil){complete({ ready: false, active: actual, redirected: !routeMatches && visualSignature(actual[actual.length - 1]).found, reason: !matches ? 'Navigation redirected or the target did not mount.' : visual.loading ? `Screen is still loading (${visual.loadingReason}).` : transitioning ? 'Native transition did not finish.' : !visual.content ? 'Screen has no visible content yet.' : 'Screen did not settle in time.', readinessMs: now - started, loadingMs, ...visible() }); return;}
+          }
           later(check, painting ? 16 : visual.loading ? 100 : 40);
           } catch { complete({ ready: false, reason: 'The screen detached while opening. It will be retried.' }); }
         }

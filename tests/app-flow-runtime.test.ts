@@ -50,6 +50,22 @@ test('runtime rejects redirects and never reports a login screen as the target',
   assert.match(result.reason,/redirected/);
 });
 
+test('loaded content at the short deadline finishes its paint check without reopening the route',async t=>{
+  const app=runtime(t);let dispatches=0;const dispatch=app.navigation.dispatch;
+  app.navigation.dispatch=action=>{dispatches++;dispatch(action)};
+  const opened=await app.invoke({type:'open',path:['Profile'],timeoutMs:80,loadingTimeoutMs:1000});
+  assert.equal(opened.ready,true);assert.equal(dispatches,1);
+  const probe=(await app.invoke({type:'diagnostics'})).lastOpenProbe;
+  assert.equal(probe.painted,true);assert.equal(probe.loading,false);
+});
+
+test('paint grace stays bounded when loaded content keeps changing',async t=>{
+  const app=runtime(t);let revision=0;
+  Object.defineProperty(app.native.memoizedProps,'children',{get:()=>String(++revision)});
+  const started=Date.now(),opened=await app.invoke({type:'open',path:['Profile'],timeoutMs:40,loadingTimeoutMs:1000});
+  assert.equal(opened.ready,false);assert.ok(Date.now()-started<1000);
+});
+
 test('a local form can remount its navigator without losing routes or the starting state',async t=>{
   const app=runtime(t);await app.invoke({type:'inspect'});
   await app.invoke({type:'open',path:['Profile'],timeoutMs:300});
@@ -514,13 +530,40 @@ test('runtime lease renews beyond 30 seconds and restores after heartbeats stop'
   assert.equal(timers.size, 0);
 });
 
-test('recovery restores the starting stack without ending the runtime session', async t => {
+test('recovery keeps the current route without measuring or remounting the starting screen', async t => {
   const app=runtime(t);
   await app.invoke({type:'open',path:['Profile'],params:{id:'real'},timeoutMs:300});
   assert.deepEqual(Array.from(app.getState().routes,(r:any)=>r.name),['Home','Profile']);
-  await app.invoke({type:'recover'});
-  assert.equal(app.getState().routes[0].name,'Home');
+  const before=app.getState();let reads=0,dispatches=0;
+  const dispatch=app.navigation.dispatch;
+  app.navigation.dispatch=action=>{dispatches++;dispatch(action)};
+  app.native.stateNode.getBoundingClientRect=()=>{reads++;throw Error('Content reads must not hold up navigation recovery')};
+  assert.equal((await app.invoke({type:'recover'})).recovered,true);
+  assert.equal(reads,0);assert.equal(dispatches,0);assert.equal(app.getState(),before);
   assert.equal((await app.invoke({type:'heartbeat'})).alive,true);
+  await app.invoke({type:'restore'});
+  assert.equal(app.getState().routes.length,1);assert.equal(app.getState().routes[0].name,'Home','Stop still restores the original app state');
+});
+
+test('recovery waits for the current native transition before allowing another route',async t=>{
+  const app=runtime(t),events=new Map<string,()=>void>();
+  (app.navigation as any).addListener=(name:string,handler:()=>void)=>{events.set(name,handler);return ()=>events.delete(name)};
+  await app.invoke({type:'open',path:['Profile'],timeoutMs:300});
+  events.get('transitionStart')!();
+  let completed=false;const recovering=app.invoke({type:'recover'}).then(value=>{completed=true;return value});
+  await new Promise(resolve=>setTimeout(resolve,90));assert.equal(completed,false);
+  events.get('transitionEnd')!();
+  assert.equal((await recovering).recovered,true);
+});
+
+test('resuming cancels an old recovery without leaving its reply or timers pending',async t=>{
+  const app=runtime(t),events=new Map<string,()=>void>();
+  (app.navigation as any).addListener=(name:string,handler:()=>void)=>{events.set(name,handler);return ()=>events.delete(name)};
+  await app.invoke({type:'open',path:['Profile'],timeoutMs:300});events.get('transitionStart')!();
+  const recovering=app.invoke({type:'recover'});
+  await app.invoke({type:'resume'});
+  assert.equal((await recovering).recovered,false);
+  assert.equal((await app.invoke({type:'diagnostics'})).waitTimers,0);
 });
 
 test('long screens cap host layout reads while retaining late loaders, queries, headings and opacity',async t=>{
