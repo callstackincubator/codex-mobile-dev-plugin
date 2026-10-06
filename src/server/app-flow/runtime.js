@@ -1,10 +1,11 @@
 // Injected into a development runtime through one CDP connection. No app-specific code.
-export function installFlowRuntime(key, leaseMs, presentationFactory) {
+export function installFlowRuntime(key, leaseMs, presentationFactory, captureQueueFactory, captureDriverFactory) {
   if (globalThis[key]) return;
   const hook = globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
   // Expo's native developer menu can cover every captured screen while JS keeps running.
   try { globalThis.expo?.modules?.ExpoDevMenu?.hideMenu?.()?.catch?.(() => {}); } catch {}
   let root, original, observation, observing = false, stopped = false, generation = 0, safeBudget = 2000;
+  let captureQueue;
   // Preserve RN's error handler. A live navigator behind LogBox is not a
   // capturable screen, even when its React tree has finished rendering.
   let appFailed = false, errorUtils, originalErrorHandler, errorHandler;
@@ -511,6 +512,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
   }
   async function restore() {
     if (stopped) return;
+    if (captureQueue) await captureQueue.stop();
     stopped = true; generation++; clearTimeout(watchdog); cancelWaits();
     // Native sheets must dismiss before their parent modal unmounts. Dropping
     // both at once can leave UIKit showing a detached, blank presentation.
@@ -532,7 +534,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
   globalThis[key] = {
       invoke(command, reply) {
       const originalReply = reply;
-      const cleanup = ['restore', 'heartbeat', 'presentation-rollback'].includes(command.type);
+      const cleanup = ['restore', 'heartbeat', 'presentation-rollback', 'capture-stop'].includes(command.type);
       const failed = () => { if ((!appFailed&&!logBoxVisible) || cleanup) return false; originalReply({appFailed:true}); return true; };
       reply = value => { if (!failed()) originalReply(value); };
       try {
@@ -541,6 +543,48 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
         renewLease();
         if (failed()) return;
         if (command.type === 'heartbeat') { reply({ alive: true }); return; }
+        if (command.type === 'capture-inventory') { reply(globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.inventory?.() ?? {unavailable:true}); return; }
+        if (command.type === 'capture-start') {
+          if(observing){reply({error:'Stop recording before starting a capture batch.'});return;}
+          const registry = globalThis.__MOBILE_DEV_FLOW_REGISTRY__;
+          if (!registry || registry.version !== 1 || !captureQueueFactory || !captureDriverFactory) { reply({error:'Prepare the instrumented development build before starting a capture batch.'}); return; }
+          if (captureQueue?.active) { reply({error:'A capture batch is already running.'}); return; }
+          const probe = target => {
+            if (appFailed || logBoxVisible) throw Object.assign(new Error('The app reported an error.'),{fatal:true});
+            const live = visible();
+            let focus;
+            if (target.owner) {
+              const id = target.target ? `${target.owner}:${target.target}` : target.owner;
+              fibers(fiber => { if (fiber.tag === 12 && fiber.memoizedProps?.id === id) { focus = fiber; return stopWalk; } });
+              if (!focus) return {ready:false,found:false,key:id};
+            }
+            if(target.nativeStart){presentations?.captureNative?.(focus);return {armed:true};}
+            if(target.nativeStop){presentations?.captureNative?.(focus,true);return {released:true};}
+            if(target.within) {
+              let parent=focus?.return;
+              while(parent){if(parent.tag===12 && parent.memoizedProps?.id===target.within)return {contained:true};parent=parent.return;}
+              return {contained:false};
+            }
+            const actual = active(root?.getRootState?.() ?? root?.getState?.());
+            const geometry=new WeakMap();
+            const visual = visualSignature(target.owner ? undefined : actual.at(-1), !!target.owner, focus,geometry);
+            const nativeMotion=focus && presentations?.motion(focus,visual.bounds,geometry);
+            if(nativeMotion){visual.signature+=nativeMotion.signature;visual.motion=JSON.stringify([visual.motion,nativeMotion.signature]);}
+            const normalize=value=>value.split('/').filter(part=>part&&part!=='index'&&!/^\(.+\)$/.test(part)).join('/');
+            const routeMatches = !target.path?.length || (target.expo ? normalize(actual.join('/'))===normalize(target.path[0]) : JSON.stringify(actual) === JSON.stringify(target.path));
+            let leaf=root?.getRootState?.()??root?.getState?.();while(leaf?.routes?.length){const next=leaf.routes[leaf.index??0];if(!next){leaf=undefined;break;}leaf=next.state??next;}
+            const paramsMatch=Object.entries(target.params??{}).every(([key,value])=>sameRouteParams(leaf?.params?.[key],value));
+            return {...visual, key:JSON.stringify([actual,target.owner,target.target]), transitioning:live.transitioning,
+              ready:routeMatches && paramsMatch && visual.found && visual.content > 0 && !visual.loading && !live.transitioning && !nativeMotion?.pending && Date.now()-transitionAt>=32};
+          };
+          captureQueue = captureQueueFactory(captureDriverFactory(globalThis[key], registry, probe), event => {
+            const binding = globalThis[command.binding];
+            if (typeof binding === 'function') binding(JSON.stringify({capture:event}));
+          });
+          reply(captureQueue.start(command.batch, command.jobs)); return;
+        }
+        if (command.type === 'capture-ack') { reply(captureQueue?.ack(command.batch, command.ticket, command.value) ?? {accepted:false}); return; }
+        if (command.type === 'capture-stop') { void captureQueue?.stop().then(() => reply({stopped:true})); if(!captureQueue)reply({stopped:true}); return; }
         if (command.type === 'diagnostics') {
           let mountedFibers=0,mountedHosts=0;fibers(fiber=>{mountedFibers++;if(fiber.tag===5)mountedHosts++;});
           reply({mountedFibers,mountedHosts,...navigationCounts(),transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,lastPresentationProbe,presentations:presentations?.diagnostics?.()});return;

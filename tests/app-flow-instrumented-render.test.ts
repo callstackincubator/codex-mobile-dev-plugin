@@ -1,0 +1,57 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {createHash} from 'node:crypto';
+import vm from 'node:vm';
+import {readFile} from 'node:fs/promises';
+import {build,transform} from 'esbuild';
+import {JSDOM} from 'jsdom';
+import * as React from 'react';
+import {createRoot} from 'react-dom/client';
+
+const require=createRequire(import.meta.url),babel=require('@babel/core'),plugin=require('../src/server/app-flow/instrumentation-plugin.cjs');
+
+test('instrumented preview preserves real props/context, isolates state, suppresses app effects, and restores',async t=>{
+  const dom=new JSDOM('<div id="root"></div>');
+  const saved={window:globalThis.window,document:globalThis.document,IS_REACT_ACT_ENVIRONMENT:globalThis.IS_REACT_ACT_ENVIRONMENT};
+  Object.assign(globalThis,{window:dom.window,document:dom.window.document,IS_REACT_ACT_ENVIRONMENT:true});
+  t.after(()=>{Object.assign(globalThis,saved);dom.window.close();});
+  const context=vm.createContext({setTimeout,clearTimeout,console});
+  const bundle=await build({entryPoints:['src/server/app-flow/instrumentation-client.js'],bundle:true,write:false,format:'cjs',platform:'node',external:['react','react-native']});
+  const module={exports:{} as any};
+  const native={View:({children,style}:any)=>React.createElement('div',{style},children)};
+  context.module=module;context.exports=module.exports;context.require=(name:string)=>name==='react'?React:native;
+  vm.runInContext(bundle.outputFiles[0].text,context);
+  const client=module.exports;
+  const source=`import * as React from 'react';
+export const Data=React.createContext('missing');
+export let effects=0;
+export function Screen({label}) {
+  const [step,setStep]=React.useState('first');
+  const data=React.useContext(Data);
+  React.useEffect(()=>{effects++},[step]);
+  return <span>{label}:{data}:{step}</span>;
+}
+export function RootNavigator(){return <Screen label="real-prop"/>;}`;
+  const lines=source.split('\n'),line=lines.findIndex(value=>value.includes('React.useState'))+1;
+  const manifest={sourceHash:'hash',files:{'screen.jsx':{hash:createHash('sha256').update(source).digest('hex'),states:[{id:'step',owner:'Screen',line,column:lines[line-1].indexOf('React.useState')}],controls:[],hosts:['RootNavigator']}}};
+  const prepared=babel.transformSync(source,{filename:'/app/screen.jsx',configFile:false,babelrc:false,parserOpts:{plugins:['jsx']},plugins:[[plugin,{enabled:true,projectRoot:'/app',client:'flow-client',manifest}]]}).code;
+  const compiled=await transform(prepared,{loader:'jsx',format:'cjs'});
+  const screenModule={exports:{} as any};context.module=screenModule;context.exports=screenModule.exports;context.require=(name:string)=>name==='react'?React:client;
+  vm.runInContext(compiled.code,context);const app=screenModule.exports;
+  const root=createRoot(dom.window.document.getElementById('root')!);
+  t.after(async()=>{await React.act(()=>root.unmount());});
+  await React.act(()=>root.render(React.createElement(React.StrictMode,null,React.createElement(app.Data.Provider,{value:'real-context'},React.createElement(app.RootNavigator)))));
+  const registry=client.registry,live=registry.find('step');
+  assert.ok(live);assert.equal(live.value.tuple[0],'first');const beforeEffects=app.effects;
+  await React.act(()=>registry.project({source:live.owner.source,owner:live.owner,site:'step',value:'second'}));
+  const preview=registry.find('step');assert.ok(preview.owner.preview);assert.equal(preview.value.tuple[0],'second');
+  assert.equal(live.value.tuple[0],'first');assert.equal(app.effects,beforeEffects);
+  assert.match(dom.window.document.body.textContent!,/real-prop:real-context:second/);
+  await React.act(()=>preview.value.tuple[1]('third'));
+  assert.equal(registry.find('step').value.tuple[0],'third');assert.equal(app.effects,beforeEffects);
+  await React.act(()=>registry.unproject());
+  assert.equal(registry.find('step').value.tuple[0],'first');
+  assert.equal(dom.window.document.body.textContent,'real-prop:real-context:first');
+  await React.act(()=>root.unmount());assert.equal(registry.inventory().owners,0);
+});

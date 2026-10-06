@@ -41,6 +41,7 @@ export type FlowPresentationAction = {
   preview?: boolean;
   views?: string[];
   expected?: {component: string; file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}};
+  handoffs?: {file: string; owner: string; component: string; prop: string; source: {line: number; column: number; endLine: number; endColumn: number}; contextPath: string[]; close: string}[];
   consumer?: {component: string; entries: {file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}}[]};
   effect: { kind:'mount'; file:string; export:string } | { kind: 'state'; site: string; path: string[]; value: unknown } | { kind: 'control'; component: string; prop: string; method: string; close: string | string[]; target?: {file: string; owner: string; line: number; source: {line: number; column: number; endLine: number; endColumn: number}} };
 };
@@ -75,6 +76,9 @@ export type FlowRun = FlowGraph & {
   finishedAt?: number;
   elapsedMs?: number;
   captureStartedAt?: number;
+  captureMode?: 'instrumented';
+  preparationMs?: number;
+  manifestTotal?: number;
   error?: string;
   revision: number;
   retrying?: boolean;

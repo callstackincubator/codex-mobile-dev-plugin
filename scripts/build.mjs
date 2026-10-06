@@ -5,6 +5,7 @@ import { iosLogsSourceHash } from "./build-ios-logs.mjs";
 import { androidCpuSourceHash } from "./build-android-cpu.mjs";
 import { baguetteTelemetrySourceHash } from "./rebuild-baguette.mjs";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
+import {buildFlowRuntime} from './build-flow-runtime.mjs';
 import { build } from "esbuild";
 import { sentryEsbuildPlugin } from "@sentry/node/esbuild";
 import SentryCli from "@sentry/cli";
@@ -19,6 +20,7 @@ const manifest = JSON.parse(await readFile('.codex-plugin/plugin.json', 'utf8'))
 await releaseMetadata(`v${manifest.version}`);
 const telemetryEnvironment = telemetryBuildEnvironment();
 await mkdir("dist", { recursive: true });
+await buildFlowRuntime();
 await access("vendor/baguette/Baguette");
 await access("vendor/baguette/Baguette_Baguette.bundle");
 const baguetteReleaseText = await readFile("vendor/baguette/release.json", "utf8");

@@ -1,0 +1,53 @@
+# Instrumented App Flow capture
+
+The instrumented path is opt-in while we test it against a small, fixed set of
+routes, guarded forms and nested sheets. The target is 260 reviewed views in
+260 seconds. Source matches and unit tests do not establish that result.
+
+`mobile_app_flow` with `prepare-build` and the usual project/device options adds
+a reversible wrapper to a CommonJS `babel.config.js`. Restart the existing Metro
+process once and reload the app. The wrapper preserves the original plugin order
+and applies instrumentation only in development. `restore-build` restores the
+exact original config and refuses to overwrite later user edits. Generated files
+live in `.mobile-dev-flow`; tracked app component files stay unchanged.
+
+Start with `options.capture: {planRunId, include, recipes}`. A saved plan supplies real
+route params and opening chains already found in that project. `include` contains
+node or source-view IDs. Optional recipes join scanner-proven action IDs, with an
+optional base node from the saved map. They cannot introduce executable code,
+new component names, control methods or invented state values. A planner still
+needs to choose these opening chains; this does not yet replace all initial
+discovery. The run checks the source hash, freezes the
+selected jobs before capture, and reports preparation time separately. Missing
+data and unsupported contexts remain explicit failures in that fixed selection.
+
+The Babel transform registers committed state, controls and JSX entries under
+exact source locations. It adds hooks at fixed build-time positions. It does not
+replace React's dispatcher or rewrite Fiber hook cells. Repeated instances need
+an unambiguous owner; the runtime will not pick the first matching row.
+
+Guarded render bodies can mount through a source-registered loader beneath the
+live provider tree. Local preview state uses a separate component instance and
+real props. Shared controls cannot open from a copied live reference. App effects
+are contained in previews; source-proven local Reanimated timing/spring effects
+keep running. Framework query hooks keep their real cache and requests. Shared
+consumer contexts and other effects still need further source-proven support.
+These previews are not proof that every guarded state can render faithfully.
+
+The app runs the opening queue and retains common parent steps. It emits a frame
+request only after readiness checks pass, waits for the native screenshot, then
+verifies the view again. A changed frame is discarded without reopening the view.
+The server saves only accepted frames. Source commits wake readiness checks;
+local motion probes remain because native animation can move without a React
+commit. Loading, native lifecycle, geometry, opacity, paint and blank-frame checks
+remain active. Proven menu dismissal handoffs wait for the close callback before
+opening a sibling sheet. Disconnect recovery resumes unfinished jobs.
+
+`node scripts/build-flow-runtime.mjs` rebuilds the injected runtime separately.
+New inspector connections read `dist/app-flow/runtime.json` afresh. Once the new
+server is loaded, runtime edits do not require restarting the host. Changes to
+the Babel transform or hook layout still require rebuilding/reloading the app.
+
+Validate the small representative selection before attempting another full map.
+Report correct captures, failures, preparation time and capture time. Do not use
+CPU/memory recordings as a substitute for this check.

@@ -5,9 +5,11 @@ import ts from "typescript";
 import type { FlowGraph, FlowNode, FlowParams } from "../../shared/app-flow.ts";
 import { missingFlowParams } from "../../shared/app-flow.ts";
 import { sourceLinkMatches, sourceLinkReader } from "./source-links.ts";
+import {attachSourceHandoffs} from './handoff-source.ts';
 import { scanPresentations } from './presentations-source.ts';
 import { scanSourceViews } from './views-source.ts';
 import { addSourcePreviewPlans } from './preview-plans.ts';
+import {originalCaptureConfig} from './capture-build.ts';
 
 const ignored = new Set(["node_modules", ".git", ".expo", ".next", "dist", "build", "ios", "android", "vendor", "coverage", "__tests__", "__mocks__"]);
 const extensions = [".tsx", ".ts", ".jsx", ".js"];
@@ -83,7 +85,8 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
     signal?.throwIfAborted();
     const batch = await Promise.all(files.slice(offset, offset + 16).map(async file => {
       if ((await stat(file)).size > 512_000) { warnings.push(`Skipped large source file: ${relative(root, file)}`); return; }
-      return { file, text: await readFile(file, { encoding: "utf8", signal }) };
+      const text = await readFile(file, { encoding: "utf8", signal });
+      return { file, text: await originalCaptureConfig(root, relative(root,file), text) };
     }));
     for (const item of batch) {
       if (!item) continue;
@@ -436,6 +439,7 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
   graph.presentations.views = catalog.views;
   graph.presentations.viewStates = catalog.states;
   addSourcePreviewPlans(graph.presentations,graph.nodes);
+  attachSourceHandoffs(graph.presentations,units,root,(unit,name)=>symbol(units.get(unit.file)!,name),platform);
   graph.catalogMs = performance.now() - catalogStarted;
   const sourceHash=createHash('sha256').update(platform);for(const unit of [...units.values()].sort((a,b)=>a.file.localeCompare(b.file))){sourceHash.update(relative(root,unit.file));sourceHash.update('\0');sourceHash.update(unit.ast.text);sourceHash.update('\0');}graph.sourceHash=sourceHash.digest('hex');
   // Source facts remain separate. Only finite presentation selectors and exact

@@ -16,6 +16,7 @@ import type { ServeEmu } from "../serve-emu.ts";
 import { errorMessage, parseBaseUrl, udidSchema } from "../../shared/protocol.ts";
 import { androidIdSchema } from "../serve-emu.ts";
 import { captureServerError } from "../telemetry.ts";
+import {prepareCaptureBuild, restoreCaptureBuild} from './capture-build.ts';
 
 const resolutionSchema = z.array(z.object({ nodeId: z.string().max(64), params: z.record(z.string(), z.unknown()) }).strict()).max(300);
 const safeResolutions = (value: unknown) => {
@@ -25,7 +26,7 @@ const safeResolutions = (value: unknown) => {
 };
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
-const startSchema = z.object({ projectRoot: z.string().min(1).max(2048), platform: z.enum(["ios", "android"]), deviceId: z.string().min(1).max(256), targetId: z.string().min(1).max(512), metroUrl: z.string().max(2048).default("http://127.0.0.1:8081"), useAi: z.boolean().default(true) });
+const startSchema = z.object({ projectRoot: z.string().min(1).max(2048), platform: z.enum(["ios", "android"]), deviceId: z.string().min(1).max(256), targetId: z.string().min(1).max(512), metroUrl: z.string().max(2048).default("http://127.0.0.1:8081"), useAi: z.boolean().default(true), capture: z.object({planRunId:z.uuid().optional(), include:z.array(z.string().max(100)).min(1).max(1000).optional(), recipes:z.array(z.object({baseNodeId:z.string().max(100).optional(),actions:z.array(z.string().max(100)).min(1).max(20)}).strict()).max(300).optional()}).optional() });
 
 export function registerAppFlowTools(server: McpServer, baguette: Baguette, android: ServeEmu) {
   const runs = new AppFlowRuns({
@@ -45,7 +46,7 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
       const runtime = new FlowConnection(target.webSocketDebuggerUrl, resume?.sessionId,input.platform,resume?.metrics);
       const stop = () => { void runtime.close(); };
       signal.addEventListener("abort", stop, { once: true });
-      return { target: { appId: target.appId, deviceId: target.deviceId, deviceName: target.deviceName }, runtime: { invoke: (command, timeout) => runtime.invoke(command, timeout), close: async options => { signal.removeEventListener("abort", stop); await runtime.close(options); } },
+      return { target: { appId: target.appId, deviceId: target.deviceId, deviceName: target.deviceName }, runtime: { invoke: (command, timeout) => runtime.invoke(command, timeout), onCapture: listener => runtime.onCapture(listener), close: async options => { signal.removeEventListener("abort", stop); await runtime.close(options); } },
         async screenshot(captureSignal) {
           const started=performance.now();let timedOut=false;
           try {
@@ -96,10 +97,21 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
   };
   registerAppTool(server, "mobile_app_flow", {
     title: "Map React Native app screens",
-    description: "Map React Navigation and Expo Router routes, finite presentation state, and reversible sheet controls in the running app. Mapping previews UI state without changing session state or submitting forms. discover finds project/Metro; targets lists apps. start creates a map with options. extend maps the current app state into runId, keeping previews. record watches screens as the user moves through login, onboarding or local forms; needs options and label, with optional runId to extend a map. It never clicks, submits forms, changes auth, or restores navigation. capture-step optionally labels and captures the next settled view while recording. stop ends recording, or restores starting navigation for route mapping. prepare saves AI context; context reads unresolved routes and observed data; diagnostics reads command timings and inspector counts; resolve submits real params; retry repeats timed-out routes. Read progress with mobile_read_app_flow. No app-specific adapters or source edits.",
-    inputSchema: { action: z.enum(["discover", "targets", "start", "extend", "record", "capture-step", "prepare", "context", "diagnostics", "resolve", "retry", "stop"]), label: z.string().trim().min(1).max(80).optional(), discovery: z.object({ projectRoot: z.string().max(2048).optional(), metroUrl: z.string().max(2048).optional(), deviceId: z.string().max(256).optional(), deviceName: z.string().max(256).optional(), appId: z.string().max(512).optional() }).optional(), options: startSchema.optional(), runId: z.uuid().optional(), metroUrl: z.string().max(2048).optional(), resolutions: resolutionSchema.optional() },
+    description: "Map React Navigation and Expo Router routes, finite presentation state, and reversible sheet controls in the running app. Mapping previews UI state without changing session state or submitting forms. discover finds project/Metro; targets lists apps. start creates a map with options. extend maps the current app state into runId, keeping previews. record watches screens as the user moves through login, onboarding or local forms; needs options and label, with optional runId to extend a map. It never clicks, submits forms, changes auth, or restores navigation. capture-step optionally labels and captures the next settled view while recording. stop ends recording, or restores starting navigation for route mapping. prepare saves AI context; context reads unresolved routes and observed data; diagnostics reads command timings and inspector counts; resolve submits real params; retry repeats timed-out routes. Read progress with mobile_read_app_flow. prepare-build installs reversible development-only Babel instrumentation; restore-build restores the original config. With options.capture, start runs an in-app queue from a saved planRunId, optional include IDs, and optional recipes of source action IDs. It preserves native readiness and requires the matching prepared app build. No app-specific adapters.",
+    inputSchema: { action: z.enum(["discover", "targets", "start", "extend", "record", "capture-step", "prepare", "prepare-build", "restore-build", "context", "diagnostics", "resolve", "retry", "stop"]), label: z.string().trim().min(1).max(80).optional(), discovery: z.object({ projectRoot: z.string().max(2048).optional(), metroUrl: z.string().max(2048).optional(), deviceId: z.string().max(256).optional(), deviceName: z.string().max(256).optional(), appId: z.string().max(512).optional() }).optional(), options: startSchema.optional(), runId: z.uuid().optional(), metroUrl: z.string().max(2048).optional(), resolutions: resolutionSchema.optional() },
     annotations: write, _meta: { ui: { visibility: ["app", "model"] } },
   }, safe(async ({ action, discovery, options, runId, metroUrl, resolutions, label }) => {
+    if (action === 'prepare-build' || action === 'restore-build') {
+      const input = startSchema.parse(options);
+      if (action === 'restore-build') return restoreCaptureBuild(input.projectRoot);
+      const started = performance.now();
+      try {
+        const {scanAppFlow} = await import('./scan.ts');
+        return await prepareCaptureBuild(input.projectRoot, await scanAppFlow(input.projectRoot,input.platform));
+      } finally {
+        if(process.env.MOBILE_DEV_TELEMETRY!=='off')Sentry.metrics.distribution('app_flow.build_prepare',performance.now()-started,{unit:'millisecond',attributes:{surface:'app-flow',device_platform:input.platform}});
+      }
+    }
     if (action === "discover") {
       const started = performance.now();
       try {

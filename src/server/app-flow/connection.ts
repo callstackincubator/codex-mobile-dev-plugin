@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
-import { installFlowRuntime } from "./runtime.js";
-import { installPresentationRuntime } from './presentations-runtime.js';
+import {flowRuntimeSource} from './runtime-source.ts';
 import { bindPresentationSites } from './presentations-bindings.ts';
 import {FlowAppFailure,FlowRuntimeFailure,FlowRuntimeMetrics,FlowRuntimeTimeout,runtimeOperation} from './runtime-metrics.ts';
 
@@ -22,6 +21,8 @@ export class FlowConnection {
   private metrics:FlowRuntimeMetrics;
   private presentationRoot?:string;
   private presentationCatalog?:import('../../shared/app-flow.ts').FlowPresentations;
+  private captureListeners = new Set<(event: any) => void>();
+  onCapture(listener: (event:any) => void) { this.captureListeners.add(listener); return () => this.captureListeners.delete(listener); }
 
   constructor(url: string, sessionId = randomUUID(), platform?:'ios'|'android', metrics?:FlowRuntimeMetrics) {
     this.metrics=metrics??new FlowRuntimeMetrics(platform);
@@ -39,7 +40,9 @@ export class FlowConnection {
       try {
         const message = JSON.parse(bytes.toString());
         if (message.method === "Runtime.bindingCalled" && message.params?.name === this.binding) {
-          const value = JSON.parse(message.params.payload); this.finish(value.id, value.result);
+          const value = JSON.parse(message.params.payload);
+          if (value.capture) { for (const listener of this.captureListeners) listener(value.capture); }
+          else this.finish(value.id, value.result);
         } else if (message.id) {
           if (message.error || message.result?.exceptionDetails) this.finish(message.id, undefined, new FlowRuntimeFailure(this.pending.get(message.id)?.operation??'other','was rejected',message.result?.exceptionDetails?.exception?.description??message.result?.exceptionDetails?.text??message.error?.message));
           else if (message.id > 0) this.finish(message.id, message.result);
@@ -50,8 +53,9 @@ export class FlowConnection {
     this.socket.on("close", () => this.fail(new Error("Metro disconnected.")));
     this.ready = this.ready.then(async () => {
       await this.send("Runtime.addBinding", { name: this.binding }, 2000,undefined,'binding');
+      const [runtimeSource,presentationSource,queueSource,driverSource] = await flowRuntimeSource();
       // esbuild keepNames may introduce __name inside serialized functions.
-      await this.send("Runtime.evaluate", { expression: `(()=>{const __name=(value)=>value;for(const name of Object.keys(globalThis))if(name.startsWith(${JSON.stringify(`${this.key}_reply_`)})&&name!==${JSON.stringify(this.binding)})delete globalThis[name];(${installFlowRuntime.toString()})(${JSON.stringify(this.key)},10000,${installPresentationRuntime.toString()});})()`, silent: true, returnByValue: true, objectGroup: this.key }, 2000,undefined,'install');
+      await this.send("Runtime.evaluate", { expression: `(()=>{const __name=(value)=>value;for(const name of Object.keys(globalThis))if(name.startsWith(${JSON.stringify(`${this.key}_reply_`)})&&name!==${JSON.stringify(this.binding)})delete globalThis[name];(${runtimeSource})(${JSON.stringify(this.key)},10000,${presentationSource},${queueSource},${driverSource});})()`, silent: true, returnByValue: true, objectGroup: this.key }, 2000,undefined,'install');
       if (!this.closing && !this.closed) {
         this.heartbeat = setInterval(() => {
           if (this.heartbeatPending) return;
@@ -69,7 +73,7 @@ export class FlowConnection {
     this.metrics.record(pending.operation,performance.now()-pending.started,error instanceof FlowRuntimeTimeout);
     if (error) pending.reject(error); else pending.resolve(value);
   }
-  private fail(error: Error) { clearInterval(this.heartbeat); for (const id of this.pending.keys()) this.finish(id, undefined, error); }
+  private fail(error: Error) { clearInterval(this.heartbeat); for (const id of this.pending.keys()) this.finish(id, undefined, error); for(const listener of this.captureListeners)listener({type:'connection-error'}); }
   private send(method: string, params: unknown, timeout: number, id = ++this.sequence,operation='other'): Promise<any> {
     if (this.closed || this.socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error("Metro connection is closed."));
     return new Promise((resolve, reject) => {
@@ -80,6 +84,7 @@ export class FlowConnection {
   }
   async invoke(command: Record<string, unknown>, timeout = 1500): Promise<any> {
     await this.ready;
+    if (command.type === 'capture-start') command = {...command, binding:this.binding};
     if (command.type === 'presentation-setup') {
       this.presentationRoot=command.projectRoot as string;
       const catalog = command.catalog as import('../../shared/app-flow.ts').FlowPresentations;
@@ -148,6 +153,7 @@ export class FlowConnection {
     }
     this.closed = true;
     this.fail(new Error("App Flow stopped."));
+    this.captureListeners.clear();
     this.metrics.flush();
     this.socket.terminate();
   }

@@ -614,3 +614,23 @@ retry within the original capture deadline. The existing screenshot timing now
 includes recovery when needed. `app_flow.screenshot.recoveries` counts those
 attempts by app-flow surface and device platform. Neither this counter nor the
 existing timings send paths, source locations, app content or device identities.
+
+### Instrumented App Flow capture
+
+The opt-in in-app queue preserves `app_flow.capture` attempt durations and the
+native `screenshot` operation timing, including screenshot connection recovery.
+`app_flow.runtime` adds fixed operation labels `capture-inventory`,
+`capture-start`, `capture-ack`, `capture-stop`, and `capture-prepare`. These measure
+binding inventory, batch dispatch, frame acknowledgement, restoration and saved
+plan preparation in milliseconds. `app_flow.build_prepare` measures scanning and
+writing the reversible development build setup. Attributes remain surface and
+platform only. No job IDs, source paths, props, params, image bytes or app errors
+enter these metrics. Existing server error scrubbing still applies.
+
+The instrumented path replaces per-view inspector polling and symbolication with
+in-app readiness probes and frame events. Those removed operations emit no fake
+zero samples. Native lifecycle and motion checks remain active. Local run data
+records `preparationMs`, `manifestTotal`, and the capture mode; these are not app
+memory or FPS measurements. The client registry releases committed owners on
+unmount, and the queue releases timers, listeners and pending frame replies on
+completion or cancellation.

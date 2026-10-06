@@ -15,10 +15,12 @@ import { FlowPresentationCapture } from './presentations.ts';
 import { recordFlow } from './recording.ts';
 import { PLUGIN_VERSION } from '../../shared/version.ts';
 import { FlowAppFailure, FlowRuntimeFailure, FlowRuntimeMetrics } from './runtime-metrics.ts';
+import {captureManifest,captureRecipeNodes,type CaptureRecipe} from './capture-manifest.ts';
+import {captureBatch,CaptureConnectionError} from './capture-batch.ts';
 
-export type FlowStart = { projectRoot: string; platform: "ios" | "android"; deviceId: string; targetId: string; metroUrl: string; useAi: boolean };
+export type FlowStart = { projectRoot: string; platform: "ios" | "android"; deviceId: string; targetId: string; metroUrl: string; useAi: boolean; capture?: {planRunId?: string; include?: string[]; recipes?: CaptureRecipe[]} };
 export type RuntimeInfo = FlowEvidence & { available: boolean; data?: unknown[] };
-export type FlowRuntime = { invoke(command: Record<string, unknown>, timeout?: number): Promise<any>; close(options?: { restore?: boolean }): Promise<void> };
+export type FlowRuntime = { invoke(command: Record<string, unknown>, timeout?: number): Promise<any>; close(options?: { restore?: boolean }): Promise<void>; onCapture?(listener: (event: any) => void): () => void };
 export type FlowTargetIdentity = { appId?: string; deviceId?: string; deviceName?: string };
 export type FlowBackend = { runtime: FlowRuntime; target?: FlowTargetIdentity; screenshot(signal: AbortSignal): Promise<Buffer> };
 export type FlowDependencies = {
@@ -384,9 +386,43 @@ export class AppFlowRuns {
       active.info = await abortable(backend.runtime.invoke({ type: "inspect" }, 2000), signal);
       if (active.info?.available) discovery = new FlowReachability(graph, active.info, resume ? run : undefined);
       else { graph.nodes = resume ? run.nodes.filter(node => node.presentation) : []; graph.edges = resume ? run.edges : []; }
-      Object.assign(run, graph);
-      run.phase = "capturing"; run.revision++;
+      Object.assign(run, input.capture ? {...graph,nodes:[],edges:[]} : graph);
+      run.phase = input.capture ? 'connecting' : "capturing"; run.revision++;
       await mkdir(join(this.directory, run.id), { recursive: true, mode: 0o700 });
+      if (input.capture) {
+        const preparedAt = performance.now();
+        const saved = input.capture.planRunId ? await this.saved(input.capture.planRunId) : undefined;
+        if (saved && (saved.input.projectRoot !== input.projectRoot || saved.input.platform !== input.platform || saved.run.sourceHash !== graph.sourceHash)) throw new Error('The prepared capture plan does not match this project source. Prepare it again.');
+        const known=saved?.run.nodes??graph.nodes;
+        const nodes=[...known,...captureRecipeNodes(graph,known,input.capture.recipes)];
+        const manifest = captureManifest(graph,nodes,input.capture.include);
+        if (!manifest.total) throw new Error('The capture selection contains no prepared views.');
+        const inventory = await backend.runtime.invoke({type:'capture-inventory'}, 2000);
+        if (inventory?.unavailable) throw new Error('Prepare and reload the instrumented development build before mapping.');
+        if (inventory.sourceHashes?.length !== 1 || inventory.sourceHashes[0] !== graph.sourceHash) throw new Error('The running capture build is stale. Prepare and reload it before mapping.');
+        const selected = new Set(manifest.jobs.map(job => job.id));
+        run.nodes = structuredClone(nodes.filter(node => selected.has(node.id))).map(node => ({...node, status:'pending', image:undefined, imageSourceHash:undefined, reason:undefined, failure:undefined, captureAttempts:0}));
+        run.edges = (saved?.run.edges??graph.edges).filter(edge => selected.has(edge.from) && selected.has(edge.to));
+        run.ai = 'off'; run.phase='capturing'; run.revision++;
+        run.captureMode='instrumented';run.manifestTotal=manifest.total;run.preparationMs=Date.now()-sessionStarted;
+        runtimeMetrics.record('capture-prepare',performance.now()-preparedAt,false);
+        await save();
+        for (let reconnectAttempt=0;;reconnectAttempt++) {
+          const jobs = manifest.jobs.filter(job=>run.nodes.some(node=>node.id===job.id && ['pending','capturing'].includes(node.status)));
+          try {
+            await captureBatch({backend, manifest:{...manifest,jobs}, run, directory:this.directory, signal, save,
+              timing:(operation,ms) => { if(operation==='capture')captureTimings.record(ms); },
+            });
+            break;
+          } catch(error) {
+            if (!(error instanceof CaptureConnectionError) || reconnectAttempt>=2 || signal.aborted) throw error;
+            await reconnect();
+            await backend.runtime.invoke({type:'capture-stop'},10000);
+          }
+        }
+        run.phase = run.nodes.every(node => node.status==='captured') ? 'complete' : 'partial';
+        return;
+      }
       presentations = new FlowPresentationCapture(run, input.projectRoot, this.directory, signal, save);
       const pendingDiscovery=new Map<string,number>();
       if(resume&&presentations.enabled)for(const node of run.nodes)if(node.status==='captured'&&!node.presentation&&node.kind==='screen')pendingDiscovery.set(node.id,0);
