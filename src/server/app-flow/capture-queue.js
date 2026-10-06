@@ -14,6 +14,7 @@ export function createCaptureQueue(driver, emit) {
     try {
       for (const job of current.jobs) {
         if (current.cancelled) break;
+        current.job = job;
         const started = Date.now();
         send({type: 'opening', id: job.id});
         try {
@@ -31,7 +32,7 @@ export function createCaptureQueue(driver, emit) {
         while (!current.cancelled && Date.now() < deadline) {
           const before = await driver.ready(job, current.signal);
           if (!before?.ready) {
-            send({type: 'result', id: job.id, status: 'timed-out', reason: before?.reason || 'The view did not settle.', ms: Date.now() - started});
+            send({type: 'result', id: job.id, status: before?.error ? 'blocked' : 'timed-out', reason: before?.error || before?.reason || 'The view did not settle.', ms: Date.now() - started});
             break;
           }
           const ticket = ++serial;
@@ -72,6 +73,26 @@ export function createCaptureQueue(driver, emit) {
     }
   }
   return {
+    request(request) {
+      const current = run;
+      if (!current || current.cancelled || !current.job || current.source) return Promise.reject(new Error('Capture source request is unavailable.'));
+      const ticket = ++serial;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          if (current.source?.ticket !== ticket) return;
+          current.source = undefined;
+          reject(Object.assign(new Error('Capture source binding stopped responding.'), {fatal:true}));
+        }, 12000);
+        current.source = {ticket, resolve: value => {clearTimeout(timer);current.source=undefined;resolve(value);},
+          reject: error => {clearTimeout(timer);current.source=undefined;reject(error);}};
+        send({type:'source', id:current.job.id, ticket, ...request});
+      });
+    },
+    source(batch, ticket, value) {
+      if (run?.id !== batch || run.source?.ticket !== ticket || run.cancelled) return {accepted:false};
+      run.source.resolve(value);
+      return {accepted:true};
+    },
     start(id, jobs) {
       if (run || restoreError || restoreTask) throw new Error('Finish capture cleanup before starting another batch.');
       if (!Array.isArray(jobs) || jobs.length > 1000 || new Set(jobs.map(job => job.id)).size !== jobs.length) throw new Error('Invalid capture manifest.');
@@ -91,6 +112,7 @@ export function createCaptureQueue(driver, emit) {
         current.cancelled = true;
         current.controller.abort();
         current.pending?.resolve({ok: false, terminal: true});
+        current.source?.reject(new Error('Capture stopped.'));
         await current.done;
       }
       // A finished queue can still own a native sheet. Keep its driver and

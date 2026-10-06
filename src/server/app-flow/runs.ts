@@ -436,7 +436,7 @@ export class AppFlowRuns {
         for (let reconnectAttempt=0;;reconnectAttempt++) {
           const jobs = manifest.jobs.filter(job=>run.nodes.some(node=>node.id===job.id && ['pending','capturing'].includes(node.status)));
           try {
-            await captureBatch({backend, manifest:{...manifest,jobs}, run, directory:this.directory, signal, save,
+            await captureBatch({backend, manifest:{...manifest,jobs}, run, directory:this.directory, projectRoot:input.projectRoot, signal, save,
               timing:(operation,ms) => { if(operation==='capture')captureTimings.record(ms); },
             });
             break;

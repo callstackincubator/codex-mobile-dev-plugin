@@ -7,6 +7,8 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildNativeSentry, nativeTelemetrySourceHash, nativeSentryLicense, saveNativeSymbols } from "./native-telemetry.mjs";
 
+import { patchBaguetteCapture } from "./patch-baguette-capture.mjs";
+
 const execute = promisify(execFile);
 
 export async function baguetteTelemetrySourceHash() {
@@ -14,7 +16,8 @@ export async function baguetteTelemetrySourceHash() {
   await nativeTelemetrySourceHash(hash);
   const script = await readFile("scripts/rebuild-baguette.mjs");
   hash.update(script);
-  for (const file of ["ForegroundCommand.swift", "foreground-method.swift"]) {
+  hash.update(await readFile("scripts/patch-baguette-capture.mjs"));
+  for (const file of ["ForegroundCommand.swift", "foreground-method.swift", "Server+Screenshot.swift", "ServerScreenshotCaptureTests.swift"]) {
     const contents = await readFile(`native/baguette/${file}`);
     hash.update(contents);
   }
@@ -99,6 +102,7 @@ export async function rebuildBaguette(sourceDirectory) {
     const sdk = await buildNativeSentry();
     await addBaguetteTelemetry(source, sdk);
     await addForegroundDetection(source);
+    await patchBaguetteCapture(source);
     console.log(`Rebuilding Baguette ${release.version} with ${swift.trim().split("\n")[0]}…`);
     try {
       await execute("xcrun", ["swift", "build", "-c", "release", "--product", "Baguette"], {

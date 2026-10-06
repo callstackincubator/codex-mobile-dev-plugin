@@ -9,6 +9,7 @@ import { installPresentationRuntime } from '../src/server/app-flow/presentations
 import {FlowAppFailure,FlowRuntimeFailure,FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
 import {sharedLoopRuntime} from './app-flow-runtime-fixtures.ts';
 import {createTransitionMode} from '../src/server/app-flow/transitions-runtime.js';
+import {createCaptureDriver} from '../src/server/app-flow/capture-driver.js';
 
 function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, clearTimeout}, presentations: boolean | ((options:any)=>any) = false, globals = {}) {
   let state:any = {index:0,routeNames:['Home','Profile'],routes:[{name:'Home'}]};
@@ -1037,21 +1038,22 @@ test('capture motion follows the resolved view while retaining its native parent
   app.fiber.child=owner;owner.child=body;body.child=host;
   Object.assign(app.context,{body,owner,pending:false,motionScopes:[],__MOBILE_DEV_FLOW_REGISTRY__:{version:1}});
   vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,
-    () => ({checkpoint:()=>0,cleanup(){},focusFor:()=>body,probeFocus:focus=>({visualFocus:focus,motion:()=>{
-      motionScopes.push(focus===body?'body':'provider');
-      return {pending,signature:focus===body?'stable':String(Math.random())};
+    () => ({checkpoint:()=>0,cleanup(){},focusFor:()=>body,probeFocus:()=>({focus:owner,visualFocus:body,expectedReady:true,motion:()=>{
+      motionScopes.push('body');
+      return {pending,signature:'stable'};
     }})}),
-    driver => ({start(){globalThis.captureProbe=driver.probe;return {started:true}},async stop(){}}),
-    (_runtime,_registry,probe)=>({probe})
+    driver => ({start(){globalThis.captureDriver=driver;return {started:true}},async stop(){}}),
+    ${createCaptureDriver.toString()}
   )`,app.context);
   await app.invoke({type:'inspect'});
   await app.invoke({type:'capture-start',batch:'test',jobs:[]});
-  const target={owner:'owner',component:'Compose',path:['Home']};
-  const first=app.context.captureProbe(target),second=app.context.captureProbe(target);
+  const job={id:'compose',path:['Home'],actions:[{id:'compose'}]};
+  const first=await app.context.captureDriver.ready(job,new AbortController().signal);
+  const second=await app.context.captureDriver.verify(job);
   assert.equal(first.ready,true);assert.equal(first.motion,second.motion);
-  assert.deepEqual(Array.from(app.context.motionScopes),['body','body']);
+  assert.ok(app.context.motionScopes.length>=2);assert.ok(app.context.motionScopes.every((scope:string)=>scope==='body'));
   app.context.pending=true;
-  assert.equal(app.context.captureProbe(target).ready,false,'A native ancestor still blocks capture while opening');
+  assert.equal((await app.context.captureDriver.verify(job)).ready,false,'A native ancestor still blocks capture while opening');
 });
 
 test('image load events block only visible images in the captured view',async t=>{

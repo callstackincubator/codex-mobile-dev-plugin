@@ -5,14 +5,18 @@ import type {FlowBackend} from './runs.ts';
 import type {FlowRun} from '../../shared/app-flow.ts';
 import type {CaptureManifest} from './capture-manifest.ts';
 import {blankFlowFrame} from './frame.ts';
+import {captureSource} from './capture-source.ts';
 
 export class CaptureConnectionError extends Error { constructor() { super('The capture connection was interrupted.'); } }
 
-/** The server only handles native screenshots and durable map updates. */
-export async function captureBatch(options: {backend: FlowBackend; manifest: CaptureManifest; run: FlowRun; directory: string; signal: AbortSignal; save(): Promise<void>; timing?(operation: string, ms: number): void}) {
+/** The server binds approved source recipes, captures native frames and saves results. */
+export async function captureBatch(options: {backend: FlowBackend; manifest: CaptureManifest; run: FlowRun; directory: string; projectRoot?: string; signal: AbortSignal; save(): Promise<void>; timing?(operation: string, ms: number): void}) {
   const {backend, manifest, run, directory, signal, save} = options;
   if (!backend.runtime.onCapture) throw new Error('This connection does not support in-app capture batches.');
   const batch = randomUUID(), byId = new Map(run.nodes.map(node => [node.id, node]));
+  const jobs = new Map(manifest.jobs.map(job => [job.id, job]));
+  const presentations = run.presentations;
+  const catalog = {states:[...new Map([...(presentations?.states??[]),...(presentations?.previewStates??[])].map(site=>[site.id,site])).values()], actions:[...(presentations?.actions??[]),...(presentations?.previews??[])]};
   const frames = new Map<number, {path: string; id: string}>();
   let chain = Promise.resolve(), done: () => void, fail: (error: Error) => void, stopped = false;
   const completed = new Promise<void>((resolve, reject) => { done = resolve; fail = reject; });
@@ -27,6 +31,14 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
       signal.throwIfAborted();
       const node = byId.get(event.id);
       if (event.type === 'opening' && node) { node.status = 'capturing'; node.captureAttempts = (node.captureAttempts ?? 0) + 1; run.revision++; }
+      else if (event.type === 'source') {
+        const job = jobs.get(event.id);
+        if (!job || !node || node.status !== 'capturing' || !options.projectRoot) throw new Error('Capture source request has no active prepared job.');
+        const value = await captureSource({backend, job, catalog, projectRoot:options.projectRoot, sourceHash:run.sourceHash,
+          operation:event.operation, actionId:event.actionId, signal});
+        const reply = await backend.runtime.invoke({type:'capture-source', batch, ticket:event.ticket, value}, 2000);
+        if (!reply?.accepted) throw new Error('The app rejected a stale source binding acknowledgement.');
+      }
       else if (event.type === 'frame' && node) {
         const started = performance.now();
         const bytes = await backend.screenshot(AbortSignal.any([signal, AbortSignal.timeout(5000)]));

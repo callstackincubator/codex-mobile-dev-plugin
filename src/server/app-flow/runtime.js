@@ -558,62 +558,15 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           const registry = globalThis.__MOBILE_DEV_FLOW_REGISTRY__;
           if (!registry || registry.version !== 1 || !captureQueueFactory || !captureDriverFactory) { reply({error:'Prepare the instrumented development build before starting a capture batch.'}); return; }
           if (captureQueue?.active) { reply({error:'A capture batch is already running.'}); return; }
-          const probe = target => {
-            if (appFailed || logBoxVisible) throw Object.assign(new Error('The app reported an error.'),{fatal:true});
-            const live = visible();
-            let focus;
-            if (target.owner) {
-              const id = target.target ? `${target.owner}:${target.target}` : target.owner;
-              fibers(fiber => { if (fiber.tag === 12 && fiber.memoizedProps?.id === id) { focus = fiber; return stopWalk; } });
-              if (!focus) return {ready:false,found:false,key:id};
-              if(target.ownerScope&&target.target){
-                let owner=focus.return;
-                while(owner&&!(owner.tag===12&&owner.memoizedProps?.id===target.owner))owner=owner.return;
-                if(!owner)return {ready:false,found:false,key:id};
-                focus=owner;
-              }
-            }
-            if(target.nativeStart){presentations?.captureNative?.(focus);return {armed:true};}
-            if(target.nativeStop){presentations?.captureNative?.(focus,true);return {released:true};}
-            if(target.nativeClose)return presentations.captureClose(focus,target.control,target.close);
-            if(target.within) {
-              let parent=focus?.return;
-              while(parent){if(parent.tag===12 && parent.memoizedProps?.id===target.within)return {contained:true};parent=parent.return;}
-              return {contained:false};
-            }
-            const actual = active(root?.getRootState?.() ?? root?.getState?.());
-            const geometry=new WeakMap();
-            const scoped=focus && presentations?.probeFocus(focus);
-            let body=target.component?presentations?.focusFor(target.component,focus):scoped?.visualFocus??focus;
-            if(target.component&&!body) {
-              const ids=new Set((registry.components?.(target.component)??[]).map(owner=>owner.id)), matches=[];
-              fibers(fiber=>{
-                if(fiber.tag!==12||!ids.has(fiber.memoizedProps?.id))return;
-                for(let parent=fiber;parent;parent=parent.return)if(parent===focus||parent===focus?.alternate){matches.push(fiber);break;}
-              });
-              if(matches.length===1)body=presentations?.probeFocus(matches[0]).visualFocus??matches[0];
-            }
-            if(target.component&&!body)return {ready:false,found:false,reason:'The source-proven view has not mounted.'};
-            const visual = visualSignature(target.owner ? undefined : actual.at(-1), !!target.owner, body,geometry);
-            // State may live in a provider above the entire app. Measure the
-            // resolved view and its native ancestors, not unrelated siblings
-            // such as the animated feed underneath an open composer.
-            const motionScope=body && body!==scoped?.visualFocus ? presentations?.probeFocus(body) : scoped;
-            const nativeMotion=motionScope?.motion(visual.bounds,geometry);
-            if(nativeMotion){visual.signature+=nativeMotion.signature;visual.motion=JSON.stringify([visual.motion,nativeMotion.signature]);}
-            const normalize=value=>value.split('/').filter(part=>part&&part!=='index'&&!/^\(.+\)$/.test(part)).join('/');
-            const routeMatches = !target.path?.length || (target.expo ? normalize(actual.join('/'))===normalize(target.path[0]) : JSON.stringify(actual) === JSON.stringify(target.path));
-            let leaf=root?.getRootState?.()??root?.getState?.();while(leaf?.routes?.length){const next=leaf.routes[leaf.index??0];if(!next){leaf=undefined;break;}leaf=next.state??next;}
-            const paramsMatch=Object.entries(target.params??{}).every(([key,value])=>sameRouteParams(leaf?.params?.[key],value));
-            return {...visual, nativePending:!!nativeMotion?.pending, key:JSON.stringify([actual,target.owner,target.target]), transitioning:live.transitioning,
-              ready:routeMatches && paramsMatch && visual.found && visual.content > 0 && !visual.loading && !live.transitioning && !nativeMotion?.pending && Date.now()-transitionAt>=32};
-          };
-          captureQueue = captureQueueFactory(captureDriverFactory(globalThis[key], registry, probe), event => {
+          let queue;
+          queue = captureQueueFactory(captureDriverFactory(globalThis[key], request => queue.request(request)), event => {
             const binding = globalThis[command.binding];
             if (typeof binding === 'function') binding(JSON.stringify({capture:event}));
           });
+          captureQueue = queue;
           reply(captureQueue.start(command.batch, command.jobs)); return;
         }
+        if (command.type === 'capture-source') { reply(captureQueue?.source(command.batch, command.ticket, command.value) ?? {accepted:false}); return; }
         if (command.type === 'capture-ack') { reply(captureQueue?.ack(command.batch, command.ticket, command.value) ?? {accepted:false}); return; }
         if (command.type === 'capture-stop') { void captureQueue?.stop().then(() => reply({stopped:true}), () => reply({error:'Capture state could not be restored.'})); if(!captureQueue)reply({stopped:true}); return; }
         if (command.type === 'diagnostics') {
@@ -670,9 +623,12 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           return;
         }
         if (command.type === 'presentation-open') {
+          const before = presentations?.checkpoint() ?? 0;
           const result = presentations?.open(command.id,presentationFocus) ?? { error: 'Presentation capture is unavailable.' };
           if (result.error) { reply(result); return; }
-          presentationFrames.push({focus:presentationFocus,expected:presentationExpected});presentationExpected=result.expected; presentationObservation = undefined;
+          const after = presentations?.checkpoint() ?? before;
+          for(let level=before;level<after;level++)presentationFrames.push({focus:presentationFocus,expected:presentationExpected});
+          presentationExpected=result.expected; presentationObservation = undefined;
           later(() => {
             try {
               presentationFocus = result.focus;
@@ -719,7 +675,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           };
           check(); return;
         }
-        if (command.type === 'verify') { reply({ active: active(root?.getRootState?.() ?? root?.getState?.()), ...visualSignature(command.name), ...visible() }); return; }
+        if (command.type === 'verify') { const state=root?.getRootState?.() ?? root?.getState?.(); reply({ active: active(state), routeMatches:matchesRoute(state,command), ...visualSignature(command.name), ...visible() }); return; }
         if(command.type==='open')refreshNavigation();
         if (command.type === 'open' && !navigatorState()?.routeNames?.length) { reply({ready: false, reason: 'The navigator is remounting. This screen will be retried.'}); return; }
         if (command.type !== 'open' || !root) { reply({ error: 'No mounted navigator found. Use Record a flow for screens outside navigation.' }); return; }

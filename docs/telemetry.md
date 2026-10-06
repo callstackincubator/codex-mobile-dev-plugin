@@ -758,3 +758,20 @@ lookups share a cache within one synchronous tree index. A completed dismissal
 retains one target until the next open and releases it on rollback or cleanup.
 No new telemetry fields or per-frame events were added. Source identities,
 controls and native content stay local.
+
+Since 0.1.189, Baguette resolves its Xcode directory once per process and encodes
+raw screenshot responses directly in the requested format. Each capture still
+resolves the current device and display and acquires a fresh framebuffer. Existing
+server screenshot timings cover acquisition and encoding with unchanged names,
+units and boundaries. Native crash and resource coverage remains active; the
+build retains matching Baguette symbols. No image content enters telemetry.
+
+The prepared queue now uses the same presentation opener, provider and portal
+context, native lifecycle checks, and rollback as discovery. Server source
+binding retains the existing `presentation-collect`, `presentation-symbolicate`,
+`presentation-open`, and handoff measurements. `capture-source` measures only the
+acknowledgement of a bound source request. Full source work and in-app readiness
+remain inside `app_flow.capture`; in-app probes do not emit a metric per frame.
+Missing context returns before a loading wait. No source paths, binding IDs,
+props, app state or image data enter telemetry. Route capture still reuses its
+loading and paint proof only while a fresh frame check matches.

@@ -90,3 +90,29 @@ test('stop rejects when cancellation cleanup fails instead of allowing parent na
   assert.equal(queue.active,true);
   dismissed=true;await queue.stop();assert.equal(queue.active,false);
 });
+
+test('source binding responses belong to exactly one active job and batch',async()=>{
+  const events:any[]=[];let queue:any;
+  queue=createCaptureQueue({async open(){const result=await queue.request({operation:'open',actionId:'sheet'});return {ready:false,status:'needs-data',reason:result.error}},async restore(){}},(event:any)=>events.push(event));
+  queue.start('batch',[{id:'sheet'}]);await delay(0);
+  const request=events.find(event=>event.type==='source');
+  assert.equal(request.id,'sheet');assert.equal(request.actionId,'sheet');
+  assert.equal(queue.source('other-batch',request.ticket,{}).accepted,false);
+  assert.equal(queue.source('batch',request.ticket+1,{}).accepted,false);
+  assert.equal(queue.source('batch',request.ticket,{error:'Missing context'}).accepted,true);
+  await delay(0);
+  assert.equal(queue.source('batch',request.ticket,{}).accepted,false);
+  assert.equal(events.some(event=>event.status==='needs-data'),true);
+  assert.equal(events.some(event=>event.type==='frame'),false);
+  assert.equal(queue.active,false);
+});
+
+test('stopping cancels a pending source binding and restores before another batch',async()=>{
+  const events:any[]=[];let queue:any,restores=0;
+  queue=createCaptureQueue({async open(){await queue.request({operation:'open',actionId:'sheet'});assert.fail('A cancelled source request must not resume opening');},async restore(){restores++}},(event:any)=>events.push(event));
+  queue.start('batch',[{id:'sheet'}]);await delay(0);
+  const request=events.find(event=>event.type==='source');
+  await queue.stop();assert.equal(restores,1);assert.equal(queue.active,false);
+  assert.equal(queue.source('batch',request.ticket,{view:{ready:true}}).accepted,false);
+  assert.equal(events.some(event=>event.type==='frame'),false);
+});

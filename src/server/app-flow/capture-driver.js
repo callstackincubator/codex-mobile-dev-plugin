@@ -1,223 +1,119 @@
-/** Driver for source-instrumented controls and the existing navigation runtime. */
-export function createCaptureDriver(runtime, registry, probe) {
-  let branch = [], base, currentOwner, currentTarget, lastReady;
+/** Both discovery and prepared capture use the presentation runtime's state,
+ * provider, portal, native lifecycle and rollback implementation. */
+export function createCaptureDriver(runtime, source) {
+  let base, branch = [], lastReady, routeReady;
+  const check = signal => { if (signal?.aborted) throw new Error('Capture stopped.'); };
   const call = command => new Promise((resolve, reject) => runtime.invoke(command, result => {
-    if (result?.error || result?.appFailed) reject(Object.assign(new Error(result.error || 'The app reported an error.'),{fatal:!!result?.appFailed}));
+    if (result?.appFailed) reject(Object.assign(new Error('The app reported an error.'), {fatal: true}));
     else resolve(result);
   }));
-  const own = (value, key) => {
-    if (!value || typeof value !== 'object') return undefined;
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    return descriptor && 'value' in descriptor ? descriptor.value : undefined;
-  };
-  const controlKey = effect => effect.target && `${effect.target.file}:${effect.target.source.line}:${effect.target.source.column}:${effect.prop}`;
-  function controlUndo(owner, target, control, close) {
-    return async (waitForCallback=false) => {
-      if (!owner.mounted) return;
-      const closeMethod = own(control, close);
-      // Controllers with a completion callback must acknowledge their
-      // native dismissal before a sibling sheet opens.
-      if (waitForCallback) await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('The sheet did not acknowledge dismissal.')), 4000);
-        closeMethod.call(control, () => { clearTimeout(timer); resolve(); });
-      });
-      else {
-        const dismissal=await probe({owner:owner.id,target,nativeClose:true,control,close});
-        if(dismissal?.handled&&dismissal.observed&&dismissal.closed)return;
-        if(!dismissal?.handled)closeMethod.call(control);
-        await waitUntil(() => {
-          const result = probe({owner: owner.id, target});
-          // The source marker stays mounted when a sheet's body closes.
-          // Wait for the body and native transition, not the marker.
-          return {...result, ready: (!result.found || result.hosts===0) && !result.nativePending && !result.transitioning};
-        }, undefined).then(result=>{
-          if (!result?.ready) throw new Error('The sheet did not finish dismissing.');
-        });
-      }
-    };
-  }
-  function stateUndo(owner, setter, before) {
-    return async () => { if (owner.mounted) setter(before); };
-  }
-  function aliasUndo(parent) {
-    return async handoff => {
-      if (handoff && !parent.closed) { await parent.undo(true); parent.closed=true; }
-    };
-  }
-  async function restoreTo(level) {
-    lastReady=undefined;
-    while (branch.length > level) {
-      const item = branch[branch.length - 1];
-      if(!item.closed)await item.undo();
-      branch.pop();
-      if(!item.alias)probe({nativeStop:true});
+  const same = (a, b) => a?.ready && b?.ready && a.key === b.key && a.signature === b.signature && a.motion === b.motion;
+  const route = job => ({path: job.path, params: job.params, expo: job.expo});
+  async function read(job, waitMs = 0) {
+    if (!job.actions.length && job.path.length) {
+      const view = await call({type:'verify', ...route(job), name:routeReady?.name ?? job.path.at(-1)});
+      return {...view, key:JSON.stringify(view.active), ready:!!routeReady && view.routeMatches !== false
+        && JSON.stringify(view.active) === JSON.stringify(routeReady.active) && view.found && view.content > 0
+        && !view.loading && !view.transitioning && view.signature === routeReady.signature && view.motion === routeReady.motion};
     }
-    currentOwner = branch.at(-1)?.owner;
-    currentTarget = branch.at(-1)?.target;
-  }
-  function update(value, path, next) {
-    if (!path.length) return next;
-    const [key, ...rest] = path;
-    if (['__proto__', 'prototype', 'constructor'].includes(key) || !value || typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype) throw new Error('The UI selector is not a plain state value.');
-    return {...value, [key]: update(own(value, key), rest, next)};
-  }
-  function waitUntil(read, signal, timeout = 4000) {
-    return new Promise((resolve, reject) => {
-      let timer, deadline, off, paint, wake, stopped = false, previous, since = Date.now(), frames = 0, reason;
-      const finish = (value, error) => {
-        if (stopped) return; stopped = true;
-        clearTimeout(timer); clearTimeout(deadline); clearTimeout(wake); off?.();
-        if (paint !== undefined) (globalThis.cancelAnimationFrame || clearTimeout)(paint);
-        signal?.removeEventListener('abort', aborted);
-        if (error) reject(error); else if (!value) reject(new Error('Readiness completed without a view.')); else resolve(value);
-      };
-      const aborted = () => finish(undefined, new Error('Capture stopped.'));
-      const check = () => {
-        if (stopped) return;
-        clearTimeout(timer);
-        try {
-          const view = read();
-          reason=view.reason || (view.loading?'data or loader':view.transitioning?'navigation transition':view.nativePending?'native presentation':!view.found?'missing visible body':!view.content?'empty body':'motion or paint');
-          const key = JSON.stringify([view.key, view.signature, view.motion, view.loading, view.transitioning]);
-          if (!view.ready || key !== previous) { previous = key; since = Date.now(); frames = 0; }
-          if (view.ready && Date.now() - since >= 160 && frames >= 2) { finish(view); return; }
-          // Native animation can change without a React commit. Retain a local
-          // motion probe; source commits wake it immediately, no CDP polling.
-          timer = setTimeout(check, view.loading ? 100 : 40);
-          if (paint === undefined && view.ready) {
-            const frame = globalThis.requestAnimationFrame || (callback => setTimeout(callback, 16));
-            paint = frame(() => { paint = undefined; frames++; });
-          }
-        } catch (error) { finish(undefined, error); }
-      };
-      // Many instrumented owners commit in the same React pass. Inspect the
-      // completed commit once, rather than measuring the tree in every layout
-      // effect. Native motion still gets the regular local polling check.
-      off = registry.subscribe(() => {
-        if (stopped || wake !== undefined) return;
-        wake = setTimeout(() => { wake = undefined; check(); }, 0);
-      });
-      deadline = setTimeout(() => finish({ready: false, reason: `The view did not settle: ${reason || 'readiness unavailable'}.`}), timeout);
-      signal?.addEventListener('abort', aborted, {once: true});
-      if (signal?.aborted) aborted(); else check();
-    });
-  }
-  const view = job => {
-    if(registry.projection?.error)throw new Error(registry.projection.error);
-    let owner=currentOwner,target=currentTarget;
-    if(target?.endsWith(':entry')) {
-      owner=registry.find(target)?.owner;
-      if(!owner)return {ready:false,found:false,reason:'The exact source view has not mounted.'};
+    const value = await call({type: 'presentation-view', ...route(job), waitMs});
+    if (value?.portalBindings?.length || value?.effectBindings?.length) {
+      const resolved = await source({operation: 'view'});
+      if (resolved?.portalBindings?.length || resolved?.effectBindings?.length) return {...resolved, ready:false,
+        error:'The presentation needs a portal or UI effect that could not be proven from source.'};
+      return {...resolved, ready:!!resolved?.ready && resolved.routeMatches !== false};
     }
-    return probe({owner:owner?.id,target,ownerScope:branch.at(-1)?.ownerScope,component:branch.at(-1)?.component,path:job.path,params:job.params,expo:job.expo});
-  };
-  const same=(before,after)=>before?.ready && after?.ready && before.key===after.key && before.signature===after.signature && before.motion===after.motion;
-  async function closePreview() {
-    registry.unproject();
-    const closed=await waitUntil(()=>({ready:!probe({owner:'flow-preview'}).found,key:'restored',signature:''}));
-    if(!closed?.ready)throw new Error('The isolated view did not unmount.');
+    return {...value, ready:!!value?.ready && value.routeMatches !== false};
+  }
+  async function settled(job, signal) {
+    const deadline = Date.now() + 8000;
+    do {
+      check(signal);
+      const value = await read(job, Math.min(1000, Math.max(0, deadline - Date.now())));
+      check(signal);
+      if (value?.ready || value?.error) return value;
+      if (Date.now() >= deadline) return value;
+      await new Promise(resolve => setTimeout(resolve, 40));
+    } while (true);
+  }
+  async function rollback(level) {
+    const result = await call({type: 'presentation-rollback', level});
+    if (result?.error) throw new Error('Capture state could not be restored.');
+    lastReady = undefined;
+  }
+  async function restoreTo(depth) {
+    if (branch.length > depth) await rollback(depth ? branch[depth - 1].level : 0);
+    branch = branch.slice(0, depth);
   }
   return {
     async open(job, signal) {
+      check(signal);
       if (job.blocked) return {ready: false, status: 'needs-data', reason: job.blocked};
       const nextBase = JSON.stringify([job.path, job.params ?? {}, !!job.expo]);
       let depth = 0;
-      if (base === nextBase) while (depth < branch.length && !branch[depth].closed && branch[depth].id === job.actions[depth]?.id) depth++;
+      if (base === nextBase) {
+        const current = await read(job);
+        const checkpoint = await call({type: 'presentation-checkpoint'});
+        if (current?.routeMatches !== false && current?.ready && checkpoint?.level === (branch.at(-1)?.level ?? 0)) {
+          while (depth < branch.length && branch[depth].id === job.actions[depth]?.id && !branch[depth].closed
+            && branch[depth].projected === !!job.projections?.includes(branch[depth].id)) depth++;
+        } else base = undefined;
+      }
       await restoreTo(depth);
-      probe({nativeStart:true});
+      check(signal);
       if (base !== nextBase) {
+        // The runtime owns all presentation checkpoints, including failed opens.
+        await rollback(0);
         if (job.path.length) {
-          const opened = await call({type: 'open', path: job.path, params: job.params, expo: job.expo, timeoutMs: 4000, loadingTimeoutMs: 8000});
+          const opened = await call({type: 'open', ...route(job), timeoutMs: 4000, loadingTimeoutMs: 8000});
+          check(signal);
+          if (opened?.error || opened?.redirected) return {ready: false, status: 'blocked', reason: opened.error || 'This route redirects to another screen.'};
           if (!opened?.ready) return {ready: false, status: 'timed-out', reason: opened?.reason};
-          if (!job.actions.length && typeof opened.signature === 'string') {
-            // Navigation already waited for loading, motion and two paint
-            // frames. Reuse that proof only while a fresh probe still matches.
-            const current=view(job);
-            if (same({...opened,key:current.key},current)) lastReady={id:job.id,view:current};
-          }
+          routeReady = opened;
         }
         base = nextBase;
       }
       for (const action of job.actions.slice(depth)) {
-        if(signal.aborted)throw new Error('Capture stopped.');
-        const effect = action.effect;
-        if (action.consumer) return {ready: false, status: 'needs-data', reason: 'This recipe needs its real shared render context.'};
-        if(effect.kind==='mount') {
-          probe({nativeStart:true});
-          await registry.project({source:`${effect.file}#${effect.export}`});
-          currentOwner={id:'flow-preview'};currentTarget=undefined;
-          branch.push({id:action.id,owner:currentOwner,undo:closePreview});
-          const opened=await waitUntil(()=>view(job),signal);
-          if(!opened.ready)return {ready:false,status:'timed-out',reason:opened.reason};
-          lastReady={id:job.id,view:opened};
-          continue;
+        check(signal);
+        // Source approval stays on the server. This uses the same opener as
+        // discovery, including shared consumers and previews in native sheets.
+        const opened = await source({operation: 'open', actionId: action.id});
+        check(signal);
+        if (opened?.error) return {ready: false, status: opened.status || 'needs-data', reason: opened.error};
+        if (opened?.closed) for (const frame of branch) frame.closed = true;
+        if (job.projections?.includes(action.id)) {
+          const projected = await source({operation: 'project', actionId: action.id});
+          check(signal);
+          if (projected?.error) return {ready: false, status: 'blocked', reason: projected.error};
         }
-        const binding = effect.kind === 'state' ? effect.site : controlKey(effect);
-        const match = registry.find(binding);
-        if (!match) return {ready: false, status: 'needs-data', reason: 'The source owner is unmounted or has several instances. Prepare its real context first.'};
-        const {owner, value} = match;
-        for(const handoff of action.handoffs??[]) {
-          const id=`${handoff.file}:${handoff.source.line}:${handoff.source.column}:handoff`;
-          const entry=registry.find(id);
-          const parent=entry && [...branch].reverse().find(frame=>!frame.closed && frame.target && probe({owner:entry.owner.id,target:id,within:`${frame.owner.id}:${frame.target}`}).contained);
-          if(!parent)return {ready:false,status:'needs-data',reason:'The source-proven parent sheet is not open in this context.'};
-          await parent.undo(true);parent.closed=true;
-          if(signal.aborted)throw new Error('Capture stopped.');
-          if(!owner.mounted)return {ready:false,status:'needs-data',reason:'The target owner unmounted when its parent closed.'};
-        }
-        if (effect.kind === 'state') {
-          probe({nativeStart:true});
-          if (value.kind !== 'state' || typeof value.tuple?.[1] !== 'function') return {ready: false, reason: 'The UI setter is unavailable.'};
-          const before=value.tuple[0],setter=value.hook==='useReducer'?value.previewSetter:value.tuple[1];
-          const next = update(before, effect.path, effect.value);
-          if(action.preview && !owner.preview) {
-            if(branch.some(frame=>frame.control&&!frame.closed))return {ready:false,status:'needs-data',reason:'This state preview needs a capture host inside its native presentation.'};
-            if(!owner.type)return {ready:false,status:'needs-data',reason:'This shared state needs its real consumer context.'};
-            await registry.project({source:owner.source,owner,site:effect.site,value:next});
-            currentOwner={id:'flow-preview'};
-            branch.push({id:action.id,owner:currentOwner,undo:closePreview});
-          }else {
-            if(typeof setter!=='function')return {ready:false,status:'needs-data',reason:'A reducer selector requires an isolated preview.'};
-            branch.push({id: action.id, owner, undo: stateUndo(owner, setter, before)});
-            setter(next);
-          }
-          if(action.expected){branch.at(-1).target=`${action.expected.file}:${action.expected.source.line}:${action.expected.source.column}:entry`;branch.at(-1).ownerScope=action.expected.scope==='owner';}
-          else branch.at(-1).component=action.name;
-        } else {
-          let control = value.control;
-          control = own(control, 'current') ?? control;
-          // Wrapper and inner JSX sites can expose the same native controller.
-          // Reuse that presentation; opening it twice can detach its native body.
-          const existing = control && branch.find(frame => !frame.closed && frame.controlRef === control);
-          if (existing) {
-            branch.push({id:action.id,owner:existing.owner,target:existing.target,control:true,alias:true,undo:aliasUndo(existing)});
-            currentOwner=existing.owner;currentTarget=existing.target;
-            continue;
-          }
-          const names = effect.method === 'auto' ? ['open', 'present', 'show', 'expand'] : [effect.method];
-          const open = names.find(name => typeof own(control, name) === 'function' && own(control, name).length === 0);
-          const close = (Array.isArray(effect.close) ? effect.close : [effect.close]).find(name => typeof own(control, name) === 'function');
-          if (!open || !close) return {ready: false, reason: 'The source control has no reversible open/close pair.'};
-          const target = binding;
-          const undo = controlUndo(owner, target, control, close);
-          branch.push({id: action.id, owner, target, control:true, controlRef:control, undo});
-          probe({owner:owner.id,target,nativeStart:true});
-          own(control, open).call(control);
-        }
-        currentOwner = branch.at(-1).owner; currentTarget = branch.at(-1).target;
-        const opened = await waitUntil(() => view(job), signal);
-        if (!opened.ready) return {ready: false, status: 'timed-out', reason: opened.reason};
-        lastReady={id:job.id,view:opened};
+        const view = opened.view?.ready && !job.projections?.includes(action.id) ? opened.view : await settled(job, signal);
+        if (!view?.ready) return {ready: false, status: view?.error ? 'blocked' : 'timed-out', reason: view?.error || view?.reason || 'The presentation did not settle.'};
+        const checkpoint = await call({type: 'presentation-checkpoint'});
+        if (!Number.isInteger(checkpoint?.level)) throw new Error('The presentation checkpoint is unavailable.');
+        branch.push({id: action.id, level: checkpoint.level, projected: !!job.projections?.includes(action.id)});
+        lastReady = {id: job.id, view};
       }
       return {ready: true};
     },
-    ready(job, signal) {
-      const current=view(job);
-      if(lastReady?.id===job.id && same(lastReady.view,current))return Promise.resolve(current);
-      return waitUntil(() => view(job), signal);
+    async ready(job, signal) {
+      check(signal);
+      const current = await read(job);
+      check(signal);
+      if (same(lastReady?.view, current) || current?.ready) return current;
+      if (!job.actions.length && job.path.length) {
+        const opened = await call({type:'open', ...route(job), timeoutMs:4000, loadingTimeoutMs:8000});
+        check(signal);
+        if (!opened?.ready) return opened;
+        routeReady = opened;
+        return read(job);
+      }
+      return settled(job, signal);
     },
-    verify(job) { return view(job); },
+    verify(job) { return read(job); },
     same,
-    async restore() { await restoreTo(0); base = undefined; },
+    async restore() {
+      await rollback(0);
+      branch = []; base = routeReady = undefined;
+    },
   };
 }
