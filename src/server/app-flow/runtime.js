@@ -492,6 +492,15 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
     Object.assign(probe,{stage:'done',totalMs:Date.now()-start,expectedReady,found:visual.found,hosts:visual.hosts,content:visual.content,loading:visual.loading,transitioning:live.transitioning,nativePending:!!nativeMotion?.pending,painted:presentationObservation.painted,quietMs:now-presentationObservation.since,keyChanged,signatureChanged,reason});
     return { ...visual, key, active: active(root?.getRootState?.() ?? root?.getState?.()), ready: !reason, reason, ...live, nativePending:nativeMotion?.pending, error:nativeMotion?.error, components:componentTree };
   }
+  function sameRouteParams(before,next,depth=0,budget={left:200}) {
+    if(Object.is(before,next))return true;
+    if(!before||!next||typeof before!=='object'||typeof next!=='object'||depth>6||--budget.left<0)return false;
+    const array=Array.isArray(before);
+    if(array!==Array.isArray(next)||!array&&(Object.getPrototypeOf(before)!==Object.prototype||Object.getPrototypeOf(next)!==Object.prototype))return false;
+    const a=Object.getOwnPropertyDescriptors(before),b=Object.getOwnPropertyDescriptors(next),keys=Object.keys(a);
+    if(keys.length>200||keys.length!==Object.keys(b).length)return false;
+    return keys.every(key=>a[key]&&b[key]&&'value'in a[key]&&'value'in b[key]&&sameRouteParams(a[key].value,b[key].value,depth+1,budget));
+  }
   function returnToStart() {
     const path = active(original);
     let leaf = original;
@@ -633,7 +642,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
           visible();
           const selected = leaf?.routes?.[leaf.index ?? 0];
           if (leaf?.type === 'stack' && leaf.key && leaf.routeNames?.includes(expected)) {
-            if (selected?.name !== expected || command.params) (navigationFor(leaf.key)??root).dispatch({ type: 'REPLACE', target: leaf.key, payload: { name: expected, params: command.params } });
+            if (selected?.name !== expected || command.params && !sameRouteParams(selected.params??{},command.params)) (navigationFor(leaf.key)??root).dispatch({ type: 'REPLACE', target: leaf.key, payload: { name: expected, params: command.params } });
           } else {
             let params = command.params ?? {};
             for (let index = path.length - 1; index > 0; index--) params = { screen: path[index], params, initial: false };

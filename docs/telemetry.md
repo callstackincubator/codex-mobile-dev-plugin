@@ -592,3 +592,9 @@ component and its connected portal bodies. The original component remains part
 of native ownership and restoration. Existing discovery, readiness, capture and
 restoration timings retain their names, units and boundaries; this change sends
 no new app data.
+
+Since 0.1.175, reopening a focused stack route with unchanged data parameters
+keeps the mounted route. Loading, native transition, paint and screenshot checks
+still run. Existing open, readiness, capture and restoration timings retain their
+names, units and boundaries. Bounded native lifecycle evidence stays in local
+App Flow diagnostics; component names, events and app data do not go to Sentry.

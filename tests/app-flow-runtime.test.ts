@@ -924,3 +924,27 @@ test('readiness polls expose portals mounted after the initial opening',async t=
   app.context.lateMounted=true;
   assert.deepEqual(JSON.parse(JSON.stringify((await app.invoke({type:'presentation-view'})).portalBindings)),[{id:'late-portal'}]);
 });
+
+
+test('an unchanged focused stack route keeps its instance and still waits for readiness', async t => {
+    const app=runtime(t);await app.invoke({type:'restore'});
+    let state:any={type:'stack',key:'stack',index:0,routeNames:['Home'],routes:[{key:'real-instance',name:'Home',params:{filter:{tag:'real-tag'},page:1}}]};
+    app.navigation.getState=()=>state;app.fiber.memoizedProps.route=state.routes[0];
+    let replaces=0;
+    app.navigation.dispatch=(action:any)=>{if(action.type==='REPLACE'){replaces++;state={...state,routes:[{key:'new-instance',name:action.payload.name,params:action.payload.params}]};app.fiber.memoizedProps.route=state.routes[0]}};
+    vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000)`,app.context);
+    await app.invoke({type:'inspect'});
+    const same=await app.invoke({type:'open',path:['Home'],params:{page:1,filter:{tag:'real-tag'}},timeoutMs:500});
+    assert.equal(same.ready,true);assert.equal(replaces,0);assert.equal(state.routes[0].key,'real-instance');
+    app.native.type='Skeleton';
+    const loading=await app.invoke({type:'open',path:['Home'],params:{filter:{tag:'real-tag'},page:1},timeoutMs:100,loadingTimeoutMs:100});
+    assert.equal(loading.ready,false,'An existing route must still pass the loading and paint checks');assert.equal(replaces,0);
+    app.native.type='View';
+    const changed=await app.invoke({type:'open',path:['Home'],params:{filter:{tag:'other-real-tag'},page:1},timeoutMs:500});
+    assert.equal(changed.ready,true);assert.equal(replaces,1);
+    const extra=await app.invoke({type:'open',path:['Home'],params:{filter:{tag:'other-real-tag'}},timeoutMs:500});
+    assert.equal(extra.ready,true);assert.equal(replaces,2,'Removed parameters still replace the route');
+    Object.defineProperty(state.routes[0].params.filter,'tag',{enumerable:true,get(){assert.fail('Route reuse must not read a getter')}});
+    const getter=await app.invoke({type:'open',path:['Home'],params:{filter:{tag:'other-real-tag'}},timeoutMs:500});
+    assert.equal(getter.ready,true);assert.equal(replaces,3,'An opaque parameter still follows normal replacement');
+});

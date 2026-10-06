@@ -1823,3 +1823,24 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   }finally{runtime.cleanup();app.runtime.cleanup()}
  });
 }
+
+
+for (const install of [installPresentationRuntime, sharedLoopRuntime(installPresentationRuntime)]) {
+  test(`native readiness diagnostics retain bounded real lifecycle evidence (${install===installPresentationRuntime?'normal':'shared loops'})`, () => {
+    const app=tree(install);const original={onStateChange(){}};
+    const canonical={currentProps:original};
+    app.sheet.child={tag:5,type:'NativeSheet',memoizedProps:original,stateNode:{canonical},return:app.sheet};
+    app.runtime.open('open');
+    canonical.currentProps.onStateChange({nativeEvent:{state:'opening'}});
+    assert.equal(app.runtime.motion(app.sheet).pending,true);
+    let probe=app.runtime.diagnostics().nativeProbe;
+    assert.equal(probe.pendingTargets.length,1);assert.equal(probe.pendingTargets[0].kind,'host');
+    assert.equal(probe.pendingTargets[0].lastEvent,'opening');assert.equal(probe.pendingTargets[0].events,1);
+    canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});
+    assert.equal(app.runtime.motion(app.sheet).pending,false);
+    probe=app.runtime.diagnostics().nativeProbe;assert.deepEqual(probe.pendingTargets,[]);
+    assert.equal(probe.observedEvents,2);assert.equal(probe.unshownPreviews,0);
+    assert.equal(probe.targets[0].opened,true);assert.equal(probe.targets[0].pending,false);assert.equal(probe.targets[0].lastEvent,'open');
+    app.runtime.cleanup();assert.equal(app.runtime.diagnostics().nativeProbe,undefined);
+  });
+}

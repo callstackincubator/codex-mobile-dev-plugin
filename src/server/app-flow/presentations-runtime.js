@@ -854,7 +854,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const [first,...rest]=path;const copy=Array.isArray(value)?value.slice():{...value};copy[first]=setPath(value?.[first],rest,next);return copy;
   }
   const nativeRecords=new Map(),nativeClassCallbacks=new Map();let nativeCallbackOrigins=new WeakMap();
-  let commitPatch,nativeArmed=false,nativeCloseRequests=0,nativeCloseRetries=0;
+  let commitPatch,nativeArmed=false,nativeCloseRequests=0,nativeCloseRetries=0,lastNativeProbe;
   function forgetClassCallbacks(instance,record) {
     for(const [key,handler]of record.handlers){
       if(Object.getOwnPropertyDescriptor(instance,key)?.value===handler.wrapped)Object.defineProperty(instance,key,handler.descriptor);
@@ -894,6 +894,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         // reuse an event object for a later, different lifecycle transition.
         status.dispatch={key,event};
         const state=key==='onShow'?'open':key==='onDismiss'?'closed':event?.nativeEvent?.state;
+        status.events=(status.events??0)+1;if(['open','opened','presented','closed','dismissed','opening','closing'].includes(state))status.lastEvent=state;
         if(['closed','dismissed'].includes(state)){status.pending=false;status.closed=true;status.opened=false;}
         else if(['open','opened','presented'].includes(state)){status.openEvents=(status.openEvents??0)+1;status.closed=false;status.opened=true;status.pending=!!status.closing;}
         else if(['opening','closing'].includes(state)){status.pending=true;if(state==='closing')status.dismissAcknowledged=true;}
@@ -1030,7 +1031,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     for(const [canonical,record]of nativeRecords)if(!tree.current.has(record.fiber)&&!tree.current.has(record.fiber?.alternate)){forgetNative(record);nativeRecords.delete(canonical);}
     const related=[...nativeRecords.values()].filter(r=>scope.some(root=>inside(r.fiber,root)||inside(root,r.fiber)));
     const hosts=related.filter(r=>r.fiber.tag===5),boundaries=hosts.length?hosts:related;
-    let pending=boundaries.some(r=>r.status.pending);const boxes=[];
+    const pendingTargets=new Set(boundaries.filter(r=>r.status.pending));let pending=pendingTargets.size>0;const boxes=[];
     const relevant=new Set();
     // Build the same connected-body and ancestor set without testing every
     // offscreen feed fiber against each parent chain. Preserve mounted order.
@@ -1041,17 +1042,22 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     for(const fiber of tree.all){
       if(!relevant.has(fiber))continue;
       const canonical=fiber.stateNode?.canonical,record=canonical&&nativeRecords.get(canonical);
-      if(record?.status.pending&&(!hosts.length||fiber.tag===5))pending=true;
+      if(record?.status.pending&&(!hosts.length||fiber.tag===5)){pending=true;pendingTargets.add(record);}
       // Remaining hosts still contribute transition events, but their bounds
       // cannot change this capped signature. Avoid extra Fabric layout reads.
       if(boxes.length>=24)continue;
       try{const native=canonical?.publicInstance;const box=typeof native?.getBoundingClientRect==='function'?(geometry?.has(fiber)?geometry.get(fiber):native.getBoundingClientRect()):undefined;if(box&&boxes.length<24){let {x,y,width,height}=box;if(viewport){const right=Math.min(x+width,viewport.x+viewport.width),bottom=Math.min(y+height,viewport.y+viewport.height);x=Math.max(x,viewport.x);y=Math.max(y,viewport.y);width=right-x;height=bottom-y;if(width<=0||height<=0)continue;}boxes.push([x,y,width,height].map(v=>Math.round(v)));}}catch{}
     }
-    if(projected.some(record=>!record.shown&&(focus===record.focus||roots(record.focus).includes(focus))))pending=true;
+    const unshown=projected.filter(record=>!record.shown&&(focus===record.focus||roots(record.focus).includes(focus))).length;
+    if(unshown)pending=true;
     const error=projected.some(record=>record.failed&&(focus===record.focus||roots(record.focus).includes(focus)))?'The temporary presentation preview failed.':undefined;
+    // Local diagnostics only. Keep bounded primitive evidence, never fibers,
+    // callback arguments or app content. Telemetry still uses aggregate timings.
+    const describe=record=>({component:name(record.fiber),kind:record.fiber?.tag===5?'host':'adapter',pending:!!record.status.pending,opened:!!record.status.opened,closing:!!record.status.closing,events:record.status.events??0,lastEvent:record.status.lastEvent,visible:typeof record.original?.visible==='boolean'?record.original.visible:undefined});
+    lastNativeProbe={pendingTargets:[...pendingTargets].slice(0,8).map(describe),targets:[...hosts,...related.filter(record=>record.fiber?.tag!==5)].slice(0,8).map(describe),scope:scope.slice(0,8).map(name),observedEvents:[...new Set(boundaries.map(record=>record.status))].reduce((total,status)=>total+(status.events??0),0),unshownPreviews:unshown};
     return {pending,signature:JSON.stringify(boxes),error};
   }
-  function clearNative(){structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();for(const [instance,record]of nativeClassCallbacks)forgetClassCallbacks(instance,record);nativeCallbackOrigins=new WeakMap();}
+  function clearNative(){lastNativeProbe=undefined;structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();for(const [instance,record]of nativeClassCallbacks)forgetClassCallbacks(instance,record);nativeCallbackOrigins=new WeakMap();}
   function open(id,focus) {
     if(undo.some(entry=>entry.closing))return {error:'A native presentation is still dismissing.'};
     armNative();
@@ -1191,6 +1197,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     return result.map(item=>item.value);
   }
-  const diagnostics=()=>({nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  const diagnostics=()=>({nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
   return {collect,records,configure,list,open,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }
