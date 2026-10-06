@@ -750,3 +750,11 @@ timings still include the whole operation; the existing restoration measurement
 keeps its boundary. Failed handoffs retain cleanup state, and cancellation cannot
 open a child afterward. Source paths, context values, callbacks and view identities
 stay local. Telemetry tests check the fixed name and existing scrubbing.
+
+Since 0.1.188, presentation discovery follows exact React element identities
+through portals. The existing collection, binding, handoff and capture timings
+still cover this work, with unchanged names, units and boundaries. Logical-owner
+lookups share a cache within one synchronous tree index. A completed dismissal
+retains one target until the next open and releases it on rollback or cleanup.
+No new telemetry fields or per-frame events were added. Source identities,
+controls and native content stay local.
