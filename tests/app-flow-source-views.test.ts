@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {scanAppFlow} from '../src/server/app-flow/scan.ts';
 import {FlowStore} from '../src/server/app-flow/store.ts';
+import {flowProgressRun} from '../src/shared/app-flow.ts';
 import {installPresentationRuntime} from '../src/server/app-flow/presentations-runtime.js';
 import {bindPresentationSites} from '../src/server/app-flow/presentations-bindings.ts';
 import {sharedLoopRuntime} from './app-flow-runtime-fixtures.ts';
@@ -121,7 +122,8 @@ test('two same-named mounted sheets bind and open only their own source target',
 test('the immutable catalog saves once, restores for inspection and stays out of map polling',async t=>{
   const path=await fixture(t,{}),store=new FlowStore(path),id=randomUUID();
   const views:any[]=[{id:'proof',availability:'observed-only'}];
-  const run:any={id,phase:'complete',revision:1,nodes:[],edges:[],warnings:[],presentations:{states:[],actions:[],views,viewStates:[]}};
+  const actions:any[]=[{id:'open-sheet',effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}}];
+  const run:any={id,phase:'complete',revision:1,nodes:[],edges:[],warnings:[],links:[{target:'sheet',owner:'Home',guarded:false}],presentations:{states:[],actions,views,viewStates:[]}};
   await store.save({run});
   const files=await readdir(join(path,id)),source=files.find(f=>f.startsWith('source-'))!;
   const before=(await stat(join(path,id,source))).mtimeMs;
@@ -129,6 +131,10 @@ test('the immutable catalog saves once, restores for inspection and stays out of
   assert.equal((await stat(join(path,id,source))).mtimeMs,before);
   const map=JSON.parse(await readFile(join(path,id,'map.json'),'utf8'));
   assert.equal(map.presentations.views,undefined);
+  assert.deepEqual(map.presentations.actions,actions,'Restart and AI replay must retain the saved recipes');
+  const progress=flowProgressRun(run);
+  assert.equal(progress.presentations,undefined);assert.equal(progress.links,undefined);
+  assert.equal(run.presentations.actions,actions,'A canvas read must never mutate the run catalog');
   assert.deepEqual((await store.load(id)).run.presentations?.views,views);
   assert.equal((await store.load(id,false)).run.presentations?.views,undefined);
   const other=new FlowStore(path);assert.deepEqual((await other.load(id)).run.presentations?.views,views);

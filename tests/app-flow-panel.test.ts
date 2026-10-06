@@ -7,6 +7,7 @@ function panel(t: test.TestContext, call: (args:any)=>Promise<any>) {
   const dom = new JSDOM('<html/>',{pretendToBeVisual:true,runScripts:'outside-only'});
   dom.window.eval(bundle.outputFiles[0].text + ';globalThis.Flow = Flow;');
   const api = new dom.window.Flow.AppFlowPanel({callServerTool:call}, {subscribe:()=>()=>{},getSnapshot:()=>({device:{udid:'device',name:'iPhone'},foregroundApp:{bundleId:'example.app'}})});
+  api.thumbnail=async(blob:string,width:number)=>({url:`data:image/png;base64,${blob}`,bytes:width*width*8,width});
   t.after(()=>{api.dispose();dom.window.close()}); return api;
 }
 const result = {projectRoot:'/project',metroUrl:'http://127.0.0.1:9191',targetId:'target',targets:[{id:'target'}],servers:[],message:''};
@@ -44,6 +45,7 @@ test('screenshots use host-compatible data URLs and publish one update per batch
   const api=panel(t,async()=>({structuredContent:{}}));
   api.state={...api.state,run:{id:'run',phase:'complete',revision:1,nodes:[{image:'mobile-flow://run/a'},{image:'mobile-flow://run/b'}]},images:{}};
   api.app.readServerResource=async()=>({contents:[{mimeType:'image/png',blob:'iVBORw0KGgo='}]});
+  api.visible(['mobile-flow://run/a','mobile-flow://run/b']);
   let updates=0;const stop=api.subscribe(()=>updates++);
   await api.loadImages();stop();
   assert.equal(updates,1);
@@ -109,6 +111,7 @@ test('reset keeps setup, ignores late responses, and starts a separate map', asy
   const settings = {...api.settings};
   api.state = {...api.state,open:true,run:{id:'old-run',phase:'complete',revision:1,nodes:[{image:uri}]},images:{old:'saved-image'},error:'Old error',message:'Old status'};
   api.app.readServerResource = () => new Promise(resolve => { finishImage = resolve; });
+  api.visibleImages.add(uri);
   const images = api.loadImages(), polling = api.poll();
   api.reset();
   finishImage({contents:[{mimeType:'image/png',blob:'iVBORw0KGgo='}]});
@@ -124,4 +127,43 @@ test('reset keeps setup, ignores late responses, and starts a separate map', asy
   assert.equal(calls.at(-1).arguments.action,'start');
   assert.equal(calls.at(-1).arguments.runId,undefined);
   assert.equal(api.getSnapshot().run.id,'fresh-run');
+});
+
+test('only visible screenshots load and scrolling releases their decoded memory',async t=>{
+  const api=panel(t,async()=>({structuredContent:{}})),requested:string[]=[];
+  const uris=Array.from({length:200},(_,i)=>`mobile-flow://run/${i}`);
+  api.state={...api.state,run:{id:'run',phase:'complete',nodes:uris.map(image=>({image}))},images:{}};
+  api.app.readServerResource=async({uri}:any)=>{requested.push(uri);return {contents:[{blob:'png'}]}};
+  for(let i=0;i<50;i++){
+    api.visible([uris[i]],384);await api.loadImages();
+    assert.deepEqual(Object.keys(api.state.images),[uris[i]]);
+    assert.ok(api.imageBytes<=384*384*8);
+  }
+  assert.equal(requested.length,50,'Offscreen screenshots must not download');
+  api.visible([]);assert.equal(api.imageBytes,0);assert.equal(Object.keys(api.state.images).length,0);
+});
+
+test('panning away during a screenshot read drops its result and zoom controls preview size',async t=>{
+  const api=panel(t,async()=>({structuredContent:{}})),uri='mobile-flow://run/a';let finish:any,decoded=0;
+  api.state={...api.state,run:{id:'run',phase:'complete',nodes:[{image:uri}]},images:{}};
+  api.thumbnail=async()=>{decoded++;return {url:'thumb',bytes:100,width:96}};
+  api.app.readServerResource=()=>new Promise(resolve=>{finish=resolve});
+  api.visible([uri],96);const pending=api.loadImages();api.visible([]);
+  finish({contents:[{blob:'png'}]});await pending;
+  assert.equal(decoded,0);assert.equal(api.imageBytes,0);
+  api.visible(Array.from({length:260},(_,i)=>String(i)),384);
+  assert.ok(api.thumbnailWidth<128,'A wide overview must fit the decoded-pixel budget');
+});
+
+test('overlapping viewport updates share two screenshot decode slots',async t=>{
+  const api=panel(t,async()=>({structuredContent:{}})),finish:Array<(value:any)=>void>=[];
+  const uris=Array.from({length:12},(_,i)=>`mobile-flow://run/${i}`);
+  api.state={...api.state,run:{id:'run',phase:'complete',nodes:uris.map(image=>({image}))}};
+  api.app.readServerResource=()=>new Promise(resolve=>finish.push(resolve));
+  api.visible(uris);
+  const batches=[api.loadImages(),api.loadImages(),api.loadImages()];
+  assert.equal(finish.length,2);
+  for(const resolve of finish)resolve({contents:[{blob:'png'}]});
+  await Promise.all(batches);
+  assert.equal(Object.keys(api.state.images).length,2);assert.equal(api.loading.size,0);
 });

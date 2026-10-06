@@ -46,7 +46,8 @@ export const AppFlowCanvas = memo(function AppFlowCanvas({ panel, run, graph, im
   // needs one key per rendered edge or it can leave old paths behind on update.
   const edges = useMemo(() => [...new Map(run?.edges.map(edge => [`${edge.from}:${edge.to}`, edge])).values()], [run?.edges]);
   const imageKey = nodes.flatMap(node => node.image ? [node.image] : []).join('|');
-  useEffect(() => { panel.visible(imageKey ? imageKey.split('|') : []); }, [panel, imageKey]);
+  useEffect(() => { panel.visible(imageKey ? imageKey.split('|') : [],FLOW_CARD_WIDTH*scale*(window.devicePixelRatio||1)); }, [panel, imageKey, scale]);
+  useEffect(() => () => panel.visible([]),[panel]);
   return <div ref={viewport} className="app-flow-viewport">
     {!run?.nodes.length ? <div className="app-flow-empty"><GitForkIcon size={36} /><h3>{run ? 'No screens in this view yet' : 'Your app, screen by screen'}</h3><p>{run?.recording ? 'Open the first screen in the app. It will appear here once it settles.' : run ? 'Choose another flow or map more screens.' : 'Map routes, local forms, and sheets in your running app.'}</p></div> : <div style={{ width: graph.width * scale, height: graph.height * scale }}><div className="app-flow-canvas" style={{ width: graph.width, height: graph.height, transform: `scale(${scale})`, '--flow-card-width': `${FLOW_CARD_WIDTH}px`, '--flow-card-height': `${FLOW_CARD_HEIGHT}px`, '--flow-preview-ratio': FLOW_PREVIEW_ASPECT_RATIO } as CSSProperties}>
       <svg width={bounds.width} height={bounds.height} style={{ left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height }} className="app-flow-edges" aria-hidden="true">

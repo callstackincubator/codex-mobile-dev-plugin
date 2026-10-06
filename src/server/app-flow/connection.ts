@@ -93,6 +93,7 @@ export class FlowConnection {
         let page = await this.invoke({ type: 'presentation-collect', ...(this.presentationCatalog===catalog?{}:{states:catalog.states,actions:catalog.actions,projectRoot:command.projectRoot}) }, 2500);
         const bindings = [];
         for (let i=0;i<30;i++) { bindings.push(...(page.bindings ?? [])); if (page.next === undefined) break; page = await this.invoke({type:'presentation-bindings',offset:page.next},1500); }
+        if(!bindings.length){this.presentationCatalog=catalog;break;}
         let matches;
         const sourceStarted=performance.now();
         try { matches = await bindPresentationSites(this.metroBase, command.projectRoot as string, bindings, catalog.states, catalog.actions); }

@@ -367,7 +367,7 @@ test('retry replays its saved route and full presentation chain, preserving comp
   const completed:any={id:'sibling',name:'Other',kind:'screen',path:[],required:[],status:'captured',image:'kept'};
   const run:FlowRun={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[node,completed],edges:[],presentations:{states:[],actions:[]}};
   let screen='Home';
-  const backend:any={screenshot:async()=>Buffer.from(screen),runtime:{async invoke(c:any){commands.push(c);if(c.type==='open'){screen='Home';return {ready:true}};if(c.type==='presentations')return [{id:'form'},{id:'options'}];if(c.type==='presentation-open')screen=c.id;if(c.type==='presentation-open'||c.type==='presentation-view')return {key:screen,ready:true,found:true,active:['Home'],signature:screen};return {};}}};
+  const backend:any={screenshot:async()=>Buffer.from(screen),runtime:{async invoke(c:any){commands.push(c);if(c.type==='open'){screen='Home';return {ready:true}};if(c.type==='presentations')return [{id:'canonical-form',aliases:['form']},{id:'options'}];if(c.type==='presentation-open')screen=c.id;if(c.type==='presentation-open'||c.type==='presentation-view')return {key:screen,ready:true,found:true,active:['Home'],signature:screen};return {};}}};
   const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
   await capture.retry(backend,node);assert.equal(node.status,'captured');assert.equal(completed.image,'kept');
   assert.deepEqual(commands.filter(c=>c.type==='presentation-open').map(c=>c.id),['form','options']);assert.deepEqual(commands.find(c=>c.type==='open').path,['Home']);
@@ -1927,3 +1927,41 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
   }finally{app.runtime.cleanup()}
  });
 }
+
+test('one live controller keeps its canonical destination across different entry sources',()=>{
+  const app=tree();
+  try{
+    assert.equal(app.runtime.list()[0].canonicalId,'open');
+    const alias={...app.action,id:'another-entry',line:2,views:['other-source']};
+    app.button.memoizedProps.disabled=true;
+    const second:any={type:app.button.type,_debugSource:{fileName:'App.tsx',lineNumber:2,columnNumber:1},memoizedProps:{onPress(){}},return:app.root};
+    app.sheet.sibling=second;
+    configureFixture(app.runtime,{states:[],actions:[app.action,alias]});
+    const [entry]=app.runtime.list();
+    assert.equal(entry.id,'another-entry');assert.equal(entry.canonicalId,'open');
+    app.button.memoizedProps.disabled=false;
+    const available=app.runtime.list();
+    assert.equal(available.length,1);assert.deepEqual(available[0].aliases,['open','another-entry']);
+    app.button.memoizedProps.disabled=true;
+    app.sheet.memoizedProps.control={open(){},close(){}};
+    assert.equal(app.runtime.list()[0].canonicalId,'another-entry','A distinct live dialog must remain separate');
+  }finally{app.runtime.cleanup()}
+});
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresentationRuntime)])test(`preview content keeps its measured native sheet coordinates (${install===installPresentationRuntime?'normal':'shared loops'})`,t=>{
+  const app=tree(install),previous=(globalThis as any).__r;
+  function View(){}function Modal(){}
+  const props={onStateChange(){},backgroundColor:'#fefefe'},canonical={currentProps:props};
+  const sheet:any={tag:5,type:'NativeSheet',memoizedProps:props,stateNode:{canonical}};
+  const original=React.createElement(app.root.type),container:any={type:View,memoizedProps:{children:original},return:sheet,child:app.root};sheet.child=container;app.root.return=container;
+  app.sheet.child={tag:5,type:'TextInput',memoizedProps:{},return:app.sheet,stateNode:{getBoundingClientRect:()=>({x:24,y:280,width:354,height:240})}};
+  let modal:any;
+  const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??sheet];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+  (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:{...React}}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}]])};
+  const runtime=install({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',overrideProps(_fiber:any,_path:any,next:any){modal=next.children.props.children.at(-1);assert.equal(next.children.props.children[0],original)}}]])},fibers,hidden:()=>false,later:setTimeout});
+  t.after(()=>{runtime.cleanup();app.runtime.cleanup();(globalThis as any).__r=previous});
+  runtime.captureNative(app.sheet);canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});
+  assert.equal(runtime.project(app.sheet,{views:['step']}).error,undefined);
+  assert.equal(modal.props.transparent,true);assert.equal(modal.props.presentationStyle,'overFullScreen');
+  assert.deepEqual(modal.props.children.props.children.props.style,{position:'absolute',left:24,top:280,width:354,minHeight:240,backgroundColor:'#fefefe'});
+});

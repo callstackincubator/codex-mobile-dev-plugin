@@ -1,7 +1,8 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { DeviceAppsStore } from "./device-apps.ts";
 import { flowRunning, type FlowRun } from "../shared/app-flow.ts";
-import { captureUiError, recordUiTiming, getUiTelemetryAttributes } from "./telemetry.ts";
+import { captureUiError, recordUiTiming, getUiTelemetryAttributes, setUiGauge } from "./telemetry.ts";
+import {flowThumbnail} from './app-flow-thumbnail.ts';
 
 type Target = { deviceId?: string; id: string; title: string; appId?: string; deviceName?: string; supportsMultipleDebuggers: boolean };
 export type AppFlowState = { open: boolean; busy: boolean; error: string; targets: Target[]; servers: { url: string; projectRoot?: string }[]; message: string; run?: FlowRun; images: Record<string, string>; resolving: boolean };
@@ -15,6 +16,9 @@ export class AppFlowPanel {
   private failedImages = new Set<string>();
   private controller = new AbortController();
   private imageBytes = 0;
+  private imageSizes = new Map<string,{bytes:number;width:number}>();
+  private thumbnailWidth = 192;
+  private thumbnail = flowThumbnail;
   private visibleImages = new Set<string>();
   private manualProject = false;
   private manualMetro = false;
@@ -105,7 +109,7 @@ export class AppFlowPanel {
     this.update({ busy: true, error: "", message: "" });
     try {
       const result = await this.call("mobile_app_flow", { action: "start", options: { projectRoot, metroUrl, targetId, useAi, deviceId: device.udid, platform: device.platform ?? "ios" } });
-      this.failedImages.clear(); this.visibleImages.clear(); this.imageBytes = 0;
+      this.failedImages.clear(); this.visibleImages.clear(); this.imageBytes = 0; this.imageSizes.clear();
       this.update({ run: result.run, images: {} });
       void this.poll();
     } catch (error) { this.failure(error); }
@@ -119,7 +123,7 @@ export class AppFlowPanel {
   reset() {
     if (this.state.busy || this.state.resolving || flowRunning(this.state.run)) return;
     clearTimeout(this.timer);
-    this.loading.clear(); this.failedImages.clear(); this.visibleImages.clear(); this.imageBytes = 0;
+    this.loading.clear(); this.failedImages.clear(); this.visibleImages.clear(); this.imageBytes = 0; this.imageSizes.clear();
     this.update({ run: undefined, images: {}, error: "", message: "" });
   }
   private runOptions() {
@@ -181,14 +185,15 @@ export class AppFlowPanel {
     } catch (error) { if (this.state.run?.id === runId) this.failure(error); }
     finally {
       this.polling = false;
-      const pendingImages = this.state.run?.nodes.some(node => node.image && !this.state.images[node.image] && !this.failedImages.has(node.image));
+      const pendingImages = [...this.visibleImages].some(uri => !this.state.images[uri] && !this.failedImages.has(uri));
       if (!this.disposed && this.state.run && this.state.open && document.visibilityState !== "hidden") this.timer = setTimeout(() => { void this.poll(); }, flowRunning(this.state.run) || pendingImages ? 500 : 2000);
     }
   }
   private async loadImages() {
     const runId = this.state.run?.id;
     const available = new Set(this.state.run?.nodes.flatMap(node => node.image ? [node.image] : []));
-    const uris = [...new Set([...this.visibleImages, ...available])].filter(uri => available.has(uri) && !this.state.images[uri] && !this.loading.has(uri) && !this.failedImages.has(uri)).slice(0, 4);
+    const width=this.thumbnailWidth;
+    const uris = [...this.visibleImages].filter(uri => available.has(uri) && (!this.state.images[uri] || (this.imageSizes.get(uri)?.width??0)<width) && !this.loading.has(uri) && !this.failedImages.has(uri)).slice(0, Math.max(0,2-this.loading.size));
     const images: Record<string, string> = {};
     await Promise.allSettled([...new Set(uris)].map(async uri => {
       this.loading.add(uri);
@@ -196,19 +201,38 @@ export class AppFlowPanel {
         const result = await this.app.readServerResource({ uri }, { signal: this.controller.signal, timeout: 5000 });
         const content = result.contents.find(item => "blob" in item);
         if (!content || !("blob" in content) || typeof content.blob !== "string") throw new Error("Missing screenshot.");
-        if (this.state.run?.id !== runId || this.disposed) return;
-        // MCP app frames permit data images. Blob URLs belong to a different origin
-        // in some hosts; using the resource's base64 also avoids a main-thread copy.
-        const bytes = Math.ceil(content.blob.length * 3 / 4);
-        if (this.imageBytes + bytes > 128 * 1024 * 1024) { this.failedImages.add(uri); return; }
-        this.imageBytes += bytes;
-        images[uri] = `data:image/png;base64,${content.blob}`;
+        if (this.state.run?.id !== runId || this.disposed || !this.visibleImages.has(uri)) return;
+        // Keep only a canvas-sized copy. The original remains in the saved map.
+        const preview=await this.thumbnail(content.blob,width);
+        if (this.state.run?.id !== runId || this.disposed || !this.visibleImages.has(uri)) return;
+        const bytes=this.imageBytes-(this.imageSizes.get(uri)?.bytes??0)+preview.bytes;
+        if (bytes > 64 * 1024 * 1024) return;
+        this.imageBytes=bytes;this.imageSizes.set(uri,{bytes:preview.bytes,width});
+        images[uri] = preview.url;
       } catch { if (this.state.run?.id === runId && !this.disposed) this.failedImages.add(uri); }
       finally { this.loading.delete(uri); }
     }));
-    if (Object.keys(images).length && this.state.run?.id === runId) this.update({ images: { ...this.state.images, ...images } });
+    if (Object.keys(images).length && this.state.run?.id === runId) {
+      const current=Object.fromEntries(Object.entries(images).filter(([uri])=>this.visibleImages.has(uri)));
+      this.update({ images: { ...this.state.images, ...current } });
+      this.measureImages();
+      if(this.state.open&&!this.disposed&&document.visibilityState!=="hidden")void this.loadImages();
+    }
   }
-  visible(uris: string[]) { this.visibleImages = new Set(uris); }
+  visible(uris: string[], width=192) {
+    this.visibleImages = new Set(uris);
+    // At overview zoom many cards fit on screen, but each needs fewer pixels.
+    this.thumbnailWidth=Math.max(48,Math.min(384,Math.ceil(width),Math.floor(Math.sqrt(12_000_000/Math.max(1,uris.length)/3))));
+    const images={...this.state.images};let changed=false;
+    for(const uri of new Set([...Object.keys(images),...this.imageSizes.keys()]))if(!this.visibleImages.has(uri)||(this.imageSizes.get(uri)?.width??0)>this.thumbnailWidth*2){
+      delete images[uri];this.imageBytes-=this.imageSizes.get(uri)?.bytes??0;this.imageSizes.delete(uri);changed=true;
+    }
+    if(changed){this.update({images});this.measureImages();}
+    if(this.state.open&&!this.disposed)void this.loadImages();
+  }
+  private measureImages() {
+    if(this.state.open&&!this.disposed&&document.visibilityState!=="hidden"&&getUiTelemetryAttributes().surface==='app-flow')setUiGauge('ui.app_flow.image_cache_bytes',this.imageBytes);
+  }
   private failure(error: unknown) { if (this.disposed) return; this.update({ error: error instanceof Error ? error.message : "App Flow failed." }); captureUiError(new Error("App Flow UI operation failed."), "app_flow.ui"); }
   dispose() {
     this.cancelSetup(); this.unsubscribeDevice(); this.disposed = true; this.controller.abort(); clearTimeout(this.timer); document.removeEventListener("visibilitychange", this.visibility);

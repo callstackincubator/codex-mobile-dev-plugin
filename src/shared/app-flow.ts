@@ -89,6 +89,11 @@ export type FlowRun = FlowGraph & {
 export function publicFlowRun(run: FlowRun): FlowRun {
   return {...run,presentations:run.presentations?{states:run.presentations.states,actions:run.presentations.actions,previews:run.presentations.previews,previewStates:run.presentations.previewStates}:undefined};
 }
+/** Polling renders a graph, not its source analysis or executable recipes. */
+export function flowProgressRun(run: FlowRun): FlowRun {
+  const {presentations,links,...progress}=run;
+  return progress;
+}
 export type FlowResolution = { nodeId: string; params: FlowParams };
 export const flowRunning = (run?: FlowRun) => !!run && ["scanning", "connecting", "reconnecting", "capturing", "recording", "finishing"].includes(run.phase);
 export function flowProgress(run: FlowRun) {

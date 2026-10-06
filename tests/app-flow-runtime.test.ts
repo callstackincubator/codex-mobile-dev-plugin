@@ -418,7 +418,7 @@ test('presentation setup stops on a failed collection and names rejected or malf
       if(message.method==='Runtime.addBinding')binding=message.params.name;
       if(message.id>0){socket.send(JSON.stringify({id:message.id,result:{}}));return;}
       vm.runInNewContext(message.params.expression,{
-        [message.params.objectGroup]:{invoke(command:any,reply:any){commands.push(command.type);reply(command.type===failing?{error:'private app exception'}:command.type==='presentation-collect'?{bindings:[]}:{})}},
+        [message.params.objectGroup]:{invoke(command:any,reply:any){commands.push(command.type);reply(command.type===failing?{error:'private app exception'}:command.type==='presentation-collect'?{bindings:failing==='presentation-configure'?[{id:'entry',kind:'entry',owner:'Sheet',source:{file:'/app/App.tsx',line:1,column:0}}]:[]}:{})}},
         [binding]:(payload:string)=>socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload}})),
       });
     });
@@ -431,6 +431,9 @@ test('presentation setup stops on a failed collection and names rejected or malf
   failing='presentation-configure';
   await assert.rejects(connection.invoke(setup),error=>error instanceof FlowRuntimeFailure&&error.operation==='presentation-configure');
   failing='none';
+  commands.length=0;
+  await connection.invoke(setup);
+  assert.deepEqual(commands,['presentation-collect'],'Already bound source must not trigger another symbolication or configuration');
   await assert.rejects(connection.invoke({type:'presentations'}),error=>error instanceof FlowRuntimeFailure&&error.operation==='presentations'&&/invalid response/.test(error.message));
 });
 
@@ -1032,4 +1035,33 @@ test('failed capture cleanup preserves parent navigation and reports stop errors
   assert.deepEqual(Array.from(app.context.order),['close','close']);
   app.context.closed=true;await app.invoke({type:'restore'});
   assert.deepEqual(Array.from(app.context.order),['close','close','close','cleanup','navigation']);
+});
+
+test('one presentation wait keeps readiness and paint checks inside the app',async t=>{
+  const app=runtime(t,false,{setTimeout,clearTimeout},true);
+  const started=Date.now();
+  const result=await app.invoke({type:'presentation-view',waitMs:1000});
+  assert.equal(result.ready,true);assert.ok(Date.now()-started>=160);
+  assert.equal((await app.invoke({type:'diagnostics'})).waitTimers,0);
+});
+
+test('stopping releases a local presentation wait without accepting its unfinished frame',async t=>{
+  const app=runtime(t,false,{setTimeout,clearTimeout},true);
+  app.native.memoizedProps.children='';
+  const waiting=app.invoke({type:'presentation-view',waitMs:1000});
+  await app.invoke({type:'restore'});
+  assert.match((await waiting).error,/cancelled/);
+});
+
+test('a provider-owned dialog settles without measuring the animated feed beneath it',async t=>{
+  const app=runtime(t);await app.invoke({type:'restore'});
+  const dialog:any={type:function LocalDialog(){},memoizedProps:{},return:app.fiber};
+  dialog.child={tag:5,type:'View',memoizedProps:{children:'Dialog content'},return:dialog,stateNode:{getBoundingClientRect:()=>({x:0,y:80,width:100,height:160})}};
+  app.native.sibling=dialog;let backgroundReads=0;
+  app.native.stateNode.getBoundingClientRect=()=>{backgroundReads++;return {x:0,y:backgroundReads,width:100,height:200}};
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,(options)=>{const p=(${installPresentationRuntime.toString()})(options);return {...p,open:()=>({focus:providerFocus,expected:'LocalDialog'})}})`,Object.assign(app.context,{providerFocus:app.fiber}));
+  await app.invoke({type:'inspect'});await app.invoke({type:'presentation-open',id:'dialog'});
+  const view=await app.invoke({type:'presentation-view',waitMs:1000});
+  assert.equal(view.ready,true);assert.ok(view.signature.includes('Dialog content'));
+  assert.equal(backgroundReads,0,'Unrelated native geometry cannot reset the dialog readiness');
 });

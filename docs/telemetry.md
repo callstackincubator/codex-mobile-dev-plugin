@@ -646,3 +646,15 @@ scan request, including file validation and cloning a cached result.
 `app_flow.source_catalog` is zero on reuse because that request builds no catalog.
 The cache holds at most 24 MB of serialized source facts, never live app state,
 and sends no paths, hashes or source text to telemetry.
+
+The default discovery capture path also waits for presentation readiness inside
+the app. `app_flow.runtime` samples for `presentation-view` now include that wait
+when requested, instead of measuring each probe as a separate debugger round
+trip. Presentation and capture timings still include the full wait. Native
+lifecycle, loading, motion and paint checks remain active.
+
+`ui.app_flow.image_cache_bytes` estimates retained canvas image memory: thumbnail
+pixels at four bytes per pixel plus data URL strings at two bytes per character.
+It excludes temporary decode buffers, the browser's other memory, and the mobile
+app. The cache has a 64 MiB ceiling and only keeps images near the viewport. This
+gauge uses the active `app-flow` surface, never screenshot identifiers or content.

@@ -627,7 +627,20 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           if(!result||result.error){reply(result??{error:'Temporary UI effects are unavailable.'});return;}
           presentationObservation=undefined;later(()=>{try{reply({...presentationView(),...result,portalBindings:presentations?.portalBindings(presentationFocus),effectBindings:presentations?.uiEffectBindings?.(presentationFocus)});}catch{reply({error:'Presentation inspection is unavailable.'});}},80);return;
         }
-        if (command.type === 'presentation-view') { reply({...presentationView(),portalBindings:presentations?.portalBindings?.(presentationFocus),effectBindings:presentations?.uiEffectBindings?.(presentationFocus)}); return; }
+        if (command.type === 'presentation-view') {
+          const deadline=Date.now()+Math.min(20000,Math.max(0,command.waitMs||0)),ticket=generation;
+          const check=()=>{
+            if(stopped||ticket!==generation){reply({error:'Presentation wait was cancelled.'});return;}
+            try{
+              const view={...presentationView(),portalBindings:presentations?.portalBindings?.(presentationFocus),effectBindings:presentations?.uiEffectBindings?.(presentationFocus)};
+              // Source approvals still happen on the server. Loading, native
+              // motion and paint settle here without a CDP request per sample.
+              if(view.ready||view.error||view.portalBindings?.length||view.effectBindings?.length||Date.now()>=deadline){reply(view);return;}
+              later(check,view.loading?100:40,()=>reply({error:'Presentation wait was cancelled.'}));
+            }catch(error){reply({error:'Presentation inspection is unavailable.',detail:String(error?.message??error).slice(0,1000)});}
+          };
+          check();return;
+        }
         if (command.type === 'presentation-checkpoint') { reply({level:presentations?.checkpoint()??0}); return; }
         if (command.type === 'presentation-rollback') { const level=command.level??0; void (presentations?.rollback(level) ?? Promise.resolve()).then(() => {while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined;reply({});}, error => reply({error:'Presentation restoration failed.',detail:String(error?.message??error).slice(0,1000)})); return; }
         if (command.type === 'presentation-project') {

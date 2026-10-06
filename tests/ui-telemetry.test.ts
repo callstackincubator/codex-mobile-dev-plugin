@@ -68,7 +68,7 @@ test("browser errors use the served environment regardless of live-reload marker
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts"; export { LogList } from "./src/ui/log-list.ts"; export { LogsPanel } from "./src/ui/logs-panel.ts"; export { DeviceAppsStore } from "./src/ui/device-apps.ts";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts"; export { LogList } from "./src/ui/log-list.ts"; export { LogsPanel } from "./src/ui/logs-panel.ts"; export { DeviceAppsStore } from "./src/ui/device-apps.ts"; export { AppFlowPanel } from "./src/ui/app-flow-panel.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -252,6 +252,17 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   api.recordUiTiming("ui.app_flow.layout", 4);
   api.recordUiTiming("ui.app_flow.zoom", 16);
   api.recordUiTiming("ui.app_flow.update", 8);
+  const flow = new api.AppFlowPanel({readServerResource:async()=>({contents:[{blob:'PRIVATE_SCREENSHOT'}]})}, {subscribe:()=>()=>{}});
+  flow.state={...flow.state,open:true,run:{id:'PRIVATE_FLOW',phase:'complete',nodes:[{image:'PRIVATE_IMAGE_URI'}]}};
+  flow.thumbnail=async()=>({url:'thumbnail',bytes:1024,width:192});
+  flow.visibleImages.add('PRIVATE_IMAGE_URI');
+  await flow.loadImages();
+  api.flushUiMeasurements();
+  api.setUiSurface('logs');
+  flow.visible([]);
+  flow.dispose();
+  api.flushUiMeasurements();
+  api.setUiSurface('app-flow');
   Object.defineProperty(window.document, "visibilityState", { configurable: true, value: "hidden" });
   const visibilityChange = new window.Event("visibilitychange");
   window.document.dispatchEvent(visibilityChange);
@@ -298,6 +309,10 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, "ui.app_flow.layout.mean");
   contains(encoded, "ui.app_flow.zoom.mean");
   contains(encoded, "ui.app_flow.update.mean");
+  const imageMetrics=encoded.split('\n').filter(line=>line.includes('"items"')).flatMap(line=>JSON.parse(line).items??[]).filter(metric=>metric.name==='ui.app_flow.image_cache_bytes');
+  assert.ok(imageMetrics.length>0);
+  assert.ok(imageMetrics.every(metric=>metric.value===1024&&metric.attributes.surface.value==='app-flow'),'Image memory must not be attributed to another surface');
+  contains(encoded,'PRIVATE_IMAGE_URI',false);contains(encoded,'PRIVATE_FLOW',false);contains(encoded,'PRIVATE_SCREENSHOT',false);
   contains(encoded, '"surface":{"value":"app-flow"');
   contains(encoded, "ui.performance.batch.mean");
   contains(encoded, "ui.recording.process.mean");

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import * as Sentry from "@sentry/node";
-import { flowRunning, missingFlowParams, publicFlowRun, type FlowParams, type FlowResolution, type FlowRun } from "../../shared/app-flow.ts";
+import { flowRunning, missingFlowParams, publicFlowRun, flowProgressRun, type FlowParams, type FlowResolution, type FlowRun } from "../../shared/app-flow.ts";
 import { blankFlowFrame } from "./frame.ts";
 import { FlowReachability, type FlowEvidence } from "./reachability.ts";
 import type { scanAppFlow } from "./scan.ts";
@@ -73,7 +73,7 @@ export class AppFlowRuns {
     const active=this.get(id),run=active.run;
     // The immutable source catalog belongs to inspection. Canvas polling only
     // needs live capture data and must not clone or transfer the catalog.
-    return structuredClone({...publicFlowRun(run),...(active.runtimeMetrics?{runtimeTimings:active.runtimeMetrics.snapshot()}:{})});
+    return structuredClone({...flowProgressRun(run),...(active.runtimeMetrics?{runtimeTimings:active.runtimeMetrics.snapshot()}:{})});
   }
   async record(input: FlowStart, name: string, id?: string): Promise<FlowRun> {
     this.makeRoom(id);
@@ -139,7 +139,7 @@ export class AppFlowRuns {
     this.sessions.set(id, active); this.launch(active, true);
     return structuredClone(active.run);
   }
-  readUpdate(id: string, revision?: number) { const run = this.get(id).run; return run.revision === revision ? undefined : structuredClone(run); }
+  readUpdate(id: string, revision?: number) { const run = this.get(id).run; return run.revision === revision ? undefined : this.read(id); }
   private get(id: string) { const session = this.sessions.get(id); if (!session) throw new Error("This App Flow run is no longer in memory. Start a new map."); return session; }
   private launch(active: Active, resume = false) {
     active.done = this.execute(active, resume).finally(async () => {
@@ -163,12 +163,12 @@ export class AppFlowRuns {
   }
   private async saved(id: string, includeCatalog = true): Promise<SavedFlow> {
     const active = this.sessions.get(id);
-    if (active && !active.settled) {const run=this.read(id);if(includeCatalog)run.presentations=active.run.presentations;return {run,input:active.input,info:active.info,target:active.target};}
+    if (active && !active.settled) {const run=this.read(id);if(includeCatalog){run.presentations=active.run.presentations;run.links=active.run.links;}return {run,input:active.input,info:active.info,target:active.target};}
     return this.store.load(id,includeCatalog);
   }
   async readShared(id: string, revision?: number) {
     const { run } = await this.saved(id,false);
-    return run.revision === revision ? undefined : publicFlowRun(run);
+    return run.revision === revision ? undefined : flowProgressRun(run);
   }
   private async refreshContext(active?: Active) {
     if (!active?.runtime || !active.info || active.settled || active.abort.signal.aborted) return;

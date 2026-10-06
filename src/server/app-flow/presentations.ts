@@ -10,7 +10,7 @@ import { captureServerError } from '../telemetry.ts';
 import { FlowRuntimeFailure } from './runtime-metrics.ts';
 
 type View = { key: string; ready: boolean; found: boolean; signature: string; motion?: string; title?: string; active: string[]; loading?: boolean; transitioning?: boolean; reason?: string; error?: string };
-type Action = { id: string; name: string; file: string; line: number };
+type Action = { id: string; canonicalId?: string; aliases?:string[]; views?:string[]; name: string; file: string; line: number };
 type RetainedBranch = { backend: FlowBackend; base: string; actions: string[]; projections: string[]; frames: {level:number;view:View}[]; baseView?:View };
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24);
 
@@ -91,7 +91,10 @@ export class FlowPresentationCapture {
     let view: View;
     do {
       this.signal.throwIfAborted();
-      view = await backend.runtime.invoke({type: 'presentation-view'}, 2000);
+      // Yield at least once a second so Stop stays responsive during a slow
+      // screen. Each window samples in the app, not through debugger polling.
+      const waitMs=Math.min(1000,Math.max(0,timeout-(performance.now()-started)));
+      view = await backend.runtime.invoke({type: 'presentation-view',waitMs}, waitMs+1500);
       if (view.error) {
         if(view.error==='The temporary presentation preview failed.'){
           captureServerError(new Error('App Flow temporary preview could not render.'),'app_flow.presentation');
@@ -168,8 +171,9 @@ export class FlowPresentationCapture {
       for (const action of available) {
         const source = this.catalog.actions.find(item => item.id === action.id);
         if (!source) continue;
-        const effect = source.effect;
-        const destination = effect.kind === 'state' ? [effect.site, effect.path, effect.value] : [source.file, source.owner, effect];
+        const canonical=this.catalog.actions.find(item=>item.id===action.canonicalId)??source;
+        const effect = canonical.effect;
+        const destination = effect.kind === 'state' ? [effect.site, effect.path, effect.value] : [canonical.file, canonical.owner, effect];
         const id = `presentation-${hash(destination)}`;
         // Controller-only entries can remain available while already open.
         // Discover their children without putting this captured parent back
@@ -178,12 +182,13 @@ export class FlowPresentationCapture {
         let node = this.run.nodes.find(item => item.id === id);
         if (!node) {
           node = {id, name: source.name, kind: 'screen', path: [], required: [], status: 'pending', file: source.file, line: source.line,
-            sourceViews:source.views?.slice(),presentation: {actions: [...(base.presentation?.actions ?? []), action.id], preview:source.preview||base.presentation?.preview, projections: base.presentation?.projections?.slice(), basePath: base.presentation?.basePath ?? base.path, baseParams: base.presentation?.baseParams ?? base.params, expo: base.presentation?.expo ?? base.component === 'expo-router'}};
+            sourceViews:[...new Set([...(source.views??[]),...(action.views??[])])],presentation: {actions: [...(base.presentation?.actions ?? []), action.id], preview:source.preview||base.presentation?.preview, projections: base.presentation?.projections?.slice(), basePath: base.presentation?.basePath ?? base.path, baseParams: base.presentation?.baseParams ?? base.params, expo: base.presentation?.expo ?? base.component === 'expo-router'}};
           this.run.nodes.push(node); this.run.revision++;
         } else if (node.status === 'captured' && !this.visited.has(id)) {
           // Reopen kept previews once to discover children after a reconnect.
           node.status = 'pending'; node.captureAttempts = 0; this.run.revision++;
         }
+        node.sourceViews=[...new Set([...(node.sourceViews??[]),...(source.views??[]),...(action.views??[])])];
         this.edge(base, node);
       }
       this.visited.add(base.id);
@@ -222,7 +227,7 @@ export class FlowPresentationCapture {
       for (const id of plan.actions.slice(actions.length)) {
         await this.setup(backend);
         const available: Action[] = await backend.runtime.invoke({type: 'presentations'}, 2000);
-        if (!available.some(action => action.id === id)) { node.status = 'blocked'; node.reason = 'The presentation entry is no longer available in this app state.'; return; }
+        if (!available.some(action => action.id === id||action.aliases?.includes(id))) { node.status = 'blocked'; node.reason = 'The presentation entry is no longer available in this app state.'; return; }
         const before: View = await backend.runtime.invoke({type: 'presentation-view'}, 2000);
         if(!actions.length&&before.ready&&before.found&&!before.loading&&!before.transitioning)baseView=before;
         const opened = await backend.runtime.invoke({type: 'presentation-open', id}, 2000);

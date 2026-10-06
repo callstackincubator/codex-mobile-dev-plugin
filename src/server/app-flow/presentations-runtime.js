@@ -500,6 +500,24 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     let root;if(ancestor)fibers(fiber=>{if(fiber===ancestor||fiber===ancestor.alternate)root=fiber;});
     for(const renderer of hook.renderers.values())if(root&&renderer.rendererPackageName==='react-native-renderer'&&typeof renderer.overrideProps==='function')return {root,renderer,react,native};
   }
+  function presentationFrame(focus,native) {
+    const boundaries=nativeTargets(focus,true).filter(record=>record.status.opened&&!record.status.closed);
+    if(!boundaries.length)return;
+    let box,backgroundColor;
+    descendants(focus,fiber=>{
+      if(fiber.tag!==5)return;
+      const instance=fiber.stateNode?.canonical?.publicInstance??fiber.stateNode;
+      let rect;try{rect=instance?.getBoundingClientRect?.();}catch{}
+      if(!rect||![rect.x,rect.y,rect.width,rect.height].every(Number.isFinite)||rect.width<=0||rect.height<=0)return;
+      const next={x:rect.x,y:rect.y,right:rect.x+rect.width,bottom:rect.y+rect.height};
+      box=box?{x:Math.min(box.x,next.x),y:Math.min(box.y,next.y),right:Math.max(box.right,next.right),bottom:Math.max(box.bottom,next.bottom)}:next;
+    });
+    for(let parent=focus;parent&&!backgroundColor;parent=parent.return){
+      const props=parent.memoizedProps;try{backgroundColor=props?.backgroundColor??native.StyleSheet.flatten?.(props?.style)?.backgroundColor;}catch{}
+    }
+    if(!box||backgroundColor==null)return {unavailable:true};
+    return {left:box.x,top:box.y,width:box.right-box.x,minHeight:box.bottom-box.y,backgroundColor};
+  }
   function project(focus, preview, mountedContext) {
     if(!focus||!preview&&(!undo.length||projected.some(p=>p.focus===focus||p.focus===focus.alternate)))return {error:'This view cannot be projected.'};
     const owner=previewOwner(focus);
@@ -509,6 +527,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const type=focus.elementType??focus.type;
     if(!type||typeof type==='string')return {error:'No component view to project.'};
     const {root,renderer,react,native}=context,props=root.memoizedProps;
+    const placement=owner?.placement??presentationFrame(focus,native);
+    if(placement?.unavailable)return {error:'The native presentation body has no measurable preview frame.'};
     const child=react.createElement(type,preview?.props??focus.memoizedProps);
     let content=child;
     // Keep live provider values. Never fabricate auth or query data for the
@@ -524,7 +544,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // after React removes its tree. Retain each body's own undo checkpoint.
     const children=props.children?.props?.children;
     const previousPreview=owner?.shown&&projectionAttached(owner)&&Array.isArray(children)&&children.includes(owner.element)?owner:undefined;
-    const record={root,renderer,react,props,focus,child,content,parent:previousPreview,portals:[],seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:!!previousPreview,dismissed:false,failed:false};
+    const record={root,renderer,react,props,focus,child,content,placement,parent:previousPreview,portals:[],seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:!!previousPreview,dismissed:false,failed:false};
     class PreviewBoundary extends react.Component {
       constructor(props){super(props);this.state={failed:false};}
       static getDerivedStateFromError(){return {failed:true};}
@@ -536,6 +556,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       for(const key of ['presentationStyle','transparent','statusBarTranslucent','navigationBarTranslucent','hardwareAccelerated','supportedOrientations'])if(key in parent.memoizedProps)modalProps[key]=parent.memoizedProps[key];
       break;
     }
+    // A state-only preview belongs in the existing sheet's content rectangle.
+    // Preserve the actual sheet below a transparent window, including its
+    // safe area, detent, corners and backdrop. No guessed phone inset or mode.
+    if(placement){content=react.createElement(native.View,{style:{position:'absolute',...placement}},content);modalProps={...modalProps,transparent:true,presentationStyle:'overFullScreen'};}
     const body=react.createElement(PreviewBoundary,null,content);
     const modal=previousPreview?react.cloneElement(previousPreview.element,{},body):react.createElement(native.Modal,{key:`mobile-flow-preview-${++sequence}`,transparent:false,...modalProps,visible:true,animationType:'none',onShow:()=>{record.shown=true;},onDismiss:()=>{record.dismissed=true;}},body);
     // React unwraps one unkeyed root Fragment before reconciling children.
@@ -823,11 +847,11 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(unique.length===1)return {owner,target:unique[0]};
     }
   };
-  let lastAvailable=0;
+  let lastAvailable=0,canonicalControls=new WeakMap();
   const list = focus => {
     mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};
-    const tree=index(true),scope=bodyRoots(focus,tree),seen=new Set();
-    const result=catalog.actions.filter(action=>{
+    const tree=index(true),scope=bodyRoots(focus,tree),seen=new Map();
+    catalog.actions.forEach(action=>{
       const found=find(action,tree,focus,scope);if(!found)return false;
       const key=found.target?.value??JSON.stringify(action.effect.kind==='mount'?['mount',action.effect.file,action.effect.export]:[action.effect.site,action.effect.path,action.effect.value]);
       const opened=found.target&&undo.find(entry=>entry.control===key);
@@ -835,9 +859,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         if(opened===undo[undo.length-1])opened.views=[...new Set([...(opened.views??[]),...(action.views??[])])];
         return false;
       }
-      if(seen.has(key))return false;seen.add(key);return true;
-    }).map(action=>({id:action.id,name:action.name,file:action.file,line:action.line}));
-    lastAvailable=result.length;return result;
+      if(seen.has(key)){seen.get(key).views.push(...(action.views??[]));seen.get(key).aliases.push(action.id);return false;}
+      if(found.target&&!canonicalControls.has(key))canonicalControls.set(key,action.id);
+      seen.set(key,{id:action.id,canonicalId:found.target?canonicalControls.get(key):action.id,aliases:[action.id],name:action.name,file:action.file,line:action.line,views:[...(action.views??[])]});return true;
+    });
+    const items=[...seen.values()].map(item=>({...item,views:[...new Set(item.views)]}));
+    lastAvailable=items.length;return items;
   };
   function activeViews(focus) {
     const tree=index(),visual=visualFocus(focus,tree),ids=new Set();
@@ -1227,7 +1254,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80,resolve));
   }
-  function cleanup(){captureRoots.clear();releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=undefined;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){canonicalControls=new WeakMap();captureRoots.clear();releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=undefined;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[],entryId) {
     connected=bodyRoots(scope,tree,connected);
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&(!entryId||entry(fiber,false)?.actions.has(entryId))&&tree.isVisible(fiber));
@@ -1242,7 +1269,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(bodies.length===1)currentFocus=bodies[0];
     }
     const connected=roots(currentFocus,tree);
-    return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(typeof expected==='object'?expected.component:expected,currentFocus,tree,connected,typeof expected==='object'?expected.entry:undefined)),motion:(viewport,geometry)=>motion(currentFocus,viewport,tree,connected,geometry)};
+    const expectedFocus=expected&&focusedComponent(typeof expected==='object'?expected.component:expected,currentFocus,tree,connected,typeof expected==='object'?expected.entry:undefined);
+    // A local UI state can belong to a provider above the entire application.
+    // Read the proven destination body and its native ancestors, so background
+    // feeds and unrelated animations neither delay nor impersonate this view.
+    const body=expectedFocus||currentFocus,visualScope=expectedFocus?roots(expectedFocus,tree):connected;
+    return {focus:currentFocus,visualFocus:visualScope.at(-1)??body,expectedReady:(!focus||!!currentFocus)&&(!expected||!!expectedFocus),motion:(viewport,geometry)=>motion(body,viewport,tree,visualScope,geometry)};
   }
   function nativeWaiters() {
     const result=[];
