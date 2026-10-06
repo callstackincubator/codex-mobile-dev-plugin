@@ -13,6 +13,7 @@ const operations:Record<string,string>={
   'presentation-collect':'collecting presentation bindings', 'presentation-bindings':'reading presentation bindings',
   'presentation-configure':'binding presentation source', 'presentation-active':'reading presentation state',
   'presentation-symbolicate':'resolving presentation source',
+  'presentation-prepare':'preparing a source view',
   presentations:'finding presentation entries', 'presentation-view':'checking presentation readiness',
   'presentation-portals':'rendering a temporary portal',
   'presentation-effects':'opening a temporary UI control',

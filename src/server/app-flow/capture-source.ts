@@ -24,10 +24,8 @@ export async function captureSource(options: {
     return invoke({type:'presentation-project'}, 2000);
   }
   await invoke({type:'presentation-setup', catalog, projectRoot, sourceHash}, 5000);
-  const available = await invoke({type:'presentations'}, 2000);
-  if (!Array.isArray(available) || !available.some(value => value.id === action.id || value.aliases?.includes(action.id))) {
-    return {error:'The source-proven entry has no live owner, control, or real context in this app state.', status:'needs-data'};
-  }
+  const prepared = await invoke({type:'presentation-prepare', id:action.id}, 2000);
+  if (!prepared?.available) return {error:prepared?.error || 'The source-proven entry has no live owner, control, or real context in this app state.', status:'needs-data'};
   let closed = false;
   if (action.handoffs?.length) {
     const result = await invoke({type:'presentation-handoff', id:action.id}, 5000);

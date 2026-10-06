@@ -70,14 +70,14 @@ test('source requests use only the server recipe and wait for native handoff',as
   const signal=new AbortController().signal;
   const backend:any={runtime:{async invoke(command:any){
     events.push(command.type);
-    if(command.type==='presentations')return [{id:'child'}];
+    if(command.type==='presentation-prepare')return {available:true};
     if(command.type==='presentation-handoff'){await closed;return {closed:true};}
     if(command.type==='presentation-open')return {ready:true,key:'child'};
     return {};
   }}};
   const options:any={backend,job:{id:'child',path:['Home'],actions:[action]},catalog:{states:[],actions:[action]},projectRoot:'/fixture',sourceHash:'hash',signal};
   const opening=captureSource({...options,operation:'open',actionId:'child'});
-  await delay(0);assert.deepEqual(events,['presentation-setup','presentations','presentation-handoff']);
+  await delay(0);assert.deepEqual(events,['presentation-setup','presentation-prepare','presentation-handoff']);
   close!();assert.equal((await opening).closed,true);assert.equal(events.at(-1),'presentation-open');
   events.length=0;
   await assert.rejects(captureSource({...options,operation:'open',actionId:'not-in-recipe'}),/outside/);
@@ -89,7 +89,7 @@ test('source requests use only the server recipe and wait for native handoff',as
 test('stopping during handoff cannot open the child after a late callback',async()=>{
   const controller=new AbortController(),events:string[]=[];let close:()=>void;
   const closed=new Promise(resolve=>{close=()=>resolve(undefined)});
-  const backend:any={runtime:{async invoke(command:any){events.push(command.type);if(command.type==='presentations')return [{id:'child'}];if(command.type==='presentation-handoff')await closed;return {};}}};
+  const backend:any={runtime:{async invoke(command:any){events.push(command.type);if(command.type==='presentation-prepare')return {available:true};if(command.type==='presentation-handoff')await closed;return {};}}};
   const opening=captureSource({backend,job:{id:'child',path:[],sourceViews:[],actions:[{id:'child',handoffs:[{}]} as any]},operation:'open',actionId:'child',catalog:{states:[],actions:[]},projectRoot:'/fixture',signal:controller.signal});
   await delay(0);controller.abort();close!();await assert.rejects(opening);
   assert.equal(events.includes('presentation-open'),false);
@@ -117,4 +117,14 @@ test('native motion and a missing body cannot pass verification',async()=>{
   app.motion('fading');assert.equal(app.driver.same(before,await app.driver.verify(job)),false);
   app.loading(true);assert.equal((await app.driver.verify(job)).ready,false);
   await app.driver.restore();
+});
+
+
+test('source preparation checks just the requested entry and keeps its failure reason',async()=>{
+  const events:any[]=[],action:any={id:'form',effect:{kind:'mount',file:'Form.tsx',export:'Form'}};
+  const backend:any={runtime:{async invoke(command:any){events.push(command);if(command.type==='presentation-prepare')return {available:false,error:'The opening state could not be bound to its source.'};return {};}}};
+  const result=await captureSource({backend,job:{id:'form',path:[],actions:[action],sourceViews:[]},catalog:{states:[],actions:[action]},projectRoot:'/fixture',signal:new AbortController().signal,operation:'open',actionId:'form'});
+  assert.equal(result.status,'needs-data');assert.match(result.error,/opening state/);
+  assert.deepEqual(events.map(event=>event.type),['presentation-setup','presentation-prepare']);
+  assert.equal(events[1].id,'form');
 });

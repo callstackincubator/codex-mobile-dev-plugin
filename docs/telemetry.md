@@ -775,3 +775,12 @@ remain inside `app_flow.capture`; in-app probes do not emit a metric per frame.
 Missing context returns before a loading wait. No source paths, binding IDs,
 props, app state or image data enter telemetry. Route capture still reuses its
 loading and paint proof only while a fresh frame check matches.
+
+
+Prepared capture checks the requested presentation with `presentation-prepare`.
+This fixed runtime operation includes loading its source module when the matching
+prepared app build proves the import. It excludes rendering and screenshot time.
+The existing `presentations` operation still measures candidate enumeration in
+discovery. Source binding, capture, readiness and restoration keep their existing
+boundaries. Preparation errors stay local; no component names or app data enter
+these metrics.

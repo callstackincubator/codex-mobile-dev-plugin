@@ -36,7 +36,7 @@ test('queued native sheet previews use server-bound source and retain their real
     if(command.type==='capture-source')return queue.source(command.batch,command.ticket,command.value);
     if(command.type==='capture-stop')return queue.stop();
     if(command.type==='presentation-setup'){assert.equal(command.projectRoot,'/fixture');assert.equal(command.catalog.actions[0],action);return {};}
-    if(command.type==='presentations')return [{id:action.id}];
+    if(command.type==='presentation-prepare')return {available:true};
     if(command.type==='presentation-open')return {key:'form',ready:true};
     assert.fail('Unexpected runtime command');
   }};

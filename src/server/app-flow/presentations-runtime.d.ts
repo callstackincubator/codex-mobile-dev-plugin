@@ -8,6 +8,7 @@ export function installPresentationRuntime(options: {
   records(offset: number): {bindings: PresentationBinding[]; next?: number};
   configure(catalog: FlowPresentations, matches: {binding: string; site: string}[], checked?: string[]): void;
   list(focus?: any): {id: string; name: string; file: string; line: number}[];
+  prepare(id: string, focus?: any): {available?: boolean; error?: string};
   open(id: string, focus?: any): {name?: string; focus?: any; scope?: any; expected?: string | {component:string;entry?:string;scope?:'owner'}; error?: string};
   handoff(id:string,focus?:any,cancelled?:()=>boolean):Promise<{closed?:boolean;focus?:any;error?:string}>;
   portalBindings(focus?:any): (PresentationBinding&{approved:boolean})[];

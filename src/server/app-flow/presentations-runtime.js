@@ -434,7 +434,31 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   function configure(next=catalog,matches,checked=[]){catalog=next;for(const match of matches){const binding=bindings.get(match.binding);if(binding)binding.site=match.site;else entries.get(match.binding)?.actions.add(match.site);}for(const id of checked){const binding=bindings.get(id)??entries.get(id);if(binding)binding.checked=true;}}
   const descendants = (fiber,callback) => fibers(callback,fiber);
-  function attached(fiber,boxes){let measurable=false,shown=false;descendants(fiber,child=>{if(shown)return false;if(child.tag!==5)return;let measured=boxes?.get(child);if(!measured){measured={measurable:false,shown:false};try{const native=child.stateNode?.canonical?.publicInstance??child.stateNode;if(typeof native?.getBoundingClientRect==='function'){measured.measurable=true;const box=native.getBoundingClientRect();measured.shown=box?.width>0&&box?.height>0;}}catch{}boxes?.set(child,measured);}measurable||=measured.measurable;shown||=measured.shown;});return !measurable||shown;}
+  function attached(fiber,boxes){
+    const bounds=child=>{
+      let measured=boxes?.get(child);if(measured)return measured;
+      measured={measurable:false,shown:false};
+      try{const native=child.stateNode?.canonical?.publicInstance??child.stateNode;
+        if(typeof native?.getBoundingClientRect==='function'){measured.measurable=true;measured.box=native.getBoundingClientRect();measured.shown=measured.box?.width>0&&measured.box?.height>0;}
+      }catch{}
+      boxes?.set(child,measured);return measured;
+    };
+    // Pagers retain their other pages at offscreen coordinates. A nonzero
+    // rectangle alone must not make every repeated opening control visible.
+    let viewport,measurable=false,shown=false;
+    for(let parent=fiber.return,count=0;parent&&count++<100;parent=parent.return){
+      if(parent.tag!==5)continue;const measured=bounds(parent),box=measured.box;
+      if(measured.shown&&Number.isFinite(box.x)&&Number.isFinite(box.y))viewport=box;
+    }
+    descendants(fiber,child=>{
+      if(shown)return false;if(child.tag!==5)return;
+      const measured=bounds(child),box=measured.box;measurable||=measured.measurable;
+      shown=measured.shown&&(!viewport||!Number.isFinite(box.x)||!Number.isFinite(box.y)||
+        box.x<viewport.x+viewport.width&&box.x+box.width>viewport.x&&box.y<viewport.y+viewport.height&&box.y+box.height>viewport.y);
+    });
+    return !measurable||shown;
+  }
+
   const activeAncestors = fiber => {
     for(let parent=fiber,count=0;parent&&count++<100;parent=parent.return){
       const p=parent.memoizedProps;if(hidden(p)||p?.visible===false&&(name(parent)==='Modal'||parent.tag===5&&typeof p?.onShow==='function')||p?.disabled===true||p?.accessibilityState?.disabled===true)return false;
@@ -998,6 +1022,36 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(unique.length===1)return {owner,target:unique[0]};
     }
   };
+  function prepare(id,focus) {
+    const action=catalog.actions.find(action=>action.id===id);
+    if(!action)return {available:false,error:'The requested view is not in the source catalog.'};
+    const effect=action.effect;
+    if(action.preview&&effect.kind==='mount'&&!focus&&!projected.length){
+      // Only the selected source-proven component may initialize here. Listing
+      // candidates never loads cold modules, and no component/handler is called.
+      const registry=globalThis.__MOBILE_DEV_FLOW_REGISTRY__;
+      const prepared=sourceHash&&registry?.matchingOwners?.(sourceHash)?.length;
+      const modules=globalThis.__r?.getModules?.();
+      const candidates=[];
+      for(const [key,module]of modules??[]){
+        if(typeof module.verboseName!=='string')continue;
+        const file=modulePath(module.verboseName);
+        if(file===effect.file||sourceRoot&&file===`${sourceRoot}/${effect.file}`)candidates.push({key,module});
+      }
+      if(candidates.length===1&&!candidates[0].module.isInitialized){
+        if(!prepared||typeof globalThis.__r!=='function')return {available:false,error:'Prepare the app build before loading this view.'};
+        try{globalThis.__r(candidates[0].key);}catch{return {available:false,error:'The source component could not load.'};}
+      }
+    }
+    const tree=index(true),found=find(action,tree,focus);
+    if(found)return {available:true};
+    if(action.preview&&effect.kind==='mount')return {available:false,error:'The source component or its live provider context is unavailable.'};
+    const sites=effect.kind==='state'?tree.states.get(effect.site)??[]:[];
+    if(effect.kind==='state'&&!sites.length)return {available:false,error:'The opening state could not be bound to its source.'};
+    if(!action.preview&&!(tree.entries.get(id)?.length))return {available:false,error:'The opening control could not be bound to its source.'};
+    if(effect.kind==='state'&&sites.length>1)return {available:false,error:'More than one live instance owns this opening state.'};
+    return {available:false,error:'The source-proven entry has no live owner, control, or real context in this app state.'};
+  }
   let lastAvailable=0,canonicalControls=new WeakMap();
   const list = focus => {
     mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};
@@ -1506,5 +1560,5 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return result.map(item=>item.value);
   }
   const diagnostics=()=>({inlineProjections:projected.filter(record=>record.inline).length,nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
-  return {structure:committedStructure,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,collect,records,configure,list,open,handoff,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
+  return {structure:committedStructure,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,collect,records,configure,list,prepare,open,handoff,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

@@ -1103,10 +1103,10 @@ test('temporary preview boundaries contain their own React root errors and prese
 });
 
 
-test('an unmounted form renders with live context while its temporary effects stay contained',async t=>{
+test('a selected cold form loads once and renders with live context while its temporary effects stay contained',async t=>{
   for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
     const react=(React as any).default??React,dom=new JSDOM('<div id="root"></div>');
-    const previous={window:(globalThis as any).window,document:(globalThis as any).document,require:(globalThis as any).__r};
+    const previous={window:(globalThis as any).window,document:(globalThis as any).document,require:(globalThis as any).__r,registry:(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__};
     (globalThis as any).window=dom.window;(globalThis as any).document=dom.window.document;
     const Context=react.createContext(undefined),observed={label:'Observed record'},originalSnapshotHook=react.useSyncExternalStore;
     let current:any,clone:any,effects=0,initializers=0,subscriptions=0,appSubscriptions=0,appUnsubscribes=0;
@@ -1131,14 +1131,26 @@ test('an unmounted form renders with live context while its temporary effects st
       react.useEffect(()=>{effects++},[]);react.useLayoutEffect(()=>{effects++},[]);
       current=undefined;return react.createElement('span',null,value.label+' '+step);
     }
-    (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}],
-      [2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}],
-      [3,{verboseName:'Forms.tsx',isInitialized:true,publicModule:{exports:{HiddenForm}}}]])};
+    const cold:any={verboseName:'/app/Forms.tsx',isInitialized:false,publicModule:{exports:{}}};
+    const other:any={verboseName:'/app/Other.tsx',isInitialized:false,publicModule:{exports:{}}};
+    let loads=0;
+    const modules=new Map([[1,{isInitialized:true,publicModule:{exports:react}}],
+      [2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}], [3,cold],[4,other]]);
+    (globalThis as any).__r=Object.assign((id:number)=>{assert.equal(id,3,'Only the selected source module can load');loads++;cold.isInitialized=true;cold.publicModule.exports={HiddenForm};return cold.publicModule.exports;},{getModules:()=>modules});
+    (globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__={matchingOwners:(hash:string)=>hash==='prepared'?[{entries:new Map()}]:[]};
     const render=()=>flushSync(()=>rendered.render(react.createElement(Context.Provider,{value:observed},react.createElement(View,host.memoizedProps))));
     const runtime=install({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',getCurrentFiber:()=>current,overrideProps(fiber:any,_path:any,props:any){fiber.memoizedProps=props;host.child=undefined;render()}}]])},fibers:(visit:any,subtree?:any)=>{const stack=[subtree??root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}},hidden:()=>false,later:setTimeout});
     const action:any={id:'mount',file:'Forms.tsx',line:1,owner:'HiddenForm',component:'HiddenForm',name:'HiddenForm',prop:'',preview:true,views:['owner-body'],effect:{kind:'mount',file:'Forms.tsx',export:'HiddenForm'}};
     try{
       render();runtime.configure({states:[],actions:[action]},[]);
+      assert.equal(runtime.prepare('mount').available,false,'An unprepared app cannot initialize a module');
+      assert.equal(loads,0);
+      await runtime.collect([], [action], '/app', 'prepared');
+      assert.deepEqual(runtime.list(),[]);assert.equal(loads,0,'Listing must not initialize cold modules');
+      assert.equal(runtime.prepare('unknown').available,false);assert.equal(loads,0);
+      assert.equal(runtime.prepare('mount').available,true);assert.equal(loads,1);
+      assert.equal(runtime.prepare('mount').available,true);assert.equal(loads,1,'Repeated preparation reuses the loaded module');
+      assert.equal(other.isInitialized,false);
       assert.equal(runtime.open('mount').error,undefined);runtime.focused(clone);
       assert.equal(dom.window.document.getElementById('root')!.textContent,'Original appObserved record start');
       assert.equal(initializers,1,'Ordinary form defaults run without fabricated state');assert.equal(effects,0);assert.equal(subscriptions,0,'React internal subscription effects cannot run for a temporary preview');assert.equal(appSubscriptions,1,'The original app still owns its store subscription');assert.equal(appUnsubscribes,0,'Preview mounting does not unsubscribe the original app');
@@ -1146,7 +1158,7 @@ test('an unmounted form renders with live context while its temporary effects st
       assert.deepEqual(runtime.list(),[],'The mounted form cannot bootstrap a duplicate');
       await runtime.rollback(0,false);assert.equal(dom.window.document.getElementById('root')!.textContent,'Original app');
       assert.equal(runtime.checkpoint(),0);assert.equal(react.useSyncExternalStore,originalSnapshotHook,'Restoration releases the subscription wrapper');
-    }finally{runtime.cleanup();flushSync(()=>rendered.unmount());await new Promise(resolve=>setTimeout(resolve,20));dom.window.close();(globalThis as any).window=previous.window;(globalThis as any).document=previous.document;(globalThis as any).__r=previous.require;}
+    }finally{runtime.cleanup();flushSync(()=>rendered.unmount());await new Promise(resolve=>setTimeout(resolve,20));dom.window.close();(globalThis as any).window=previous.window;(globalThis as any).document=previous.document;(globalThis as any).__r=previous.require;(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__=previous.registry;}
   }
 });
 
@@ -2121,4 +2133,23 @@ for(const outcome of ['closed','unavailable','cancelled'])test(`default capture 
     assert.equal(node.status,'captured');assert.ok(events.indexOf('handoff')<events.indexOf('open:child'));
   }else{assert.ok(!events.includes('open:child'));assert.equal(node.image,undefined);}
   assert.equal(events.at(-1),'restore');assert.equal(capture.reuseDepth(node),0,'A dismissed parent cannot remain a reusable branch');
+});
+
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()])test(`retained pager pages cannot make a unique opening control ambiguous (${install===installPresentationRuntime?'normal':'shared loops'})`,()=>{
+  const app=tree(install);
+  const window:any={tag:5,type:'NativeWindow',memoizedProps:{},stateNode:{getBoundingClientRect:()=>({x:0,y:0,width:400,height:800})},child:app.root};
+  app.root.return=window;
+  app.button.child={tag:5,type:'NativeButton',memoizedProps:{},return:app.button,stateNode:{getBoundingClientRect:()=>({x:10,y:100,width:100,height:40})}};
+  const other:any={type:app.root.type,memoizedProps:{},return:window};app.root.sibling=other;
+  const button:any={...app.button,return:other,child:undefined};other.child=button;
+  button.child={tag:5,type:'NativeButton',memoizedProps:{},return:button,stateNode:{getBoundingClientRect:()=>({x:410,y:100,width:100,height:40})}};
+  const another={open(){assert.fail('Never open an offscreen page')},close(){}};
+  button.sibling={...app.sheet,return:other,child:undefined,memoizedProps:{control:another}};
+  app.runtime.records(0);
+  const catalog={states:[],actions:[app.action]};configureFixture(app.runtime,catalog);
+  assert.deepEqual(app.runtime.list().map(action=>action.id),['open']);
+  assert.equal(app.runtime.prepare('open').available,true);
+  assert.equal(app.runtime.open('open').focus,app.sheet);
+  app.runtime.cleanup();
 });
