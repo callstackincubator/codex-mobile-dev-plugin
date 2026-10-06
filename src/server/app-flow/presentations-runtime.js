@@ -494,13 +494,18 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     if(!react||typeof react.Component!=='function'||!native)return;
     let ancestor;const seen=new Set();
-    for(let parent=focus;parent&&!seen.has(parent);parent=parent.return){seen.add(parent);if(parent.type===native.View||parent.elementType===native.View)ancestor=parent;}
+    // Keep the window inside the nearest native container. The app's main
+    // window cannot present again while one of its native sheets is open.
+    for(let parent=focus;parent&&!seen.has(parent);parent=parent.return){seen.add(parent);if(parent.type===native.View||parent.elementType===native.View){ancestor=parent;break;}}
     let root;if(ancestor)fibers(fiber=>{if(fiber===ancestor||fiber===ancestor.alternate)root=fiber;});
     for(const renderer of hook.renderers.values())if(root&&renderer.rendererPackageName==='react-native-renderer'&&typeof renderer.overrideProps==='function')return {root,renderer,react,native};
   }
   function project(focus, preview, mountedContext) {
     if(!focus||!preview&&(!undo.length||projected.some(p=>p.focus===focus||p.focus===focus.alternate)))return {error:'This view cannot be projected.'};
-    const context=mountedContext??projectionRoot(focus);if(!context)return {error:'This renderer cannot project a local view.'};
+    const owner=previewOwner(focus);
+    // A copied body can contain another View. Its next step must retain the
+    // already shown window instead of presenting another window inside it.
+    const context=owner?.shown&&projectionAttached(owner)?projectionRoot(owner.root):mountedContext??projectionRoot(focus);if(!context)return {error:'This renderer cannot project a local view.'};
     const type=focus.elementType??focus.type;
     if(!type||typeof type==='string')return {error:'No component view to project.'};
     const {root,renderer,react,native}=context,props=root.memoizedProps;
@@ -517,7 +522,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // Nested temporary form states share one shown native window. Stacking
     // Modal controllers for each step can leave UIKit displaying an old body
     // after React removes its tree. Retain each body's own undo checkpoint.
-    const owner=previewOwner(focus),children=props.children?.props?.children;
+    const children=props.children?.props?.children;
     const previousPreview=owner?.shown&&projectionAttached(owner)&&Array.isArray(children)&&children.includes(owner.element)?owner:undefined;
     const record={root,renderer,react,props,focus,child,content,parent:previousPreview,portals:[],seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:!!previousPreview,dismissed:false,failed:false};
     class PreviewBoundary extends react.Component {

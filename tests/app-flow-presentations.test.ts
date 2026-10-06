@@ -421,7 +421,8 @@ test('native projection keeps deep live contexts, contains render errors and res
   ancestor.child=app.sheet;app.sheet.return=ancestor;
   assert.equal(runtime.project(app.sheet).error,undefined);
   assert.equal(unrelated.memoizedProps.children,'unrelated overlay','A preview uses its own app root instead of an unrelated renderer root');
-  const element=app.root.memoizedProps.children.props.children[1];
+  assert.equal(app.root.memoizedProps.children,'original','The main app stays mounted');
+  const element=ancestor.memoizedProps.children.props.children[1];
   assert.equal(element.type,Modal);assert.equal(element.props.presentationStyle,'pageSheet');
   const boundary=element.props.children,content=boundary.props.children;
   assert.equal(content.type,Provider);assert.equal(content.props.value,liveContext);
@@ -449,6 +450,7 @@ test('native projection keeps deep live contexts, contains render errors and res
   }
   app.root.memoizedProps={...app.root.memoizedProps,marker:2};
   await runtime.rollback(0,false);
+  assert.equal(ancestor.memoizedProps.children,undefined,'The nearest native container restores its children');
   assert.deepEqual(app.root.memoizedProps,{children:'original',marker:2});assert.equal(app.control.closes,1);runtime.cleanup();
 });
 
@@ -1843,4 +1845,52 @@ for (const install of [installPresentationRuntime, sharedLoopRuntime(installPres
     assert.equal(probe.targets[0].opened,true);assert.equal(probe.targets[0].pending,false);assert.equal(probe.targets[0].lastEvent,'open');
     app.runtime.cleanup();assert.equal(app.runtime.diagnostics().nativeProbe,undefined);
   });
+}
+
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresentationRuntime)]){
+ test(`sheet previews present from their native parent and reuse that window for nested bodies (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+  const app=tree(install),previous=(globalThis as any).__r;
+  function View(){}function Modal(){}function NativeSheet(){}function Step(){}
+  const mainBody=React.createElement('main',null,'App');
+  const sheetBody=React.createElement(app.root.type);
+  const main:any={type:View,memoizedProps:{children:mainBody,marker:'main'}};
+  const host:any={tag:5,type:NativeSheet,memoizedProps:{},return:main};main.child=host;
+  const container:any={type:View,memoizedProps:{children:sheetBody,marker:'sheet'},return:host,child:app.root};host.child=container;app.root.return=container;
+  let body:any,modal:any,shown=0,refused=0,hidden=0;
+  const roots:any[]=[];
+  const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??main];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+  const renderer={rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){
+   fiber.memoizedProps=props;roots.push(fiber);
+   const next=props.children?.props?.children?.at(-1);
+   if(next?.type!==Modal){app.root.sibling=undefined;return;}
+   modal=next;
+   // UIKit refuses a second presentation from the main window while its
+   // native sheet is open. A child window can present from that sheet.
+   if(fiber!==container){refused++;return;}
+   if(modal.props.visible===false){hidden++;modal.props.onDismiss();return;}
+   if(!shown){shown++;modal.props.onShow();}
+   const element=modal.props.children.props.children;
+   body={type:element.type,memoizedProps:element.props,pendingProps:element.props,return:container};app.root.sibling=body;
+  }};
+  (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:{...React}}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}]])};
+  const runtime=install({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});
+  t.after(()=>{runtime.cleanup();app.runtime.cleanup();(globalThis as any).__r=previous});
+  assert.equal(runtime.project(app.sheet,{views:['sheet-step']}).error,undefined);
+  assert.equal(refused,0,'The native parent must accept the first preview');
+  assert.equal(runtime.motion(app.sheet).pending,false,'The actual onShow must settle the preview');
+  const first=body,key=modal.key;
+  const bodyContainer:any={type:View,memoizedProps:{children:React.createElement(Step)},return:first};first.child=bodyContainer;
+  const step:any={type:Step,memoizedProps:{},return:bodyContainer};bodyContainer.child=step;
+  assert.equal(runtime.project(step,{views:['nested-step']}).error,undefined);
+  assert.equal(roots.at(-1),container,'A nested body keeps its already shown parent window');
+  assert.equal(modal.key,key);assert.equal(shown,1);assert.equal(refused,0);
+  assert.equal(container.memoizedProps.children.props.children.length,2);
+  assert.equal(main.memoizedProps.children,mainBody,'The main app stays mounted');
+  await runtime.rollback(1);
+  assert.equal(hidden,0,'Back between steps keeps the native window open');
+  await runtime.rollback();
+  assert.equal(hidden,1);assert.equal(container.memoizedProps.children,sheetBody);
+  assert.equal(runtime.checkpoint(),0);assert.equal(runtime.diagnostics().projections,0);
+ });
 }

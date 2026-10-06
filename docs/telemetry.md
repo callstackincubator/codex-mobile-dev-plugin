@@ -598,3 +598,9 @@ keeps the mounted route. Loading, native transition, paint and screenshot checks
 still run. Existing open, readiness, capture and restoration timings retain their
 names, units and boundaries. Bounded native lifecycle evidence stays in local
 App Flow diagnostics; component names, events and app data do not go to Sentry.
+
+Since 0.1.176, temporary previews attach to the nearest native View, so a sheet
+can present its child window. Nested preview steps reuse the shown window.
+Existing presentation, readiness, capture and restoration timings cover this
+path with unchanged names, units and boundaries. Native waits still require
+real lifecycle events. No new app content or callback data enters Sentry.
