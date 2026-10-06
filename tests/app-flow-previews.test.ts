@@ -10,7 +10,7 @@ import {bindPresentationSites} from '../src/server/app-flow/presentations-bindin
 import {compareViewReference,presentationDestination} from '../scripts/lib/compare-app-flow-views.mjs';
 import {compareFlowCapture} from '../scripts/lib/compare-app-flow-capture.mjs';
 import {createFlowRegistry} from '../src/server/app-flow/instrumentation-registry.js';
-import {FlowPresentationCapture} from '../src/server/app-flow/presentations.ts';
+import {FlowPresentationDiscovery} from '../src/server/app-flow/presentations.ts';
 
 test('source preview plans cover finite reducer bodies without opener callbacks and exclude business flags',async t=>{
   const root=await mkdtemp(join(tmpdir(),'flow-previews-'));t.after(()=>rm(root,{recursive:true,force:true}));
@@ -358,30 +358,6 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   });
 }
 
-test('a source-only preview uses the capture queue and a failed body does not stop its siblings',async t=>{
-  const directory=await mkdtemp(join(tmpdir(),'preview-capture-'));t.after(()=>rm(directory,{recursive:true,force:true}));
-  const id='00000000-0000-0000-0000-000000000000';await mkdir(join(directory,id));
-  const action:any={id:'step',file:'App.tsx',line:1,owner:'App',component:'Form',prop:'',name:'Form',preview:true,views:['source-body'],effect:{kind:'state',site:'state',path:['step'],value:1}};
-  const run:any={id,sourceHash:'source',revision:0,nodes:[],edges:[],presentations:{states:[],actions:[],previews:[action],previewStates:[]}};
-  const base:any={id:'entry',kind:'screen',name:'Entry',path:[],required:[],status:'captured'};run.nodes.push(base);
-  let opened=false,failed=false,shots=0;
-  const backend:any={screenshot:async()=>Buffer.from(`frame-${shots++}`),runtime:{async invoke(command:any){
-    if(command.type==='presentation-setup'){assert.equal(command.catalog.actions.length,1);assert.equal(command.catalog.views,undefined);return {};}
-    if(command.type==='presentation-active')return [];
-    if(command.type==='presentations')return opened?[]:[action];
-    if(command.type==='presentation-open'){opened=true;return {};}
-    if(command.type==='presentation-rollback'){opened=false;return {};}
-    if(command.type==='presentation-view')return {key:'same-components',signature:opened?'new-body':'old-body',found:true,ready:!failed,error:failed?'The temporary presentation preview failed.':undefined};
-    return {};
-  }}};
-  const capture=new FlowPresentationCapture(run,directory,directory,new AbortController().signal,async()=>{});
-  assert.equal(capture.enabled,true);await capture.explore(backend,base);
-  const node=run.nodes[1];await capture.retry(backend,node);
-  assert.equal(node.status,'captured');assert.equal(node.presentation.preview,true);assert.equal(node.imageSourceHash,'source');assert.deepEqual(node.sourceViews,['source-body']);
-  node.image=undefined;node.status='pending';failed=true;await capture.retry(backend,node);
-  assert.equal(node.status,'blocked');assert.equal(base.status,'captured');assert.equal(opened,false);
-});
-
 test('capture comparison counts verified automatic images once and separates UI previews from live captures',()=>{
   const action:any={id:'step',effect:{kind:'state',site:'hook',path:['step'],value:1}},key=presentationDestination(action);
   const graph:any={sourceHash:'current',presentations:{actions:[action],views:[]}};
@@ -399,26 +375,6 @@ test('capture comparison counts verified automatic images once and separates UI 
   run.nodes[1].presentation.actions.push('child');
   result=compareFlowCapture(graph,comparison,run,new Set(['home','step']));assert.equal(result.automaticCapturedViews,1);
   assert.throws(()=>compareFlowCapture(graph,comparison,{...run,sourceHash:'old'},new Set()),/source differs/);
-});
-
-
-test('an open controller cannot requeue its own captured preview during child discovery',async t=>{
-  const directory=await mkdtemp(join(tmpdir(),'preview-self-'));t.after(()=>rm(directory,{recursive:true,force:true}));
-  const id='00000000-0000-0000-0000-000000000000';await mkdir(join(directory,id));
-  const action:any={id:'sheet',file:'App.tsx',line:1,owner:'App',component:'Sheet',prop:'',name:'Sheet',preview:true,effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};
-  const run:any={id,sourceHash:'source',revision:0,nodes:[],edges:[],presentations:{states:[],actions:[],previews:[action],previewStates:[]}};
-  const base:any={id:'entry',name:'Home',kind:'screen',path:[],required:[],status:'captured'};run.nodes.push(base);
-  let opened=false,shots=0;
-  const backend:any={screenshot:async()=>Buffer.from(`frame-${shots++}`),runtime:{async invoke(c:any){
-    if(c.type==='presentations')return [action];
-    if(c.type==='presentation-open')opened=true;
-    if(c.type==='presentation-rollback')opened=false;
-    return {key:opened?'sheet':'home',signature:opened?'sheet':'home',ready:true,found:true,active:[]};
-  }}};
-  const capture=new FlowPresentationCapture(run,directory,directory,new AbortController().signal,async()=>{});
-  await capture.explore(backend,base);const sheet=run.nodes[1];await capture.retry(backend,sheet);
-  assert.equal(sheet.status,'captured');assert.equal(sheet.captureAttempts,1);assert.ok(sheet.image);
-  assert.equal(run.nodes.length,2);assert.equal(run.edges.length,1);assert.equal(opened,false);
 });
 
 
@@ -456,7 +412,7 @@ test('unmounted previews use initialized exact data exports and keep each owner 
     app.runtime.configure({states:[],actions},[]);
     assert.deepEqual(app.runtime.list().map(a=>a.id),['welcome','other']);
     assert.deepEqual(app.runtime.diagnostics().mountChecks,{plans:5,moduleMissing:2,moduleCold:1,moduleUnknown:1,exportMissing:1,ownerMismatch:0,alreadyMounted:0,available:2});
-    assert.equal(app.runtime.open('welcome').error,undefined);assert.equal(app.clone.type,Welcome);
+    const opened=app.runtime.open('welcome');assert.equal(opened.error,undefined);assert.ok(opened.focus,'Keep the exact projection handle before its native show event');assert.equal(app.runtime.visualFocus(opened.focus),app.clone);assert.equal(app.clone.type,Welcome);
     assert.deepEqual(app.clone.memoizedProps,{});assert.deepEqual(app.counts,{dispatched:0,effects:0,initializers:0});
     app.runtime.focused(app.clone);
     assert.deepEqual(app.runtime.activeViews(app.clone),['welcome-body']);

@@ -1,3 +1,5 @@
+import {FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
+import {QueuedAppFlowRuns as AppFlowRuns} from './app-flow-queue-fixture.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
@@ -5,8 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scanAppFlow } from '../src/server/app-flow/scan.ts';
 import { installPresentationRuntime } from '../src/server/app-flow/presentations-runtime.js';
-import { FlowPresentationCapture } from '../src/server/app-flow/presentations.ts';
-import { AppFlowRuns } from '../src/server/app-flow/runs.ts';
+import { FlowPresentationDiscovery } from '../src/server/app-flow/presentations.ts';
 import { flowRunning, type FlowRun } from '../src/shared/app-flow.ts';
 import { bindPresentationSites } from '../src/server/app-flow/presentations-bindings.ts';
 import * as React from 'react';
@@ -241,13 +242,13 @@ test('presentation focus treats a missing alternate as outside the scope',()=>{
 
 test('presentation retries yield to untouched screens and retain all three readiness attempts',async t=>{
   const directory=await fixture(t,{}),events:string[]=[];let clock=0,key='Home',slow=0;
-  t.mock.method(performance,'now',()=>clock);
+  t.mock.method(Date,'now',()=>clock);
   const actions:any[]=['Slow','Quick'].map(name=>({id:name,name,file:'Home.tsx',line:1,owner:'Home',component:'Button',prop:'onPress',effect:{kind:'control',component:name,prop:'control',method:'open',close:['close']}}));
   const nodes:any[]=['Home','Search'].map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending'}));
   const runs=flowRuns(t,{directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions}}),connect:async()=>({
     screenshot:async()=>Buffer.from(key),runtime:{async close(){},async invoke(command:any){
       if(command.type==='inspect')return {available:true};
-      if(command.type==='open'){key=command.path.at(-1);if(command.timeoutMs===1000)events.push(key);}
+      if(command.type==='open'){key=command.path.at(-1);if(!command.settleOnly)events.push(key);}
       if(command.type==='presentation-rollback')key='Home';
       if(command.type==='presentations')return key==='Home'?actions:[];
       if(command.type==='presentation-open'){key=command.id;if(key==='Slow')slow++;events.push(`${key}:${key==='Slow'?slow:1}`);}
@@ -261,35 +262,9 @@ test('presentation retries yield to untouched screens and retain all three readi
   await runs.close();
   const result=runs.read(run.id);
   assert.equal(result.phase,'complete');
-  assert.deepEqual(events,['Home','Search','Slow:1','Quick:1','Slow:2','Slow:3']);
+  assert.deepEqual(events,['Home','Slow:1','Search','Home','Quick:1','Slow:2','Home','Slow:3']);
   assert.ok(result.nodes.every(node=>node.status==='captured'&&node.image));
   assert.equal(result.nodes.find(node=>node.name==='Slow')?.captureAttempts,3);
-});
-
-test('queued capture deduplicates local forms and sheets and restores each parent',async t=>{
-  const root=await fixture(t,{}),signal=new AbortController().signal;
-  const actions:any[]=[{id:'login',name:'Login',file:'App.tsx',line:1,owner:'App',component:'Button',prop:'onPress',effect:{kind:'state',site:'step',path:[],value:1}},
-    {id:'sheet',name:'Options',file:'Login.tsx',line:2,owner:'Login',component:'Button',prop:'onPress',effect:{kind:'control',component:'Options',prop:'control',method:'open',close:'close'}}];
-  const base:any={id:'entry',name:'Welcome',kind:'screen',entry:true,path:[],required:[],status:'captured'};
-  const run:FlowRun={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[base],edges:[],presentations:{states:[],actions}};
-  await mkdir(join(root,'run'));
-  const stack:string[]=[];let screenshots=0;
-  const view=()=>({key:stack.join('/')||'welcome',ready:true,found:true,active:[],signature:stack.join('/')});
-  const backend:any={screenshot:async()=>{screenshots++;return Buffer.from(stack.join('/')||'fixture')},runtime:{async invoke(c:any){
-    if(c.type==='presentation-checkpoint')return {level:stack.length};
-    if(c.type==='presentation-rollback'){stack.length=c.level??0;return {}};
-    if(c.type==='presentations')return stack.length===0?[actions[0]]:stack.length===1?[actions[1]]:[];
-    if(c.type==='presentation-open'){stack.push(c.id);return view()};
-    if(c.type==='presentation-view')return view();return {};
-  }}};
-  const capture=new FlowPresentationCapture(run,root,root,signal,async()=>{});
-  await capture.explore(backend,base);await capture.explore(backend,base);
-  assert.equal(screenshots,0,'Discovery does not block the route queue with sheet captures');
-  await capture.retry(backend,run.nodes[1]);
-  await capture.retry(backend,run.nodes[2]);
-  assert.equal(screenshots,4);assert.equal(stack.length,0);
-  assert.deepEqual(run.nodes.map(n=>n.name),['Welcome','Login','Options']);
-  assert.deepEqual(run.edges.map(e=>[e.from,e.to]),[[base.id,run.nodes[1].id],[run.nodes[1].id,run.nodes[2].id]]);
 });
 
 test('state hook tracking restores only its presentation field and leaves no wrapped exports',async t=>{
@@ -359,19 +334,6 @@ test('a tooltip visibility flag does not hide its still-visible presentation tri
   const app=tree();const tooltip:any={type:function Tooltip(){},memoizedProps:{visible:false},child:app.button,return:app.root};
   app.button.return=tooltip;app.root.child=tooltip;app.button.sibling=undefined;tooltip.sibling=app.sheet;
   assert.equal(app.runtime.list().length,1);app.runtime.cleanup();
-});
-
-test('retry replays its saved route and full presentation chain, preserving completed siblings',async t=>{
-  const root=await fixture(t,{});await mkdir(join(root,'run'));const commands:any[]=[];
-  const node:any={id:'sheet',name:'Options',kind:'screen',path:[],required:[],status:'pending',presentation:{basePath:['Home'],actions:['form','options']}};
-  const completed:any={id:'sibling',name:'Other',kind:'screen',path:[],required:[],status:'captured',image:'kept'};
-  const run:FlowRun={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[node,completed],edges:[],presentations:{states:[],actions:[]}};
-  let screen='Home';
-  const backend:any={screenshot:async()=>Buffer.from(screen),runtime:{async invoke(c:any){commands.push(c);if(c.type==='open'){screen='Home';return {ready:true}};if(c.type==='presentations')return [{id:'canonical-form',aliases:['form']},{id:'options'}];if(c.type==='presentation-open')screen=c.id;if(c.type==='presentation-open'||c.type==='presentation-view')return {key:screen,ready:true,found:true,active:['Home'],signature:screen};return {};}}};
-  const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
-  await capture.retry(backend,node);assert.equal(node.status,'captured');assert.equal(completed.image,'kept');
-  assert.deepEqual(commands.filter(c=>c.type==='presentation-open').map(c=>c.id),['form','options']);assert.deepEqual(commands.find(c=>c.type==='open').path,['Home']);
-  assert.equal(commands.at(-1).type,'presentation-rollback');
 });
 
 test('source supports optional sheet refs, custom controller props and false-valued form branches',async t=>{
@@ -494,41 +456,6 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()])test(`addi
   }
 });
 
-test('saved native projections replay at the correct step on retry',async t=>{
-  const root=await fixture(t,{});await mkdir(join(root,'run'));let key='entry';const commands:any[]=[];
-  const node:any={id:'login',name:'Login',kind:'screen',path:[],required:[],status:'pending',presentation:{actions:['login'],projections:['login'],basePath:[]}};
-  const run:FlowRun={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[node],edges:[],presentations:{states:[],actions:[]}};
-  const backend:any={screenshot:async()=>Buffer.from(key),runtime:{async invoke(command:any){commands.push(command.type);if(command.type==='presentations')return [{id:'login'}];if(command.type==='presentation-project')key='projected login';if(command.type==='presentation-view')return {key,ready:true,found:true,signature:key};return {};}}};
-  await new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{}).retry(backend,node);
-  assert.equal(node.status,'captured');assert.equal(commands.filter(type=>type==='presentation-project').length,1);
-});
-
-test('a kept form reopens its saved native preview to discover uncaptured children',async t=>{
-  const root=await fixture(t,{});await mkdir(join(root,'run'));let key='entry',projects=0;
-  const actions:any[]=[{id:'login',name:'Login',file:'App.tsx',line:1,owner:'App',component:'Button',prop:'onPress',effect:{kind:'state',site:'step',path:[],value:1}},
-    {id:'sheet',name:'Options',file:'Login.tsx',line:2,owner:'Login',component:'Button',prop:'onPress',effect:{kind:'control',component:'Options',prop:'control',method:'open',close:'close'}}];
-  const base:any={id:'base',name:'Entry',kind:'screen',path:[],required:[],status:'captured'};
-  const existing:any={id:'presentation-keep',name:'Login',kind:'screen',path:[],required:[],status:'captured',image:'kept',presentation:{actions:['login'],projections:['login'],basePath:[]}};
-  // Use the same source destination identity as a previously completed run.
-  const {createHash}=await import('node:crypto');existing.id=`presentation-${createHash('sha256').update(JSON.stringify(['step',[],1])).digest('hex').slice(0,24)}`;
-  const run:FlowRun={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[base,existing],edges:[],presentations:{states:[],actions}};
-  const backend:any={screenshot:async()=>Buffer.from(key),runtime:{async invoke(command:any){
-    if(command.type==='presentation-checkpoint')return {level:key==='entry'?0:2};
-    if(command.type==='presentation-rollback'){key=command.level?'projected login':'entry';return {}};
-    if(command.type==='presentations')return key==='entry'?[actions[0]]:key==='projected login'?[actions[1]]:[];
-    if(command.type==='presentation-open')key=command.id;
-    if(command.type==='presentation-project'){key='projected login';projects++};
-    if(command.type==='presentation-view')return {key,ready:true,found:true,signature:key};return {};
-  }}};
-  const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
-  await capture.explore(backend,base);
-  assert.equal(existing.status,'pending');
-  await capture.retry(backend,existing);
-  assert.equal(projects,1);assert.equal(existing.image,'kept');assert.equal(run.nodes.at(-1)?.name,'Options');assert.equal(run.nodes.at(-1)?.status,'pending');
-  await capture.retry(backend,run.nodes.at(-1)!);
-  assert.equal(run.nodes.at(-1)?.status,'captured');
-});
-
 test('apps without a navigator map local forms and resume a nested sheet after disconnect',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'presentation-test-'));let connections=0,opens=0;
   const actions:any[]=[{id:'login',name:'Login',file:'App.tsx',line:1,owner:'App',component:'Button',prop:'onPress',effect:{kind:'state',site:'step',path:[],value:1}},
@@ -647,29 +574,29 @@ return step===0 ? (
   assert.deepEqual(await bindPresentationSites('http://localhost:8081',root,[binding],[],catalog.actions),[{binding:'welcome',site:action.id}]);
 });
 
-test('a second discovery timeout after reconnect keeps captured routes and continues the queue',async t=>{
+test('repeated discovery timeouts keep captured routes and continue without reconnecting',async t=>{
   const directory=await fixture(t,{});let connections=0,discoveryFailed=false;
   const action:any={id:'dialog',owner:'Home',file:'App.tsx',component:'Button',prop:'onPress',name:'Dialog',line:1,effect:{kind:'control',component:'Dialog',prop:'control',method:'open',close:'close'}};
   const nodes:any[]=['Home','Search'].map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending',entry:true}));
   const runs=flowRuns(t,{directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>{
-    const generation=++connections;
+    const generation=++connections;let screen='Home';
     return {runtime:{async close(){},async invoke(command:any){
       if(['inspect','resume','recover'].includes(command.type))return {available:true};
-      if(command.type==='presentation-setup'&&generation===1){discoveryFailed=true;throw Error('discovery stalled')}
+      if(command.type==='presentation-setup'&&generation===1){discoveryFailed=true;throw new FlowRuntimeTimeout('presentations')}
       if(command.type==='heartbeat'&&generation===1&&discoveryFailed)throw Error('connection stalled');
-      if(command.type==='open'&&generation===2&&command.path[0]==='Home')throw Error('replay stalled');
-      if(command.type==='open')return {ready:true,name:command.path[0],active:command.path,signature:command.path[0]};
+      if(command.type==='open'&&generation===2&&command.path[0]==='Home')throw new FlowRuntimeTimeout('open');
+      if(command.type==='open'){screen=command.path[0];return {ready:true,name:screen,active:command.path,signature:screen};}
       if(command.type==='verify')return {found:true,active:[command.name]};
       if(command.type==='presentations')return [];
       return {};
-    }},screenshot:async()=>Buffer.from('frame')};
+    }},screenshot:async()=>Buffer.from(screen)};
   }});
   const run=runs.start({projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'fixture',metroUrl:'http://127.0.0.1:8081',useAi:false});
   while(flowRunning(runs.read(run.id)))await new Promise(resolve=>setTimeout(resolve,5));
   const saved=runs.read(run.id);assert.equal(saved.phase,'partial');assert.equal(saved.error,undefined);
-  assert.equal(saved.nodes.filter(node=>node.status==='captured').length,2);assert.equal(connections,2);
+  assert.equal(saved.nodes.filter(node=>node.status==='captured').length,2);assert.equal(connections,1);
   assert.ok(saved.warnings.some(w=>w.includes('partial map was kept')));
-  assert.equal(saved.discoveryFailures?.length,1);assert.equal(saved.discoveryFailures?.[0].nodeId,'Home');await runs.close();
+  assert.equal(saved.discoveryFailures?.length,2);assert.equal(saved.discoveryFailures?.[0].nodeId,'Home');await runs.close();
 });
 
 test('failed discovery retries after fresh routes and discovers sheets without replacing their screenshots',async t=>{
@@ -681,7 +608,7 @@ test('failed discovery retries after fresh routes and discovers sheets without r
       if(command.type==='inspect')return {available:true};
       if(command.type==='open'){active=command.path[0];events.push(`open:${active}`);return {ready:true,name:active,active:[active],signature:active};}
       if(command.type==='verify')return {found:true,active:[command.name]};
-      if(command.type==='presentation-setup'&&active==='Home'&&++collections===1)throw Error('temporary discovery failure');
+      if(command.type==='presentation-setup'&&active==='Home'&&++collections===1)throw new FlowRuntimeTimeout('presentations');
       if(command.type==='presentations')return active==='Home'?[action]:[];
       if(command.type==='presentation-open')active='Sheet';
       if(command.type==='presentation-rollback')active='Home';
@@ -701,7 +628,7 @@ test('failed discovery retries after fresh routes and discovers sheets without r
   assert.equal(saved.nodes.filter(node=>node.status==='captured').length,3);
   assert.ok(events.indexOf('open:Search')<events.lastIndexOf('open:Home'));
   assert.equal(events.filter(event=>event==='capture:Search').length,1);
-  assert.equal(events.filter(event=>event==='capture:Home').length,2,'one original route screenshot and one baseline check before opening the sheet');
+  assert.equal(events.filter(event=>event==='capture:Home').length,1,'Discovery and sheet opening reuse the verified parent image');
   assert.ok(!saved.warnings.some(warning=>warning.includes('partial map')));
 });
 
@@ -846,7 +773,7 @@ test('expected components remain scoped to the logical owner across a portal',()
   app.runtime.cleanup();
 });
 
-test('newly discovered routes run before sheets at the same attempt count',async t=>{
+test('discovery retains the current route for sheets and still follows its observed links',async t=>{
   const directory=await fixture(t,{}),events:string[]=[];let key='Home';
   const action:any={id:'sheet',name:'Sheet',file:'Home.tsx',line:1,owner:'Home',component:'Button',prop:'onPress',effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};
   const nodes:any[]=['Home','Search','Settings'].map(name=>({id:name,name,kind:'screen',path:[name],urls:[`/${name.toLowerCase()}`],required:[],status:'pending'}));
@@ -864,8 +791,8 @@ test('newly discovered routes run before sheets at the same attempt count',async
   const run=runs.start({projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'target',metroUrl:'http://127.0.0.1:8081',useAi:false});
   for(let i=0;i<300&&flowRunning(runs.read(run.id));i++)await new Promise(resolve=>setTimeout(resolve,10));
   assert.equal(runs.read(run.id).phase,'complete');
-  assert.deepEqual(events.slice(0,4),['Home','Search','Settings','Home']);
-  assert.equal(events[4],'Sheet');
+  assert.deepEqual(events,['Home','Sheet','Search','Settings']);
+  assert.equal(events.filter(event=>event==='Sheet').length,1);
   assert.ok(runs.read(run.id).nodes.every(n=>n.status==='captured'));
   await runs.close();
 });
@@ -959,112 +886,6 @@ test('controller previews honor a proven opener even when its sheet stays mounte
   app.button.memoizedProps.disabled=false;app.button.memoizedProps.onPress=undefined;
   assert.deepEqual(app.runtime.list(),[]);
   app.runtime.cleanup();
-});
-
-
-test('related sheets retain a verified parent and use actual projection checkpoints',async t=>{
-  const root=await fixture(t,{});await mkdir(join(root,'run'));const events:any[]=[];let stack:string[]=[];
-  const make=(id:string,actions:string[])=>({id,name:id,kind:'screen',path:[],required:[],status:'pending',presentation:{basePath:['Home'],actions,projections:['form']}} as any);
-  const parent=make('parent',['form']),first=make('first',['form','first']),second=make('second',['form','second']);
-  const run:any={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[parent,first,second],edges:[],presentations:{states:[],actions:[]}};
-  const view=()=>({key:stack.join('/')||'Home',signature:stack.join('/'),ready:true,found:true});
-  const backend:any={screenshot:async()=>Buffer.from(view().key),runtime:{async invoke(command:any){
-    events.push(command);
-    if(command.type==='open'){stack=[];return {ready:true};}
-    if(command.type==='presentation-rollback'){stack.length=command.level??0;return {};}
-    if(command.type==='presentation-checkpoint')return {level:stack.length};
-    if(command.type==='presentation-open')stack.push(command.id);
-    if(command.type==='presentation-project')stack.push('projection');
-    if(command.type==='presentations')return ['form','first','second'].map(id=>({id}));
-    if(command.type==='presentation-view')return view();
-    return {};
-  }}};
-  const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
-  await capture.retry(backend,parent,true);assert.equal(capture.reuseDepth(first),1);
-  await capture.retry(backend,first,true);await capture.retry(backend,second,true);
-  assert.ok(run.nodes.every((node:any)=>node.status==='captured'&&node.image));
-  assert.deepEqual(events.filter(e=>e.type==='presentation-open').map(e=>e.id),['form','first','second']);
-  assert.equal(events.filter(e=>e.type==='open').length,1);
-  assert.deepEqual(events.filter(e=>e.type==='presentation-rollback').map(e=>e.level),[0,2]);
-  await capture.leave(backend);assert.deepEqual(stack,[]);assert.equal(capture.reuseDepth(first),0);
-  assert.ok(capture.timings.take(),'Presentation attempts remain measured');
-  assert.ok(capture.restorationTimings.take(),'Deferred branch restoration remains measured');
-});
-
-test('sibling sheets reuse their settled base only after restoration and a fresh view check',async t=>{
-  for(const proof of ['legacy','matching','different-params'])for(const changed of [false,true]){
-    const root=await fixture(t,{});await mkdir(join(root,'run'));const events:any[]=[];let stack:string[]=[],baseVersion='';
-    const make=(id:string)=>({id,name:id,kind:'screen',path:[],required:[],status:'pending',presentation:{basePath:['Home'],baseParams:{id:'observed'},actions:[id]}} as any);
-    const first=make('first'),second=make('second');
-    const run:any={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[first,second],edges:[],presentations:{states:[],actions:[]}};
-    const view=()=>({key:stack.join('/')||'Home',signature:stack.length?stack.join('/'):baseVersion,ready:true,found:true,motion:'settled'});
-    const backend:any={screenshot:async()=>Buffer.from(view().key),runtime:{async invoke(command:any){
-      events.push(command);
-      if(command.type==='open'){stack=[];baseVersion='';return {ready:true};}
-      if(command.type==='presentation-rollback'){stack.length=command.level??0;if(changed&&first.status==='captured')baseVersion='new base content';return {};}
-      if(command.type==='presentation-checkpoint')return {level:stack.length};
-      if(command.type==='presentation-open')stack.push(command.id);
-      if(command.type==='presentations')return ['first','second'].map(id=>({id}));
-      if(command.type==='presentation-view')return {...view(),routeMatches:command.path?.length&&proof!=='legacy'?proof==='matching':undefined};
-      return {};
-    }}};
-    const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
-    await capture.retry(backend,first,true);await capture.retry(backend,second,true);
-    assert.ok(run.nodes.every((node:any)=>node.status==='captured'&&node.image));
-    assert.equal(events.filter(event=>event.type==='open').length,proof==='different-params'||changed&&proof==='legacy'?2:1,'Settled content may change only with fresh route and parameter proof');
-    const close=events.findIndex((event,index)=>index>events.findIndex(event=>event.type==='presentation-open')&&event.type==='presentation-rollback');
-    const next=events.findIndex(event=>event.type==='presentation-open'&&event.id==='second');
-    assert.ok(close>=0&&next>close);
-    assert.ok(events.slice(close+1,next).some(event=>event.type==='presentation-view'),'Restoring the base must be followed by a live readiness check');
-    await capture.leave(backend);assert.deepEqual(stack,[]);
-    assert.ok(capture.restorationTimings.take());
-  }
-});
-
-test('parent reuse requires unchanged view, checkpoint, base, projection and backend',async t=>{
-  for(const changed of ['signature','motion','checkpoint','base','projection','backend','loading']){
-    const root=await fixture(t,{});await mkdir(join(root,'run'));let stack:string[]=[],version='',motion='',ready=true,opens=0,extra=0;
-    const make=(id:string,actions:string[])=>({id,name:id,kind:'screen',path:[],required:[],status:'pending',presentation:{basePath:['Home'],actions}} as any);
-    const parent=make('parent',['form']),child=make('child',['form','options']);
-    const run:any={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[parent,child],edges:[],presentations:{states:[],actions:[]}};
-    const runtime={async invoke(command:any){
-      if(command.type==='open'){stack=[];version='';motion='';ready=true;extra=0;return {ready:true};}
-      if(command.type==='presentation-rollback'){stack.length=command.level??0;return {};}
-      if(command.type==='presentation-checkpoint')return {level:stack.length+extra};
-      if(command.type==='presentation-open'){stack.push(command.id);opens++;}
-      if(command.type==='presentations')return ['form','options'].map(id=>({id}));
-      if(command.type==='presentation-view')return {key:stack.join('/')||'Home',signature:stack.join('/')+version,motion,ready,found:true,loading:!ready};
-      return {};
-    }};
-    let backend:any={runtime,screenshot:async()=>Buffer.from(stack.join('/')||'Home')};
-    const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
-    await capture.retry(backend,parent,true);
-    if(changed==='signature')version='changed';if(changed==='motion')motion='changed';if(changed==='checkpoint')extra=1;
-    if(changed==='base')child.presentation.baseParams={id:'real changed record'};
-    if(changed==='projection')child.presentation.projections=['form'];
-    if(changed==='backend')backend={...backend};if(changed==='loading')ready=false;
-    await capture.retry(backend,child,true);
-    assert.equal(child.status,'captured',changed);assert.equal(opens,3,`${changed} must replay the whole chain`);
-    await capture.leave(backend);
-  }
-});
-
-test('failed child capture restores its retained parent instead of leaving an overlay',async t=>{
-  const root=await fixture(t,{});await mkdir(join(root,'run'));let stack:string[]=[],shots=0;
-  const parent:any={id:'parent',name:'Form',kind:'screen',path:[],required:[],status:'pending',presentation:{basePath:[],actions:['form']}};
-  const child:any={...parent,id:'child',name:'Options',presentation:{basePath:[],actions:['form','options']}};
-  const run:any={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[parent,child],edges:[],presentations:{states:[],actions:[]}};
-  const backend:any={screenshot:async()=>{if(stack.at(-1)==='options'&&++shots===1)throw Error('device capture failed');return Buffer.from(stack.join('/')||'entry');},runtime:{async invoke(c:any){
-    if(c.type==='presentation-rollback')stack.length=c.level??0;
-    if(c.type==='presentation-checkpoint')return {level:stack.length};
-    if(c.type==='presentation-open')stack.push(c.id);
-    if(c.type==='presentations')return ['form','options'].map(id=>({id}));
-    if(c.type==='presentation-view')return {key:stack.join('/')||'entry',signature:stack.join('/'),ready:true,found:true};
-    return {};
-  }}};
-  const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
-  await capture.retry(backend,parent,true);await assert.rejects(capture.retry(backend,child,true),/device capture failed/);
-  assert.deepEqual(stack,[]);assert.equal(capture.reuseDepth(child),0);assert.ok(parent.image);assert.equal(child.image,undefined);
 });
 
 test('temporary preview boundaries contain their own React root errors and preserve app handlers',async t=>{
@@ -1976,36 +1797,6 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
   assert.equal(runtime.checkpoint(),0);assert.equal(container.memoizedProps.children,original);
 });
 
-test('route handoff waits for its first presentation probe and children reuse the verified parent image', async t => {
-  const directory = await fixture(t, {}); await mkdir(join(directory, 'run'));
-  const base:any={id:'home',name:'Home',kind:'screen',path:['Home'],required:[],status:'captured'};
-  const parent:any={id:'sheet',name:'Sheet',kind:'screen',path:[],required:[],status:'pending',presentation:{basePath:['Home'],actions:['sheet']}};
-  const child:any={...parent,id:'child',presentation:{basePath:['Home'],actions:['sheet','child']}};
-  const run:any={id:'run',nodes:[base,parent,child],edges:[],revision:0,presentations:{states:[],actions:[]}};
-  const events:string[]=[],stack:string[]=[];let firstProbe=true;
-  const view=()=>({key:stack.join('/')||'Home',signature:stack.join('/'),active:['Home'],found:true,ready:true});
-  const backend:any={screenshot:async()=>{events.push('screenshot');return Buffer.from(view().key)},runtime:{async invoke(command:any){
-    events.push(command.type);
-    if(command.type==='open')assert.fail('The settled route must not open again');
-    if(command.type==='presentation-view'){if(firstProbe){firstProbe=false;return {...view(),ready:false};}return view();}
-    if(command.type==='presentation-checkpoint')return {level:stack.length};
-    if(command.type==='presentation-open')stack.push(command.id);
-    if(command.type==='presentation-rollback')stack.length=command.level??0;
-    if(command.type==='presentations')return ['sheet','child'].map(id=>({id}));
-    return {};
-  }}};
-  const capture=new FlowPresentationCapture(run,directory,directory,new AbortController().signal,async()=>{});
-  await capture.retainBase(backend,base);
-  assert.equal(capture.priority(parent),1);assert.equal(capture.priority(base),0);
-  await capture.retry(backend,parent,true);
-  assert.equal(capture.priority(child),2);
-  await capture.retry(backend,child,true);
-  assert.equal(parent.status,'captured');assert.equal(child.status,'captured');
-  assert.equal(events.filter(event=>event==='screenshot').length,3,'One baseline and two real captures; no second parent screenshot');
-  assert.equal(events.filter(event=>event==='presentation-rollback').length,0);
-  await capture.leave(backend);assert.deepEqual(stack,[]);
-});
-
 test('the default mapper captures local sheets before leaving their route', async t => {
   const directory=await fixture(t,{}),events:string[]=[],stack:string[]=[];let route='Home';
   const actions:any[]=Array.from({length:12},(_,i)=>({id:`sheet-${i}`,name:`Sheet ${i}`,file:'Home.tsx',line:i+1,owner:'Home',component:'Button',prop:'onPress',effect:{kind:'control',component:`Sheet${i}`,prop:'control',method:'open',close:'close'}}));
@@ -2078,7 +1869,7 @@ for(const difference of ['none','uncaptured','missing-image','different-view','d
   if(difference==='different-parent')parent.presentation.actions=['other-open'];
   if(difference==='different-group')base.groupId='other-state';
   const run:any={id:'run',revision:0,nodes:[parent,base],edges:[],presentations:{states:[],actions:[enter,back]}};
-  const capture=new FlowPresentationCapture(run,directory,directory,new AbortController().signal,async()=>{});
+  const capture=new FlowPresentationDiscovery(run,directory,directory,new AbortController().signal,async()=>{});
   const backend:any={runtime:{async invoke(command:any){if(command.type==='presentations')return [back];if(command.type==='presentation-active')return ['next-view'];return {};}}};
   await capture.explore(backend,base);
   if(difference==='none'){
@@ -2102,37 +1893,6 @@ test('presentation visibility respects the final nested style override',()=>{
   app.button.memoizedProps.style=[{display:'none'},[{display:'flex'}]];
   assert.equal(app.runtime.list().length,1);
   app.runtime.cleanup();
-});
-
-for(const outcome of ['closed','unavailable','cancelled'])test(`default capture handles a ${outcome} source handoff before opening its child`,async t=>{
-  const root=await fixture(t,{});await mkdir(join(root,'run'));const events:string[]=[],controller=new AbortController();let visible='Home',level=0;
-  const node:any={id:'child',name:'Child',kind:'screen',path:[],required:[],status:'pending',presentation:{basePath:['Home'],actions:['parent','child']}};
-  const action:any={id:'child',effect:{kind:'control'},handoffs:[{file:'App.tsx'}]};
-  const run:any={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[node],edges:[],presentations:{states:[],actions:[action]}};
-  const view=()=>({key:visible,signature:visible,ready:true,found:true,active:['Home']});
-  const backend:any={screenshot:async()=>Buffer.from(visible),runtime:{async invoke(command:any){
-    if(command.type==='open')return {ready:true};
-    if(command.type==='presentation-rollback'){events.push('restore');level=0;visible='Home';return {};}
-    if(command.type==='presentation-checkpoint')return {level};
-    if(command.type==='presentations')return visible==='child'?[]:[{id:'parent'},{id:'child'}];
-    if(command.type==='presentation-open'){events.push(`open:${command.id}`);visible=command.id;level++;return {};}
-    if(command.type==='presentation-handoff'){
-      events.push('handoff');
-      if(outcome==='unavailable')return {error:'The source-proven handoff entry is not mounted in this app state.'};
-      if(outcome==='cancelled')controller.abort();
-      visible='Home';return {closed:true};
-    }
-    if(command.type==='presentation-view')return view();
-    return {};
-  }}};
-  const capture=new FlowPresentationCapture(run,root,root,controller.signal,async()=>{});
-  const result=capture.retry(backend,node,true);
-  if(outcome==='cancelled')await assert.rejects(result);else await result;
-  assert.equal(events.filter(event=>event==='handoff').length,1);
-  if(outcome==='closed'){
-    assert.equal(node.status,'captured');assert.ok(events.indexOf('handoff')<events.indexOf('open:child'));
-  }else{assert.ok(!events.includes('open:child'));assert.equal(node.image,undefined);}
-  assert.equal(events.at(-1),'restore');assert.equal(capture.reuseDepth(node),0,'A dismissed parent cannot remain a reusable branch');
 });
 
 

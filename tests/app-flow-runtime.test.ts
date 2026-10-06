@@ -364,7 +364,7 @@ test('persistent CDP connection uses binding replies and renews the runtime leas
     if(message.method==='Runtime.addBinding')binding=message.params.name;
     if(message.params?.expression?.includes('"heartbeat"'))heartbeatReceived();
     socket.send(JSON.stringify({id:message.id,result:{result:{type:'undefined'}}}));
-    if(message.id<0)setTimeout(()=>socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload:JSON.stringify({id:message.id,result:{available:true,marker:message.id}})}})),10);
+    if(message.id<0)setTimeout(()=>socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload:JSON.stringify({id:message.id,result:{available:true,alive:true,marker:message.id}})}})),10);
   }));
   const address=server.address() as {port:number};
   const connection=new FlowConnection(`ws://127.0.0.1:${address.port}`);
@@ -1209,4 +1209,50 @@ test('an expired debugger request cannot mutate the app after recovery has moved
   assert.equal(opened,0,'A timed-out opening must not run late against a recovered app');
   assert.equal((await connection.invoke({type:'presentation-open',id:'fresh-view'},200)).ready,true);
   assert.equal(opened,1,'The calibrated device clock must still admit a fresh request');
+});
+
+for(const operation of ['resume','presentation-rollback','restore']) {
+ test(`${operation} settles an interrupted navigation callback exactly once`,async t=>{
+  const app=runtime(t);await app.invoke({type:'inspect'});app.native.type='Skeleton';
+  let replies=0;
+  const opening=new Promise<any>(resolve=>app.context.flow.invoke({type:'open',path:['Profile'],timeoutMs:2000},(value:any)=>{replies++;resolve(value)}));
+  await new Promise(resolve=>setTimeout(resolve,20));
+  await app.invoke({type:operation});
+  const result=await opening;
+  assert.equal(result.cancelled,true);assert.equal(result.ready,false);assert.equal(replies,1);
+ });
+}
+
+test('context loss reaches the capture listener even while the debugger socket stays open',async t=>{
+ const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
+ t.after(()=>new Promise<void>(resolve=>{for(const client of server.clients)client.terminate();server.close(()=>resolve())}));
+ let socket:any,binding='',enabled=false;
+ server.on('connection',client=>{socket=client;client.on('message',bytes=>{
+  const message=JSON.parse(bytes.toString());
+  if(message.method==='Runtime.enable')enabled=true;
+  if(message.method==='Runtime.addBinding')binding=message.params.name;
+  if(message.id>0)client.send(JSON.stringify({id:message.id,result:{}}));
+  if(message.id<0)client.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload:JSON.stringify({id:message.id,result:{alive:true}})}}));
+ });});
+ const connection=new FlowConnection(`ws://127.0.0.1:${(server.address() as {port:number}).port}`);
+ t.after(()=>connection.close({restore:false}));
+ await connection.invoke({type:'heartbeat'});assert.equal(enabled,true);
+ const disconnected=new Promise(resolve=>connection.onCapture(resolve));
+ socket.send(JSON.stringify({method:'Runtime.executionContextsCleared',params:{}}));
+ assert.equal((await disconnected as any).type,'connection-error');
+ assert.equal(socket.readyState,1);
+});
+
+test('a stopped runtime is not a successful heartbeat',async t=>{
+ const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
+ t.after(()=>new Promise<void>(resolve=>{for(const client of server.clients)client.terminate();server.close(()=>resolve())}));
+ let result:any={stopped:true,error:'Capture stopped.'};
+ server.on('connection',socket=>{let binding='';socket.on('message',bytes=>{
+  const message=JSON.parse(bytes.toString());if(message.method==='Runtime.addBinding')binding=message.params.name;
+  if(message.id>0)socket.send(JSON.stringify({id:message.id,result:{}}));
+  else socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload:JSON.stringify({id:message.id,result})}}));
+ });});
+ const connection=new FlowConnection(`ws://127.0.0.1:${(server.address() as {port:number}).port}`);t.after(()=>connection.close({restore:false}));
+ await assert.rejects(connection.invoke({type:'heartbeat'}),/inspector is no longer installed/);
+ result={};await assert.rejects(connection.invoke({type:'heartbeat'}),/invalid response/);
 });

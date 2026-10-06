@@ -31,7 +31,7 @@ test('queued native sheet previews use server-bound source and retain their real
   queue=createCaptureQueue({async open(){const value=await queue.request({operation:'open',actionId:'guarded'});return value.error?{ready:false,reason:value.error}:value.view;},async ready(){return {key:'form',ready:true}},async verify(){return {key:'form',ready:true}},same:(a:any,b:any)=>a.key===b.key,async restore(){events.push('restore')}},(event:any)=>listener(event));
   const runtime={onCapture(callback:any){listener=callback;return()=>{listener=()=>{}}},async close(){},async invoke(command:any){
     events.push(command.type);
-    if(command.type==='capture-start')return queue.start(command.batch,command.jobs);
+    if(command.type==='capture-start'){assert.deepEqual(command.jobs[0].actions,[{id:'guarded'}]);assert.equal(command.jobs[0].sourceViews,undefined);return queue.start(command.batch,command.jobs);}
     if(command.type==='capture-ack')return queue.ack(command.batch,command.ticket,command.value);
     if(command.type==='capture-source')return queue.source(command.batch,command.ticket,command.value);
     if(command.type==='capture-stop')return queue.stop();

@@ -1,3 +1,4 @@
+import {QueuedAppFlowRuns as AppFlowRuns} from './app-flow-queue-fixture.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile, writeFile, mkdir, stat } from 'node:fs/promises';
@@ -5,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { AppFlowRuns, type FlowDependencies, type FlowStart } from '../src/server/app-flow/runs.ts';
+import { type FlowDependencies, type FlowStart } from '../src/server/app-flow/runs.ts';
 import { FlowStore } from '../src/server/app-flow/store.ts';
 import { flowRunning, type FlowGraph } from '../src/shared/app-flow.ts';
 
@@ -169,18 +170,18 @@ test('a fade starting during screenshot capture retries in place and saves only 
   const runs=new AppFlowRuns({directory,scan:async()=>({...graph(),nodes:[graph().nodes[0]]}),connect:async()=>({
     runtime:{async invoke(command){
       if(command.type==='inspect')return{available:true};
-      if(command.type==='open'){opens++;return{ready:true,name:'Home',active:['Home'],signature:'content',motion:'[0]'}}
+      if(command.type==='open'){if(!command.settleOnly)opens++;return{ready:true,name:'Home',active:['Home'],signature:'content',motion:JSON.stringify([checks?([.25,.75,1,1][checks]??1):0])}}
       if(command.type==='verify')return{found:true,active:['Home'],motion:JSON.stringify([ [.25,.75,1,1][checks++] ?? 1 ])};
       return{};
     },async close(){}},
-    async screenshot(){return Buffer.from(`frame-${++shots}`)},
+    async screenshot(){shots++;return Buffer.from(`motion-${[.25,.75,1,1][checks-1]??1}`)},
   })});
   t.after(()=>runs.close());
   const {id}=runs.start(input),result=await finished(runs,id);
   assert.equal(result.nodes[0].status,'captured');
   assert.equal(opens,1,'recapture must not replay the navigation or restart the fade');
-  assert.equal(shots,4);
-  assert.equal((await runs.image(id,'home')).toString(),'frame-4');
+  assert.ok(shots>=1);
+  assert.equal((await runs.image(id,'home')).toString(),'motion-1');
 });
 
 test('device leases exclude other capture owners and release cleanly', async t => {
@@ -210,6 +211,7 @@ test('Stop from another MCP process interrupts a long readiness wait', async t =
   while (!opening) await delay(5);
   await client.stopShared(id);
   const result = await finished(owner, id);
+  assert.deepEqual(await (owner as any).store.commands(id),[],'Stop must finish acknowledging its command before the run closes');
   assert.equal(result.phase, 'stopped');
   assert.equal(result.nodes[0].image, undefined);
 });

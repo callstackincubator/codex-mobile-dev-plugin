@@ -33,6 +33,6 @@ export async function captureSource(options: {
     closed = !!result.closed;
   }
   const view = await invoke({type:'presentation-open', id:action.id}, 2000);
-  if (view?.error) return {error:view.error, status:'needs-data'};
+  if (view?.error) return {error:view.error, status:'timed-out'};
   return {closed, view};
 }

@@ -1,10 +1,11 @@
+import {QueuedAppFlowRuns as AppFlowRuns} from './app-flow-queue-fixture.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { AppFlowRuns, type FlowStart } from '../src/server/app-flow/runs.ts';
+import { type FlowStart } from '../src/server/app-flow/runs.ts';
 import { flowRunning, type FlowGraph } from '../src/shared/app-flow.ts';
 
 const input: FlowStart = {projectRoot:'/fixture',platform:'ios',deviceId:'device',targetId:'target',metroUrl:'http://127.0.0.1:8081',useAi:false};

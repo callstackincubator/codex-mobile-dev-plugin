@@ -5,13 +5,12 @@ import { homedir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import * as Sentry from "@sentry/node";
 import { flowRunning, missingFlowParams, publicFlowRun, flowProgressRun, type FlowParams, type FlowResolution, type FlowRun, type FlowNode } from "../../shared/app-flow.ts";
-import { blankFlowFrame } from "./frame.ts";
 import { FlowReachability, type FlowEvidence } from "./reachability.ts";
 import type { scanAppFlow } from "./scan.ts";
 import { MeasurementWindow } from "../../shared/telemetry.ts";
 import { captureServerError } from "../telemetry.ts";
 import { FlowStore, type FlowLease, type SavedFlow } from './store.ts';
-import { FlowPresentationCapture } from './presentations.ts';
+import { CapturePlanner } from './capture-planner.ts';
 import { recordFlow } from './recording.ts';
 import { PLUGIN_VERSION } from '../../shared/version.ts';
 import { FlowAppFailure, FlowRuntimeFailure, FlowRuntimeMetrics } from './runtime-metrics.ts';
@@ -30,7 +29,6 @@ export type FlowDependencies = {
   directory?: string;
 };
 type Active = { run: FlowRun; input: FlowStart; abort: AbortController; done?: Promise<void>; runtime?: FlowRuntime; runtimeMetrics?:FlowRuntimeMetrics; info?: RuntimeInfo; target?: FlowTargetIdentity; saving?: Promise<void>; savedRevision?: number; checkpoints?: MeasurementWindow; lease?: FlowLease; writing: Set<Promise<void>>; settled: boolean; contextRefresh?: Promise<void> };
-const maxAttempts = 3;
 const discoveryWarning="Presentation discovery failed on some screens. The partial map was kept.";
 export const FLOW_DIRECTORY = join(homedir(), "Library/Application Support/mobile-dev/app-flow");
 
@@ -309,20 +307,21 @@ export class AppFlowRuns {
     const stopTimer = setInterval(() => {
       if (checkingStop || signal.aborted) return;
       checkingStop = true;
-      stopCheck=this.store.commands(run.id).then(commands => {
-        if (commands.some(item => item.command.type === 'stop')) this.stop(run.id);
+      stopCheck=this.store.commands(run.id).then(async commands => {
+        const stops=commands.filter(item=>item.command.type==='stop');
+        if(stops.length){this.stop(run.id);await this.store.acknowledge(run.id,stops.map(item=>item.name));}
       }).catch(() => { if (!stopReadErrorReported) { stopReadErrorReported = true; captureServerError(new Error('App Flow control request could not be read.'), 'app_flow.control'); } }).finally(() => { checkingStop = false; });
     }, 500);
     stopTimer.unref();
     let backend: FlowBackend | undefined, ai: Promise<void> | undefined;
     let discovery: FlowReachability | undefined;
-    let presentations: FlowPresentationCapture | undefined;
-    let previousFrame: { bytes: Buffer; signature: string } | undefined;
+    let planner: CapturePlanner | undefined;
     const captureTimings = new MeasurementWindow();
     const readinessTimings = new MeasurementWindow(), loadingTimings = new MeasurementWindow();
-    const reconnectTimings = new MeasurementWindow();
+    const reconnectTimings = new MeasurementWindow(), planningTimings = new MeasurementWindow();
     let reconnects = 0, recoveryContinuations = 0;
     let retries = 0;
+    const presentationTimings = new MeasurementWindow(), restorationTimings = new MeasurementWindow();
     const attributes = { surface: "app-flow", device_platform: input.platform };
     const runtimeMetrics=active.runtimeMetrics=new FlowRuntimeMetrics(input.platform);
     const save = async () => {
@@ -348,22 +347,10 @@ export class AppFlowRuns {
         recoveryContinuations++;
       }
     };
-    const recoverPresentation = async () => {
-      // A delayed native close does not imply a lost inspector. Keep its
-      // controller and dismissal observers, and resume cleanup on the same
-      // connection before considering a reinstall.
-      const reply=await abortable(backend!.runtime.invoke({type:'heartbeat'},2500),signal);
-      if(reply?.alive!==true)throw new FlowRuntimeFailure('heartbeat','returned an invalid response');
-      const restored=await abortable(backend!.runtime.invoke({type:'presentation-rollback',level:0},10000),signal);
-      if(restored?.error)throw new FlowRuntimeFailure('presentation-rollback','was rejected',restored.detail);
-      presentations?.discardBranch();
-      recoveryContinuations++;
-    };
     const reconnect = async () => {
       run.phase = "reconnecting"; run.revision++; reconnects++;
       await Promise.allSettled(active.writing);
       await save();
-      presentations?.discardBranch();
       await backend?.runtime.close({ restore: false }).catch(() => {});
       const started = performance.now();
       try {
@@ -376,13 +363,12 @@ export class AppFlowRuns {
             next = await connect();
             active.runtime = next.runtime;
             const info = await abortable(next.runtime.invoke({ type: "resume" }, 2500), signal);
-            if (!info?.available && !presentations) throw new Error("Waiting for the app's navigation container.");
+            if (!info?.available && !planner) throw new Error("Waiting for the app's navigation container.");
             const restored=await next.runtime.invoke({type: "presentation-rollback"}, 10000);
             if(restored?.error)throw new FlowRuntimeFailure('presentation-rollback');
             if (info?.available) await recoverNavigation(next.runtime);
             signal.throwIfAborted();
             backend = next; active.runtime = next.runtime; active.info = info; active.target = next.target;
-            previousFrame = undefined;
             run.phase = "capturing"; run.revision++;
             return;
           } catch (error) {
@@ -433,227 +419,65 @@ export class AppFlowRuns {
         run.captureMode='instrumented';run.manifestTotal=manifest.total;run.preparationMs=Date.now()-sessionStarted;
         runtimeMetrics.record('capture-prepare',performance.now()-preparedAt,false);
         await save();
-        for (let reconnectAttempt=0;;reconnectAttempt++) {
-          const jobs = manifest.jobs.filter(job=>run.nodes.some(node=>node.id===job.id && ['pending','capturing'].includes(node.status)));
-          try {
-            await captureBatch({backend, manifest:{...manifest,jobs}, run, directory:this.directory, projectRoot:input.projectRoot, signal, save,
-              timing:(operation,ms) => { if(operation==='capture')captureTimings.record(ms); },
-            });
-            break;
-          } catch(error) {
-            if (!(error instanceof CaptureConnectionError) || reconnectAttempt>=2 || signal.aborted) throw error;
-            await reconnect();
-            await backend.runtime.invoke({type:'capture-stop'},10000);
-          }
-        }
-        run.phase = run.nodes.every(node => node.status==='captured') ? 'complete' : 'partial';
-        return;
+      } else {
+        planner = new CapturePlanner(run,input.projectRoot,this.directory,signal,save,discovery,active.info?.active);
+        if(!active.info?.available)await planner.presentations.entry(backend);
+        if(!resume)run.ai=input.useAi?'waiting':'off';
       }
-      presentations = new FlowPresentationCapture(run, input.projectRoot, this.directory, signal, save);
-      const pendingDiscovery=new Map<string,number>();
-      if(resume&&presentations.enabled)for(const node of run.nodes)if(node.status==='captured'&&!node.presentation&&node.kind==='screen')pendingDiscovery.set(node.id,0);
-      if (!active.info?.available) {
-        try { await presentations.baseline(backend); }
-        catch (error) {
-          if (signal.aborted || error instanceof FlowAppFailure) throw error;
-          try { await backend.runtime.invoke({type:'heartbeat'},1000); }
-          catch { await reconnect(); await presentations.baseline(backend); }
-          if (!run.nodes.length) throw error;
-        }
-      }
-      if (!resume) run.ai = input.useAi ? "waiting" : "off";
-      const attempts = new Map(run.nodes.map(node => [node.id, node.captureAttempts ?? 0]));
-      const interruptions = new Map<string, number>();
-      // Start with the already mounted route before leaving it for another
-      // entry. This also lets its sheets reuse their live parent immediately.
-      const initialPath = JSON.stringify(active.info?.active);
-      const initialRoute = (node: FlowNode) => !node.presentation && JSON.stringify(node.path) === initialPath;
-
-      while (!signal.aborted) {
+      // Prepared selections and the Map app button use the same executor.
+      // Only their planners differ: fixed recipes or discovery from the live view.
+      const nextManifest = () => planner?.manifest() ?? captureManifest(run,run.nodes.filter(node=>['pending','capturing'].includes(node.status)));
+      let interrupted=0;
+      while(!signal.aborted){
         await this.drain(active);
-        await this.persist(active);
-        signal.throwIfAborted();
-        for (const node of run.nodes) attempts.set(node.id, node.captureAttempts ?? 0);
-        const node = run.nodes.filter(item => item.kind === 'screen' && item.status === 'pending' && (attempts.get(item.id) ?? 0) < maxAttempts)
-          .sort((a, b) => (attempts.get(a.id) ?? 0) - (attempts.get(b.id) ?? 0) || presentations.priority(b)-presentations.priority(a) || Number(initialRoute(b))-Number(initialRoute(a)) || Number(!!a.presentation)-Number(!!b.presentation))[0];
-        if (node?.presentation) {
-          run.retrying = (node.captureAttempts ?? 0) > 0;
-          if (run.retrying) retries++;
-          try { await presentations.retry(backend, node, true); }
-          catch (error) {
-            if (signal.aborted || error instanceof FlowAppFailure) throw error;
-            if(node.status!=='captured'){
-              node.status = (node.captureAttempts ?? 0) < maxAttempts ? 'pending' : 'timed-out';
-              node.reason = error instanceof FlowRuntimeFailure ? error.message : 'Presentation capture was interrupted.';
-              node.failure={operation:error instanceof FlowRuntimeFailure?error.operation:'other',detail:error instanceof FlowRuntimeFailure?error.detail:error instanceof Error?error.message.slice(0,1000):undefined};
+        const manifest=nextManifest();
+        if(!manifest.jobs.length){
+          if(run.ai==='waiting'){
+            const unresolved=run.nodes.some(node=>node.status==='needs-data');
+            if(unresolved && this.dependencies.resolve){
+              run.ai='resolving';run.revision++;
+              ai=abortable(this.contextShared(run.id).then(context=>this.dependencies.resolve!(context,signal)),signal).then(resolutions=>{
+                if(!signal.aborted){this.resolve(run.id,resolutions);run.ai='done';run.revision++;}
+              }).catch(()=>{if(!signal.aborted){run.ai='unavailable';run.revision++;}});
+              await ai;continue;
             }
-            try {
-              if(error instanceof FlowRuntimeFailure&&error.operation==='presentation-rollback')await recoverPresentation();
-              else await backend.runtime.invoke({type: 'heartbeat'}, 1000);
-            }
-            catch (recoveryError) { if(signal.aborted||recoveryError instanceof FlowAppFailure)throw recoveryError;await reconnect(); if(node.status!=='captured'){node.captureAttempts = Math.max(0, (node.captureAttempts ?? 1) - 1); node.status = 'pending';} }
+            run.ai=unresolved?'unavailable':'off';run.revision++;
           }
-          continue;
-        }
-        try { await presentations.leave(backend); }
-        catch(error){
-          if(signal.aborted||error instanceof FlowAppFailure)throw error;
-          try { await recoverPresentation(); }
-          catch(recoveryError) { if(signal.aborted||recoveryError instanceof FlowAppFailure)throw recoveryError;await reconnect(); }
-          continue;
-        }
-        if (!node) {
-          const entry=[...pendingDiscovery].filter(([,attempts])=>attempts<maxAttempts).sort((a,b)=>a[1]-b[1])[0];
-          if(entry){
-            const [id,attempts]=entry,base=run.nodes.find(node=>node.id===id);
-            pendingDiscovery.set(id,attempts+1);
-            if(!base){pendingDiscovery.delete(id);continue;}
-            try {
-              const opened=await abortable(backend.runtime.invoke({type:'open',path:base.path,params:base.params,expo:base.component==='expo-router',timeoutMs:2000,loadingTimeoutMs:10000},10500),signal);
-              if(!opened.ready)throw new FlowRuntimeFailure('open');
-              discovery?.reveal(base,opened);
-              await abortable(presentations.explore(backend,base),signal);pendingDiscovery.delete(id);
-            } catch(error) {
-              if(signal.aborted || error instanceof FlowAppFailure)throw error;
-              if(!presentations.failures.has(id))presentations.failures.set(id,{nodeId:id,operation:error instanceof FlowRuntimeFailure?error.operation:'other',message:error instanceof FlowRuntimeFailure?error.message:'App Flow presentation discovery failed.'});
-              try { await backend.runtime.invoke({type:'heartbeat'},1000); } catch { await reconnect(); }
-            }
-            run.discoveryFailures=[...presentations.failures.values()];run.revision++;await save();
-            continue;
-          }
-          if (run.ai === "waiting") {
-            const unresolved = run.nodes.some(node => node.status === "needs-data");
-            if (unresolved && this.dependencies.resolve) {
-              run.ai = "resolving";
-              ai = abortable(this.contextShared(run.id).then(context => this.dependencies.resolve!(context, signal)), signal).then(resolutions => {
-                if (!signal.aborted) { this.resolve(run.id, resolutions); run.ai = "done"; run.revision++; }
-              }).catch(() => { if (!signal.aborted) { run.ai = "unavailable"; run.revision++; } });
-            } else run.ai = unresolved ? "unavailable" : "off";
-            run.revision++;
-          }
-          if (run.ai === "resolving" || run.ai === "waiting") { await delay(50, undefined, { signal }); continue; }
           break;
         }
-        const attempt = (attempts.get(node.id) ?? 0) + 1; attempts.set(node.id, attempt);
-        node.captureAttempts = attempt;
-        run.retrying = attempt > 1;
-        if (run.retrying) retries++;
-        const timeoutMs = [1000, 2000, 4000][attempt - 1];
-        const loadingTimeoutMs = [6000, 10000, 20000][attempt - 1];
-        node.status = "capturing"; node.failure=undefined; node.reason=undefined; run.revision++;
-        const started = performance.now();
-        let capturedTarget=false;
         try {
-          const result = await abortable(backend.runtime.invoke({ type: "open", path: node.path, params: node.params, expo: node.component === "expo-router", timeoutMs, loadingTimeoutMs }, loadingTimeoutMs + 500), signal);
-          signal.throwIfAborted();
-          if (typeof result.readinessMs === "number") readinessTimings.record(result.readinessMs);
-          if (typeof result.loadingMs === "number") loadingTimings.record(result.loadingMs);
-          discovery?.reveal(node, result);
-          if (result.error) { node.status = "blocked"; node.reason = result.error; }
-          else if (result.redirected) {
-            node.status = "blocked"; node.reason = "This route redirects to another screen.";
-            discovery?.reveal(node, { links: [{ screen: result.active.at(-1) }] });
+          await captureBatch({backend,manifest,run,directory:this.directory,projectRoot:input.projectRoot,signal,save,
+            ...(planner?{plan:async(node:FlowNode,result:{ready?:boolean;evidence?:FlowEvidence})=>{
+              await this.drain(active);
+              const next=await planner!.after(backend!,node,result);
+              run.discoveryFailures=[...planner!.presentations.failures.values()];
+              await save();return next;
+            }}:{}),
+            timing:(operation,ms)=>{
+              if(operation==='capture')captureTimings.record(ms);
+              if(operation==='presentation')presentationTimings.record(ms);
+              if(operation==='restoration')restorationTimings.record(ms);
+              if(operation==='readiness')readinessTimings.record(ms);
+              if(operation==='loading')loadingTimings.record(ms);
+              if(operation==='planning')planningTimings.record(ms);
+              if(operation==='retry')retries++;
+            },
+          });
+          interrupted=0;
+        } catch(error) {
+          if(!(error instanceof CaptureConnectionError) || ++interrupted>2 || signal.aborted)throw error;
+          // Keep accepted images. The interrupted job has not consumed a retry.
+          for(const node of run.nodes)if(node.status==='capturing'){
+            node.status='pending';node.captureAttempts=Math.max(0,(node.captureAttempts??1)-1);
           }
-          else if (!result.ready) { node.status = "timed-out"; node.reason = result.reason ?? "Screen did not settle in time."; }
-          else {
-            const captureSignal = AbortSignal.any([signal, AbortSignal.timeout([1200, 2000, 3000][attempt - 1])]);
-            let bytes = await backend.screenshot(captureSignal);
-            if (previousFrame && result.signature !== previousFrame.signature && bytes.equals(previousFrame.bytes)) {
-              await delay(100, undefined, { signal: captureSignal });
-              bytes = await backend.screenshot(captureSignal);
-              if (bytes.equals(previousFrame.bytes)) throw new Error("Native frame did not change.");
-            }
-            if (blankFlowFrame(bytes)) {
-              // A committed React tree can precede the native frame during a transition.
-              // Retry in place instead of navigating away and repeating the entire route.
-              await delay(120, undefined, { signal: captureSignal });
-              bytes = await backend.screenshot(captureSignal);
-              if (blankFlowFrame(bytes)) throw new Error("Native screen is blank.");
-            }
-            signal.throwIfAborted();
-            const validatedFrame = bytes;
-            let verified = await backend.runtime.invoke({ type: "verify", name: result.name }, 1000);
-            let motion = result.motion;
-            const sameScreen = () => JSON.stringify(verified.active) === JSON.stringify(result.active) && verified.found && !verified.loading && !verified.transitioning;
-            // A fade can begin after readiness but before the native screenshot.
-            // Recapture in place until its live values agree across capture.
-            while (sameScreen() && verified.motion !== motion) {
-              motion = verified.motion;
-              await delay(40, undefined, { signal: captureSignal });
-              bytes = await backend.screenshot(captureSignal);
-              verified = await backend.runtime.invoke({ type: "verify", name: result.name }, 1000);
-            }
-            captureSignal.throwIfAborted();
-            if (bytes !== validatedFrame && blankFlowFrame(bytes)) throw new Error("Native screen is blank.");
-            if (JSON.stringify(verified.active) !== JSON.stringify(result.active) || !verified.found || verified.loading || verified.transitioning) {
-              node.status = "timed-out"; node.reason = "The screen changed during capture.";
-            } else {
-              discovery?.reveal(node, verified);
-              const file = `${node.id}.png`;
-              // Disk writes do not hold up navigation. A screenshot remains labelled only after it saves.
-              const writing = writeFile(join(this.directory, run.id, file), bytes, { mode: 0o600 }).then(() => {
-                node.image = `mobile-flow://${run.id}/${node.id}`;node.imageSourceHash=run.sourceHash; node.status = "captured"; node.reason = "Focused screen captured; content completeness is not verified."; run.revision++;
-              }).catch(() => { node.status = "blocked"; node.reason = "Could not save screenshot."; run.revision++; });
-              active.writing.add(writing); capturedTarget=true;
-              void writing.finally(() => active.writing.delete(writing));
-              previousFrame = { bytes, signature: result.signature };
-            }
-          }
-        } catch (error) {
-          if (signal.aborted || error instanceof FlowAppFailure) throw error;
-          node.failure={operation:error instanceof FlowRuntimeFailure?error.operation:'other',detail:error instanceof FlowRuntimeFailure?error.detail:error instanceof Error?error.message.slice(0,1000):undefined};
-          node.status = "timed-out"; node.reason = error instanceof FlowRuntimeFailure ? error.message : error instanceof Error && error.message === "Native screen is blank." ? "The native screen is blank. It was not saved as a preview." : error instanceof Error && error.message === "Native frame did not change." ? "The device still shows the previous screen. Close any native overlay and try again." : "Capture or runtime acknowledgement timed out.";
+          await reconnect();
+          await backend.runtime.invoke({type:'capture-stop'},10000);
         }
-        const routeCaptureMs=capturedTarget?performance.now()-started:undefined;
-        if (capturedTarget) {
-          if (presentations.enabled) {
-            try { if(previousFrame)presentations.rememberFrame(previousFrame.bytes);await presentations.explore(backend, node);await presentations.retainBase(backend,node);pendingDiscovery.delete(node.id); }
-            catch (error) {
-              if (signal.aborted || error instanceof FlowAppFailure) throw error;
-              try {
-                try { await backend.runtime.invoke({type:"heartbeat"},1000); }
-                catch {
-                  await reconnect();
-                  const restored=await backend!.runtime.invoke({type:"open",path:node.path,params:node.params,expo:node.component==="expo-router",timeoutMs:2000,loadingTimeoutMs:10000},10500);
-                  if(restored.ready)await presentations.explore(backend!,node);
-                }
-              } catch (recoveryError) {
-                // Discovery can fail again after a reconnect. Keep the saved
-                // screenshot and let the queue retry other routes.
-                if(signal.aborted || recoveryError instanceof FlowAppFailure)throw recoveryError;
-              }
-              run.discoveryFailures=[...presentations.failures.values()];run.revision++;
-              if(presentations.failures.has(node.id))pendingDiscovery.set(node.id,1);
-              if(!run.warnings.includes(discoveryWarning)){run.warnings.push(discoveryWarning);captureServerError(new Error("App Flow presentation capture failed."),"app_flow.presentation");}
-            }
-          }
-        }
-        if (node.status === "timed-out") {
-          const more = attempt < maxAttempts || run.nodes.some(item => item.kind === 'screen' && !item.presentation && item.status === 'pending');
-          if (attempt < maxAttempts) node.status = 'pending';
-          // Final restoration belongs to close(); a last failed screen must not
-          // turn an otherwise finished map into a connection failure.
-          if (more) {
-            try { await recoverNavigation(backend.runtime); }
-            catch (error) {
-              if(error instanceof FlowAppFailure)throw error;
-              const interrupted = (interruptions.get(node.id) ?? 0) + 1;
-              interruptions.set(node.id, interrupted);
-              await reconnect();
-              // A dropped connection does not consume the screen's first retry.
-              // Repeated failures on this screen must not trap the whole queue.
-              if (interrupted < 2) { node.status = "pending"; node.reason = undefined; attempts.set(node.id, attempt - 1); node.captureAttempts = attempt - 1; }
-              else { node.status = "blocked"; node.reason = "This screen repeatedly interrupted the app connection. Other screens continued."; }
-            }
-          }
-        }
-        node.captureMs = routeCaptureMs??performance.now() - started; captureTimings.record(node.captureMs); run.revision++;
       }
-      if (!signal.aborted) {
-        run.discoveryFailures=[...presentations.failures.values()];
-        run.phase = run.discoveryFailures.length ? "partial" : "complete";
-        if(!run.discoveryFailures.length)run.warnings=run.warnings.filter(warning=>warning!==discoveryWarning);
-      }
+      run.discoveryFailures=planner?[...planner.presentations.failures.values()]:[];
+      run.phase=run.discoveryFailures.length || run.nodes.some(node=>node.kind==='screen'&&node.status!=='captured')?'partial':'complete';
+      if(!run.discoveryFailures.length)run.warnings=run.warnings.filter(warning=>warning!==discoveryWarning);
+      else if(!run.warnings.includes(discoveryWarning))run.warnings.push(discoveryWarning);
     } catch (error) {
       if (!signal.aborted) {
         run.phase = "failed"; run.error = error instanceof Error ? error.message : "App Flow failed.";
@@ -670,14 +494,12 @@ export class AppFlowRuns {
       for (const node of run.nodes) if (node.kind === "screen" && ["pending", "capturing"].includes(node.status)) { node.status = "timed-out"; node.reason ??= "Run stopped."; }
       if (["waiting", "resolving"].includes(run.ai)) run.ai = "unavailable";
       run.revision++;
-      presentations?.discardBranch();
       await backend?.runtime.close().catch(() => {});
       await Promise.allSettled(active.writing);
       discovery?.finish();
       run.revision++;
       await ai;
       active.runtime = undefined; active.writing.clear();
-      previousFrame = undefined;
       run.finishedAt = Date.now();
       run.elapsedMs = (run.elapsedMs ?? 0) + Math.max(0, run.finishedAt - sessionStarted);
       run.captureStartedAt = undefined;
@@ -688,7 +510,7 @@ export class AppFlowRuns {
       if (process.env.MOBILE_DEV_TELEMETRY !== "off") {
         const timings = captureTimings.take();
         if (timings) for (const statistic of ["mean", "p95", "max"] as const) Sentry.metrics.gauge(`app_flow.capture.${statistic}`, timings[statistic], { unit: "millisecond", attributes });
-        for (const [name, window] of [["readiness", readinessTimings], ["loading", loadingTimings], ["reconnect", reconnectTimings], ['checkpoint', active.checkpoints]] as const) {
+        for (const [name, window] of [["planning",planningTimings], ["readiness", readinessTimings], ["loading", loadingTimings], ["reconnect", reconnectTimings], ['checkpoint', active.checkpoints]] as const) {
           const values = window?.take();
           if (values) for (const statistic of ["mean", "p95", "max"] as const) Sentry.metrics.gauge(`app_flow.${name}.${statistic}`, values[statistic], { unit: "millisecond", attributes });
         }
@@ -699,7 +521,7 @@ export class AppFlowRuns {
         Sentry.metrics.distribution("app_flow.run", (run.finishedAt ?? Date.now()) - sessionStarted, { unit: "millisecond", attributes });
         Sentry.metrics.gauge("app_flow.routes", run.nodes.filter(node => node.kind === "screen" && node.capture !== 'observed' && !node.presentation).length, { attributes });
         Sentry.metrics.gauge("app_flow.captured", run.nodes.filter(node => node.status === "captured" && node.capture !== 'observed' && !node.presentation).length, { attributes });
-        for (const [name,window] of [["presentation", presentations?.timings], ["presentation_restoration", presentations?.restorationTimings], ["presentation_binding", presentations?.bindingTimings], ["presentation_discovery", presentations?.discoveryTimings]] as const) {
+        for (const [name,window] of [["presentation", presentationTimings], ["presentation_restoration", restorationTimings], ["presentation_binding", planner?.presentations.bindingTimings], ["presentation_discovery", planner?.presentations.discoveryTimings]] as const) {
           const values = window?.take();
           if (values) for (const statistic of ["mean", "p95", "max"] as const) Sentry.metrics.gauge(`app_flow.${name}.${statistic}`,values[statistic],{unit:"millisecond",attributes});
         }

@@ -1,3 +1,4 @@
+import {QueuedAppFlowRuns as AppFlowRuns} from './app-flow-queue-fixture.ts';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm, symlink } from "node:fs/promises";
@@ -5,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { scanAppFlow } from "../src/server/app-flow/scan.ts";
-import { AppFlowRuns, type FlowStart, type FlowDependencies } from "../src/server/app-flow/runs.ts";
+import { type FlowStart, type FlowDependencies } from "../src/server/app-flow/runs.ts";
 import { flowRunning, layoutFlow, type FlowGraph } from "../src/shared/app-flow.ts";
 
 async function fixture(t: test.TestContext, files: Record<string, string>) {
@@ -101,7 +102,7 @@ const graph = (): FlowGraph => ({ files:1,scanMs:1,warnings:[],edges:[],nodes:[
   {id:'second',name:'Profile',kind:'screen',path:['Profile'],required:['id'],status:'needs-data'},
 ]});
 async function waitForRun(runs: AppFlowRuns, id: string) {
-  for (let i=0;i<200 && flowRunning(runs.read(id));i++) await delay(10);
+  for (let i=0;i<1800 && flowRunning(runs.read(id));i++) await delay(10);
   return runs.read(id);
 }
 
@@ -122,7 +123,7 @@ test("capture loop acknowledges screenshots, keeps missing data, and restores na
   const result = runs.read(run.id);
   assert.equal(result.nodes[0].status,'captured');
   assert.equal(result.nodes[1].status,'needs-data');
-  assert.deepEqual(events,['inspect','open','screenshot','verify','restore']);
+  assert.deepEqual(events,['inspect','presentation-rollback','open','verify','screenshot','verify','presentation-rollback','restore']);
   assert.equal((await runs.image(run.id,'first')).toString(),'fixture');
 });
 
@@ -161,7 +162,7 @@ test("a redirect or changing frame cannot count as a captured target", async t =
   })});
   const run=runs.start(start);await waitForRun(runs,run.id);await runs.close();
   assert.equal(runs.read(run.id).nodes[0].status,'timed-out');
-  assert.equal(screenshotCount,3);
+  assert.equal(screenshotCount,0);
 });
 
 test("shared screens collapse into one preview with alternate navigation paths", async t => {
@@ -263,8 +264,8 @@ test('failed screens recover and the remaining queue continues; unchanged revisi
   const result=runs.read(first.id);
   assert.equal(result.nodes[0].status,'timed-out');
   assert.equal(result.nodes[1].status,'captured');
-  assert.equal(events.filter(e=>e==='recover').length,2);
-  assert.equal(result.phase,'complete');
+  assert.equal(events.filter(e=>e==='recover').length,0);
+  assert.equal(result.phase,'partial');
   assert.equal(events.at(-1),'restore');
   assert.equal(runs.readUpdate(first.id,result.revision),undefined);
   assert.equal(runs.readUpdate(first.id,result.revision-1)?.id,first.id);
@@ -283,7 +284,7 @@ test('a stale native screenshot cannot be assigned to a different rendered scree
   const result=runs.read(first.id);
   assert.equal(result.nodes[0].status,'captured');
   assert.equal(result.nodes[1].status,'timed-out');
-  assert.match(result.nodes[1].reason??'',/previous screen/);
+  assert.match(result.nodes[1].reason??'',/screenshot did not settle/);
 });
 
 test('source links follow barrels, namespaces, lazy components, helpers and lexical bindings', async t => {

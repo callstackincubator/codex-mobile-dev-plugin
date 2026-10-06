@@ -1409,7 +1409,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(action.effect.kind==='mount'){
       const owner={type:found.type,elementType:found.type,memoizedProps:{},return:found.context};
       const result=project(owner,{views:action.views,mount:true},found.projection);
-      return result.error?result:{name:action.owner,expected:action.owner};
+      return result.error?result:{...result,expected:action.owner};
     }
     if(action.effect.kind==='state'){
       if(action.preview)return {...previewState(action,found),expected:action.expected?{component:action.expected.component,scope:action.expected.scope,entry:`${action.id}:expected`}:action.name};

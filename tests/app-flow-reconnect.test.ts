@@ -1,10 +1,11 @@
+import {QueuedAppFlowRuns as AppFlowRuns} from './app-flow-queue-fixture.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { AppFlowRuns, type FlowStart } from '../src/server/app-flow/runs.ts';
+import { type FlowStart } from '../src/server/app-flow/runs.ts';
 import { reconnectFlowTarget } from '../src/server/app-flow/target.ts';
 import { flowProgress, flowRunning, type FlowGraph } from '../src/shared/app-flow.ts';
 
@@ -23,7 +24,7 @@ test('disconnect saves progress, reconnects to the same run, and resumes the int
     let screen='Home';
     return {target,runtime:{async invoke(command){
       if(command.type==='inspect'||command.type==='resume')return {available:true};
-      if(command.type==='recover'||command.type==='heartbeat'){if(generation===1)throw Error('disconnected');return {recovered:true};}
+      if(command.type==='recover'||command.type==='heartbeat'){if(generation===1)throw Error('disconnected');return {alive:true,recovered:true};}
       if(command.type==='open'){screen=(command.path as string[])[0];if(generation===1&&screen==='Profile')throw Error('disconnected');return {ready:true,active:[screen],name:screen,signature:screen};}
       return {found:true,active:[screen]};
     },async close(options){closures.push(options?.restore!==false)}},async screenshot(){shots.push(screen);return Buffer.from(screen)}};
@@ -69,7 +70,7 @@ test('slow recovery with a healthy connection retries the route without reinstal
     },async close(){}},async screenshot(){shots.push(screen);return Buffer.from(screen)}};
   }});
   const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
-  assert.equal(connections,1);assert.equal(recoveries,2);assert.equal(heartbeats,2);
+  assert.equal(connections,1);assert.equal(recoveries,0);assert.equal(heartbeats,0);
   assert.deepEqual(shots,['Home','Settings','Profile']);
   assert.equal(runs.read(run.id).nodes.find(n=>n.name==='Profile')?.captureAttempts,3);
   assert.equal(runs.read(run.id).phase,'complete');
@@ -140,7 +141,7 @@ test('fatal app errors stop capture before saving an error overlay or opening la
   const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
   const result=runs.read(run.id);
   assert.equal(result.phase,'failed');assert.match(result.error!,/fatal JavaScript error/);
-  assert.equal(connections,1);assert.deepEqual(opened,['Home','Profile']);assert.deepEqual(shots,['Home','Profile']);
+  assert.equal(connections,1);assert.deepEqual(opened,['Home','Profile']);assert.deepEqual(shots,['Home']);
   assert.equal(result.nodes.find(node=>node.name==='Home')?.status,'captured');
   assert.equal(result.nodes.find(node=>node.name==='Profile')?.image,undefined);
   await assert.rejects(readFile(join(path,run.id,'Profile.png')),{code:'ENOENT'});
@@ -280,6 +281,6 @@ for(const failOpening of [false,true])test(`slow presentation cleanup resumes wi
   }});
   const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
   assert.equal(runs.read(run.id).phase,'complete');assert.equal(connections,1);
-  assert.equal(heartbeats,1);assert.ok(closeRequests>=2);assert.equal(level,0);
+  assert.equal(heartbeats,0);assert.ok(closeRequests>=2);assert.equal(level,0);
   assert.ok(runs.read(run.id).nodes.every(node=>node.status==='captured'));
 });

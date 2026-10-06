@@ -128,3 +128,30 @@ test('source preparation checks just the requested entry and keeps its failure r
   assert.deepEqual(events.map(event=>event.type),['presentation-setup','presentation-prepare']);
   assert.equal(events[1].id,'form');
 });
+
+for(const factory of [createCaptureDriver,sharedLoopRuntime(createCaptureDriver as any) as any]) {
+ const mode=factory===createCaptureDriver?'normal':'shared loop bindings';
+ test(`cancelling a lost runtime callback stops opening and ignores its late reply (${mode})`,async()=>{
+  let reply:any,opens=0,restores=0;
+  const driver=factory({invoke(command:any,callback:any){
+   if(command.type==='presentation-rollback'){restores++;callback({});}
+   else if(command.type==='open')reply=callback;
+   else assert.fail('A cancelled command must not continue');
+  }},async()=>{opens++;return {view:{ready:true}}});
+  const controller=new AbortController();
+  const pending=driver.open({id:'child',path:['Home'],actions:[{id:'child'}]},controller.signal);
+  const rejected=assert.rejects(pending,/Capture stopped/);
+  await delay(0);assert.equal(typeof reply,'function');
+  controller.abort();await rejected;
+  reply({ready:true,active:['Home']});await delay(0);
+  assert.equal(opens,0);await driver.restore();assert.equal(restores,2);
+ });
+}
+
+test('a lost callback expires even when the inspector keeps answering heartbeats',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ const driver=createCaptureDriver({invoke(){}},async()=>assert.fail('No source request expected'));
+ const pending=driver.verify({path:[],actions:[]});
+ const rejected=assert.rejects(pending,(error:any)=>error.interrupted===true&&error.fatal===true);
+ t.mock.timers.tick(2001);await rejected;
+});

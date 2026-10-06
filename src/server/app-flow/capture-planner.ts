@@ -1,0 +1,58 @@
+import type {FlowNode, FlowRun} from '../../shared/app-flow.ts';
+import type {FlowBackend} from './runs.ts';
+import {captureManifest, type CaptureJob} from './capture-manifest.ts';
+import {FlowPresentationDiscovery} from './presentations.ts';
+import type {FlowEvidence, FlowReachability} from './reachability.ts';
+import {FlowAppFailure} from './runtime-metrics.ts';
+
+/** Chooses work only. The in-app queue owns all opening, capture and cleanup. */
+export class CapturePlanner {
+  readonly presentations: FlowPresentationDiscovery;
+  private discoveries = new Map<string,number>();
+  private run:FlowRun; private signal:AbortSignal; private reachability?:FlowReachability; private initialPath?:string[];
+  constructor(run:FlowRun, root:string, directory:string, signal:AbortSignal,
+    save:()=>Promise<void>, reachability?:FlowReachability, initialPath?:string[]) {
+    this.run=run;this.signal=signal;this.reachability=reachability;this.initialPath=initialPath;
+    this.presentations = new FlowPresentationDiscovery(run,root,directory,signal,save);
+  }
+  manifest(current?:FlowNode) {
+    const selected = this.run.nodes.filter(node=>node.kind==='screen' && node.capture!=='observed' &&
+      (node.status==='pending' && (node.captureAttempts??0)<3 || node.status==='captured' && this.presentations.enabled &&
+        !this.presentations.hasVisited(node.id) && (this.discoveries.get(node.id)??0)<3));
+    const manifest = captureManifest(this.run,selected);
+    const currentJob = current?.status==='captured' && captureManifest(this.run,[current]).jobs[0];
+    const key = (job:CaptureJob)=>JSON.stringify([job.path,job.params??{},!!job.expo]);
+    const proximity = (job:CaptureJob)=>{
+      if(!currentJob || key(job)!==key(currentJob))return 0;
+      let depth=1;
+      while(depth<=Math.min(job.actions.length,currentJob.actions.length) && job.actions[depth-1].id===currentJob.actions[depth-1].id)depth++;
+      return depth;
+    };
+    for(const job of manifest.jobs){
+      const node=selected.find(node=>node.id===job.id)!;
+      job.discoverOnly=node.status==='captured';
+      job.attempt=node.captureAttempts??0;
+    }
+    // Untouched views precede retries. Children retain their parent's live
+    // checkpoints before another route replaces it.
+    manifest.jobs.sort((a,b)=>(a.attempt??0)-(b.attempt??0) || proximity(b)-proximity(a) ||
+      Number(JSON.stringify(b.path)===JSON.stringify(this.initialPath))-Number(JSON.stringify(a.path)===JSON.stringify(this.initialPath)) ||
+      selected.findIndex(node=>node.id===a.id)-selected.findIndex(node=>node.id===b.id));
+    return manifest;
+  }
+  async after(backend:FlowBackend,node:FlowNode,result:{ready?:boolean;evidence?:FlowEvidence}) {
+    this.signal.throwIfAborted();
+    if(!node.presentation && result.evidence)this.reachability?.reveal(node,result.evidence);
+    if(result.ready && this.presentations.enabled){
+      this.discoveries.set(node.id,(this.discoveries.get(node.id)??0)+1);
+      try { await this.presentations.explore(backend,node); }
+      catch(error) { if(this.signal.aborted || error instanceof FlowAppFailure)throw error; }
+    } else if(node.status==='captured' && this.presentations.enabled) {
+      this.presentations.failures.set(node.id,{nodeId:node.id,operation:'open',message:'The saved view could not be reopened for discovery.'});
+      this.discoveries.set(node.id,(this.discoveries.get(node.id)??0)+1);
+    }
+    if(node.status==='timed-out' && (node.captureAttempts??0)<3)node.status='pending';
+    this.run.revision++;
+    return this.manifest(node);
+  }
+}

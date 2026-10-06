@@ -541,13 +541,15 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
   renewLease();
   globalThis[key] = {
       invoke(command, reply) {
-      const originalReply = reply;
+      let replied = false;
+      const callback = reply;
+      const originalReply = value => { if (!replied) { replied = true; callback(value); } };
       const cleanup = ['restore', 'heartbeat', 'presentation-rollback', 'capture-stop'].includes(command.type);
       const failed = () => { if ((!appFailed&&!logBoxVisible) || cleanup) return false; originalReply({appFailed:true}); return true; };
       reply = value => { if (!failed()) originalReply(value); };
       try {
         if (command.type === 'restore') { void restore().then(() => reply({restored:true}),()=>reply({error:'App Flow restoration failed.'})); return; }
-        if (stopped) { reply({ error: 'Capture stopped.' }); return; }
+        if (stopped) { reply({ stopped:true, error: 'Capture stopped.' }); return; }
         renewLease();
         if (failed()) return;
         if (['open','capture-start','presentation-open'].includes(command.type) && !observing) transitionMode?.enable();
@@ -555,8 +557,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (command.type === 'capture-inventory') { reply(globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.inventory?.() ?? {unavailable:true}); return; }
         if (command.type === 'capture-start') {
           if(observing){reply({error:'Stop recording before starting a capture batch.'});return;}
-          const registry = globalThis.__MOBILE_DEV_FLOW_REGISTRY__;
-          if (!registry || registry.version !== 1 || !captureQueueFactory || !captureDriverFactory) { reply({error:'Prepare the instrumented development build before starting a capture batch.'}); return; }
+          if (!captureQueueFactory || !captureDriverFactory) { reply({error:'Prepare the instrumented development build before starting a capture batch.'}); return; }
           if (captureQueue?.active) { reply({error:'A capture batch is already running.'}); return; }
           let queue;
           queue = captureQueueFactory(captureDriverFactory(globalThis[key], request => queue.request(request)), event => {
@@ -564,7 +565,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
             if (typeof binding === 'function') binding(JSON.stringify({capture:event}));
           });
           captureQueue = queue;
-          reply(captureQueue.start(command.batch, command.jobs)); return;
+          reply(captureQueue.start(command.batch, command.jobs, command.planning)); return;
         }
         if (command.type === 'capture-source') { reply(captureQueue?.source(command.batch, command.ticket, command.value) ?? {accepted:false}); return; }
         if (command.type === 'capture-ack') { reply(captureQueue?.ack(command.batch, command.ticket, command.value) ?? {accepted:false}); return; }
@@ -630,14 +631,23 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           const after = presentations?.checkpoint() ?? before;
           for(let level=before;level<after;level++)presentationFrames.push({focus:presentationFocus,expected:presentationExpected});
           presentationExpected=result.expected; presentationObservation = undefined;
-          later(() => {
+          const started=Date.now(),ticket=generation;
+          const cancelled=()=>reply({cancelled:true,error:'Presentation opening was interrupted.'});
+          const mounted=()=>{
+            if(stopped||ticket!==generation){cancelled();return;}
             try {
-              presentationFocus = result.focus;
-              if (!presentationFocus) presentationFocus=presentations?.focusFor(result.name,result.scope);
-              if (!presentationFocus) { reply({ error: 'The presentation target did not mount.' }); return; }
-              presentations?.focused(presentationFocus); reply({...presentationView(),portalBindings:presentations?.portalBindings(presentationFocus),effectBindings:presentations?.uiEffectBindings?.(presentationFocus)});
-            } catch(error) { reply({error:'Presentation inspection is unavailable.',detail:String(error?.message??error).slice(0,1000)}); }
-          }, 80);
+              presentationFocus=result.focus??presentations?.focusFor(result.name,result.scope);
+              if(!presentationFocus){
+                if(Date.now()-started>=1200){reply({error:'The presentation target did not mount.'});return;}
+                later(mounted,32,cancelled);return;
+              }
+              presentations?.focused(presentationFocus);
+              reply({...presentationView(),portalBindings:presentations?.portalBindings(presentationFocus),effectBindings:presentations?.uiEffectBindings?.(presentationFocus)});
+            } catch(error){reply({error:'Presentation inspection is unavailable.',detail:String(error?.message??error).slice(0,1000)});}
+          };
+          // A retained projection has an exact owner before its copy commits.
+          // Readiness follows that copy and its native onShow; no fixed sleep.
+          later(mounted,0,cancelled);
           return;
         }
         if (command.type === 'resume') {
@@ -683,7 +693,9 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         cancelWaits();
         const ticket = ++generation, path = command.path;
         let expected = path[path.length - 1];
-        if (command.expo) {
+        if(command.settleOnly){
+          if(!matchesRoute(navigatorState(),command)){reply({ready:false,redirected:true,reason:'The screen changed during capture.'});return;}
+        } else if (command.expo) {
           const router = expoRouter();
           if (!router) { reply({ error: 'Expo Router is not exposed by this development runtime.' }); return; }
           router.replace({ pathname: path[0], params: command.params ?? {} });
@@ -712,10 +724,12 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         const started = Date.now();
         let previous, quietSince = started, watched = false, sawLoading = false, loadingMs = 0, sampledAt = started, wasLoading = false;
         let paintTicket = 0, painting = false, painted = false, settleUntil;
-        const complete = value => { cancelWaits(); reply(value); };
+        let finished = false;
+        const complete = value => { if (finished) return; finished = true; cancelWaits(); reply(value); };
+        const cancelled = () => complete({cancelled:true, ready:false, reason:'Navigation was interrupted.'});
         function check() {
           try {
-          if (ticket !== generation || stopped) return;
+          if (ticket !== generation || stopped) { cancelled(); return; }
           if (appFailed) { complete({appFailed:true}); return; }
           const state = root.getRootState?.() ?? root.getState();
           const actual = active(state), name = expected ?? actual[actual.length - 1];
@@ -755,10 +769,10 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
             if(settling&&settleUntil===undefined)settleUntil=now+500;
             if(!settling||now>=settleUntil){complete({ ready: false, active: actual, redirected: !routeMatches && visualSignature(actual[actual.length - 1]).found, reason: !matches ? 'Navigation redirected or the target did not mount.' : visual.loading ? `Screen is still loading (${visual.loadingReason}).` : transitioning ? 'Native transition did not finish.' : !visual.content ? 'Screen has no visible content yet.' : 'Screen did not settle in time.', readinessMs: now - started, loadingMs, ...visible() }); return;}
           }
-          later(check, painting ? 16 : visual.loading ? 100 : 40);
+          later(check, painting ? 16 : visual.loading ? 100 : 40, cancelled);
           } catch { complete({ ready: false, reason: 'The screen detached while opening. It will be retried.' }); }
         }
-        later(check, 0);
+        later(check, 0, cancelled);
       } catch (error) { reply({ error: String(error?.message ?? 'Runtime navigation failed.').slice(0, 300) }); }
     },
   };

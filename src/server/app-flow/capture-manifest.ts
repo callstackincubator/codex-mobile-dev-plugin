@@ -12,6 +12,9 @@ export type CaptureJob = {
   sourceViews: string[];
   projections?: string[];
   blocked?: string;
+  discoverOnly?: boolean;
+  entryKey?: string;
+  attempt?: number;
 };
 export type CaptureManifest = {version: 1; sourceHash?: string; jobs: CaptureJob[]; total: number};
 export type CaptureRecipe = {baseNodeId?: string; actions: string[]};
@@ -39,7 +42,7 @@ export type InstrumentationManifest = {
   files: Record<string, {hash: string; states: FlowStateSite[]; hosts?: string[]; mounts?: string[]; controls: {id: string; owner: string; prop: string; source: NonNullable<FlowPresentationAction['source']>}[]}>;
 };
 
-/** Freeze the denominator before capture; no discovery in the screenshot loop. */
+/** Build approved jobs for a fixed selection or the live discovery planner. */
 export function captureManifest(graph: FlowGraph, nodes: FlowNode[] = graph.nodes, include?: string[]): CaptureManifest {
   const catalog = new Map([...(graph.presentations?.actions ?? []), ...(graph.presentations?.previews ?? [])].map(action => [action.id, action]));
   const selected = include && new Set(include);
@@ -51,7 +54,7 @@ export function captureManifest(graph: FlowGraph, nodes: FlowNode[] = graph.node
     const missing = missingFlowParams(node);
     let blocked = missing.length ? `Real data is required for: ${missing.join(', ')}.` : undefined;
     if (actions.length !== (node.presentation?.actions.length ?? 0)) blocked = 'The source recipe changed. Prepare the map again.';
-    jobs.push({id: node.id, path: node.presentation?.basePath ?? node.path, params: node.presentation?.baseParams ?? node.params, expo: node.presentation?.expo ?? node.component==='expo-router', actions, sourceViews: node.sourceViews ?? [], projections: node.presentation?.projections, blocked});
+    jobs.push({id: node.id, path: node.presentation?.basePath ?? node.path, params: node.presentation?.baseParams ?? node.params, expo: node.presentation?.expo ?? node.component==='expo-router', actions, sourceViews: node.sourceViews ?? [], projections: node.presentation?.projections, entryKey:node.presentation?.entryKey, blocked});
   }
   // Parent paths and shared opening steps remain adjacent, retaining providers
   // and real query caches. IDs break ties so repeated preparation is stable.

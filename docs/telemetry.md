@@ -784,3 +784,27 @@ The existing `presentations` operation still measures candidate enumeration in
 discovery. Source binding, capture, readiness and restoration keep their existing
 boundaries. Preparation errors stay local; no component names or app data enter
 these metrics.
+
+
+Normal mapping and prepared selections now share the in-app capture queue.
+`app_flow.capture` covers each attempt from opening through verified pixels.
+`app_flow.presentation` covers that same interval for presentation jobs; it no
+longer includes later discovery or closing a retained parent. Discovery and
+source binding retain their existing bounded windows.
+`app_flow.presentation_restoration` measures actual queue cleanup, including
+shared parent rollback. The queue reports route readiness and loading durations
+once for each navigation, using the existing names and millisecond units.
+Screenshot acquisition keeps its existing server measurements.
+
+Reloaded execution contexts and lost callbacks stop the current batch and resume
+unaccepted jobs. Reconnect counts and timing windows remain in the run owner.
+A handled presentation error reports one fixed error per batch under
+`app_flow.presentation`; its app message stays in the local map. No planner
+evidence, source identity, route params, screenshots or app content enters
+telemetry.
+
+`app_flow.planning.mean`, `.p95` and `.max` measure server work between queue
+jobs, including discovery, choosing the next job and saving its plan. The app
+receives one next job during discovery, with action IDs rather than source
+definitions. Prepared selections send their fixed list in the same compact form.
+These timings use the existing bounded windows and surface/platform attributes.

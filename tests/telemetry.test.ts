@@ -16,9 +16,10 @@ import { SimulatorUnavailableError } from "../src/server/simulator-unavailable.t
 import { registerDeviceChoiceTools } from "../src/server/device-choice-tools.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { adapterClient } from "./agent-device-fixtures.ts";
-import { AppFlowRuns } from "../src/server/app-flow/runs.ts";
+import {QueuedAppFlowRuns as AppFlowRuns} from "./app-flow-queue-fixture.ts";
 import { flowRunning } from "../src/shared/app-flow.ts";
-import { FlowPresentationCapture } from "../src/server/app-flow/presentations.ts";
+import {captureBatch} from "../src/server/app-flow/capture-batch.ts";
+import {queuedBackend} from "./app-flow-queue-fixture.ts";
 import {FlowRuntimeMetrics,FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
 
 test('local runtime totals retain fixed names across flushes without retaining command data',()=>{
@@ -99,7 +100,8 @@ test('automatic local forms report bounded capture and binding costs without sou
       if(command.type==='presentation-view')return {key:opened?'PRIVATE_FORM':'PRIVATE_ENTRY',signature:'PRIVATE_CONTENT',ready:true,found:true};
       if(command.type==='presentation-checkpoint')return {level:0};
       if(command.type==='presentations')return opened?[]:[action];
-      if(command.type==='presentation-open')opened=true;
+      if(command.type==='presentation-prepare')return {available:true};
+    if(command.type==='presentation-open'){opened=true;return {ready:false};}
       if(command.type==='presentation-rollback')opened=false;
       return {};
     }},async screenshot(){return Buffer.from(opened?'PRIVATE_FORM_IMAGE':'PRIVATE_ENTRY_IMAGE')},
@@ -109,7 +111,7 @@ test('automatic local forms report bounded capture and binding costs without sou
   while(flowRunning(runs.read(run.id)))await new Promise(resolve=>setTimeout(resolve,5));
   await runs.close();await Sentry.close();
   const metrics=JSON.stringify(envelopes.flatMap(envelope=>envelope[1]).filter(item=>item[0].type==='trace_metric'));
-  for(const name of ['app_flow.source_catalog','app_flow.source_candidates','app_flow.preview_plans','app_flow.previews_captured','app_flow.previews_blocked','app_flow.presentations','app_flow.presentations_captured','app_flow.presentation.mean','app_flow.presentation_binding.p95','app_flow.presentation_discovery.mean','app-flow','device_platform'])contains(metrics,name);
+  for(const name of ['app_flow.planning.mean','app_flow.source_catalog','app_flow.source_candidates','app_flow.preview_plans','app_flow.previews_captured','app_flow.previews_blocked','app_flow.presentations','app_flow.presentations_captured','app_flow.presentation.mean','app_flow.presentation_binding.p95','app_flow.presentation_discovery.mean','app-flow','device_platform'])contains(metrics,name);
   contains(metrics,'PRIVATE_',false);
 });
 
@@ -139,18 +141,19 @@ test('preview failures report a fixed error without the app exception or source'
   const run:any={id:'PRIVATE_RUN',revision:0,nodes:[node],edges:[],presentations:{states:[],actions:[{id:'PRIVATE_ACTION'}]}};
   const backend:any={screenshot:async()=>Buffer.from('PRIVATE_IMAGE'),runtime:{async invoke(command:any){
     if(command.type==='presentations')return [{id:'PRIVATE_ACTION'}];
-    if(command.type==='presentation-open')opened=true;
+    if(command.type==='presentation-prepare')return {available:true};
+    if(command.type==='presentation-open'){opened=true;return {ready:false};}
     if(command.type==='presentation-view')return {key:'PRIVATE_VIEW',error:opened?'PRIVATE_APP_ERROR':undefined};
     if(command.type==='presentation-rollback')opened=false;
     return {};
   }}};
   try{
-    const capture=new FlowPresentationCapture(run,'PRIVATE_PATH','PRIVATE_PATH',new AbortController().signal,async()=>{});
-    await assert.rejects(capture.retry(backend,node),/Presentation inspection is unavailable/);
+    await captureBatch({backend:queuedBackend(backend),run,directory:'PRIVATE_PATH',projectRoot:'PRIVATE_PATH',signal:new AbortController().signal,async save(){},manifest:{version:1,total:1,jobs:[{id:node.id,path:[],actions:[{id:'PRIVATE_ACTION'} as any],sourceViews:[]}]}});
+    assert.equal(node.status,'blocked');
     assert.equal(opened,false,'A failed preview still restores its entry');
     await Sentry.flush();
     const errors=JSON.stringify(envelopes.flatMap(envelope=>envelope[1]).filter(item=>item[0].type==='event'));
-    contains(errors,'Presentation inspection is unavailable');contains(errors,'app_flow.presentation');contains(errors,'PRIVATE_',false);
+    contains(errors,'App Flow presentation capture failed.');contains(errors,'app_flow.presentation');contains(errors,'PRIVATE_',false);
   }finally{await Sentry.close();}
 });
 

@@ -42,6 +42,10 @@ export class FlowConnection {
     this.socket.on("message", bytes => {
       try {
         const message = JSON.parse(bytes.toString());
+        if (message.method === 'Runtime.executionContextsCleared' || message.method === 'Runtime.executionContextDestroyed') {
+          this.fail(new Error('The app reloaded during capture.'));
+          return;
+        }
         if (message.method === "Runtime.bindingCalled" && message.params?.name === this.binding) {
           const value = JSON.parse(message.params.payload);
           if (value.capture) { for (const listener of this.captureListeners) listener(value.capture); }
@@ -55,6 +59,7 @@ export class FlowConnection {
     this.socket.on("error", () => this.fail(new Error("Metro disconnected.")));
     this.socket.on("close", () => this.fail(new Error("Metro disconnected.")));
     this.ready = this.ready.then(async () => {
+      await this.send("Runtime.enable", {}, 2000, undefined, 'binding');
       await this.send("Runtime.addBinding", { name: this.binding }, 2000,undefined,'binding');
       const [runtimeSource,presentationSource,queueSource,driverSource,transitionSource] = await flowRuntimeSource();
       // esbuild keepNames may introduce __name inside serialized functions.
@@ -78,9 +83,11 @@ export class FlowConnection {
     });
     void this.ready.catch(() => {});
   }
-  private finish(id: number, value?: unknown, error?: Error) {
+  private finish(id: number, value?: any, error?: Error) {
     const pending = this.pending.get(id); if (!pending) return;
     this.pending.delete(id); clearTimeout(pending.timer);
+    if (!error && (value?.runtimeUnavailable || value?.stopped && pending.operation!=='capture-stop')) error = new Error('App Flow inspector is no longer installed. Reconnecting.');
+    if (!error && pending.operation==='heartbeat' && value?.alive!==true) error = new FlowRuntimeFailure(pending.operation,'returned an invalid response');
     if(!error){this.lastReply=performance.now();this.heartbeatFailures=0;}
     this.metrics.record(pending.operation,performance.now()-pending.started,error instanceof FlowRuntimeTimeout);
     if (error) pending.reject(error); else pending.resolve(value);
@@ -124,8 +131,9 @@ export class FlowConnection {
     const deadline=this.appClockOffset===undefined?undefined:performance.now()+timeout+this.appClockOffset;
     const expression = `(()=>{const runtime=globalThis[${JSON.stringify(this.key)}],reply=result=>globalThis[${JSON.stringify(this.binding)}]?.(JSON.stringify({id:${id},result}));${deadline===undefined?'':`if((globalThis.performance?.now?.()??Date.now())>${deadline}){reply({commandExpired:true});return;}`}if(!runtime?.invoke){reply({runtimeUnavailable:true});return;}runtime.invoke(${JSON.stringify(command)},reply);})()`;
     let result=await this.send("Runtime.evaluate", { expression, silent: true, returnByValue: true, objectGroup: this.key }, timeout, id,runtimeOperation(command.type));
-    if(result?.runtimeUnavailable)throw new Error('App Flow inspector is no longer installed. Reconnecting.');
+    if(result?.runtimeUnavailable || result?.stopped && command.type!=='capture-stop')throw new Error('App Flow inspector is no longer installed. Reconnecting.');
     if(result?.appFailed)throw new FlowAppFailure(String(command.type));
+    if(command.type==='heartbeat' && result?.alive!==true)throw new FlowRuntimeFailure('heartbeat','returned an invalid response');
     if(['presentation-open','presentation-view'].includes(String(command.type))){
       const attempted=new Set<string>();
       for(let depth=0;depth<8&&(result?.portalBindings?.length||result?.effectBindings?.length);depth++){

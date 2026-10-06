@@ -31,7 +31,7 @@ test('a changed view discards the frame without reopening the route', async () =
   queue.ack('b',events.find(e=>e.type==='frame').ticket,{ok:true});await delay(0);
   assert.equal(opens,1);assert.equal(events.filter(e=>e.type==='discard').length,1);
   assert.equal(events.filter(e=>e.status==='captured').length,0);
-  queue.ack('b',events.filter(e=>e.type==='frame')[1].ticket,{ok:true});await delay(0);
+  await delay(40);queue.ack('b',events.filter(e=>e.type==='frame')[1].ticket,{ok:true});await delay(0);
   assert.equal(events.filter(e=>e.status==='captured').length,1);
 });
 
@@ -115,4 +115,15 @@ test('stopping cancels a pending source binding and restores before another batc
   await queue.stop();assert.equal(restores,1);assert.equal(queue.active,false);
   assert.equal(queue.source('batch',request.ticket,{view:{ready:true}}).accepted,false);
   assert.equal(events.some(event=>event.type==='frame'),false);
+});
+
+test('Stop rejects a delayed planner reply without opening the next discovered view',async()=>{
+  const events:any[]=[],opened:string[]=[];let restores=0;
+  const queue=createCaptureQueue({async open(job:any){opened.push(job.id);return {ready:true}},async ready(){return {ready:true,key:'parent'}},async verify(){return {ready:true,key:'parent'}},same:()=>true,async restore(){restores++}},(event:any)=>events.push(event));
+  queue.start('batch',[{id:'parent'}],true);await delay(0);
+  queue.ack('batch',events.find(event=>event.type==='frame').ticket,{ok:true});await delay(0);
+  const plan=events.find(event=>event.type==='plan');assert.ok(plan);
+  await queue.stop();
+  assert.equal(queue.source('batch',plan.ticket,{jobs:[{id:'child'}]}).accepted,false);
+  assert.deepEqual(opened,['parent']);assert.equal(restores,1);assert.equal(queue.active,false);
 });
