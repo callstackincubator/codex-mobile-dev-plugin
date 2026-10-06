@@ -38,6 +38,13 @@ export function attachSourceHandoffs(catalog:FlowPresentations,units:Map<string,
     if(ts.isIdentifier(node)){const local=binding(node,node.text);if(local&&ts.isVariableDeclaration(local))return callback(unit,local.initializer,depth+1);if(local&&ts.isFunctionDeclaration(local)&&local.body)return local as Fn;return functions.get(symbol(unit,node.text));}
     if(ts.isCallExpression(node)&&/^react#useCallback$/.test(symbol(unit,node.expression.getText())))return callback(unit,node.arguments[0],depth+1);
   };
+  const callbackBranches=(unit:SourceUnit,node:ts.Node|undefined,depth=0):Fn[]=>{
+    if(!node||depth>8)return [];node=unwrap(node);
+    // A conditional prop can choose between an opening and a business action.
+    // This proves only the close-before-forward wrapper; neither branch runs.
+    if(ts.isConditionalExpression(node))return [...callbackBranches(unit,node.whenTrue,depth+1),...callbackBranches(unit,node.whenFalse,depth+1)];
+    const fn=callback(unit,node);return fn?[fn]:[];
+  };
   const finite=(unit:SourceUnit,node:ts.Node,seen=new Set<ts.Node>(),depth=0):unknown=>{
     if(depth>10||seen.has(node))return;seen=new Set(seen).add(node);node=unwrap(node);
     if(ts.isStringLiteralLike(node))return node.text;
@@ -113,8 +120,8 @@ export function attachSourceHandoffs(catalog:FlowPresentations,units:Map<string,
       if(owner(element)!==fn)continue;
       for(const prop of element.attributes.properties.filter(ts.isJsxAttribute)){
         const event=prop.name.getText();if(!/^on(?:Press|Click)$/.test(event))continue;
-        const proof=wrapper(unit,element.tagName.getText(),event),handler=callback(unit,expression(prop));if(!proof||!handler)continue;
-        let opens=false;walk(handler.body,child=>{
+        const proof=wrapper(unit,element.tagName.getText(),event),handlers=callbackBranches(unit,expression(prop));if(!proof||!handlers.length)continue;
+        let opens=false;for(const handler of handlers)walk(handler.body,child=>{
           if(!ts.isCallExpression(child)||child.arguments.length||!ts.isPropertyAccessExpression(child.expression)||!['open','present','show','expand'].includes(child.expression.name.text))return;
           const receiver=path(child.expression.expression);if(receiver&&JSON.stringify(receiver)===JSON.stringify(control)&&binding(child,receiver[0])===declaration)opens=true;
         });

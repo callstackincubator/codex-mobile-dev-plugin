@@ -35,6 +35,7 @@ export async function bindPresentationSites(base: string, root: string, bindings
         if(action.expected&&action.expected.component===binding.owner)sites.push({file:action.expected.file,loc:action.expected.source,id:`${action.id}:expected`});
         if(action.effect?.kind==='control'&&action.effect.target)sites.push({file:action.effect.target.file,loc:action.effect.target.source,id:`${action.id}:target`});
         for(const entry of action.consumer?.entries??[])sites.push({file:entry.file,loc:entry.source,id:`${action.id}:consumer`});
+        for(const [index,entry]of (action.handoffs??[]).entries())if(entry.component===binding.owner)sites.push({file:entry.file,loc:entry.source,id:`${action.id}:handoff:${index}`});
         for(const site of sites){
           const loc=site.loc,line=frame.lineNumber!,column=frame.column;
           if(site.file!==file||!loc||line<loc.line||line>loc.endLine)continue;

@@ -661,6 +661,14 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           const result=presentations?.project(presentationFocus);if(!result||result.error){reply(result??{error:'Presentation projection is unavailable.'});return;}
           presentationFrames.push({focus:presentationFocus,expected:presentationExpected});presentationObservation=undefined;later(()=>{try{reply(presentationView());}catch(error){reply({error:'Presentation inspection is unavailable.',detail:String(error?.message??error).slice(0,1000)});}},80);return;
         }
+        if (command.type === 'presentation-handoff') {
+          const ticket=generation;
+          void (presentations?.handoff(command.id,presentationFocus,()=>stopped||ticket!==generation)??Promise.resolve({closed:false})).then(result=>{
+            if(result.closed){presentationFocus=result.focus;presentationExpected=undefined;presentationObservation=undefined;}
+            reply({closed:result.closed,error:result.error});
+          },()=>reply({error:'Presentation handoff failed.'}));
+          return;
+        }
         if (command.type === 'presentation-open') {
           const result = presentations?.open(command.id,presentationFocus) ?? { error: 'Presentation capture is unavailable.' };
           if (result.error) { reply(result); return; }

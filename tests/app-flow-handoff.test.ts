@@ -189,3 +189,12 @@ test('prepared form readiness keeps the exact branch marker and waits for siblin
   owner.entries.delete(target);assert.equal(driver.verify(job).ready,false,'The owner alone cannot replace exact branch evidence');
   await driver.restore();assert.equal(state,0);
 });
+
+
+test('a conditional event prop retains its proven UI dismissal without approving either handler',async t=>{
+  const root=await sourceFixture(t,`context.control.close(()=>onPress?.(event))`);
+  await writeFile(join(root,'App.tsx'),`import {Item} from './menu';export function App(){const menu=useControl(),dialog=useControl();return <><Menu control={menu}><Item onPress={alreadyDone?mutateAccount:()=>dialog.open()}/></Menu><Dialog control={dialog}/></>}`);
+  const graph=await scanAppFlow(root,'ios'),preview=graph.presentations!.previews!.find(a=>a.name==='Dialog');
+  assert.equal(preview?.handoffs?.length,1,'The callback branch proves only which menu dismissal precedes this dialog');
+  assert.ok(!graph.presentations!.actions.some(a=>a.name==='Dialog'),'The mixed event handler remains unapproved');
+});

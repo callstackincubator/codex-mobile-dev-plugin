@@ -2091,3 +2091,34 @@ test('presentation visibility respects the final nested style override',()=>{
   assert.equal(app.runtime.list().length,1);
   app.runtime.cleanup();
 });
+
+for(const outcome of ['closed','unavailable','cancelled'])test(`default capture handles a ${outcome} source handoff before opening its child`,async t=>{
+  const root=await fixture(t,{});await mkdir(join(root,'run'));const events:string[]=[],controller=new AbortController();let visible='Home',level=0;
+  const node:any={id:'child',name:'Child',kind:'screen',path:[],required:[],status:'pending',presentation:{basePath:['Home'],actions:['parent','child']}};
+  const action:any={id:'child',effect:{kind:'control'},handoffs:[{file:'App.tsx'}]};
+  const run:any={id:'run',phase:'capturing',startedAt:0,revision:0,ai:'off',files:1,scanMs:1,warnings:[],nodes:[node],edges:[],presentations:{states:[],actions:[action]}};
+  const view=()=>({key:visible,signature:visible,ready:true,found:true,active:['Home']});
+  const backend:any={screenshot:async()=>Buffer.from(visible),runtime:{async invoke(command:any){
+    if(command.type==='open')return {ready:true};
+    if(command.type==='presentation-rollback'){events.push('restore');level=0;visible='Home';return {};}
+    if(command.type==='presentation-checkpoint')return {level};
+    if(command.type==='presentations')return visible==='child'?[]:[{id:'parent'},{id:'child'}];
+    if(command.type==='presentation-open'){events.push(`open:${command.id}`);visible=command.id;level++;return {};}
+    if(command.type==='presentation-handoff'){
+      events.push('handoff');
+      if(outcome==='unavailable')return {error:'The source-proven handoff entry is not mounted in this app state.'};
+      if(outcome==='cancelled')controller.abort();
+      visible='Home';return {closed:true};
+    }
+    if(command.type==='presentation-view')return view();
+    return {};
+  }}};
+  const capture=new FlowPresentationCapture(run,root,root,controller.signal,async()=>{});
+  const result=capture.retry(backend,node,true);
+  if(outcome==='cancelled')await assert.rejects(result);else await result;
+  assert.equal(events.filter(event=>event==='handoff').length,1);
+  if(outcome==='closed'){
+    assert.equal(node.status,'captured');assert.ok(events.indexOf('handoff')<events.indexOf('open:child'));
+  }else{assert.ok(!events.includes('open:child'));assert.equal(node.image,undefined);}
+  assert.equal(events.at(-1),'restore');assert.equal(capture.reuseDepth(node),0,'A dismissed parent cannot remain a reusable branch');
+});

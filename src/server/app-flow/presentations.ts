@@ -266,6 +266,14 @@ export class FlowPresentationCapture {
         if (!available.some(action => action.id === id||action.aliases?.includes(id))) { node.status = 'blocked'; node.reason = 'The presentation entry is no longer available in this app state.'; return; }
         const before: View = await backend.runtime.invoke({type: 'presentation-view'}, 2000);
         if(!actions.length&&before.ready&&before.found&&!before.loading&&!before.transitioning)baseView=before;
+        if(this.catalog.actions.find(action=>action.id===id)?.handoffs?.length){
+          const handoff=await backend.runtime.invoke({type:'presentation-handoff',id},5000);
+          this.signal.throwIfAborted();
+          if(handoff?.error){node.status='blocked';node.reason=handoff.error;node.failure={operation:'presentation-handoff'};return;}
+          // The parent has closed. Its saved checkpoint is no longer a live
+          // reusable branch; restore the completed child normally afterward.
+          if(handoff?.closed)retainCompleted=false;
+        }
         const opened = await backend.runtime.invoke({type: 'presentation-open', id}, 2000);
         if (opened.error) { node.status = 'blocked'; node.reason = 'The presentation entry could not be opened.'; return; }
         if (plan.projections?.includes(id)) {

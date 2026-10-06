@@ -393,7 +393,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(offset>0)return page(offset);
     // JSX creation stacks identify the actual entry, even when unrelated
     // components and callbacks have identical names. Never invoke the callback.
-    const targets=new Map();for(const action of catalog.actions){if(action.effect.kind==='mount')continue;for(const [component,owner]of [[action.component,action.owner],...(action.effect.kind==='control'&&action.effect.target?[[action.effect.component,action.effect.target.owner]]:[]),...(action.consumer?.entries??[]).map(entry=>[action.consumer.component,entry.owner])]){const names=targets.get(component)??new Set();names.add(owner);targets.set(component,names);}}
+    const targets=new Map();for(const action of catalog.actions){if(action.effect.kind==='mount')continue;for(const [component,owner]of [[action.component,action.owner],...(action.effect.kind==='control'&&action.effect.target?[[action.effect.component,action.effect.target.owner]]:[]),...(action.consumer?.entries??[]).map(entry=>[action.consumer.component,entry.owner]),...(action.handoffs??[]).map(entry=>[entry.component,entry.owner])]){const names=targets.get(component)??new Set();names.add(owner);targets.set(component,names);}}
     const ownerNames=new Set(catalog.states.flatMap(site=>(site.ownerEntries??[]).map(entry=>entry.component)));
     const mounted=new Set(), candidates=[];
     for(const fiber of committedStructure().all){mounted.add(fiber);if(ownerNames.has(name(fiber))){candidates.push(fiber);continue;}const names=targets.get(name(fiber));if(!names)continue;for(let parent=fiber.return,n=0;parent&&n++<100;parent=parent.return)if(names.has(name(parent))){candidates.push(fiber);break;}}
@@ -461,7 +461,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   function index(includeEntries=false) {
     const {names,current,all,props}=committedStructure(),live=new WeakMap(),boxes=new WeakMap(),states=new Map(),values=new Map(),matched=new Map(),targets=new Set(),openers=new Map();
-    if(includeEntries)for(const action of catalog.actions){targets.add(action.component);if(action.effect.kind==='control')targets.add(action.effect.component);if(action.consumer)targets.add(action.consumer.component);}
+    if(includeEntries)for(const action of catalog.actions){targets.add(action.component);if(action.effect.kind==='control')targets.add(action.effect.component);if(action.consumer)targets.add(action.consumer.component);for(const handoffSite of action.handoffs??[])targets.add(handoffSite.component);}
     // Source bindings can change without a React commit. Rebuild these matches
     // from the current catalog, while reusing only the committed tree structure.
     for(const n of targets)for(const fiber of names.get(n)??[]){
@@ -998,7 +998,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     catalog.actions.forEach(action=>{
       const found=find(action,tree,focus,scope);if(!found)return false;
       const key=found.target?.value??JSON.stringify(action.effect.kind==='mount'?['mount',action.effect.file,action.effect.export]:[action.effect.site,action.effect.path,action.effect.value]);
-      const opened=found.target&&undo.find(entry=>entry.control===key);
+      const opened=found.target&&undo.find(entry=>!entry.closed&&entry.control===key);
       if(opened){
         if(opened===undo[undo.length-1])opened.views=[...new Set([...(opened.views??[]),...(action.views??[])])];
         return false;
@@ -1292,6 +1292,46 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return {pending,signature:JSON.stringify(boxes),error};
   }
   function clearNative(){captureDismissals=new WeakMap();for(const record of imageRecords.values())forgetNative(record);imageRecords.clear();lastNativeProbe=undefined;structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();for(const [instance,record]of nativeClassCallbacks)forgetClassCallbacks(instance,record);nativeCallbackOrigins=new WeakMap();}
+  async function handoff(id,focus,cancelled=()=>false) {
+    const action=catalog.actions.find(action=>action.id===id);
+    if(!action?.handoffs?.length)return {closed:false};
+    const tree=index(true),found=find(action,tree,focus);
+    if(!found?.target)return {error:'The handoff target is no longer available.'};
+    let owner=found.target.fiber;
+    while(owner&&name(owner)!==action.effect.target?.owner)owner=owner.return;
+    if(!owner)return {error:'The handoff source owner is unavailable.'};
+    const scope=roots(owner,tree),parents=new Set();let entriesFound=false;
+    for(const [proofIndex,proof]of action.handoffs.entries())for(const entry of tree.entries.get(`${id}:handoff:${proofIndex}`)??[]){
+      if(name(entry)!==proof.component||!scope.some(root=>tree.inside(entry,root))||!tree.isVisible(entry))continue;
+      entriesFound=true;
+      for(let context=entry.dependencies?.firstContext,count=0;context&&count++<40;context=context.next){
+        let value=context.memoizedValue;
+        for(const key of proof.contextPath){const descriptor=value&&(typeof value==='object'||typeof value==='function')?Object.getOwnPropertyDescriptor(value,key):undefined;value=descriptor&&'value'in descriptor?descriptor.value:undefined;}
+        const parent=[...undo].reverse().find(frame=>!frame.closed&&!frame.closing&&frame.control===value&&frame.close===proof.close);
+        if(parent&&parent.control!==found.target.value&&roots(parent.nativeFocus,tree).some(root=>tree.inside(entry,root)))parents.add(parent);
+      }
+    }
+    if(!entriesFound)return {error:'The source-proven handoff entry is not mounted in this app state.'};
+    if(parents.size!==1)return {error:'The source-proven parent sheet is missing or ambiguous.'};
+    if(cancelled())return {error:'Presentation handoff was cancelled.'};
+    const parent=[...parents][0];let acknowledged=false;
+    beginDismissal(parent,parent.nativeFocus);parent.closing=true;nativeCloseRequests++;
+    // Source proves this exact control accepts a dismissal callback. Never run
+    // the incoming UI handler: it can contain account or other business work.
+    try{parent.control[parent.close](()=>{acknowledged=true;});}
+    catch(error){parent.closing=false;throw error;}
+    const started=Date.now();
+    while(!acknowledged||parent.native.some(status=>!status.closed)){
+      if(cancelled())return {error:'Presentation handoff was cancelled.'};
+      if(Date.now()-started>=4000)return {error:'The parent sheet did not finish its source-proven dismissal.'};
+      await new Promise(resolve=>later(resolve,40,resolve));
+    }
+    parent.closed=true;parent.closing=false;
+    if(cancelled())return {error:'Presentation handoff was cancelled.'};
+    const current=index().current;
+    if(!current.has(found.target.fiber)||!current.has(owner))return {error:'The handoff target unmounted when its parent closed.'};
+    return {closed:true,focus:current.get(owner)};
+  }
   function open(id,focus) {
     if(undo.some(entry=>entry.closing))return {error:'A native presentation is still dismissing.'};
     armNative();
@@ -1312,7 +1352,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     if(action.effect.kind==='control'){
       const {value,close}=found.target,fiber=controllerFocus(found.target.fiber,value);
-      const opened=undo.find(entry=>entry.control===value);
+      const opened=undo.find(entry=>!entry.closed&&entry.control===value);
       if(opened){if(opened===undo[undo.length-1])opened.views=[...new Set([...(opened.views??[]),...(action.views??[])])];return {name:action.name,focus:fiber,alreadyOpen:true};}
       armNative(fiber);undo.push({control:value,close,focus:fiber,nativeFocus:fiber,views:action.views?.slice()});value[found.target.method??action.effect.method]();
       return {name:action.name,focus:fiber};
@@ -1340,6 +1380,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       // Keep the checkpoint until its close operation succeeds. A thrown close
       // must not discard the only way to restore the app on the next attempt.
       const entry=undo[undo.length-1];
+      if(entry.closed){undo.pop();continue;}
       if(entry.projection){
         const record=entry.projection;clearTimeout(record.seedTimer);releaseUiEffects(record);
         // An app commit may remove the entire preview before its native callback.
@@ -1448,5 +1489,5 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return result.map(item=>item.value);
   }
   const diagnostics=()=>({inlineProjections:projected.filter(record=>record.inline).length,nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
-  return {structure:committedStructure,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,collect,records,configure,list,open,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
+  return {structure:committedStructure,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,collect,records,configure,list,open,handoff,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

@@ -16,6 +16,7 @@ const operations:Record<string,string>={
   presentations:'finding presentation entries', 'presentation-view':'checking presentation readiness',
   'presentation-portals':'rendering a temporary portal',
   'presentation-effects':'opening a temporary UI control',
+  'presentation-handoff':'dismissing a parent presentation',
   'presentation-open':'opening a presentation', 'presentation-project':'projecting a presentation',
   'presentation-rollback':'restoring a presentation', 'presentation-checkpoint':'reading a presentation checkpoint',
 };

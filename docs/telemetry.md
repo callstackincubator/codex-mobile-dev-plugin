@@ -740,3 +740,13 @@ separate for components with the same name. Existing binding and runtime timings
 cover the reduced work; no extra telemetry fields or per-frame events were added.
 Native rectangles, styles and source matches stay local. Runtime tests cover
 sizing and cleanup; telemetry tests cover the unchanged aggregation and scrubbing.
+
+
+Since 0.1.187, the default mapper applies source-proven parent dismissal before
+opening a sibling dialog. `presentation-handoff` is a fixed runtime operation
+measured in milliseconds through the existing bounded windows. It includes the
+parent's dismissal callback and observed native completion. Presentation attempt
+timings still include the whole operation; the existing restoration measurement
+keeps its boundary. Failed handoffs retain cleanup state, and cancellation cannot
+open a child afterward. Source paths, context values, callbacks and view identities
+stay local. Telemetry tests check the fixed name and existing scrubbing.
