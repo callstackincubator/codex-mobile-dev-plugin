@@ -580,3 +580,9 @@ Since 0.1.172, related-view traversal also follows portals inside a temporary
 React copy. The existing presentation, readiness, native motion and restoration
 timings measure this path with the same names, units and boundaries. No new
 per-frame events or app data enter telemetry.
+
+Since 0.1.173, idle class sheet adapters do not predict native opening events.
+New dispatch hosts connected to an opening control still wait for their real
+lifecycle events. Existing readiness, native motion and restoration timings
+cover these waits with unchanged names, units and boundaries. No app callback
+names or data enter telemetry.

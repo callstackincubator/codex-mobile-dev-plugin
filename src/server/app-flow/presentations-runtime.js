@@ -903,7 +903,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   const inside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner?.alternate)return true;return false;};
   function watchNative(focus, pending = false, ancestors = false, mounting = false) {
-    const hosts=[],adapters=[],mounted=new Set();
+    const hosts=[],adapters=[],mounted=new Set();let openingRoots;
     for(const fiber of committedStructure().all){
       if(fiber.tag!==5&&fiber.tag!==1)continue;
       const canonical=fiber.tag===1?fiber.stateNode:fiber.stateNode?.canonical,field=fiber.tag===1?'props':'currentProps',props=canonical?.[field];
@@ -933,6 +933,15 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       const forwarded=['onShow','onDismiss','onStateChange'].map(key=>nativeCallbackOrigins.get(props[key])).filter(Boolean);
       const shared=forwarded.length&&forwarded.every(status=>status===forwarded[0])?forwarded[0]:undefined;
       const status=nativeClassCallbacks.get(canonical)?.status??shared??previous?.status??{pending:mounting&&props.visible!==false&&typeof props.onShow==='function',opened:props.visible===true,closed:false,closing:false};
+      // A newly mounted dispatch host can share an idle cached class handler.
+      // Arm only hosts connected to a control we are opening, then wait for
+      // their real event. Unopened sibling adapters stay idle.
+      if(!previous&&fiber.tag===5&&mounting&&props.visible!==false&&!status.opened&&!status.pending){
+        openingRoots??=undo.filter(entry=>entry.control&&!entry.closing).flatMap(entry=>roots(entry.nativeFocus));
+        if(typeof props.onShow==='function'||typeof props.onStateChange==='function'&&openingRoots.some(root=>inside(fiber,root))){
+          status.pending=true;status.closed=false;status.closing=false;status.dismissAcknowledged=false;
+        }
+      }
       if(previous)forgetNative(previous);
       const record={canonical,field,fiber,original:props,visible:props.visible,status,detach:[]};
       const patched={...props};
@@ -943,7 +952,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       nativeRecords.set(canonical,record);
     }
     const targets=nativeTargets(focus,ancestors);
-    if(pending)for(const record of targets){if(record.original?.visible===false&&!record.status.opened&&!record.status.pending)continue;record.status.pending=true;record.status.closed=false;record.status.closing=false;record.status.dismissAcknowledged=false;}
+    if(pending)for(const record of targets){
+      if(record.original?.visible===false&&!record.status.opened&&!record.status.pending)continue;
+      // An idle class adapter is not evidence that native presentation began.
+      // Actual dispatch hosts and lifecycle events still arm the opening wait.
+      if(record.fiber.tag===1&&!record.status.opened&&!record.status.pending&&typeof record.original?.onShow!=='function')continue;
+      record.status.pending=true;record.status.closed=false;record.status.closing=false;record.status.dismissAcknowledged=false;
+    }
     return targets;
   }
   function nativeTargets(focus,ancestors=false) {

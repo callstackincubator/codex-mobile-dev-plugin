@@ -343,8 +343,9 @@ test('class presentation handlers observe native completion even through an opaq
   const app=tree();let calls=0;const original={onStateChange(){calls++}};
   const instance={props:original,onStateChange(event:any){this.props.onStateChange(event)}};
   const controller:any={tag:1,type:function Controller(){},memoizedProps:original,stateNode:instance,return:app.sheet};app.sheet.child=controller;
-  app.runtime.open('open');assert.equal(app.runtime.motion(app.sheet).pending,true);
-  instance.onStateChange({nativeEvent:{state:'open'}});assert.equal(app.runtime.motion(app.sheet).pending,false);assert.equal(calls,1);
+  app.runtime.open('open');assert.equal(app.runtime.motion(app.sheet).pending,false,'An unopened adapter is idle');
+  instance.onStateChange({nativeEvent:{state:'opening'}});assert.equal(app.runtime.motion(app.sheet).pending,true);
+  instance.onStateChange({nativeEvent:{state:'open'}});assert.equal(app.runtime.motion(app.sheet).pending,false);assert.equal(calls,2);
   app.runtime.cleanup();assert.equal(instance.props,original);
 });
 
@@ -905,6 +906,7 @@ test('native observation and readiness share one tree walk per commit',()=>{
   const props={onStateChange(){}},canonical={currentProps:props,publicInstance:{getBoundingClientRect:()=>({x:0,y:0,width,height:200})}};
   app.sheet.child={tag:5,type:'NativeHost',memoizedProps:props,stateNode:{canonical},return:app.sheet};
   app.control.open=()=>canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});
+  hook.onCommitFiberRoot();
   try{
     app.runtime.open('open');const before=walks;
     width=160;hook.onCommitFiberRoot();
@@ -1213,6 +1215,7 @@ test('opening a sheet does not arm the idle native sheets inside its body',()=>{
   const idle:any={tag:1,type:function IdleSheet(){},memoizedProps:original,stateNode:inner,return:app.nested};app.nested.child=idle;
   const native:any={tag:1,type:function NativeSheet(){},memoizedProps:original,stateNode:outer,return:app.sheet,child:app.nested};
   app.sheet.child=native;app.nested.return=native;
+  app.control.open=()=>outer.props.onStateChange({nativeEvent:{state:'opening'}});
   app.runtime.open('open');assert.equal(app.runtime.diagnostics().nativePending,1);
   outer.props.onStateChange({nativeEvent:{state:'open'}});
   assert.equal(app.runtime.motion(app.sheet).pending,false);app.runtime.cleanup();
@@ -1769,4 +1772,54 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]) {
     assert.equal(runtime.focusFor('PrivateForm'),undefined);assert.equal(hiddenVisits,0);
     runtime.cleanup();
   });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+ test(`unopened class sheet adapters do not create dismissal waiters (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+  const app=tree(install),props={onStateChange(){}};
+  const adapters=Array.from({length:2},()=>({tag:1,type:function SheetAdapter(){},stateNode:{props,onStateChange(){}},memoizedProps:props,return:app.sheet}));
+  app.sheet.child=adapters[0];(adapters[0] as any).sibling=adapters[1];
+  try{
+   app.runtime.open('open');
+   assert.equal(app.runtime.diagnostics().nativePending,0,'A wrapper with no opening event or native host is still idle');
+   assert.deepEqual(app.runtime.diagnostics().nativeWaiters,[]);
+   await app.runtime.rollback();
+   assert.equal(app.control.closes,1);assert.equal(app.runtime.checkpoint(),0);
+  }finally{app.runtime.cleanup()}
+ });
+ test(`a newly mounted dispatch host waits for its real opening event (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+  const app=tree(install),events:string[]=[],props={onStateChange(){}};
+  const instance:any={props,onStateChange(event:any){events.push(event.nativeEvent.state)}};
+  const adapter:any={tag:1,type:function SheetAdapter(){},stateNode:instance,memoizedProps:props,return:app.sheet};app.sheet.child=adapter;
+  const hook:any={renderers:new Map(),onCommitFiberRoot(){}};
+  const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??app.root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+  const runtime=install({hook,fibers,hidden:()=>false,later:setTimeout});
+  configureFixture(runtime,{states:[],actions:[app.action]});
+  let canonical:any,unrelated:any;
+  app.control.open=()=>{
+   const nativeProps={onStateChange:instance.onStateChange};canonical={currentProps:nativeProps};
+   adapter.child={tag:5,type:'NativeSheet',memoizedProps:nativeProps,stateNode:{canonical},return:adapter};
+   const otherProps={onStateChange(){}};
+   unrelated={tag:5,type:'UnrelatedNativeSheet',memoizedProps:otherProps,stateNode:{canonical:{currentProps:otherProps}},return:app.root};app.sheet.sibling=unrelated;
+   hook.onCommitFiberRoot();
+  };
+  app.control.close=()=>{
+   app.control.closes++;canonical.currentProps.onStateChange({nativeEvent:{state:'closing'}});
+   setTimeout(()=>canonical.currentProps.onStateChange({nativeEvent:{state:'closed'}}),20);
+  };
+  try{
+   runtime.open('open');
+   assert.equal(runtime.motion(app.sheet).pending,true,'Mounting an actual host must block capture before native announces opening');
+   assert.equal(runtime.motion(unrelated).pending,false,'Unrelated hosts must remain idle');
+   canonical.currentProps.onStateChange({nativeEvent:{state:'opening'}});
+   assert.equal(runtime.motion(app.sheet).pending,true);
+   canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});
+   assert.equal(runtime.motion(app.sheet).pending,false);
+   const closing=runtime.rollback();await new Promise(resolve=>setTimeout(resolve,5));
+   assert.equal(runtime.checkpoint(),1,'The real closing animation must retain its checkpoint');
+   await closing;assert.equal(app.control.closes,1);assert.equal(runtime.checkpoint(),0);
+   assert.deepEqual(events,['opening','open','closing','closed']);
+   assert.equal(runtime.diagnostics().nativeRecords,0);
+  }finally{runtime.cleanup();app.runtime.cleanup()}
+ });
 }
