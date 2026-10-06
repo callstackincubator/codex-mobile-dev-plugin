@@ -1724,3 +1724,46 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   assert.deepEqual(Object.getOwnPropertyDescriptors(instance),before);assert.equal(reads,0);
  });
 }
+
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]) {
+  test(`shared native geometry preserves zero bounds and reads missing hosts (${install===installPresentationRuntime?'normal':'shared loops'})`,()=>{
+    const app=tree(install);let measured=0;
+    const box={x:0,y:0,width:100,height:200};
+    const host:any={tag:5,type:'View',memoizedProps:{children:'body'},stateNode:{canonical:{publicInstance:{getBoundingClientRect(){measured++;return box}}}},return:app.sheet};
+    app.sheet.child=host;
+    const geometry=new WeakMap<object,any>();geometry.set(host,{x:0,y:0,width:0,height:0});
+    const probe=app.runtime.probeFocus(app.sheet);
+    assert.equal(probe.motion(undefined,geometry).signature,'[[0,0,0,0]]');assert.equal(measured,0);
+    assert.equal(probe.motion(undefined,new WeakMap()).signature,'[[0,0,100,200]]');assert.equal(measured,1);
+    assert.equal(app.runtime.motion(app.sheet,undefined,geometry).signature,'[[0,0,0,0]]');assert.equal(measured,1);
+    app.runtime.cleanup();
+  });
+}
+
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]) {
+  test(`presentation metadata visits an inactive navigation branch after it becomes active (${install===installPresentationRuntime?'normal':'shared loops'})`,()=>{
+    function Sheet(){}function PrivateForm(){}
+    const active:any={type:Sheet,memoizedProps:{}};
+    const inactive:any={type:function Screen(){},memoizedProps:{hidden:true}};active.sibling=inactive;
+    let hiddenVisits=0;
+    const body:any={type:PrivateForm,memoizedProps:{},return:inactive};inactive.child=body;
+    let tail=body;
+    for(let i=0;i<500;i++){
+      const child:any={type:function Row(){},memoizedProps:{},return:inactive};tail.sibling=child;tail=child;
+    }
+    const hook={renderers:new Map(),onCommitFiberRoot(){}};
+    const runtime=install({hook,hidden:props=>props?.hidden===true,later:setTimeout,fibers(visit:any,subtree?:any){
+      const stack=[subtree??active];while(stack.length){const fiber=stack.pop();if(fiber===body||fiber.return===inactive)hiddenVisits++;if(fiber!==subtree&&fiber.sibling)stack.push(fiber.sibling);if(visit(fiber)!==false&&fiber.child)stack.push(fiber.child);}
+    }});
+    assert.equal(runtime.probeFocus(active,'Sheet').expectedReady,true);assert.equal(runtime.focusFor('PrivateForm'),undefined);
+    assert.equal(hiddenVisits,0,'An inactive branch must not allocate metadata for its rows');
+    inactive.memoizedProps={hidden:false};hook.onCommitFiberRoot();
+    runtime.probeFocus(active,'Sheet');assert.equal(hiddenVisits,501,'A focus commit reveals the complete branch');
+    assert.equal(runtime.focusFor('PrivateForm'),body);
+    inactive.memoizedProps={hidden:true};hook.onCommitFiberRoot();hiddenVisits=0;
+    assert.equal(runtime.focusFor('PrivateForm'),undefined);assert.equal(hiddenVisits,0);
+    runtime.cleanup();
+  });
+}

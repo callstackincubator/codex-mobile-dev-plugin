@@ -547,3 +547,17 @@ local diagnostic count `preservedRootFragments` counts preview insertions that
 keep this child level and clears on cleanup. It contains no app data and does
 not enter telemetry. Source catalog timing also covers exported guard-page
 preview plans above navigators; these plans never change account conditions.
+
+
+App Flow shares native bounds between content and motion inspection within one
+synchronous readiness check. Each later check reads fresh native bounds. Existing
+readiness, capture and restoration timing names, units and boundaries remain
+unchanged. Local visual-probe layout-read counts still count actual native reads
+in content inspection; motion inspection can reuse those reads. No native host
+references or app content enter telemetry or tool results.
+
+Presentation metadata skips branches marked inactive by the existing navigation
+visibility predicate. A focus commit rebuilds the metadata before inspecting that
+branch. Collection and readiness timings keep their existing boundaries and units.
+Mount availability counts are bounded local diagnostics only; they contain no
+source paths, component names, app data or telemetry fields.

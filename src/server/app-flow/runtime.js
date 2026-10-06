@@ -263,7 +263,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
       if (router && typeof router.push === 'function' && typeof router.replace === 'function' && typeof router.canGoBack === 'function') return router;
     }
   }
-  function visualSignature(name, wholeApp = false, focus) {
+  function visualSignature(name, wholeApp = false, focus, geometry) {
     let hosts = 0, content = 0, screen = focus, loadingReason, bounds, title;
     const started=Date.now(),probe={fibers:0,layoutReads:0,layoutMs:0,opacityReads:0,totalMs:0};
     const signature = [], motion = [], motionSources = new Set(), motionStyles = new Set(), components = new Set();
@@ -312,6 +312,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
           probe.layoutReads++;const before=Date.now();
           try{value=native.getBoundingClientRect();}finally{probe.layoutMs+=Date.now()-before;}
         }
+        geometry?.set(fiber,value);
         if (value && value.width > 0 && value.height > 0) result = value;
       } catch { /* Older renderers do not expose native bounds. */ }
       rects.set(fiber,result); return result;
@@ -470,12 +471,15 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
     // in the native body. A detached or missing body still cannot be ready.
     const expectedReady=presentationProbe?.expectedReady??(!presentationExpected||!!presentations?.focusFor(presentationExpected,presentationFocus));
     probe.expectedMs=Date.now()-before;probe.stage='visual';before=Date.now();
-    const visual = visualSignature(undefined, true, visualFocus);
+    // Share raw native bounds only within this synchronous readiness probe.
+    // The next probe reads native geometry again, including UI-thread motion.
+    const geometry = new WeakMap();
+    const visual = visualSignature(undefined, true, visualFocus, geometry);
     probe.visualMs=Date.now()-before;probe.stage='visible';before=Date.now();
     const live = visible();
     probe.visibleMs=Date.now()-before;probe.stage='motion';before=Date.now();
     const componentTree = visual.components;
-    const nativeMotion=presentationProbe?.motion(visual.bounds)??presentations?.motion(presentationFocus,visual.bounds);
+    const nativeMotion=presentationProbe?.motion(visual.bounds,geometry)??presentations?.motion(presentationFocus,visual.bounds,geometry);
     probe.motionMs=Date.now()-before;
     if(nativeMotion){visual.signature+=nativeMotion.signature;visual.motion=JSON.stringify([visual.motion,nativeMotion.signature]);}
     const key = JSON.stringify([active(root?.getRootState?.() ?? root?.getState?.()), visual.components?.sort(), visual.title]),now=Date.now();

@@ -454,6 +454,7 @@ test('unmounted previews use initialized exact data exports and keep each owner 
     if(projectRoot)await app.runtime.collect([],actions,projectRoot);
     app.runtime.configure({states:[],actions},[]);
     assert.deepEqual(app.runtime.list().map(a=>a.id),['welcome','other']);
+    assert.deepEqual(app.runtime.diagnostics().mountChecks,{plans:5,moduleMissing:2,exportMissing:1,ownerMismatch:0,alreadyMounted:0,available:2});
     assert.equal(app.runtime.open('welcome').error,undefined);assert.equal(app.clone.type,Welcome);
     assert.deepEqual(app.clone.memoizedProps,{});assert.deepEqual(app.counts,{dispatched:0,effects:0,initializers:0});
     app.runtime.focused(app.clone);

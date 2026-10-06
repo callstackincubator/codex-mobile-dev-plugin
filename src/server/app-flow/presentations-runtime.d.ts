@@ -13,10 +13,10 @@ export function installPresentationRuntime(options: {
   previewPortals(ids:string[],focus?:any): {portals?:number;error?:string};
   activeViews(focus?: any): string[];
   rollback(level?: number, wait?: boolean): Promise<void>;
-  cleanup(): void; motion(focus?: any, viewport?: {x: number; y: number; width: number; height: number}): {pending: boolean; signature: string};
+  cleanup(): void; motion(focus?: any, viewport?: {x: number; y: number; width: number; height: number}, geometry?: WeakMap<object,any>): {pending: boolean; signature: string};
   project(focus: any): {name?: string; focus?: any; error?: string};
   focusFor(name: string, scope?: any): any;
-  probeFocus(focus?: any, expected?: string): {focus:any;visualFocus:any;expectedReady:boolean;motion(viewport?: {x:number;y:number;width:number;height:number}): {pending:boolean;signature:string;error?:string}};
+  probeFocus(focus?: any, expected?: string): {focus:any;visualFocus:any;expectedReady:boolean;motion(viewport?: {x:number;y:number;width:number;height:number}, geometry?: WeakMap<object,any>): {pending:boolean;signature:string;error?:string}};
   diagnostics(): Record<string,number>;
   visualFocus(focus?: any): any; focused(focus: any): void; checkpoint(): number;
 };

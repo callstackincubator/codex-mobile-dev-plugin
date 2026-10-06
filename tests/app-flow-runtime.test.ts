@@ -7,6 +7,7 @@ import { once } from 'node:events';
 import { FlowConnection } from '../src/server/app-flow/connection.ts';
 import { installPresentationRuntime } from '../src/server/app-flow/presentations-runtime.js';
 import {FlowAppFailure,FlowRuntimeFailure,FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
+import {sharedLoopRuntime} from './app-flow-runtime-fixtures.ts';
 
 function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, clearTimeout}, presentations: boolean | ((options:any)=>any) = false, globals = {}) {
   let state:any = {index:0,routeNames:['Home','Profile'],routes:[{name:'Home'}]};
@@ -865,3 +866,29 @@ test('route opens and recovery cannot unmount an unrestored presentation',async 
   await app.invoke({type:'presentation-rollback'});
   assert.equal((await app.invoke({type:'open',path:['Profile'],timeoutMs:300})).ready,true);
 });
+
+
+for (const install of [installPresentationRuntime, sharedLoopRuntime()]) {
+  test(`presentation content and motion share native geometry only within one check (${install===installPresentationRuntime?'normal':'shared loops'})`, async t => {
+    const factory = (options:any) => ({
+      ...(globalThis as any).installPresentationRuntime(options),
+      open:()=>({focus:(globalThis as any).logical}),
+    });
+    const app=runtime(t,false,undefined,factory,{installPresentationRuntime:install});
+    let reads=0,width=100;
+    app.native.stateNode={canonical:{publicInstance:{getBoundingClientRect(){reads++;return {x:0,y:0,width,height:200}}}}};
+    app.context.logical=app.fiber;
+    await app.invoke({type:'presentation-open',id:'preview'});
+    await new Promise(resolve=>setTimeout(resolve,180));
+    reads=0;
+    const settled=await app.invoke({type:'presentation-view'});
+    assert.equal(settled.ready,true);assert.equal(reads,1,'The native host is measured once for content and motion');
+    width=160;reads=0;
+    const moving=await app.invoke({type:'presentation-view'});
+    assert.equal(reads,1,'A later probe must read current native geometry');
+    assert.notEqual(moving.motion,settled.motion);assert.equal(moving.ready,false,'Changed bounds restart paint and settling checks');
+    await new Promise(resolve=>setTimeout(resolve,180));
+    assert.equal((await app.invoke({type:'presentation-view'})).ready,true);
+    assert.equal('geometry' in settled,false,'Native host references never enter tool results');
+  });
+}
