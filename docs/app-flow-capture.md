@@ -80,3 +80,9 @@ seconds, including 4.7 seconds of preparation. All four images passed manual
 inspection and the app returned to Home. The full 20-view set has not been rerun
 with the image-load fix. Native image observers detach during cleanup; image
 content and URLs never enter telemetry.
+
+Repeat scans reuse an immutable source catalog when current file contents,
+file membership, aliases and platform match. Each request still reads and hashes
+source files, so preserving a file's timestamp does not hide an edit. The cache
+holds one project result, capped at 24 MB, and returns a fresh copy to each run.
+This cuts repeated source work without changing capture readiness or coverage.

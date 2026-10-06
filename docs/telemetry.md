@@ -639,3 +639,10 @@ Capture compatibility fixes preserve these timing boundaries. Readiness failures
 now name the local blocker, and packaged runtime tests exercise compiled async
 closures. These diagnostic messages stay in local run results; they add no metric
 attributes or app-content telemetry.
+
+App Flow can reuse one source catalog after re-reading and hashing the current
+source files and TypeScript aliases. `app_flow.scan` still measures the whole
+scan request, including file validation and cloning a cached result.
+`app_flow.source_catalog` is zero on reuse because that request builds no catalog.
+The cache holds at most 24 MB of serialized source facts, never live app state,
+and sends no paths, hashes or source text to telemetry.

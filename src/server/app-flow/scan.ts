@@ -2,6 +2,7 @@ import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import ts from "typescript";
+import {serialize, deserialize} from "node:v8";
 import type { FlowGraph, FlowNode, FlowParams } from "../../shared/app-flow.ts";
 import { missingFlowParams } from "../../shared/app-flow.ts";
 import { sourceLinkMatches, sourceLinkReader } from "./source-links.ts";
@@ -14,6 +15,10 @@ import {originalCaptureConfig} from './capture-build.ts';
 const ignored = new Set(["node_modules", ".git", ".expo", ".next", "dist", "build", "ios", "android", "vendor", "coverage", "__tests__", "__mocks__"]);
 const extensions = [".tsx", ".ts", ".jsx", ".js"];
 const id = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 20);
+// Retain one immutable source result, bounded independently of app runtime state.
+// Every hit still reads and hashes the current files; mtimes alone are not proof.
+let previousScan: {root: string; platform: string; fingerprint: string; graph: Buffer} | undefined;
+const maxCachedGraphBytes = 24_000_000;
 type Screen = { name: string; component?: string; params?: FlowParams; file: string; line: number };
 type Group = { key: string; name: string; file: string; screens: Screen[]; helpers: string[]; initial?: string; tabs?: boolean };
 type Unit = { file: string; ast: ts.SourceFile; imports: Map<string, { module: string; name: string }>; constants: Map<string, ts.Expression> };
@@ -79,7 +84,7 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
   }
   await walk(root);
   if (files.length >= 4000) warnings.push("Discovery reached the 4,000-file limit. Some routes may be missing.");
-  const units = new Map<string, Unit>();
+  const sources: {file: string; text: string}[] = [];
   let bytes = 0;
   for (let offset = 0; offset < files.length; offset += 16) {
     signal?.throwIfAborted();
@@ -92,6 +97,29 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
       if (!item) continue;
       bytes += item.text.length;
       if (bytes > 40_000_000) { warnings.push("Discovery reached its source-size limit."); break; }
+      sources.push(item);
+    }
+    if (bytes > 40_000_000) break;
+    await new Promise<void>(done => setImmediate(done));
+  }
+  let configText = '';
+  try { configText = await readFile(join(root, 'tsconfig.json'), {encoding:'utf8', signal}); }
+  catch { signal?.throwIfAborted(); }
+  const fingerprintHash = createHash('sha256').update(configText).update('\0').update(JSON.stringify(files.map(file=>relative(root,file))));
+  for (const item of sources) fingerprintHash.update(relative(root,item.file)).update('\0').update(item.text).update('\0');
+  fingerprintHash.update(JSON.stringify(warnings));
+  const fingerprint = fingerprintHash.digest('hex');
+  signal?.throwIfAborted();
+  if (previousScan?.root === root && previousScan.platform === platform && previousScan.fingerprint === fingerprint) {
+    const graph: FlowGraph = deserialize(previousScan.graph);
+    graph.catalogMs = 0;
+    graph.scanMs = performance.now() - started;
+    return graph;
+  }
+  const units = new Map<string, Unit>();
+  for (let offset=0; offset<sources.length; offset+=16) {
+    signal?.throwIfAborted();
+    for (const item of sources.slice(offset,offset+16)) {
       const ast = ts.createSourceFile(item.file, item.text, ts.ScriptTarget.Latest, true, /x$/.test(item.file) ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
       const unit: Unit = { file: item.file, ast, imports: new Map(), constants: new Map() };
       const collect = (node: ts.Node) => {
@@ -106,12 +134,11 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
       };
       collect(ast); units.set(item.file, unit);
     }
-    if (bytes > 40_000_000) break;
     await new Promise<void>(done => setImmediate(done));
   }
   const paths: Record<string, string[]> = {};
   try {
-    const config = ts.parseConfigFileTextToJson("tsconfig.json", await readFile(join(root, "tsconfig.json"), "utf8"));
+    const config = ts.parseConfigFileTextToJson("tsconfig.json", configText);
     Object.assign(paths, config.config?.compilerOptions?.paths ?? {});
   } catch { /* Alias inference also covers common src aliases. */ }
   function moduleFile(unit: Unit, module: string): string | undefined {
@@ -447,6 +474,9 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
   if (!graph.nodes.length) warnings.push("No supported route declarations found. Runtime discovery may still find mounted navigators.");
   if (graph.nodes.length >= 1500) warnings.push("Discovery reached the 1,500-node limit.");
   graph.warnings = [...new Set(warnings)].slice(0, 40);
+  signal?.throwIfAborted();
+  const serialized = serialize(graph);
+  previousScan = serialized.byteLength <= maxCachedGraphBytes ? {root,platform,fingerprint,graph:serialized} : undefined;
   graph.scanMs = performance.now() - started;
   return graph;
 }

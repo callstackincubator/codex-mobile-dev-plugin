@@ -333,3 +333,31 @@ test('equivalent navigation branches are usable but a one-sided guard stays cond
   assert.equal(graph.edges.find(e=>e.kind==='navigation'&&names.get(e.to)==='Preferences')!.guarded,false);
   assert.equal(graph.edges.find(e=>e.kind==='navigation'&&names.get(e.to)==='Admin')!.guarded,true);
 });
+
+test('unchanged source reuses the catalog without sharing mutable results',async t=>{
+  const root=await fixture(t,{'App.tsx':'function App(){return <Stack.Navigator><Stack.Screen name="Home" component={Home}/></Stack.Navigator>}'});
+  const first=await scanAppFlow(root,'ios');
+  const expected=structuredClone(first);first.nodes[0].name='caller mutation';first.warnings.push('caller warning');
+  const second=await scanAppFlow(root,'ios');
+  assert.equal(second.catalogMs,0);
+  assert.deepEqual({...second,scanMs:0,catalogMs:0},{...expected,scanMs:0,catalogMs:0});
+  second.nodes.length=0;
+  assert.ok((await scanAppFlow(root,'ios')).nodes.length>0);
+});
+
+test('cached scans read current contents, additions, removals, aliases and platform',async t=>{
+  const root=await fixture(t,{'App.tsx':'function App(){return <S.Navigator><S.Screen name="First" component={Home}/></S.Navigator>}'});
+  const first=await scanAppFlow(root,'ios');
+  const {stat,utimes}=await import('node:fs/promises');const path=join(root,'App.tsx'),originalStat=await stat(path);
+  await writeFile(path,'function App(){return <S.Navigator><S.Screen name="Other" component={Home}/></S.Navigator>}');
+  await utimes(path,originalStat.atime,originalStat.mtime);
+  assert.ok((await scanAppFlow(root,'ios')).nodes.some(n=>n.name==='Other'));
+  await mkdir(join(root,'app'));await writeFile(join(root,'app','_layout.tsx'),'export default function Layout(){return <Stack/>}');await writeFile(join(root,'app','extra.tsx'),'export default function Extra(){return null}');
+  assert.ok((await scanAppFlow(root,'ios')).nodes.some(n=>n.name==='/extra'));
+  await rm(join(root,'app','extra.tsx'));
+  assert.ok(!(await scanAppFlow(root,'ios')).nodes.some(n=>n.name==='/extra'));
+  await writeFile(join(root,'tsconfig.json'),'{"compilerOptions":{"paths":{"custom/*":["src/*"]}}}');
+  assert.notEqual((await scanAppFlow(root,'ios')).catalogMs,0,'Alias edits invalidate source reuse');
+  assert.notEqual((await scanAppFlow(root,'android')).sourceHash,first.sourceHash);
+  const stopped=new AbortController();stopped.abort();await assert.rejects(scanAppFlow(root,'android',stopped.signal));
+});
