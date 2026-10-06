@@ -9,6 +9,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   let previewRefs=new WeakSet(),containedImperativeHandles=0,containedSubscriptions=0;
   const queryPatches=[],querySnapshots=new Map();let reusedQueryResults=0;
   let queryCacheDiagnostics={clients:0,caches:0,observerCandidates:0,clientTypes:[],observerTypes:[]};
+  let queryPreviewReads=0,queryPreviewRejections={missing:0,representation:0,fields:0};
   let catalog = {states:[],actions:[]};
   const name = fiber => { const type=fiber.type?.render??fiber.type?.type??fiber.type;return type?.displayName??type?.name; };
   const current = () => {
@@ -68,23 +69,29 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       const enabled=Object.getOwnPropertyDescriptor(options,'enabled')?.value;
       const records=querySnapshots.get(query)??[];
       if(previewOwner(fiber)){
+        queryPreviewReads++;
         const matched=records.filter(record=>record.state===state&&record.select===select&&record.placeholder===placeholder&&record.enabled===enabled);
         if(matched.length===1){
-          const snapshot=Object.getOwnPropertyDescriptors(matched[0].result),next=Object.getOwnPropertyDescriptors(result);
-          // Mount history may differ in a temporary instance. Every other data
-          // and status value must still agree with the current library read.
+          const record=matched[0],snapshot=Object.getOwnPropertyDescriptors(record.result),next=Object.getOwnPropertyDescriptors(result);
+          const mountFetch=currentSettledQueryResult(record,query,options)&&ownQueryValue(options,'_optimisticResults')==='optimistic'&&ownQueryValue(result,'fetchStatus')==='fetching'&&ownQueryValue(result,'isFetching')===true&&ownQueryValue(result,'isRefetching')===true;
+          // A contained preview does not subscribe or fetch on mount. Reuse an
+          // actual mounted observer's settled object when only that unstarted
+          // mount fetch differs. Never synthesize flags or alter cache state.
+          // Every other data/status field must agree with the library read.
           // Time-based staleness and changed observer options must not reuse an
           // old ready result. Methods and promises belong to observer instances.
           const keys=new Set([...Object.keys(snapshot),...Object.keys(next)]);
           const same=[...keys].every(key=>{
             if(['isFetchedAfterMount','refetch','promise'].includes(key))return true;
+            if(mountFetch&&['fetchStatus','isFetching','isRefetching'].includes(key))return true;
             const a=snapshot[key],b=next[key];return a&&b&&'value'in a&&'value'in b&&a.value===b.value;
           });
-          if(same){reusedQueryResults++;return matched[0].result;}
-        }
+          if(same){reusedQueryResults++;return record.result;}
+          queryPreviewRejections.fields++;
+        }else queryPreviewRejections[records.length?'representation':'missing']++;
         return result;
       }
-      rememberQueryResult(query,result,options);
+      rememberQueryResult(query,result,options,this);
       return result;
     };
   }
@@ -92,17 +99,30 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(!object||(typeof object!=='object'&&typeof object!=='function'))return;
     const descriptor=Object.getOwnPropertyDescriptor(object,key);return descriptor&&'value'in descriptor?descriptor.value:undefined;
   };
-  function rememberQueryResult(query,result,options){
+  function rememberQueryResult(query,result,options,observer){
     // Both ordinary renders and existing live observers supply the plain
     // framework result before trackResult creates a proxy. Never invent flags.
     const state=ownQueryValue(query,'state'),hash=ownQueryValue(query,'queryHash');
     if(!state||typeof hash!=='string'||hash!==ownQueryValue(options,'queryHash')||!result||typeof result!=='object')return;
     if(ownQueryValue(result,'data')===undefined||ownQueryValue(result,'isPending')!==false||ownQueryValue(result,'isFetching')!==false||ownQueryValue(result,'isError')!==false||ownQueryValue(result,'isPlaceholderData')!==false)return;
     const select=ownQueryValue(options,'select'),placeholder=ownQueryValue(options,'placeholderData'),enabled=ownQueryValue(options,'enabled');
-    const records=querySnapshots.get(query)??[],record={state,select,placeholder,enabled,result};
+    const records=querySnapshots.get(query)??[],record={state,select,placeholder,enabled,result,observer,staleTime:ownQueryValue(options,'staleTime'),refetchOnMount:ownQueryValue(options,'refetchOnMount')};
     const kept=records.filter(previous=>previous.state===state&&!(previous.select===select&&previous.placeholder===placeholder&&previous.enabled===enabled));
     kept.push(record);querySnapshots.delete(query);querySnapshots.set(query,kept.slice(-4));
     if(querySnapshots.size>200)querySnapshots.delete(querySnapshots.keys().next().value);
+  }
+  function currentSettledQueryResult(record,query,options){
+    if(ownQueryValue(record.state,'fetchStatus')!=='idle'||ownQueryValue(record.state,'status')!=='success'||ownQueryValue(record.result,'fetchStatus')!=='idle')return false;
+    if(record.staleTime!==ownQueryValue(options,'staleTime')||record.refetchOnMount!==ownQueryValue(options,'refetchOnMount'))return false;
+    const observers=ownQueryValue(query,'observers');if(!Array.isArray(observers)||!observers.includes(record.observer))return false;
+    const current=queryFrameworkMethod(record.observer,'QueryObserver','getCurrentQuery'),read=queryFrameworkMethod(record.observer,'QueryObserver','getCurrentResult');
+    if(!current||!read)return false;
+    try{
+      if(current.method.call(record.observer)!==query)return false;
+      const actual=read.method.call(record.observer);if(!actual||typeof actual!=='object')return false;
+      const a=Object.getOwnPropertyDescriptors(actual),b=Object.getOwnPropertyDescriptors(record.result);
+      return [...new Set([...Object.keys(a),...Object.keys(b)])].every(key=>a[key]&&b[key]&&'value'in a[key]&&'value'in b[key]&&a[key].value===b[key].value);
+    }catch{return false;}
   }
   function patchQueryPrototype(prototype){
     if(!prototype||queryPatches.some(patch=>patch.prototype===prototype))return;
@@ -149,7 +169,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
           try{
             if(current.method.call(observer)!==query)continue;
             patchQueryPrototype(current.prototype);
-            rememberQueryResult(query,result.method.call(observer),ownQueryValue(observer,'options'));
+            rememberQueryResult(query,result.method.call(observer),ownQueryValue(observer,'options'),observer);
           }catch{/* A detached observer cannot supply a settled result. */}
         }
       }
@@ -172,7 +192,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   function unpatchQueryResults(){
     for(const patch of queryPatches){patch.state.active=false;if(Object.getOwnPropertyDescriptor(patch.prototype,'getOptimisticResult')?.value===patch.wrapped)Object.defineProperty(patch.prototype,'getOptimisticResult',patch.descriptor);}
-    queryPatches.length=0;querySnapshots.clear();reusedQueryResults=0;queryCacheDiagnostics={clients:0,caches:0,observerCandidates:0,clientTypes:[],observerTypes:[]};
+    queryPatches.length=0;querySnapshots.clear();reusedQueryResults=0;queryPreviewReads=0;queryPreviewRejections={missing:0,representation:0,fields:0};queryCacheDiagnostics={clients:0,caches:0,observerCandidates:0,clientTypes:[],observerTypes:[]};
   }
   function patchHooks() {
     if(patches.length)return true;
@@ -1050,6 +1070,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const connected=roots(currentFocus,tree);
     return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:viewport=>motion(currentFocus,viewport,tree,connected)};
   }
-  const diagnostics=()=>({lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,reusedQueryResults,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  const diagnostics=()=>({lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,reusedQueryResults,queryPreviewReads,queryPreviewRejections,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
   return {collect,records,configure,list,open,portalBindings,previewPortals,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

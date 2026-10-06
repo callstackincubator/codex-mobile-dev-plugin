@@ -626,3 +626,39 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
     assert.equal(calls,0);assert.equal(app.runtime.diagnostics().queryObservers,0);app.runtime.cleanup();
   });
 }
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`a contained mount can read the exact settled live query without starting its predicted fetch (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    const data={id:'observed'},query:any={queryHash:'record',state:{data,status:'success',fetchStatus:'idle'},observers:[]};
+    const ready={data,status:'success',fetchStatus:'idle',isFetching:false,isRefetching:false,isPending:false,isError:false,isPlaceholderData:false,isStale:true,isFetchedAfterMount:true};
+    let cold={...ready,fetchStatus:'fetching',isFetching:true,isRefetching:true,isFetchedAfterMount:false},reads=0;
+    const options={queryHash:'record',_optimisticResults:'optimistic',staleTime:0};
+    class QueryObserver{
+      result=ready;
+      getCurrentQuery(){return query}
+      getCurrentResult(){return this.result}
+      getOptimisticResult(){reads++;return cold}
+    }
+    const live=new QueryObserver(),preview=new QueryObserver();query.observers=[live];
+    class QueryCache{getAll(){return [query]}}
+    class QueryClient{getQueryCache(){return new QueryCache()}}
+    (live as any).options=options;
+    const app=runtimeFixture(t,false,install);
+    app.owner.memoizedProps={...app.owner.memoizedProps,client:new QueryClient()};
+    await configure(app);assert.equal(app.runtime.diagnostics().querySnapshots,1);
+    assert.equal(app.runtime.open('preview').error,undefined);app.setCurrent(app.clone);
+    const before=reads;assert.equal(preview.getOptimisticResult(options),ready);assert.equal(reads,before+1);
+    assert.equal(app.runtime.diagnostics().reusedQueryResults,1);
+    assert.equal(preview.getOptimisticResult({...options,staleTime:Infinity}),cold,'Changed mount rules keep their own result');
+    assert.equal(preview.getOptimisticResult({...options,_optimisticResults:undefined}),cold,'Only the library mount prediction can differ');
+    query.observers=[];assert.equal(preview.getOptimisticResult(options),cold,'A detached observer is not live evidence');query.observers=[live];
+    live.result={...ready,isStale:false};assert.equal(preview.getOptimisticResult(options),cold,'Changed live results cannot supply an older ready object');live.result=ready;
+    query.state.fetchStatus='fetching';assert.equal(preview.getOptimisticResult(options),cold,'A real request cannot be hidden');query.state.fetchStatus='idle';
+    const mount=cold;cold={...mount,data:{id:'different'}};assert.equal(preview.getOptimisticResult(options),cold,'Different data cannot reuse the app result');
+    cold={...mount,status:'error'};assert.equal(preview.getOptimisticResult(options),cold,'Different status cannot reuse the app result');
+    cold=mount;assert.equal(preview.getOptimisticResult(options),ready);
+    app.setCurrent(undefined);await app.runtime.rollback(0,false);app.runtime.cleanup();
+    assert.equal(app.runtime.diagnostics().queryPreviewReads,0);
+    assert.deepEqual(app.runtime.diagnostics().queryPreviewRejections,{missing:0,representation:0,fields:0});
+  });
+}

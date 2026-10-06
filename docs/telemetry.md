@@ -528,3 +528,14 @@ cache write. Existing setup, readiness, capture and restoration timings include
 this path with the same names and units. Bounds and owned-method cleanup remain
 in place. Client/cache/observer counts and bounded constructor names stay in
 local diagnostics only, clear on cleanup, and never enter telemetry.
+
+Since 0.1.167, a contained temporary form can reuse the actual settled observer
+result when only TanStack's unstarted mount-fetch prediction differs. The
+current query must remain successful and idle, its observer must still be
+attached, and its current result, selection, placeholder, enabled condition,
+staleness and mount options must match. The mapper returns the library's real
+result object and adds no request, subscription, cache write or invented flag.
+Existing setup, readiness, capture and restoration windows retain their names,
+units and boundaries. Preview query reads and rejection counts stay local, clear
+on cleanup, and never enter telemetry. Query values and observer references
+remain inside the app runtime.
