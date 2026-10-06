@@ -60,7 +60,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         if(!record&&uiEffects.size<100){record={id:`ui-effect-${++sequence}`,fiber,preview,stack};records.set(key,record);uiEffects.set(record.id,record);}
         if(record){const body=Function.prototype.toString.call(callback);if(record.body!==body)record.approval=undefined;record.body=body;record.fiber=fiber;record.callback=callback;record.deps=deps;}
       }
-      return original(preview?()=>{}:callback,deps);
+      return original(preview&&!preview.compiled?()=>{}:callback,deps);
     };
   }
   function queryResultWrapper(original,readQuery,patchState) {
@@ -79,6 +79,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       const placeholder=Object.getOwnPropertyDescriptor(options,'placeholderData')?.value;
       const enabled=Object.getOwnPropertyDescriptor(options,'enabled')?.value;
       const records=querySnapshots.get(query)??[];
+      if(previewOwner(fiber)?.compiled)return result;
       if(previewOwner(fiber)){
         queryPreviewReads++;
         let selection=false;
@@ -256,7 +257,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       // useEffect alone does not stop a copied query/store observer subscribing.
       // Keep its hook order and real snapshot reads; the app's own subscriptions
       // continue normally and can update the shared store.
-      if(previewOwner(current()?.fiber)){containedSubscriptions++;subscribe=noSubscription;}
+      const preview=previewOwner(current()?.fiber);
+      if(preview&&!preview.compiled){containedSubscriptions++;subscribe=noSubscription;}
       return original(subscribe,getSnapshot,getServerSnapshot);
     };
   }
@@ -462,6 +464,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   const activeAncestors = fiber => {
     for(let parent=fiber,count=0;parent&&count++<100;parent=parent.return){
       const p=parent.memoizedProps;if(hidden(p)||p?.visible===false&&(name(parent)==='Modal'||parent.tag===5&&typeof p?.onShow==='function')||p?.disabled===true||p?.accessibilityState?.disabled===true)return false;
+      // Native pagers may retain inactive pages at the same layout coordinates.
+      // Page focus flags describe visibility; a button's active style does not.
+      if(p&&Object.keys(p).some(key=>p[key]===false&&/^(?:is)?(?:screen|page|tab)(?:focused|active)$/i.test(key)))return false;
+      if(p?.route&&typeof p.navigation?.isFocused==='function'){try{if(!p.navigation.isFocused())return false;}catch{return false;}}
       const styles=[p?.style];let display,opacity;
       for(let i=0;styles.length&&i<100;i++){const style=styles.pop();if(Array.isArray(style)){for(let j=style.length-1;j>=0;j--)styles.push(style[j]);}else if(style&&typeof style==='object'){if('display'in style)display=style.display;if('opacity'in style)opacity=style.opacity;}}
       if(display==='none'||opacity===0)return false;
@@ -594,12 +600,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     });
     return text?undefined:result;
   }
-  function inlinePlacement(focus,{root,react}) {
+  function inlinePlacement(focus,{root,react},previewContainer=false) {
     const boundaries=nativeTargets(focus,true).filter(record=>record.status.opened&&!record.status.closed);
-    if(!boundaries.length)return;
+    if(!boundaries.length&&!previewContainer)return;
     // A native sheet owns its coordinates, safe area and height. Render a
     // copied step in that same container, never in a second native window.
-    if(root===focus||!boundaries.some(record=>inside(root,record.fiber))||nativeTargets(focus).some(record=>record.status.opened&&!record.status.closed))return {unavailable:true};
+    if(root===focus||!previewContainer&&!boundaries.some(record=>inside(root,record.fiber))||nativeTargets(focus).some(record=>record.status.opened&&!record.status.closed))return {unavailable:true};
     const children=root.memoizedProps.children;
     const wrappers=new Set([react.Fragment,react.Profiler]);
     for(let parent=focus.return;parent&&parent!==root;parent=parent.return)if(parent.tag===10){wrappers.add(parent.type);wrappers.add(parent.elementType);}
@@ -615,9 +621,21 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // Appending after the original keeps React's existing sibling positions.
     // Require an exact last-child match so no footer or sibling moves ahead
     // of this step. Ambiguous containers must not produce a false capture.
-    if(!last||last.props!==focus.memoizedProps||(last.type!==focus.type&&last.type!==focus.elementType))return {unavailable:true};
     const hosts=nativeBodyRoots(focus);
     if(!hosts?.length)return {unavailable:true};
+    const exactLast=last&&last.props===focus.memoizedProps&&(last.type===focus.type||last.type===focus.elementType);
+    // A copied full-screen form can have non-layout wrappers between its
+    // native container and the next step. Keep that container (and its safe
+    // area) only when every native body belongs to this exact step.
+    if(!exactLast){
+      const contents=[];let text=false;
+      if(previewContainer)descendants(root,fiber=>{
+        if(inside(focus,fiber))return;
+        if(fiber.tag===6){text=true;return false;}
+        if(fiber.tag===5){contents.push(fiber);return false;}
+      });
+      if(text||contents.length!==hosts.length||contents.some((host,index)=>host!==hosts[index]))return {unavailable:true};
+    }
     const sizes=hosts.map(inlineSize);
     if(sizes.some(size=>!size))return {unavailable:true};
     return {focus,hosts:hosts.map((fiber,i)=>{
@@ -657,12 +675,25 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   function syncInlineBody(record,tree) {
     const focus=tree.current.get(record.inline.focus),hosts=focus&&nativeBodyRoots(focus);
     if(!hosts?.length||hosts.length!==record.inline.hosts.length)return {error:'The original native presentation body changed during its preview.'};
-    if(hosts.some(fiber=>!record.inline.hosts.some(host=>(fiber===host.fiber||fiber===host.fiber.alternate)&&(fiber.memoizedProps.style===host.hiddenStyle||host.previousStyle&&fiber.memoizedProps.style===host.previousStyle))))return {error:'The original native presentation body changed during its preview.'};
+    if(hosts.some((fiber,index)=>fiber!==record.inline.hosts[index].fiber&&fiber!==record.inline.hosts[index].fiber.alternate))return {error:'The original native presentation body changed during its preview.'};
+    let pending=false;
+    for(const host of record.inline.hosts){
+      const fiber=hosts.find(fiber=>fiber===host.fiber||fiber===host.fiber.alternate),props=fiber.memoizedProps;
+      if(props.style===host.hiddenStyle||host.previousStyle&&props.style===host.previousStyle)continue;
+      // A query commit may replace DevTools' prop override on this same host.
+      // Preserve the new app layout for restoration, then conceal it again.
+      // A different native body still fails above instead of being hidden.
+      const original={...props};
+      for(const [key,value]of Object.entries(concealedBodyProps))if(props[key]===value){
+        if(Object.prototype.hasOwnProperty.call(host.props,key))original[key]=host.props[key];else delete original[key];
+      }
+      host.props=original;host.previousStyle=undefined;host.hiddenStyle=[props.style,{position:'absolute',opacity:0,...host.size}];
+      structureCache=undefined;record.renderer.overrideProps(fiber,[],{...props,...concealedBodyProps,style:host.hiddenStyle});pending=true;
+    }
     const bodies=(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type);
     const copies=bodies.length===1&&nativeBodyRoots(bodies[0]);
     if(!copies?.length)return {pending:true};
     if(copies.length!==hosts.length||copies.some((fiber,i)=>fiber.type!==hosts[i].type))return {error:'The native presentation sizing roots do not match the copied form.'};
-    let pending=false;
     for(let i=0;i<copies.length;i++){
       const size=inlineSize(copies[i]),host=record.inline.hosts[i],fiber=hosts[i];
       if(!size){pending=true;continue;}
@@ -698,12 +729,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const nestedNative=owner&&nativeTargets(focus,true).some(record=>record.status.opened&&!record.status.closed&&ownerBodies.some(body=>inside(record.fiber,body)));
     // Reuse the current slot only within the same native presentation. A
     // sheet opened by the copied form has its own container and close order.
-    const reusable=owner?.shown&&!nestedNative&&projectionAttached(owner);
+    const nestedBody=owner&&ownerBodies.length===1&&focus!==ownerBodies[0]&&tree.inside(focus,ownerBodies[0]);
+    const reusable=owner?.shown&&!nestedNative&&!nestedBody&&projectionAttached(owner);
     const context=reusable?projectionRoot(owner.root):mountedContext??projectionRoot(focus);if(!context)return {error:'This renderer cannot project a local view.'};
     const type=focus.elementType??focus.type;
     if(!type||typeof type==='string')return {error:'No component view to project.'};
     const {root,renderer,react,native}=context,props=root.memoizedProps;
-    const inline=reusable?owner.inline:inlinePlacement(focus,context);
+    const inline=reusable?owner.inline:inlinePlacement(focus,context,!!nestedBody&&!nestedNative);
     if(inline?.unavailable)return {error:'This step has no exact content slot inside its native presentation.'};
     const child=react.createElement(type,preview?.props??focus.memoizedProps);
     let content=child;
@@ -732,6 +764,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       for(const key of ['presentationStyle','transparent','statusBarTranslucent','navigationBarTranslucent','hardwareAccelerated','supportedOrientations'])if(key in parent.memoizedProps)modalProps[key]=parent.memoizedProps[key];
       break;
     }
+    const registry=globalThis.__MOBILE_DEV_FLOW_REGISTRY__;
+    record.compiled=!!sourceHash&&typeof registry?.wrapPreview==='function'&&!!registry.matchingOwners?.(sourceHash)?.length;
+    // Prepared app hooks suppress their own effects. Keep framework effects
+    // and query subscriptions alive so the form can finish loading real data.
+    // Native placement, identity checks and rollback still use this executor.
+    if(record.compiled)content=registry.wrapPreview(content,{seeds:new Map(),sourceHash});
     const body=react.createElement(PreviewBoundary,null,content);
     const key=`mobile-flow-preview-${++sequence}`;
     const modal=previousPreview?react.cloneElement(previousPreview.element,{},body):inline?react.createElement(react.Fragment,{key},body):react.createElement(native.Modal,{key,transparent:false,...modalProps,visible:true,animationType:'none',onShow:()=>{record.shown=true;},onDismiss:()=>{record.dismissed=true;}},body);
@@ -947,13 +985,35 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const bodies=(tree.props.get(projection.child.props)??[]).filter(fiber=>fiber.type===projection.child.type||fiber.elementType===projection.child.type);
     return [...new Set(bodies.flatMap(body=>roots(body,tree)))];
   }
+  function mountContext(tree) {
+    // A root native container can sit above every app provider. Use the
+    // focused route, or the exact prepared host, as the context boundary.
+    const routes=tree.all.filter(fiber=>{
+      const props=fiber.memoizedProps;
+      if(typeof props?.route?.name!=='string'||typeof props?.navigation?.isFocused!=='function')return false;
+      try{return props.navigation.isFocused()&&tree.isVisible(fiber);}catch{return false;}
+    });
+    const leaves=routes.filter(owner=>!routes.some(child=>child!==owner&&tree.inside(child,owner)));
+    if(leaves.length===1)return leaves[0];
+    if(leaves.length>1)return;
+    const owners=globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.matchingOwners?.(sourceHash)??[];
+    const ids=new Set(owners.filter(owner=>owner.host&&!owner.preview).map(owner=>owner.id));
+    const hosts=tree.all.filter(fiber=>fiber.tag===12&&ids.has(fiber.memoizedProps?.id)&&tree.isVisible(fiber));
+    if(hosts.length===1)return hosts[0];
+    if(hosts.length>1)return;
+    // A small non-navigation app can have one unambiguous container. Never
+    // choose the first of several containers with different provider scopes.
+    let only;
+    for(const fiber of tree.all)if(fiber.tag===5&&tree.isVisible(fiber)){if(only)return;only=fiber;}
+    return only;
+  }
   const find = (action,tree=index(true),focus,scope=bodyRoots(focus,tree)) => {
     const inScope=fiber=>!focus||scope.some(root=>tree.inside(fiber,root));
     if(action.preview&&action.effect.kind==='mount'){
       // Bootstrap owners at a route boundary, never inside an unrelated sheet.
       if(focus||projected.length)return;
       const type=mountedExport(action,tree);if(!type)return;
-      const context=tree.all.find(fiber=>fiber.tag===5&&tree.isVisible(fiber));
+      const context=mountContext(tree);
       const projection=context&&projectionRoot(context);
       if(projection)return {type,context,projection};
       return;
@@ -1022,6 +1082,21 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(unique.length===1)return {owner,target:unique[0]};
     }
   };
+  function resolveEntry(action,tree,focus) {
+    const exact=find(action,tree,focus);if(exact)return exact;
+    if(action.preview||action.effect.kind!=='state')return;
+    // Saved maps can outlive a feature flag selecting another source opener.
+    // Reuse only an independently reachable entry for the exact same finite
+    // state update and destination, bound to one live setter. No handler runs.
+    const effect=JSON.stringify(action.effect),expected=JSON.stringify(action.expected);
+    const matches=[];
+    for(const candidate of catalog.actions){
+      if(candidate.id===action.id||candidate.preview||candidate.name!==action.name||JSON.stringify(candidate.effect)!==effect||JSON.stringify(candidate.expected)!==expected)continue;
+      const found=find(candidate,tree,focus);
+      if(found?.binding&&!matches.some(match=>match.binding.setter===found.binding.setter))matches.push(found);
+    }
+    return matches.length===1?matches[0]:undefined;
+  }
   function prepare(id,focus) {
     const action=catalog.actions.find(action=>action.id===id);
     if(!action)return {available:false,error:'The requested view is not in the source catalog.'};
@@ -1043,7 +1118,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         try{globalThis.__r(candidates[0].key);}catch{return {available:false,error:'The source component could not load.'};}
       }
     }
-    const tree=index(true),found=find(action,tree,focus);
+    const tree=index(true),found=resolveEntry(action,tree,focus);
     if(found)return {available:true};
     if(action.preview&&effect.kind==='mount')return {available:false,error:'The source component or its live provider context is unavailable.'};
     const sites=effect.kind==='state'?tree.states.get(effect.site)??[]:[];
@@ -1405,7 +1480,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const action=catalog.actions.find(a=>a.id===id),tree=index(true);
     const target=prepared?.id===id&&tree.current.get(prepared.target.fiber),owner=prepared?.id===id&&tree.current.get(prepared.owner);
     const saved=action?.effect.kind==='control'&&target&&owner&&controlValue(target,action.effect.prop)===prepared.target.value?{owner,target:{...prepared.target,fiber:target}}:undefined;
-    const found=action&&(saved??find(action,tree,focus));if(!found)return {error:'This presentation entry is not currently available.'};
+    const found=action&&(saved??resolveEntry(action,tree,focus));if(!found)return {error:'This presentation entry is not currently available.'};
     if(action.effect.kind==='mount'){
       const owner={type:found.type,elementType:found.type,memoizedProps:{},return:found.context};
       const result=project(owner,{views:action.views,mount:true},found.projection);
@@ -1529,9 +1604,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return unique.length===1?unique[0]:undefined;
   }
   function probeFocus(focus,expected) {
-    const tree=index();let currentFocus=focus&&tree.current.get(focus);
+    const tree=index();let currentFocus=focus&&tree.current.get(focus),pendingProjection;
     if(focus&&!currentFocus){
-      const record=[...projected].reverse().find(record=>record.focus===focus||record.focus===focus.alternate||record.child.props===(focus.pendingProps??focus.memoizedProps));
+      const record=pendingProjection=[...projected].reverse().find(record=>record.focus===focus||record.focus===focus.alternate||record.child.props===(focus.pendingProps??focus.memoizedProps));
       const bodies=record?(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type):[];
       if(bodies.length===1)currentFocus=bodies[0];
     }
@@ -1544,9 +1619,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // exact JSX entry proves the branch exists; readiness still needs the
     // whole temporary form so a label cannot hide a loading sibling.
     const ownerScope=expected?.scope==='owner'&&expectedFocus;
-    const body=ownerScope?currentFocus:expectedFocus||currentFocus;
+    const retained=currentFocus??(pendingProjection?focus:undefined);
+    const body=ownerScope?currentFocus:expectedFocus||retained;
     const visualScope=ownerScope?bodyRoots(currentFocus,tree,connected):expectedFocus?roots(expectedFocus,tree):connected;
-    return {focus:currentFocus,visualFocus:visualScope.at(-1)??body,expectedReady:(!focus||!!currentFocus)&&(!expected||!!expectedFocus),motion:(viewport,geometry)=>motion(body,viewport,tree,visualScope,geometry)};
+    return {focus:retained,visualFocus:visualScope.at(-1)??body,expectedReady:(!focus||!!currentFocus)&&(!expected||!!expectedFocus),motion:(viewport,geometry)=>motion(body,viewport,tree,visualScope,geometry)};
   }
   function nativeWaiters() {
     const result=[];

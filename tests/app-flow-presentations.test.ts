@@ -180,6 +180,23 @@ test('a lookup shares native bounds across related owners and refreshes them on 
   app.runtime.cleanup();
 });
 
+test('retained pager pages cannot make a visible opening control ambiguous',async()=>{
+  for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+    const app=tree(install),other:any={...app.root,memoizedProps:{isPageFocused:false},child:undefined};
+    const button:any={...app.button,return:other,memoizedProps:{onPress(){assert.fail('No entry handler runs')}}};
+    const sheet:any={...app.sheet,return:other,memoizedProps:{control:{open(){assert.fail('Inactive page must not open')},close(){}}},child:undefined,sibling:undefined};
+    other.child=button;button.sibling=sheet;app.root.sibling=other;
+    app.root.memoizedProps={isPageFocused:true};
+    configureFixture(app.runtime,{states:[],actions:[app.action]});
+    assert.equal(app.runtime.list().length,1,'Both pager pages can have the same nonzero native bounds');
+    assert.equal(app.runtime.open('open').focus,app.sheet);
+    await app.runtime.rollback(0,false);
+    other.memoizedProps.isPageFocused=true;
+    assert.deepEqual(app.runtime.list(),[],'Two active owners remain ambiguous');
+    app.runtime.cleanup();
+  }
+});
+
 test('native presentation events hold readiness and cleanup restores event handlers',()=>{
   const app=tree();let originalCalls=0;const original={onStateChange(){originalCalls++}};
   const canonical={currentProps:original,publicInstance:{getBoundingClientRect:()=>({x:0,y:0,width:10,height:20})}};
@@ -265,6 +282,38 @@ test('presentation retries yield to untouched screens and retain all three readi
   assert.deepEqual(events,['Home','Slow:1','Search','Home','Quick:1','Slow:2','Home','Slow:3']);
   assert.ok(result.nodes.every(node=>node.status==='captured'&&node.image));
   assert.equal(result.nodes.find(node=>node.name==='Slow')?.captureAttempts,3);
+});
+
+test('a saved state opener can use an equivalent live source entry without invoking callbacks',async t=>{
+  const app=tree();let state={panel:false};
+  const setter=(update:any)=>{state=update(state);app.root.memoizedState={memoizedState:state,next:null}};
+  const react={createElement(){},useState(){return [state,setter]},useReducer(){}};
+  const previous=(globalThis as any).__r;
+  (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}]])};
+  t.after(()=>{(globalThis as any).__r=previous});
+  const renderer={rendererPackageName:'react-native-renderer',getCurrentFiber:()=>app.root,scheduleUpdate(){app.root.memoizedState=null;react.useState();app.root.memoizedState={memoizedState:state,next:null}}};
+  const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??app.root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+  const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});
+  const site:any={id:'state',file:'App.tsx',line:1,column:0,endLine:1,owner:'App',paths:[['panel']]};
+  const {bindings}=await runtime.collect([site]);
+  const saved={...app.action,effect:{kind:'state',site:'state',path:['panel'],value:true}};
+  const live={...saved,id:'alternate',line:2};
+  app.button.memoizedProps.disabled=true;
+  const alternate:any={...app.button,sibling:undefined,_debugSource:{fileName:'App.tsx',lineNumber:2,columnNumber:1},memoizedProps:{onPress(){assert.fail('No event handler may execute')}}};
+  app.sheet.sibling=alternate;
+  configureFixture(runtime,{states:[site],actions:[saved,live]},[{binding:bindings[0].id,site:'state'}],bindings.map(binding=>binding.id));
+  try{
+    assert.equal(runtime.prepare('open').available,true);
+    assert.equal(runtime.open('open').error,undefined);assert.equal(state.panel,true);
+    await runtime.rollback(0,false);assert.equal(state.panel,false);
+    alternate.memoizedProps.disabled=true;
+    assert.equal(runtime.prepare('open').available,false,'Unavailable alternatives cannot bypass guards');
+    alternate.memoizedProps.disabled=false;
+    live.effect={...live.effect,value:'different'};
+    assert.equal(runtime.prepare('open').available,false,'A different state value is not the same view');
+    live.effect={...live.effect,value:true};live.name='OtherSheet';
+    assert.equal(runtime.prepare('open').available,false,'A different destination must not replace the requested view');
+  }finally{runtime.cleanup();app.runtime.cleanup()}
 });
 
 test('state hook tracking restores only its presentation field and leaves no wrapped exports',async t=>{
@@ -925,18 +974,19 @@ test('temporary preview boundaries contain their own React root errors and prese
 
 
 test('a selected cold form loads once and renders with live context while its temporary effects stay contained',async t=>{
-  for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  for(const install of [installPresentationRuntime,sharedLoopRuntime()])for(const compiled of [false,true]){
     const react=(React as any).default??React,dom=new JSDOM('<div id="root"></div>');
     const previous={window:(globalThis as any).window,document:(globalThis as any).document,require:(globalThis as any).__r,registry:(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__};
     (globalThis as any).window=dom.window;(globalThis as any).document=dom.window.document;
-    const Context=react.createContext(undefined),observed={label:'Observed record'},originalSnapshotHook=react.useSyncExternalStore;
-    let current:any,clone:any,effects=0,initializers=0,subscriptions=0,appSubscriptions=0,appUnsubscribes=0;
+    const Preview=react.createContext(null),Context=react.createContext(undefined),observed={label:'Observed record'},originalSnapshotHook=react.useSyncExternalStore;
+    let current:any,clone:any,effects=0,initializers=0,subscriptions=0,appSubscriptions=0,appUnsubscribes=0,frameworkEffects=0;
     function View({children}:any){return react.createElement('div',null,children)}
     function Modal({children,onShow}:any){onShow();return children}
     const rendered=createRoot(dom.window.document.getElementById('root')!);
     const root:any={tag:3,stateNode:(rendered as any)._internalRoot};
-    const provider:any={tag:10,type:Context.Provider,memoizedProps:{value:observed},return:root};
-    const host:any={tag:5,type:View,memoizedProps:{children:react.createElement(OriginalApp)},return:provider};root.child=provider;provider.child=host;
+    const outer:any={tag:5,type:View,memoizedProps:{},return:root};root.child=outer;
+    const provider:any={tag:10,type:Context.Provider,memoizedProps:{value:observed},return:outer};outer.child=provider;
+    const host:any={tag:5,type:View,memoizedProps:{children:react.createElement(OriginalApp),route:{name:'Current'},navigation:{isFocused:()=>true}},return:provider};provider.child=host;
     const appFiber:any={type:OriginalApp,memoizedProps:{},return:host};
     const appSubscribe=()=>{appSubscriptions++;return ()=>{appUnsubscribes++}};
     function OriginalApp(){
@@ -949,7 +999,9 @@ test('a selected cold form loads once and renders with live context while its te
       const snapshot=react.useSyncExternalStore(()=>{subscriptions++;return ()=>{}},()=>observed,()=>observed);
       assert.equal(snapshot,observed,'The preview reads the real store snapshot');
       const [step]=react.useState(()=>{initializers++;return 'start'});
-      react.useEffect(()=>{effects++},[]);react.useLayoutEffect(()=>{effects++},[]);
+      const preview=react.useContext(Preview);
+      react.useEffect(preview?()=>{}:()=>{effects++},[]);react.useLayoutEffect(preview?()=>{}:()=>{effects++},[]);
+      react.useEffect(()=>{frameworkEffects++},[]);
       current=undefined;return react.createElement('span',null,value.label+' '+step);
     }
     const cold:any={verboseName:'/app/Forms.tsx',isInitialized:false,publicModule:{exports:{}}};
@@ -958,9 +1010,14 @@ test('a selected cold form loads once and renders with live context while its te
     const modules=new Map([[1,{isInitialized:true,publicModule:{exports:react}}],
       [2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}], [3,cold],[4,other]]);
     (globalThis as any).__r=Object.assign((id:number)=>{assert.equal(id,3,'Only the selected source module can load');loads++;cold.isInitialized=true;cold.publicModule.exports={HiddenForm};return cold.publicModule.exports;},{getModules:()=>modules});
-    (globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__={matchingOwners:(hash:string)=>hash==='prepared'?[{entries:new Map()}]:[]};
+    (globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__={matchingOwners:(hash:string)=>hash==='prepared'?[{entries:new Map()}]:[],...(compiled?{wrapPreview:(content:any,preview:any)=>react.createElement(Preview.Provider,{value:preview},content)}:{})};
     const render=()=>flushSync(()=>rendered.render(react.createElement(Context.Provider,{value:observed},react.createElement(View,host.memoizedProps))));
-    const runtime=install({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',getCurrentFiber:()=>current,overrideProps(fiber:any,_path:any,props:any){fiber.memoizedProps=props;host.child=undefined;render()}}]])},fibers:(visit:any,subtree?:any)=>{const stack=[subtree??root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}},hidden:()=>false,later:setTimeout});
+    let deferCommit=true,commit:(()=>void)|undefined;
+    const runtime=install({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',getCurrentFiber:()=>current,overrideProps(fiber:any,_path:any,props:any){
+      assert.equal(fiber,host,'Cold forms mount in the focused route below its real providers');
+      fiber.memoizedProps=props;host.child=undefined;
+      if(deferCommit){deferCommit=false;commit=render;}else render();
+    }}]])},fibers:(visit:any,subtree?:any)=>{const stack=[subtree??root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}},hidden:()=>false,later:setTimeout});
     const action:any={id:'mount',file:'Forms.tsx',line:1,owner:'HiddenForm',component:'HiddenForm',name:'HiddenForm',prop:'',preview:true,views:['owner-body'],effect:{kind:'mount',file:'Forms.tsx',export:'HiddenForm'}};
     try{
       render();runtime.configure({states:[],actions:[action]},[]);
@@ -972,9 +1029,14 @@ test('a selected cold form loads once and renders with live context while its te
       assert.equal(runtime.prepare('mount').available,true);assert.equal(loads,1);
       assert.equal(runtime.prepare('mount').available,true);assert.equal(loads,1,'Repeated preparation reuses the loaded module');
       assert.equal(other.isInitialized,false);
-      assert.equal(runtime.open('mount').error,undefined);runtime.focused(clone);
+      const opened=runtime.open('mount');assert.equal(opened.error,undefined);runtime.focused(opened.focus);
+      const waiting=runtime.probeFocus(opened.focus,opened.expected);
+      assert.equal(waiting.expectedReady,false);assert.equal(waiting.focus,opened.focus,'Keep the exact mount handle until React commits its copy');
+      commit!();
+      const mounted=runtime.probeFocus(waiting.focus,opened.expected);
+      assert.equal(mounted.focus,clone);assert.equal(mounted.expectedReady,true);
       assert.equal(dom.window.document.getElementById('root')!.textContent,'Original appObserved record start');
-      assert.equal(initializers,1,'Ordinary form defaults run without fabricated state');assert.equal(effects,0);assert.equal(subscriptions,0,'React internal subscription effects cannot run for a temporary preview');assert.equal(appSubscriptions,1,'The original app still owns its store subscription');assert.equal(appUnsubscribes,0,'Preview mounting does not unsubscribe the original app');
+      assert.equal(initializers,1,'Ordinary form defaults run without fabricated state');assert.equal(effects,0);assert.equal(subscriptions,compiled?1:0,'Prepared views allow framework query subscriptions; unprepared previews keep them contained');assert.equal(frameworkEffects,compiled?1:0);assert.equal(appSubscriptions,1,'The original app still owns its store subscription');assert.equal(appUnsubscribes,0,'Preview mounting does not unsubscribe the original app');
       assert.equal(provider.memoizedProps.value,observed);assert.deepEqual(runtime.activeViews(clone),['owner-body']);
       assert.deepEqual(runtime.list(),[],'The mounted form cannot bootstrap a duplicate');
       await runtime.rollback(0,false);assert.equal(dom.window.document.getElementById('root')!.textContent,'Original app');
@@ -1682,7 +1744,7 @@ for (const install of [installPresentationRuntime, sharedLoopRuntime(installPres
 
 
 for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresentationRuntime)]){
- test(`sheet previews present from their native parent and reuse that window for nested bodies (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+ test(`nested preview steps retain their native parent layout and restore that container (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
   const app=tree(install),previous=(globalThis as any).__r;
   function View(){}function Modal(){}function NativeSheet(){}function Step(){}
   const mainBody=React.createElement('main',null,'App');
@@ -1690,11 +1752,18 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
   const main:any={type:View,memoizedProps:{children:mainBody,marker:'main'}};
   const host:any={tag:5,type:NativeSheet,memoizedProps:{},return:main};main.child=host;
   const container:any={type:View,memoizedProps:{children:sheetBody,marker:'sheet'},return:host,child:app.root};host.child=container;app.root.return=container;
-  let body:any,modal:any,shown=0,refused=0,hidden=0;
+  let body:any,bodyContainer:any,step:any,stepHost:any,modal:any,shown=0,refused=0,hidden=0;
   const roots:any[]=[];
   const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??main];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
   const renderer={rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){
    fiber.memoizedProps=props;roots.push(fiber);
+   if(fiber===stepHost)return;
+   if(fiber===bodyContainer){
+    const element=props.children?.props?.children?.at?.(-1)?.props?.children?.props?.children;
+    if(!element){step.sibling=undefined;return;}
+    const clone:any={type:element.type,memoizedProps:element.props,return:bodyContainer};step.sibling=clone;
+    clone.child={...stepHost,return:clone,memoizedProps:{style:{flex:1}}};return;
+   }
    const next=props.children?.props?.children?.at(-1);
    if(next?.type!==Modal){app.root.sibling=undefined;return;}
    modal=next;
@@ -1713,15 +1782,31 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
   assert.equal(refused,0,'The native parent must accept the first preview');
   assert.equal(runtime.motion(app.sheet).pending,false,'The actual onShow must settle the preview');
   const first=body,key=modal.key;
-  const bodyContainer:any={type:View,memoizedProps:{children:React.createElement(Step)},return:first};first.child=bodyContainer;
-  const step:any={type:Step,memoizedProps:{},return:bodyContainer};bodyContainer.child=step;
+  function ErrorWrapper(){}
+  const stepElement=React.createElement(Step),wrappedStep=React.createElement(ErrorWrapper,null,stepElement);
+  bodyContainer={type:View,memoizedProps:{children:wrappedStep,style:{flex:1,paddingTop:62,paddingBottom:34}},return:first};first.child=bodyContainer;
+  const nativeContainer:any={tag:5,type:'NativeContainer',memoizedProps:bodyContainer.memoizedProps,return:bodyContainer};bodyContainer.child=nativeContainer;
+  const errorWrapper:any={type:ErrorWrapper,memoizedProps:wrappedStep.props,return:nativeContainer};nativeContainer.child=errorWrapper;
+  step={type:Step,memoizedProps:stepElement.props,return:errorWrapper};errorWrapper.child=step;
+  stepHost={tag:5,type:'NativeStep',memoizedProps:{style:{flex:1}},return:step,stateNode:{getBoundingClientRect:()=>({x:0,y:62,width:402,height:778})}};step.child=stepHost;
   assert.equal(runtime.project(step,{views:['nested-step']}).error,undefined);
-  assert.equal(roots.at(-1),container,'A nested body keeps its already shown parent window');
+  assert.equal(roots.at(-1),bodyContainer,'A nested body keeps the layout inside its already shown window');
+  assert.deepEqual(bodyContainer.memoizedProps.style,{flex:1,paddingTop:62,paddingBottom:34},'Real safe area remains on the original container');
+  assert.equal(runtime.motion(step.sibling).error,undefined);
+  stepHost.memoizedProps={style:{flex:1,backgroundColor:'white'},testID:'loaded-form'};
+  assert.equal(runtime.motion(step.sibling).error,undefined,'A query commit on the same native host keeps the preview valid');
+  assert.equal(stepHost.memoizedProps.pointerEvents,'none');
+  assert.equal(stepHost.memoizedProps.style.at(-1).opacity,0);
   assert.equal(modal.key,key);assert.equal(shown,1);assert.equal(refused,0);
   assert.equal(container.memoizedProps.children.props.children.length,2);
   assert.equal(main.memoizedProps.children,mainBody,'The main app stays mounted');
   await runtime.rollback(1);
   assert.equal(hidden,0,'Back between steps keeps the native window open');
+  assert.equal(bodyContainer.memoizedProps.children,wrappedStep);assert.deepEqual(stepHost.memoizedProps.style,{flex:1,backgroundColor:'white'});assert.equal(stepHost.memoizedProps.testID,'loaded-form');
+  errorWrapper.sibling={tag:5,type:'Footer',memoizedProps:{},return:bodyContainer};
+  const writes=roots.length;
+  assert.match(runtime.project(step,{views:['ambiguous-step']}).error,/exact content slot/);
+  assert.equal(roots.length,writes,'A sibling with native layout prevents moving the copied body to another slot');
   await runtime.rollback();
   assert.equal(hidden,1);assert.equal(container.memoizedProps.children,sheetBody);
   assert.equal(runtime.checkpoint(),0);assert.equal(runtime.diagnostics().projections,0);

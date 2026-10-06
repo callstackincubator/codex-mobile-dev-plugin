@@ -11,6 +11,8 @@ if (typeof __MOBILE_DEV_FLOW_FINGERPRINT__ === 'string') {
 const key = '__MOBILE_DEV_FLOW_REGISTRY__';
 export const registry = globalThis[key] ??= createFlowRegistry((owner, projection, failed) => capturePreviewContext(owner.id, PreviewError, projection, failed));
 const Preview = React.createContext(null);
+// The shared executor can place this boundary inside an existing native sheet.
+registry.wrapPreview = (content, preview) => React.createElement(Preview.Provider, {value:preview}, content);
 const reducerSetters=new WeakMap();
 const seedAction=Symbol('flow-preview-state');
 
@@ -54,6 +56,22 @@ export function useFlowEffect(kind, effect, dependencies, animation) {
   // Preview only the render body. App effects may persist account/session data;
   // framework query hooks retain their ordinary real cache and read requests.
   React[kind](preview && !animation ? () => {} : effect, dependencies);
+}
+// Keep system keyboard/autofill UI from covering a copied form. The live
+// input, handlers, value and ref retain the app's own behavior.
+export function input(element) {
+  return React.createElement(PreviewInput,{key:element.key,element});
+}
+function PreviewInput({element}) {
+  const preview=React.useContext(Preview);
+  return preview ? React.cloneElement(element,{autoFocus:false}) : element;
+}
+const noSubscription=()=>()=>{};
+export function useFlowExternalStore(subscribe,getSnapshot,getServerSnapshot) {
+  const preview=React.useContext(Preview);
+  // App subscriptions stay contained. Framework query observers can subscribe
+  // normally and load real read data while a temporary view is mounted.
+  return React.useSyncExternalStore(preview?noSubscription:subscribe,getSnapshot,getServerSnapshot);
 }
 class PreviewError extends React.Component {
   state={failed:false};

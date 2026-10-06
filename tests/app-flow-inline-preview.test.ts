@@ -63,7 +63,9 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   assert.equal(runtime.motion(app.form).error,undefined);
   const previousBody=app.body();
   const step:any={type:app.Step,memoizedProps:{},return:previousBody.child};previousBody.child.child=step;
-  assert.equal(runtime.project(step,{views:['next-step']}).error,undefined);
+  assert.match(runtime.project(step,{views:['unmounted-step']}).error,/exact content slot/);
+  previousBody.child.child={tag:5,type:'NativeBody',memoizedProps:{},stateNode:{getBoundingClientRect:()=>({width:300,height:180})},return:previousBody.child};
+  assert.equal(runtime.project(previousBody,{views:['next-step']}).error,undefined);
   assert.equal(app.windowCount(),0);assert.equal(runtime.checkpoint(),2);
   assert.equal(app.container.memoizedProps.children.props.children.length,3);
   await runtime.rollback(1);
@@ -78,10 +80,12 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
  test(`native preview cleanup preserves later app props and rejects overlapping frames (${mode})`,async t=>{
   const app=sheetFixture(t,install),{runtime}=app;
   runtime.project(app.form,{views:['step']});
-  const style={padding:20};app.originalHost.memoizedProps={style,testID:'changed'};app.hook.onCommitFiberRoot();
-  assert.match(runtime.motion(app.form).error,/body changed/);
+  const style={padding:20};app.originalHost.memoizedProps={...app.originalHost.memoizedProps,style,testID:'changed'};app.hook.onCommitFiberRoot();
+  const changed=runtime.motion(app.form);assert.equal(changed.error,undefined);assert.equal(changed.pending,true);
+  assert.equal(app.originalHost.memoizedProps.style.at(-1).opacity,0,'The same body is concealed again before it can pass readiness');
+  assert.equal(runtime.motion(app.form).pending,false);
   await runtime.rollback();
-  assert.equal(app.originalHost.memoizedProps.style,style);assert.equal(app.originalHost.memoizedProps.testID,'changed');
+  assert.equal(app.originalHost.memoizedProps.style,style);assert.equal(app.originalHost.memoizedProps.testID,'changed');assert.equal(app.originalHost.memoizedProps.pointerEvents,undefined);
   assert.equal(app.container.memoizedProps.children,app.children);
  });
 

@@ -70,6 +70,9 @@ module.exports = function flowInstrumentation({types: t}) {
       CallExpression(path) {
         if (wrapped.has(path.node)) return;
         const hook=reactHook(path);
+        if(hook==='useSyncExternalStore') {
+          path.replaceWith(call('useFlowExternalStore',path.node.arguments));effects++;path.skip();return;
+        }
         if(['useEffect','useLayoutEffect','useInsertionEffect'].includes(hook)) {
           path.replaceWith(call('useFlowEffect',[t.stringLiteral(hook),path.node.arguments[0],path.node.arguments[1]||t.identifier('undefined'),t.booleanLiteral(animationEffect(path))]));effects++;path.skip();return;
         }
@@ -95,8 +98,12 @@ module.exports = function flowInstrumentation({types: t}) {
           }
           markers.push({owner,target});
         }
-        if(!markers.length)return;
+        const autofocus=path.node.attributes.some(attribute=>t.isJSXAttribute(attribute)&&attribute.name.name==='autoFocus');
+        if(!markers.length&&!autofocus)return;
         let result=element.node;
+        if(autofocus){
+          result=call('input',[result]);effects++;
+        }
         for(const {owner,target} of markers)result=call('entry',[owner.token,t.stringLiteral(target.id),result]);
         if(element.parentPath.isJSXElement()||element.parentPath.isJSXFragment())element.replaceWith(t.jsxExpressionContainer(result));
         else element.replaceWith(result);

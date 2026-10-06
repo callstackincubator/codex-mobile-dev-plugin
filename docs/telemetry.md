@@ -808,3 +808,12 @@ jobs, including discovery, choosing the next job and saving its plan. The app
 receives one next job during discovery, with action IDs rather than source
 definitions. Prepared selections send their fixed list in the same compact form.
 These timings use the existing bounded windows and surface/platform attributes.
+
+
+Prepared previews and nested form copies still use the shared queue's existing
+capture, source-binding, readiness, screenshot and restoration measurements.
+Framework query loading and layout repair stay inside those same timing
+boundaries. No metric was added per render or query update. Provider values,
+store snapshots, form state and input props remain inside the app and are not
+sent to telemetry. Existing App Flow and telemetry behavior tests cover this
+execution path and its cleanup.

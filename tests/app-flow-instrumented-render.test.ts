@@ -23,15 +23,20 @@ test('instrumented preview preserves real props/context, isolates state, suppres
   context.module=module;context.exports=module.exports;context.require=(name:string)=>name==='react'?React:native;
   vm.runInContext(bundle.outputFiles[0].text,context);
   const client=module.exports;
+  const inputRef=React.createRef(),element=React.createElement('input',{key:'field',ref:inputRef,autoFocus:true});
+  const wrapped=client.input(element);assert.equal(wrapped.key,'field');assert.equal(wrapped.props.element,element);assert.equal(wrapped.props.element.props.ref,inputRef);
   const source=`import * as React from 'react';
 export const Data=React.createContext('missing');
-export let effects=0;
+export let effects=0,subscriptions=0;
+const subscribe=()=>{subscriptions++;return ()=>{}};
+const read=()=>"real snapshot";
 export function Screen({label}) {
   const [step,setStep]=React.useState('first');
   const data=React.useContext(Data);
+  React.useSyncExternalStore(subscribe,read,read);
   React.useEffect(()=>{effects++},[step]);
   if(step === 'broken') throw new Error('Preview failure');
-  return <span>{label}:{data}:{step}</span>;
+  return <><button autoFocus data-step={step}/><span>{label}:{data}:{step}</span></>;
 }
 export function RootNavigator(){return <Data.Provider value="local-context"><Screen label="real-prop"/></Data.Provider>;}`;
   const lines=source.split('\n'),line=lines.findIndex(value=>value.includes('React.useState'))+1;
@@ -47,11 +52,13 @@ export function RootNavigator(){return <Data.Provider value="local-context"><Scr
   t.after(async()=>{await React.act(()=>root.unmount());});
   await React.act(()=>root.render(React.createElement(React.StrictMode,null,React.createElement(app.Data.Provider,{value:'real-context'},React.createElement(app.RootNavigator)))));
   const registry=client.registry,live=registry.find('step');
-  assert.ok(live);assert.equal(live.value.tuple[0],'first');const beforeEffects=app.effects;
+  assert.ok(live);assert.equal(live.value.tuple[0],'first');const beforeEffects=app.effects,beforeSubscriptions=app.subscriptions;
+  const focused=dom.window.document.activeElement;assert.equal(focused?.getAttribute('data-step'),'first');
   await React.act(()=>registry.project({source:live.owner.source,owner:live.owner,site:'step',value:'second'}));
   const preview=registry.find('step');assert.ok(preview.owner.preview);assert.equal(preview.value.tuple[0],'second');
-  assert.equal(live.value.tuple[0],'first');assert.equal(app.effects,beforeEffects);
+  assert.equal(live.value.tuple[0],'first');assert.equal(app.effects,beforeEffects);assert.equal(app.subscriptions,beforeSubscriptions,'App-owned subscriptions stay contained in the copied form');
   assert.match(dom.window.document.body.textContent!,/real-prop:local-context:second/);
+  assert.equal(dom.window.document.activeElement,focused,'A copied autoFocus input must not open system keyboard or autofill UI');
   await React.act(()=>preview.value.tuple[1]('third'));
   assert.equal(registry.find('step').value.tuple[0],'third');assert.equal(app.effects,beforeEffects);
   await React.act(()=>registry.unproject());

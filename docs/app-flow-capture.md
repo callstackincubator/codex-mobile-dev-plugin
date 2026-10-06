@@ -1,8 +1,46 @@
 # Instrumented App Flow capture
 
-The instrumented path is opt-in while we test it against a small, fixed set of
-routes, guarded forms and nested sheets. The target is 260 reviewed views in
-260 seconds. Source matches and unit tests do not establish that result.
+Normal mapping and prepared selections use one capture queue and presentation
+executor. They differ in how they choose jobs. We are validating that executor
+against a fixed set of routes, guarded forms and nested sheets before widening
+coverage. The target is 260 reviewed views in 260 seconds. Source matches and
+unit tests do not establish that result.
+
+The latest development check after 0.1.191 attempted the same 20 selected views
+in 49.4 seconds, including 0.35 seconds of preparation. Inspection of every saved
+image accepted 13 distinct views. One report image had an invalid subject; two
+report steps timed out; two signup steps, hosting-provider selection and discard
+confirmation lacked usable state or an opening binding. No reconnect or runtime
+failure occurred, and the app returned to its logged-in Home without a sheet.
+This has not passed the 20-view gate. An earlier run accepted 13 unobscured views
+in 38.4 seconds, so the current result does not establish a speed improvement.
+
+Cold previews now use the focused route's provider context and keep their target
+handle until React commits. Prepared previews contain app effects and app-owned
+subscriptions while allowing framework queries to load real data. Nested form
+copies retain their native parent layout and safe area. If a query commit replaces
+the original body's hidden style, capture conceals that same body again and waits
+for its layout; cleanup preserves the app's newer props. A different native body
+still fails. Copied forms do not autofocus explicitly marked inputs, so system
+autofill does not cover their fields. Live form behavior stays unchanged.
+
+Opening bindings ignore inactive retained pager pages. A saved finite-state
+opener may use another independently reachable source entry only when both name
+the same destination and exact state update and resolve to one live setter. This
+never runs an event handler.
+
+The next gate is still all 20 correct images. Signup needs proven local state
+updates from real query data. Report steps need a valid subject and the choices
+that their form requires; changing a step number alone is not enough. Resolve
+those inputs and remaining openers before another full-map sweep. Timing from a
+recent mixed run also shows about 6.5 seconds spent collecting and resolving
+source bindings. Exact prepared JSX entries are the next speed target after the
+correctness gate; readiness checks must remain.
+
+When changing Babel instrumentation, restart the existing Metro once with its
+transform cache cleared, then reload the app. In this test a JavaScript reload
+picked up the runtime but left old transforms in use; clearing Metro's cache
+activated the autofocus fix. Do not start a second server.
 
 `mobile_app_flow` with `prepare-build` and the usual project/device options adds
 a reversible wrapper to a CommonJS `babel.config.js`. Restart the existing Metro
@@ -51,6 +89,8 @@ the Babel transform or hook layout still require rebuilding/reloading the app.
 Validate the small representative selection before attempting another full map.
 Report correct captures, failures, preparation time and capture time. Do not use
 CPU/memory recordings as a substitute for this check.
+
+## Earlier checks
 
 The first live 20-view check did not pass. It exposed Hermes evaluator closure
 failures, anonymous compiled component names, and native sheets left over after
