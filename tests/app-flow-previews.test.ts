@@ -575,3 +575,54 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
     assert.equal(app.runtime.diagnostics().queryObservers,0);
   });
 }
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`live query caches supply settled results without Metro exports (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    const data={id:'real'},query:any={queryHash:'record',state:{data},observers:[]};
+    const options={queryHash:'record',enabled:false};
+    let settled={data,isPending:false,isFetching:false,isError:false,isPlaceholderData:false,isFetchedAfterMount:true};
+    let cold={...settled,isFetchedAfterMount:false},cacheReads=0,resultReads=0,appCalls=0;
+    class QueryObserver {
+      options=options;temporary:boolean;
+      constructor(temporary=false){this.temporary=temporary}
+      getCurrentQuery(){return query}
+      getCurrentResult(){resultReads++;return settled}
+      getOptimisticResult(_options?:any){return this.temporary?cold:settled}
+    }
+    class QueryCache {getAll(){cacheReads++;return [query]}}
+    const cache=new QueryCache();
+    class QueryClient {getQueryCache(){return cache}}
+    const client=new QueryClient(),live=new QueryObserver();query.observers=[live];
+    Object.defineProperty(client,'getQueryCache',{get(){appCalls++;throw Error('Instance getter must not execute')}});
+    Object.defineProperty(live,'getCurrentResult',{get(){appCalls++;throw Error('Instance getter must not execute')}});
+    const original=QueryObserver.prototype.getOptimisticResult;
+    const app=runtimeFixture(t,false,install);app.owner.memoizedProps={client};
+    await configure(app);
+    assert.equal(cacheReads,1);assert.equal(resultReads,1);assert.equal(appCalls,0);
+    assert.deepEqual(app.runtime.diagnostics().queryCache,{clients:1,caches:1,observerCandidates:1,clientTypes:['QueryClient'],observerTypes:['QueryObserver']});
+    assert.equal(app.runtime.diagnostics().queryObservers,1);assert.equal(app.runtime.diagnostics().querySnapshots,1);
+    assert.equal(app.runtime.open('preview').error,undefined);app.setCurrent(app.clone);
+    const preview=new QueryObserver(true);assert.equal(preview.getOptimisticResult(),cold,'Missing options cannot reuse another representation');
+    assert.equal(preview.getOptimisticResult(options),settled,'Use the actual result loaded before capture started');
+    assert.equal(app.runtime.diagnostics().reusedQueryResults,1);
+    query.state={data};assert.equal(preview.getOptimisticResult(options),cold,'Changed cache state requires a fresh real observer read');
+    app.setCurrent(undefined);await app.runtime.rollback(0,false);
+    // A pending live result is not readiness evidence even when it has old data.
+    settled={...settled,isFetching:true};await app.runtime.collect([app.site],[app.action]);
+    assert.equal(app.runtime.open('preview').error,undefined);app.setCurrent(app.clone);
+    assert.equal(preview.getOptimisticResult(options),cold);
+    app.setCurrent(undefined);await app.runtime.rollback(0,false);app.runtime.cleanup();
+    assert.equal(QueryObserver.prototype.getOptimisticResult,original);assert.equal(app.runtime.diagnostics().querySnapshots,0);
+    assert.deepEqual(app.runtime.diagnostics().queryCache,{clients:0,caches:0,observerCandidates:0,clientTypes:[],observerTypes:[]});
+  });
+  test(`unrelated clients and observer getters stay unread (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    let calls=0;
+    class OtherClient {getQueryCache(){calls++;throw Error('Unrelated client')}}
+    const app=runtimeFixture(t,false,install);app.owner.memoizedProps={client:new OtherClient()};
+    await configure(app);assert.equal(calls,0);assert.equal(app.runtime.diagnostics().queryObservers,0);
+    class QueryClient {getQueryCache(){return new QueryCache()}}
+    class QueryCache {getAll(){return [Object.defineProperty({queryHash:'key',state:{}},'observers',{get(){calls++;throw Error('Accessor')}})]}}
+    app.owner.memoizedProps={client:new QueryClient()};await app.runtime.collect([app.site],[app.action]);
+    assert.equal(calls,0);assert.equal(app.runtime.diagnostics().queryObservers,0);app.runtime.cleanup();
+  });
+}

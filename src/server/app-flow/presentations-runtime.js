@@ -8,6 +8,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   const portalEffects=new Map();let portalOwners=new WeakMap(),approvedPortals=new WeakSet(),syncingPortals=false;
   let previewRefs=new WeakSet(),containedImperativeHandles=0,containedSubscriptions=0;
   const queryPatches=[],querySnapshots=new Map();let reusedQueryResults=0;
+  let queryCacheDiagnostics={clients:0,caches:0,observerCandidates:0,clientTypes:[],observerTypes:[]};
   let catalog = {states:[],actions:[]};
   const name = fiber => { const type=fiber.type?.render??fiber.type?.type??fiber.type;return type?.displayName??type?.name; };
   const current = () => {
@@ -83,17 +84,76 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         }
         return result;
       }
-      // Keep the plain framework result before trackResult creates a proxy.
-      // No accessor, query callback, fetch, subscription or cache write runs.
-      const descriptors=Object.getOwnPropertyDescriptors(result);
-      const value=key=>descriptors[key]&&'value'in descriptors[key]?descriptors[key].value:undefined;
-      if(value('data')===undefined||value('isPending')!==false||value('isFetching')!==false||value('isError')!==false||value('isPlaceholderData')!==false)return result;
-      const record={state,select,placeholder,enabled,result};
-      const kept=records.filter(previous=>previous.state===state&&!(previous.select===select&&previous.placeholder===placeholder&&previous.enabled===enabled));
-      kept.push(record);querySnapshots.delete(query);querySnapshots.set(query,kept.slice(-4));
-      if(querySnapshots.size>200)querySnapshots.delete(querySnapshots.keys().next().value);
+      rememberQueryResult(query,result,options);
       return result;
     };
+  }
+  const ownQueryValue=(object,key)=>{
+    if(!object||(typeof object!=='object'&&typeof object!=='function'))return;
+    const descriptor=Object.getOwnPropertyDescriptor(object,key);return descriptor&&'value'in descriptor?descriptor.value:undefined;
+  };
+  function rememberQueryResult(query,result,options){
+    // Both ordinary renders and existing live observers supply the plain
+    // framework result before trackResult creates a proxy. Never invent flags.
+    const state=ownQueryValue(query,'state'),hash=ownQueryValue(query,'queryHash');
+    if(!state||typeof hash!=='string'||hash!==ownQueryValue(options,'queryHash')||!result||typeof result!=='object')return;
+    if(ownQueryValue(result,'data')===undefined||ownQueryValue(result,'isPending')!==false||ownQueryValue(result,'isFetching')!==false||ownQueryValue(result,'isError')!==false||ownQueryValue(result,'isPlaceholderData')!==false)return;
+    const select=ownQueryValue(options,'select'),placeholder=ownQueryValue(options,'placeholderData'),enabled=ownQueryValue(options,'enabled');
+    const records=querySnapshots.get(query)??[],record={state,select,placeholder,enabled,result};
+    const kept=records.filter(previous=>previous.state===state&&!(previous.select===select&&previous.placeholder===placeholder&&previous.enabled===enabled));
+    kept.push(record);querySnapshots.delete(query);querySnapshots.set(query,kept.slice(-4));
+    if(querySnapshots.size>200)querySnapshots.delete(querySnapshots.keys().next().value);
+  }
+  function patchQueryPrototype(prototype){
+    if(!prototype||queryPatches.some(patch=>patch.prototype===prototype))return;
+    const method=Object.getOwnPropertyDescriptor(prototype,'getOptimisticResult');
+    const read=Object.getOwnPropertyDescriptor(prototype,'getCurrentQuery');
+    if(!method?.writable||typeof method.value!=='function'||typeof read?.value!=='function')return;
+    const original=method.value,state={active:true},wrapped=queryResultWrapper(original,read.value,state);
+    try{Object.defineProperty(prototype,'getOptimisticResult',{...method,value:wrapped});}catch{return;}
+    queryPatches.push({prototype,descriptor:method,original,wrapped,state});
+  }
+  function queryFrameworkMethod(object,owner,key){
+    // Use the known library prototype's read method, never an instance getter
+    // or an app override. Subclasses still use their actual library cache.
+    for(let prototype=object&&Object.getPrototypeOf(object),count=0;prototype&&count++<5;prototype=Object.getPrototypeOf(prototype)){
+      const constructor=ownQueryValue(prototype,'constructor'),label=ownQueryValue(constructor,'name');
+      if(typeof constructor!=='function'||typeof label!=='string'||label.replace(/^_+/,'')!==owner)continue;
+      const method=ownQueryValue(prototype,key);if(typeof method==='function')return {prototype,method};
+    }
+  }
+  function collectQueryObservers(){
+    const clients=new Set(),clientTypes=new Set(),observerTypes=new Set();let queriesRead=0;
+    queryCacheDiagnostics={clients:0,caches:0,observerCandidates:0,clientTypes:[],observerTypes:[]};
+    const describe=(object,types)=>{
+      const label=ownQueryValue(ownQueryValue(Object.getPrototypeOf(object),'constructor'),'name');
+      if(typeof label==='string'&&types.size<20)types.add(label.slice(0,80));return [...types];
+    };
+    for(const fiber of committedStructure().all){
+      const client=ownQueryValue(fiber.memoizedProps,'client');
+      if(!client||clients.has(client)||clients.size>=10)continue;
+      clients.add(client);queryCacheDiagnostics.clients=clients.size;queryCacheDiagnostics.clientTypes=describe(client,clientTypes);
+      const readCache=queryFrameworkMethod(client,'QueryClient','getQueryCache');if(!readCache)continue;
+      let cache,queries;
+      try{cache=readCache.method.call(client);const readAll=queryFrameworkMethod(cache,'QueryCache','getAll');if(!readAll)continue;queryCacheDiagnostics.caches++;queries=readAll.method.call(cache);}catch{continue;}
+      if(!Array.isArray(queries))continue;
+      for(const query of queries){
+        const observers=ownQueryValue(query,'observers');if(!Array.isArray(observers)||!observers.length)continue;
+        if(queriesRead++>=200)return;
+        for(const observer of observers.slice(0,20)){
+          if(!observer||typeof observer!=='object')continue;
+          queryCacheDiagnostics.observerCandidates++;queryCacheDiagnostics.observerTypes=describe(observer,observerTypes);
+          const current=queryFrameworkMethod(observer,'QueryObserver','getCurrentQuery');
+          const result=queryFrameworkMethod(observer,'QueryObserver','getCurrentResult');
+          if(!current||!result)continue;
+          try{
+            if(current.method.call(observer)!==query)continue;
+            patchQueryPrototype(current.prototype);
+            rememberQueryResult(query,result.method.call(observer),ownQueryValue(observer,'options'));
+          }catch{/* A detached observer cannot supply a settled result. */}
+        }
+      }
+    }
   }
   function patchQueryResults() {
     for(const module of globalThis.__r?.getModules?.()?.values?.()??[]){
@@ -106,18 +166,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         try{observer=descriptor.get.call(exports);}catch{continue;}
       }
       const prototype=typeof observer==='function'?Object.getOwnPropertyDescriptor(observer,'prototype')?.value:undefined;
-      if(!prototype||queryPatches.some(patch=>patch.prototype===prototype))continue;
-      const method=Object.getOwnPropertyDescriptor(prototype,'getOptimisticResult');
-      const read=Object.getOwnPropertyDescriptor(prototype,'getCurrentQuery');
-      if(!method?.writable||typeof method.value!=='function'||typeof read?.value!=='function')continue;
-      const original=method.value,state={active:true},wrapped=queryResultWrapper(original,read.value,state);
-      try{Object.defineProperty(prototype,'getOptimisticResult',{...method,value:wrapped});}catch{continue;}
-      queryPatches.push({prototype,descriptor:method,original,wrapped,state});
+      patchQueryPrototype(prototype);
     }
+    collectQueryObservers();
   }
   function unpatchQueryResults(){
     for(const patch of queryPatches){patch.state.active=false;if(Object.getOwnPropertyDescriptor(patch.prototype,'getOptimisticResult')?.value===patch.wrapped)Object.defineProperty(patch.prototype,'getOptimisticResult',patch.descriptor);}
-    queryPatches.length=0;querySnapshots.clear();reusedQueryResults=0;
+    queryPatches.length=0;querySnapshots.clear();reusedQueryResults=0;queryCacheDiagnostics={clients:0,caches:0,observerCandidates:0,clientTypes:[],observerTypes:[]};
   }
   function patchHooks() {
     if(patches.length)return true;
@@ -995,6 +1050,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const connected=roots(currentFocus,tree);
     return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:viewport=>motion(currentFocus,viewport,tree,connected)};
   }
-  const diagnostics=()=>({lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,reusedQueryResults,queryObservers:queryPatches.length,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  const diagnostics=()=>({lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,reusedQueryResults,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
   return {collect,records,configure,list,open,portalBindings,previewPortals,activeViews,rollback,cleanup,motion, visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

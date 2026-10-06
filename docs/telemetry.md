@@ -519,3 +519,12 @@ observer export. The existing setup and command timing boundaries include this
 read. Observer patch count joins snapshot and reuse counts in local diagnostics
 only; no module names, exports or query data enter telemetry. Cleanup retains the
 same method ownership checks and releases the observer patches.
+
+Since 0.1.166, presentation setup can read existing TanStack Query observers
+from a mounted client's cache. This includes results loaded before mapping and
+works without a Metro observer export. Known library prototype read methods
+supply the actual result; the mapper adds no fetch, subscription, callback or
+cache write. Existing setup, readiness, capture and restoration timings include
+this path with the same names and units. Bounds and owned-method cleanup remain
+in place. Client/cache/observer counts and bounded constructor names stay in
+local diagnostics only, clear on cleanup, and never enter telemetry.
