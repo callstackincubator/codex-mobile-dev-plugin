@@ -254,3 +254,32 @@ test('diagnostics use the reconnected inspector while native dismissal is pendin
   assert.equal(runs.read(run.id).phase,'complete');
   assert.ok(events.indexOf('2:diagnostics')<events.indexOf('2:recover'));
 });
+
+for(const failOpening of [false,true])test(`slow presentation cleanup resumes without reinstalling the live inspector (${failOpening?'failed opening':'captured sheet'})`,async t=>{
+  const {FlowRuntimeTimeout}=await import('../src/server/app-flow/runtime-metrics.ts');
+  const g=graph();g.nodes=g.nodes.filter(node=>node.name!=='Profile');
+  const action:any={id:'sheet',name:'Details',file:'Home.tsx',line:1,owner:'Home',component:'Button',prop:'onPress',effect:{kind:'control',component:'Details',prop:'control',method:'open',close:'close'}};
+  g.presentations={states:[],actions:[action]};
+  let connections=0,heartbeats=0,closeRequests=0,openingFailures=0,cleanupFailed=false,level=0,screen='Home';
+  const view=()=>({ready:true,found:true,active:[screen],key:level?'Details':screen,signature:level?'details-body':screen});
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>g,connect:async()=>{
+    connections++;
+    return {runtime:{async invoke(command){
+      if(command.type==='inspect')return {available:true};
+      if(command.type==='open'){assert.equal(level,0,'Never navigate under a sheet that is still closing');screen=(command.path as string[])[0];return {...view(),name:screen};}
+      if(command.type==='presentations')return screen==='Home'&&level===0?[action]:[];
+      if(command.type==='presentation-checkpoint')return {level};
+      if(command.type==='presentation-open'){level=1;if(failOpening&&openingFailures++===0)return {error:'Body not available yet'};return view();}
+      if(command.type==='presentation-rollback'){
+        if(level){closeRequests++;if(!cleanupFailed){cleanupFailed=true;throw new FlowRuntimeTimeout('presentation-rollback');}}
+        level=0;return {};
+      }
+      if(command.type==='heartbeat'){heartbeats++;return {alive:true};}
+      return view();
+    },async close(){}},async screenshot(){return Buffer.from(view().key)}};
+  }});
+  const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
+  assert.equal(runs.read(run.id).phase,'complete');assert.equal(connections,1);
+  assert.equal(heartbeats,1);assert.ok(closeRequests>=2);assert.equal(level,0);
+  assert.ok(runs.read(run.id).nodes.every(node=>node.status==='captured'));
+});

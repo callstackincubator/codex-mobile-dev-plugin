@@ -1154,3 +1154,29 @@ for(const expiry of [false,true])test(`navigation animation overrides restore on
   if(expiry){expire!();await new Promise(resolve=>setTimeout(resolve,0));}else await app.invoke({type:'restore'});
   assert.equal(exports.useDescriptors,original);assert.equal(app.context.flow,undefined);
 });
+
+test('sheet rollback cancels a stale readiness wait before starting native cleanup',async t=>{
+  const app=runtime(t,false,undefined,true);
+  await app.invoke({type:'inspect'});
+  app.native.memoizedProps.loading=true;
+  const waiting=app.invoke({type:'presentation-view',waitMs:20000});
+  await app.invoke({type:'presentation-rollback',level:0});
+  assert.match((await waiting).error,/cancelled/);
+  const diagnostics=await app.invoke({type:'diagnostics'});
+  assert.equal(diagnostics.waitTimers,0);assert.equal(diagnostics.paintFrames,0);
+  app.native.memoizedProps.loading=false;
+  assert.equal((await app.invoke({type:'presentation-view',waitMs:1000})).ready,true);
+});
+
+test('presentation reuse proves the current route and real params, including nested values',async t=>{
+  const app=runtime(t,false,undefined,true);
+  await app.invoke({type:'inspect'});
+  await app.invoke({type:'open',path:['Profile'],params:{id:'observed',filter:{tab:'posts'}},timeoutMs:300});
+  const read=(path:string[],params:any,expo=false)=>app.invoke({type:'presentation-view',path,params,expo});
+  assert.equal((await read(['Profile'],{id:'observed',filter:{tab:'posts'}})).routeMatches,true);
+  assert.equal((await read(['Profile'],{id:'another'})).routeMatches,false);
+  assert.equal((await read(['Profile'],{id:'observed',filter:{tab:'media'}})).routeMatches,false);
+  assert.equal((await read(['Home'],{id:'observed'})).routeMatches,false);
+  assert.equal((await read(['/(tabs)/Profile/index'],{id:'observed'},true)).routeMatches,true);
+  assert.equal((await app.invoke({type:'presentation-view'})).routeMatches,undefined);
+});

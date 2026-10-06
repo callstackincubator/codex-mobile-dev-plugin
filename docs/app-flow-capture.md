@@ -115,3 +115,22 @@ tests, so this is an observed result, not an isolated measure of compilation. A
 controlled fallback test on the same warmed app captured 18 in 38.8 seconds, with
 two false image waits. The image fix removes those waits while preserving checks
 for real new loads. The full coverage and one-second-per-view goals remain open.
+
+Version 0.1.183 retries slow sheet cleanup on the same inspector after a successful
+heartbeat. Reconnecting remains the fallback if cleanup still fails or the
+connection is gone. Rollback cancels old readiness timers before dismissing the
+native sheet. No navigation starts beneath an unfinished dismissal.
+
+Sibling sheets can reuse a parent whose content changed if a fresh probe proves
+that its route and real parameters still match. The native checkpoint, loaded
+content and motion checks still apply. Reuse never supplies an old screenshot;
+the next view still needs its own capture and verification. Older runtimes that
+cannot supply route proof keep the stricter content comparison.
+
+A fresh default run on the installed 0.1.182 server saved 116 captures in 500.5
+seconds before we stopped it. It reconnected once after delayed sheet cleanup,
+so the earlier prepared-batch result does not establish default-path reliability.
+Four isolated Starter Pack dialogs took 23.5 seconds on that build. One captured;
+three kept showing loaders because their opening recipes lacked prepared data.
+The 0.1.183 changes still need an installed-build live test. Full coverage,
+duplicate removal and aggregate one-second captures remain open.

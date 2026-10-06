@@ -992,7 +992,7 @@ test('related sheets retain a verified parent and use actual projection checkpoi
 });
 
 test('sibling sheets reuse their settled base only after restoration and a fresh view check',async t=>{
-  for(const changed of [false,true]){
+  for(const proof of ['legacy','matching','different-params'])for(const changed of [false,true]){
     const root=await fixture(t,{});await mkdir(join(root,'run'));const events:any[]=[];let stack:string[]=[],baseVersion='';
     const make=(id:string)=>({id,name:id,kind:'screen',path:[],required:[],status:'pending',presentation:{basePath:['Home'],baseParams:{id:'observed'},actions:[id]}} as any);
     const first=make('first'),second=make('second');
@@ -1005,13 +1005,13 @@ test('sibling sheets reuse their settled base only after restoration and a fresh
       if(command.type==='presentation-checkpoint')return {level:stack.length};
       if(command.type==='presentation-open')stack.push(command.id);
       if(command.type==='presentations')return ['first','second'].map(id=>({id}));
-      if(command.type==='presentation-view')return view();
+      if(command.type==='presentation-view')return {...view(),routeMatches:command.path?.length&&proof!=='legacy'?proof==='matching':undefined};
       return {};
     }}};
     const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
     await capture.retry(backend,first,true);await capture.retry(backend,second,true);
     assert.ok(run.nodes.every((node:any)=>node.status==='captured'&&node.image));
-    assert.equal(events.filter(event=>event.type==='open').length,changed?2:1,'Changed base content requires normal navigation');
+    assert.equal(events.filter(event=>event.type==='open').length,proof==='different-params'||changed&&proof==='legacy'?2:1,'Settled content may change only with fresh route and parameter proof');
     const close=events.findIndex((event,index)=>index>events.findIndex(event=>event.type==='presentation-open')&&event.type==='presentation-rollback');
     const next=events.findIndex(event=>event.type==='presentation-open'&&event.id==='second');
     assert.ok(close>=0&&next>close);

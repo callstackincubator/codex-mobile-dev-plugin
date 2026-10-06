@@ -9,7 +9,7 @@ import { MeasurementWindow } from '../../shared/telemetry.ts';
 import { captureServerError } from '../telemetry.ts';
 import { FlowRuntimeFailure } from './runtime-metrics.ts';
 
-type View = { key: string; ready: boolean; found: boolean; signature: string; motion?: string; title?: string; active: string[]; loading?: boolean; transitioning?: boolean; reason?: string; error?: string };
+type View = { routeMatches?: boolean; nativePending?: boolean; key: string; ready: boolean; found: boolean; signature: string; motion?: string; title?: string; active: string[]; loading?: boolean; transitioning?: boolean; reason?: string; error?: string };
 type Action = { id: string; canonicalId?: string; aliases?:string[]; views?:string[]; name: string; file: string; line: number };
 type RetainedBranch = { backend: FlowBackend; base: string; actions: string[]; projections: string[]; frames: {level:number;view:View}[]; baseView?:View };
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24);
@@ -63,22 +63,26 @@ export class FlowPresentationCapture {
     const branch=this.retained,depth=this.reuseDepth(node);
     this.retained=undefined;
     if(!branch||branch.backend!==backend||branch.base!==this.baseKey(node)||!depth&&!branch.baseView)return;
-    const current:View=await backend.runtime.invoke({type:'presentation-view'},2000);
+    const route={path:node.presentation!.basePath,params:node.presentation!.baseParams,expo:node.presentation!.expo};
+    let current:View=await backend.runtime.invoke({type:'presentation-view',...route},2000);
+    if(current.routeMatches===true&&!current.ready)current=await this.settled(backend,Math.min(timeout,1000),route);
+    const sameOwner=(after:View,before:View,base=false)=>after.routeMatches!==false&&(this.sameView(after,before)||
+      after.routeMatches===true&&after.ready&&after.found&&!after.loading&&!after.transitioning&&!after.nativePending&&(base||after.key===before.key));
     const checkpoint=await backend.runtime.invoke({type:'presentation-checkpoint'},2000);
     const last=branch.frames.at(-1);
-    if(checkpoint?.level!==(last?.level??0)||!this.sameView(current,last?.view??branch.baseView!))return;
+    if(checkpoint?.level!==(last?.level??0)||!sameOwner(current,last?.view??branch.baseView!,!last))return;
     const kept=depth?branch.frames[depth-1]:undefined;
     if(depth<branch.actions.length){
       const restored=await backend.runtime.invoke({type:'presentation-rollback',level:kept?.level??0},10000);
       if(restored?.error)throw new FlowRuntimeFailure('presentation-rollback');
     }
-    const view=depth===branch.actions.length?current:await this.settled(backend,timeout);
+    const view=depth===branch.actions.length?current:await this.settled(backend,timeout,route);
     // Sibling sheets share their route only after the native sheet has closed
-    // and its fresh base view still matches. Changed content or motion replays
-    // normal navigation, with the same screenshot verification as before.
-    if(!this.sameView(view,kept?.view??branch.baseView!))return;
+    // and the same route and real params remain active. Fresh settled content
+    // can change without requiring another navigation or reusing old pixels.
+    if(!sameOwner(view,kept?.view??branch.baseView!,!kept))return;
     const hasFrame=depth===branch.actions.length&&!!this.previous?.view&&this.sameView(view,this.previous.view);
-    return {actions:branch.actions.slice(0,depth),frames:branch.frames.slice(0,depth),view,baseView:branch.baseView,hasFrame};
+    return {actions:branch.actions.slice(0,depth),frames:branch.frames.slice(0,depth),view,baseView:depth?branch.baseView:view,hasFrame};
   }
   rememberFrame(bytes:Buffer) { this.previous={key:"",bytes}; }
   private catalog: FlowPresentations;
@@ -98,7 +102,7 @@ export class FlowPresentationCapture {
     if (result?.error) throw new Error('Presentation source binding is unavailable.');
     this.bindingTimings.record(performance.now() - start);
   }
-  private async settled(backend: FlowBackend, timeout: number): Promise<View> {
+  private async settled(backend: FlowBackend, timeout: number, route?: {path:string[];params?:Record<string,unknown>;expo?:boolean}): Promise<View> {
     const started = performance.now();
     let view: View;
     do {
@@ -106,7 +110,7 @@ export class FlowPresentationCapture {
       // Yield at least once a second so Stop stays responsive during a slow
       // screen. Each window samples in the app, not through debugger polling.
       const waitMs=Math.min(1000,Math.max(0,timeout-(performance.now()-started)));
-      view = await backend.runtime.invoke({type: 'presentation-view',waitMs}, waitMs+1500);
+      view = await backend.runtime.invoke({type: 'presentation-view',waitMs,...route}, waitMs+1500);
       if (view.error) {
         if(view.error==='The temporary presentation preview failed.'){
           captureServerError(new Error('App Flow temporary preview could not render.'),'app_flow.presentation');

@@ -348,6 +348,17 @@ export class AppFlowRuns {
         recoveryContinuations++;
       }
     };
+    const recoverPresentation = async () => {
+      // A delayed native close does not imply a lost inspector. Keep its
+      // controller and dismissal observers, and resume cleanup on the same
+      // connection before considering a reinstall.
+      const reply=await abortable(backend!.runtime.invoke({type:'heartbeat'},2500),signal);
+      if(reply?.alive!==true)throw new FlowRuntimeFailure('heartbeat','returned an invalid response');
+      const restored=await abortable(backend!.runtime.invoke({type:'presentation-rollback',level:0},10000),signal);
+      if(restored?.error)throw new FlowRuntimeFailure('presentation-rollback','was rejected',restored.detail);
+      presentations?.discardBranch();
+      recoveryContinuations++;
+    };
     const reconnect = async () => {
       run.phase = "reconnecting"; run.revision++; reconnects++;
       await Promise.allSettled(active.writing);
@@ -473,17 +484,19 @@ export class AppFlowRuns {
               node.failure={operation:error instanceof FlowRuntimeFailure?error.operation:'other',detail:error instanceof FlowRuntimeFailure?error.detail:error instanceof Error?error.message.slice(0,1000):undefined};
             }
             try {
-              if(error instanceof FlowRuntimeFailure&&error.operation==='presentation-rollback')throw error;
-              await backend.runtime.invoke({type: 'heartbeat'}, 1000);
+              if(error instanceof FlowRuntimeFailure&&error.operation==='presentation-rollback')await recoverPresentation();
+              else await backend.runtime.invoke({type: 'heartbeat'}, 1000);
             }
-            catch { await reconnect(); if(node.status!=='captured'){node.captureAttempts = Math.max(0, (node.captureAttempts ?? 1) - 1); node.status = 'pending';} }
+            catch (recoveryError) { if(signal.aborted||recoveryError instanceof FlowAppFailure)throw recoveryError;await reconnect(); if(node.status!=='captured'){node.captureAttempts = Math.max(0, (node.captureAttempts ?? 1) - 1); node.status = 'pending';} }
           }
           continue;
         }
         try { await presentations.leave(backend); }
         catch(error){
           if(signal.aborted||error instanceof FlowAppFailure)throw error;
-          await reconnect();continue;
+          try { await recoverPresentation(); }
+          catch(recoveryError) { if(signal.aborted||recoveryError instanceof FlowAppFailure)throw recoveryError;await reconnect(); }
+          continue;
         }
         if (!node) {
           const entry=[...pendingDiscovery].filter(([,attempts])=>attempts<maxAttempts).sort((a,b)=>a[1]-b[1])[0];

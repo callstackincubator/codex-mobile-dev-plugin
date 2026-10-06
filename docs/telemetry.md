@@ -700,3 +700,11 @@ from their exact temporary boundary. Existing capture duration and
 `app_flow.previews_blocked` counts cover failures on this path. App root errors
 still reach the original handler. Preview cleanup restores that handler and
 releases its context references; no provider values or error text enter telemetry.
+
+Since 0.1.183, `app_flow.recovery_continuations` also counts native sheet cleanup
+that succeeds on the existing inspector after a failed cleanup command. These
+retries do not increment reconnect counts. Runtime rollback and readiness
+measurements retain their names, units and boundaries. Reusing changed parent
+content still measures fresh route checks and screenshot verification. Route
+parameters and the matching proof remain local; no new telemetry attributes or
+per-frame events were added.

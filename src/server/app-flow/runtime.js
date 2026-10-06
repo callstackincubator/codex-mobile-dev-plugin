@@ -469,7 +469,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     const component = visual.components.find(name => /(?:Screen|Page|Form)$/.test(name) && !/^(?:Native|RN|Animated|Screen$)/.test(name));
     return { key, ready, active: path, title: visual.title ?? component, signature: visual.signature, loading: visual.loading };
   }
-  function presentationView() {
+  function presentationView(expectedRoute) {
     const start=Date.now(),probe=lastPresentationProbe={stage:'focus',focusMs:0,expectedMs:0,visualMs:0,visibleMs:0,motionMs:0,totalMs:0};
     let presentationProbe;
     if(presentations?.probeFocus){presentationProbe=presentations.probeFocus(presentationFocus,presentationExpected);presentationFocus=presentationProbe.focus;}
@@ -500,7 +500,8 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     }
     const reason=!expectedReady?'target':nativeMotion?.error?'preview-error':!visual.found?'missing':!visual.content?'empty':visual.loading?'loading':live.transitioning?'transition':nativeMotion?.pending?'native':!presentationObservation.painted?'paint':now-presentationObservation.since<160?'settling':undefined;
     Object.assign(probe,{stage:'done',totalMs:Date.now()-start,expectedReady,found:visual.found,hosts:visual.hosts,content:visual.content,loading:visual.loading,transitioning:live.transitioning,nativePending:!!nativeMotion?.pending,painted:presentationObservation.painted,quietMs:now-presentationObservation.since,keyChanged,signatureChanged,reason});
-    return { ...visual, key, active: active(root?.getRootState?.() ?? root?.getState?.()), ready: !reason, reason, ...live, nativePending:nativeMotion?.pending, error:nativeMotion?.error, components:componentTree };
+    const state=root?.getRootState?.()??root?.getState?.();
+    return { ...visual, key, active: active(state), routeMatches:expectedRoute?.path?.length?matchesRoute(state,expectedRoute):undefined, ready: !reason, reason, ...live, nativePending:nativeMotion?.pending, error:nativeMotion?.error, components:componentTree };
   }
   function sameRouteParams(before,next,depth=0,budget={left:200}) {
     if(Object.is(before,next))return true;
@@ -510,6 +511,12 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     const a=Object.getOwnPropertyDescriptors(before),b=Object.getOwnPropertyDescriptors(next),keys=Object.keys(a);
     if(keys.length>200||keys.length!==Object.keys(b).length)return false;
     return keys.every(key=>a[key]&&b[key]&&'value'in a[key]&&'value'in b[key]&&sameRouteParams(a[key].value,b[key].value,depth+1,budget));
+  }
+  function matchesRoute(state, target) {
+    const path=active(state),normalize=value=>value.split('/').filter(part=>part&&part!=='index'&&!/^\(.+\)$/.test(part)).join('/');
+    if(target.path?.length && !(target.expo?normalize(path.join('/'))===normalize(target.path[0]):JSON.stringify(path)===JSON.stringify(target.path)))return false;
+    let leaf=state;while(leaf?.routes?.length){const next=leaf.routes[leaf.index??0];if(!next)return false;leaf=next.state??next;}
+    return Object.entries(target.params??{}).every(([key,value])=>sameRouteParams(leaf?.params?.[key],value));
   }
   async function restore() {
     if (stopped) return;
@@ -633,7 +640,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           const check=()=>{
             if(stopped||ticket!==generation){reply({error:'Presentation wait was cancelled.'});return;}
             try{
-              const view={...presentationView(),portalBindings:presentations?.portalBindings?.(presentationFocus),effectBindings:presentations?.uiEffectBindings?.(presentationFocus)};
+              const view={...presentationView(command),portalBindings:presentations?.portalBindings?.(presentationFocus),effectBindings:presentations?.uiEffectBindings?.(presentationFocus)};
               // Source approvals still happen on the server. Loading, native
               // motion and paint settle here without a CDP request per sample.
               if(view.ready||view.error||view.portalBindings?.length||view.effectBindings?.length||Date.now()>=deadline){reply(view);return;}
@@ -643,7 +650,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           check();return;
         }
         if (command.type === 'presentation-checkpoint') { reply({level:presentations?.checkpoint()??0}); return; }
-        if (command.type === 'presentation-rollback') { const level=command.level??0; void (presentations?.rollback(level) ?? Promise.resolve()).then(() => {while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined;reply({});}, error => reply({error:'Presentation restoration failed.',detail:String(error?.message??error).slice(0,1000)})); return; }
+        if (command.type === 'presentation-rollback') { generation++; cancelWaits(); const level=command.level??0; void (presentations?.rollback(level) ?? Promise.resolve()).then(() => {while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined;reply({});}, error => reply({error:'Presentation restoration failed.',detail:String(error?.message??error).slice(0,1000)})); return; }
         if (command.type === 'presentation-project') {
           const result=presentations?.project(presentationFocus);if(!result||result.error){reply(result??{error:'Presentation projection is unavailable.'});return;}
           presentationFrames.push({focus:presentationFocus,expected:presentationExpected});presentationObservation=undefined;later(()=>{try{reply(presentationView());}catch(error){reply({error:'Presentation inspection is unavailable.',detail:String(error?.message??error).slice(0,1000)});}},80);return;
