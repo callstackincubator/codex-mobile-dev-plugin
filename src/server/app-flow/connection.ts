@@ -123,6 +123,12 @@ export class FlowConnection {
         if(effects.length)result=await this.invoke({type:'presentation-effects',matches:effects},2000);
       }
     }
+    if (command.type==='presentation-open' && !result?.error && this.presentationCatalog?.actions.some(action=>action.id===command.id&&action.expected)) {
+      // A hidden branch can create its JSX only after its temporary state is
+      // seeded. Bind that new entry before checking its capture readiness.
+      await this.invoke({type:'presentation-setup',catalog:this.presentationCatalog,projectRoot:this.presentationRoot},5000);
+      result=await this.invoke({type:'presentation-view'},2000);
+    }
     if (['presentation-collect','presentation-bindings','presentation-configure','presentation-active','presentations','presentation-rollback','presentation-portals','presentation-effects'].includes(String(command.type))) {
       if(result?.error)throw new FlowRuntimeFailure(String(command.type),'was rejected',result.detail??result.error);
       if(['presentation-active','presentations'].includes(String(command.type))&&!Array.isArray(result))throw new FlowRuntimeFailure(String(command.type),'returned an invalid response');

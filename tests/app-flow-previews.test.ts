@@ -834,3 +834,39 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   await app.runtime.rollback(0,false);assert.equal(copiedCloses,1);assert.equal(app.real.step,'start');
  });
 }
+
+
+test('a finite preview retains the exact JSX target location when its component repeats', async t => {
+  const root=await mkdtemp(join(tmpdir(),'flow-preview-exact-target-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const source=`import {useState} from 'react';
+    export function App(){const [step]=useState('start');return step==='verify'?<>
+      <Caption>Verify this form</Caption><Caption>Other text</Caption>
+    </>:<Start/>} function Caption(){return <span/>} function Start(){return <section/>}`;
+  await writeFile(join(root,'App.tsx'),source);
+  const graph=await scanAppFlow(root,'ios');
+  const plan:any=graph.presentations!.previews!.find(p=>p.effect.kind==='state'&&p.effect.value==='verify');
+  assert.ok(plan.expected,'Repeated helpers need a source target, not a component-name guess');
+  assert.equal(plan.expected.component,'Caption');assert.equal(plan.expected.file,'App.tsx');assert.equal(plan.expected.owner,'App');
+  const loc=plan.expected.source,lines=source.split('\n');
+  assert.equal(lines[loc.line-1].slice(loc.column,loc.endColumn),'<Caption>');
+});
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]) {
+  test(`a repeated preview target requires its exact JSX source (${install===installPresentationRuntime?'normal':'shared loops'})`, async t => {
+    const app=runtimeFixture(t,false,install);
+    app.action.expected={component:'Verify',file:'App.tsx',owner:'Wizard',source:{line:4,column:0,endLine:4,endColumn:12}};
+    await configure(app,'/app');app.runtime.open('preview');
+    const target=app.clone.child;target._debugSource={fileName:'/app/App.tsx',lineNumber:4,columnNumber:1};
+    const other={type:target.type,return:app.clone,memoizedProps:{},_debugSource:{fileName:'/app/App.tsx',lineNumber:9,columnNumber:1}};
+    target.sibling=other;
+    const page=app.runtime.records(0);
+    const matches=await bindPresentationSites('http://localhost:8081','/app',page.bindings,[],[app.action]);
+    assert.ok(matches.some(m=>m.site==='preview:expected'),'The intended JSX entry must bind');
+    app.runtime.configure({states:[app.site],actions:[app.action]},matches,page.bindings.map(b=>b.id));
+    const expected={component:'Verify',entry:'preview:expected'};
+    assert.equal(app.runtime.probeFocus(app.owner,expected).expectedReady,true,'Repeated target names must not hide the correct form');
+    app.clone.child=other;
+    assert.equal(app.runtime.probeFocus(app.owner,expected).expectedReady,false,'Another instance with the same name cannot satisfy readiness');
+    await app.runtime.rollback(0,false);
+  });
+}

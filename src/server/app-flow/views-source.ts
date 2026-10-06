@@ -283,7 +283,7 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
                 ts.isBinaryExpression(parent)&&parent.right===p&&parent.operatorToken.kind===ts.SyntaxKind.AmpersandAmpersandToken?parent.left:undefined;
               if(condition&&truth(unit,condition,ref,state!.value)===undefined)guards++;
             }
-            const item={file:relative(root,resolved.slice(0,split)),component:resolved.slice(split+1),...(ref?{guards}:{})},previous=result.get(resolved);
+            const item={file:relative(root,resolved.slice(0,split)),component:resolved.slice(split+1),entry:{file:relative(root,unit.file),source:location(unit,n)},...(ref?{guards}:{})},previous=result.get(resolved);
             if(!previous||(item.guards??0)<(previous.guards??0))result.set(resolved,item);
           }
         }

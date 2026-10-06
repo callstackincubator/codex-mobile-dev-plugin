@@ -9,6 +9,7 @@ import * as Sentry from "@sentry/node";
 import { FlowConnection } from "./connection.ts";
 import {FlowRuntimeFailure,FlowRuntimeTimeout} from "./runtime-metrics.ts";
 import { reconnectFlowTarget } from "./target.ts";
+import { readFlowScreenshot } from "./screenshot.ts";
 import { metroTargets } from "../metro-logs.ts";
 import type { Baguette } from "../baguette.ts";
 import type { ServeEmu } from "../serve-emu.ts";
@@ -48,14 +49,20 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
         async screenshot(captureSignal) {
           const started=performance.now();let timedOut=false;
           try {
-            // The bundled backend can restart on a new port while Metro stays
-            // connected. Resolve its current address for every fresh capture.
-            if(input.platform==='ios')screenshotUrl.port=baguette.baseUrl.port;
-            const response = await fetch(screenshotUrl, { redirect: "error", signal: captureSignal });
-            if (!response.ok) throw new Error(`Screenshot failed with HTTP ${response.status}.`);
-            const bytes = Buffer.from(await response.arrayBuffer());
-            if (bytes.length > 16 * 1024 * 1024 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error("Device returned an invalid screenshot.");
-            return bytes;
+            return await readFlowScreenshot({
+              url: () => {
+                // Startup can choose a new port while Metro stays connected.
+                if(input.platform==='ios')screenshotUrl.port=baguette.baseUrl.port;
+                return screenshotUrl;
+              },
+              signal: captureSignal,
+              recover: async () => {
+                if(process.env.MOBILE_DEV_TELEMETRY!=='off')Sentry.metrics.count('app_flow.screenshot.recoveries',1,{attributes:{surface:'app-flow',device_platform:input.platform}});
+                if(input.platform==='ios')return baguette.start();
+                const backend=await android.start(input.deviceId);
+                screenshotUrl.port=backend.url.port;
+              },
+            });
           } catch(error) {
             if(signal.aborted)throw error;
             timedOut=captureSignal.aborted&&captureSignal.reason?.name==='TimeoutError';

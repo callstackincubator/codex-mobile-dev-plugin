@@ -40,6 +40,7 @@ export type FlowPresentationAction = {
   guard?: FlowUiCondition;
   preview?: boolean;
   views?: string[];
+  expected?: {component: string; file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}};
   consumer?: {component: string; entries: {file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}}[]};
   effect: { kind:'mount'; file:string; export:string } | { kind: 'state'; site: string; path: string[]; value: unknown } | { kind: 'control'; component: string; prop: string; method: string; close: string | string[]; target?: {file: string; owner: string; line: number; source: {line: number; column: number; endLine: number; endColumn: number}} };
 };
@@ -48,7 +49,7 @@ export type FlowSourceView = {
   id: string; name: string; file: string; owner: string; line: number;
   kind: 'state' | 'control' | 'branch' | 'component';
   source: {line: number; column: number; endLine: number; endColumn: number};
-  components: {file: string; component: string; guards?: number}[];
+  components: {file: string; component: string; guards?: number; entry?: {file: string; source: {line: number; column: number; endLine: number; endColumn: number}}}[];
   state?: {site: string; path: string[]; value: unknown};
   control?: {component: string; prop: string; boundary: boolean; generic: boolean};
   branch?: {condition: string; side: 'true' | 'false' | 'case'};

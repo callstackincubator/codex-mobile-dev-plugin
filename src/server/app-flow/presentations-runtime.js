@@ -1073,7 +1073,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       return result.error?result:{name:action.owner,expected:action.owner};
     }
     if(action.effect.kind==='state'){
-      if(action.preview)return {...previewState(action,found),expected:action.name};
+      if(action.preview)return {...previewState(action,found),expected:action.expected?{component:action.expected.component,entry:`${action.id}:expected`}:action.name};
       const b=found.binding;let previous=hookValue(b);for(const part of action.effect.path)previous=previous?.[part];
       undo.push({binding:b,path:action.effect.path,value:previous,nativeDismiss:previous==null||previous===false});
       // Guard discovery only supplies finite presentation values. No session,
@@ -1175,9 +1175,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait)await new Promise(resolve=>later(resolve,80,resolve));
   }
   function cleanup(){releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=undefined;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
-  function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[]) {
+  function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[],entryId) {
     connected=bodyRoots(scope,tree,connected);
-    const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&tree.isVisible(fiber));
+    const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&(!entryId||entry(fiber,false)?.actions.has(entryId))&&tree.isVisible(fiber));
     const unique=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner)));
     return unique.length===1?unique[0]:undefined;
   }
@@ -1189,7 +1189,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(bodies.length===1)currentFocus=bodies[0];
     }
     const connected=roots(currentFocus,tree);
-    return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:(viewport,geometry)=>motion(currentFocus,viewport,tree,connected,geometry)};
+    return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(typeof expected==='object'?expected.component:expected,currentFocus,tree,connected,typeof expected==='object'?expected.entry:undefined)),motion:(viewport,geometry)=>motion(currentFocus,viewport,tree,connected,geometry)};
   }
   function nativeWaiters() {
     const result=[];

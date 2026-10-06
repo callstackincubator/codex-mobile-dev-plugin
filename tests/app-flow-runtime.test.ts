@@ -948,3 +948,35 @@ test('an unchanged focused stack route keeps its instance and still waits for re
     const getter=await app.invoke({type:'open',path:['Home'],params:{filter:{tag:'other-real-tag'}},timeoutMs:500});
     assert.equal(getter.ready,true);assert.equal(replaces,3,'An opaque parameter still follows normal replacement');
 });
+
+
+test('connection binds a newly created preview target and preserves failed opening replies', async t => {
+  const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
+  t.after(()=>new Promise<void>(resolve=>{for(const client of server.clients)client.terminate();server.close(()=>resolve())}));
+  const commands:string[]=[];let opened=false,bound=false,fail=false;
+  server.on('connection',socket=>{
+    let binding='';socket.on('message',bytes=>{
+      const message=JSON.parse(bytes.toString());if(message.method==='Runtime.addBinding')binding=message.params.name;
+      if(message.id>0){socket.send(JSON.stringify({id:message.id,result:{}}));return;}
+      vm.runInNewContext(message.params.expression,{
+        [message.params.objectGroup]:{invoke(command:any,reply:any){
+          commands.push(command.type);
+          if(command.type==='presentation-open'){if(fail){reply({error:'Opening refused'});return;}opened=true;reply({ready:false,reason:'target'});return;}
+          if(command.type==='presentation-collect'){reply({bindings:opened?[{id:'new-entry',kind:'entry',owner:'Caption',source:{file:'/fixture/App.tsx',line:4,column:0}}]:[]});return;}
+          if(command.type==='presentation-configure'){bound ||= command.matches.some((m:any)=>m.binding==='new-entry'&&m.site==='preview:expected');reply({});return;}
+          reply({ready:bound});
+        }},
+        [binding]:(payload:string)=>socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload}})),
+      });
+    });
+  });
+  const address=server.address() as {port:number},connection=new FlowConnection(`ws://127.0.0.1:${address.port}`);
+  t.after(()=>connection.close({restore:false}));
+  const catalog={states:[],actions:[{id:'preview',file:'App.tsx',owner:'Form',component:'Caption',effect:{kind:'state'},expected:{component:'Caption',file:'App.tsx',owner:'Form',source:{line:4,column:0,endLine:4,endColumn:12}}}]};
+  await connection.invoke({type:'presentation-setup',projectRoot:'/fixture',catalog});
+  const before=commands.length;assert.equal((await connection.invoke({type:'presentation-open',id:'preview'})).ready,true);
+  assert.deepEqual(commands.slice(before),['presentation-open','presentation-collect','presentation-configure','presentation-view']);
+  fail=true;const refused=commands.length;
+  assert.equal((await connection.invoke({type:'presentation-open',id:'preview'})).error,'Opening refused');
+  assert.deepEqual(commands.slice(refused),['presentation-open'],'A failed open must not become a successful view reply');
+});

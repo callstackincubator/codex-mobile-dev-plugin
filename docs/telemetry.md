@@ -604,3 +604,13 @@ can present its child window. Nested preview steps reuse the shown window.
 Existing presentation, readiness, capture and restoration timings cover this
 path with unchanged names, units and boundaries. Native waits still require
 real lifecycle events. No new app content or callback data enters Sentry.
+
+Since 0.1.177, finite preview readiness uses the target's exact JSX source when
+available, including entries created after the preview mounts. Existing binding,
+readiness, capture and restoration timings cover this path with the same names
+and units. Capture still checks loading, native lifecycle, paint and motion.
+Native screenshot transport failures get one backend recovery and an in-place
+retry within the original capture deadline. The existing screenshot timing now
+includes recovery when needed. `app_flow.screenshot.recoveries` counts those
+attempts by app-flow surface and device platform. Neither this counter nor the
+existing timings send paths, source locations, app content or device identities.

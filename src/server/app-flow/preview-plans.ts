@@ -67,11 +67,12 @@ export function addSourcePreviewPlans(catalog:FlowPresentations, navigators:Flow
         const entries=local?undefined:ownersBySource.get(JSON.stringify([render.file,render.owner]))?.entries
           ?.flatMap(entry=>entry.source?[{file:entry.file,owner:entry.owner,source:entry.source}]:[]);
         if(!local&&!entries?.length)return [];
-        return [{render,component,local,entries,rank:(render.renderBody?0:2)+(local?0:1),guards:target?.guards??0}];
+        return [{render,component,target,local,entries,rank:(render.renderBody?0:2)+(local?0:1),guards:target?.guards??0}];
       }).sort((a,b)=>a.rank-b.rank||a.guards-b.guards);
       const selected=candidates[0];if(!selected)continue;
-      const {render,component,entries}=selected;
+      const {render,component,target,entries}=selected;
       action={...base,file:render.file,line:render.line,owner:render.owner,name:component,component,effect:{kind:'state',...view.state},
+        ...(target?.entry?{expected:{component,file:target.entry.file,owner:render.owner,source:target.entry.source}}:{}),
         ...(!selected.local?{consumer:{component:render.owner,entries:entries!}}:{})};
     }else if(view.control?.boundary){
       // Method discovery happens on the exact mounted controller. It requires
