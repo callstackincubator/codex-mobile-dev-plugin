@@ -601,7 +601,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           reply(captureQueue.start(command.batch, command.jobs)); return;
         }
         if (command.type === 'capture-ack') { reply(captureQueue?.ack(command.batch, command.ticket, command.value) ?? {accepted:false}); return; }
-        if (command.type === 'capture-stop') { void captureQueue?.stop().then(() => reply({stopped:true})); if(!captureQueue)reply({stopped:true}); return; }
+        if (command.type === 'capture-stop') { void captureQueue?.stop().then(() => reply({stopped:true}), () => reply({error:'Capture state could not be restored.'})); if(!captureQueue)reply({stopped:true}); return; }
         if (command.type === 'diagnostics') {
           let mountedFibers=0,mountedHosts=0;fibers(fiber=>{mountedFibers++;if(fiber.tag===5)mountedHosts++;});
           reply({mountedFibers,mountedHosts,...navigationCounts(),transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,lastPresentationProbe,presentations:presentations?.diagnostics?.()});return;

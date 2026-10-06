@@ -1909,3 +1909,21 @@ test('native image readiness tracks new loads, source changes, errors and observ
   const callback=canonical.currentProps.onLoadStart;runtime.cleanup();callback();
   assert.equal(runtime.imagePending(fiber),false);assert.equal(canonical.currentProps.onLoadStart,original.onLoadStart);
 });
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresentationRuntime)]){
+ test(`capture cleanup resumes a timed-out native dismissal without closing twice (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+  const app=tree(install),props={onStateChange(){}};
+  const canonical={currentProps:props};
+  app.sheet.child={tag:5,type:'NativeSheet',memoizedProps:props,stateNode:{canonical},return:app.sheet} as any;
+  app.control.open=()=>canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});
+  app.control.close=()=>{app.control.closes++;canonical.currentProps.onStateChange({nativeEvent:{state:'closing'}})};
+  try{
+   app.runtime.captureNative(app.sheet);app.control.open();
+   await assert.rejects(app.runtime.captureClose(app.sheet,app.control,'close'),/dismissal has not finished/);
+   assert.equal(app.control.closes,1);
+   const resumed=app.runtime.captureClose(app.sheet,app.control,'close');
+   canonical.currentProps.onStateChange({nativeEvent:{state:'closed'}});
+   assert.equal((await resumed).closed,true);assert.equal(app.control.closes,1);
+  }finally{app.runtime.cleanup()}
+ });
+}

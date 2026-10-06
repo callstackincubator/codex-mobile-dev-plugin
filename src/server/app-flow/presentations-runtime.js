@@ -1048,12 +1048,18 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       await new Promise(resolve=>later(resolve,40,resolve));
     }
   }
+  let captureDismissals=new WeakMap();
   async function captureClose(focus,control,close) {
-    const entry={control,close};
-    beginDismissal(entry,focus);
+    let entry=captureDismissals.get(control);
+    if(!entry){
+      entry={control,close};
+      beginDismissal(entry,focus);
+      captureDismissals.set(control,entry);
+      requestControlClose(entry);
+    }
     const observed=entry.native.length>0;
-    requestControlClose(entry);
     await waitForDismissal(entry);
+    captureDismissals.delete(control);
     return {handled:true,observed,closed:true};
   }
   function observeCommits() {
@@ -1109,7 +1115,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     lastNativeProbe={pendingTargets:[...pendingTargets].slice(0,8).map(describe),targets:[...hosts,...related.filter(record=>record.fiber?.tag!==5)].slice(0,8).map(describe),scope:scope.slice(0,8).map(name),observedEvents:[...new Set(boundaries.map(record=>record.status))].reduce((total,status)=>total+(status.events??0),0),unshownPreviews:unshown};
     return {pending,signature:JSON.stringify(boxes),error};
   }
-  function clearNative(){for(const record of imageRecords.values())forgetNative(record);imageRecords.clear();lastNativeProbe=undefined;structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();for(const [instance,record]of nativeClassCallbacks)forgetClassCallbacks(instance,record);nativeCallbackOrigins=new WeakMap();}
+  function clearNative(){captureDismissals=new WeakMap();for(const record of imageRecords.values())forgetNative(record);imageRecords.clear();lastNativeProbe=undefined;structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();for(const [instance,record]of nativeClassCallbacks)forgetClassCallbacks(instance,record);nativeCallbackOrigins=new WeakMap();}
   function open(id,focus) {
     if(undo.some(entry=>entry.closing))return {error:'A native presentation is still dismissing.'};
     armNative();

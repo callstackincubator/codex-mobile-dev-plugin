@@ -86,3 +86,10 @@ file membership, aliases and platform match. Each request still reads and hashes
 source files, so preserving a file's timestamp does not hide an edit. The cache
 holds one project result, capped at 24 MB, and returns a fresh copy to each run.
 This cuts repeated source work without changing capture readiness or coverage.
+
+If final sheet dismissal fails, the capture queue retains its driver until cleanup
+succeeds. Stop retries that cleanup and reports a failure while native dismissal
+is pending; the runtime must not reset parent navigation or replace the queue in
+that state. A retry keeps the original native close observer instead of issuing
+a second close. Normal captures add no delay. Existing capture-stop and restore
+operation timings and handled-error reporting cover this path.

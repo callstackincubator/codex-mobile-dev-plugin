@@ -64,3 +64,29 @@ test('Strict Mode cleanup/setup replays the same committed bindings',()=>{
   const abandoned=new Map([['state',{value:99}]]);owner.pending=abandoned;
   assert.equal(registry.find('state').value.value,42);
 });
+
+test('failed cleanup stays owned after completion and blocks another batch until native dismissal succeeds',async()=>{
+  const events:any[]=[];let dismissed=false,attempts=0;
+  const queue=createCaptureQueue({async restore(){attempts++;if(!dismissed)throw Error('Native dismissal is pending')}},(event:any)=>events.push(event));
+  queue.start('b',[]);await delay(0);
+  assert.equal(queue.active,true);
+  assert.ok(events.some(event=>event.type==='error'));
+  assert.throws(()=>queue.start('replacement',[]),/cleanup/);
+  await assert.rejects(queue.stop(),/Native dismissal/);
+  assert.equal(queue.active,true);
+  dismissed=true;
+  await Promise.all([queue.stop(),queue.stop()]);
+  assert.equal(attempts,3,'Concurrent cleanup retries share the same dismissal');
+  assert.equal(queue.active,false);
+  queue.start('next',[]);await delay(0);assert.equal(queue.active,false);
+});
+
+test('stop rejects when cancellation cleanup fails instead of allowing parent navigation to reset',async()=>{
+  const events:any[]=[];let dismissed=false;
+  const queue=createCaptureQueue({async open(){return {ready:true}},async ready(){return {ready:true}},async restore(){if(!dismissed)throw Error('Still closing')}},(event:any)=>events.push(event));
+  queue.start('b',[{id:'one'}]);await delay(0);
+  assert.ok(events.some(event=>event.type==='frame'));
+  await assert.rejects(queue.stop(),/Still closing/);
+  assert.equal(queue.active,true);
+  dismissed=true;await queue.stop();assert.equal(queue.active,false);
+});

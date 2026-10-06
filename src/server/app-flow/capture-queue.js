@@ -1,6 +1,14 @@
 /** Runs in the app. One frame may be awaiting acknowledgement at a time. */
 export function createCaptureQueue(driver, emit) {
-  let run, serial = 0;
+  let run, restoreError, restoreTask, serial = 0;
+  function restore() {
+    if (restoreTask) return restoreTask;
+    restoreTask = Promise.resolve().then(() => driver.restore()).then(
+      () => { restoreError = undefined; },
+      error => { restoreError = error; throw error; },
+    ).finally(() => { restoreTask = undefined; });
+    return restoreTask;
+  }
   const send = event => { if (run && !run.cancelled) emit({...event, batch: run.id}); };
   async function execute(current) {
     try {
@@ -12,7 +20,7 @@ export function createCaptureQueue(driver, emit) {
         const opened = await driver.open(job, current.signal);
         if (current.cancelled) break;
         if (!opened?.ready) {
-          await driver.restore();
+          await restore();
           send({type: 'result', id: job.id, status: opened?.status || 'blocked', reason: opened?.reason || 'The capture recipe is not available.', ms: Date.now() - started});
           continue;
         }
@@ -48,13 +56,13 @@ export function createCaptureQueue(driver, emit) {
           if(current.cancelled)break;
           if(error?.fatal)throw error;
           send({type:'result',id:job.id,status:'blocked',reason:String(error?.message||error).slice(0,300),ms:Date.now()-started});
-          await driver.restore();
+          await restore();
         }
       }
     } catch (error) {
       send({type: 'error', reason: String(error?.message || error).slice(0, 300)});
     } finally {
-      try { await driver.restore(); }
+      try { await restore(); }
       catch { send({type: 'error', reason: 'Capture state could not be restored.'}); }
       if (run === current) {
         current.pending?.resolve({ok: false, terminal: true});
@@ -65,7 +73,7 @@ export function createCaptureQueue(driver, emit) {
   }
   return {
     start(id, jobs) {
-      if (run) throw new Error('A capture batch is already running.');
+      if (run || restoreError || restoreTask) throw new Error('Finish capture cleanup before starting another batch.');
       if (!Array.isArray(jobs) || jobs.length > 1000 || new Set(jobs.map(job => job.id)).size !== jobs.length) throw new Error('Invalid capture manifest.');
       const controller = new AbortController();
       const current = run = {id, jobs, cancelled: false, signal: controller.signal, controller};
@@ -79,12 +87,16 @@ export function createCaptureQueue(driver, emit) {
     },
     async stop() {
       const current = run;
-      if (!current) return;
-      current.cancelled = true;
-      current.controller.abort();
-      current.pending?.resolve({ok: false, terminal: true});
-      await current.done;
+      if (current) {
+        current.cancelled = true;
+        current.controller.abort();
+        current.pending?.resolve({ok: false, terminal: true});
+        await current.done;
+      }
+      // A finished queue can still own a native sheet. Keep its driver and
+      // propagate failure so the runtime cannot reset navigation beneath it.
+      if (restoreError || restoreTask) await restore();
     },
-    get active() { return !!run; },
+    get active() { return !!run || !!restoreError || !!restoreTask; },
   };
 }

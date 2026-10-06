@@ -1019,3 +1019,17 @@ test('image load events block only visible images in the captured view',async t=
   app.native.sibling=offscreen;pendingImages.add(offscreen);
   assert.equal((await app.invoke({type:'verify',name:'Home'})).loading,false);
 });
+
+test('failed capture cleanup preserves parent navigation and reports stop errors until a retry succeeds',async t=>{
+  const app=runtime(t);await app.invoke({type:'restore'});
+  app.context.closed=false;app.context.order=[];app.context.__MOBILE_DEV_FLOW_REGISTRY__={version:1};
+  const dispatch=app.navigation.dispatch;app.navigation.dispatch=action=>{app.context.order.push('navigation');dispatch(action)};
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,()=>({checkpoint:()=>0,cleanup(){order.push('cleanup')}}),()=>({active:false,start(){return {started:true}},async stop(){order.push('close');if(!closed)throw Error('Native dismissal pending')}}),()=>({}))`,app.context);
+  await app.invoke({type:'inspect'});await app.invoke({type:'capture-start',batch:'b',jobs:[]});
+  assert.equal((await app.invoke({type:'capture-stop'})).error,'Capture state could not be restored.');
+  assert.equal((await app.invoke({type:'restore'})).error,'App Flow restoration failed.');
+  assert.equal((await app.invoke({type:'heartbeat'})).alive,true);
+  assert.deepEqual(Array.from(app.context.order),['close','close']);
+  app.context.closed=true;await app.invoke({type:'restore'});
+  assert.deepEqual(Array.from(app.context.order),['close','close','close','cleanup','navigation']);
+});
