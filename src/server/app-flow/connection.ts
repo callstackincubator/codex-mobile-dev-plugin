@@ -17,6 +17,7 @@ export class FlowConnection {
   private heartbeat?: NodeJS.Timeout;
   private heartbeatPending = false;
   private heartbeatFailures = 0;
+  private lastReply = 0;
   private metroBase: string;
   private metrics:FlowRuntimeMetrics;
   private presentationRoot?:string;
@@ -53,14 +54,17 @@ export class FlowConnection {
     this.socket.on("close", () => this.fail(new Error("Metro disconnected.")));
     this.ready = this.ready.then(async () => {
       await this.send("Runtime.addBinding", { name: this.binding }, 2000,undefined,'binding');
-      const [runtimeSource,presentationSource,queueSource,driverSource] = await flowRuntimeSource();
+      const [runtimeSource,presentationSource,queueSource,driverSource,transitionSource] = await flowRuntimeSource();
       // esbuild keepNames may introduce __name inside serialized functions.
-      await this.send("Runtime.evaluate", { expression: `(()=>{const __name=(value)=>value;for(const name of Object.keys(globalThis))if(name.startsWith(${JSON.stringify(`${this.key}_reply_`)})&&name!==${JSON.stringify(this.binding)})delete globalThis[name];(${runtimeSource})(${JSON.stringify(this.key)},10000,${presentationSource},${queueSource},${driverSource});})()`, silent: true, returnByValue: true, objectGroup: this.key }, 2000,undefined,'install');
+      await this.send("Runtime.evaluate", { expression: `(()=>{const __name=(value)=>value;for(const name of Object.keys(globalThis))if(name.startsWith(${JSON.stringify(`${this.key}_reply_`)})&&name!==${JSON.stringify(this.binding)})delete globalThis[name];(${runtimeSource})(${JSON.stringify(this.key)},10000,${presentationSource},${queueSource},${driverSource},${transitionSource});})()`, silent: true, returnByValue: true, objectGroup: this.key }, 2000,undefined,'install');
       if (!this.closing && !this.closed) {
         this.heartbeat = setInterval(() => {
-          if (this.heartbeatPending) return;
+          // Every runtime command renews the lease. Recent replies already
+          // prove liveness; do not queue another debugger traversal mid-capture.
+          if (this.heartbeatPending || performance.now()-this.lastReply<1500) return;
           this.heartbeatPending = true;
-          void this.invoke({ type: "heartbeat" }, 2500).then(() => { this.heartbeatFailures = 0; }).catch(() => { if (++this.heartbeatFailures >= 3) void this.close(); }).finally(() => { this.heartbeatPending = false; });
+          const sentAt=performance.now();
+          void this.invoke({ type: "heartbeat" }, 2500).catch(() => { if(this.lastReply<sentAt&&++this.heartbeatFailures>=3)void this.close({restore:false}); }).finally(() => { this.heartbeatPending = false; });
         }, 2000);
         this.heartbeat.unref();
       }
@@ -70,6 +74,7 @@ export class FlowConnection {
   private finish(id: number, value?: unknown, error?: Error) {
     const pending = this.pending.get(id); if (!pending) return;
     this.pending.delete(id); clearTimeout(pending.timer);
+    if(!error){this.lastReply=performance.now();this.heartbeatFailures=0;}
     this.metrics.record(pending.operation,performance.now()-pending.started,error instanceof FlowRuntimeTimeout);
     if (error) pending.reject(error); else pending.resolve(value);
   }

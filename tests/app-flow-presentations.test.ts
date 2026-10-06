@@ -1965,3 +1965,56 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
   assert.equal(modal.props.transparent,true);assert.equal(modal.props.presentationStyle,'overFullScreen');
   assert.deepEqual(modal.props.children.props.children.props.style,{position:'absolute',left:24,top:280,width:354,minHeight:240,backgroundColor:'#fefefe'});
 });
+
+test('route handoff waits for its first presentation probe and children reuse the verified parent image', async t => {
+  const directory = await fixture(t, {}); await mkdir(join(directory, 'run'));
+  const base:any={id:'home',name:'Home',kind:'screen',path:['Home'],required:[],status:'captured'};
+  const parent:any={id:'sheet',name:'Sheet',kind:'screen',path:[],required:[],status:'pending',presentation:{basePath:['Home'],actions:['sheet']}};
+  const child:any={...parent,id:'child',presentation:{basePath:['Home'],actions:['sheet','child']}};
+  const run:any={id:'run',nodes:[base,parent,child],edges:[],revision:0,presentations:{states:[],actions:[]}};
+  const events:string[]=[],stack:string[]=[];let firstProbe=true;
+  const view=()=>({key:stack.join('/')||'Home',signature:stack.join('/'),active:['Home'],found:true,ready:true});
+  const backend:any={screenshot:async()=>{events.push('screenshot');return Buffer.from(view().key)},runtime:{async invoke(command:any){
+    events.push(command.type);
+    if(command.type==='open')assert.fail('The settled route must not open again');
+    if(command.type==='presentation-view'){if(firstProbe){firstProbe=false;return {...view(),ready:false};}return view();}
+    if(command.type==='presentation-checkpoint')return {level:stack.length};
+    if(command.type==='presentation-open')stack.push(command.id);
+    if(command.type==='presentation-rollback')stack.length=command.level??0;
+    if(command.type==='presentations')return ['sheet','child'].map(id=>({id}));
+    return {};
+  }}};
+  const capture=new FlowPresentationCapture(run,directory,directory,new AbortController().signal,async()=>{});
+  await capture.retainBase(backend,base);
+  assert.equal(capture.priority(parent),1);assert.equal(capture.priority(base),0);
+  await capture.retry(backend,parent,true);
+  assert.equal(capture.priority(child),2);
+  await capture.retry(backend,child,true);
+  assert.equal(parent.status,'captured');assert.equal(child.status,'captured');
+  assert.equal(events.filter(event=>event==='screenshot').length,3,'One baseline and two real captures; no second parent screenshot');
+  assert.equal(events.filter(event=>event==='presentation-rollback').length,0);
+  await capture.leave(backend);assert.deepEqual(stack,[]);
+});
+
+test('the default mapper captures local sheets before leaving their route', async t => {
+  const directory=await fixture(t,{}),events:string[]=[],stack:string[]=[];let route='Home';
+  const actions:any[]=Array.from({length:12},(_,i)=>({id:`sheet-${i}`,name:`Sheet ${i}`,file:'Home.tsx',line:i+1,owner:'Home',component:'Button',prop:'onPress',effect:{kind:'control',component:`Sheet${i}`,prop:'control',method:'open',close:'close'}}));
+  const nodes:any[]=['Home','Search'].map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending',entry:true}));
+  const view=()=>({key:stack.at(-1)??route,name:route,active:[route],signature:stack.at(-1)??route,ready:true,found:true});
+  const runs=flowRuns(t,{directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes,edges:[],presentations:{states:[],actions}}),connect:async()=>({
+    screenshot:async()=>Buffer.from(view().key),runtime:{async close(){},async invoke(command:any){
+      if(command.type==='inspect')return {available:true};
+      if(command.type==='open'){route=command.path.at(-1);stack.length=0;events.push(`route:${route}`);}
+      if(command.type==='presentation-checkpoint')return {level:stack.length};
+      if(command.type==='presentation-rollback')stack.length=command.level??0;
+      if(command.type==='presentations')return route==='Home'&&!stack.length?actions:[];
+      if(command.type==='presentation-open'){stack.push(command.id);events.push(command.id);}
+      return view();
+    }}
+  })});
+  const run=runs.start({projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'target',metroUrl:'http://127.0.0.1:8081',useAi:false});
+  for(let i=0;i<300&&flowRunning(runs.read(run.id));i++)await new Promise(resolve=>setTimeout(resolve,10));
+  await runs.close();const result=runs.read(run.id);
+  assert.equal(result.phase,'complete');assert.equal(result.nodes.filter(n=>n.image).length,14);
+  assert.deepEqual(events,['route:Home',...actions.map(a=>a.id),'route:Search']);
+});

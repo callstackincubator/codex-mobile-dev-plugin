@@ -1,3 +1,4 @@
+import { isolateRequestSignals } from "./request-signals.ts";
 import { App, applyDocumentTheme, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
 import { createRoot } from "react-dom/client";
 import { ComparisonController } from "./comparison-controller.ts";
@@ -7,6 +8,7 @@ import { PLUGIN_VERSION } from "../shared/version.ts";
 
 export function startComparisonApp() {
   const app = new App({ name: "mobile-dev-comparison", version: PLUGIN_VERSION });
+  isolateRequestSignals(app);
   startUiTelemetry(app);
   setUiSurface("comparison");
   const controller = new ComparisonController(app);

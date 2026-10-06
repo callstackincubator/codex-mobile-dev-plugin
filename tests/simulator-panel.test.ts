@@ -939,3 +939,33 @@ for (const platform of ["ios", "android"] as const) test(`selecting a stopped ${
   assert.equal(f.calls.filter(call => call.name === (platform === "ios" ? "mobile_boot_simulator" : "mobile_boot_android_emulator")).length, 1);
   assert.equal(panel.root.buttons[0].disabled, false);
 });
+
+test("hiding a simulator closes its stream and showing it resumes the same device", async t => {
+  const f = fixture(t);
+  await f.ios.panel.load();
+  await waitFor(() => f.waitingForFrame('ios'));
+  const selected = f.ios.panel.selected;
+  const opens = () => f.calls.filter(call => call.name === 'mobile_stream_session').length;
+  assert.equal(opens(), 1);
+  f.ios.panel.setVisible(false);
+  await waitFor(() => f.closed.length === 1);
+  assert.equal(f.ios.panel.selected, selected);
+  f.visibility('visible');
+  await f.ios.panel.resume();
+  assert.equal(opens(), 1, 'Focus and discovery cannot restart a hidden stream');
+  f.ios.panel.setVisible(true);
+  await waitFor(() => opens() === 2);
+  assert.equal(f.ios.panel.selected, selected);
+});
+
+test("hiding a simulator during connection closes the late session without reading frames", async t => {
+  const f = fixture(t);
+  let release!: () => void;
+  f.delayOpen(new Promise<void>(resolve => { release = resolve; }));
+  const loading = f.ios.panel.load();
+  await waitFor(() => f.calls.some(call => call.name === 'mobile_stream_session'));
+  f.ios.panel.setVisible(false);
+  release(); await loading;
+  await waitFor(() => f.closed.length === 1);
+  assert.equal(f.waitingForFrame('ios'), false);
+});

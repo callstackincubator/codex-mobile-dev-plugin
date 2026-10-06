@@ -22,7 +22,7 @@ export class FlowPresentationCapture {
   readonly restorationTimings = new MeasurementWindow();
   private visited = new Set<string>();
   readonly failures = new Map<string,{nodeId:string;operation:string;message:string;detail?:string}>();
-  private previous?: {key:string;bytes:Buffer};
+  private previous?: {key:string;bytes:Buffer;view?:View};
   private retained?: RetainedBranch;
   private baseKey(node: FlowNode) {
     const plan=node.presentation!;
@@ -35,11 +35,21 @@ export class FlowPresentationCapture {
     while(depth<branch.actions.length&&branch.actions[depth]===plan.actions[depth]&&branch.projections.includes(plan.actions[depth])===!!plan.projections?.includes(plan.actions[depth])&&branch.frames[depth])depth++;
     return depth;
   }
+  priority(node: FlowNode) { return this.retained&&node.presentation&&this.retained.base===this.baseKey(node)?1+this.reuseDepth(node):0; }
+  async retainBase(backend: FlowBackend, node: FlowNode) {
+    this.discardBranch();
+    const base=JSON.stringify([node.path,node.params??{},node.component==='expo-router']);
+    if(!this.run.nodes.some(candidate=>candidate.status==='pending'&&candidate.presentation&&this.baseKey(candidate)===base))return;
+    const view=await this.settled(backend,1000);
+    const checkpoint=await backend.runtime.invoke({type:'presentation-checkpoint'},2000);
+    if(checkpoint?.level!==0||!view.ready||!view.found||view.loading||view.transitioning||JSON.stringify(view.active)!==JSON.stringify(node.path))return;
+    this.retained={backend,base,actions:[],projections:[],frames:[],baseView:view};
+  }
   discardBranch() { this.retained=undefined; }
   async leave(backend: FlowBackend) {
     const retained=this.retained;
     this.retained=undefined;
-    if(!retained||retained.backend!==backend)return;
+    if(!retained||retained.backend!==backend||!retained.frames.length)return;
     const started=performance.now();
     try {
       const restored=await backend.runtime.invoke({type:'presentation-rollback',level:0},10000);
@@ -55,7 +65,8 @@ export class FlowPresentationCapture {
     if(!branch||branch.backend!==backend||branch.base!==this.baseKey(node)||!depth&&!branch.baseView)return;
     const current:View=await backend.runtime.invoke({type:'presentation-view'},2000);
     const checkpoint=await backend.runtime.invoke({type:'presentation-checkpoint'},2000);
-    if(checkpoint?.level!==branch.frames.at(-1)!.level||!this.sameView(current,branch.frames.at(-1)!.view))return;
+    const last=branch.frames.at(-1);
+    if(checkpoint?.level!==(last?.level??0)||!this.sameView(current,last?.view??branch.baseView!))return;
     const kept=depth?branch.frames[depth-1]:undefined;
     if(depth<branch.actions.length){
       const restored=await backend.runtime.invoke({type:'presentation-rollback',level:kept?.level??0},10000);
@@ -66,7 +77,8 @@ export class FlowPresentationCapture {
     // and its fresh base view still matches. Changed content or motion replays
     // normal navigation, with the same screenshot verification as before.
     if(!this.sameView(view,kept?.view??branch.baseView!))return;
-    return {actions:branch.actions.slice(0,depth),frames:branch.frames.slice(0,depth),view,baseView:branch.baseView};
+    const hasFrame=depth===branch.actions.length&&!!this.previous?.view&&this.sameView(view,this.previous.view);
+    return {actions:branch.actions.slice(0,depth),frames:branch.frames.slice(0,depth),view,baseView:branch.baseView,hasFrame};
   }
   rememberFrame(bytes:Buffer) { this.previous={key:"",bytes}; }
   private catalog: FlowPresentations;
@@ -128,7 +140,7 @@ export class FlowPresentationCapture {
     captureSignal.throwIfAborted();
     if (!same() || blankFlowFrame(bytes) || this.previous && this.previous.key!==view.key && bytes.equals(this.previous.bytes)){node.reason=!same()?'The presentation changed during capture.':blankFlowFrame(bytes)?'The native presentation is blank.':'The native frame still shows the previous view.';return false;}
     await writeFile(join(this.directory, this.run.id, `${node.id}.png`), bytes, {mode: 0o600});
-    this.previous={key:view.key,bytes};
+    this.previous={key:view.key,bytes,view:verified};
     node.image = `mobile-flow://${this.run.id}/${node.id}`;
     node.imageSourceHash=this.run.sourceHash;
     node.status = 'captured'; node.reason = node.presentation?.preview?'UI preview captured; backend conditions are unchanged.':'Presentation captured; content completeness is not verified.';
@@ -223,7 +235,7 @@ export class FlowPresentationCapture {
         const base = await backend.runtime.invoke({type: 'open', path: plan.basePath, params: plan.baseParams, expo: plan.expo, timeoutMs: 2000, loadingTimeoutMs: 10000}, 10500);
         if (!base.ready) { node.status = 'pending'; node.reason = 'The presentation entry route has not settled.'; node.failure={operation:'open',detail:base.reason}; return; }
       }
-      if (plan.actions.length) this.rememberFrame(await backend.screenshot(AbortSignal.any([this.signal, AbortSignal.timeout(2000)])));
+      if (plan.actions.length&&!reused?.hasFrame) this.rememberFrame(await backend.screenshot(AbortSignal.any([this.signal, AbortSignal.timeout(2000)])));
       for (const id of plan.actions.slice(actions.length)) {
         await this.setup(backend);
         const available: Action[] = await backend.runtime.invoke({type: 'presentations'}, 2000);

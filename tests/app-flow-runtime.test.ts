@@ -8,6 +8,7 @@ import { FlowConnection } from '../src/server/app-flow/connection.ts';
 import { installPresentationRuntime } from '../src/server/app-flow/presentations-runtime.js';
 import {FlowAppFailure,FlowRuntimeFailure,FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
 import {sharedLoopRuntime} from './app-flow-runtime-fixtures.ts';
+import {createTransitionMode} from '../src/server/app-flow/transitions-runtime.js';
 
 function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, clearTimeout}, presentations: boolean | ((options:any)=>any) = false, globals = {}) {
   let state:any = {index:0,routeNames:['Home','Profile'],routes:[{name:'Home'}]};
@@ -22,7 +23,7 @@ function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, cl
   fiber.child=native;
   function sync(){fiber.memoizedProps.route=state.routes[state.index ?? 0]}
   const context=vm.createContext({...timers,...globals,Date,Map,Set,JSON,Math,Object,Array,String,__REACT_DEVTOOLS_GLOBAL_HOOK__:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer'}]]),getFiberRoots:()=>[{current:fiber}]}});
-  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,${typeof presentations==='function'?presentations.toString():presentations?installPresentationRuntime.toString():'undefined'})`,context);
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,${typeof presentations==='function'?presentations.toString():presentations?installPresentationRuntime.toString():'undefined'},undefined,undefined,${createTransitionMode.toString()})`,context);
   const invoke=(command:any)=>new Promise<any>(resolve=>context.flow.invoke(command,resolve));
   t.after(async()=>{if(context.flow)await invoke({type:'restore'})});
   return {context,invoke,getState:()=>state,original,navigation,fiber,native};
@@ -1064,4 +1065,49 @@ test('a provider-owned dialog settles without measuring the animated feed beneat
   const view=await app.invoke({type:'presentation-view',waitMs:1000});
   assert.equal(view.ready,true);assert.ok(view.signature.includes('Dialog content'));
   assert.equal(backgroundReads,0,'Unrelated native geometry cannot reset the dialog readiness');
+});
+
+test('cached navigation metadata keeps transition events live and invalidates on React commits',async t=>{
+  const app=runtime(t,false,{setTimeout,clearTimeout},true),hook=app.context.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+  hook.onCommitFiberRoot=()=>{};
+  const events=new Map<string,()=>void>();let linkReads=0;
+  (app.navigation as any).addListener=(name:string,callback:()=>void)=>{events.set(name,callback);return ()=>events.delete(name)};
+  Object.defineProperty(app.fiber.memoizedProps,'href',{get(){linkReads++;return '/settings'},configurable:true});
+  await app.invoke({type:'inspect'});const reads=linkReads;
+  for(let i=0;i<10;i++)await app.invoke({type:'presentation-view'});
+  assert.equal(linkReads,reads,'An unchanged tree does not repeat navigation metadata scans');
+  events.get('transitionStart')!();assert.equal((await app.invoke({type:'presentation-view'})).transitioning,true);
+  events.get('transitionEnd')!();assert.equal((await app.invoke({type:'presentation-view'})).transitioning,false);
+  hook.onCommitFiberRoot();await app.invoke({type:'presentation-view'});assert.ok(linkReads>reads);
+});
+
+test('active runtime replies renew the lease without competing heartbeat requests',async t=>{
+  const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
+  t.after(()=>new Promise<void>(resolve=>{for(const client of server.clients)client.terminate();server.close(()=>resolve())}));
+  let binding='';const commands:string[]=[];
+  server.on('connection',socket=>socket.on('message',bytes=>{
+    const message=JSON.parse(bytes.toString());
+    if(message.method==='Runtime.addBinding')binding=message.params.name;
+    if(message.id>0){socket.send(JSON.stringify({id:message.id,result:{}}));return;}
+    vm.runInNewContext(message.params.expression,{
+      [message.params.objectGroup]:{invoke(command:any,reply:any){commands.push(command.type);reply({available:true});}},
+      [binding]:(payload:string)=>socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload}})),
+    });
+  }));
+  const connection=new FlowConnection(`ws://127.0.0.1:${(server.address()as {port:number}).port}`);
+  t.after(()=>connection.close({restore:false}));
+  for(let i=0;i<6;i++){await connection.invoke({type:'inspect'});await new Promise(resolve=>setTimeout(resolve,450));}
+  assert.equal(commands.filter(c=>c==='heartbeat').length,0);
+});
+
+for(const expiry of [false,true])test(`navigation animation overrides restore on ${expiry?'lease expiry':'Stop'}`,async t=>{
+  const original=()=>({descriptors:{},describe(){}}),exports={useDescriptors:original};
+  let expire:(()=>void)|undefined;
+  const timers={setTimeout(callback:()=>void,ms:number){if(ms===5000){expire=callback;return setTimeout(()=>{},60000)}return setTimeout(callback,ms)},clearTimeout};
+  const app=runtime(t,false,timers,false,{__r:{getModules:()=>new Map([[1,{isInitialized:true,verboseName:'/node_modules/@react-navigation/core/src/useDescriptors.tsx',publicModule:{exports}}]])}});
+  await app.invoke({type:'inspect'});assert.equal(exports.useDescriptors,original,'Inspect alone leaves user transitions intact');
+  const opened=await app.invoke({type:'open',path:['Profile'],timeoutMs:300});assert.equal(opened.ready,true);
+  assert.notEqual(exports.useDescriptors,original);assert.equal((await app.invoke({type:'diagnostics'})).transitionModules,1);
+  if(expiry){expire!();await new Promise(resolve=>setTimeout(resolve,0));}else await app.invoke({type:'restore'});
+  assert.equal(exports.useDescriptors,original);assert.equal(app.context.flow,undefined);
 });

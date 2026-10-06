@@ -68,7 +68,7 @@ test("browser errors use the served environment regardless of live-reload marker
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts"; export { LogList } from "./src/ui/log-list.ts"; export { LogsPanel } from "./src/ui/logs-panel.ts"; export { DeviceAppsStore } from "./src/ui/device-apps.ts"; export { AppFlowPanel } from "./src/ui/app-flow-panel.ts";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts"; export { LogList } from "./src/ui/log-list.ts"; export { LogsPanel } from "./src/ui/logs-panel.ts"; export { DeviceAppsStore } from "./src/ui/device-apps.ts"; export { AppFlowPanel } from "./src/ui/app-flow-panel.ts"; export { isolateRequestSignals } from "./src/ui/request-signals.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -261,6 +261,13 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   api.setUiSurface('logs');
   flow.visible([]);
   flow.dispose();
+  api.setUiSurface('app-flow');
+  let replyRequest!: () => void;
+  const bridge = {request: (..._args: unknown[]) => new Promise<void>(resolve => { replyRequest = resolve; })};
+  api.isolateRequestSignals(bridge);
+  const pendingRequest = bridge.request({}, {}, {signal: new window.AbortController().signal});
+  api.flushUiMeasurements();
+  replyRequest(); await pendingRequest;
   api.flushUiMeasurements();
   api.setUiSurface('app-flow');
   Object.defineProperty(window.document, "visibilityState", { configurable: true, value: "hidden" });
@@ -307,6 +314,10 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, "ui.annotations.inspection_fallback");
   contains(encoded, '"surface":{"value":"simulator"');
   contains(encoded, "ui.app_flow.layout.mean");
+  const bridgeMetrics=encoded.split('\n').filter(line=>line.includes('"items"')).flatMap(line=>JSON.parse(line).items??[]).filter(metric=>metric.name==='ui.bridge.pending_signals');
+  assert.ok(bridgeMetrics.some(metric=>metric.value===1));
+  assert.ok(bridgeMetrics.some(metric=>metric.value===0));
+  assert.ok(bridgeMetrics.every(metric=>metric.attributes.surface.value==='app-flow'));
   contains(encoded, "ui.app_flow.zoom.mean");
   contains(encoded, "ui.app_flow.update.mean");
   const imageMetrics=encoded.split('\n').filter(line=>line.includes('"items"')).flatMap(line=>JSON.parse(line).items??[]).filter(metric=>metric.name==='ui.app_flow.image_cache_bytes');

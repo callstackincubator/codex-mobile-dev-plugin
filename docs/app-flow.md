@@ -16,6 +16,11 @@ to connect; it does not launch another server.
 Runs have no total time limit. Mapping finishes after all queued screens have
 been attempted and the background AI batch has returned. Choose **Stop** to end a
 run early. Build and launch the app before starting.
+The mapper temporarily turns off supported React Navigation transitions, then
+restores the framework exports when it stops or loses its lease. Presentation
+styles, gestures, loading indicators and native dismissal checks stay intact.
+It captures related sheets while their parent route is open and checks the live
+view before reusing it. Unsupported animation frameworks keep their normal behavior.
 Route mapping supports React Navigation and Expo Router. Flow recording also
 works without a navigator. Automatic mapping can capture the current standalone
 view and its supported presentation branches without a navigator. Both need a development build with a React Native

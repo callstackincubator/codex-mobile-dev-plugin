@@ -1,11 +1,12 @@
 // Injected into a development runtime through one CDP connection. No app-specific code.
-export function installFlowRuntime(key, leaseMs, presentationFactory, captureQueueFactory, captureDriverFactory) {
+export function installFlowRuntime(key, leaseMs, presentationFactory, captureQueueFactory, captureDriverFactory, transitionFactory) {
   if (globalThis[key]) return;
   const hook = globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
   // Expo's native developer menu can cover every captured screen while JS keeps running.
   try { globalThis.expo?.modules?.ExpoDevMenu?.hideMenu?.()?.catch?.(() => {}); } catch {}
   let root, original, observation, observing = false, stopped = false, generation = 0, safeBudget = 2000;
   let captureQueue;
+  const transitionMode = transitionFactory?.();
   // Preserve RN's error handler. A live navigator behind LogBox is not a
   // capturable screen, even when its React tree has finished rendering.
   let appFailed = false, errorUtils, originalErrorHandler, errorHandler;
@@ -178,10 +179,13 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     return {navigationRoutes,navigationStacks,largestStack,navigationTruncated:truncated||stack.length>0};
   }
   const hidden = props => props?.hidden === true || props?.mode === 'hidden' || props?.activityState === 0 || props?.route && props.navigation?.isFocused && !props.navigation.isFocused();
+  let visibleMetadata;
   function visible() {
+    const structure=presentations?.structure?.();
+    if(structure&&visibleMetadata?.structure===structure)return {...visibleMetadata.value,transitioning:[...transitions.values()].some(record=>record.busy)};
     const links = [], components = new Set(), destinations = new Set(), live = new Set();
     safeBudget = 2000;
-    fibers(fiber => {
+    const visit = fiber => {
       const props = fiber.memoizedProps;
       if (hidden(props)) return false;
       const type = fiber.type?.render ?? fiber.type?.type ?? fiber.type;
@@ -202,12 +206,15 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         record.off.push(nav.addListener('transitionEnd', () => { record.busy = false; transitionAt = Date.now(); }));
         transitions.set(nav, record);
       }
-    });
+    };
+    if(structure)for(const fiber of structure.all)visit(fiber);else fibers(visit);
     for (const [nav, record] of transitions) if (!live.has(nav)) {
       for (const off of record.off) { try { off(); } catch {} }
       transitions.delete(nav);
     }
-    return { links, components: [...components], transitioning: [...transitions.values()].some(record => record.busy) };
+    const value={links,components:[...components]};
+    if(structure)visibleMetadata={structure,value};
+    return {...value,transitioning:[...transitions.values()].some(record=>record.busy)};
   }
   function inspect() {
     observeLogBox();
@@ -521,12 +528,12 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     catch(error){stopped=false;renewLease();throw error;}
     try { if (errorHandler && errorUtils.getGlobalHandler() === errorHandler) errorUtils.setGlobalHandler(originalErrorHandler); } catch {}
     try{logBoxSubscription?.unsubscribe?.();}catch{}logBoxSubscription=undefined;logBoxVisible=false;
-    presentations?.cleanup(); presentationFrames.length=0; presentationFocus=presentationObservation=presentationExpected=undefined;
+    presentations?.cleanup(); transitionMode?.restore(); presentationFrames.length=0; presentationFocus=presentationObservation=presentationExpected=undefined;
     cancelWaits();
     try { if (!observing && root && original) root.dispatch({ type: 'RESET', payload: original }); } catch {}
     for (const record of transitions.values()) for (const off of record.off) { try { off(); } catch {} }
     transitions.clear();
-    observed.clear(); root = original = observation = undefined;
+    observed.clear(); visibleMetadata=undefined; root = original = observation = undefined;
     delete globalThis[key];
   }
   let watchdog;
@@ -543,6 +550,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (stopped) { reply({ error: 'Capture stopped.' }); return; }
         renewLease();
         if (failed()) return;
+        if (['open','capture-start','presentation-open'].includes(command.type) && !observing) transitionMode?.enable();
         if (command.type === 'heartbeat') { reply({ alive: true }); return; }
         if (command.type === 'capture-inventory') { reply(globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.inventory?.() ?? {unavailable:true}); return; }
         if (command.type === 'capture-start') {
@@ -604,7 +612,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (command.type === 'capture-stop') { void captureQueue?.stop().then(() => reply({stopped:true}), () => reply({error:'Capture state could not be restored.'})); if(!captureQueue)reply({stopped:true}); return; }
         if (command.type === 'diagnostics') {
           let mountedFibers=0,mountedHosts=0;fibers(fiber=>{mountedFibers++;if(fiber.tag===5)mountedHosts++;});
-          reply({mountedFibers,mountedHosts,...navigationCounts(),transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,lastPresentationProbe,presentations:presentations?.diagnostics?.()});return;
+          reply({mountedFibers,mountedHosts,...navigationCounts(),...transitionMode?.diagnostics(),transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,lastPresentationProbe,presentations:presentations?.diagnostics?.()});return;
         }
         if (command.type === 'context-data') { reply(contextData()); return; }
         if (command.type === 'observe') { reply(observe()); return; }

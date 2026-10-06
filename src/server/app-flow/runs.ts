@@ -445,7 +445,7 @@ export class AppFlowRuns {
         signal.throwIfAborted();
         for (const node of run.nodes) attempts.set(node.id, node.captureAttempts ?? 0);
         const node = run.nodes.filter(item => item.kind === 'screen' && item.status === 'pending' && (attempts.get(item.id) ?? 0) < maxAttempts)
-          .sort((a, b) => (attempts.get(a.id) ?? 0) - (attempts.get(b.id) ?? 0) || Number(!!a.presentation)-Number(!!b.presentation) || presentations.reuseDepth(b)-presentations.reuseDepth(a))[0];
+          .sort((a, b) => (attempts.get(a.id) ?? 0) - (attempts.get(b.id) ?? 0) || presentations.priority(b)-presentations.priority(a) || Number(!!a.presentation)-Number(!!b.presentation))[0];
         if (node?.presentation) {
           run.retrying = (node.captureAttempts ?? 0) > 0;
           if (run.retrying) retries++;
@@ -575,7 +575,7 @@ export class AppFlowRuns {
         const routeCaptureMs=capturedTarget?performance.now()-started:undefined;
         if (capturedTarget) {
           if (presentations.enabled) {
-            try { if(previousFrame)presentations.rememberFrame(previousFrame.bytes);await presentations.explore(backend, node);pendingDiscovery.delete(node.id); }
+            try { if(previousFrame)presentations.rememberFrame(previousFrame.bytes);await presentations.explore(backend, node);await presentations.retainBase(backend,node);pendingDiscovery.delete(node.id); }
             catch (error) {
               if (signal.aborted || error instanceof FlowAppFailure) throw error;
               try {

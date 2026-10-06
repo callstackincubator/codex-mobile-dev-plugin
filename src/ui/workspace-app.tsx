@@ -1,4 +1,5 @@
 import { App, applyDocumentTheme, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
+import { isolateRequestSignals } from "./request-signals.ts";
 import { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import "@openai/mcp-extensions/app/styles.css";
 import "@fontsource-variable/inter";
@@ -21,6 +22,7 @@ import { AppFlowPanel } from "./app-flow-panel.ts";
 import { RecordingController } from "./recording-controller.ts";
 
 const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, {}, { autoResize: false });
+isolateRequestSignals(app);
 startUiTelemetry(app);
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
@@ -48,7 +50,7 @@ logsPanel.setLayout(document.documentElement.dataset.view === "workspace");
 
 function updateSelection() {
   const visible = panels.filter(panel => !panel.root.hidden);
-  const active = visible.find(panel => panel.platform === activePlatform) ?? visible[0];
+  const active = visible.find(panel => panel.platform === activePlatform) ?? visible[0] ?? panels.find(panel => panel.platform === activePlatform);
   const selected = active?.selected;
   if (selected) setUiTelemetryContext({ device_platform: selected.platform, device_kind: selected.kind ?? "simulator" });
   panelContext.selectSimulators(visible.flatMap(panel => panel.selected ? [panel.selected] : []), selected);
@@ -60,7 +62,7 @@ function changeLayout(layout: DeviceLayout) {
   setUiTelemetryContext({ layout });
   if (layout === "ios" || layout === "android") activePlatform = layout;
   for (const panel of panels) {
-    panel.root.hidden = layout !== "both" && layout !== panel.platform;
+    panel.setVisible(layout === "both" || layout === panel.platform);
   }
   requestAnimationFrame(() => { for (const panel of panels) if (!panel.root.hidden) panel.fitScreen(); });
   updateSelection();

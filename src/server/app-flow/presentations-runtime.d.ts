@@ -20,5 +20,6 @@ export function installPresentationRuntime(options: {
   focusFor(name: string, scope?: any): any;
   probeFocus(focus?: any, expected?: string): {focus:any;visualFocus:any;expectedReady:boolean;motion(viewport?: {x:number;y:number;width:number;height:number}, geometry?: WeakMap<object,any>): {pending:boolean;signature:string;error?:string}};
   diagnostics(): Record<string,number>;
+  structure(): {all: any[]};
   visualFocus(focus?: any): any; focused(focus: any): void; checkpoint(): number;
 };

@@ -658,3 +658,17 @@ pixels at four bytes per pixel plus data URL strings at two bytes per character.
 It excludes temporary decode buffers, the browser's other memory, and the mobile
 app. The cache has a 64 MiB ceiling and only keeps images near the viewport. This
 gauge uses the active `app-flow` surface, never screenshot identifiers or content.
+
+`ui.bridge.pending_signals` counts request cancellation listeners still attached
+to stream/session signals. Completed, failed and cancelled requests remove them.
+The gauge tracks plugin bridge work, not device memory. Existing stream timing
+and error coverage remains on the same calls; hidden simulator panels close
+their streams and resume when shown.
+
+App Flow still measures full capture, discovery, binding and restoration time
+when it reuses a settled route or parent sheet. It checks the live view and native
+checkpoint before reuse. Runtime heartbeat counts now exclude checks made
+redundant by recent command replies. Local diagnostics report `transitionModules`
+and `transitionOptions` for temporary React Navigation animation overrides.
+These counters contain no app data. Loading and native dismissal checks remain
+active, and stopping or the runtime watchdog restores the framework exports.

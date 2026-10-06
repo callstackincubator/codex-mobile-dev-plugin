@@ -463,11 +463,11 @@ export function createSimulatorPanel(
   }
 
   async function connect() {
-    if (disposed || !toolsAvailable || !selected) return;
+    if (disposed || !toolsAvailable || !selected || root.hidden) return;
     const connected = selected.kind === "physical" && selected.platform === "ios" ? selected.state === "connected" : selected.state === "Booted";
     if (connected === false) return;
     await disconnect();
-    if (document.visibilityState === "hidden" || disposed) return;
+    if (document.visibilityState === "hidden" || root.hidden || disposed) return;
     if (frame.hidden) empty("Connecting…", "Opening the device screen.");
     const sessionEpoch = epoch;
     const udid = selected.udid;
@@ -906,7 +906,7 @@ export function createSimulatorPanel(
   }
   function onVisibility() {
     const connected = selectedDeviceConnected();
-    if (document.visibilityState === "hidden") void disconnect();
+    if (document.visibilityState === "hidden" || root.hidden) void disconnect();
     else if (toolsAvailable && connected && !ready && !disposed) void resume();
   }
   document.addEventListener("visibilitychange", onVisibility);
@@ -926,6 +926,7 @@ export function createSimulatorPanel(
     load: () => action(async () => { await listDevices(); scheduleDiscovery(); await connect(); }),
     acceptStatus(next: Status) { renderStatus(next); if (toolsAvailable && !reconnect.active) void resume(); },
     setAvailable(value: boolean) { toolsAvailable = value; controls(); },
+    setVisible(value: boolean) { root.hidden = !value; onVisibility(); },
     dispose() {
       if (disposing) return disposing;
       disposed = true;

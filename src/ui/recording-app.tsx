@@ -1,3 +1,4 @@
+import { isolateRequestSignals } from "./request-signals.ts";
 import { App, applyDocumentTheme, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
 import { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import { createRoot } from "react-dom/client";
@@ -8,6 +9,7 @@ import { PLUGIN_VERSION } from "../shared/version.ts";
 
 export function startRecordingApp() {
   const app = new App({ name: "mobile-dev-recording", version: PLUGIN_VERSION });
+  isolateRequestSignals(app);
   startUiTelemetry(app);
   setUiSurface("recording");
   const controller = new RecordingController(app, new OpenAIExtensions(app));
