@@ -407,7 +407,8 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         const component = typeof type === 'string' ? type : type?.displayName ?? type?.name ?? '';
         const disabled = props.loading === false || props.isLoading === false || props.visible === false || props.enabled === false || props.animating === false;
         let reason;
-        if (!disabled && /Skeleton|Shimmer|LoadingPlaceholder|LoadingIndicator|LoadingSpinner|LoadingView|LoadingScreen|ActivityIndicator|Spinner|^Loader$/.test(component)) reason = 'skeleton';
+        if (presentations?.imagePending?.(fiber)) reason = 'image';
+        else if (!disabled && /Skeleton|Shimmer|LoadingPlaceholder|LoadingIndicator|LoadingSpinner|LoadingView|LoadingScreen|ActivityIndicator|Spinner|^Loader$/.test(component)) reason = 'skeleton';
         else if (props.accessibilityState?.busy === true || props['aria-busy'] === true || props.isLoading === true || props.loading === true || props.animating === true || (props.accessibilityRole === 'progressbar' || props.role === 'progressbar') && !disabled) reason = 'busy';
         else if (fiber.tag === 13 && fiber.memoizedState !== null && fiber.memoizedState !== undefined) reason = 'suspense';
         else {
@@ -580,7 +581,11 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
             }
             if(target.component&&!body)return {ready:false,found:false,reason:'The source-proven view has not mounted.'};
             const visual = visualSignature(target.owner ? undefined : actual.at(-1), !!target.owner, body,geometry);
-            const nativeMotion=scoped?.motion(visual.bounds,geometry);
+            // State may live in a provider above the entire app. Measure the
+            // resolved view and its native ancestors, not unrelated siblings
+            // such as the animated feed underneath an open composer.
+            const motionScope=body && body!==scoped?.visualFocus ? presentations?.probeFocus(body) : scoped;
+            const nativeMotion=motionScope?.motion(visual.bounds,geometry);
             if(nativeMotion){visual.signature+=nativeMotion.signature;visual.motion=JSON.stringify([visual.motion,nativeMotion.signature]);}
             const normalize=value=>value.split('/').filter(part=>part&&part!=='index'&&!/^\(.+\)$/.test(part)).join('/');
             const routeMatches = !target.path?.length || (target.expo ? normalize(actual.join('/'))===normalize(target.path[0]) : JSON.stringify(actual) === JSON.stringify(target.path));

@@ -102,3 +102,51 @@ test('state preview inside an open sheet stays explicit instead of mounting outs
   assert.equal(result.status,'needs-data');assert.equal(projects,0);
   await driver.restore();assert.equal(visible,false);
 });
+
+test('two source sites sharing one controller open and dismiss that native sheet once',async()=>{
+  const registry=createFlowRegistry(),owner=registry.create('Screen','hash');
+  let visible=false,opens=0,closes=0;
+  const control={open(){assert.equal(visible,false);visible=true;opens++},close(){assert.equal(visible,true);visible=false;closes++}};
+  for(const line of [1,2])registry.stage(owner,`sheet:${line}:0:control`,{kind:'control',control});
+  registry.commit(owner);
+  const driver=createCaptureDriver({invoke(){}},registry,()=>({ready:visible,found:visible,hosts:visible?1:0,key:'sheet',signature:String(visible)}));
+  const actions=[1,2].map(line=>({id:`site-${line}`,effect:{kind:'control',method:'open',close:'close',prop:'control',target:{file:'sheet',source:{line,column:0}}}}));
+  assert.equal((await driver.open({id:'sheet',path:[],actions},new AbortController().signal)).ready,true);
+  await driver.restore();assert.equal(opens,1);assert.equal(closes,1);
+});
+
+test('a burst of source commits schedules one readiness check and cancels its wake on stop',async()=>{
+  const registry=createFlowRegistry();let reads=0;
+  const driver=createCaptureDriver({invoke(){}},registry,()=>{reads++;return {ready:false,found:false,key:'waiting'}});
+  const controller=new AbortController();const ready=driver.ready({id:'waiting',path:[]},controller.signal);const initial=reads;
+  for(let i=0;i<100;i++)registry.commit(registry.create('Row','hash'));
+  assert.equal(reads,initial,'Layout effects must not each traverse and measure the app');
+  await delay(5);assert.equal(reads,initial+1);
+  registry.commit(registry.create('Last','hash'));controller.abort();
+  await assert.rejects(ready,/stopped/);await delay(5);assert.equal(reads,initial+1,'Stopping cancels the queued source wake');
+});
+
+test('cleanup keeps each owner and setter when the evaluator shares loop bindings',async()=>{
+  const {sharedLoopRuntime}=await import('./app-flow-runtime-fixtures.ts');
+  const factory=sharedLoopRuntime(createCaptureDriver as any) as any;
+  const registry=createFlowRegistry(),events:string[]=[];
+  for(const id of ['one','two']){
+    const owner=registry.create(id,'hash');
+    registry.stage(owner,id,{kind:'state',hook:'useState',tuple:[false,(value:boolean)=>events.push(`${id}:${value}`)]});registry.commit(owner);
+  }
+  const driver=factory({invoke(){}},registry,()=>({ready:true,found:true,key:'view',signature:'stable'}));
+  const actions=['one','two'].map(id=>({id,effect:{kind:'state',site:id,path:[],value:true}}));
+  await driver.open({id:'steps',path:[],actions},new AbortController().signal);
+  await driver.restore();
+  assert.deepEqual(events,['one:true','two:true','two:false','one:false']);
+});
+
+test('a handoff through a duplicate source site still closes the actual parent before opening a child',async()=>{
+  const app=fixture(),signal=new AbortController().signal;
+  const alias={...app.parent,id:'menu-alias'};
+  await app.driver.open({id:'alias',path:[],actions:[app.parent,alias]},signal);
+  const opening=app.driver.open({id:'child',path:[],actions:[app.parent,alias,app.child]},signal);
+  await delay(0);assert.deepEqual(app.events,['menu-open','menu-close']);
+  app.closeCompleted();await opening;await app.driver.restore();
+  assert.deepEqual(app.events,['menu-open','menu-close','dialog-open','dialog-close']);
+});

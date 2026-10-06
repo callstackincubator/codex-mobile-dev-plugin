@@ -11,13 +11,46 @@ export function createCaptureDriver(runtime, registry, probe) {
     return descriptor && 'value' in descriptor ? descriptor.value : undefined;
   };
   const controlKey = effect => effect.target && `${effect.target.file}:${effect.target.source.line}:${effect.target.source.column}:${effect.prop}`;
+  function controlUndo(owner, target, control, close) {
+    return async (waitForCallback=false) => {
+      if (!owner.mounted) return;
+      const closeMethod = own(control, close);
+      // Controllers with a completion callback must acknowledge their
+      // native dismissal before a sibling sheet opens.
+      if (waitForCallback) await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('The sheet did not acknowledge dismissal.')), 4000);
+        closeMethod.call(control, () => { clearTimeout(timer); resolve(); });
+      });
+      else {
+        const dismissal=await probe({owner:owner.id,target,nativeClose:true,control,close});
+        if(dismissal?.handled&&dismissal.observed&&dismissal.closed)return;
+        if(!dismissal?.handled)closeMethod.call(control);
+        await waitUntil(() => {
+          const result = probe({owner: owner.id, target});
+          // The source marker stays mounted when a sheet's body closes.
+          // Wait for the body and native transition, not the marker.
+          return {...result, ready: (!result.found || result.hosts===0) && !result.nativePending && !result.transitioning};
+        }, undefined).then(result=>{
+          if (!result?.ready) throw new Error('The sheet did not finish dismissing.');
+        });
+      }
+    };
+  }
+  function stateUndo(owner, setter, before) {
+    return async () => { if (owner.mounted) setter(before); };
+  }
+  function aliasUndo(parent) {
+    return async handoff => {
+      if (handoff && !parent.closed) { await parent.undo(true); parent.closed=true; }
+    };
+  }
   async function restoreTo(level) {
     lastReady=undefined;
     while (branch.length > level) {
       const item = branch[branch.length - 1];
       if(!item.closed)await item.undo();
       branch.pop();
-      probe({nativeStop:true});
+      if(!item.alias)probe({nativeStop:true});
     }
     currentOwner = branch.at(-1)?.owner;
     currentTarget = branch.at(-1)?.target;
@@ -30,10 +63,10 @@ export function createCaptureDriver(runtime, registry, probe) {
   }
   function waitUntil(read, signal, timeout = 4000) {
     return new Promise((resolve, reject) => {
-      let timer, deadline, off, paint, stopped = false, previous, since = Date.now(), frames = 0, reason;
+      let timer, deadline, off, paint, wake, stopped = false, previous, since = Date.now(), frames = 0, reason;
       const finish = (value, error) => {
         if (stopped) return; stopped = true;
-        clearTimeout(timer); clearTimeout(deadline); off?.();
+        clearTimeout(timer); clearTimeout(deadline); clearTimeout(wake); off?.();
         if (paint !== undefined) (globalThis.cancelAnimationFrame || clearTimeout)(paint);
         signal?.removeEventListener('abort', aborted);
         if (error) reject(error); else if (!value) reject(new Error('Readiness completed without a view.')); else resolve(value);
@@ -57,7 +90,13 @@ export function createCaptureDriver(runtime, registry, probe) {
           }
         } catch (error) { finish(undefined, error); }
       };
-      off = registry.subscribe(check);
+      // Many instrumented owners commit in the same React pass. Inspect the
+      // completed commit once, rather than measuring the tree in every layout
+      // effect. Native motion still gets the regular local polling check.
+      off = registry.subscribe(() => {
+        if (stopped || wake !== undefined) return;
+        wake = setTimeout(() => { wake = undefined; check(); }, 0);
+      });
       deadline = setTimeout(() => finish({ready: false, reason: `The view did not settle: ${reason || 'readiness unavailable'}.`}), timeout);
       signal?.addEventListener('abort', aborted, {once: true});
       if (signal?.aborted) aborted(); else check();
@@ -85,6 +124,7 @@ export function createCaptureDriver(runtime, registry, probe) {
       let depth = 0;
       if (base === nextBase) while (depth < branch.length && !branch[depth].closed && branch[depth].id === job.actions[depth]?.id) depth++;
       await restoreTo(depth);
+      probe({nativeStart:true});
       if (base !== nextBase) {
         if (job.path.length) {
           const opened = await call({type: 'open', path: job.path, params: job.params, expo: job.expo, timeoutMs: 4000, loadingTimeoutMs: 8000});
@@ -132,7 +172,7 @@ export function createCaptureDriver(runtime, registry, probe) {
             branch.push({id:action.id,owner:currentOwner,undo:closePreview});
           }else {
             if(typeof setter!=='function')return {ready:false,status:'needs-data',reason:'A reducer selector requires an isolated preview.'};
-            branch.push({id: action.id, owner, undo: async () => { if (owner.mounted) setter(before); }});
+            branch.push({id: action.id, owner, undo: stateUndo(owner, setter, before)});
             setter(next);
           }
           if(action.expected)branch.at(-1).target=`${action.expected.file}:${action.expected.source.line}:${action.expected.source.column}:entry`;
@@ -140,35 +180,21 @@ export function createCaptureDriver(runtime, registry, probe) {
         } else {
           let control = value.control;
           control = own(control, 'current') ?? control;
+          // Wrapper and inner JSX sites can expose the same native controller.
+          // Reuse that presentation; opening it twice can detach its native body.
+          const existing = control && branch.find(frame => !frame.closed && frame.controlRef === control);
+          if (existing) {
+            branch.push({id:action.id,owner:existing.owner,target:existing.target,control:true,alias:true,undo:aliasUndo(existing)});
+            currentOwner=existing.owner;currentTarget=existing.target;
+            continue;
+          }
           const names = effect.method === 'auto' ? ['open', 'present', 'show', 'expand'] : [effect.method];
           const open = names.find(name => typeof own(control, name) === 'function' && own(control, name).length === 0);
           const close = (Array.isArray(effect.close) ? effect.close : [effect.close]).find(name => typeof own(control, name) === 'function');
           if (!open || !close) return {ready: false, reason: 'The source control has no reversible open/close pair.'};
           const target = binding;
-          const undo = async (waitForCallback=false) => {
-            if (!owner.mounted) return;
-            const closeMethod = own(control, close);
-            // Controllers with a completion callback must acknowledge their
-            // native dismissal before a sibling sheet opens.
-            if (waitForCallback) await new Promise((resolve, reject) => {
-              const timer = setTimeout(() => reject(new Error('The sheet did not acknowledge dismissal.')), 4000);
-              closeMethod.call(control, () => { clearTimeout(timer); resolve(); });
-            });
-            else {
-              const dismissal=await probe({owner:owner.id,target,nativeClose:true,control,close});
-              if(dismissal?.handled&&dismissal.observed&&dismissal.closed)return;
-              if(!dismissal?.handled)closeMethod.call(control);
-              await waitUntil(() => {
-                const result = probe({owner: owner.id, target});
-                // The source marker stays mounted when a sheet's body closes.
-                // Wait for the body and native transition, not the marker.
-                return {...result, ready: (!result.found || result.hosts===0) && !result.nativePending && !result.transitioning};
-              }, undefined).then(result=>{
-                if (!result?.ready) throw new Error('The sheet did not finish dismissing.');
-              });
-            }
-          };
-          branch.push({id: action.id, owner, target, control:true, undo});
+          const undo = controlUndo(owner, target, control, close);
+          branch.push({id: action.id, owner, target, control:true, controlRef:control, undo});
           probe({owner:owner.id,target,nativeStart:true});
           own(control, open).call(control);
         }

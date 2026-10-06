@@ -1894,3 +1894,18 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
   assert.equal(runtime.checkpoint(),0);assert.equal(runtime.diagnostics().projections,0);
  });
 }
+
+test('native image readiness tracks new loads, source changes, errors and observer cleanup',()=>{
+  const hook={renderers:new Map(),onCommitFiberRoot(){}};
+  const list:any[]=[];const original={source:[{uri:'image-one'}],onLoadStart(){},onLoad(){},onError(){}};
+  const canonical:any={currentProps:original};const fiber:any={tag:5,type:'ExpoImage',memoizedProps:original,stateNode:{canonical}};
+  const runtime=installPresentationRuntime({hook,fibers(visit:any){for(const item of list)visit(item)},hidden:()=>false,later:setTimeout});
+  runtime.captureNative();list.push(fiber);hook.onCommitFiberRoot();
+  assert.equal(runtime.imagePending(fiber),true);
+  canonical.currentProps.onLoad();assert.equal(runtime.imagePending(fiber),false);
+  canonical.currentProps={...original,source:[{uri:'image-two'}]};hook.onCommitFiberRoot();
+  assert.equal(runtime.imagePending(fiber),true);
+  canonical.currentProps.onError();assert.equal(runtime.imagePending(fiber),false);
+  const callback=canonical.currentProps.onLoadStart;runtime.cleanup();callback();
+  assert.equal(runtime.imagePending(fiber),false);assert.equal(canonical.currentProps.onLoadStart,original.onLoadStart);
+});

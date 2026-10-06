@@ -980,3 +980,42 @@ test('connection binds a newly created preview target and preserves failed openi
   assert.equal((await connection.invoke({type:'presentation-open',id:'preview'})).error,'Opening refused');
   assert.deepEqual(commands.slice(refused),['presentation-open'],'A failed open must not become a successful view reply');
 });
+
+test('capture motion follows the resolved view while retaining its native parent wait', async t => {
+  const app = runtime(t);
+  await app.invoke({type:'restore'});
+  const owner:any = {tag:12,memoizedProps:{id:'owner'},return:app.fiber};
+  const body:any = {tag:0,type:function Compose(){},memoizedProps:{},return:owner};
+  const host:any = {tag:5,type:'Text',memoizedProps:{children:'compose'},stateNode:{getBoundingClientRect:()=>({x:0,y:0,width:100,height:200})},return:body};
+  app.fiber.child=owner;owner.child=body;body.child=host;
+  Object.assign(app.context,{body,owner,pending:false,motionScopes:[],__MOBILE_DEV_FLOW_REGISTRY__:{version:1}});
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,
+    () => ({checkpoint:()=>0,cleanup(){},focusFor:()=>body,probeFocus:focus=>({visualFocus:focus,motion:()=>{
+      motionScopes.push(focus===body?'body':'provider');
+      return {pending,signature:focus===body?'stable':String(Math.random())};
+    }})}),
+    driver => ({start(){globalThis.captureProbe=driver.probe;return {started:true}},async stop(){}}),
+    (_runtime,_registry,probe)=>({probe})
+  )`,app.context);
+  await app.invoke({type:'inspect'});
+  await app.invoke({type:'capture-start',batch:'test',jobs:[]});
+  const target={owner:'owner',component:'Compose',path:['Home']};
+  const first=app.context.captureProbe(target),second=app.context.captureProbe(target);
+  assert.equal(first.ready,true);assert.equal(first.motion,second.motion);
+  assert.deepEqual(Array.from(app.context.motionScopes),['body','body']);
+  app.context.pending=true;
+  assert.equal(app.context.captureProbe(target).ready,false,'A native ancestor still blocks capture while opening');
+});
+
+test('image load events block only visible images in the captured view',async t=>{
+  const pendingImages=new Set();
+  const app=runtime(t,false,{setTimeout,clearTimeout},()=>({checkpoint:()=>0,cleanup(){},imagePending:fiber=>globalThis.pendingImages.has(fiber)}),{pendingImages});
+  pendingImages.add(app.native);
+  let result=await app.invoke({type:'verify',name:'Home'});
+  assert.equal(result.loadingReason,'image');
+  pendingImages.delete(app.native);
+  assert.equal((await app.invoke({type:'verify',name:'Home'})).loading,false);
+  const offscreen={tag:5,type:'Image',memoizedProps:{source:{uri:'offscreen'}},stateNode:{getBoundingClientRect:()=>({x:0,y:900,width:100,height:100})},return:app.fiber};
+  app.native.sibling=offscreen;pendingImages.add(offscreen);
+  assert.equal((await app.invoke({type:'verify',name:'Home'})).loading,false);
+});

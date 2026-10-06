@@ -60,3 +60,23 @@ controller remain blocked until a capture host can preserve that native parent.
 Do not count source readiness or a saved PNG as proof of a correct capture when
 native presentation restoration failed. A JavaScript reload can leave an orphaned
 native sheet visible; the live test required an app relaunch to clear it.
+
+Capture readiness now measures the resolved view and its native ancestors instead
+of its whole state provider. Repeated source entries for one controller reuse the
+open sheet. Cleanup callbacks keep their owner references outside loop scopes,
+and source commits in one burst schedule one readiness check. The existing
+capture, screenshot and runtime timings keep the same boundaries and units.
+
+The next fixed 20-view test finished in 43.2 seconds, including 4.7 seconds of
+preparation, without a run error. Manual inspection accepted 12 captures. Three
+saved images showed incomplete or invalid app data, two views timed out, and three
+needed context. This still falls short of the coverage and speed target. The
+mapper must not equate a settled image with a complete, correctly populated view.
+
+Native image load events now delay capture while visible images load, without
+waiting for offscreen images. A focused four-view check after that fix captured
+composer, drafts, the populated GIF picker and interaction settings in 13.6
+seconds, including 4.7 seconds of preparation. All four images passed manual
+inspection and the app returned to Home. The full 20-view set has not been rerun
+with the image-load fix. Native image observers detach during cleanup; image
+content and URLs never enter telemetry.

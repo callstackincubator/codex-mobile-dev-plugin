@@ -918,6 +918,35 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   const inside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner?.alternate)return true;return false;};
   const captureRoots=new Set();
+  const imageRecords=new Map();
+  function imageHandler(handler, record, pending) {
+    record.detach.push(()=>{record=undefined;});
+    return function(...args) {
+      if(record)record.pending=pending;
+      return handler.apply(this,args);
+    };
+  }
+  function watchImages(mounting=false) {
+    const mounted=new Set();
+    for(const fiber of committedStructure().all) {
+      const canonical=fiber.tag===5&&fiber.stateNode?.canonical,props=canonical?.currentProps;
+      if(!props || !/image/i.test(typeof fiber.type==='string'?fiber.type:name(fiber)??'') || typeof props.onLoad!=='function' || typeof props.onLoadStart!=='function')continue;
+      mounted.add(canonical);
+      const previous=imageRecords.get(canonical);
+      if(previous?.patched===props){previous.fiber=fiber;continue;}
+      const sources=props.source??props.sources;
+      let source=sources;
+      try{source=JSON.stringify(sources);}catch{ /* Native image references can be opaque. */ }
+      const pending=previous ? previous.source===source?previous.pending:!!sources : mounting&&!!sources;
+      if(previous)forgetNative(previous);
+      const record={canonical,field:'currentProps',fiber,original:props,source,pending,detach:[]};
+      const patched={...props};
+      for(const key of ['onLoadStart','onLoad','onError','onDisplay'])if(typeof props[key]==='function')patched[key]=imageHandler(props[key],record,key==='onLoadStart');
+      record.patched=patched;
+      try{canonical.currentProps=patched;imageRecords.set(canonical,record);}catch{forgetNative(record);imageRecords.delete(canonical);}
+    }
+    for(const [canonical,record]of imageRecords)if(!mounted.has(canonical)){forgetNative(record);imageRecords.delete(canonical);}
+  }
   function watchNative(focus, pending = false, ancestors = false, mounting = false) {
     const hosts=[],adapters=[],mounted=new Set();let openingRoots;
     for(const fiber of committedStructure().all){
@@ -1033,13 +1062,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // the old callback and observe the current chain before reusing metadata.
     if(commitPatch){commitPatch.state.callback=undefined;commitPatch=undefined;structureCache=undefined;}
     if(typeof hook?.onCommitFiberRoot!=='function')return false;
-    const patch=commitHandler(hook.onCommitFiberRoot,()=>{structureCache=undefined;if(nativeArmed){watchNative(undefined,false,false,true);syncPortalPreviews();}});
+    const patch=commitHandler(hook.onCommitFiberRoot,()=>{structureCache=undefined;if(nativeArmed){watchImages(true);watchNative(undefined,false,false,true);syncPortalPreviews();}});
     try{hook.onCommitFiberRoot=patch.wrapped;}catch{patch.state.callback=undefined;return false;}
     if(hook.onCommitFiberRoot!==patch.wrapped){patch.state.callback=undefined;return false;}
     commitPatch=patch;return true;
   }
   function armNative(focus) {
-    nativeArmed=true;observeCommits();watchNative(focus,true);
+    nativeArmed=true;observeCommits();watchImages();watchNative(focus,true);
   }
   function captureNative(focus, remove=false) {
     if(remove){
@@ -1080,7 +1109,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     lastNativeProbe={pendingTargets:[...pendingTargets].slice(0,8).map(describe),targets:[...hosts,...related.filter(record=>record.fiber?.tag!==5)].slice(0,8).map(describe),scope:scope.slice(0,8).map(name),observedEvents:[...new Set(boundaries.map(record=>record.status))].reduce((total,status)=>total+(status.events??0),0),unshownPreviews:unshown};
     return {pending,signature:JSON.stringify(boxes),error};
   }
-  function clearNative(){lastNativeProbe=undefined;structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();for(const [instance,record]of nativeClassCallbacks)forgetClassCallbacks(instance,record);nativeCallbackOrigins=new WeakMap();}
+  function clearNative(){for(const record of imageRecords.values())forgetNative(record);imageRecords.clear();lastNativeProbe=undefined;structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();for(const [instance,record]of nativeClassCallbacks)forgetClassCallbacks(instance,record);nativeCallbackOrigins=new WeakMap();}
   function open(id,focus) {
     if(undo.some(entry=>entry.closing))return {error:'A native presentation is still dismissing.'};
     armNative();
@@ -1221,5 +1250,5 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return result.map(item=>item.value);
   }
   const diagnostics=()=>({nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
-  return {captureClose,captureNative,collect,records,configure,list,open,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
+  return {imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,collect,records,configure,list,open,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }
