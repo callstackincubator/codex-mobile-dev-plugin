@@ -1,5 +1,5 @@
 import { ActivityIcon, TerminalIcon, PanelsTopLeftIcon } from "lucide-react";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { LogsPanel } from "../logs-panel.ts";
 import type { PerformancePanel } from "../performance-panel.ts";
 import { PerformanceView } from "./performance-view";
@@ -17,15 +17,23 @@ import { RecordingCard } from "./recording-card";
 import { PluginUpdateBanner } from "./plugin-update-banner";
 import type { PluginUpdateController } from "../plugin-updates.ts";
 
-export type DeviceLayout = "both" | "ios" | "android" | "none";
+import type { DeviceLayout } from "../device-layout.ts";
+export type { DeviceLayout } from "../device-layout.ts";
 
-export function Workspace({ logs, performance, recordingController, updates, onLayout }: { logs: LogsPanel; performance: PerformancePanel; recordingController: RecordingController; updates?: PluginUpdateController; onLayout: (layout: DeviceLayout) => void }) {
+export function Workspace({ logs, performance, recordingController, updates, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; recordingController: RecordingController; updates?: PluginUpdateController; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout) => void }) {
   const [tool, setTool] = useState<"logs" | "performance">("logs");
   const [savedVisible, setSavedVisible] = useState(false);
-  const [layout, setLayout] = useState<DeviceLayout>("ios");
+  const [layout, setLayout] = useState<DeviceLayout>(automaticLayout ?? "both");
+  const manualLayout = useRef(false);
   const recordingState = useSyncExternalStore(recordingController.subscribe, recordingController.getSnapshot);
   useEffect(() => {
+    if (automaticLayout === undefined || manualLayout.current || recordingState.recording !== undefined) return;
+    setLayout(automaticLayout);
+    onLayout(automaticLayout);
+  }, [automaticLayout]);
+  useEffect(() => {
     if (recordingState.recording === undefined) return;
+    manualLayout.current = true;
     setTool("performance");
     setSavedVisible(true);
     setLayout("none");
@@ -89,6 +97,7 @@ export function Workspace({ logs, performance, recordingController, updates, onL
     </Select>
     <Select multiple items={[{ value: "ios", label: "iOS" }, { value: "android", label: "Android" }]} value={layout === "both" ? ["ios", "android"] : layout === "none" ? [] : [layout]} onValueChange={values => {
       const next: DeviceLayout = values.length === 0 ? "none" : values.length === 2 ? "both" : values[0] === "ios" ? "ios" : "android";
+      manualLayout.current = true;
       setLayout(next); onLayout(next);
     }}>
       <SelectTrigger id="platform-select" size="sm" className={fullscreen || layout === "none" ? "ml-auto shrink-0" : "shrink-0"} aria-label="Visible platforms"><SelectValue>{layout === "both" ? "Both" : layout === "none" ? "Platforms" : layout === "ios" ? "iOS" : "Android"}</SelectValue></SelectTrigger>
@@ -100,9 +109,9 @@ export function Workspace({ logs, performance, recordingController, updates, onL
   </>;
   const simulatorPanel = <ResizablePanel key="simulators" id="simulators-resizable" minSize="0%" maxSize="100%" collapsible collapsedSize="0px" defaultSize={split ? "36%" : "60%"}>
     <ResizablePanelGroup id="simulator-panels" groupRef={simulatorGroupRef} orientation="horizontal" aria-label="Simulators">
-      <ResizablePanel id="ios-resizable" defaultSize="100%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="ios" toolbar={!fullscreen && (layout === "ios" || layout === "both") ? toolbar : undefined} /></ResizablePanel>
+      <ResizablePanel id="ios-resizable" defaultSize="100%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="ios" visible={layout === "ios" || layout === "both"} toolbar={!fullscreen && (layout === "ios" || layout === "both") ? toolbar : undefined} /></ResizablePanel>
       <ResizableHandle hidden={layout !== "both"} disabled={layout !== "both"} aria-label="Resize iOS and Android simulators" />
-      <ResizablePanel id="android-resizable" defaultSize="0%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="android" toolbar={!fullscreen && layout === "android" ? toolbar : undefined} /></ResizablePanel>
+      <ResizablePanel id="android-resizable" defaultSize="0%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="android" visible={layout === "android" || layout === "both"} toolbar={!fullscreen && layout === "android" ? toolbar : undefined} /></ResizablePanel>
     </ResizablePanelGroup>
   </ResizablePanel>;
   const divider = <ResizableHandle key="divider" hidden={layout === "none" || (!fullscreen && !open)} disabled={layout === "none" || (!fullscreen && !open)} aria-label="Resize tools and simulators" />;

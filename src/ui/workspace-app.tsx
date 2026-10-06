@@ -7,7 +7,8 @@ import "./style.css";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { Workspace } from "./components/workspace";
-import type { DeviceLayout } from "./components/workspace";
+import { activeDeviceLayout } from "./device-layout.ts";
+import type { DeviceLayout } from "./device-layout.ts";
 import type { Status } from "../shared/protocol.ts";
 import { PanelContext } from "./model-context.ts";
 import { LogsPanel } from "./logs-panel.ts";
@@ -30,10 +31,13 @@ const logsPanel = new LogsPanel(app, panelContext, deviceApps);
 const recordingController = new RecordingController(app, extensions);
 const updates = new PluginUpdateController(app);
 const reactRoot = createRoot(document.getElementById("root")!);
-const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-  <Workspace performance={performancePanel} logs={logsPanel} recordingController={recordingController} updates={updates} onLayout={changeLayout} />
-</ErrorBoundary>;
-flushSync(() => { reactRoot.render(workspace); });
+function renderWorkspace(automaticLayout?: DeviceLayout) {
+  const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
+    <Workspace performance={performancePanel} logs={logsPanel} recordingController={recordingController} updates={updates} automaticLayout={automaticLayout} onLayout={changeLayout} />
+  </ErrorBoundary>;
+  reactRoot.render(workspace);
+}
+flushSync(() => { renderWorkspace(); });
 
 let activePlatform: "ios" | "android" = "ios";
 const panels = (["ios", "android"] as const).map(platform => {
@@ -45,12 +49,14 @@ const panels = (["ios", "android"] as const).map(platform => {
 });
 const [ios, android] = panels;
 logsPanel.setLayout(document.documentElement.dataset.view === "workspace");
+changeLayout("both");
 
 function updateSelection() {
   const visible = panels.filter(panel => !panel.root.hidden);
   const active = visible.find(panel => panel.platform === activePlatform) ?? visible[0];
   const selected = active?.selected;
-  if (selected) setUiTelemetryContext({ device_platform: selected.platform, device_kind: selected.kind ?? "simulator" });
+  const deviceKind = selected?.kind ?? (selected ? "simulator" : undefined);
+  setUiTelemetryContext({ device_platform: selected?.platform, device_kind: deviceKind });
   panelContext.selectSimulators(visible.flatMap(panel => panel.selected ? [panel.selected] : []), selected);
   deviceApps.selectDevice(selected);
   for (const panel of panels) panel.root.dataset.active = String(panel === active);
@@ -133,6 +139,10 @@ void (async () => {
     if (available) {
       stopLiveReload = startLiveReload(app, disposeUI);
       await Promise.all([ios.load(), android.load()]);
+      if (disposingUI === undefined) {
+        const layout = activeDeviceLayout(ios.selected, android.selected);
+        renderWorkspace(layout);
+      }
     }
   } catch (error) {
     captureUiError(error, "host.connect");

@@ -34,7 +34,7 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   const { act, createElement } = await import("react"); const { createRoot } = await import("react-dom/client");
   const root = createRoot(dom.window.document.getElementById("root")!);
   cleanup = async () => { await act(async () => { root.unmount(); }); };
-  await act(async () => { root.render(createElement(SimulatorView, { platform: "ios" })); });
+  await act(async () => { root.render(createElement(SimulatorView, { platform: "ios", visible: true })); });
   const canvas = dom.window.document.querySelector("canvas");
   const store = getScreenAnnotations(dom.window.document.querySelector('[data-element="stage"]'));
   const context = new PanelContext({ getHostCapabilities: () => ({ updateModelContext: { image: {} }, message: { text: {} } }), async sendMessage() { return { isError: true }; } } as unknown as App, { modelContext: { getCurrent: () => undefined, update: async () => ({ updateId: "annotation-update" }) } } as unknown as OpenAIExtensions);

@@ -16,6 +16,7 @@ import { logKey } from "../src/shared/logs.ts";
 import type { StackedLog } from "../src/shared/logs.ts";
 import type { CpuBatch } from "../src/shared/cpu.ts";
 import { UDID } from "./fixtures.ts";
+import type { DeviceLayout } from "../src/ui/device-layout.ts";
 
 test("React log controls filter virtual rows, attach full logs, and preserve simulator DOM", async t => {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
@@ -102,10 +103,27 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   cleanupView = async () => { recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); deviceApps.dispose(); await performance.dispose(); }); };
   const layouts: string[] = [];
   let commits = 0;
-  const workspace = createElement(Workspace, { logs: panel, performance, recordingController, onLayout(layout: string) { layouts.push(layout); } });
-  const profiled = createElement(Profiler, { id: "workspace", onRender() { commits++; } }, workspace);
-  await act(async () => { root.render(profiled); });
+  const onLayout = (layout: string) => { layouts.push(layout); };
+  const renderWorkspace = (automaticLayout?: DeviceLayout) => {
+    const workspace = createElement(Workspace, { logs: panel, performance, recordingController, automaticLayout, onLayout });
+    const profiled = createElement(Profiler, { id: "workspace", onRender() { commits++; } }, workspace);
+    root.render(profiled);
+  };
+  await act(async () => { renderWorkspace(); });
   const canvas = dom.window.document.querySelector('canvas');
+  const iosPanel = dom.window.document.getElementById("ios-panel") as HTMLElement;
+  const androidPanel = dom.window.document.getElementById("android-panel") as HTMLElement;
+  for (const layout of ["android", "both", "none", "ios"] as const) {
+    await act(async () => { renderWorkspace(layout); });
+    assert.equal(iosPanel.hidden, layout === "android" || layout === "none");
+    assert.equal(androidPanel.hidden, layout === "ios" || layout === "none");
+    assert.equal(dom.window.document.querySelector("canvas"), canvas, "Device discovery preserves the mounted stream canvas.");
+    assert.equal(layouts.at(-1), layout);
+    const platformLabel = layout === "both" ? "Both" : layout === "none" ? "Platforms" : layout === "ios" ? "iOS" : "Android";
+    const triggerText = dom.window.document.getElementById("platform-select")?.textContent ?? "";
+    assert.ok(triggerText.startsWith(platformLabel));
+  }
+  layouts.length = 0;
   const picker = dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]');
   assert.ok(picker);
   const pickerElement = dom.window.document.querySelector('#ios-panel [data-element="devices"]')!;
@@ -398,6 +416,10 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await togglePlatform("ios");
   await togglePlatform("android");
   assert.deepEqual(layouts, ["both", "android", "none"]);
+  await act(async () => { renderWorkspace("both"); });
+  assert.equal(iosPanel.hidden, true);
+  assert.equal(androidPanel.hidden, true);
+  assert.deepEqual(layouts, ["both", "android", "none"], "Late discovery preserves a manual platform choice.");
   await togglePlatform("ios");
   await togglePlatform("android");
   assert.deepEqual(layouts, ["both", "android", "none", "ios", "both"]);
@@ -415,6 +437,8 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(dom.window.document.querySelector(".recording-overview-bar")?.getAttribute("aria-label"), "Selected range: 12.0s–18.0s");
   assert.ok(dom.window.document.body.textContent?.includes("Checkout scroll · Run 1"));
   assert.equal(layouts.at(-1), "none", "Opening a saved run gives the detailed chart the workspace.");
+  await act(async () => { renderWorkspace("android"); });
+  assert.equal(layouts.at(-1), "none", "Device discovery does not interrupt a saved recording.");
   assert.equal(cpuSessionsOpened, sessionsBeforeOpening, "Opening a saved recording does not start another collector.");
   assert.equal(dom.window.document.querySelector("canvas"), canvas, "Saved recordings preserve the existing device DOM.");
 });
