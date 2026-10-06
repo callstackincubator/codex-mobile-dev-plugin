@@ -17,6 +17,7 @@
     "longDescription": "Keep an iOS simulator or Android device beside your chat while building, running, or debugging Expo, React Native, SwiftUI, and other mobile apps. Monitor native CPU, memory, and device-wide Display FPS, render interactive performance recordings in chat, read native and Metro logs, and inspect and control apps with Mobile Dev tools.",
     "developerName": "Callstack",
     "websiteURL": "https://callstack.com",
+    "privacyPolicyURL": "https://www.callstack.com/documents/privacy-policy",
     "category": "Developer Tools",
     "capabilities": [
       "Read",
@@ -24,7 +25,7 @@
       "Interactive"
     ],
     "composerIcon": "./assets/icon.svg",
-    "logo": "./assets/store-logo.png",
+    "logo": "./assets/store-logo.webp",
     "defaultPrompt": [
       "Build and run my mobile app in the simulator beside this chat.",
       "Open my mobile simulator.",
