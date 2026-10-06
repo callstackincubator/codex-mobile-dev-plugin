@@ -15,6 +15,7 @@ function sheetFixture(t:test.TestContext,install=installPresentationRuntime) {
   const container:any={type:View,memoizedProps:{children,style:{padding:12}},return:sheet};sheet.child=container;
   const form:any={type:Form,memoizedProps:original.props,return:container};container.child=form;
   const originalStyle=[{padding:8}],originalHost:any={tag:5,type:'NativeBody',memoizedProps:{style:originalStyle},return:form};form.child=originalHost;
+  originalHost.stateNode={getBoundingClientRect:()=>({width:originalHost.memoizedProps.style?.at?.(-1)?.width??300,height:originalHost.memoizedProps.style?.at?.(-1)?.height??100})};
   let body:any,windowCount=0,overrides=0,failInsert=false;
   const hook={renderers:new Map(),onCommitFiberRoot(){}};
   const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??sheet];while(stack.length){const fiber=stack.pop();if(fiber!==subtree&&fiber.sibling)stack.push(fiber.sibling);if(visit(fiber)!==false&&fiber.child)stack.push(fiber.child)}};
@@ -30,7 +31,7 @@ function sheetFixture(t:test.TestContext,install=installPresentationRuntime) {
         const child=element.props.children.props.children;
         body={type:child.type,elementType:child.type,memoizedProps:child.props,pendingProps:child.props,return:container};
         const view:any={type:View,memoizedProps:{},return:body};body.child=view;
-        view.child={tag:5,type:'PreviewBody',memoizedProps:{},return:view};form.sibling=body;
+        view.child={tag:5,type:'NativeBody',memoizedProps:{},stateNode:{getBoundingClientRect:()=>({width:300,height:180})},return:view};form.sibling=body;
       }
     }
     hook.onCommitFiberRoot();
@@ -54,9 +55,11 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   assert.equal(children[1],app.original,'Original element type, key, position and props remain unchanged');
   assert.equal(children[2].type,React.Fragment,'A layout-neutral body keeps the native sheet height and safe area');
   assert.equal(app.windowCount(),0,'A form step must not start another native presentation');
-  assert.equal(app.originalHost.memoizedProps.style.at(-1).display,'none');
+  assert.equal(app.originalHost.memoizedProps.style.at(-1).opacity,0);
   assert.equal(runtime.diagnostics().inlineProjections,1);
-  assert.equal(runtime.motion(app.form).pending,false,'No additional onShow callback is required');
+  assert.equal(runtime.motion(app.form).pending,true,'The native sizing root follows the copied form before readiness');
+  assert.equal(app.originalHost.memoizedProps.style.at(-1).height,180);
+  assert.equal(runtime.motion(app.form).pending,false,'The observed native sizing root now matches the copied form');
   assert.equal(runtime.motion(app.form).error,undefined);
   const previousBody=app.body();
   const step:any={type:app.Step,memoizedProps:{},return:previousBody.child};previousBody.child.child=step;
@@ -64,7 +67,7 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   assert.equal(app.windowCount(),0);assert.equal(runtime.checkpoint(),2);
   assert.equal(app.container.memoizedProps.children.props.children.length,3);
   await runtime.rollback(1);
-  assert.equal(app.originalHost.memoizedProps.style.at(-1).display,'none','Returning to the prior copied step keeps the original concealed');
+  assert.equal(app.originalHost.memoizedProps.style.at(-1).opacity,0,'Returning to the prior copied step keeps the original concealed');
   assert.equal(runtime.diagnostics().inlineProjections,1);
   await runtime.rollback();
   assert.equal(app.container.memoizedProps.children,app.children,'Cleanup preserves the app’s exact original Fragment');
@@ -95,7 +98,7 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
  test(`a failed inline commit keeps enough undo state to restore the original body (${mode})`,async t=>{
   const app=sheetFixture(t,install),{runtime}=app;app.failInsert();
   assert.throws(()=>runtime.project(app.form,{views:['step']}),/commit refused/);
-  assert.equal(runtime.checkpoint(),1);assert.equal(app.originalHost.memoizedProps.style.at(-1).display,'none');
+  assert.equal(runtime.checkpoint(),1);assert.equal(app.originalHost.memoizedProps.style.at(-1).opacity,0);
   await runtime.rollback();
   assert.equal(app.originalHost.memoizedProps.style,app.originalStyle);assert.equal(runtime.checkpoint(),0);
  });
@@ -127,15 +130,15 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   const native:any={tag:5,type:'ChildSheet',memoizedProps:props,stateNode:{canonical},return:body};body.child=native;
   const child=React.createElement(app.Step),container:any={type:app.View,memoizedProps:{children:child},return:native};native.child=container;
   const step:any={type:app.Step,memoizedProps:child.props,return:container};container.child=step;
-  const host:any={tag:5,type:'Field',memoizedProps:{},return:step};step.child=host;
+  const host:any={tag:5,type:'Field',memoizedProps:{},stateNode:{getBoundingClientRect:()=>({width:300,height:100})},return:step};step.child=host;
   app.hook.onCommitFiberRoot();runtime.captureNative(native);canonical.currentProps.onStateChange({nativeEvent:{state:'open'}} as any);
   assert.equal(runtime.project(step,{views:['child-step']}).error,undefined);
   assert.equal(app.container.memoizedProps.children.props.children.at(-1),parentElement,'The outer form must not replace its newly opened native child');
   assert.equal(container.memoizedProps.children.props.children.at(-1).type,React.Fragment);
-  assert.equal(host.memoizedProps.style.at(-1).display,'none');
+  assert.equal(host.memoizedProps.style.at(-1).opacity,0);
   await runtime.rollback(1);
   assert.equal(container.memoizedProps.children,child);assert.equal('style' in host.memoizedProps,false);
-  assert.equal(app.originalHost.memoizedProps.style.at(-1).display,'none');
+  assert.equal(app.originalHost.memoizedProps.style.at(-1).opacity,0);
   await runtime.rollback();
   assert.equal(app.originalHost.memoizedProps.style,app.originalStyle);
  });
@@ -152,5 +155,35 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   assert.equal(app.windowCount(),0);assert.equal(app.container.memoizedProps.children.props.children[1],wrapper);
   await app.runtime.rollback();
   assert.equal(app.container.memoizedProps.children,props.children);assert.equal(app.originalHost.memoizedProps.style,app.originalStyle);
+ });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+ test(`inline sizing waits for the native root and restores its exact props (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+  const app=sheetFixture(t,install),{runtime}=app;
+  app.originalHost.memoizedProps={...app.originalHost.memoizedProps,pointerEvents:'box-only',accessibilityElementsHidden:false};
+  let actualHeight=100;
+  app.originalHost.stateNode.getBoundingClientRect=()=>({width:300,height:actualHeight});
+  runtime.project(app.form,{views:['step']});
+  assert.equal(app.originalHost.memoizedProps.pointerEvents,'none');
+  assert.equal(app.originalHost.memoizedProps.accessibilityElementsHidden,true);
+  assert.equal(runtime.motion(app.form).pending,true);
+  assert.equal(app.originalHost.memoizedProps.style.at(-1).height,180);
+  assert.equal(runtime.motion(app.form).pending,true,'React props alone do not prove native sizing caught up');
+  actualHeight=180;
+  assert.equal(runtime.motion(app.form).pending,false);
+  await runtime.rollback();
+  assert.equal(app.originalHost.memoizedProps.pointerEvents,'box-only');
+  assert.equal(app.originalHost.memoizedProps.accessibilityElementsHidden,false);
+  assert.equal('importantForAccessibility' in app.originalHost.memoizedProps,false);
+  assert.equal(app.originalHost.memoizedProps.style,app.originalStyle);
+ });
+
+ test(`incompatible native sizing roots cannot count as a ready preview (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+  const app=sheetFixture(t,install),{runtime}=app;
+  runtime.project(app.form,{views:['step']});
+  const root=app.body().child.child;root.sibling={...root,return:root.return};app.hook.onCommitFiberRoot();
+  assert.match(runtime.motion(app.form).error,/sizing roots do not match/);
+  await runtime.rollback();assert.equal(app.originalHost.memoizedProps.style,app.originalStyle);
  });
 }

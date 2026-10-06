@@ -727,3 +727,16 @@ no source IDs, form values, images or native rectangles enter telemetry.
 Owned style overrides restore during rollback and cleanup without overwriting
 later app changes. Existing telemetry behavior tests cover the unchanged
 aggregation and scrubbing paths; runtime tests cover preview cleanup.
+
+
+Since 0.1.186, native sheet previews keep their original sizing view attached
+and match its dimensions to the rendered copy. Readiness includes that native
+layout check. The extra full-frame equality check from 0.1.185 was removed: it
+could accept a clipped form and wait on unrelated animated content. Loading,
+paint, motion, blank-frame and target checks remain in the capture path.
+Presentation, screenshot and restoration timings retain their names, units and
+boundaries. Discovery now retains completed hook reads and keeps source sites
+separate for components with the same name. Existing binding and runtime timings
+cover the reduced work; no extra telemetry fields or per-frame events were added.
+Native rectangles, styles and source matches stay local. Runtime tests cover
+sizing and cleanup; telemetry tests cover the unchanged aggregation and scrubbing.

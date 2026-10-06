@@ -9,7 +9,7 @@ import { MeasurementWindow } from '../../shared/telemetry.ts';
 import { captureServerError } from '../telemetry.ts';
 import { FlowRuntimeFailure } from './runtime-metrics.ts';
 
-type View = { routeMatches?: boolean; nativePending?: boolean; nativePreview?: boolean; key: string; ready: boolean; found: boolean; signature: string; motion?: string; title?: string; active: string[]; loading?: boolean; transitioning?: boolean; reason?: string; error?: string };
+type View = { routeMatches?: boolean; nativePending?: boolean; key: string; ready: boolean; found: boolean; signature: string; motion?: string; title?: string; active: string[]; loading?: boolean; transitioning?: boolean; reason?: string; error?: string };
 type Action = { id: string; canonicalId?: string; aliases?:string[]; views?:string[]; name: string; file: string; line: number };
 type RetainedBranch = { backend: FlowBackend; base: string; actions: string[]; projections: string[]; frames: {level:number;view:View}[]; baseView?:View };
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24);
@@ -132,17 +132,11 @@ export class FlowPresentationCapture {
       await delay(100, undefined, {signal: captureSignal});
       bytes = await backend.screenshot(captureSignal);
     }
-    // UIKit can resize an existing sheet after React geometry has settled.
-    // Those copied bodies need two equal native frames; React-only readiness
-    // cannot prove that the sheet has finished moving or clipping its content.
-    let priorNativeFrame:Buffer|undefined;
-    if(view.nativePreview){priorNativeFrame=bytes;bytes=await backend.screenshot(captureSignal);}
     let verified: View = await backend.runtime.invoke({type: 'presentation-view'}, 2000);
     let motion = view.motion;
     const same = () => verified.key === view.key && verified.ready && verified.found && !verified.loading && !verified.transitioning;
-    while (same() && (verified.motion !== motion || priorNativeFrame&&!bytes.equals(priorNativeFrame))) {
+    while (same() && verified.motion !== motion) {
       motion = verified.motion;
-      if(view.nativePreview)priorNativeFrame=bytes;
       await delay(40, undefined, {signal: captureSignal});
       bytes = await backend.screenshot(captureSignal);
       verified = await backend.runtime.invoke({type: 'presentation-view'}, 2000);

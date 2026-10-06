@@ -934,3 +934,45 @@ test('a prepared binding does not hide other state sites in the same owner',asyn
   assert.equal(app.runtime.diagnostics().lastCompiledBindings,1);
   assert.equal(app.runtime.diagnostics().lastScheduled,1,'Partial prepared coverage must not suppress source collection');
 });
+
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]) {
+  const mode=install===installPresentationRuntime?'normal':'shared loops';
+  test(`prepared collection keeps same-named owners' source sites separate (${mode})`,async t=>{
+    const registry=createFlowRegistry(),prior=(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__;
+    const priorModules=(globalThis as any).__r;
+    (globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__=registry;
+    t.after(()=>{(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__=prior;(globalThis as any).__r=priorModules});
+    const types=[function Provider(){},function Provider(){}],calls:any[]=[],fibers:any[]=[];
+    const sites=types.map((type,index)=>{
+      const file=`Provider${index}.tsx`,id=`state-${index}`,setter=()=>assert.fail('Discovery must not dispatch');
+      fibers.push({type,memoizedProps:{},memoizedState:{memoizedState:index,queue:{dispatch:setter},next:null}});
+      const owner=registry.create(`${file}#Provider`,'fresh');
+      registry.stage(owner,id,{kind:'state',hook:'useState',tuple:[index,setter]});registry.commit(owner);
+      return {id,file,owner:'Provider'};
+    });
+    (globalThis as any).__r={getModules:()=>new Map([[10,{isInitialized:true,publicModule:{exports:{createElement(){},useState(){},useReducer(){}}}}],...types.map((type,index)=>[index,{isInitialized:true,verboseName:sites[index].file,publicModule:{exports:{Provider:type}}}])])};
+    const runtime=install({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',scheduleUpdate(fiber:any){calls.push(fiber)}}]])},fibers:(visit:any)=>fibers.forEach(visit),hidden:()=>false,later:setTimeout});
+    t.after(()=>runtime.cleanup());
+    await runtime.collect(sites,[],undefined,'fresh');
+    assert.equal(runtime.diagnostics().lastCompiledBindings,2);
+    assert.deepEqual(calls,[],'Each exact owner has complete prepared coverage; another Provider must not cause an update');
+    assert.equal(runtime.diagnostics().lastScheduled,0);
+  });
+
+  test(`a prepared refresh retains a completed hook collection (${mode})`,async t=>{
+    const app=runtimeFixture(t,false,install),registry=createFlowRegistry(),prior=(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__;
+    (globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__=registry;t.after(()=>{(globalThis as any).__MOBILE_DEV_FLOW_REGISTRY__=prior});
+    const setter=()=>assert.fail('Discovery must not dispatch');
+    app.owner.memoizedState.queue={dispatch:setter};
+    app.react.useReducer=()=>{app.owner.memoizedState={memoizedState:app.real,queue:{dispatch:setter},next:null};return [app.real,setter]};
+    const owner=registry.create('App.tsx#Wizard','fresh');registry.stage(owner,'state',{kind:'state',hook:'useReducer',tuple:[app.real,setter]});registry.commit(owner);
+    const sites=[app.site,{...app.site,id:'unobserved-site'}];
+    await app.runtime.collect(sites,[app.action],'/app','fresh');
+    assert.equal(app.runtime.diagnostics().lastScheduled,1,'An unproven source site still requires the first hook collection');
+    await app.runtime.collect();
+    assert.equal(app.runtime.diagnostics().lastScheduled,0,'The same committed setter keeps evidence of the completed hook pass');
+    app.host.child=undefined;await app.runtime.collect();
+    assert.equal(app.runtime.diagnostics().bindings,0,'Retained evidence must not retain an unmounted owner');
+  });
+}

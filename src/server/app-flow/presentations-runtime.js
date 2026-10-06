@@ -288,7 +288,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       const qualified=site.ownerSites??[];
       const sources=[{owner:site.owner,file:site.file},...qualified,...(site.owners??[]).filter(owner=>!qualified.some(source=>source.owner===owner)).map(owner=>({owner,file:site.file}))];
       for(const {owner,file}of sources){
-        const target=targets.get(owner)??{types:new Set(),sites:new Set(),fallback:false};target.sites.add(site.id);
+        const target=targets.get(owner)??{types:new Set(),sitesByType:new Map(),fallbackSites:new Set(),fallback:false};
+        const addType=type=>{target.types.add(type);const sites=target.sitesByType.get(type)??new Set();sites.add(site.id);target.sitesByType.set(type,sites);};
         const exports=sourceModule(initialized,file), matches=[];
         // Read data exports only. Never initialize a project module or invoke a
         // getter to identify one of several unrelated same-named Providers.
@@ -301,12 +302,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
           if((key===owner||body?.displayName===owner||body?.name===owner)&&typeof body==='function')matches.push(type,body);
         }
         if(typeof exports==='function'&&exports.name===owner)matches.push(exports);
-        if(matches.length)for(const type of matches)target.types.add(type);
+        if(matches.length)for(const type of matches)addType(type);
         else if(site.ownerEntries?.some(entry=>entry.component===owner)){
           for(const record of entries.values())if(record.actions.has(`owner:${site.id}:${owner}`))for(const fiber of record.fibers){
-            if(name(fiber)===owner){if(fiber.type)target.types.add(fiber.type);if(fiber.elementType)target.types.add(fiber.elementType);}
+            if(name(fiber)===owner){if(fiber.type)addType(fiber.type);if(fiber.elementType)addType(fiber.elementType);}
           }
-        }else target.fallback=true;
+        }else{target.fallback=true;target.fallbackSites.add(site.id);}
         targets.set(owner,target);
       }
     }
@@ -337,7 +338,11 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         if(!record)record=new Map();owners.set(fiber,record);
         let id=record.get(index),binding=id&&bindings.get(id);
         if(!binding){if(bindings.size>=1500)continue;id=String(++sequence);record.set(index,id);binding={id,index};bindings.set(id,binding);}
-        Object.assign(binding,{kind:match.value.hook,site:match.site.id,fiber,renderer,setter:state.queue.dispatch,prepared:true});
+        // The exact same hook queue keeps evidence from an earlier full hook
+        // pass. A prepared refresh must not turn that evidence into a partial
+        // read and force the owner to render again at every screenshot.
+        const prepared=binding.prepared!==false||binding.setter!==state.queue.dispatch||binding.kind!==match.value.hook;
+        Object.assign(binding,{kind:match.value.hook,site:match.site.id,fiber,renderer,setter:state.queue.dispatch,prepared});
         lastCompiledBindings++;
       }
     }
@@ -355,7 +360,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         if(!found?.length)return false;
         // A normal collection sees every hook. A prepared read only sees its
         // proven sites; keep collecting if this owner has another state site.
-        return found.some(binding=>!binding.prepared)||!!target&&[...target.sites].every(site=>found.some(binding=>binding.site===site));
+        if(found.some(binding=>!binding.prepared))return true;
+        if(!target)return false;
+        // Same-named components from different source modules have different
+        // hook lists. Only this exact type's sites and unresolved sources can
+        // require another pass. Never borrow a different owner's coverage.
+        const sites=new Set([...target.fallbackSites,...(target.sitesByType.get(fiber.type)??[]),...(target.sitesByType.get(fiber.elementType)??[])]);
+        return sites.size>0&&[...sites].every(site=>found.some(binding=>binding.site===site));
       };
       const targets=collectionTargets(states);
       for(const fiber of mounted){
@@ -420,7 +431,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   const descendants = (fiber,callback) => fibers(callback,fiber);
   function attached(fiber,boxes){let measurable=false,shown=false;descendants(fiber,child=>{if(shown)return false;if(child.tag!==5)return;let measured=boxes?.get(child);if(!measured){measured={measurable:false,shown:false};try{const native=child.stateNode?.canonical?.publicInstance??child.stateNode;if(typeof native?.getBoundingClientRect==='function'){measured.measurable=true;const box=native.getBoundingClientRect();measured.shown=box?.width>0&&box?.height>0;}}catch{}boxes?.set(child,measured);}measurable||=measured.measurable;shown||=measured.shown;});return !measurable||shown;}
   const activeAncestors = fiber => {
-    for(let parent=fiber,count=0;parent&&count++<100;parent=parent.return){const p=parent.memoizedProps;if(hidden(p)||p?.visible===false&&(name(parent)==='Modal'||parent.tag===5&&typeof p?.onShow==='function')||p?.disabled===true||p?.accessibilityState?.disabled===true)return false;const styles=[p?.style];for(let i=0;i<styles.length&&i<30;i++){if(Array.isArray(styles[i]))styles.push(...styles[i]);else if(styles[i]?.display==='none')return false;}}
+    for(let parent=fiber,count=0;parent&&count++<100;parent=parent.return){
+      const p=parent.memoizedProps;if(hidden(p)||p?.visible===false&&(name(parent)==='Modal'||parent.tag===5&&typeof p?.onShow==='function')||p?.disabled===true||p?.accessibilityState?.disabled===true)return false;
+      const styles=[p?.style];let display,opacity;
+      for(let i=0;styles.length&&i<100;i++){const style=styles.pop();if(Array.isArray(style)){for(let j=style.length-1;j>=0;j--)styles.push(style[j]);}else if(style&&typeof style==='object'){if('display'in style)display=style.display;if('opacity'in style)opacity=style.opacity;}}
+      if(display==='none'||opacity===0)return false;
+    }
     return true;
   };
   function committedStructure() {
@@ -572,11 +588,23 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(!last||last.props!==focus.memoizedProps||(last.type!==focus.type&&last.type!==focus.elementType))return {unavailable:true};
     const hosts=nativeBodyRoots(focus);
     if(!hosts?.length)return {unavailable:true};
-    return {focus,hosts:hosts.map(fiber=>({fiber,style:fiber.memoizedProps.style,hadStyle:Object.prototype.hasOwnProperty.call(fiber.memoizedProps,'style'),hiddenStyle:[fiber.memoizedProps.style,{display:'none'}]}))};
+    const sizes=hosts.map(inlineSize);
+    if(sizes.some(size=>!size))return {unavailable:true};
+    return {focus,hosts:hosts.map((fiber,i)=>{
+      const props=fiber.memoizedProps;
+      return {fiber,props,size:sizes[i],hiddenStyle:[props.style,{position:'absolute',opacity:0,...sizes[i]}]};
+    })};
   }
+  function inlineSize(fiber) {
+    try {
+      const instance=fiber?.stateNode?.canonical?.publicInstance??fiber?.stateNode,box=instance?.getBoundingClientRect?.();
+      if(box&&Number.isFinite(box.width)&&Number.isFinite(box.height)&&box.width>0&&box.height>0)return {width:box.width,height:box.height};
+    }catch{}
+  }
+  const concealedBodyProps={pointerEvents:'none',accessibilityElementsHidden:true,importantForAccessibility:'no-hide-descendants'};
   function hideInlineBody(record) {
     for(const host of record.inline.hosts){
-      structureCache=undefined;record.renderer.overrideProps(host.fiber,[],{...host.fiber.memoizedProps,style:host.hiddenStyle});
+      structureCache=undefined;record.renderer.overrideProps(host.fiber,[],{...host.fiber.memoizedProps,...concealedBodyProps,style:host.hiddenStyle});
     }
   }
   function restoreInlineBody(record) {
@@ -584,17 +612,44 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const tree=index();
     for(const host of record.inline.hosts){
       const fiber=tree.current.get(host.fiber);
-      // The app may have replaced this host or committed a new style. Only
-      // undo the exact temporary override; keep every later app prop intact.
-      if(!fiber||fiber.memoizedProps.style!==host.hiddenStyle)continue;
-      const props={...fiber.memoizedProps};if(host.hadStyle)props.style=host.style;else delete props.style;
-      structureCache=undefined;record.renderer.overrideProps(fiber,[],props);
+      if(!fiber)continue;
+      // Restore only fields still owned by this preview, preserving every
+      // later app change even if it replaced just one of the overrides.
+      const props={...fiber.memoizedProps};let changed=false;
+      for(const [key,value]of Object.entries({...concealedBodyProps,style:host.hiddenStyle})){
+        if(props[key]!==value&&!(key==='style'&&host.previousStyle&&props[key]===host.previousStyle))continue;
+        if(Object.prototype.hasOwnProperty.call(host.props,key))props[key]=host.props[key];else delete props[key];
+        changed=true;
+      }
+      if(changed){structureCache=undefined;record.renderer.overrideProps(fiber,[],props);}
     }
   }
-  function inlineBodyReady(record,tree) {
-    if(!record.inline)return true;
+  function syncInlineBody(record,tree) {
     const focus=tree.current.get(record.inline.focus),hosts=focus&&nativeBodyRoots(focus);
-    return !!hosts?.length&&hosts.every(fiber=>record.inline.hosts.some(host=>(fiber===host.fiber||fiber===host.fiber.alternate)&&fiber.memoizedProps.style===host.hiddenStyle));
+    if(!hosts?.length||hosts.length!==record.inline.hosts.length)return {error:'The original native presentation body changed during its preview.'};
+    if(hosts.some(fiber=>!record.inline.hosts.some(host=>(fiber===host.fiber||fiber===host.fiber.alternate)&&(fiber.memoizedProps.style===host.hiddenStyle||host.previousStyle&&fiber.memoizedProps.style===host.previousStyle))))return {error:'The original native presentation body changed during its preview.'};
+    const bodies=(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type);
+    const copies=bodies.length===1&&nativeBodyRoots(bodies[0]);
+    if(!copies?.length)return {pending:true};
+    if(copies.length!==hosts.length||copies.some((fiber,i)=>fiber.type!==hosts[i].type))return {error:'The native presentation sizing roots do not match the copied form.'};
+    let pending=false;
+    for(let i=0;i<copies.length;i++){
+      const size=inlineSize(copies[i]),host=record.inline.hosts[i],fiber=hosts[i];
+      if(!size){pending=true;continue;}
+      // Native sheets can observe their first content UIView by identity.
+      // Keep that original root attached and size its invisible layout proxy
+      // from the actual copied root. display:none would sever that sizing
+      // signal; another sibling's height cannot update the native observer.
+      if(size.width!==host.size.width||size.height!==host.size.height){
+        if(fiber.memoizedProps.style!==host.hiddenStyle){pending=true;continue;}
+        host.size=size;host.previousStyle=host.hiddenStyle;host.hiddenStyle=[host.props.style,{position:'absolute',opacity:0,...size}];
+        structureCache=undefined;record.renderer.overrideProps(fiber,[],{...fiber.memoizedProps,style:host.hiddenStyle});pending=true;continue;
+      }
+      const actual=inlineSize(fiber);
+      if(fiber.memoizedProps.style!==host.hiddenStyle||!actual||Math.abs(actual.width-size.width)>.5||Math.abs(actual.height-size.height)>.5)pending=true;
+      else host.previousStyle=undefined;
+    }
+    return {pending};
   }
   const projectionElement=(child,record)=>child?.type===record.element.type&&child?.key===record.element.key;
   function removeProjection(record,root) {
@@ -1228,10 +1283,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     let error=projected.some(record=>record.failed&&(focus===record.focus||roots(record.focus).includes(focus)))?'The temporary presentation preview failed.':undefined;
     // Local diagnostics only. Keep bounded primitive evidence, never fibers,
     // callback arguments or app content. Telemetry still uses aggregate timings.
-    if(projected.some(record=>record.inline&&projectionAttached(record,tree)&&!inlineBodyReady(record,tree)))error='The original native presentation body changed during its preview.';
+    for(const record of projected){
+      if(!record.inline||!projectionAttached(record,tree)||projected.some(child=>child.parent===record))continue;
+      const layout=syncInlineBody(record,tree);pending||=!!layout.pending;if(layout.error)error=layout.error;
+    }
     const describe=record=>({component:name(record.fiber),kind:record.fiber?.tag===5?'host':'adapter',pending:!!record.status.pending,opened:!!record.status.opened,closing:!!record.status.closing,events:record.status.events??0,lastEvent:record.status.lastEvent,visible:typeof record.original?.visible==='boolean'?record.original.visible:undefined});
     lastNativeProbe={pendingTargets:[...pendingTargets].slice(0,8).map(describe),targets:[...hosts,...related.filter(record=>record.fiber?.tag!==5)].slice(0,8).map(describe),scope:scope.slice(0,8).map(name),observedEvents:[...new Set(boundaries.map(record=>record.status))].reduce((total,status)=>total+(status.events??0),0),unshownPreviews:unshown};
-    return {pending,signature:JSON.stringify(boxes),error,nativePreview:projected.some(record=>record.inline&&projectionAttached(record,tree))};
+    return {pending,signature:JSON.stringify(boxes),error};
   }
   function clearNative(){captureDismissals=new WeakMap();for(const record of imageRecords.values())forgetNative(record);imageRecords.clear();lastNativeProbe=undefined;structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();for(const [instance,record]of nativeClassCallbacks)forgetClassCallbacks(instance,record);nativeCallbackOrigins=new WeakMap();}
   function open(id,focus) {

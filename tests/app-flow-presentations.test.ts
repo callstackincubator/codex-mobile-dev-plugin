@@ -2079,27 +2079,15 @@ for(const difference of ['none','uncaptured','missing-image','different-view','d
  });
 }
 
-for(const nativePreview of [false,true]){
- test(`native sheet resize needs stable pixels after React settles (${nativePreview?'native sheet':'ordinary view'})`,async t=>{
-  const root=await fixture(t,{});await mkdir(join(root,'run'));
-  const node:any={id:'step',name:'Form',kind:'screen',path:[],required:[],status:'pending',presentation:{actions:['step'],basePath:['Home'],preview:true}};
-  const run:any={id:'run',revision:0,nodes:[node],edges:[],presentations:{states:[],actions:[]}};
-  let opened=false;
-  const backend:any={runtime:{async invoke(c:any){
-    if(c.type==='open')return {ready:true};
-    if(c.type==='presentations')return [{id:'step'}];
-    if(c.type==='presentation-open')opened=true;
-    if(c.type==='presentation-rollback')opened=false;
-    if(c.type==='presentation-view')return {key:opened?'step':'Home',signature:opened?'form':'home',motion:'stable Yoga layout',ready:true,found:true,active:['Home'],nativePreview:opened&&nativePreview};
-    return {};
-  }}};
-  // The fake native sequence changes until frame three, after React
-  // geometry has already settled. Compare consecutive fresh screenshots.
-  let frame=0;backend.screenshot=async()=>Buffer.from(!opened?'base':++frame===1?'resize frame one':frame===2?'resize frame two':'complete form');
-  const capture=new FlowPresentationCapture(run,root,root,new AbortController().signal,async()=>{});
-  await capture.retry(backend,node);
-  assert.equal(node.status,'captured');
-  assert.equal((await readFile(join(root,'run','step.png'))).toString(),nativePreview?'complete form':'resize frame one');
-  assert.equal(frame,nativePreview?4:1,'Ordinary views do not pay for extra native resize samples');
- });
-}
+
+
+test('presentation visibility respects the final nested style override',()=>{
+  const app=tree();
+  app.button.memoizedProps.style=[{opacity:0},[{opacity:1}]];
+  assert.equal(app.runtime.list().length,1,'A later visible style overrides an earlier hidden style');
+  app.button.memoizedProps.style=[{opacity:1},[{opacity:0}]];
+  assert.equal(app.runtime.list().length,0,'The hidden sizing root must not supply an opener');
+  app.button.memoizedProps.style=[{display:'none'},[{display:'flex'}]];
+  assert.equal(app.runtime.list().length,1);
+  app.runtime.cleanup();
+});
