@@ -390,17 +390,19 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const observed=observeCommits();
     let structure=observed&&structureCache;
     if(!structure){
-      const names=new Map(),current=new WeakMap(),all=[],props=new Map();
+      const names=new Map(),current=new WeakMap(),all=[],props=new Map(),images=[],concealed=new WeakSet();
       fibers(fiber=>{
-        // Navigation keeps inactive branches mounted. Their hooks and source
-        // entries cannot open from the current route. Inspect them after a
-        // focus commit instead of forcing those hidden trees to render now.
-        if(hidden(fiber.memoizedProps))return false;
+        // Hidden tabs keep their native images mounted and can finish loading
+        // in the background. Keep their event history until actual unmount;
+        // they must not become new pending images when the tab regains focus.
+        if(fiber.tag===5 && /image/i.test(typeof fiber.type==='string'?fiber.type:name(fiber)??''))images.push(fiber);
+        // Only visible branches supply navigation, opening controls and props.
+        if(concealed.has(fiber.return)||hidden(fiber.memoizedProps)){if(!nativeArmed)return false;concealed.add(fiber);return;}
         all.push(fiber);current.set(fiber,fiber);if(fiber.alternate)current.set(fiber.alternate,fiber);
         const n=name(fiber);if(n){const list=names.get(n)??[];list.push(fiber);names.set(n,list);}
         const p=fiber.memoizedProps;if(p&&typeof p==='object'){const list=props.get(p)??[];list.push(fiber);props.set(p,list);}
       });
-      structure={names,current,all,props};if(observed)structureCache=structure;
+      structure={names,current,all,props,images};if(observed)structureCache=structure;
     }
     return structure;
   }
@@ -955,9 +957,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   function watchImages(mounting=false) {
     const mounted=new Set();
-    for(const fiber of committedStructure().all) {
-      const canonical=fiber.tag===5&&fiber.stateNode?.canonical,props=canonical?.currentProps;
-      if(!props || !/image/i.test(typeof fiber.type==='string'?fiber.type:name(fiber)??'') || typeof props.onLoad!=='function' || typeof props.onLoadStart!=='function')continue;
+    for(const fiber of committedStructure().images) {
+      const canonical=fiber.stateNode?.canonical,props=canonical?.currentProps;
+      if(!props || typeof props.onLoad!=='function' || typeof props.onLoadStart!=='function')continue;
       mounted.add(canonical);
       const previous=imageRecords.get(canonical);
       if(previous?.patched===props){previous.fiber=fiber;continue;}
@@ -1101,6 +1103,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     commitPatch=patch;return true;
   }
   function armNative(focus) {
+    if(!nativeArmed)structureCache=undefined;
     nativeArmed=true;observeCommits();watchImages();watchNative(focus,true);
   }
   function captureNative(focus, remove=false) {
@@ -1287,6 +1290,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     return result.map(item=>item.value);
   }
-  const diagnostics=()=>({nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  const diagnostics=()=>({nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
   return {structure:committedStructure,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,collect,records,configure,list,open,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

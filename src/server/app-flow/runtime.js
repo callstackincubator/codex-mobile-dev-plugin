@@ -1,5 +1,5 @@
 // Injected into a development runtime through one CDP connection. No app-specific code.
-export function installFlowRuntime(key, leaseMs, presentationFactory, captureQueueFactory, captureDriverFactory, transitionFactory) {
+export function installFlowRuntime(key, leaseMs, presentationFactory, captureQueueFactory, captureDriverFactory, transitionFactory, execution = 'debugger') {
   if (globalThis[key]) return;
   const hook = globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__;
   // Expo's native developer menu can cover every captured screen while JS keeps running.
@@ -605,7 +605,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (command.type === 'capture-stop') { void captureQueue?.stop().then(() => reply({stopped:true}), () => reply({error:'Capture state could not be restored.'})); if(!captureQueue)reply({stopped:true}); return; }
         if (command.type === 'diagnostics') {
           let mountedFibers=0,mountedHosts=0;fibers(fiber=>{mountedFibers++;if(fiber.tag===5)mountedHosts++;});
-          reply({mountedFibers,mountedHosts,...navigationCounts(),...transitionMode?.diagnostics(),transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,lastOpenProbe,lastPresentationProbe,presentations:presentations?.diagnostics?.()});return;
+          reply({execution,mountedFibers,mountedHosts,...navigationCounts(),...transitionMode?.diagnostics(),transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,lastOpenProbe,lastPresentationProbe,presentations:presentations?.diagnostics?.()});return;
         }
         if (command.type === 'context-data') { reply(contextData()); return; }
         if (command.type === 'observe') { reply(observe()); return; }

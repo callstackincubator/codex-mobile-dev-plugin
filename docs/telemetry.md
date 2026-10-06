@@ -680,3 +680,17 @@ units stay unchanged. `app_flow.recovery_continuations` counts slow recovery
 commands after which the same inspector answers a heartbeat and continues;
 these no longer count as reconnects. The count flushes once per run with the
 existing surface and platform attributes. It contains no app data.
+
+Prepared development builds can now run the same capture runtime from Metro's
+compiled app bundle. Runtime command, capture, readiness, binding, recovery and
+restoration timings keep their existing boundaries and units. A content
+fingerprint selects only the matching runtime; older builds use the debugger
+fallback. Local diagnostics report `execution` as `compiled` or `debugger`. The
+fingerprint stays local and adds no metric attributes. This change starts no
+extra observer or timer; both paths use the same lease and cleanup.
+
+Image observers now retain load events while a native tab stays mounted but
+hidden, and release them on unmount or cleanup. Local `imageObservers` and
+`pendingImages` counts help check retention; they contain no image sources.
+A capture can reuse navigation's paint proof after a fresh matching content and
+motion probe. Capture durations still include all work that actually ran.

@@ -2018,3 +2018,35 @@ test('the default mapper captures local sheets before leaving their route', asyn
   assert.equal(result.phase,'complete');assert.equal(result.nodes.filter(n=>n.image).length,14);
   assert.deepEqual(events,['route:Home',...actions.map(a=>a.id),'route:Search']);
 });
+
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresentationRuntime)]){
+ test(`image readiness survives hidden tabs and releases actual unmounts (${install===installPresentationRuntime?'normal':'shared loops'})`,()=>{
+  const originalCommit=()=>{},hook={renderers:new Map(),onCommitFiberRoot:originalCommit};
+  const root:any={memoizedProps:{},tag:0},tab:any={memoizedProps:{hidden:false},tag:0,return:root};root.child=tab;
+  const original={source:[{uri:'real-image'}],onLoadStart(){},onLoad(){},onError(){}};
+  const canonical:any={currentProps:original};
+  const image:any={tag:5,type:'ExpoImage',memoizedProps:original,stateNode:{canonical},return:tab};tab.child=image;
+  const runtime=install({hook,hidden:(props:any)=>props?.hidden===true,later:setTimeout,
+    fibers(visit:any,subtree?:any){const stack=[subtree??root];while(stack.length){const fiber=stack.pop();if(fiber!==subtree&&fiber.sibling)stack.push(fiber.sibling);if(visit(fiber)!==false&&fiber.child)stack.push(fiber.child)}}});
+  try {
+    runtime.captureNative();canonical.currentProps.onLoadStart();
+    assert.equal(runtime.imagePending(image),true);
+    tab.memoizedProps={hidden:true};hook.onCommitFiberRoot();
+    assert.equal(runtime.structure().all.includes(image),false,'Hidden tabs still provide no opening controls');
+    canonical.currentProps.onLoad();
+    tab.memoizedProps={hidden:false};hook.onCommitFiberRoot();
+    assert.equal(runtime.imagePending(image),false,'Returning to a loaded tab does not wait for another load event');
+    tab.memoizedProps={hidden:true};hook.onCommitFiberRoot();
+    canonical.currentProps={...original,source:[{uri:'next-real-image'}]};hook.onCommitFiberRoot();
+    tab.memoizedProps={hidden:false};hook.onCommitFiberRoot();
+    assert.equal(runtime.imagePending(image),true,'A new source must still finish loading');
+    canonical.currentProps.onLoad();assert.equal(runtime.imagePending(image),false);
+    const callback=canonical.currentProps.onLoadStart;
+    root.child=undefined;hook.onCommitFiberRoot();callback();
+    assert.equal(runtime.imagePending(image),false,'Unmount releases retained image state and event closures');
+    assert.equal(canonical.currentProps.onLoadStart,original.onLoadStart);
+  } finally {runtime.cleanup();}
+  assert.equal(hook.onCommitFiberRoot,originalCommit);
+ });
+}

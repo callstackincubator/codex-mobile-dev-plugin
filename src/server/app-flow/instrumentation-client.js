@@ -1,6 +1,11 @@
 import * as React from 'react';
 import {View} from 'react-native';
 import {createFlowRegistry} from './instrumentation-registry.js';
+import {installPreparedRuntime} from './prepared-runtime.js';
+
+if (typeof __MOBILE_DEV_FLOW_FINGERPRINT__ === 'string') {
+  globalThis.__MOBILE_DEV_FLOW_COMPILED__ = {fingerprint: __MOBILE_DEV_FLOW_FINGERPRINT__, install: installPreparedRuntime};
+}
 
 const key = '__MOBILE_DEV_FLOW_REGISTRY__';
 export const registry = globalThis[key] ??= createFlowRegistry();

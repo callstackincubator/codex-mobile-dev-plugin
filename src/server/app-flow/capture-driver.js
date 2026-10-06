@@ -129,6 +129,12 @@ export function createCaptureDriver(runtime, registry, probe) {
         if (job.path.length) {
           const opened = await call({type: 'open', path: job.path, params: job.params, expo: job.expo, timeoutMs: 4000, loadingTimeoutMs: 8000});
           if (!opened?.ready) return {ready: false, status: 'timed-out', reason: opened?.reason};
+          if (!job.actions.length && typeof opened.signature === 'string') {
+            // Navigation already waited for loading, motion and two paint
+            // frames. Reuse that proof only while a fresh probe still matches.
+            const current=view(job);
+            if (same({...opened,key:current.key},current)) lastReady={id:job.id,view:current};
+          }
         }
         base = nextBase;
       }

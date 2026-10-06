@@ -150,3 +150,24 @@ test('a handoff through a duplicate source site still closes the actual parent b
   app.closeCompleted();await opening;await app.driver.restore();
   assert.deepEqual(app.events,['menu-open','menu-close','dialog-open','dialog-close']);
 });
+
+
+test('a verified navigation frame avoids a second settling wait only while it still matches',async()=>{
+  const registry=createFlowRegistry();
+  let current:any={ready:true,key:'Home',signature:'loaded',motion:'settled'};
+  const runtime={invoke(_command:any,reply:any){reply({...current});}};
+  const driver=createCaptureDriver(runtime,registry,(target:any)=>target.nativeStart?{}:current);
+  const signal=new AbortController().signal,job={id:'home',path:['Home'],params:{},actions:[]};
+  assert.equal((await driver.open(job,signal)).ready,true);
+  let settled=false;const first=driver.ready(job,signal).then((value:any)=>{settled=true;return value;});
+  await Promise.resolve();assert.equal(settled,true,'The route already supplied its loading, motion and paint proof');
+  await first;
+  current={...current,signature:'changed'};
+  settled=false;const second=driver.ready(job,signal).then((value:any)=>{settled=true;return value;});
+  await Promise.resolve();assert.equal(settled,false,'Changed content must settle again');
+  assert.equal((await second).signature,'changed');
+  current={...current,ready:false,loading:true};
+  const controller=new AbortController();const third=driver.ready(job,controller.signal);
+  controller.abort();await assert.rejects(third,/stopped/);
+  await driver.restore();
+});
