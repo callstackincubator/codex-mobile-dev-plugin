@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import ts from 'typescript';
 import { scanAppFlow } from '../src/server/app-flow/scan.ts';
 import { compareViewReference } from './lib/compare-app-flow-views.mjs';
-import {compareFlowCapture} from './lib/compare-app-flow-capture.mjs';
+import {compareFlowCapture,assertCaptureProvenance} from './lib/compare-app-flow-capture.mjs';
 
 const [project, referenceFile, ...options] = process.argv.slice(2);
 if (!project || !referenceFile) throw new Error('Usage: node scripts/compare-app-flow-views.mjs PROJECT REFERENCE [--snapshot GRAPH.json] [--write-snapshot GRAPH.json] [--capture-map MAP.json] [--output REPORT.json] [--strict]');
@@ -111,6 +111,7 @@ const report = { ...provenance,
   ...compared };
 if(option('--capture-map')){
   const map=resolve(option('--capture-map')),run=await json(map),verified=new Set();
+  assertCaptureProvenance(run,pluginVersion);
   if(!/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(run.id))throw new Error('Invalid saved capture run.');
   for(const node of run.nodes??[]){
     if(node.status!=='captured'||node.capture==='observed'||!/^[-a-z\d]{1,64}$/.test(node.id)||node.image!==`mobile-flow://${run.id}/${node.id}`)continue;

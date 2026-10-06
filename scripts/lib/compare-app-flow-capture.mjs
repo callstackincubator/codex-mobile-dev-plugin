@@ -1,5 +1,11 @@
 import {presentationDestination} from './compare-app-flow-views.mjs';
 
+/** A finished capture belongs to the same installed build as its audit. */
+export function assertCaptureProvenance(run,pluginVersion) {
+  if(run.pluginVersion!==pluginVersion)throw new Error('Capture plugin version differs from this audit. Run a fresh map with the installed build.');
+  if(!['complete','partial','stopped','failed'].includes(run.phase)||!Number.isFinite(run.finishedAt)||run.finishedAt<run.startedAt)throw new Error('Capture is still running. Wait for restoration to finish before comparing screenshots.');
+}
+
 /** Count actual saved automatic screenshots, never source matches or queued
  * plans. The caller verifies the source hash and files before supplying ids. */
 export function compareFlowCapture(graph,comparison,run,verifiedImages) {

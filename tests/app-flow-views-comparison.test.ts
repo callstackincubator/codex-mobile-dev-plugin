@@ -82,3 +82,14 @@ test('exported body preview plans retain their exact source identity and entry',
   assert.equal(result.previewPlannedViews,1);assert.equal(result.rows[0].coverage,'preview');
   assert.equal(result.rows[1].status,'missing');assert.equal(result.collisions.length,0);
 });
+
+
+import {assertCaptureProvenance} from '../scripts/lib/compare-app-flow-capture.mjs';
+
+test('capture evidence rejects another build and unfinished restoration',()=>{
+  const run={pluginVersion:'test-build',phase:'complete',startedAt:10,finishedAt:20};
+  assert.doesNotThrow(()=>assertCaptureProvenance(run,'test-build'));
+  assert.throws(()=>assertCaptureProvenance(run,'other-build'),/plugin version differs/);
+  for(const changed of [{pluginVersion:undefined},{phase:'finishing'},{finishedAt:undefined},{finishedAt:9}])assert.throws(()=>assertCaptureProvenance({...run,...changed},'test-build'));
+  assert.doesNotThrow(()=>assertCaptureProvenance({...run,phase:'stopped'},'test-build'),'A stopped partial run is valid evidence, with its status retained');
+});
