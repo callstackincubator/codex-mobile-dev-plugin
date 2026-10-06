@@ -401,7 +401,7 @@ export class AppFlowRuns {
         if (inventory?.unavailable) throw new Error('Prepare and reload the instrumented development build before mapping.');
         if (inventory.sourceHashes?.length !== 1 || inventory.sourceHashes[0] !== graph.sourceHash) throw new Error('The running capture build is stale. Prepare and reload it before mapping.');
         const selected = new Set(manifest.jobs.map(job => job.id));
-        run.nodes = structuredClone(nodes.filter(node => selected.has(node.id))).map(node => ({...node, status:'pending', image:undefined, imageSourceHash:undefined, reason:undefined, failure:undefined, captureAttempts:0}));
+        run.nodes = structuredClone(nodes.filter(node => selected.has(node.id))).map(node => ({...node, status:'pending', image:undefined, imageSourceHash:undefined, reason:undefined, failure:undefined, captureMs:undefined, captureAttempts:0}));
         run.edges = (saved?.run.edges??graph.edges).filter(edge => selected.has(edge.from) && selected.has(edge.to));
         run.ai = 'off'; run.phase='capturing'; run.revision++;
         run.captureMode='instrumented';run.manifestTotal=manifest.total;run.preparationMs=Date.now()-sessionStarted;

@@ -47,8 +47,8 @@ export function createCaptureQueue(driver, emit) {
         } catch(error) {
           if(current.cancelled)break;
           if(error?.fatal)throw error;
-          await driver.restore();
           send({type:'result',id:job.id,status:'blocked',reason:String(error?.message||error).slice(0,300),ms:Date.now()-started});
+          await driver.restore();
         }
       }
     } catch (error) {

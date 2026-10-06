@@ -30,13 +30,13 @@ export function createCaptureDriver(runtime, registry, probe) {
   }
   function waitUntil(read, signal, timeout = 4000) {
     return new Promise((resolve, reject) => {
-      let timer, deadline, off, paint, stopped = false, previous, since = Date.now(), frames = 0;
+      let timer, deadline, off, paint, stopped = false, previous, since = Date.now(), frames = 0, reason;
       const finish = (value, error) => {
         if (stopped) return; stopped = true;
         clearTimeout(timer); clearTimeout(deadline); off?.();
         if (paint !== undefined) (globalThis.cancelAnimationFrame || clearTimeout)(paint);
         signal?.removeEventListener('abort', aborted);
-        if (error) reject(error); else resolve(value);
+        if (error) reject(error); else if (!value) reject(new Error('Readiness completed without a view.')); else resolve(value);
       };
       const aborted = () => finish(undefined, new Error('Capture stopped.'));
       const check = () => {
@@ -44,6 +44,7 @@ export function createCaptureDriver(runtime, registry, probe) {
         clearTimeout(timer);
         try {
           const view = read();
+          reason=view.reason || (view.loading?'data or loader':view.transitioning?'navigation transition':view.nativePending?'native presentation':!view.found?'missing visible body':!view.content?'empty body':'motion or paint');
           const key = JSON.stringify([view.key, view.signature, view.motion, view.loading, view.transitioning]);
           if (!view.ready || key !== previous) { previous = key; since = Date.now(); frames = 0; }
           if (view.ready && Date.now() - since >= 160 && frames >= 2) { finish(view); return; }
@@ -57,7 +58,7 @@ export function createCaptureDriver(runtime, registry, probe) {
         } catch (error) { finish(undefined, error); }
       };
       off = registry.subscribe(check);
-      deadline = setTimeout(() => finish({ready: false, reason: 'The view is still loading or moving.'}), timeout);
+      deadline = setTimeout(() => finish({ready: false, reason: `The view did not settle: ${reason || 'readiness unavailable'}.`}), timeout);
       signal?.addEventListener('abort', aborted, {once: true});
       if (signal?.aborted) aborted(); else check();
     });
@@ -69,13 +70,13 @@ export function createCaptureDriver(runtime, registry, probe) {
       owner=registry.find(target)?.owner;
       if(!owner)return {ready:false,found:false,reason:'The exact source view has not mounted.'};
     }
-    return probe({owner:owner?.id,target,path:job.path,params:job.params,expo:job.expo});
+    return probe({owner:owner?.id,target,component:branch.at(-1)?.component,path:job.path,params:job.params,expo:job.expo});
   };
   const same=(before,after)=>before?.ready && after?.ready && before.key===after.key && before.signature===after.signature && before.motion===after.motion;
   async function closePreview() {
     registry.unproject();
     const closed=await waitUntil(()=>({ready:!probe({owner:'flow-preview'}).found,key:'restored',signature:''}));
-    if(!closed.ready)throw new Error('The isolated view did not unmount.');
+    if(!closed?.ready)throw new Error('The isolated view did not unmount.');
   }
   return {
     async open(job, signal) {
@@ -92,7 +93,7 @@ export function createCaptureDriver(runtime, registry, probe) {
         base = nextBase;
       }
       for (const action of job.actions.slice(depth)) {
-        signal.throwIfAborted();
+        if(signal.aborted)throw new Error('Capture stopped.');
         const effect = action.effect;
         if (action.consumer) return {ready: false, status: 'needs-data', reason: 'This recipe needs its real shared render context.'};
         if(effect.kind==='mount') {
@@ -115,7 +116,7 @@ export function createCaptureDriver(runtime, registry, probe) {
           const parent=entry && [...branch].reverse().find(frame=>!frame.closed && frame.target && probe({owner:entry.owner.id,target:id,within:`${frame.owner.id}:${frame.target}`}).contained);
           if(!parent)return {ready:false,status:'needs-data',reason:'The source-proven parent sheet is not open in this context.'};
           await parent.undo(true);parent.closed=true;
-          signal.throwIfAborted();
+          if(signal.aborted)throw new Error('Capture stopped.');
           if(!owner.mounted)return {ready:false,status:'needs-data',reason:'The target owner unmounted when its parent closed.'};
         }
         if (effect.kind === 'state') {
@@ -124,6 +125,7 @@ export function createCaptureDriver(runtime, registry, probe) {
           const before=value.tuple[0],setter=value.hook==='useReducer'?value.previewSetter:value.tuple[1];
           const next = update(before, effect.path, effect.value);
           if(action.preview && !owner.preview) {
+            if(branch.some(frame=>frame.control&&!frame.closed))return {ready:false,status:'needs-data',reason:'This state preview needs a capture host inside its native presentation.'};
             if(!owner.type)return {ready:false,status:'needs-data',reason:'This shared state needs its real consumer context.'};
             await registry.project({source:owner.source,owner,site:effect.site,value:next});
             currentOwner={id:'flow-preview'};
@@ -134,6 +136,7 @@ export function createCaptureDriver(runtime, registry, probe) {
             setter(next);
           }
           if(action.expected)branch.at(-1).target=`${action.expected.file}:${action.expected.source.line}:${action.expected.source.column}:entry`;
+          else branch.at(-1).component=action.name;
         } else {
           let control = value.control;
           control = own(control, 'current') ?? control;
@@ -152,15 +155,20 @@ export function createCaptureDriver(runtime, registry, probe) {
               closeMethod.call(control, () => { clearTimeout(timer); resolve(); });
             });
             else {
-              closeMethod.call(control);
-              const closed = await waitUntil(() => {
+              const dismissal=await probe({owner:owner.id,target,nativeClose:true,control,close});
+              if(dismissal?.handled&&dismissal.observed&&dismissal.closed)return;
+              if(!dismissal?.handled)closeMethod.call(control);
+              await waitUntil(() => {
                 const result = probe({owner: owner.id, target});
-                return {...result, ready: !result.found};
-              }, undefined);
-              if (!closed.ready) throw new Error('The sheet did not finish dismissing.');
+                // The source marker stays mounted when a sheet's body closes.
+                // Wait for the body and native transition, not the marker.
+                return {...result, ready: (!result.found || result.hosts===0) && !result.nativePending && !result.transitioning};
+              }, undefined).then(result=>{
+                if (!result?.ready) throw new Error('The sheet did not finish dismissing.');
+              });
             }
           };
-          branch.push({id: action.id, owner, target, undo});
+          branch.push({id: action.id, owner, target, control:true, undo});
           probe({owner:owner.id,target,nativeStart:true});
           own(control, open).call(control);
         }

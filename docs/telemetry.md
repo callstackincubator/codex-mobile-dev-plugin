@@ -634,3 +634,8 @@ records `preparationMs`, `manifestTotal`, and the capture mode; these are not ap
 memory or FPS measurements. The client registry releases committed owners on
 unmount, and the queue releases timers, listeners and pending frame replies on
 completion or cancellation.
+
+Capture compatibility fixes preserve these timing boundaries. Readiness failures
+now name the local blocker, and packaged runtime tests exercise compiled async
+closures. These diagnostic messages stay in local run results; they add no metric
+attributes or app-content telemetry.

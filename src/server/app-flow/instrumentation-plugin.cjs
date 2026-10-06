@@ -111,7 +111,8 @@ module.exports = function flowInstrumentation({types: t}) {
       else if(t.isObjectPattern(first) || t.isAssignmentPattern(first) && t.isObjectPattern(first.left)) {
         props=fn.scope.generateUidIdentifier('flowProps');
         fn.node.params[0]=t.isAssignmentPattern(first)?t.assignmentPattern(props,first.right):props;
-        destructure=t.variableDeclaration('const',[t.variableDeclarator(t.isAssignmentPattern(first)?first.left:first,props)]);
+        // Parameters are mutable bindings. Preserve reassignment by the app.
+        destructure=t.variableDeclaration('let',[t.variableDeclarator(t.isAssignmentPattern(first)?first.left:first,props)]);
       }else if(t.isAssignmentPattern(first) && t.isIdentifier(first.left))props=first.left;
       if (!name.startsWith('use')) fn.traverse({
         Function(path) { path.skip(); },

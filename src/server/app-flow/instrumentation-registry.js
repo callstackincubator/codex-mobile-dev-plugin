@@ -29,6 +29,9 @@ export function createFlowRegistry() {
       owners.set(owner.id, owner); notify();
     },
     remove(owner) { owner.mounted = false; owner.entries.clear(); owners.delete(owner.id); notify(); },
+    components(name) {
+      return [...owners.values()].filter(owner=>owner.source.endsWith(`#${name}`) && (!projection || owner.preview===projection));
+    },
     find(id, ownerId) {
       const matches = [];
       for (const owner of owners.values()) if ((!ownerId || owner.id === ownerId) && owner.entries.has(id)) matches.push({owner, value: owner.entries.get(id)});

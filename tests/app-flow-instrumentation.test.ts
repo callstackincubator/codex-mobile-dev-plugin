@@ -71,3 +71,14 @@ test('recipes join only current scanned steps, preserve real data, and deduplica
   assert.throws(()=>captureRecipeNodes(graph,[base],[{baseNodeId:'missing',actions:['form']}]),/base/);
   assert.throws(()=>captureManifest(graph,nodes,['missing-view']),/selection/);
 });
+
+test('instrumented destructured props preserve mutable parameter bindings',()=>{
+  const source='export function List({style = 1}) { style = style + 2; return style; }';
+  const code=transformSync(source,{filename:'/app/list.js',configFile:false,babelrc:false,plugins:[[plugin,{enabled:true,projectRoot:'/app',client:'flow-client',manifest:{files:{'list.js':{mounts:['List'],states:[],controls:[]}}}}]]}).code;
+  const commonjs=require('esbuild').transformSync(code,{format:'cjs'}).code;
+  const module={exports:{}};
+  const flow={useFlowOwner:()=>({}),boundary:(_owner,value)=>value};
+  new Function('require','module','exports',commonjs)(()=>flow,module,module.exports);
+  assert.equal((module.exports as any).List({style:4}),6);
+  assert.equal((module.exports as any).List({}),3);
+});

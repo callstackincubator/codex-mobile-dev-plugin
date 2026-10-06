@@ -71,3 +71,34 @@ for(const wrapper of [`context.control.close(()=>{mutateAccount();onPress?.(even
   const root=await sourceFixture(t,wrapper),graph=await scanAppFlow(root,'ios');
   assert.ok([...graph.presentations!.actions,...graph.presentations!.previews!].every(action=>!action.handoffs?.length));
 });
+
+test('capture supports React Native AbortSignal without throwIfAborted',async()=>{
+  const app=fixture(),controller=new AbortController();
+  Object.defineProperty(controller.signal,'throwIfAborted',{value:undefined});
+  const result=await app.driver.open({id:'menu',path:[],actions:[app.parent]},controller.signal);
+  assert.equal(result.ready,true);
+  await app.driver.restore();
+});
+
+test('dismissal waits for native completion even when the body leaves its source marker mounted',async()=>{
+  const registry=createFlowRegistry(),owner=registry.create('Screen','hash');
+  let opened=false,pending=false;
+  const control={open(){opened=true},close(){opened=false;pending=true;setTimeout(()=>{pending=false},70)}};
+  registry.stage(owner,'screen:1:0:control',{kind:'control',control});registry.commit(owner);
+  const driver=createCaptureDriver({invoke(){}},registry,()=>({found:true,hosts:opened?2:0,content:opened?1:0,ready:opened,nativePending:pending,key:'sheet',signature:String(opened)}));
+  await driver.open({id:'sheet',path:[],actions:[{id:'open',effect:{kind:'control',method:'open',close:'close',prop:'control',target:{file:'screen',source:{line:1,column:0}}}}]},new AbortController().signal);
+  const started=Date.now();await driver.restore();
+  assert.ok(Date.now()-started>=70);assert.equal(pending,false);
+});
+
+test('state preview inside an open sheet stays explicit instead of mounting outside its native parent',async()=>{
+  const registry=createFlowRegistry(),owner=registry.create('Screen','hash');
+  let visible=false,projects=0;
+  registry.project=async()=>{projects++};
+  registry.stage(owner,'sheet:1:0:control',{kind:'control',control:{open(){visible=true},close(){visible=false}}});
+  registry.stage(owner,'step',{kind:'state',hook:'useState',tuple:[0,()=>{}]});registry.commit(owner);
+  const driver=createCaptureDriver({invoke(){}},registry,()=>({ready:visible,found:visible,hosts:visible?1:0,content:visible?1:0,key:'sheet',signature:String(visible)}));
+  const result=await driver.open({id:'step',path:[],actions:[{id:'open',effect:{kind:'control',method:'open',close:'close',prop:'control',target:{file:'sheet',source:{line:1,column:0}}}},{id:'step',name:'Step',preview:true,effect:{kind:'state',site:'step',path:[],value:1}}]},new AbortController().signal);
+  assert.equal(result.status,'needs-data');assert.equal(projects,0);
+  await driver.restore();assert.equal(visible,false);
+});

@@ -560,6 +560,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
             }
             if(target.nativeStart){presentations?.captureNative?.(focus);return {armed:true};}
             if(target.nativeStop){presentations?.captureNative?.(focus,true);return {released:true};}
+            if(target.nativeClose)return presentations.captureClose(focus,target.control,target.close);
             if(target.within) {
               let parent=focus?.return;
               while(parent){if(parent.tag===12 && parent.memoizedProps?.id===target.within)return {contained:true};parent=parent.return;}
@@ -567,14 +568,25 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
             }
             const actual = active(root?.getRootState?.() ?? root?.getState?.());
             const geometry=new WeakMap();
-            const visual = visualSignature(target.owner ? undefined : actual.at(-1), !!target.owner, focus,geometry);
-            const nativeMotion=focus && presentations?.motion(focus,visual.bounds,geometry);
+            const scoped=focus && presentations?.probeFocus(focus);
+            let body=target.component?presentations?.focusFor(target.component,focus):scoped?.visualFocus??focus;
+            if(target.component&&!body) {
+              const ids=new Set((registry.components?.(target.component)??[]).map(owner=>owner.id)), matches=[];
+              fibers(fiber=>{
+                if(fiber.tag!==12||!ids.has(fiber.memoizedProps?.id))return;
+                for(let parent=fiber;parent;parent=parent.return)if(parent===focus||parent===focus?.alternate){matches.push(fiber);break;}
+              });
+              if(matches.length===1)body=presentations?.probeFocus(matches[0]).visualFocus??matches[0];
+            }
+            if(target.component&&!body)return {ready:false,found:false,reason:'The source-proven view has not mounted.'};
+            const visual = visualSignature(target.owner ? undefined : actual.at(-1), !!target.owner, body,geometry);
+            const nativeMotion=scoped?.motion(visual.bounds,geometry);
             if(nativeMotion){visual.signature+=nativeMotion.signature;visual.motion=JSON.stringify([visual.motion,nativeMotion.signature]);}
             const normalize=value=>value.split('/').filter(part=>part&&part!=='index'&&!/^\(.+\)$/.test(part)).join('/');
             const routeMatches = !target.path?.length || (target.expo ? normalize(actual.join('/'))===normalize(target.path[0]) : JSON.stringify(actual) === JSON.stringify(target.path));
             let leaf=root?.getRootState?.()??root?.getState?.();while(leaf?.routes?.length){const next=leaf.routes[leaf.index??0];if(!next){leaf=undefined;break;}leaf=next.state??next;}
             const paramsMatch=Object.entries(target.params??{}).every(([key,value])=>sameRouteParams(leaf?.params?.[key],value));
-            return {...visual, key:JSON.stringify([actual,target.owner,target.target]), transitioning:live.transitioning,
+            return {...visual, nativePending:!!nativeMotion?.pending, key:JSON.stringify([actual,target.owner,target.target]), transitioning:live.transitioning,
               ready:routeMatches && paramsMatch && visual.found && visual.content > 0 && !visual.loading && !live.transitioning && !nativeMotion?.pending && Date.now()-transitionAt>=32};
           };
           captureQueue = captureQueueFactory(captureDriverFactory(globalThis[key], registry, probe), event => {

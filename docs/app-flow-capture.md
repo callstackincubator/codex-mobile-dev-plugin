@@ -51,3 +51,12 @@ the Babel transform or hook layout still require rebuilding/reloading the app.
 Validate the small representative selection before attempting another full map.
 Report correct captures, failures, preparation time and capture time. Do not use
 CPU/memory recordings as a substitute for this check.
+
+The first live 20-view check did not pass. It exposed Hermes evaluator closure
+failures, anonymous compiled component names, and native sheets left over after
+JavaScript restoration. The runtime now precompiles async closures and follows
+registered source owners and portal bodies. State previews beneath an open
+controller remain blocked until a capture host can preserve that native parent.
+Do not count source readiness or a saved PNG as proof of a correct capture when
+native presentation restoration failed. A JavaScript reload can leave an orphaned
+native sheet visible; the live test required an app relaunch to clear it.
