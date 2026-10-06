@@ -569,3 +569,9 @@ wait. Local diagnostics count approved UI openings, live query reuse with
 recreated selectors, and registered but unloaded form modules. These counts,
 source locations, callback bodies and app data do not enter telemetry. Timer
 cleanup runs when a preview closes or the inspector shuts down.
+
+Readiness polls also bind source-proven portals that mount after the opening
+reply. Existing presentation, symbolication, readiness and restoration timing
+windows cover this work with the same names, units and boundaries. Native
+dismissal diagnostics list at most eight pending hosts or adapters. These names
+and lifecycle counts stay local and never enter telemetry.

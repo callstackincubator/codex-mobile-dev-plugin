@@ -912,3 +912,15 @@ test('automatic UI openings keep sibling restoration aligned with actual checkpo
   assert.equal(app.context.lastEffectFocus,app.fiber,'Closing a child retains its parent after an implicit control checkpoint');
   await app.invoke({type:'presentation-rollback',level:0});
 });
+
+
+test('readiness polls expose portals mounted after the initial opening',async t=>{
+  const app=runtime(t,false,undefined,()=>({
+    portalBindings:()=> (globalThis as any).lateMounted?[{id:'late-portal'}]:[],
+    visualFocus(){},focusFor(){},motion:()=>({pending:false,signature:''}),checkpoint:()=>0,cleanup(){},
+  }));
+  app.context.lateMounted=false;
+  const before=await app.invoke({type:'presentation-view'});assert.equal(before.portalBindings.length,0);
+  app.context.lateMounted=true;
+  assert.deepEqual(JSON.parse(JSON.stringify((await app.invoke({type:'presentation-view'})).portalBindings)),[{id:'late-portal'}]);
+});

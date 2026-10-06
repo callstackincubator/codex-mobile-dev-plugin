@@ -557,7 +557,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory) {
           if(!result||result.error){reply(result??{error:'Temporary UI effects are unavailable.'});return;}
           presentationObservation=undefined;later(()=>{try{reply({...presentationView(),...result,portalBindings:presentations?.portalBindings(presentationFocus),effectBindings:presentations?.uiEffectBindings?.(presentationFocus)});}catch{reply({error:'Presentation inspection is unavailable.'});}},80);return;
         }
-        if (command.type === 'presentation-view') { reply({...presentationView(),effectBindings:presentations?.uiEffectBindings?.(presentationFocus)}); return; }
+        if (command.type === 'presentation-view') { reply({...presentationView(),portalBindings:presentations?.portalBindings?.(presentationFocus),effectBindings:presentations?.uiEffectBindings?.(presentationFocus)}); return; }
         if (command.type === 'presentation-checkpoint') { reply({level:presentations?.checkpoint()??0}); return; }
         if (command.type === 'presentation-rollback') { const level=command.level??0; void (presentations?.rollback(level) ?? Promise.resolve()).then(() => {while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined;reply({});}, error => reply({error:'Presentation restoration failed.',detail:String(error?.message??error).slice(0,1000)})); return; }
         if (command.type === 'presentation-project') {

@@ -63,7 +63,13 @@ export function sourceUiPortal(source:string,line:number,column=0){
   const position=ast.getPositionOfLineAndCharacter(line-1,column),functions:ts.FunctionLikeDeclaration[]=[];
   const visit=(node:ts.Node)=>{if(ts.isFunctionLike(node)&&'body'in node&&node.body&&node.getStart()<=position&&position<node.getEnd())functions.push(node);ts.forEachChild(node,visit)};
   visit(ast);
-  const fn=functions.reverse().find(fn=>'body'in fn&&fn.body&&ts.isBlock(fn.body));
+  // Metro can resolve an effect call to the callback's first column. Find
+  // the owning null-rendering component, not that nested callback's body.
+  const fn=functions.reverse().find(fn=>{
+    if(!('body'in fn)||!fn.body||!ts.isBlock(fn.body))return false;
+    const last=fn.body.statements.at(-1);
+    return !!last&&ts.isReturnStatement(last)&&!!last.expression&&unwrap(last.expression).kind===ts.SyntaxKind.NullKeyword;
+  });
   if(!fn||!('body'in fn)||!fn.body||!ts.isBlock(fn.body))return false;
   const last=fn.body.statements.at(-1);
   if(!last||!ts.isReturnStatement(last)||!last.expression||unwrap(last.expression).kind!==ts.SyntaxKind.NullKeyword)return false;

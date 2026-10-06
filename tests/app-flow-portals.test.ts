@@ -25,6 +25,8 @@ function createGroup(){
 const line=source.slice(0,source.indexOf('  useEffect')).split('\n').length;
 test('portal source proves UI state output before previewing suppressed portal children',()=>{
  assert.equal(sourceUiPortal(source,line,2),true);
+ const effect=source.split('\n')[line-1];
+ assert.equal(sourceUiPortal(source,line,effect.indexOf('append(id')),true,'A symbolicated callback column still proves its owning portal');
  for(const changed of [
   source.replace('append(id,children)','append(id,credentials)'),
   source.replace('remove(id)','remove(other)'),
@@ -124,7 +126,7 @@ test('connection verifies portal source, renders nested portals once and keeps f
  const file=join(root,'portal.tsx');await writeFile(file,source);
  const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
  t.after(()=>new Promise<void>(resolve=>{for(const client of server.clients)client.terminate();server.close(()=>resolve())}));
- const commands:any[]=[];let rejected=false,unsafe=false;
+ const commands:any[]=[];let rejected=false,unsafe=false,late=false;
  server.on('connection',socket=>{
   let binding='';socket.on('message',bytes=>{
    const message=JSON.parse(bytes.toString());if(message.method==='Runtime.addBinding')binding=message.params.name;
@@ -134,7 +136,8 @@ test('connection verifies portal source, renders nested portals once and keeps f
      commands.push(JSON.parse(JSON.stringify(command)));
      const candidate=(id:string)=>({id,owner:'Portal',kind:'portal',source:{file:unsafe?'/private/tmp/unrelated.tsx':file,line,column:2}});
      reply(command.type==='presentation-collect'?{bindings:[]}:
-      command.type==='presentation-open'?{portalBindings:[candidate('first')]}:
+      command.type==='presentation-open'&&!late?{portalBindings:[candidate('first')]}:
+      command.type==='presentation-view'&&late?{portalBindings:[candidate('first')]}:
       command.type==='presentation-portals'?(rejected?{error:'private application details'}:{ready:true,portalBindings:command.ids[0]==='first'?[candidate('nested')]:[candidate('nested')]}):{});
     }},
     [binding]:(payload:string)=>socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload}})),
@@ -147,6 +150,10 @@ test('connection verifies portal source, renders nested portals once and keeps f
  assert.equal((await connection.invoke({type:'presentation-open',id:'entry'})).ready,true);
  assert.deepEqual(commands.filter(command=>command.type==='presentation-portals').map(command=>command.ids),[['first'],['nested']]);
  assert.equal(metrics.snapshot().find(operation=>operation.operation==='presentation-portals')?.count,2);
+ late=true;const delayed=commands.length;
+ assert.equal((await connection.invoke({type:'presentation-open',id:'entry'})).ready,undefined);
+ assert.equal((await connection.invoke({type:'presentation-view'})).ready,true);
+ assert.deepEqual(commands.slice(delayed).filter(command=>command.type==='presentation-portals').map(command=>command.ids),[['first'],['nested']],'A portal mounted after the initial opening is handled by a readiness poll');late=false;
  rejected=true;await assert.rejects(connection.invoke({type:'presentation-open',id:'entry'}),error=>error instanceof FlowRuntimeFailure&&error.operation==='presentation-portals'&&!error.message.includes('private'));
  rejected=false;unsafe=true;const before=commands.length;await connection.invoke({type:'presentation-open',id:'entry'});
  assert.deepEqual(commands.slice(before).map(command=>command.type),['presentation-open'],'Unknown source never mounts portal children');

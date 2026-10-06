@@ -1344,7 +1344,10 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
     app.runtime.focused(app.nested);const closing=app.runtime.rollback();
     await new Promise(resolve=>setTimeout(resolve,5));
     assert.equal(app.runtime.checkpoint(),1);assert.equal(app.runtime.diagnostics().dismissalWaiters,1);
-    await closing;assert.equal(app.runtime.checkpoint(),0);assert.equal(events,2);assert.equal(app.control.closes,1);
+    const waiters=app.runtime.diagnostics().nativeWaiters;
+    assert.equal(waiters.length,1);assert.equal(waiters[0].kind,'host');assert.equal(waiters[0].opened,true);assert.equal(waiters[0].openEvents,1);
+    await closing;assert.equal(app.runtime.diagnostics().nativeWaiters.length,0);
+    assert.equal(app.runtime.checkpoint(),0);assert.equal(events,2);assert.equal(app.control.closes,1);
     assert.equal(instance.props,props);assert.equal(canonical.currentProps,props);app.runtime.cleanup();
   });
 }
