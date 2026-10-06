@@ -11,6 +11,8 @@ export function installPresentationRuntime(options: {
   open(id: string, focus?: any): {name?: string; focus?: any; scope?: any; expected?: string; error?: string};
   portalBindings(focus?:any): (PresentationBinding&{approved:boolean})[];
   previewPortals(ids:string[],focus?:any): {portals?:number;error?:string};
+  uiEffectBindings(focus?:any): (PresentationBinding&{approval?:string})[];
+  previewEffects(matches:{binding:string;site:string}[],focus?:any): {effects?:number;error?:string};
   activeViews(focus?: any): string[];
   rollback(level?: number, wait?: boolean): Promise<void>;
   cleanup(): void; motion(focus?: any, viewport?: {x: number; y: number; width: number; height: number}, geometry?: WeakMap<object,any>): {pending: boolean; signature: string};

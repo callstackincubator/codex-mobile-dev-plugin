@@ -454,7 +454,7 @@ test('unmounted previews use initialized exact data exports and keep each owner 
     if(projectRoot)await app.runtime.collect([],actions,projectRoot);
     app.runtime.configure({states:[],actions},[]);
     assert.deepEqual(app.runtime.list().map(a=>a.id),['welcome','other']);
-    assert.deepEqual(app.runtime.diagnostics().mountChecks,{plans:5,moduleMissing:2,exportMissing:1,ownerMismatch:0,alreadyMounted:0,available:2});
+    assert.deepEqual(app.runtime.diagnostics().mountChecks,{plans:5,moduleMissing:2,moduleCold:1,moduleUnknown:1,exportMissing:1,ownerMismatch:0,alreadyMounted:0,available:2});
     assert.equal(app.runtime.open('welcome').error,undefined);assert.equal(app.clone.type,Welcome);
     assert.deepEqual(app.clone.memoizedProps,{});assert.deepEqual(app.counts,{dispatched:0,effects:0,initializers:0});
     app.runtime.focused(app.clone);
@@ -699,3 +699,62 @@ test('guard body previews exclude unrelated rows, required props, unexported bod
   const graph=await scanAppFlow(root,'ios');
   assert.ok(!graph.presentations!.previews!.some(p=>['RequiredPage','PrivatePage','ProgressPage','RowBadge'].includes(p.owner)));
 });
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`fresh selectors reuse only the exact data from a current live observer (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    const selected={id:'selected'},data={selected},query:any={queryHash:'record',state:{data,status:'success',fetchStatus:'idle'},observers:[]};
+    const ready={data:selected,status:'success',fetchStatus:'idle',isFetching:false,isRefetching:false,isPending:false,isError:false,isPlaceholderData:false,isStale:true,isFetchedAfterMount:true};
+    let cold={...ready,fetchStatus:'fetching',isFetching:true,isRefetching:true,isFetchedAfterMount:false};
+    let selections=0;const select=(value:any)=>{selections++;return value.selected};
+    const options={queryHash:'record',select,_optimisticResults:'optimistic',staleTime:0};
+    class QueryObserver{options=options;getCurrentQuery(){return query}getCurrentResult(){return ready}getOptimisticResult(opts:any){return {...cold,data:opts.select(data)}}}
+    const live=new QueryObserver(),preview=new QueryObserver();query.observers=[live];
+    class QueryCache{getAll(){return [query]}}
+    class QueryClient{getQueryCache(){return new QueryCache()}}
+    const app=runtimeFixture(t,false,install);app.owner.memoizedProps={...app.owner.memoizedProps,client:new QueryClient()};
+    await configure(app);assert.equal(app.runtime.open('preview').error,undefined);app.setCurrent(app.clone);
+    const newOptions={...options,select:(value:any)=>{selections++;return value.selected}};
+    assert.equal(preview.getOptimisticResult(newOptions),ready);assert.equal(selections,1,'Only the ordinary library selection runs');
+    assert.equal(app.runtime.diagnostics().reusedQuerySelections,1);
+    assert.notEqual(preview.getOptimisticResult({...newOptions,select:()=>({...selected})}),ready,'A new object with similar fields is a different representation');
+    assert.notEqual(preview.getOptimisticResult({...newOptions,enabled:false}),ready,'Other options still must match');
+    query.observers=[];assert.notEqual(preview.getOptimisticResult(newOptions),ready,'The source observer must still be mounted');query.observers=[live];
+    cold={...cold,isStale:false};assert.notEqual(preview.getOptimisticResult(newOptions),ready,'New status fields stay authoritative');
+    app.setCurrent(undefined);await app.runtime.rollback(0,false);app.runtime.cleanup();assert.equal(app.runtime.diagnostics().reusedQuerySelections,0);
+  });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`only source-approved UI opening effects run in a temporary form (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    const app=runtimeFixture(t,false,install);await configure(app);assert.equal(app.runtime.open('preview').error,undefined);
+    let opens=0,closes=0,otherEffects=0,cleans=0;const control={open(){opens++},close(){closes++}};
+    const opening=()=>{control.open();return ()=>{cleans++}};
+    const register=()=>{app.setCurrent(app.clone);app.react.useEffect(opening,[control]);app.react.useEffect(()=>otherEffects++);app.setCurrent(undefined)};
+    register();assert.equal(opens,0);assert.equal(otherEffects,0);
+    const bindings=app.runtime.uiEffectBindings(app.clone);assert.equal(bindings.length,1);assert.equal(bindings[0].kind,'ui-effect');
+    assert.equal(app.runtime.previewEffects([{binding:bindings[0].id,site:'portal'}],app.clone).effects,0);
+    const matches=[{binding:bindings[0].id,site:'ui-effect:0:open'}];
+    assert.equal(app.runtime.previewEffects(matches,app.clone).effects,1);assert.equal(opens,1);assert.equal(otherEffects,0);
+    assert.equal(app.runtime.uiEffectBindings(app.clone).length,0);
+    register();assert.equal(app.runtime.uiEffectBindings(app.clone).length,0,'An unchanged dependency does not repeat the effect');
+    assert.equal(app.runtime.diagnostics().openedUiEffects,1);
+    await app.runtime.rollback(0,false);assert.equal(cleans,1);assert.equal(closes,1);assert.equal(app.runtime.diagnostics().uiEffectBindings,0);
+    app.runtime.cleanup();assert.equal(cleans,1);assert.equal(app.runtime.diagnostics().openedUiEffects,0);
+  });
+
+  test(`restoration cancels a delayed UI opening effect (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    const app=runtimeFixture(t,false,install);await configure(app);app.runtime.open('preview');
+    let opens=0;const control={open(){opens++},close(){}};
+    app.setCurrent(app.clone);app.react.useEffect(()=>{const timer=setTimeout(()=>control.open(),60);return ()=>clearTimeout(timer)},[control]);app.setCurrent(undefined);
+    const binding=app.runtime.uiEffectBindings(app.clone)[0];app.runtime.previewEffects([{binding:binding.id,site:'ui-effect:0:open'}],app.clone);
+    await app.runtime.rollback(0,false);await new Promise(resolve=>setTimeout(resolve,80));assert.equal(opens,0);
+    app.runtime.cleanup();
+  });
+
+  test(`UI opening effects do not read controller accessors (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    const app=runtimeFixture(t,false,install);await configure(app);app.runtime.open('preview');
+    const control={get open(){assert.fail('Never run an app getter')},close(){}};
+    app.setCurrent(app.clone);app.react.useEffect(()=>control.open(),[control]);app.setCurrent(undefined);
+    assert.deepEqual(app.runtime.uiEffectBindings(app.clone),[]);await app.runtime.rollback(0,false);app.runtime.cleanup();
+  });
+}

@@ -106,22 +106,24 @@ export class FlowConnection {
     let result=await this.send("Runtime.evaluate", { expression, silent: true, returnByValue: true, objectGroup: this.key }, timeout, id,runtimeOperation(command.type));
     if(result?.runtimeUnavailable)throw new Error('App Flow inspector is no longer installed. Reconnecting.');
     if(result?.appFailed)throw new FlowAppFailure(String(command.type));
-    if(command.type==='presentation-open'){
+    if(['presentation-open','presentation-view'].includes(String(command.type))){
       const attempted=new Set<string>();
-      for(let depth=0;depth<8&&result?.portalBindings?.length;depth++){
-        const bindings=result.portalBindings.filter((binding:any)=>typeof binding.id==='string'&&!attempted.has(binding.id)).slice(0,50);
+      for(let depth=0;depth<8&&(result?.portalBindings?.length||result?.effectBindings?.length);depth++){
+        const bindings=[...(result.portalBindings??[]),...(result.effectBindings??[])].filter((binding:any)=>typeof binding.id==='string'&&!attempted.has(binding.id)).slice(0,100);
         if(!bindings.length)break;
         for(const binding of bindings)attempted.add(binding.id);
         const started=performance.now();let matches;
-        try{matches=await bindPresentationSites(this.metroBase,this.presentationRoot??'',bindings.filter((binding:any)=>!binding.approved),[]);}
+        try{matches=await bindPresentationSites(this.metroBase,this.presentationRoot??'',bindings.filter((binding:any)=>!binding.approved&&!binding.approval),[]);}
         catch(error){throw new FlowRuntimeFailure('presentation-symbolicate','failed',error instanceof Error?error.message:undefined);}
         finally{this.metrics.record('presentation-symbolicate',performance.now()-started,false);}
         const ids=[...bindings.filter((binding:any)=>binding.approved).map((binding:any)=>binding.id),...matches.filter(match=>match.site==='portal').map(match=>match.binding)];
-        if(!ids.length)break;
-        result=await this.invoke({type:'presentation-portals',ids},2000);
+        const effects=[...bindings.filter((binding:any)=>binding.kind==='ui-effect'&&binding.approval).map((binding:any)=>({binding:binding.id,site:binding.approval})),...matches.filter(match=>match.site.startsWith('ui-effect:'))];
+        if(!ids.length&&!effects.length)break;
+        if(ids.length)result=await this.invoke({type:'presentation-portals',ids},2000);
+        if(effects.length)result=await this.invoke({type:'presentation-effects',matches:effects},2000);
       }
     }
-    if (['presentation-collect','presentation-bindings','presentation-configure','presentation-active','presentations','presentation-rollback','presentation-portals'].includes(String(command.type))) {
+    if (['presentation-collect','presentation-bindings','presentation-configure','presentation-active','presentations','presentation-rollback','presentation-portals','presentation-effects'].includes(String(command.type))) {
       if(result?.error)throw new FlowRuntimeFailure(String(command.type),'was rejected',result.detail??result.error);
       if(['presentation-active','presentations'].includes(String(command.type))&&!Array.isArray(result))throw new FlowRuntimeFailure(String(command.type),'returned an invalid response');
       if(['presentation-collect','presentation-bindings'].includes(String(command.type))&&!Array.isArray(result?.bindings))throw new FlowRuntimeFailure(String(command.type),'returned an invalid response');

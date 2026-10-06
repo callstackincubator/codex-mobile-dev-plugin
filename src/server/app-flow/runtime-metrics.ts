@@ -12,6 +12,7 @@ const operations:Record<string,string>={
   'presentation-symbolicate':'resolving presentation source',
   presentations:'finding presentation entries', 'presentation-view':'checking presentation readiness',
   'presentation-portals':'rendering a temporary portal',
+  'presentation-effects':'opening a temporary UI control',
   'presentation-open':'opening a presentation', 'presentation-project':'projecting a presentation',
   'presentation-rollback':'restoring a presentation', 'presentation-checkpoint':'reading a presentation checkpoint',
 };

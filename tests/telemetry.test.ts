@@ -77,10 +77,10 @@ test('runtime timing and timeout metrics use fixed operation names and no comman
     transport:()=>({async send(envelope){envelopes.push(envelope);return {statusCode:200}},async flush(){return true}})});
   const metrics=new FlowRuntimeMetrics('ios');
   for(let i=0;i<3000;i++)metrics.record('presentation-collect',12,false);
-  metrics.record('presentation-collect',2500,true);metrics.record('context-data',15,false);metrics.record('PRIVATE_COMMAND',20,true);metrics.flush();metrics.flush();
+  metrics.record('presentation-collect',2500,true);metrics.record('context-data',15,false);metrics.record('presentation-effects',81,false);metrics.record('PRIVATE_COMMAND',20,true);metrics.flush();metrics.flush();
   await Sentry.close();
   const payload=JSON.stringify(envelopes.flatMap(envelope=>envelope[1]).filter(item=>item[0].type==='trace_metric'));
-  for(const value of ['app_flow.runtime.mean','app_flow.runtime.p95','app_flow.runtime.max','app_flow.runtime.timeouts','presentation-collect','context-data','other','app-flow','device_platform'])contains(payload,value);
+  for(const value of ['app_flow.runtime.mean','app_flow.runtime.p95','app_flow.runtime.max','app_flow.runtime.timeouts','presentation-collect','context-data','presentation-effects','other','app-flow','device_platform'])contains(payload,value);
   contains(payload,'PRIVATE_',false);assert.doesNotMatch(new FlowRuntimeTimeout('PRIVATE_COMMAND').message,/PRIVATE_/);
 });
 

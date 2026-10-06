@@ -1,6 +1,7 @@
 import { relative, isAbsolute } from 'node:path';
 import {readFile,realpath,stat} from 'node:fs/promises';
 import {sourceUiPortal} from './portal-source.ts';
+import {sourceUiOpenEffect} from './effect-source.ts';
 import type { FlowStateSite, FlowPresentationAction } from '../../shared/app-flow.ts';
 import type { PresentationBinding } from './presentations-runtime.js';
 
@@ -16,7 +17,7 @@ export async function bindPresentationSites(base: string, root: string, bindings
   const matches: {binding:string;site:string}[] = [], resolvedEntries=new Set<string>(), resolvedStates=new Set<string>();
   const matchFrame=(binding:PresentationBinding,frame:Frame)=>{
     if(!frame.file||!Number.isInteger(frame.lineNumber))return;
-    if(binding.kind==='portal'){portalFrames.push({binding:binding.id,frame});return;}
+    if(binding.kind==='portal'||binding.kind==='ui-effect'){portalFrames.push({binding:binding.id,frame});return;}
     const file=relative(root,frame.file.replace(/^file:\/\//,''));if(isAbsolute(file)||file.startsWith('..')||file.split(/[\\/]/).includes('node_modules'))return;
     if(binding.kind==='entry'){
       // Only the first project frame owns this JSX. Ancestor render frames must
@@ -75,7 +76,10 @@ export async function bindPresentationSites(base: string, root: string, bindings
       const file=await realpath(frame.file!.replace(/^file:\/\//,'')),local=relative(await realpath(root),file);
       if(isAbsolute(local)||local.startsWith('..')||(await stat(file)).size>512_000)continue;
       let source=portalSources.get(file);if(source===undefined){source=await readFile(file,'utf8');portalSources.set(file,source);}
-      if(sourceUiPortal(source,frame.lineNumber!,frame.column??0)){matches.push({binding,site:'portal'});matchedPortals.add(binding);}
+      const kind=bindings.find(candidate=>candidate.id===binding)?.kind;
+      const opening=kind==='ui-effect'?sourceUiOpenEffect(source,frame.lineNumber!,frame.column??0):undefined;
+      const site=opening?`ui-effect:${opening.dependency}:${opening.method}`:kind==='portal'&&sourceUiPortal(source,frame.lineNumber!,frame.column??0)?'portal':undefined;
+      if(site){matches.push({binding,site});matchedPortals.add(binding);}
     }catch{/* Unknown or unavailable source never enables a portal preview. */}
   }
   return matches;

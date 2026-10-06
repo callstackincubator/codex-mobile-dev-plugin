@@ -7,11 +7,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   let lastScheduled = 0, lastExactScheduled = 0, lastFallbackScheduled = 0, structureCache, sourceRoot;
   const portalEffects=new Map();let portalOwners=new WeakMap(),approvedPortals=new WeakSet(),syncingPortals=false;
   let previewRefs=new WeakSet(),containedImperativeHandles=0,containedSubscriptions=0,preservedRootFragments=0;
-  const queryPatches=[],querySnapshots=new Map();let reusedQueryResults=0;
+  const uiEffects=new Map();let uiEffectOwners=new WeakMap(),openedUiEffects=0;
+  const queryPatches=[],querySnapshots=new Map();let reusedQueryResults=0,reusedQuerySelections=0;
   let queryCacheDiagnostics={clients:0,caches:0,observerCandidates:0,clientTypes:[],observerTypes:[]};
   let queryPreviewReads=0,queryPreviewRejections={missing:0,representation:0,fields:0};
   let catalog = {states:[],actions:[]};
-  let mountChecks={plans:0,moduleMissing:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};
+  let mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};
   const name = fiber => { const type=fiber.type?.render??fiber.type?.type??fiber.type;return type?.displayName??type?.name; };
   const current = () => {
     for(const renderer of hook?.renderers?.values?.()??[]){if(renderer.rendererPackageName!=='react-native-renderer')continue;const fiber=renderer.getCurrentFiber?.();if(fiber)return {fiber,renderer};}
@@ -50,6 +51,15 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         if(!record&&portalEffects.size<50){record={id:`portal-${++sequence}`,fiber,preview,stack:new Error().stack};portalEffects.set(record.id,record);}
         if(record){record.fiber=fiber;portalOwners.set(fiber,record);}
       }
+      if(preview&&Array.isArray(deps)&&deps.some(value=>openingControl(value))){
+        const stack=(new Error().stack??'').slice(0,8000);
+        let records=uiEffectOwners.get(fiber)??uiEffectOwners.get(fiber.alternate);
+        if(!records){records=new Map();uiEffectOwners.set(fiber,records);}else uiEffectOwners.set(fiber,records);
+        const key=stack.split('\n').slice(1,3).join('\n');
+        let record=records.get(key);if(record&&!uiEffects.has(record.id))record=undefined;
+        if(!record&&uiEffects.size<100){record={id:`ui-effect-${++sequence}`,fiber,preview,stack};records.set(key,record);uiEffects.set(record.id,record);}
+        if(record){const body=Function.prototype.toString.call(callback);if(record.body!==body)record.approval=undefined;record.body=body;record.fiber=fiber;record.callback=callback;record.deps=deps;}
+      }
       return original(preview?()=>{}:callback,deps);
     };
   }
@@ -71,7 +81,18 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       const records=querySnapshots.get(query)??[];
       if(previewOwner(fiber)){
         queryPreviewReads++;
-        const matched=records.filter(record=>record.state===state&&record.select===select&&record.placeholder===placeholder&&record.enabled===enabled);
+        let selection=false;
+        let matched=records.filter(record=>record.state===state&&record.select===select&&record.placeholder===placeholder&&record.enabled===enabled);
+        // Inline selectors get a new function identity in a temporary render.
+        // The ordinary framework read has already applied the new selector.
+        // Reuse only a live settled result with that exact selected data object;
+        // all result fields and the other observer options still have to agree.
+        if(!matched.length&&typeof select==='function'){
+          const data=ownQueryValue(result,'data');
+          matched=records.filter(record=>record.state===state&&typeof record.select==='function'&&record.placeholder===placeholder&&record.enabled===enabled&&data!==undefined&&ownQueryValue(record.result,'data')===data&&currentSettledQueryResult(record,query,options));
+          matched=matched.filter((record,index)=>matched.findIndex(other=>other.result===record.result)===index);
+          selection=matched.length===1;
+        }
         if(matched.length===1){
           const record=matched[0],snapshot=Object.getOwnPropertyDescriptors(record.result),next=Object.getOwnPropertyDescriptors(result);
           const mountFetch=currentSettledQueryResult(record,query,options)&&ownQueryValue(options,'_optimisticResults')==='optimistic'&&ownQueryValue(result,'fetchStatus')==='fetching'&&ownQueryValue(result,'isFetching')===true&&ownQueryValue(result,'isRefetching')===true;
@@ -87,7 +108,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
             if(mountFetch&&['fetchStatus','isFetching','isRefetching'].includes(key))return true;
             const a=snapshot[key],b=next[key];return a&&b&&'value'in a&&'value'in b&&a.value===b.value;
           });
-          if(same){reusedQueryResults++;return record.result;}
+          if(same){reusedQueryResults++;if(selection)reusedQuerySelections++;return record.result;}
           queryPreviewRejections.fields++;
         }else queryPreviewRejections[records.length?'representation':'missing']++;
         return result;
@@ -193,7 +214,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   function unpatchQueryResults(){
     for(const patch of queryPatches){patch.state.active=false;if(Object.getOwnPropertyDescriptor(patch.prototype,'getOptimisticResult')?.value===patch.wrapped)Object.defineProperty(patch.prototype,'getOptimisticResult',patch.descriptor);}
-    queryPatches.length=0;querySnapshots.clear();reusedQueryResults=0;queryPreviewReads=0;queryPreviewRejections={missing:0,representation:0,fields:0};queryCacheDiagnostics={clients:0,caches:0,observerCandidates:0,clientTypes:[],observerTypes:[]};
+    queryPatches.length=0;querySnapshots.clear();reusedQueryResults=reusedQuerySelections=0;queryPreviewReads=0;queryPreviewRejections={missing:0,representation:0,fields:0};queryCacheDiagnostics={clients:0,caches:0,observerCandidates:0,clientTypes:[],observerTypes:[]};
   }
   function patchHooks() {
     if(patches.length)return true;
@@ -533,6 +554,50 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     clearTimeout(record.seedTimer);
     record.seedTimer=later(()=>{if(!projected.includes(record))return;if(!record.seed.applied)record.failed=true;if(!collecting.size&&!projected.some(p=>p.seed&&!p.seed.applied&&!p.failed))unpatch();},1000);
   }
+  function openingControl(value,method){
+    if(!value||typeof value!=='object')return false;
+    const data=key=>{const descriptor=Object.getOwnPropertyDescriptor(value,key);return descriptor&&'value'in descriptor?descriptor.value:undefined;};
+    const pairs=[['open',['close','dismiss','hide']],['present',['dismiss','close']],['show',['hide','close']],['expand',['close','collapse']]];
+    return pairs.some(([key,closers])=>(!method||method===key)&&typeof data(key)==='function'&&data(key).length===0&&closers.some(close=>typeof data(close)==='function'));
+  }
+  const sameEffectDeps=(a,b)=>Array.isArray(a)&&a.length===b.length&&a.every((value,index)=>Object.is(value,b[index]));
+  function releaseUiEffects(preview){
+    for(const [id,record]of uiEffects)if(!preview||record.preview===preview){
+      if(record.cleanup){const cleanup=record.cleanup;record.cleanup=undefined;cleanup();}
+      record.callback=record.deps=record.executedDeps=undefined;uiEffects.delete(id);
+    }
+  }
+  function uiEffectBindings(focus){
+    const tree=index(),scope=roots(focus,tree),result=[];
+    for(const record of uiEffects.values()){
+      const fiber=tree.current.get(record.fiber);
+      if(!fiber||!projected.includes(record.preview)||record.preview.failed||!scope.some(root=>tree.inside(fiber,root))||sameEffectDeps(record.executedDeps,record.deps))continue;
+      record.fiber=fiber;result.push({id:record.id,owner:name(fiber),kind:'ui-effect',stack:record.approval?'':record.stack,approval:record.approval});
+    }
+    return result;
+  }
+  function previewEffects(matches,focus){
+    const available=new Set(uiEffectBindings(focus).map(binding=>binding.id));let opened=0;
+    for(const match of matches){
+      if(!available.has(match.binding))continue;
+      const record=uiEffects.get(match.binding),parsed=/^ui-effect:(\d+):(open|present|show|expand)$/.exec(match.site??'');
+      if(!parsed||!openingControl(record.deps[Number(parsed[1])],parsed[2])||record.deps.some((value,index)=>index!==Number(parsed[1])&&value!==null&&value!==undefined&&!['string','number','boolean'].includes(typeof value)))continue;
+      record.approval=match.site;
+      try{
+        if(record.cleanup){const cleanup=record.cleanup;record.cleanup=undefined;cleanup();}
+        record.executedDeps=record.deps.slice();
+        const value=record.deps[Number(parsed[1])];
+        if(!undo.some(entry=>entry.control===value)){
+          const close=['close','dismiss','hide','collapse'].find(key=>typeof Object.getOwnPropertyDescriptor(value,key)?.value==='function');
+          const target=controllerFocus(record.fiber,value);armNative(target);
+          undo.push({control:value,close,focus:target,nativeFocus:target,uiEffect:record,views:record.preview.views?.slice()});
+        }
+        const cleanup=record.callback();if(typeof cleanup==='function')record.cleanup=cleanup;
+        opened++;openedUiEffects++;
+      }catch{record.preview.failed=true;return {error:'The temporary UI opening effect failed.'};}
+    }
+    return {effects:opened};
+  }
   function portalBindings(focus){
     const tree=index(),scope=roots(focus,tree),result=[];
     for(const record of portalEffects.values()){
@@ -649,14 +714,15 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   function mountedExport(action,tree) {
     mountChecks.plans++;
     if(!tree.modules){
-      tree.modules=new Map();
+      tree.modules=new Map();tree.registeredModules=new Map();
       for(const module of globalThis.__r?.getModules?.()?.values?.()??[]){
-        if(!module.isInitialized||typeof module.verboseName!=='string')continue;
-        tree.modules.set(modulePath(module.verboseName),module.publicModule?.exports);
+        if(typeof module.verboseName!=='string')continue;
+        const path=modulePath(module.verboseName);tree.registeredModules.set(path,module);
+        if(module.isInitialized)tree.modules.set(path,module.publicModule?.exports);
       }
     }
     const exports=sourceModule(tree.modules,action.effect.file);
-    if(!exports||(typeof exports!=='object'&&typeof exports!=='function')){mountChecks.moduleMissing++;return;}
+    if(!exports||(typeof exports!=='object'&&typeof exports!=='function')){mountChecks.moduleMissing++;const registered=sourceModule(tree.registeredModules,action.effect.file);if(registered&&!registered.isInitialized)mountChecks.moduleCold++;else mountChecks.moduleUnknown++;return;}
     const descriptor=Object.getOwnPropertyDescriptor(exports,action.effect.export);
     const type=descriptor&&'value'in descriptor?descriptor.value:action.effect.export==='default'&&typeof exports==='function'?exports:undefined;
     if(!type||(typeof type!=='object'&&typeof type!=='function')){mountChecks.exportMissing++;return;}
@@ -743,7 +809,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   };
   let lastAvailable=0;
   const list = focus => {
-    mountChecks={plans:0,moduleMissing:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};
+    mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};
     const tree=index(true),scope=roots(focus,tree),seen=new Set();
     const result=catalog.actions.filter(action=>{
       const found=find(action,tree,focus,scope);if(!found)return false;
@@ -997,7 +1063,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return Array.isArray(children)&&children.some(child=>child?.props?.onDismiss===record.element.props.onDismiss);
   }
   function releaseProjection(record){
-    clearTimeout(record.seedTimer);
+    clearTimeout(record.seedTimer);releaseUiEffects(record);
     for(const [id,portal]of portalEffects)if(portal.preview===record)portalEffects.delete(id);
     record.portals.length=0;const position=projected.indexOf(record);if(position>=0)projected.splice(position,1);
     releasePreviewErrors();if(record.seed&&!projected.some(p=>p.seed&&!p.seed.applied&&!p.failed))unpatch();if(!projected.length)unpatchPreviewEffects();
@@ -1008,7 +1074,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       // must not discard the only way to restore the app on the next attempt.
       const entry=undo[undo.length-1];
       if(entry.projection){
-        const record=entry.projection;clearTimeout(record.seedTimer);
+        const record=entry.projection;clearTimeout(record.seedTimer);releaseUiEffects(record);
         // An app commit may remove the entire preview before its native callback.
         // The old Modal listener is gone. Keep the app's new children intact.
         if(!projectionAttached(record)){releaseProjection(record);undo.pop();continue;}
@@ -1050,6 +1116,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         }
         releaseProjection(record);
       }else if(entry.control){
+        // Cancel the approved opening timer before requesting dismissal. A late
+        // opening must not race the restoration of its temporary form.
+        if(entry.uiEffect?.cleanup){const cleanup=entry.uiEffect.cleanup;entry.uiEffect.cleanup=undefined;cleanup();}
         const tree=index(),connected=roots(entry.nativeFocus,tree);
         if(!connected.some(fiber=>tree.current.has(fiber))){undo.pop();continue;}
         if(!entry.closing){
@@ -1068,7 +1137,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80,resolve));
   }
-  function cleanup(){sourceRoot=undefined;mountChecks={plans:0,moduleMissing:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=undefined;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[]) {
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&tree.isVisible(fiber));
     const unique=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner)));
@@ -1084,6 +1153,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const connected=roots(currentFocus,tree);
     return {focus:currentFocus,visualFocus:connected.at(-1)??currentFocus,expectedReady:(!focus||!!currentFocus)&&(!expected||!!focusedComponent(expected,currentFocus,tree,connected)),motion:(viewport,geometry)=>motion(currentFocus,viewport,tree,connected,geometry)};
   }
-  const diagnostics=()=>({lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
-  return {collect,records,configure,list,open,portalBindings,previewPortals,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
+  const diagnostics=()=>({lastExactScheduled,lastFallbackScheduled,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  return {collect,records,configure,list,open,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

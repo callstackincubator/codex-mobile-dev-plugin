@@ -561,3 +561,11 @@ visibility predicate. A focus commit rebuilds the metadata before inspecting tha
 branch. Collection and readiness timings keep their existing boundaries and units.
 Mount availability counts are bounded local diagnostics only; they contain no
 source paths, component names, app data or telemetry fields.
+
+App Flow keeps the existing readiness, capture and restoration timings for
+source-bound UI opening effects. `app_flow.runtime` also measures
+`presentation-effects`, including the real opening callback and its render
+wait. Local diagnostics count approved UI openings, live query reuse with
+recreated selectors, and registered but unloaded form modules. These counts,
+source locations, callback bodies and app data do not enter telemetry. Timer
+cleanup runs when a preview closes or the inspector shuts down.

@@ -892,3 +892,23 @@ for (const install of [installPresentationRuntime, sharedLoopRuntime()]) {
     assert.equal('geometry' in settled,false,'Native host references never enter tool results');
   });
 }
+
+test('automatic UI openings keep sibling restoration aligned with actual checkpoints',async t=>{
+  const factory=()=>({
+    open(id:any){(globalThis as any).levels++;return {focus:id==='parent'?(globalThis as any).parentFocus:(globalThis as any).childFocus};},
+    previewEffects(matches:any,focus:any){(globalThis as any).lastEffectFocus=focus;if(matches.length)(globalThis as any).levels++;return {effects:matches.length};},
+    uiEffectBindings(){return []},portalBindings(){return []},
+    motion(){return {pending:false,signature:'[]'};},focused(){},cleanup(){},
+    rollback(level:any){(globalThis as any).levels=level;return Promise.resolve()},checkpoint(){return (globalThis as any).levels},
+  });
+  const app=runtime(t,false,undefined,factory);app.context.levels=0;
+  app.context.parentFocus=app.fiber;app.context.childFocus=app.native;
+  await app.invoke({type:'presentation-open',id:'parent'});
+  await app.invoke({type:'presentation-effects',matches:[{binding:'opening',site:'ui-effect:0:open'}]});
+  assert.equal((await app.invoke({type:'presentation-checkpoint'})).level,2);
+  await app.invoke({type:'presentation-open',id:'child'});
+  await app.invoke({type:'presentation-rollback',level:2});
+  await app.invoke({type:'presentation-effects',matches:[]});
+  assert.equal(app.context.lastEffectFocus,app.fiber,'Closing a child retains its parent after an implicit control checkpoint');
+  await app.invoke({type:'presentation-rollback',level:0});
+});
