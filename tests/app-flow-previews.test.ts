@@ -782,3 +782,55 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
     await app.runtime.rollback(0,false);assert.equal(app.real.step,'start');assert.deepEqual(app.counts,{dispatched:0,effects:0,initializers:0});
   });
 }
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+ test(`preview readiness checks its copy instead of an already visible original body (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+  const hook={onCommitFiberRoot(){}},app=runtimeFixture(t,false,install,{hook});
+  await configure(app);assert.equal(app.runtime.open('preview').error,undefined);
+  const copiedBody=app.clone.child;
+  app.owner.child={type:copiedBody.type,memoizedProps:{},return:app.owner};hook.onCommitFiberRoot();
+  assert.equal(app.runtime.probeFocus(app.owner,'Verify').expectedReady,true,'A visible original must not make the temporary body ambiguous');
+  assert.equal(app.runtime.focusFor('Verify',app.owner),copiedBody);
+  const other:any={type:copiedBody.type,memoizedProps:{},return:app.clone};copiedBody.sibling=other;hook.onCommitFiberRoot();
+  assert.equal(app.runtime.probeFocus(app.owner,'Verify').expectedReady,false,'Repeated bodies inside the copy remain ambiguous');
+  await app.runtime.rollback(0,false);assert.equal(app.real.step,'start');assert.deepEqual(app.counts,{dispatched:0,effects:0,initializers:0});
+ });
+ test(`a body left only in the original cannot prove a temporary preview is ready (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+  const hook={onCommitFiberRoot(){}},app=runtimeFixture(t,false,install,{hook});
+  await configure(app);assert.equal(app.runtime.open('preview').error,undefined);
+  app.owner.child={type:app.clone.child.type,memoizedProps:{},return:app.owner};app.clone.child=undefined;hook.onCommitFiberRoot();
+  assert.equal(app.runtime.probeFocus(app.owner,'Verify').expectedReady,false);
+  assert.equal(app.runtime.focusFor('Verify',app.owner),undefined);
+  await app.runtime.rollback(0,false);assert.equal(app.real.step,'start');
+ });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+ test(`child discovery uses the temporary form's state bindings (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+  const app=runtimeFixture(t,false,install);await configure(app);app.runtime.open('preview');
+  const renderer=app.hook.renderers.get(1);
+  renderer.scheduleUpdate=(fiber:any)=>{
+   const state=fiber.memoizedState.memoizedState;app.setCurrent(fiber);fiber.memoizedState=null;
+   app.react.useReducer(()=>{assert.fail('Never dispatch')},state);app.setCurrent(undefined);
+  };
+  const next={...app.action,id:'next',name:'Start',effect:{...app.action.effect,value:'done'}};
+  const page=await app.runtime.collect([app.site],[app.action,next]);
+  app.runtime.configure({states:[app.site],actions:[app.action,next]},page.bindings.filter(b=>b.kind==='useReducer').map(b=>({binding:b.id,site:'state'})),page.bindings.map(b=>b.id));
+  assert.deepEqual(app.runtime.list(app.owner).map(a=>a.id),['next'],'The original form must not make a copied state binding ambiguous');
+  assert.equal(app.real.step,'start');assert.equal(app.clone.memoizedState.memoizedState.step,'verify');
+  await app.runtime.rollback(0,false);assert.deepEqual(app.counts,{dispatched:0,effects:0,initializers:0});
+ });
+ test(`child discovery opens only a controller in the temporary form (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+  const hook={onCommitFiberRoot(){}},app=runtimeFixture(t,false,install,{hook});await configure(app);app.runtime.open('preview');
+  function SubSheet(){}let originalOpens=0,copiedOpens=0,copiedCloses=0;
+  const source={fileName:'App.tsx',lineNumber:8,columnNumber:1};
+  app.owner.child={type:SubSheet,memoizedProps:{control:{open(){originalOpens++},close(){}}},_debugSource:source,return:app.owner};
+  const copy:any={type:SubSheet,memoizedProps:{control:{open(){copiedOpens++},close(){copiedCloses++}}},_debugSource:source,return:app.clone};app.clone.child=copy;hook.onCommitFiberRoot();
+  const action:any={id:'child',file:'App.tsx',line:8,owner:'Wizard',component:'SubSheet',prop:'',name:'SubSheet',preview:true,effect:{kind:'control',component:'SubSheet',prop:'control',method:'auto',close:['close'],target:{file:'App.tsx',owner:'Wizard',line:8,source:{line:8,column:0,endLine:8,endColumn:40}}}};
+  const page=await app.runtime.collect([],[action]);
+  app.runtime.configure({states:[],actions:[action]},page.bindings.filter(b=>b.kind==='entry').map(b=>({binding:b.id,site:'child:target'})),page.bindings.map(b=>b.id));
+  assert.deepEqual(app.runtime.list(app.owner).map(a=>a.id),['child']);
+  assert.equal(app.runtime.open('child',app.owner).error,undefined);assert.equal(copiedOpens,1);assert.equal(originalOpens,0);
+  await app.runtime.rollback(0,false);assert.equal(copiedCloses,1);assert.equal(app.real.step,'start');
+ });
+}

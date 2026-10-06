@@ -735,7 +735,16 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(tree.all.some(fiber=>fiber.type===type||fiber.elementType===type||fiber.type===body)){mountChecks.alreadyMounted++;return;}
     mountChecks.available++;return type;
   }
-  const find = (action,tree=index(true),focus,scope=roots(focus,tree)) => {
+  function bodyRoots(focus,tree,connected) {
+    if(!focus)return connected??[];
+    const projection=[...projected].reverse().find(record=>record.focus===focus||record.focus===focus.alternate||record.child.props===(focus.pendingProps??focus.memoizedProps));
+    if(!projection)return connected??roots(focus,tree);
+    // Only the exact temporary body and its portals own preview actions.
+    // The original remains connected for native ownership and restoration.
+    const bodies=(tree.props.get(projection.child.props)??[]).filter(fiber=>fiber.type===projection.child.type||fiber.elementType===projection.child.type);
+    return [...new Set(bodies.flatMap(body=>roots(body,tree)))];
+  }
+  const find = (action,tree=index(true),focus,scope=bodyRoots(focus,tree)) => {
     const inScope=fiber=>!focus||scope.some(root=>tree.inside(fiber,root));
     if(action.preview&&action.effect.kind==='mount'){
       // Bootstrap owners at a route boundary, never inside an unrelated sheet.
@@ -812,7 +821,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   let lastAvailable=0;
   const list = focus => {
     mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};
-    const tree=index(true),scope=roots(focus,tree),seen=new Set();
+    const tree=index(true),scope=bodyRoots(focus,tree),seen=new Set();
     const result=catalog.actions.filter(action=>{
       const found=find(action,tree,focus,scope);if(!found)return false;
       const key=found.target?.value??JSON.stringify(action.effect.kind==='mount'?['mount',action.effect.file,action.effect.export]:[action.effect.site,action.effect.path,action.effect.value]);
@@ -1156,6 +1165,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   function cleanup(){releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=undefined;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected)clearTimeout(record.seedTimer);projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[]) {
+    connected=bodyRoots(scope,tree,connected);
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&tree.isVisible(fiber));
     const unique=candidates.filter(owner=>!candidates.some(child=>child!==owner&&tree.inside(child,owner)));
     return unique.length===1?unique[0]:undefined;

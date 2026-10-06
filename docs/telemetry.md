@@ -586,3 +586,9 @@ New dispatch hosts connected to an opening control still wait for their real
 lifecycle events. Existing readiness, native motion and restoration timings
 cover these waits with unchanged names, units and boundaries. No app callback
 names or data enter telemetry.
+
+Since 0.1.174, preview readiness and child discovery use the exact temporary
+component and its connected portal bodies. The original component remains part
+of native ownership and restoration. Existing discovery, readiness, capture and
+restoration timings retain their names, units and boundaries; this change sends
+no new app data.
