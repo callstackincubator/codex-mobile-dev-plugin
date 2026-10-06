@@ -758,3 +758,27 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
     assert.deepEqual(app.runtime.uiEffectBindings(app.clone),[]);await app.runtime.rollback(0,false);app.runtime.cleanup();
   });
 }
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`a projected owner follows its copy's portal body and native events (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    const hook={onCommitFiberRoot(){}},app=runtimeFixture(t,false,install,{hook});
+    await configure(app);assert.equal(app.runtime.open('preview').error,undefined);
+    function Portal(){}function SheetBody(){}
+    const childProps={record:app.real.record},events:string[]=[];
+    const portal:any={type:Portal,memoizedProps:{children:{type:SheetBody,props:childProps}},return:app.clone};
+    app.clone.child=portal;
+    const body:any={type:SheetBody,memoizedProps:childProps,return:app.host};
+    const canonical={currentProps:{onStateChange(event:any){events.push(event.nativeEvent.state)}},publicInstance:{getBoundingClientRect:()=>({x:0,y:0,width:100,height:200})}};
+    body.child={tag:5,type:'NativeSheet',memoizedProps:canonical.currentProps,stateNode:{canonical},return:body};
+    app.clone.sibling=body;
+    const unrelated:any={type:SheetBody,memoizedProps:{...childProps},return:app.host};body.sibling=unrelated;
+    hook.onCommitFiberRoot();
+    assert.equal(app.runtime.visualFocus(app.owner),body,'The original owner must follow the portal in its separate temporary copy');
+    const focus=app.runtime.probeFocus(app.owner,'SheetBody');assert.equal(focus.expectedReady,true);assert.equal(focus.visualFocus,body);
+    canonical.currentProps.onStateChange({nativeEvent:{state:'opening'}});
+    assert.equal(app.runtime.motion(app.owner).pending,true,'Actual native motion still blocks a screenshot');
+    canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});
+    assert.equal(app.runtime.motion(app.owner).pending,false);assert.deepEqual(events,['opening','open']);
+    await app.runtime.rollback(0,false);assert.equal(app.real.step,'start');assert.deepEqual(app.counts,{dispatched:0,effects:0,initializers:0});
+  });
+}

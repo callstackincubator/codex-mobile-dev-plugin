@@ -432,7 +432,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(!focus)return [];
     const props=(tree??committedStructure()).props;
     const result=[focus];for(const projection of projected)if(projection.focus===focus||projection.focus===focus.alternate){for(const target of props.get(projection.child.props)??[])result.push(target);}
-    const seen=new Set(),queue=[focus];
+    // A temporary owner can render its body through a null-rendering portal.
+    // Follow its copy as well as the original using exact element identity.
+    const seen=new Set(),queue=result.slice();
     for(let offset=0;offset<queue.length&&offset<12;offset++){
       const source=queue[offset];
       fibers(fiber=>{

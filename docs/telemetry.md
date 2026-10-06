@@ -575,3 +575,8 @@ reply. Existing presentation, symbolication, readiness and restoration timing
 windows cover this work with the same names, units and boundaries. Native
 dismissal diagnostics list at most eight pending hosts or adapters. These names
 and lifecycle counts stay local and never enter telemetry.
+
+Since 0.1.172, related-view traversal also follows portals inside a temporary
+React copy. The existing presentation, readiness, native motion and restoration
+timings measure this path with the same names, units and boundaries. No new
+per-frame events or app data enter telemetry.
