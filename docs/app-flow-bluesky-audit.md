@@ -1,31 +1,38 @@
 # Bluesky source inventory and extraction comparison
 
-The reviewed list contains **260 distinct views**. Plugin 0.1.164 has a distinct source match for **all 260**. There are no missing, container-only or ambiguous reference rows. The comparison has a strict mode that fails if any reviewed view loses its match.
+The reviewed list contains **260 distinct views**. Plugin 0.1.165 has a distinct source match for **all 260**. There are no missing, container-only or ambiguous reference rows. The comparison has a strict mode that fails if any reviewed view loses its match.
 
 Of the 260 matches, **164 have a route or UI action**, **81 have UI preview plans**, and **15 have source evidence only**. That gives 245 views with a planned capture path. Plans still need live source bindings, real data and settled content. They do not establish that 245 screenshots can be taken in the current session.
 
-This audit uses the clean iOS checkout at `2d8e349afd92d2be3ff31f298bc27ab0d82c61cc`. The 0.1.164 scan retains the same 2,371-file inventory. The comparison does not change or execute target app code.
+This audit uses the clean iOS checkout at `2d8e349afd92d2be3ff31f298bc27ab0d82c61cc`. The 0.1.165 scan retains the same 2,371-file inventory. The comparison does not change or execute target app code.
 
-The latest live attempt used 0.1.163, run
-`90d853d2-0e9e-41c5-8499-b127b7df8fd8`. It saved automatic PNGs for
-**79 of 260 reviewed views**, 65 live views and 14 UI previews. The map has
-91 raw screenshots. It stopped after 605.9 seconds with repeated runtime
-readiness and restoration failures. This was an incomplete attempt, not a
-full coverage result. The first sampling window recorded app physical footprint
-rising from 0.83 to 2.61 GB, with mean CPU of 70.2 percent. Simulator Display FPS
-was unavailable. Those samples do not prove a memory leak or its cause.
+The latest stopped live attempt used 0.1.164, run
+`575d6ea8-9cdb-43a1-9b1b-3ea4448bd8dd`. It saved automatic PNGs for
+**61 of 260 reviewed views**, 52 live views and nine UI previews. The map has
+65 raw screenshots. It stopped after 299.9 seconds with two presentation-open
+timeouts, one readiness timeout and one heartbeat timeout. Many other previews
+remained loading or waited for native completion. This is an incomplete attempt,
+not a full coverage result. The five-minute sampling window recorded app physical
+footprint rising from 0.83 to 2.70 GB, with mean CPU of 70.0 percent. Simulator
+Display FPS was unavailable. Those samples do not prove a memory leak or its cause.
+The previous 0.1.163 attempt captured 79 reviewed views in 605.9 seconds; the
+different stopping points do not establish a speed gain.
 
 Version 0.1.164 lets temporary forms reuse an exact settled TanStack Query
 result already observed in the live app. The cache entry, current cache state,
 selection, placeholder, enabled condition and other data/status fields must
 still match. It adds no fetch, subscription or cache write. The app retains its
-own query subscriptions, and cleanup restores the framework method. A test
-against the app's actual QueryObserver implementation fails on the old runtime
-and passes with this fix in normal and shared loop execution. All 322 App Flow,
-telemetry and release behavior tests pass. Live capture coverage and speed for
-0.1.164 remain unverified. Required preview props, reducer data payloads and
-cold-query inputs still need broader real-data resolution; the AI-facing
-resolver currently accepts navigator params only.
+own query subscriptions, and cleanup restores the framework method. The live
+0.1.164 run reported zero observed query results and zero reuse. Its installed
+TanStack CommonJS package exports QueryObserver through a getter that 0.1.164
+skips. Version 0.1.165 reads that exact initialized library export and adds a local
+patch-count diagnostic. Tests against the real ES module and CommonJS packages
+pass in normal and shared loop execution; the CommonJS cases fail on 0.1.164.
+All 324 focused App Flow, telemetry and release tests pass, along with four checks
+against the real query packages.
+Live capture coverage and speed for 0.1.165 remain unverified. Required preview
+props, reducer data payloads and cold-query inputs still need broader real-data
+resolution; the AI-facing resolver currently accepts navigator params only.
 
 The saved 0.1.136 run `4e553412-6f1f-49a1-a036-a154a48b2088` has verified
 automatic screenshots for **2 of 260 views**, Home and Search. It has no captured

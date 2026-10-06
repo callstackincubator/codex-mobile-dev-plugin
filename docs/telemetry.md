@@ -513,3 +513,9 @@ capture and restoration timing windows include this work with the same names
 and units. Snapshot count and reuse count are local diagnostics only. Query
 keys, values, methods, IDs and source paths remain inside the app runtime and
 never enter telemetry.
+
+Since 0.1.165, query tracking also reads the initialized TanStack CommonJS
+observer export. The existing setup and command timing boundaries include this
+read. Observer patch count joins snapshot and reuse counts in local diagnostics
+only; no module names, exports or query data enter telemetry. Cleanup retains the
+same method ownership checks and releases the observer patches.

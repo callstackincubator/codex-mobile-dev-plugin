@@ -550,3 +550,28 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
     app.setCurrent(undefined);QueryObserver.prototype.getOptimisticResult=original;
   });
 }
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+  test(`query tracking reads initialized CommonJS framework exports only (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+    let frameworkReads=0,unrelatedReads=0;
+    const query={queryHash:'record',state:{data:{id:'observed'}}};
+    const result={data:query.state.data,isPending:false,isFetching:false,isError:false,isPlaceholderData:false};
+    class QueryObserver {getCurrentQuery(){return query}getOptimisticResult(){return result}}
+    const original=QueryObserver.prototype.getOptimisticResult;
+    const framework=Object.defineProperty({},'QueryObserver',{get(){frameworkReads++;return QueryObserver}});
+    const unrelated=()=>Object.defineProperty({},'QueryObserver',{get(){unrelatedReads++;throw Error('Unrelated export must not execute')}});
+    const app=runtimeFixture(t,false,install,{modules:[
+      [3,{verboseName:'node_modules/@tanstack/query-core/build/modern/queryObserver.cjs',isInitialized:true,publicModule:{exports:framework}}],
+      [4,{verboseName:'src/queryObserver.cjs',isInitialized:true,publicModule:{exports:unrelated()}}],
+      [5,{verboseName:'node_modules/@tanstack/query-core/build/modern/queryObserver.js',isInitialized:true,publicModule:{exports:unrelated()}}],
+      [6,{verboseName:'node_modules/@tanstack/query-core/build/legacy/queryObserver.cjs',isInitialized:false,publicModule:{exports:unrelated()}}],
+    ]});
+    await configure(app);assert.equal(frameworkReads,1);assert.equal(unrelatedReads,0);
+    assert.equal(app.runtime.diagnostics().queryObservers,1);
+    app.setCurrent(app.owner);assert.equal(new QueryObserver().getOptimisticResult(),result);app.setCurrent(undefined);
+    // No query hash in these options, so no ready snapshot is claimed.
+    assert.equal(app.runtime.diagnostics().querySnapshots,0);
+    app.runtime.cleanup();assert.equal(QueryObserver.prototype.getOptimisticResult,original);
+    assert.equal(app.runtime.diagnostics().queryObservers,0);
+  });
+}

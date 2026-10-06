@@ -3,9 +3,9 @@ import ts from 'typescript';
 import {installPresentationRuntime} from '../src/server/app-flow/presentations-runtime.js';
 
 /** Model older Hermes loop capture semantics on serialized injection code. */
-export function sharedLoopRuntime():typeof installPresentationRuntime {
+export function sharedLoopRuntime(runtime=installPresentationRuntime):typeof installPresentationRuntime {
   // Function parameters keep their scopes; block bindings share function cells.
-  const code=ts.transpileModule(`const install=${installPresentationRuntime.toString()};install;`,{
+  const code=ts.transpileModule(`const install=${runtime.toString()};install;`,{
     compilerOptions:{target:ts.ScriptTarget.ESNext},transformers:{before:[context=>root=>{
       const visit=(node:ts.Node):ts.Node=>ts.isVariableDeclarationList(node)
         ?context.factory.createVariableDeclarationList(node.declarations.map(declaration=>ts.visitEachChild(declaration,visit,context)),ts.NodeFlags.None)
