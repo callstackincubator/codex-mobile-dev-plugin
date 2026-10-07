@@ -11,6 +11,7 @@ const manifest = JSON.parse(manifestText);
 const marketplace = resolve("release/marketplace");
 const plugin = `${marketplace}/plugins/${manifest.name}`;
 await access("dist/server.mjs");
+await access("dist/ios-mirror-service.mjs");
 await access("dist/app.html");
 await access("dist/baguette/Baguette");
 await access("dist/baguette/Baguette_Baguette.bundle");

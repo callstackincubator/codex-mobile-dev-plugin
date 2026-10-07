@@ -68,6 +68,7 @@ function fixture(t: TestContext) {
   let physicalDevices: PhysicalIosDevice[] = [];
   let physicalError = "";
   let physicalCaptureError = "";
+  let physicalInputBusy = false;
   let simulatorError = "";
   let delayedDiscovery: Promise<void> | undefined;
   let androidDevices: SimulatorDevice[] | undefined;
@@ -142,6 +143,10 @@ function fixture(t: TestContext) {
       if (failedInputPlatform && call.name === inputTool) {
         failedInputPlatform = undefined;
         return { isError: true, content: [{ type: "text", text: "Input disconnected" }], _meta: { streamDisconnected: true } };
+      }
+      if (call.name === "mobile_ios_mirror_input" && physicalInputBusy) {
+        physicalInputBusy = false;
+        return { isError: true, content: [{ type: "text", text: "Another panel is currently touching this iPhone." }], _meta: { inputBusy: true, streamDisconnected: false } };
       }
       if (call.name === "mobile_ios_mirror_session") {
         if (physicalCaptureError) return { isError: true, content: [{ type: "text", text: physicalCaptureError }] };
@@ -225,6 +230,7 @@ function fixture(t: TestContext) {
     failAndroidDecode() { failAndroidDecode = true; },
     missTiming() { observeFrames = false; }, invalidFrame() { invalidFrame = true; },
     failPhysicalCapture(message: string) { physicalCaptureError = message; },
+    busyPhysicalInput() { physicalInputBusy = true; },
     failScreenshotAttachment(message: string) { screenshotAttachmentError = message; },
   };
 }
@@ -458,6 +464,31 @@ test("physical iOS devices mirror above simulators and route touches to their ow
   for (const button of f.ios.root.buttons) assert.equal(button.dataset.unsupported, "false");
   assert.equal(f.ios.root.buttons[0].title, "Home");
   assert.equal(f.ios.root.buttons[1].title, "App switcher");
+});
+
+test("another panel's held touch does not reconnect the physical video stream", async t => {
+  const f = fixture(t);
+  f.setPhysicalDevices([physicalPhone]);
+  await f.ios.panel.load();
+  const pickerElement = f.ios.element("devices");
+  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  picker.value = physicalPhone.udid;
+  dispatch(pickerElement, "change");
+  await waitFor(() => f.ios.element("screenshot").disabled === false);
+  const screen = f.ios.element("screen");
+  f.busyPhysicalInput();
+  dispatch(screen, "pointerdown", { pointerId: 1, button: 0, clientX: 75, clientY: 150 });
+  await waitFor(() => f.ios.element("notice-message").textContent.includes("Another panel"));
+  assert.equal(screen.captures.size, 0);
+  assert.equal(f.ios.element("screenshot").disabled, false);
+  const mirrors = f.calls.filter(call => call.name === "mobile_ios_mirror_session");
+  assert.equal(mirrors.length, 1);
+  dispatch(screen, "pointerdown", { pointerId: 2, button: 0, clientX: 75, clientY: 150 });
+  dispatch(screen, "pointerup", { pointerId: 2 });
+  await waitFor(() => {
+    const inputs = f.calls.filter(call => call.name === "mobile_ios_mirror_input");
+    return inputs.length >= 2;
+  });
 });
 
 test("physical iOS capture errors stay visible and clear when mirroring recovers", async t => {

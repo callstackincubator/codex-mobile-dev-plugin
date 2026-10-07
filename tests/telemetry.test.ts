@@ -10,7 +10,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, TELEMETRY_META_KEY } from "../src/shared/telemetry.ts";
-import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordPluginUpdate } from "../src/server/telemetry.ts";
+import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordPluginUpdate, recordIosMirrorSharing } from "../src/server/telemetry.ts";
 import { ExpectedOperationError, FailureEpisodes } from "../src/shared/error-reporting.ts";
 import { parseResourceInput } from "../src/server/resource-input.ts";
 import { openRequestSession } from "../src/server/request-session.ts";
@@ -139,6 +139,30 @@ test("plugin update metrics measure plugin work without device context and honor
   await Sentry.flush();
   const afterOptOut = JSON.stringify(envelopes);
   assert.equal(afterOptOut, sent);
+});
+
+test("shared iOS capture metrics retain surface attribution and honor opt-out", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  t.after(async () => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+    await Sentry.close();
+  });
+  recordIosMirrorSharing(1, 2, 9);
+  await Sentry.flush();
+  const sent = JSON.stringify(envelopes);
+  for (const fragment of ["ios.mirror.shared.captures", "ios.mirror.shared.subscribers", "ios.mirror.shared.queue_dropped", '"surface":{"value":"simulator"', '"device_platform":{"value":"ios"', '"device_kind":{"value":"physical"', '"component":{"value":"ios-mirror-service"']) contains(sent, fragment);
+  for (const fragment of ["udid", "sessionId", "user.id", "telemetry_session"]) contains(sent, fragment, false);
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  recordIosMirrorSharing(1, 3, 10);
+  await Sentry.flush();
+  assert.equal(JSON.stringify(envelopes), sent);
 });
 
 test("Agent Device adapter continues traces and reports failures without native tool payloads", async t => {

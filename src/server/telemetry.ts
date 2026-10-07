@@ -11,6 +11,14 @@ import { getDiscoveryCommandDiagnostic } from "../shared/device-apps-command-dia
 import { androidStartupDiagnosticTags } from "../shared/android-startup-diagnostics.ts";
 import type { AndroidStartupSummary, AndroidStartupContext, AndroidStartupFailure, AndroidDeviceState } from "../shared/android-startup-diagnostics.ts";
 
+export function recordIosMirrorSharing(captures: number, subscribers: number, dropped: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "ios-mirror-service", surface: "simulator", device_platform: "ios", device_kind: "physical" };
+  Sentry.metrics.gauge("ios.mirror.shared.captures", captures, { attributes });
+  Sentry.metrics.gauge("ios.mirror.shared.subscribers", subscribers, { attributes });
+  if (dropped > 0) Sentry.metrics.count("ios.mirror.shared.queue_dropped", dropped, { attributes });
+}
+
 export function recordPluginUpdate(operation: "check" | "install", outcome: "disabled" | "unavailable" | "current" | "available" | "updated" | "failed", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", operation, outcome };

@@ -18,8 +18,8 @@ test("physical mirroring tools stream compressed frames over an app-only MCP ses
   const touches: unknown[] = [];
   const sessions = new IosMirrorSessions(async udid => {
     assert.equal(udid, phone.udid);
-    return { async read() { return { generation: 1, dropped: 0, frames: [{ data: Buffer.from([1, 2, 3]), timestamp: 0, key: true }] }; },
-      async touch(samples, generation) { touches.push({ samples, generation }); }, reset() {}, async close() { closed++; } };
+    return { async read() { return { generation: 1, sequence: 1, dropped: 0, frames: [{ sequence: 1, data: "AQID", timestamp: 0, key: true }] }; },
+      async touch(samples, generation) { touches.push({ samples, generation }); }, async reset() {}, async close() { closed++; } };
   });
   const server = new McpServer({ name: "mirror-test", version: "1" });
   const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone], async device => {
@@ -71,8 +71,8 @@ test("physical iOS screenshots copy and return the same displayed PNG, including
   const copied: Buffer[] = [];
   let clipboardFails = false;
   const sessions = new IosMirrorSessions(async () => ({
-    async read() { return { generation: 1, dropped: 0, frames: [] }; },
-    async touch() {}, reset() {}, async close() {},
+    async read() { return { generation: 1, sequence: 1, dropped: 0, frames: [] }; },
+    async touch() {}, async reset() {}, async close() {},
   }));
   const server = new McpServer({ name: "screenshot-test", version: "1" });
   const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone], async () => bezel, async bytes => {
@@ -109,8 +109,8 @@ test("physical iOS screenshots copy and return the same displayed PNG, including
 test("physical iOS screenshots reject invalid and oversized PNGs before copying", async t => {
   let copies = 0;
   const sessions = new IosMirrorSessions(async () => ({
-    async read() { return { generation: 1, dropped: 0, frames: [] }; },
-    async touch() {}, reset() {}, async close() {},
+    async read() { return { generation: 1, sequence: 1, dropped: 0, frames: [] }; },
+    async touch() {}, async reset() {}, async close() {},
   }));
   const server = new McpServer({ name: "screenshot-test", version: "1" });
   const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone], async () => bezel, async () => { copies++; });
@@ -135,7 +135,7 @@ test("a device's display rejection reaches the panel and leaves capture availabl
   let blocked = true;
   const sessions = new IosMirrorSessions(async () => {
     if (blocked) throw new Error(message);
-    return { async read() { return { generation: 0, dropped: 0, frames: [] }; }, async touch() {}, reset() {}, async close() {} };
+    return { async read() { return { generation: 0, sequence: 1, dropped: 0, frames: [] }; }, async touch() {}, async reset() {}, async close() {} };
   });
   const server = new McpServer({ name: "mirror-test", version: "1" });
   const close = registerIosMirrorTools(server, "ui://test/app", sessions, async () => [phone], async () => bezel);

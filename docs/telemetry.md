@@ -2,6 +2,10 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Since 0.1.134, physical iOS capture runs in the shared `ios-mirror-service` Node process. Existing native packet-processing, input acknowledgement, connection, resource, and crash instrumentation stays attached to the active capture. Native resource measurements now overlap that service's Node process rather than each chat's MCP process. The service uses centralized server initialization, its packaged development/release environment, and server-owned anonymous installation/process-session identity. UI decode/render timings and sampled MCP operations retain their existing boundaries. Subscriber keyframe requests no longer invalidate the shared native queue or release another panel’s touch. The native packet-processing and recovery measurements remain on this active path; the rebuilt addon retains matching debug symbols.
+
+`ios.mirror.shared.captures` and `ios.mirror.shared.subscribers` report active counts. `ios.mirror.shared.queue_dropped` counts frames discarded by subscriber queue overflow. Counts aggregate in 30-second windows and flush on service shutdown, using the simulator surface and physical iOS context. No per-frame events, device identifiers, subscription IDs, payloads, or paths are sent. The service clears its collection timer on shutdown and honors telemetry opt-out.
+
 Since 0.1.132, `plugin.update.operations` counts release checks and installations
 by fixed operation and outcome, and `plugin.update.duration` measures their
 duration in milliseconds. Cache hits emit no extra measurement. These measure

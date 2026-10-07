@@ -141,6 +141,14 @@ export function createSimulatorPanel(
           ? { sessionId: session.id, messages, generation: session.generation }
           : { sessionId: session.id, messages };
         await call(tool, parameters, { timeout: 5000 });
+      } catch (error) {
+        if (error instanceof Error && "inputBusy" in error && error.inputBusy === true) {
+          session.input?.clear();
+          cancelPointer();
+          notice(error.message);
+          return;
+        }
+        throw error;
       } finally {
         const elapsed = performance.now() - started;
         session.reader?.inputTiming(elapsed);
@@ -204,7 +212,8 @@ export function createSimulatorPanel(
     if (result.isError) {
       const message = result.content.filter(item => item.type === "text").map(item => item.text).join("\n");
       const error = result._meta?.retryable === false ? new StopReconnectError(message) : new Error(message);
-      throw Object.assign(error, { inputBlocked: result._meta?.inputBlocked === true, streamDisconnected: result._meta?.streamDisconnected === true });
+      const failure = Object.assign(error, { inputBlocked: result._meta?.inputBlocked === true, streamDisconnected: result._meta?.streamDisconnected === true, inputBusy: result._meta?.inputBusy === true });
+      throw failure;
     }
     return result;
   }
