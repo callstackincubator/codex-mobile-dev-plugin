@@ -121,6 +121,27 @@ test('stopping cancels a pending source binding and restores before another batc
   assert.equal(events.some(event=>event.type==='frame'),false);
 });
 
+test('source acknowledgement returns before the next app render can block the debugger reply',async()=>{
+  const events:any[]=[];let queue:any,continued=false;
+  queue=createCaptureQueue({async open(){await queue.request({operation:'open',actionId:'sheet'});continued=true;return {ready:false,status:'needs-data'}},async restore(){}},(event:any)=>events.push(event));
+  queue.start('batch',[{id:'sheet'}]);await delay(0);
+  const request=events.find(event=>event.type==='source');
+  assert.equal(queue.source('batch',request.ticket,{}).accepted,true);
+  assert.equal(queue.source('batch',request.ticket,{}).accepted,false,'A deferred reply still consumes its ticket exactly once');
+  await Promise.resolve();await Promise.resolve();
+  assert.equal(continued,false,'The CDP microtask checkpoint must not start the expensive render');
+  await delay(0);assert.equal(continued,true);await queue.stop();
+});
+
+test('Stop cancels an acknowledged source reply before its deferred opening',async()=>{
+  const events:any[]=[];let queue:any,continued=false,restores=0;
+  queue=createCaptureQueue({async open(){await queue.request({operation:'open',actionId:'sheet'});continued=true;return {ready:false}},async restore(){restores++}},(event:any)=>events.push(event));
+  queue.start('batch',[{id:'sheet'}]);await delay(0);
+  queue.source('batch',events.find(event=>event.type==='source').ticket,{});
+  await queue.stop();await delay(0);
+  assert.equal(continued,false);assert.equal(restores,1);assert.equal(queue.active,false);
+});
+
 test('Stop rejects a delayed planner reply without opening the next discovered view',async()=>{
   const events:any[]=[],opened:string[]=[];let restores=0;
   const queue=createCaptureQueue({async open(job:any){opened.push(job.id);return {ready:true}},async ready(){return {ready:true,key:'parent'}},async verify(){return {ready:true,key:'parent'}},same:()=>true,async restore(){restores++}},(event:any)=>events.push(event));

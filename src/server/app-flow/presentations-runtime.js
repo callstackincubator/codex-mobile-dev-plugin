@@ -612,8 +612,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
   function roots(focus,tree) {
     if(!focus)return [];
     if(tree?.scopes?.has(focus))return tree.scopes.get(focus);
-    const props=(tree??committedStructure()).props;
-    const result=[focus];for(const projection of projected)if(projection.focus===focus||projection.focus===focus.alternate){for(const target of props.get(projection.child.props)??[])result.push(target);}
+    const structure=tree??committedStructure(),props=structure.props;
+    // A retained controller can outlive many commits. Follow its current
+    // alternate before reading portal children; the old branch can still hold
+    // an empty, pre-opening element and hide the native dismissal listener.
+    const current=structure.current.get(focus)??focus;
+    const result=[current];for(const projection of projected)if(projection.focus===focus||projection.focus===focus.alternate){for(const target of props.get(projection.child.props)??[])result.push(target);}
     // A temporary owner can render its body through a null-rendering portal.
     // Follow its copy as well as the original using exact element identity.
     const seen=new Set(),queue=result.slice();
@@ -870,9 +874,14 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     structureCache=undefined;record.renderer.overrideProps(root,[],{...props,children:restored});
   }
   function project(focus, preview, mountedContext) {
-    focus=index().current.get(focus)??focus;
+    const tree=index();focus=tree.current.get(focus)??focus;
     if(!focus||!preview&&(!undo.length||projected.some(p=>p.focus===focus||p.focus===focus.alternate)))return {error:'This view cannot be projected.'};
-    const owner=previewOwner(focus),tree=owner&&index();
+    // A provider's existing children can contain the live app navigator. Copying
+    // that provider would mount a second app, run framework subscriptions and
+    // leave errors in later captures. Keep the branch unresolved until a source
+    // recipe isolates its body; never strip arbitrary children to make it work.
+    if(copiesLiveNavigation(focus,preview?.props??focus.memoizedProps,tree))return {status:'needs-data',error:'This preview would duplicate live navigation. Its source recipe must isolate the presentation from the existing app children.'};
+    const owner=previewOwner(focus);
     const ownerBodies=owner?(tree.props.get(owner.child.props)??[]).filter(fiber=>fiber.type===owner.child.type||fiber.elementType===owner.child.type):[];
     const nestedNative=owner&&nativeTargets(focus,true).some(record=>record.status.opened&&!record.status.closed&&ownerBodies.some(body=>inside(record.fiber,body)));
     // Reuse the current slot only within the same native presentation. A
@@ -887,20 +896,24 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     if(inline?.unavailable)return {error:'This step has no exact content slot inside its native presentation.'};
     const child=react.createElement(type,preview?.props??focus.memoizedProps);
     let content=child;
-    // Keep live provider values. Never fabricate auth or query data for the
-    // preview. Context values remain inside this temporary app-side closure.
+    // Keep live app providers. A new Modal resets native list/scroll ownership;
+    // copying those contexts inside it would restore a parent from a different
+    // native window. Inline copies keep their existing container's contexts.
+    const nativeLayoutContexts=[native.ScrollView?.Context,native.VirtualizedList?.contextType].filter(Boolean);
+    const resetContexts=inline?[]:nativeLayoutContexts;
     const ancestors=new Set();
     for(let parent=focus.return;parent&&(!inline||parent!==root)&&!ancestors.has(parent);parent=parent.return){
       ancestors.add(parent);
       if(parent.tag!==10||!parent.memoizedProps||!('value'in parent.memoizedProps))continue;
-      const provider=parent.elementType??parent.type;if(provider)content=react.createElement(provider,{value:preview?.providers?.get(parent)??parent.memoizedProps.value},content);
+      const provider=parent.elementType??parent.type;
+      if(provider&&!resetContexts.includes(provider._context??provider))content=react.createElement(provider,{value:preview?.providers?.get(parent)??parent.memoizedProps.value},content);
     }
     // Nested temporary form states share one shown native window. Stacking
     // Modal controllers for each step can leave UIKit displaying an old body
     // after React removes its tree. Retain each body's own undo checkpoint.
     const children=props.children?.props?.children;
     const previousPreview=reusable&&Array.isArray(children)&&children.includes(owner.element)?owner:undefined;
-    const record={root,renderer,react,props,focus,child,content,inline,slot:context.slot,parent:previousPreview,focusAliases:new WeakSet(),portals:[],seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:!!inline||!!previousPreview,dismissed:false,failed:false};
+    const record={root,renderer,react,props,focus,child,content,inline,nativeLayoutContexts,slot:context.slot,parent:previousPreview,focusAliases:new WeakSet(),portals:[],seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:!!inline||!!previousPreview,dismissed:false,failed:false};
     class PreviewBoundary extends react.Component {
       constructor(props){super(props);this.state={failed:false};}
       static getDerivedStateFromError(){return {failed:true};}
@@ -941,6 +954,23 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     structureCache=undefined;if(record.slot)setProjectionSlot(record,modal);else renderer.overrideProps(root,[],record.next);
     if(record.seed)seedDeadline(record);
     return {name:name(focus),focus};
+  }
+  function copiesLiveNavigation(focus,props,tree) {
+    const children=ownQueryValue(props,'children');if(!children||typeof children!=='object')return false;
+    const scopes=[],seen=new Set(),queue=[children];
+    while(queue.length&&seen.size<2000){
+      const element=queue.pop();if(!element||typeof element!=='object'||seen.has(element))continue;seen.add(element);
+      if(Array.isArray(element)){for(const child of element)queue.push(child);continue;}
+      const type=ownQueryValue(element,'type'),p=ownQueryValue(element,'props');if(!type||!p)continue;
+      for(const fiber of tree.props.get(p)??[])if((fiber.type===type||fiber.elementType===type)&&tree.inside(fiber,focus))scopes.push(fiber);
+      const nested=ownQueryValue(p,'children');if(nested)queue.push(nested);
+    }
+    if(queue.length)return true;
+    if(!scopes.length)return false;
+    return tree.all.some(fiber=>{
+      const p=fiber.memoizedProps,route=ownQueryValue(p,'route'),navigation=ownQueryValue(p,'navigation');
+      return typeof ownQueryValue(route,'name')==='string'&&typeof ownQueryValue(navigation,'getState')==='function'&&scopes.some(root=>tree.inside(fiber,root));
+    });
   }
   function seedDeadline(record){
     clearTimeout(record.seedTimer);
@@ -1018,7 +1048,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     let element=child;const seen=new Set();
     for(let parent=fiber.return;parent&&!seen.has(parent);parent=parent.return){
       seen.add(parent);if(parent.tag!==10||!parent.memoizedProps||!('value'in parent.memoizedProps))continue;
-      const provider=parent.elementType??parent.type;if(provider)element=record.react.createElement(provider,{value:parent.memoizedProps.value},element);
+      // This source-proven portal relocates its body to the preview outlet.
+      // Its old scroll cell does not own the outlet's native layout.
+      const provider=parent.elementType??parent.type;
+      if(provider&&!record.nativeLayoutContexts.includes(provider._context??provider))element=record.react.createElement(provider,{value:parent.memoizedProps.value},element);
     }
     return record.react.createElement(record.react.Fragment,{key:id},element);
   }
@@ -1562,9 +1595,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     }
     return targets;
   }
-  function nativeTargets(focus,ancestors=false) {
+  function nativeTargets(focus,ancestors=false,unowned) {
     if(!focus)return [];
-    const scope=roots(focus),records=[...nativeRecords.values()];
+    const scope=roots(focus),records=[...nativeRecords.values()].filter(record=>!unowned?.has(record.status));
     // A wrapper and its native host forward the same lifecycle event. Observe
     // the outer boundary, without arming idle child sheets that never opened.
     if(ancestors){
@@ -1582,7 +1615,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     return boundaries.filter(record=>!boundaries.some(other=>other!==record&&inside(record.fiber,other.fiber)));
   }
   function beginDismissal(entry,focus,ancestors=false) {
-    entry.native=watchNative(focus,false,ancestors).filter(record=>record.status.opened||record.status.pending).map(record=>record.status);
+    watchNative();
+    entry.native=nativeTargets(focus,ancestors,entry.unownedNative).filter(record=>record.status.opened||record.status.pending).map(record=>record.status);
     for(const status of entry.native){status.closing=true;status.pending=true;status.closed=false;status.dismissAcknowledged=false;}
   }
   function requestControlClose(entry) {
@@ -1673,6 +1707,21 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     const unshown=projected.filter(record=>!record.shown&&(focus===record.focus||roots(record.focus).includes(focus))).length;
     if(unshown)pending=true;
     let error=projected.some(record=>record.failed&&(focus===record.focus||roots(record.focus).includes(focus)))?'The temporary presentation preview failed.':undefined;
+    // A provider-level state change can render a page behind the sheet that
+    // triggered it. Its content and layout may be stable, but those pixels are
+    // still covered. Require the source recipe to dismiss that owned sheet.
+    // A target's own native boundary, including one still opening, keeps its
+    // ordinary lifecycle wait; do not infer dismissal of a legitimate parent.
+    if(focus&&!boundaries.some(record=>record.status.opened||record.status.pending)){
+      for(const entry of undo){
+        if(!entry.control||entry.closed||entry.closing)continue;
+        const owned=roots(entry.nativeFocus,tree);
+        if(scope.some(target=>owned.some(root=>inside(target,root))))continue;
+        if(nativeTargets(entry.nativeFocus).some(record=>record.status.opened&&!record.status.closed)){
+          pending=true;error='The target is covered by an earlier presentation. Its source recipe needs a dismissal before opening this view.';break;
+        }
+      }
+    }
     // Local diagnostics only. Keep bounded primitive evidence, never fibers,
     // callback arguments or app content. Telemetry still uses aggregate timings.
     for(const record of projected){
@@ -1747,7 +1796,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     if(action.effect.kind==='state'){
       if(action.preview)return {...(found.alreadyOpen?{focus:found.consumer??found.binding.fiber,alreadyOpen:true}:previewState(action,found,tree,progress)),expected:action.expected?{component:action.expected.component,scope:action.expected.scope,entry:`${action.id}:expected`}:action.name};
       const b=found.binding;let previous=hookValue(b);for(const part of action.effect.path)previous=previous?.[part];
-      undo.push({binding:b,path:action.effect.path,value:previous,input:found.input,nativeDismiss:previous==null||previous===false});
+      // An inline state change can live inside an already open sheet. Restoring
+      // that state must not wait for its parent to close. Exclude boundaries
+      // that were already open or opening; new and previously hidden native
+      // hosts still require their own real dismissal event.
+      const unownedNative=new Set([...nativeRecords.values()].filter(record=>record.status.opened||record.status.pending).map(record=>record.status));
+      undo.push({binding:b,path:action.effect.path,value:previous,input:found.input,nativeDismiss:previous==null||previous===false,unownedNative});
       // Apply source-proven UI state only. A queued app update owns its newer
       // state; never replace it with the captured opening data.
       const before=previous;

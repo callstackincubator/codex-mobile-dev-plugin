@@ -937,3 +937,11 @@ Probe totals accumulate only while the capture queue is active and reset with
 each batch. Logging failures do not interrupt completion. No timer, observer,
 per-frame bridge event or Sentry event was added. Existing Sentry capture,
 readiness, source binding and restoration measurements keep their boundaries.
+
+Preview navigation guards, native context isolation and dismissal ownership use
+the same capture, readiness and restoration timing windows. A rejected preview
+keeps its reason in the local map; component names, provider values and native
+callback arguments never enter Sentry. Deferred source acknowledgements still
+measure the debugger reply separately from actual opening work. Their pending
+delivery timer is cancelled when capture stops. No per-render metric or new
+telemetry field was added; focused tests cover cancellation and observer cleanup.

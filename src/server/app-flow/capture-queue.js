@@ -33,8 +33,10 @@ export function createCaptureQueue(driver, emit) {
         current.source = undefined;
         reject(Object.assign(new Error('Capture source binding stopped responding.'), {fatal:true, interrupted:true}));
       }, 12000);
-      current.source = {ticket, actionId:request.operation==='open'&&typeof request.actionId==='string'?request.actionId:undefined, resolve: value => {clearTimeout(timer);current.source=undefined;resolve(value);},
-        reject: error => {clearTimeout(timer);current.source=undefined;reject(error);}};
+      const pending={ticket,timer,actionId:request.operation==='open'&&typeof request.actionId==='string'?request.actionId:undefined,
+        resolve:value=>{clearTimeout(timer);current.source=undefined;resolve(value);},
+        reject:error=>{clearTimeout(timer);clearTimeout(pending.deliveryTimer);if(current.delivery===pending)current.delivery=undefined;current.source=undefined;reject(error);}};
+      current.source=pending;
       send({type:'source', ...request, id:current.job.id, ticket});
     });
   }
@@ -126,7 +128,15 @@ export function createCaptureQueue(driver, emit) {
     request, measure,
     source(batch, ticket, value) {
       if (run?.id !== batch || run.source?.ticket !== ticket || run.cancelled) return {accepted:false};
-      run.source.resolve(value);
+      const current=run,pending=current.source;
+      clearTimeout(pending.timer);current.source=undefined;current.delivery=pending;
+      // Return the debugger acknowledgement before starting the next opening.
+      // Promise continuations can otherwise drain inside Runtime.evaluate and
+      // make a valid reply time out while React is already rendering that view.
+      pending.deliveryTimer=setTimeout(()=>{
+        if(current.delivery!==pending)return;
+        current.delivery=undefined;pending.resolve(value);
+      },0);
       return {accepted:true};
     },
     start(id, jobs, planning = false) {
@@ -150,6 +160,7 @@ export function createCaptureQueue(driver, emit) {
         current.controller.abort();
         current.pending?.resolve({ok:false, terminal:true});
         current.source?.reject(new Error('Capture stopped.'));
+        current.delivery?.reject(new Error('Capture stopped.'));
         await current.done;
       }
       if (restoreError || restoreTask) await restore();

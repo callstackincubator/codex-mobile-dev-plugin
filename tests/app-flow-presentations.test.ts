@@ -429,6 +429,46 @@ test('an existing modal does not wait for a second onShow when its local form ch
   app.runtime.open('open');assert.equal(app.runtime.motion(app.sheet).pending,false);app.runtime.cleanup();
 });
 
+for(const install of [installPresentationRuntime,sharedLoopRuntime()])test(`provider previews never copy existing navigation children (${install===installPresentationRuntime?'normal':'shared loops'})`,()=>{
+  const app=tree(install);function ExistingApp(){}
+  const child=React.createElement(ExistingApp),original={children:React.createElement(React.Fragment,null,[child])};
+  app.sheet.memoizedProps=original;
+  const mounted:any={type:ExistingApp,memoizedProps:child.props,return:app.sheet};app.sheet.child=mounted;
+  const route:any={type:function Screen(){},memoizedProps:{route:{name:'Real'},navigation:{getState(){assert.fail('Never execute navigation during the preflight')}}},return:mounted};mounted.child=route;
+  const result=app.runtime.project(app.sheet,{seed:{index:0,kind:'useState',value:true}});
+  assert.equal(result.status,'needs-data');assert.match(result.error,/duplicate live navigation/);
+  assert.equal(app.sheet.memoizedProps,original);assert.equal(app.runtime.checkpoint(),0);
+  assert.equal(app.runtime.diagnostics().projections,0,'Reject before mounting or wrapping any app effects');
+  // The same element rendered elsewhere is not part of this owner's children.
+  mounted.return=app.root;
+  assert.doesNotMatch(app.runtime.project(app.sheet,{seed:{index:0,kind:'useState',value:true}}).error,/duplicate live navigation/);
+  mounted.return=app.sheet;
+  assert.doesNotMatch(app.runtime.project(app.sheet,{props:{children:React.createElement('span',null,'Real form content')}}).error,/duplicate live navigation/);
+  app.runtime.cleanup();
+});
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()])test(`a new native modal keeps app data without restoring old scroll ownership (${install===installPresentationRuntime?'normal':'shared loops'})`,t=>{
+  function View(){}function Modal(){}
+  const ScrollContext=React.createContext(null),ListContext=React.createContext(null),AppContext=React.createContext(null);
+  const native={View,Modal,ScrollView:{Context:ScrollContext},VirtualizedList:{contextType:ListContext},Platform:{OS:'ios'},StyleSheet:{create(){}}};
+  const previous=(globalThis as any).__r;
+  (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:React}}],[2,{isInitialized:true,publicModule:{exports:native}}]])};
+  const app=tree(options=>install({...options,hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){fiber.memoizedProps=props}}]])}}));
+  t.after(()=>{app.runtime.cleanup();(globalThis as any).__r=previous});
+  app.root.type=View;app.root.memoizedProps={children:'original app'};
+  const value={existingData:true};let parent=app.root;
+  for(const context of [AppContext,ScrollContext,ListContext]){
+    const provider:any={tag:10,type:context.Provider,memoizedProps:{value},return:parent};parent.child=provider;parent=provider;
+  }
+  parent.child=app.sheet;app.sheet.return=parent;
+  assert.equal(app.runtime.project(app.sheet,{}).error,undefined);
+  const modal=app.root.memoizedProps.children.props.children[1];
+  const content=modal.props.children.props.children;
+  assert.equal(modal.type,Modal);assert.equal(content.type,AppContext.Provider);assert.equal(content.props.value,value);
+  assert.equal(content.props.children.type,app.sheet.type,'The old scroll/list providers must not override Modal resets');
+  assert.equal(parent.memoizedProps.value,value,'Keep the original app provider unchanged');
+});
+
 test('native projection keeps deep live contexts, contains render errors and restores the root',async t=>{
   const app=tree();function View(){}function Modal(){}function Provider(){}
   const originalRequire=(globalThis as any).__r;
@@ -746,7 +786,6 @@ test('motion limits native layout reads while retaining transition events beyond
     app.runtime.cleanup();assert.equal(last.currentProps.onStateChange,original);
   }
 });
-
 
 test('repeated feed entries share source evidence without starving a later sheet',()=>{
   for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
@@ -1138,6 +1177,29 @@ test('opening a sheet does not arm the idle native sheets inside its body',()=>{
   assert.equal(app.runtime.motion(app.sheet).pending,false);app.runtime.cleanup();
 });
 
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+ test(`readiness rejects a page behind an owned native sheet (${install===installPresentationRuntime?'normal':'shared loops'})`,()=>{
+  const app=tree(install),original={onStateChange(){}},instance={props:original};
+  const native:any={tag:1,type:function NativeSheet(){},memoizedProps:original,stateNode:instance,return:app.sheet,child:app.nested};
+  app.sheet.child=native;app.nested.return=native;
+  const page:any={type:function Destination(){},memoizedProps:{},return:app.root};app.sheet.sibling=page;
+  try{
+   app.runtime.open('open');instance.props.onStateChange({nativeEvent:{state:'open'}});
+   assert.match(app.runtime.motion(page).error,/covered by an earlier presentation/);
+   assert.equal(app.runtime.motion(app.nested).error,undefined,'The owned sheet body stays capturable');
+   const next={props:{onStateChange(){}}};
+   const child:any={tag:1,type:function NextSheet(){},memoizedProps:next.props,stateNode:next,return:page};page.child=child;
+   app.runtime.captureNative(page);next.props.onStateChange({nativeEvent:{state:'opening'}});
+   assert.equal(app.runtime.motion(page).error,undefined,'A target opening its own native boundary still waits for native readiness');
+   next.props.onStateChange({nativeEvent:{state:'open'}});
+   assert.equal(app.runtime.motion(page).error,undefined);
+   next.props.onStateChange({nativeEvent:{state:'closed'}});page.child=undefined;
+   instance.props.onStateChange({nativeEvent:{state:'closed'}});
+   assert.equal(app.runtime.motion(page).error,undefined,'A dismissed parent no longer covers the destination');
+  }finally{app.runtime.cleanup()}
+ });
+}
+
 test('a focused sheet body dismisses before its temporary parent modal unmounts',async t=>{
   const previous=(globalThis as any).__r;function View(){}function Modal(){}
   const app=tree(),events:string[]=[];
@@ -1360,6 +1422,49 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime(installPresen
 
 
 for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+ for(const shape of ['inline','new-child','hidden-child','new-ancestor']){
+  test(`state restoration owns only the native presentation it opened: ${shape} (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+   const app=tree();let state=false,current:any,dismissed=0;
+   const parentProps={visible:true,onShow(){},onDismiss(){assert.fail('The existing parent must stay open')}};
+   const parent={currentProps:parentProps};
+   const parentHost:any={tag:5,type:'ParentModal',memoizedProps:parentProps,stateNode:{canonical:parent},return:app.sheet,child:app.nested};
+   app.sheet.child=parentHost;app.nested.return=parentHost;
+   const childProps={visible:false,onShow(){},onDismiss(){dismissed++}};
+   const child={currentProps:childProps};
+   const childHost:any={tag:5,type:'ChildModal',memoizedProps:childProps,stateNode:{canonical:child},return:app.nested};
+   if(shape==='hidden-child')app.nested.child=childHost;
+   const hook={renderers:new Map(),onCommitFiberRoot(){}};
+   const setter=(update:any)=>{
+    state=update(state);app.root.memoizedState={memoizedState:state,next:null};
+    if(shape==='inline'){hook.onCommitFiberRoot();return;}
+    child.currentProps={...child.currentProps,visible:state};
+    if(state){
+     if(shape==='new-ancestor'){parentHost.child=childHost;childHost.return=parentHost;childHost.child=app.nested;app.nested.return=childHost;}
+     else app.nested.child=childHost;
+    }
+    hook.onCommitFiberRoot();
+    if(state)child.currentProps.onShow();else setTimeout(()=>child.currentProps.onDismiss(),25);
+   };
+   const react={createElement(){},useState(){return [state,setter]},useReducer(){}};
+   const previous=(globalThis as any).__r;(globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}]])};
+   const renderer={rendererPackageName:'react-native-renderer',getCurrentFiber:()=>current,scheduleUpdate(){current=app.root;app.root.memoizedState=null;react.useState();app.root.memoizedState={memoizedState:state,next:null};current=undefined}};
+   hook.renderers.set(1,renderer);
+   const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??app.root];while(stack.length){const fiber=stack.pop();if(fiber!==subtree&&fiber.sibling)stack.push(fiber.sibling);if(visit(fiber)!==false&&fiber.child)stack.push(fiber.child)}};
+   const runtime=install({hook,fibers,hidden:()=>false,later:setTimeout});
+   t.after(()=>{runtime.cleanup();app.runtime.cleanup();(globalThis as any).__r=previous});
+   const site:any={id:'state',file:'App.tsx',line:1,column:0,endLine:1,owner:'App',paths:[[]]};
+   const page=await runtime.collect([site]);const binding=page.bindings.find(b=>b.kind==='useState');assert.ok(binding);
+   configureFixture(runtime,{states:[site],actions:[{...app.action,effect:{kind:'state',site:'state',path:[],value:true}}]},[{binding:binding.id,site:'state'}],page.bindings.map(b=>b.id));
+   assert.equal(runtime.open('open').error,undefined);assert.equal(state,true);runtime.focused(app.nested);
+   const closing=runtime.rollback();
+   await new Promise(resolve=>setTimeout(resolve,5));
+   assert.equal(runtime.diagnostics().dismissalWaiters,shape==='inline'?0:1,'Only the child presentation needs a native dismissal');
+   assert.equal(dismissed,0);
+   await closing;
+   assert.equal(state,false);assert.equal(runtime.checkpoint(),0);assert.equal(dismissed,shape==='inline'?0:1);
+   assert.equal(parent.currentProps,parentProps);assert.equal(runtime.diagnostics().nativeRecords,0);
+  });
+ }
  test(`an app commit that removes a preview preserves the new app children (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
   const previous=(globalThis as any).__r,app=tree();function View(){}function Modal(){}
   t.after(()=>{app.runtime.cleanup();(globalThis as any).__r=previous});
@@ -1384,6 +1489,29 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
 }
 
 for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+ test(`a retained controller follows committed portal children before dismissal (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+  const app=tree(install);function Body(){}function Portal(){}
+  app.sheet.child={type:Portal,memoizedProps:{children:null},return:app.sheet};
+  app.runtime.open('open');
+  const element=React.createElement(Body,{});
+  const current:any={...app.sheet,alternate:app.sheet};app.sheet.alternate=current;
+  current.child={type:Portal,memoizedProps:{children:element},return:current};
+  app.button.sibling=current;
+  const original={onStateChange(){}},canonical={currentProps:original};
+  const native:any={tag:5,type:'SheetHost',memoizedProps:original,stateNode:{canonical}};
+  const body:any={type:Body,memoizedProps:element.props,return:app.root,child:native};native.return=body;current.sibling=body;
+  app.runtime.captureNative(app.sheet);
+  canonical.currentProps.onStateChange({nativeEvent:{state:'open'}});
+  app.control.close=()=>{app.control.closes++;canonical.currentProps.onStateChange({nativeEvent:{state:'closing'}})};
+  try{
+   const closing=app.runtime.rollback();await new Promise(resolve=>setImmediate(resolve));
+   assert.equal(app.control.closes,1);
+   assert.equal(app.runtime.diagnostics().dismissalWaiters,1,'The current portalled native body must finish closing');
+   assert.equal(app.runtime.checkpoint(),1);
+   canonical.currentProps.onStateChange({nativeEvent:{state:'closed'}});
+   await closing;assert.equal(app.runtime.checkpoint(),0);
+  }finally{app.runtime.cleanup()}
+ });
  test(`a detached source still closes its mounted portal body (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
   const app=tree(install);function Body(){}
   const props={},element=React.createElement(Body,props);

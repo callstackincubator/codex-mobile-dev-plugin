@@ -60,22 +60,23 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   const react=(React as any).default??React,dom=new JSDOM('<div id="root"></div>');
   const previous={window:(globalThis as any).window,document:(globalThis as any).document,require:(globalThis as any).__r};
   (globalThis as any).window=dom.window;(globalThis as any).document=dom.window.document;
-  const originalEffect=react.useEffect,Context=react.createContext(undefined),value={label:'Real nested context'};
+  const originalEffect=react.useEffect,Context=react.createContext(undefined),ScrollContext=react.createContext(undefined),value={label:'Real nested context'};
   let current:any,setShown:any,setLabel:any,mounts=0,appEffects=0,previewEffects=0,attaches=0,removes=0;
   const rendered=createRoot(dom.window.document.getElementById('root')!);
   const root:any={tag:3,stateNode:(rendered as any)._internalRoot};
   const host:any={tag:5,type:View,memoizedProps:{children:react.createElement(Original)},return:root};root.child=host;
   const form:any={type:HiddenForm,elementType:HiddenForm,return:host};
   const provider:any={tag:10,type:Context.Provider,memoizedProps:{value},return:form};
-  const portal:any={type:Portal,elementType:Portal,return:provider};
+  const scroll:any={tag:10,type:ScrollContext.Provider,memoizedProps:{value:{horizontal:false}},return:provider};
+  const portal:any={type:Portal,elementType:Portal,return:scroll};
   const body:any={type:SheetBody,elementType:SheetBody,return:host};
   function View({children}:any){return react.createElement('div',null,children)}
   function Modal({children,onShow}:any){onShow();return children}
   function Original(){current=undefined;react.useEffect(()=>{appEffects++},[]);return 'Original app'}
   function HiddenForm(props:any){
    current=form;form.memoizedProps=form.pendingProps=props;host.child=form;form.sibling=undefined;
-   const [shown,updateShown]=react.useState(()=>{mounts++;return true});setShown=updateShown;const [label,updateLabel]=react.useState('');setLabel=updateLabel;const child=react.useMemo(()=>react.createElement(SheetBody,{label}),[label]);form.child=provider;provider.child=shown?portal:undefined;
-   current=undefined;return react.createElement(Context.Provider,{value},shown?react.createElement(Portal,null,child):null);
+   const [shown,updateShown]=react.useState(()=>{mounts++;return true});setShown=updateShown;const [label,updateLabel]=react.useState('');setLabel=updateLabel;const child=react.useMemo(()=>react.createElement(SheetBody,{label}),[label]);form.child=provider;provider.child=scroll;scroll.child=shown?portal:undefined;
+   current=undefined;return react.createElement(Context.Provider,{value},react.createElement(ScrollContext.Provider,{value:scroll.memoizedProps.value},shown?react.createElement(Portal,null,child):null));
   }
   function Portal(props:any){
    current=portal;portal.memoizedProps=portal.pendingProps=props;portal.child=undefined;
@@ -84,13 +85,13 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   }
   function SheetBody(props:any){
    current=body;body.memoizedProps=body.pendingProps=props;form.sibling=body;
-   const context=react.useContext(Context);react.useEffect(()=>{previewEffects++},[]);react.useLayoutEffect(()=>{previewEffects++},[]);
+   const context=react.useContext(Context);assert.equal(react.useContext(ScrollContext),undefined,'The old scroll container does not own the portal outlet');react.useEffect(()=>{previewEffects++},[]);react.useLayoutEffect(()=>{previewEffects++},[]);
    current=undefined;return react.createElement('span',null,context.label+props.label);
   }
   const hook:any={renderers:new Map(),onCommitFiberRoot(){}};
   const render=()=>{flushSync(()=>rendered.render(react.createElement(View,host.memoizedProps)));hook.onCommitFiberRoot()};
   hook.renderers.set(1,{rendererPackageName:'react-native-renderer',getCurrentFiber:()=>current,overrideProps(fiber:any,_path:any,props:any){fiber.memoizedProps=props;if(props.children?.type!==react.Fragment)host.child=undefined;render()}});
-  (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'android'},StyleSheet:{create(){}}}}}],[3,{verboseName:'Forms.tsx',isInitialized:true,publicModule:{exports:{HiddenForm}}}]])};
+  (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,ScrollView:{Context:ScrollContext},Platform:{OS:'android'},StyleSheet:{create(){}}}}}],[3,{verboseName:'Forms.tsx',isInitialized:true,publicModule:{exports:{HiddenForm}}}]])};
   const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??root];while(stack.length){const fiber=stack.pop();if(fiber!==subtree&&fiber.sibling)stack.push(fiber.sibling);if(visit(fiber)!==false&&fiber.child)stack.push(fiber.child)}};
   const runtime=install({hook,fibers,hidden:()=>false,later:setTimeout});
   const action:any={id:'mount',file:'Forms.tsx',line:1,owner:'HiddenForm',component:'HiddenForm',name:'HiddenForm',prop:'',preview:true,views:['form'],effect:{kind:'mount',file:'Forms.tsx',export:'HiddenForm'}};
