@@ -41,6 +41,16 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+function withResolvedParams(nodes: FlowNode[], cached?: Map<string, FlowParams>): FlowNode[] {
+  return nodes.map(node => {
+    const params = cached?.get(node.id);
+    if (!params) return node;
+    const resolved = { ...node, params, ...(node.presentation ? { presentation: { ...node.presentation, baseParams: params } } : {}) };
+    if (!missingFlowParams(resolved).length) resolved.status = 'pending';
+    return resolved;
+  });
+}
+
 export class AppFlowRuns {
   private sessions = new Map<string, Active>();
   private resolved = new Map<string, Map<string, FlowParams>>();
@@ -387,35 +397,41 @@ export class AppFlowRuns {
       const scanner = this.dependencies.scan ?? (await import("./scan.ts")).scanAppFlow;
       const graph = await abortable(scanner(input.projectRoot, input.platform, signal), signal);
       signal.throwIfAborted();
+      if (input.capture && resume && run.sourceHash !== graph.sourceHash) throw new Error('The prepared capture plan does not match this project source. Prepare it again.');
+      const previousCapture = input.capture && resume ? { nodes: run.nodes, edges: run.edges } : undefined;
       // Do not render the unfiltered registration catalog while connecting. It
       // includes repeated screen instances and multiple source edges per pair.
       Object.assign(run, { files: graph.files, scanMs: graph.scanMs, catalogMs: graph.catalogMs, sourceHash:graph.sourceHash, warnings: graph.warnings });
       const cached = this.resolved.get(this.cacheKey(input));
-      for (const node of graph.nodes) { const params = cached?.get(node.id); if (params) { node.params = params; if (node.presentation) node.presentation = { ...node.presentation, baseParams: params }; if (!missingFlowParams(node).length) node.status = "pending"; } }
+      graph.nodes = withResolvedParams(graph.nodes, cached);
       run.phase = "connecting"; run.revision++;
       backend = await connect();
       active.runtime = backend.runtime; active.target = backend.target;
       if (signal.aborted) { await backend.runtime.close(); signal.throwIfAborted(); }
       active.info = await abortable(backend.runtime.invoke({ type: "inspect" }, 2000), signal);
-      if (active.info?.available) discovery = new FlowReachability(graph, active.info, resume ? run : undefined);
-      else { graph.nodes = resume ? run.nodes.filter(node => node.presentation) : []; graph.edges = resume ? run.edges : []; }
-      Object.assign(run, input.capture ? {...graph,nodes:[],edges:[]} : graph);
+      if (!input.capture) {
+        if (active.info?.available) discovery = new FlowReachability(graph, active.info, resume ? run : undefined);
+        else { graph.nodes = resume ? run.nodes.filter(node => node.presentation) : []; graph.edges = resume ? run.edges : []; }
+      }
+      Object.assign(run, input.capture ? { ...graph, nodes: run.nodes, edges: run.edges } : graph);
       run.phase = input.capture ? 'connecting' : "capturing"; run.revision++;
       await mkdir(join(this.directory, run.id), { recursive: true, mode: 0o700 });
       if (input.capture) {
         const preparedAt = performance.now();
-        const saved = input.capture.planRunId ? await this.saved(input.capture.planRunId) : undefined;
-        if (saved && (saved.input.projectRoot !== input.projectRoot || saved.input.platform !== input.platform || saved.run.sourceHash !== graph.sourceHash)) throw new Error('The prepared capture plan does not match this project source. Prepare it again.');
-        const known=saved?.run.nodes??graph.nodes;
-        const nodes=[...known,...captureRecipeNodes(graph,known,input.capture.recipes)];
-        const manifest = captureManifest(graph,nodes,input.capture.include);
+        // A resumed run owns its selection, accepted images and resolved data.
+        // Rebuilding it from its original plan loses replies and repeats captures.
+        const saved = !resume && input.capture.planRunId ? await this.saved(input.capture.planRunId) : undefined;
+        if (saved && (saved.input?.projectRoot !== input.projectRoot || saved.input?.platform !== input.platform || saved.run.sourceHash !== graph.sourceHash)) throw new Error('The prepared capture plan does not match this project source. Prepare it again.');
+        const known = previousCapture?.nodes ?? withResolvedParams(saved?.run.nodes ?? graph.nodes, cached);
+        const nodes = previousCapture ? known : withResolvedParams([...known, ...captureRecipeNodes(graph, known, input.capture.recipes)], cached);
+        const manifest = captureManifest(graph, nodes, previousCapture ? undefined : input.capture.include);
         if (!manifest.total) throw new Error('The capture selection contains no prepared views.');
         const inventory = await backend.runtime.invoke({type:'capture-inventory'}, 2000);
         if (inventory?.unavailable) throw new Error('Prepare and reload the instrumented development build before mapping.');
         if (inventory.sourceHashes?.length !== 1 || inventory.sourceHashes[0] !== graph.sourceHash) throw new Error('The running capture build is stale. Prepare and reload it before mapping.');
         const selected = new Set(manifest.jobs.map(job => job.id));
-        run.nodes = structuredClone(nodes.filter(node => selected.has(node.id))).map(node => ({...node, status:'pending', image:undefined, imageSourceHash:undefined, reason:undefined, failure:undefined, captureMs:undefined, captureAttempts:0}));
-        run.edges = (saved?.run.edges??graph.edges).filter(edge => selected.has(edge.from) && selected.has(edge.to));
+        run.nodes = structuredClone(nodes.filter(node => selected.has(node.id))).map(node => previousCapture ? node : ({...node, status:'pending', image:undefined, imageSourceHash:undefined, reason:undefined, failure:undefined, captureMs:undefined, captureAttempts:0}));
+        run.edges = (previousCapture?.edges ?? saved?.run.edges ?? graph.edges).filter(edge => selected.has(edge.from) && selected.has(edge.to));
         run.ai = 'off'; run.phase='capturing'; run.revision++;
         run.captureMode='instrumented';run.manifestTotal=manifest.total;run.preparationMs=Date.now()-sessionStarted;
         runtimeMetrics.record('capture-prepare',performance.now()-preparedAt,false);

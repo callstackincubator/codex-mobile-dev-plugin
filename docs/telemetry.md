@@ -832,3 +832,10 @@ subscribe only to their owning component and detach on unmount. Local
 attachment state; component names remain local. Portal updates use the same
 slot and preserve the preview context. No per-render metric or new app data
 enters Sentry.
+
+Prepared run retries keep accepted images and resolved route data, and measure
+only attempts that actually run. Capture, readiness, loading, restoration,
+checkpoint and run timing names and units stay unchanged. Source validation can
+now reject a stale prepared retry before connecting; the existing fixed
+`app_flow.run` error covers that failure without source paths or app data.
+No extra per-screen metric was added.
