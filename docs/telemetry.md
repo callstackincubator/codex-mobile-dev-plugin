@@ -875,3 +875,10 @@ readiness and capture timing boundaries. They share the bounded expression
 reader used for form choices and add no effect, query or render event. Real
 query values and copied state remain inside the app. Transfers use the existing
 React effect lifecycle and weak setter maps, with no extra timer or observer.
+
+Temporary parent restoration keeps its existing capture, readiness and
+restoration timing boundaries. Weak aliases link detached React owners only to
+their exact active projection; removing the projection releases that lookup.
+No new timer, observer or app data enters telemetry. Preparation failures now
+distinguish a hidden owner, a lost parent scope and a missing source body in the
+local map, without adding per-probe events.

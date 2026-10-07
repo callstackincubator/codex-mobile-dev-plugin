@@ -849,7 +849,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // after React removes its tree. Retain each body's own undo checkpoint.
     const children=props.children?.props?.children;
     const previousPreview=reusable&&Array.isArray(children)&&children.includes(owner.element)?owner:undefined;
-    const record={root,renderer,react,props,focus,child,content,inline,slot:context.slot,parent:previousPreview,portals:[],seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:!!inline||!!previousPreview,dismissed:false,failed:false};
+    const record={root,renderer,react,props,focus,child,content,inline,slot:context.slot,parent:previousPreview,focusAliases:new WeakSet(),portals:[],seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:!!inline||!!previousPreview,dismissed:false,failed:false};
     class PreviewBoundary extends react.Component {
       constructor(props){super(props);this.state={failed:false};}
       static getDerivedStateFromError(){return {failed:true};}
@@ -1102,9 +1102,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(tree.all.some(fiber=>fiber.type===type||fiber.elementType===type||fiber.type===body)){mountChecks.alreadyMounted++;return;}
     mountChecks.available++;return type;
   }
+  function focusProjection(focus) {
+    if(!focus)return;
+    return [...projected].reverse().find(record=>record.focus===focus||record.focus===focus.alternate||record.focusAliases.has(focus)||record.child.props===(focus.pendingProps??focus.memoizedProps));
+  }
   function bodyRoots(focus,tree,connected) {
     if(!focus)return connected??[];
-    const projection=[...projected].reverse().find(record=>record.focus===focus||record.focus===focus.alternate||record.child.props===(focus.pendingProps??focus.memoizedProps));
+    const projection=focusProjection(focus);
     if(!projection)return connected??roots(focus,tree);
     // Only the exact temporary body and its portals own preview actions.
     // The original remains connected for native ownership and restoration.
@@ -1255,6 +1259,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(effect.kind==='state'&&!sites.length)return {available:false,error:'The opening state could not be bound to its source.'};
     if(!action.preview&&!(tree.entries.get(id)?.length))return {available:false,error:'The opening control could not be bound to its source.'};
     if(effect.kind==='state'&&sites.length>1)return {available:false,error:'More than one live instance owns this opening state.'};
+    if(action.preview&&effect.kind==='state'&&sites.length===1){
+      const binding=sites[0],scope=bodyRoots(focus,tree);
+      if(!tree.isVisible(binding.fiber))return {available:false,error:'The opening state belongs to a hidden view.'};
+      if(focus&&!scope.some(root=>tree.inside(binding.fiber,root)||tree.inside(root,binding.fiber)))return {available:false,error:'The opening state is outside the retained presentation body.'};
+      let value=hookValue(binding,tree);for(const part of effect.path)value=value?.[part];
+      if(value===effect.value&&action.expected)return {available:false,error:'The form state is selected but its source-defined body is not mounted.'};
+    }
     return {available:false,error:'The source-proven entry has no live owner, control, or real context in this app state.'};
   }
   let lastAvailable=0,canonicalControls=new WeakMap();
@@ -1741,12 +1752,16 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return unique.length===1?unique[0]:undefined;
   }
   function probeFocus(focus,expected) {
-    const tree=index();let currentFocus=focus&&tree.current.get(focus);
+    const tree=index(),record=focusProjection(focus);let currentFocus=focus&&tree.current.get(focus);
     if(focus&&!currentFocus){
-      const record=[...projected].reverse().find(record=>record.focus===focus||record.focus===focus.alternate||record.child.props===(focus.pendingProps??focus.memoizedProps));
       const bodies=record?(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type):[];
       if(bodies.length===1)currentFocus=bodies[0];
     }
+    // Replacing a temporary body can remount its parent on rollback. React
+    // clears detached fiber props, so a checkpoint cannot later recover the
+    // parent from props alone. Weak aliases preserve this exact projection's
+    // identity without keeping unmounted trees alive or matching by name.
+    if(record&&currentFocus){record.focusAliases.add(currentFocus);if(currentFocus.alternate)record.focusAliases.add(currentFocus.alternate);}
     const connected=roots(currentFocus,tree);
     const expectedFocus=expected&&focusedComponent(typeof expected==='object'?expected.component:expected,currentFocus,tree,connected,typeof expected==='object'?expected.entry:undefined);
     // A local UI state can belong to a provider above the entire application.
