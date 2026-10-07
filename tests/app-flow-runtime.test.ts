@@ -31,6 +31,44 @@ function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, cl
   return {context,invoke,getState:()=>state,original,navigation,fiber,native};
 }
 
+test('local capture falls back before opening and shares the normal opener',async t=>{
+  const app=runtime(t,false,{setTimeout,clearTimeout},()=>({
+    prepareCapture:(id:string)=>({available:id==='approved'}),
+    open:(id:string)=>{globalThis.opened.push(id);return {error:'Real context is missing.',status:'needs-data'}},
+    checkpoint:()=>0,rollback:async()=>{},cleanup(){},
+  }),{opened:[]});
+  assert.equal((await app.invoke({type:'presentation-capture-open',id:'unresolved'})).local,false);
+  assert.equal(app.context.opened.length,0);
+  const result=await app.invoke({type:'presentation-capture-open',id:'approved'});
+  assert.equal(result.local,true);assert.equal(result.status,'needs-data');assert.match(result.error,/Real context/);
+  assert.equal(app.context.opened.length,1);assert.equal(app.context.opened[0],'approved');
+});
+
+test('local capture never opens after its handoff is cancelled',async t=>{
+  const app=runtime(t,false,{setTimeout,clearTimeout},()=>({
+    prepareCapture:()=>({available:true,handoff:true}),
+    handoff:()=>new Promise(resolve=>{globalThis.releaseHandoff=resolve}),
+    open:()=>{globalThis.opened++;return {error:'Must not open'}},
+    checkpoint:()=>0,rollback:async()=>{},cleanup(){},
+  }),{opened:0});
+  const opening=app.invoke({type:'presentation-capture-open',id:'approved'});
+  await app.invoke({type:'presentation-rollback',level:0});
+  app.context.releaseHandoff({closed:true});
+  const result=await opening;
+  assert.equal(result.local,true);assert.equal(result.cancelled,true);assert.equal(app.context.opened,0);
+});
+
+test('local capture preserves handoff failures without opening or replaying',async t=>{
+  const app=runtime(t,false,{setTimeout,clearTimeout},()=>({
+    prepareCapture:()=>({available:true,handoff:true}),handoff:async()=>({error:'Parent did not close.'}),
+    open:()=>{globalThis.opened++;return {error:'Must not open'}},
+    checkpoint:()=>0,rollback:async()=>{},cleanup(){},
+  }),{opened:0});
+  const result=await app.invoke({type:'presentation-capture-open',id:'approved'});
+  assert.equal(result.local,true);assert.equal(result.status,'needs-data');assert.match(result.error,/Parent/);
+  assert.equal(app.context.opened,0);
+});
+
 test('runtime finds mounted navigators, opens a target, and restores original state',async t=>{
   const app=runtime(t);
   const info=await app.invoke({type:'inspect'});

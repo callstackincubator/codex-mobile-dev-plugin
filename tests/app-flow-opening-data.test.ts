@@ -99,6 +99,13 @@ test('prepared runtime opens one shared form from real row data and restores its
  await React.act(()=>root.render(React.createElement(appModule.exports.App)));
  await React.act(()=>runtime.collect([site],[action],directory,graph.sourceHash));
  assert.equal(runtime.prepare(action.id).available,true);
+ assert.equal(runtime.prepareCapture(action.id).available,true,'The installed source catalog can use live registered state');
+ assert.equal(runtime.prepareCapture('unapproved').available,false);
+ const originalOwner=client.registry.find(site.id).owner;
+ await React.act(()=>root.render(React.createElement(appModule.exports.App,{key:'remounted'})));
+ assert.notEqual(client.registry.find(site.id).owner,originalOwner);
+ assert.equal(runtime.prepareCapture(action.id).available,true,'A remounted owner refreshes without another host collection');
+ assert.equal(runtime.diagnostics().bindings,1,'The retired owner binding is released');
  geometry.entryY=750;
  assert.equal(runtime.prepare(action.id).available,true,'A real opening below the fold is reachable in its active vertical scroll area');
  geometry.entryX=400;
@@ -110,9 +117,9 @@ test('prepared runtime opens one shared form from real row data and restores its
  geometry.viewportX=0;
  const mode=appModule.exports.mode;
  for(const [key,blocked,allowed]of [['disabled',true,false],['active',false,true],['horizontal',true,false],['paging',true,false],['scrollEnabled',false,true]]){
-   mode[key]=blocked;await React.act(()=>root.render(React.createElement(appModule.exports.App)));
+   mode[key]=blocked;await React.act(()=>root.render(React.createElement(appModule.exports.App,{key:'remounted'})));
    assert.equal(runtime.prepare(action.id).available,false,`Preserve the ${key} gate for an offscreen entry`);
-   mode[key]=allowed;await React.act(()=>root.render(React.createElement(appModule.exports.App)));
+   mode[key]=allowed;await React.act(()=>root.render(React.createElement(appModule.exports.App,{key:'remounted'})));
    assert.equal(runtime.prepare(action.id).available,true);
  }
  await React.act(()=>{assert.equal(runtime.open(action.id).error,undefined)});
@@ -120,6 +127,7 @@ test('prepared runtime opens one shared form from real row data and restores its
  assert.ok(['real-first','real-second'].includes(opened.record.id));assert.equal(opened.subject.id,opened.record.id);
  assert.match(document.body.textContent!,/real-(first|second)/);assert.equal(runtime.checkpoint(),1);
  assert.equal(runtime.prepare(action.id).available,false,'An open shared form must not be replaced by another row');
+ assert.equal(runtime.prepareCapture(action.id).available,false,'The local path preserves real-state ownership');
  await React.act(()=>runtime.rollback(0,false));
  assert.equal(client.registry.find(site.id).value.tuple[0],undefined);assert.equal(runtime.checkpoint(),0);
  const setModel=client.registry.find(site.id).value.tuple[1];

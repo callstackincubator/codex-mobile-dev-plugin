@@ -184,3 +184,52 @@ test('a failed diagnostic observer cannot stall an opening or its cleanup',async
   assert.equal((await app.driver.ready(job,signal)).ready,true);
   await app.driver.restore();assert.deepEqual(app.frames,[]);
 });
+
+for(const factory of [createCaptureDriver,sharedLoopRuntime(createCaptureDriver as any) as any]) {
+ test(`approved openings execute in the app and unresolved owners use the host (${factory===createCaptureDriver?'normal':'shared loop bindings'})`,async()=>{
+  const app=fixture(),local:string[]=[],host:string[]=[];
+  const driver=factory({invoke(command:any,reply:any){
+   if(command.type==='presentation-capture-open'){
+    if(command.id==='unresolved'){reply({local:false});return;}
+    local.push(command.id);app.frames.push(command.id);app.signature(command.id);
+    reply({local:true,view:app.view()});return;
+   }
+   app.runtime.invoke(command,reply);
+  }},async(request:any)=>{host.push(request.actionId);return app.source(request)});
+  const signal=new AbortController().signal;
+  assert.equal((await driver.open(app.job('first',['parent','first']),signal)).ready,true);
+  assert.equal((await driver.open(app.job('second',['parent','unresolved']),signal)).ready,true);
+  assert.deepEqual(local,['parent','first']);assert.deepEqual(host,['unresolved']);
+  await driver.restore();assert.deepEqual(app.frames,[]);
+ });
+ test(`an executed local failure is never replayed through the host (${factory===createCaptureDriver?'normal':'shared loop bindings'})`,async()=>{
+  const app=fixture();
+  const driver=factory({invoke(command:any,reply:any){
+   if(command.type==='presentation-capture-open'){reply({local:true,error:'Native opening failed',status:'timed-out'});return;}
+   app.runtime.invoke(command,reply);
+  }},async()=>assert.fail('Opening must not execute twice'));
+  assert.equal((await driver.open(app.job('view',['sheet']),new AbortController().signal)).status,'timed-out');
+  await driver.restore();
+ });
+}
+
+test('source phase totals include real local and fallback opening time',async()=>{
+ const app=fixture(),samples:{phase:string;ms:number}[]=[];
+ const driver=createCaptureDriver({invoke(command:any,reply:any){
+  if(command.type==='presentation-capture-open'){
+   if(command.id==='fallback'){reply({local:false});return;}
+   void delay(20).then(()=>{app.frames.push(command.id);app.signature(command.id);reply({local:true,view:app.view()})});return;
+  }
+  app.runtime.invoke(command,reply);
+ }},async request=>{await delay(20);return app.source(request)},(phase,ms)=>samples.push({phase,ms}));
+ const signal=new AbortController().signal;
+ await driver.open(app.job('local',['local']),signal);
+ await driver.open(app.job('fallback',['fallback']),signal);
+ for(const phase of ['source-local','source-host']){
+  const values=samples.filter(sample=>sample.phase===phase);
+  assert.equal(values.length,1);assert.ok(values[0].ms>=15,`${phase} must include the opening wait`);
+ }
+ const total=samples.filter(sample=>sample.phase==='source').reduce((sum,sample)=>sum+sample.ms,0);
+ assert.ok(total>=samples.filter(sample=>['source-local','source-host'].includes(sample.phase)).reduce((sum,sample)=>sum+sample.ms,0));
+ await driver.restore();assert.deepEqual(app.frames,[]);
+});

@@ -910,3 +910,13 @@ restoration measurements. It reads committed JSX locals inside the app and keeps
 those references there; payloads do not enter telemetry or the debugger reply.
 Object copying and equal-data checks have fixed work limits. They add no timer,
 observer or event per field. Existing capture phase totals include this work.
+
+Prepared capture can open approved recipes through live in-app bindings. The
+local `source` phase keeps its full request-to-opening boundary. Its
+`source-local` and `source-host` subtotals distinguish in-app execution from the
+host fallback; both include actual opening work, not just debugger overhead.
+These fixed numeric totals stay in local diagnostics and reset with the batch.
+Sentry's existing capture, presentation, screenshot and restoration boundaries
+remain unchanged. Fewer host runtime samples mean fewer bridge calls, not less
+capture coverage. Binding refresh drops retired owners; cleanup releases the
+catalog and all retained bindings.

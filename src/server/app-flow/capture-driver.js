@@ -4,14 +4,22 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
   const clock = () => globalThis.performance?.now?.() ?? Date.now();
   // Diagnostics must not turn a successful opening into a stalled capture.
   const record = (phase, ms) => { try { measure(phase, ms); } catch {} };
-  const bind = async request => {
+  const bind = async (request, signal) => {
     const started = clock();
-    try { return await source(request); }
+    try {
+      if(request.operation==='open') {
+        const local=await call({type:'presentation-capture-open',id:request.actionId},signal,false);
+        if(local?.local){record('source-local',clock()-started);return local;}
+      }
+      const hostStarted=clock();
+      try{return await source(request);}
+      finally{record('source-host',clock()-hostStarted);}
+    }
     finally { record('source', clock() - started); }
   };
   let base, branch = [], lastReady, routeReady;
   const check = signal => { if (signal?.aborted) throw new Error('Capture stopped.'); };
-  const call = (command, signal) => new Promise((resolve, reject) => {
+  const call = (command, signal, measured = true) => new Promise((resolve, reject) => {
     const started = clock();
     const phase = command.type === 'open' ? 'navigation' : command.type === 'presentation-rollback' ? 'rollback'
       : command.type === 'presentation-checkpoint' ? 'checkpoint' : command.waitMs > 0 ? 'readiness' : 'probe';
@@ -19,14 +27,14 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
     const finish = (error, value) => {
       if (finished) return;
       finished = true; clearTimeout(timer); signal?.removeEventListener('abort', abort);
-      record(phase, clock() - started);
+      if(measured)record(phase, clock() - started);
       if (error) reject(error); else resolve(value);
     };
     const interrupted = message => Object.assign(new Error(message), {fatal:true, interrupted:true});
     const abort = () => finish(interrupted('Capture stopped.'));
     // The app may cancel a timer when its root remounts without closing CDP.
     // Bound each command, including native cleanup, rather than the whole run.
-    const timeout = command.type === 'presentation-rollback' ? 10000
+    const timeout = command.type === 'presentation-capture-open' ? 8000 : command.type === 'presentation-rollback' ? 10000
       : command.type === 'open' ? Math.max(command.timeoutMs || 0, command.loadingTimeoutMs || 0) + 1500
       : (command.waitMs || 0) + 2000;
     const timer = setTimeout(() => finish(interrupted('The capture step stopped responding.')), timeout);
@@ -110,9 +118,9 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
       }
       for (const action of job.actions.slice(depth)) {
         check(signal);
-        // Source approval stays on the server. This uses the same opener as
-        // discovery, including shared consumers and previews in native sheets.
-        const opened = await bind({operation: 'open', actionId: action.id});
+        // The host approved this recipe. Live registered bindings run the same
+        // opener as discovery; unresolved entries retain host source resolution.
+        const opened = await bind({operation: 'open', actionId: action.id},signal);
         check(signal);
         if (opened?.error) return {ready: false, status: opened.status || 'needs-data', reason: opened.error, failure:opened.failure};
         if (opened?.closed) for (const frame of branch) frame.closed = true;

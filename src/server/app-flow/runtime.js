@@ -585,6 +585,23 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (command.type === 'presentation-bindings') { reply(presentations?.records(command.offset ?? 0) ?? {bindings:[]}); return; }
         if (command.type === 'presentation-configure') { presentations?.configure(command.catalog, command.matches ?? [], command.checked ?? []); reply({}); return; }
         if (command.type === 'presentation-prepare') { reply(presentations?.prepare(command.id,presentationFocus) ?? {error:'Presentation capture is unavailable.'}); return; }
+        if (command.type === 'presentation-capture-open') {
+          const prepared=presentations?.prepareCapture?.(command.id,presentationFocus);
+          // Fallback happens before any opening. Once the operation starts,
+          // return its result and let the normal view path resolve portals.
+          if(!prepared?.available){reply({local:false});return;}
+          const ticket=generation;
+          const open=closed=>{
+            if(stopped||ticket!==generation){reply({local:true,cancelled:true});return;}
+            globalThis[key].invoke({type:'presentation-open',id:command.id},view=>reply({local:true,closed,view,
+              ...(view?.error?{error:view.error,status:view.status==='needs-data'?'needs-data':'timed-out'}:{})}));
+          };
+          if(prepared.handoff)globalThis[key].invoke({type:'presentation-handoff',id:command.id},result=>{
+            if(result?.error)reply({local:true,error:result.error,status:'needs-data'});else open(!!result?.closed);
+          });
+          else open(false);
+          return;
+        }
         if (command.type === 'presentations') { reply(presentations?.list(presentationFocus) ?? []); return; }
         if (command.type === 'presentation-active') { reply(presentations?.activeViews(presentationFocus) ?? []); return; }
         if (command.type === 'presentation-portals') {

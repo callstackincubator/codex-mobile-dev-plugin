@@ -59,15 +59,19 @@ export function App(){React.useEffect(()=>{globalThis.liveEffects=(globalThis.li
   const effects=context.liveEffects;
   let focus:any,expected:any;const frames:any[]=[];
   async function open(name:string){
-    await React.act(()=>runtime.collect(states,actions,rootPath,graph.sourceHash));
-    const item=action(name),prepared=runtime.prepare(item.id,focus);
-    assert.equal(prepared.available,true,`${name}: ${prepared.error}`);
+    if(!frames.length)await React.act(()=>runtime.collect(states,actions,rootPath,graph.sourceHash));
+    const item=action(name),prepared=runtime.prepareCapture(item.id,focus);
+    if(name==='Username'){
+      assert.equal(prepared.available,false,'Reducer previews keep the host source refresh fallback');
+      await React.act(()=>runtime.collect(states,actions,rootPath,graph.sourceHash,item.id));
+      assert.equal(runtime.prepare(item.id,focus).available,true);
+    }else assert.equal(prepared.available,true,`${name}: ${prepared.error}`);
     const before=runtime.checkpoint();let result:any;
     await React.act(()=>{result=runtime.open(item.id,focus)});
     assert.equal(result.error,undefined,name);
     for(let level=before;level<runtime.checkpoint();level++)frames.push({focus,expected});
     focus=result.focus??runtime.focusFor(result.name,result.scope);expected=result.expected;
-    runtime.focused(focus);await React.act(()=>runtime.collect(states,actions,rootPath,graph.sourceHash));const probe=runtime.probeFocus(focus,expected);focus=probe.focus;
+    runtime.focused(focus);const probe=runtime.probeFocus(focus,expected);focus=probe.focus;
     assert.equal(probe.expectedReady,true,`${name}: ${document.body.textContent} ${JSON.stringify(runtime.diagnostics().projectionSlots)}`);
     assert.match(document.querySelector('aside')?.textContent??'',new RegExp(name==='Landing'?'Welcome':name==='Login'?'Credentials':name==='Signup'?'Account':name));
     return runtime.checkpoint();

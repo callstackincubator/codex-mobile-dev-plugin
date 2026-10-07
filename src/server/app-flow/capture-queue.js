@@ -5,7 +5,7 @@ export function createCaptureQueue(driver, emit) {
   const work = new Map();
   // App-local work is separate from debugger round trips. Retain fixed numeric
   // totals only, with no command arguments, route IDs or per-probe events.
-  const phases = new Set(['navigation','source','readiness','probe','checkpoint','rollback','screenshot-wait','planning']);
+  const phases = new Set(['navigation','source','source-local','source-host','readiness','probe','checkpoint','rollback','screenshot-wait','planning']);
   function measure(phase, ms) {
     if (!phases.has(phase) || !Number.isFinite(ms) || ms < 0) return;
     const value = work.get(phase) ?? {phase, count:0, totalMs:0, maxMs:0};
