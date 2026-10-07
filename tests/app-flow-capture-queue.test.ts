@@ -97,9 +97,12 @@ test('source binding responses belong to exactly one active job and batch',async
   queue.start('batch',[{id:'sheet'}]);await delay(0);
   const request=events.find(event=>event.type==='source');
   assert.equal(request.id,'sheet');assert.equal(request.actionId,'sheet');
+  assert.equal(queue.preparingAction,'sheet');
   assert.equal(queue.source('other-batch',request.ticket,{}).accepted,false);
   assert.equal(queue.source('batch',request.ticket+1,{}).accepted,false);
+  assert.equal(queue.preparingAction,'sheet','A stale reply cannot clear the active opening');
   assert.equal(queue.source('batch',request.ticket,{error:'Missing context'}).accepted,true);
+  assert.equal(queue.preparingAction,undefined,'The scope ends before the driver continues');
   await delay(0);
   assert.equal(queue.source('batch',request.ticket,{}).accepted,false);
   assert.equal(events.some(event=>event.status==='needs-data'),true);
@@ -113,6 +116,7 @@ test('stopping cancels a pending source binding and restores before another batc
   queue.start('batch',[{id:'sheet'}]);await delay(0);
   const request=events.find(event=>event.type==='source');
   await queue.stop();assert.equal(restores,1);assert.equal(queue.active,false);
+  assert.equal(queue.preparingAction,undefined);
   assert.equal(queue.source('batch',request.ticket,{view:{ready:true}}).accepted,false);
   assert.equal(events.some(event=>event.type==='frame'),false);
 });
@@ -126,4 +130,28 @@ test('Stop rejects a delayed planner reply without opening the next discovered v
   await queue.stop();
   assert.equal(queue.source('batch',plan.ticket,{jobs:[{id:'child'}]}).accepted,false);
   assert.deepEqual(opened,['parent']);assert.equal(restores,1);assert.equal(queue.active,false);
+});
+
+
+test('view requests and later discovery do not inherit an opening scope',async()=>{
+  const events:any[]=[];let queue:any;
+  queue=createCaptureQueue({async open(){await queue.request({operation:'view',actionId:'unrelated'});return {ready:true}},async ready(){return {ready:true}},async verify(){return {ready:true}},same:()=>true,async restore(){}},(event:any)=>events.push(event));
+  queue.start('batch',[{id:'parent'}],true);await delay(0);
+  assert.equal(queue.preparingAction,undefined);
+  queue.source('batch',events.find(e=>e.type==='source').ticket,{});await delay(0);
+  queue.ack('batch',events.find(e=>e.type==='frame').ticket,{ok:true});await delay(0);
+  assert.ok(events.some(e=>e.type==='plan'));
+  assert.equal(queue.preparingAction,undefined,'Discovery must bind all candidate owners');
+  await queue.stop();
+});
+
+test('an expired source request releases its opening scope',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  let queue:any;
+  queue=createCaptureQueue({async open(){await queue.request({operation:'open',actionId:'sheet'})},async restore(){}},()=>{});
+  queue.start('batch',[{id:'sheet'}]);
+  assert.equal(queue.preparingAction,'sheet');
+  t.mock.timers.tick(12000);
+  assert.equal(queue.preparingAction,undefined);
+  await queue.stop();
 });

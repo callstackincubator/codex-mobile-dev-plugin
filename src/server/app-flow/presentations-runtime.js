@@ -350,14 +350,19 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       }
     }
   }
-  async function collect(states = catalog.states, actions = catalog.actions, projectRoot = sourceRoot, preparedHash = sourceHash) {
+  async function collect(states = catalog.states, actions = catalog.actions, projectRoot = sourceRoot, preparedHash = sourceHash, actionId) {
     if(typeof projectRoot==='string')sourceRoot=modulePath(projectRoot).replace(/\/$/,'');
     sourceHash=preparedHash;
     catalog={states,actions};lastScheduled=lastExactScheduled=lastFallbackScheduled=0;patchQueryResults();
+    // A prepared job already names its next opening. Keep the full catalog
+    // for entry/portal identity, but collect hooks only for that action's
+    // state. Ordinary discovery still collects every candidate owner.
+    const requested=typeof actionId==='string'?actions.find(action=>action.id===actionId):undefined;
+    const needed=requested?(requested.effect.kind==='state'?states.filter(site=>site.id===requested.effect.site):[]):states;
     try {
       const mounted=new Set(committedStructure().all);
       for(const [id,binding]of bindings)if(!mounted.has(binding.fiber)&&!mounted.has(binding.fiber.alternate))bindings.delete(id);
-      collectPreparedStates(states,mounted);
+      collectPreparedStates(needed,mounted);
       const tracked=(fiber,target)=>{
         const record=owners.get(fiber)??owners.get(fiber.alternate),found=record&&[...record.values()].map(id=>bindings.get(id)).filter(Boolean);
         if(!found?.length)return false;
@@ -371,7 +376,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         const sites=new Set([...target.fallbackSites,...(target.sitesByType.get(fiber.type)??[]),...(target.sitesByType.get(fiber.elementType)??[])]);
         return sites.size>0&&[...sites].every(site=>found.some(binding=>binding.site===site));
       };
-      const targets=collectionTargets(states);
+      const targets=collectionTargets(needed);
       for(const fiber of mounted){
         if(fiber.tag===14)continue;
         if(Array.isArray(fiber._debugHookTypes)&&!fiber._debugHookTypes.some(kind=>kind==='useState'||kind==='useReducer'))continue;

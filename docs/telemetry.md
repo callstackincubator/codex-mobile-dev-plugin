@@ -882,3 +882,12 @@ their exact active projection; removing the projection releases that lookup.
 No new timer, observer or app data enters telemetry. Preparation failures now
 distinguish a hidden owner, a lost parent scope and a missing source body in the
 local map, without adding per-probe events.
+
+Capture-time presentation collection now targets the requested action's state
+site. The full source catalog stays installed, and unscoped discovery still
+collects all candidate owners. `presentation-collect` retains its duration unit
+and request boundary; lower work counts reflect narrower collection rather
+than missing timing coverage. Source binding, readiness, native presentation
+and screenshot verification keep their existing measurements. No source IDs
+or opening data are added to telemetry. The scope ends on acknowledgement,
+cancellation or timeout; later discovery keeps its full collection coverage.

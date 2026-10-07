@@ -10,8 +10,9 @@ import {FlowAppFailure,FlowRuntimeFailure,FlowRuntimeTimeout} from '../src/serve
 import {sharedLoopRuntime} from './app-flow-runtime-fixtures.ts';
 import {createTransitionMode} from '../src/server/app-flow/transitions-runtime.js';
 import {createCaptureDriver} from '../src/server/app-flow/capture-driver.js';
+import {createCaptureQueue} from '../src/server/app-flow/capture-queue.js';
 
-function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, clearTimeout}, presentations: boolean | ((options:any)=>any) = false, globals = {}) {
+function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, clearTimeout}, presentations: boolean | ((options:any)=>any) = false, globals = {}, captureDriver?: Function) {
   let state:any = {index:0,routeNames:['Home','Profile'],routes:[{name:'Home'}]};
   const original = state;
   const navigation = { getState:()=>state, isFocused:()=>true, dispatch(action:any){
@@ -23,8 +24,8 @@ function runtime(t: test.TestContext, redirect = false, timers = {setTimeout, cl
   const native:any = {tag:5,type:'View',memoizedProps:{children:'screen'},stateNode:{getBoundingClientRect:()=>({x:0,y:0,width:100,height:200})},return:fiber};
   fiber.child=native;
   function sync(){fiber.memoizedProps.route=state.routes[state.index ?? 0]}
-  const context=vm.createContext({...timers,...globals,Date,Map,Set,JSON,Math,Object,Array,String,__REACT_DEVTOOLS_GLOBAL_HOOK__:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer'}]]),getFiberRoots:()=>[{current:fiber}]}});
-  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,${typeof presentations==='function'?presentations.toString():presentations?installPresentationRuntime.toString():'undefined'},undefined,undefined,${createTransitionMode.toString()})`,context);
+  const context=vm.createContext({...timers,...globals,AbortController,Date,Map,Set,JSON,Math,Object,Array,String,__REACT_DEVTOOLS_GLOBAL_HOOK__:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer'}]]),getFiberRoots:()=>[{current:fiber}]}});
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,${typeof presentations==='function'?presentations.toString():presentations?installPresentationRuntime.toString():'undefined'},${captureDriver?createCaptureQueue.toString():'undefined'},${captureDriver?captureDriver.toString():'undefined'},${createTransitionMode.toString()})`,context);
   const invoke=(command:any)=>new Promise<any>(resolve=>context.flow.invoke(command,resolve));
   t.after(async()=>{if(context.flow)await invoke({type:'restore'})});
   return {context,invoke,getState:()=>state,original,navigation,fiber,native};
@@ -1296,4 +1297,22 @@ for(const outcome of ['ready','needs-data','cancel'] as const)test(`one presenta
   if(outcome==='cancel')assert.equal(result.cancelled,true);
   await app.invoke({type:'presentation-rollback',level:0});
   assert.equal((await app.invoke({type:'presentation-checkpoint'})).level,0);
+});
+
+
+test('runtime scopes collection to the queue opening and clears it before later discovery',async t=>{
+  const events:any[]=[];
+  const app=runtime(t,false,{setTimeout,clearTimeout},function(){return {
+    collect(states,actions,projectRoot,sourceHash,actionId){return Promise.resolve({actionId})},
+    checkpoint(){return 0},cleanup(){},rollback(){return Promise.resolve()},
+  }},{captureEvent(event:string){events.push(JSON.parse(event).capture)}},function(runtime,source){return {
+    async open(){await source({operation:'open',actionId:'sheet'});return {ready:false}},async restore(){},
+  }});
+  assert.equal((await app.invoke({type:'presentation-collect'})).actionId,undefined);
+  await app.invoke({type:'capture-start',batch:'batch',binding:'captureEvent',jobs:[{id:'sheet'}]});
+  assert.equal((await app.invoke({type:'presentation-collect'})).actionId,'sheet');
+  const request=events.find(e=>e.type==='source');assert.ok(request);
+  await app.invoke({type:'capture-source',batch:'batch',ticket:request.ticket,value:{}});
+  assert.equal((await app.invoke({type:'presentation-collect'})).actionId,undefined);
+  await app.invoke({type:'capture-stop'});
 });

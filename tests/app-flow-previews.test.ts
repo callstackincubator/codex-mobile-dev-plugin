@@ -932,3 +932,28 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]) {
     assert.equal(app.runtime.diagnostics().bindings,0,'Retained evidence must not retain an unmounted owner');
   });
 }
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()])test(`capture binds only the requested state owner and retains the discovery catalog (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+  const app=runtimeFixture(t,false,install);
+  function Other(){}
+  const other:any={type:Other,return:app.host,memoizedProps:{},memoizedState:null};app.owner.sibling=other;
+  const site={...app.site,id:'other-state',owner:'Other'};
+  const action={...app.action,id:'other-preview',owner:'Other',effect:{...app.action.effect,site:site.id}};
+  const renderer=app.hook.renderers.get(1),schedule=renderer.scheduleUpdate,scheduled:any[]=[];
+  renderer.scheduleUpdate=(fiber:any)=>{scheduled.push(fiber);schedule(fiber)};
+  await app.runtime.collect([app.site,site],[app.action,action],undefined,undefined,app.action.id);
+  assert.deepEqual(scheduled,[app.owner],'An opening does not rerender unrelated state owners');
+  scheduled.length=0;
+  await app.runtime.collect(undefined,undefined,undefined,undefined,action.id);
+  assert.deepEqual(scheduled,[other],'The next source action remains in the full retained catalog');
+  assert.equal(app.runtime.diagnostics().bindings,2);
+});
+
+test('a control-only opening does not collect unrelated hooks; unscoped discovery still does',async t=>{
+  const app=runtimeFixture(t),renderer=app.hook.renderers.get(1),schedule=renderer.scheduleUpdate;let updates=0;
+  renderer.scheduleUpdate=(fiber:any)=>{updates++;schedule(fiber)};
+  const control:any={id:'control',owner:'Wizard',component:'Sheet',effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};
+  await app.runtime.collect([app.site],[app.action,control],undefined,undefined,control.id);
+  assert.equal(updates,0);assert.equal(app.runtime.diagnostics().bindings,0);
+  await app.runtime.collect();assert.equal(updates,1);assert.equal(app.runtime.diagnostics().bindings,1);
+});

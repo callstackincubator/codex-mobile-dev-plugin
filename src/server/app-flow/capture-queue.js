@@ -22,7 +22,7 @@ export function createCaptureQueue(driver, emit) {
         current.source = undefined;
         reject(Object.assign(new Error('Capture source binding stopped responding.'), {fatal:true, interrupted:true}));
       }, 12000);
-      current.source = {ticket, resolve: value => {clearTimeout(timer);current.source=undefined;resolve(value);},
+      current.source = {ticket, actionId:request.operation==='open'&&typeof request.actionId==='string'?request.actionId:undefined, resolve: value => {clearTimeout(timer);current.source=undefined;resolve(value);},
         reject: error => {clearTimeout(timer);current.source=undefined;reject(error);}};
       send({type:'source', ...request, id:current.job.id, ticket});
     });
@@ -136,6 +136,7 @@ export function createCaptureQueue(driver, emit) {
       }
       if (restoreError || restoreTask) await restore();
     },
+    get preparingAction() { return run?.source?.actionId; },
     get active() { return !!run || !!restoreError || !!restoreTask; },
   };
 }
