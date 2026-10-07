@@ -95,7 +95,13 @@ module.exports = function flowInstrumentation({types: t}) {
           path.replaceWith(call('useFlowExternalStore',path.node.arguments));effects++;path.skip();return;
         }
         if(['useEffect','useLayoutEffect','useInsertionEffect'].includes(hook)) {
-          path.replaceWith(call('useFlowEffect',[t.stringLiteral(hook),path.node.arguments[0],path.node.arguments[1]||t.identifier('undefined'),t.booleanLiteral(animationEffect(path))]));effects++;path.skip();return;
+          const sync=unit.states.flatMap(site=>site.sync||[]).filter(plan=>at(path.node,plan));
+          const transfers=sync.map(plan=>t.objectExpression([
+            t.objectProperty(t.identifier('dispatch'),t.identifier(plan.dispatch)),
+            t.objectProperty(t.identifier('plan'),t.valueToNode(plan)),
+            t.objectProperty(t.identifier('locals'),t.objectExpression(plan.locals.map(name=>t.objectProperty(t.identifier(name),t.identifier(name))))),
+          ]));
+          path.replaceWith(call('useFlowEffect',[t.stringLiteral(hook),path.node.arguments[0],path.node.arguments[1]||t.identifier('undefined'),t.booleanLiteral(animationEffect(path)),...(transfers.length?[t.arrayExpression(transfers)]:[])]));effects++;path.skip();return;
         }
         const site = unit.states.find(site => at(path.node, site));
         if (!site) return;

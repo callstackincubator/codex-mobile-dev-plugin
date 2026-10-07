@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import ts from 'typescript';
 import type {FlowStateExpression, FlowStateSelection, FlowStateSite} from '../../shared/app-flow.ts';
+import {stateExpressions} from './state-expressions-source.ts';
 import {protectedPreviewField} from './preview-plans.ts';
 
 type Fn = ts.FunctionLikeDeclaration & {body: ts.ConciseBody};
@@ -9,7 +10,6 @@ const unwrap = (node: ts.Node): ts.Node => {
   return node;
 };
 const walk = (node: ts.Node, visit: (node: ts.Node) => void) => {visit(node);ts.forEachChild(node,child=>walk(child,visit));};
-const unknown: FlowStateExpression = {unknown:true};
 const key = (name: ts.PropertyName) => ts.isIdentifier(name)||ts.isStringLiteralLike(name)||ts.isNumericLiteral(name)?name.text:undefined;
 
 /** Compile data reads and object patches, never a handler or reducer call. */
@@ -20,66 +20,7 @@ export function stateSelections(site: FlowStateSite, call: ts.CallExpression, re
   if(!dispatch||!ts.isBindingElement(dispatch)||!ts.isIdentifier(dispatch.name)||!ts.isBlock(reducer.body))return [];
   const state=reducer.parameters[0]?.name,action=reducer.parameters[1]?.name;
   if(!state||!action||!ts.isIdentifier(state)||!ts.isIdentifier(action))return [];
-  const scopes=new WeakMap<ts.Node,Map<string,ts.Identifier>>();
-  const bind=(name:ts.BindingName,values:Map<string,ts.Identifier>)=>{
-    if(ts.isIdentifier(name))values.set(name.text,name);
-    else for(const item of name.elements)if(ts.isBindingElement(item))bind(item.name,values);
-  };
-  const scope=(node:ts.Node)=>{
-    let values=scopes.get(node);if(values)return values;
-    values=new Map();scopes.set(node,values);
-    const collect=(child:ts.Node)=>{
-      if(ts.isVariableDeclaration(child)||ts.isParameter(child))bind(child.name,values!);
-      if(ts.isFunctionLike(child)||ts.isBlock(child))return;
-      ts.forEachChild(child,collect);
-    };
-    ts.forEachChild(node,collect);return values;
-  };
-  const binding=(node:ts.Identifier)=>{
-    for(let parent=node.parent;parent;parent=parent.parent)if(ts.isBlock(parent)||ts.isFunctionLike(parent)||ts.isSourceFile(parent)){
-      const value=scope(parent).get(node.text);if(value)return value;
-    }
-  };
-  const dataReads=new Map<string,{file:string;name:string}>();
-  function external(node:ts.Node){
-    let root=node;while(ts.isPropertyAccessExpression(root)||ts.isElementAccessExpression(root))root=root.expression;
-    const local=ts.isIdentifier(root)&&binding(root);
-    for(let parent=local&&local.parent;parent;parent=parent.parent)if(ts.isFunctionLike(parent))return;
-    const value=data?.(node);if(!value)return;
-    const {file,name,path}=value;if(path.some(part=>['__proto__','constructor','prototype'].includes(part)))return;
-    const ref={file,name};dataReads.set(`${file}#${name}`,ref);
-    return path.reduce<FlowStateExpression>((get,key)=>({get,key}),{data:ref});
-  }
-  function expression(node:ts.Node|undefined,env:Map<ts.Identifier,FlowStateExpression>,depth=0):FlowStateExpression {
-    if(!node||depth>20)return unknown;node=unwrap(node);
-    if(ts.isStringLiteralLike(node))return {value:node.text};
-    if(ts.isNumericLiteral(node))return {value:Number(node.text)};
-    if(node.kind===ts.SyntaxKind.TrueKeyword)return {value:true};
-    if(node.kind===ts.SyntaxKind.FalseKeyword)return {value:false};
-    if(node.kind===ts.SyntaxKind.NullKeyword)return {value:null};
-    if(ts.isIdentifier(node))return node.text==='undefined'&&!binding(node)?{undefined:true}:env.get(binding(node)!)??external(node)??unknown;
-    if(ts.isObjectLiteralExpression(node)){
-      const fields:Record<string,FlowStateExpression>={};
-      for(const property of node.properties){if(!ts.isPropertyAssignment(property)||!key(property.name)||['__proto__','constructor','prototype'].includes(key(property.name)!))return unknown;fields[key(property.name)!]=expression(property.initializer,env,depth+1);}
-      return {object:fields};
-    }
-    if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)&&node.expression.name.text==='has'&&node.arguments.length===1)return {has:expression(node.expression.expression,env,depth+1),item:expression(node.arguments[0],env,depth+1)};
-    if(ts.isPropertyAccessExpression(node)||ts.isElementAccessExpression(node)){
-      const part=ts.isPropertyAccessExpression(node)?node.name.text:node.argumentExpression&&(ts.isStringLiteralLike(node.argumentExpression)||ts.isNumericLiteral(node.argumentExpression))?node.argumentExpression.text:undefined;
-      if(part===undefined||['__proto__','constructor','prototype'].includes(part))return unknown;
-      let base:ts.Node=node;while(ts.isPropertyAccessExpression(base))base=base.expression;
-      if(ts.isIdentifier(base)&&!env.has(binding(base)!)){const value=external(node);if(value)return value;}
-      return {get:expression(node.expression,env,depth+1),key:part};
-    }
-    if(ts.isConditionalExpression(node))return {op:'?',args:[expression(node.condition,env,depth+1),expression(node.whenTrue,env,depth+1),expression(node.whenFalse,env,depth+1)]};
-    if(ts.isPrefixUnaryExpression(node)&&node.operator===ts.SyntaxKind.ExclamationToken)return {op:'!',args:[expression(node.operand,env,depth+1)]};
-    if(ts.isBinaryExpression(node)){
-      const operations=['===','!==','&&','||','??','<','<=','>','>='] as const;
-      const op=operations.find(value=>value===node.operatorToken.getText());
-      if(op)return {op,args:[expression(node.left,env,depth+1),expression(node.right,env,depth+1)]};
-    }
-    return unknown;
-  }
+  const {binding,expression,dataReads}=stateExpressions(data);
   const reducerEnv=new Map<ts.Identifier,FlowStateExpression>([[state,{input:'state'}],[action,{input:'payload'}]]);
   const variables=(statement:ts.Statement,env:Map<ts.Identifier,FlowStateExpression>)=>{
     if(!ts.isVariableStatement(statement)||!(statement.declarationList.flags&ts.NodeFlags.Const))return false;

@@ -4,6 +4,7 @@ import ts from 'typescript';
 import type {FlowSourceView, FlowStateSite} from '../../shared/app-flow.ts';
 import type {SourceUnit} from './source-links.ts';
 import {stateSelections} from './state-selections-source.ts';
+import {stateSyncs} from './state-sync-source.ts';
 
 type Fn = ts.FunctionLikeDeclaration & {body: ts.ConciseBody};
 type Origin = {site: FlowStateSite; path: string[]};
@@ -376,7 +377,8 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
       const value=units.get(file)?.constants.get(name),declaration=value?.parent;
       if(!value||!declaration||!ts.isVariableDeclaration(declaration)||!ts.isVariableDeclarationList(declaration.parent)||!(declaration.parent.flags&ts.NodeFlags.Const)||owner(declaration))return;
       return {file:relative(root,file),name,path};
-    });if(selections.length)site.selections=selections;}
+    });if(selections.length)site.selections=selections;
+      const sync=stateSyncs(site,bound.call,render,reducer,node=>['react#useEffect','react#useLayoutEffect'].includes(symbol(bound.unit,node.expression.getText())));if(sync.length)site.sync=sync;}
   }
   return {states:states.filter(site=>site.paths.length),views:[...views.values()]};
 }

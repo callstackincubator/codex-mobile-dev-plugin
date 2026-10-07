@@ -869,3 +869,9 @@ retry. Constants from initialized source modules stay in a bounded in-app table
 keyed to the prepared source hash. A new hash releases prior references. Local
 choice references follow their React marker lifetime. Neither table, projected
 state nor callbacks enter telemetry, and no per-step event is added.
+
+The prepared local-state data transfers use the existing presentation opening,
+readiness and capture timing boundaries. They share the bounded expression
+reader used for form choices and add no effect, query or render event. Real
+query values and copied state remain inside the app. Transfers use the existing
+React effect lifecycle and weak setter maps, with no extra timer or observer.

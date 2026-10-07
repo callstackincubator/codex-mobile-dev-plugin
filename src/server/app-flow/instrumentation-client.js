@@ -3,7 +3,7 @@ import {View} from 'react-native';
 import {createFlowRegistry} from './instrumentation-registry.js';
 import {capturePreviewContext} from './instrumentation-context.js';
 import {installPreparedRuntime} from './prepared-runtime.js';
-import {selectPreviewState} from './state-selections.js';
+import {selectPreviewState,syncPreviewState} from './state-selections.js';
 
 if (typeof __MOBILE_DEV_FLOW_FINGERPRINT__ === 'string') {
   globalThis.__MOBILE_DEV_FLOW_COMPILED__ = {fingerprint: __MOBILE_DEV_FLOW_FINGERPRINT__, install: installPreparedRuntime};
@@ -26,7 +26,8 @@ registry.readStateData=(hash,reference)=>{
   return descriptor&&'value'in descriptor?{value:descriptor.value}:undefined;
 };
 const reducerSetters=new WeakMap();
-const seedAction=Symbol('flow-preview-state');
+const seedAction=Symbol('flow-preview-state'),syncAction=Symbol('flow-preview-sync');
+const syncSetters=new WeakMap();
 
 // Added by the Babel transform at a fixed position in each component/custom
 // hook. No dispatcher replacement, conditional hooks, or Fiber hook mutation.
@@ -77,16 +78,18 @@ export function useFlowInitial(id, initial) {
 }
 export function useFlowReducer(id,reducer,initial,initialize) {
   const preview=React.useContext(Preview);
-  const tuple=React.useReducer((state,action)=>preview && action?.type===seedAction?action.value:reducer(state,action),initial,
+  const tuple=React.useReducer((state,action)=>preview && action?.type===seedAction?action.value:preview && action?.type===syncAction?syncPreviewState(state,action.plan,action.locals):reducer(state,action),initial,
     preview?.seeds.has(id)?()=>preview.seeds.get(id):initialize);
-  if(preview)reducerSetters.set(tuple[1],value=>tuple[1]({type:seedAction,value}));
+  if(preview){reducerSetters.set(tuple[1],value=>tuple[1]({type:seedAction,value}));syncSetters.set(tuple[1],(plan,locals)=>tuple[1]({type:syncAction,plan,locals}));}
   return tuple;
 }
-export function useFlowEffect(kind, effect, dependencies, animation) {
+export function useFlowEffect(kind, effect, dependencies, animation, transfers) {
   const preview=React.useContext(Preview);
   // Preview only the render body. App effects may persist account/session data;
   // framework query hooks retain their ordinary real cache and read requests.
-  React[kind](preview && !animation ? () => {} : effect, dependencies);
+  React[kind](preview && !animation ? () => {
+    for(const transfer of transfers??[])syncSetters.get(transfer.dispatch)?.(transfer.plan,transfer.locals);
+  } : effect, dependencies);
 }
 // Keep system keyboard/autofill UI from covering a copied form. The live
 // input, handlers, value and ref retain the app's own behavior.
