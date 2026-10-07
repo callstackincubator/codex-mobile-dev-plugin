@@ -160,13 +160,13 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
     if (seen.has(key)) return key;
     if (symbolCache.has(key)) return symbolCache.get(key)!;
     seen = new Set(seen).add(key);
-    const [head, member] = name.split('.'), imp = unit.imports.get(head);
+    const [head,...members] = name.split('.'), member=members.join('.'), imp = unit.imports.get(head);
     const follow = (module: string, exported: string) => {
       const file = moduleFile(unit, module);
       return file ? symbol(units.get(file)!, exported, seen) : `${module}#${exported}`;
     };
     let result = key;
-    if (imp) result = follow(imp.module, imp.name === '*' && member ? member : imp.name);
+    if (imp) result = follow(imp.module, imp.name === '*' && member ? member : [imp.name,member].filter(Boolean).join('.'));
     else {
       const declaration = unit.constants.get(name);
       if (declaration && ts.isCallExpression(declaration) && /(?:^|\.)lazy$/.test(declaration.expression.getText())) {
@@ -175,11 +175,19 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
       }
       for (const statement of unit.ast.statements) {
         if (!ts.isExportDeclaration(statement)) continue;
+        if(statement.exportClause&&ts.isNamespaceExport(statement.exportClause)&&statement.exportClause.name.text===head&&member&&statement.moduleSpecifier&&ts.isStringLiteral(statement.moduleSpecifier)){result=follow(statement.moduleSpecifier.text,member);break;}
         if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
-          const exported = statement.exportClause.elements.find(item => item.name.text === name);
-          if (exported) { const local = exported.propertyName?.text ?? name; result = statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier) ? follow(statement.moduleSpecifier.text, local) : symbol(unit, local, seen); break; }
+          const exported = statement.exportClause.elements.find(item => item.name.text === head);
+          if (exported) { const local = [exported.propertyName?.text??head,member].filter(Boolean).join('.'); result = statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier) ? follow(statement.moduleSpecifier.text, local) : symbol(unit, local, seen); break; }
         }
       }
+    }
+    if(result===key&&!unit.constants.has(head)){
+      const candidates=unit.ast.statements.filter(statement=>ts.isExportDeclaration(statement)&&!statement.exportClause&&statement.moduleSpecifier&&ts.isStringLiteral(statement.moduleSpecifier)).map(statement=>follow((statement as ts.ExportDeclaration).moduleSpecifier!.getText().slice(1,-1),name)).filter(target=>{
+        const separator=target.lastIndexOf('#'),source=units.get(target.slice(0,separator)),local=target.slice(separator+1).split('.')[0];
+        return source&&(source.constants.has(local)||source.ast.statements.some(statement=>ts.isFunctionDeclaration(statement)&&statement.name?.text===local));
+      });
+      const unique=[...new Set(candidates)];if(unique.length===1)result=unique[0];
     }
     symbolCache.set(key, result); return result;
   }

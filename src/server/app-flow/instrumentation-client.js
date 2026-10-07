@@ -15,6 +15,16 @@ const Preview = React.createContext(null);
 // The shared executor can place this boundary inside an existing native sheet.
 registry.wrapPreview = (content, preview) => React.createElement(Preview.Provider, {value:preview}, content);
 registry.selectState = selectPreviewState;
+const dataModules=new Map();let dataHash;
+export function moduleData(hash,file,values){
+  if(hash!==dataHash){dataModules.clear();dataHash=hash;}
+  if(dataModules.size<512||dataModules.has(file))dataModules.set(file,values);
+}
+registry.readStateData=(hash,reference)=>{
+  if(hash!==dataHash)return;
+  const value=dataModules.get(reference.file),descriptor=value&&Object.getOwnPropertyDescriptor(value,reference.name);
+  return descriptor&&'value'in descriptor?{value:descriptor.value}:undefined;
+};
 const reducerSetters=new WeakMap();
 const seedAction=Symbol('flow-preview-state');
 
@@ -41,9 +51,9 @@ export function boundary(owner, children) {
   const body=React.createElement(React.Profiler, {id: owner.id, onRender: () => {}}, children);
   return owner.host && !owner.preview ? React.createElement(CaptureHost,{owner},body) : body;
 }
-export function entry(owner, id, children) {
+export function entry(owner, id, children, locals) {
   if(!owner.pending.has(id))registry.stage(owner,id,{kind:'entry'});
-  return React.createElement(React.Profiler, {id: `${owner.id}:${id}`, key:children?.key??undefined, onRender: () => {}}, children);
+  return React.createElement(React.Profiler, {id: `${owner.id}:${id}`, key:children?.key??undefined, flowLocals:locals, onRender: () => {}}, children);
 }
 // A prepared View retains its extra children through ordinary app renders.
 // No extra native container, root replacement, or per-View hook is introduced.

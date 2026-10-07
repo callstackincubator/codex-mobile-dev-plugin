@@ -369,7 +369,14 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
   for(const site of states)if(site.hook==='useReducer'&&site.paths.length){
     const bound=calls.get(site.id),render=bound&&owner(bound.call);
     const reducer=bound?.call.arguments[0]&&functions.get(symbol(bound.unit,bound.call.arguments[0].getText()));
-    if(bound&&render&&reducer){const selections=stateSelections(site,bound.call,render,reducer);if(selections.length)site.selections=selections;}
+    if(bound&&render&&reducer){const selections=stateSelections(site,bound.call,render,reducer,(node)=>{
+      const unit=units.get(node.getSourceFile().fileName);if(!unit)return;
+      const target=symbol(unit,node.getText()),separator=target.lastIndexOf('#');
+      const file=target.slice(0,separator),[name,...path]=target.slice(separator+1).split('.');
+      const value=units.get(file)?.constants.get(name),declaration=value?.parent;
+      if(!value||!declaration||!ts.isVariableDeclaration(declaration)||!ts.isVariableDeclarationList(declaration.parent)||!(declaration.parent.flags&ts.NodeFlags.Const)||owner(declaration))return;
+      return {file:relative(root,file),name,path};
+    });if(selections.length)site.selections=selections;}
   }
   return {states:states.filter(site=>site.paths.length),views:[...views.values()]};
 }

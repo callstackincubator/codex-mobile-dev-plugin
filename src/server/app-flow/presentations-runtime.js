@@ -430,7 +430,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(!fiber||fiber.sibling)continue;
       const matches=targets.filter(target=>target.component===name(fiber));if(!matches.length)continue;
       let record=preparedEntries.get(fiber);
-      if(!record){record={actions:new Set()};preparedEntries.set(fiber,record);lastCompiledEntries++;}
+      if(!record){record={actions:new Set(),locals:marker.memoizedProps?.flowLocals};preparedEntries.set(fiber,record);lastCompiledEntries++;}
       for(const target of matches)record.actions.add(target.id);
     }
   }
@@ -1009,21 +1009,36 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     return {value:matches?Object.defineProperties(Array.isArray(value)?[]:{},descriptors):value,matches};
   }
-  function previewState(action, found, tree) {
+  function previewState(action, found, tree, progress={visited:new Set(),steps:0}) {
     const before=hookValue(found.binding,tree);
     const site=catalog.states.find(site=>site.id===action.effect.site);
     const selections=(site?.selections??[]).filter(selection=>Object.prototype.hasOwnProperty.call(selection.patch,action.effect.path[0]));
-    let value;
+    let value,selected;
     if(selections.length){
       const candidates=selections.flatMap(selection=>(tree.entries.get(`selection:${site.id}:${selection.id}`)??[])
         .filter(fiber=>tree.inside(fiber,found.binding.fiber)&&tree.isVisible(fiber))
-        .slice(0,32).map(fiber=>({id:selection.id,props:fiber.memoizedProps})));
-      const selected=globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.selectState?.(selections,before,action.effect,candidates);
-      if(!selected)return {error:'This form step needs a real rendered choice before it can be previewed.'};
+        .slice(0,32).map(fiber=>({id:selection.id,props:fiber.memoizedProps,locals:preparedEntries.get(fiber)?.locals})));
+      selected=globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.selectState?.(selections,before,action.effect,candidates,{advance:progress.steps<8,visited:progress.visited,data:ref=>globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.readStateData?.(sourceHash,ref)});
+      if(!selected)return {status:'needs-data',error:'This form step needs a real rendered choice before it can be previewed.'};
       value=selected.value;
     }else value=setPath(before,action.effect.path,action.effect.value);
     const focus=found.consumer??found.binding.fiber;
-    if(focus===found.binding.fiber||focus===found.binding.fiber.alternate)return project(focus,{views:action.views,seed:{index:found.binding.index,kind:found.binding.kind,value,applied:false}});
+    const finish=result=>{
+      if(result.error||selected?.complete!==false)return result;
+      const record=projected.at(-1),visited=new Set(progress.visited);let current=before;for(const part of action.effect.path)current=current?.[part];visited.add(current);visited.add(selected.step);
+      return {...result,advance:()=>{
+        if(!projected.includes(record)||record.failed)return {error:'The temporary form could not open its next step.'};
+        collectPreparedStates([site],committedStructure().all);
+        const live=index(true),bodies=(live.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type);
+        if(bodies.length!==1)return {pending:true};
+        const bindings=(live.states.get(action.effect.site)??[]).filter(binding=>live.inside(binding.fiber,bodies[0]));
+        if(bindings.length!==1)return {pending:true};
+        let state=hookValue(bindings[0],live);for(const part of action.effect.path)state=state?.[part];
+        if(state!==selected.step)return {pending:true};
+        return open(action.id,bodies[0],{visited,steps:progress.steps+1});
+      }};
+    };
+    if(focus===found.binding.fiber||focus===found.binding.fiber.alternate)return finish(project(focus,{views:action.views,seed:{index:found.binding.index,kind:found.binding.kind,value,applied:false}}));
     if(before===undefined||before===null)return {error:'The shared presentation has no real state to copy.'};
     const props=replaceReference(focus.memoizedProps,before,value),providers=new Map();let matches=props.matches;
     const seen=new Set();for(let parent=focus.return;parent&&!seen.has(parent);parent=parent.return){
@@ -1031,7 +1046,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(parent.tag!==10)continue;const result=replaceReference(parent.memoizedProps?.value,before,value);matches+=result.matches;if(result.matches)providers.set(parent,result.value);
     }
     if(matches!==1)return {error:'The shared presentation state is missing or ambiguous.'};
-    return project(focus,{props:props.value,providers,views:action.views});
+    return finish(project(focus,{props:props.value,providers,views:action.views}));
   }
   function condition(node,props) {
     if(!node)return true;
@@ -1118,7 +1133,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     for(const fiber of tree.all)if(fiber.tag===5&&tree.isVisible(fiber)){if(only)return;only=fiber;}
     return only;
   }
-  const find = (action,tree=index(true),focus,scope=bodyRoots(focus,tree)) => {
+  const find = (action,tree=index(true),focus,scope=bodyRoots(focus,tree),allowCurrent=false) => {
     const inScope=fiber=>!focus||scope.some(root=>tree.inside(fiber,root));
     if(action.preview&&action.effect.kind==='mount'){
       // Bootstrap owners at a route boundary, never inside an unrelated sheet.
@@ -1138,7 +1153,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         for(const consumer of consumers){
           if(focus&&!scope.some(root=>tree.inside(consumer,root)||tree.inside(root,consumer))||!tree.isVisible(consumer)||!tree.isVisible(binding.fiber))continue;
           let value=snapshot;for(const part of action.effect.path)value=value?.[part];
-          if(value===action.effect.value)continue;found.push({owner:consumer,consumer,binding});
+          const current=value===action.effect.value;
+          if(current&&!allowCurrent)continue;
+          if(current&&action.expected&&!focusedComponent(action.expected.component,consumer,tree,undefined,`${action.id}:expected`))continue;
+          found.push({owner:consumer,consumer,binding,alreadyOpen:current});
         }
       }
       return found.length===1?found[0]:undefined;
@@ -1193,8 +1211,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(unique.length===1)return {owner,target:unique[0]};
     }
   };
-  function resolveEntry(action,tree,focus) {
-    const exact=find(action,tree,focus);if(exact)return exact;
+  function resolveEntry(action,tree,focus,allowCurrent=false) {
+    const exact=find(action,tree,focus,bodyRoots(focus,tree),allowCurrent);if(exact)return exact;
     if(action.preview||!['state','control'].includes(action.effect.kind))return;
     // Saved maps can outlive a feature flag selecting another source opener.
     // Reuse only an independently reachable entry for the exact same update,
@@ -1230,7 +1248,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         try{globalThis.__r(candidates[0].key);}catch{return {available:false,error:'The source component could not load.'};}
       }
     }
-    const tree=index(true),found=resolveEntry(action,tree,focus);
+    const tree=index(true),found=resolveEntry(action,tree,focus,true);
     if(found)return {available:true};
     if(action.preview&&effect.kind==='mount')return {available:false,error:'The source component or its live provider context is unavailable.'};
     const sites=effect.kind==='state'?tree.states.get(effect.site)??[]:[];
@@ -1585,21 +1603,23 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     pendingHandoff={id,owner:current.get(owner),target:{...found.target,fiber:current.get(found.target.fiber)}};
     return {closed:true,focus:current.get(owner)};
   }
-  function open(id,focus) {
+  function open(id,focus,progress) {
     if(undo.some(entry=>entry.closing))return {error:'A native presentation is still dismissing.'};
     armNative();
     const prepared=pendingHandoff;pendingHandoff=undefined;
-    const action=catalog.actions.find(a=>a.id===id),tree=index(true);
+    const action=catalog.actions.find(a=>a.id===id);
+    if(action?.effect.kind==='state'){const site=catalog.states.find(site=>site.id===action.effect.site);if(site)collectPreparedStates([site],committedStructure().all);}
+    const tree=index(true);
     const target=prepared?.id===id&&tree.current.get(prepared.target.fiber),owner=prepared?.id===id&&tree.current.get(prepared.owner);
     const saved=action?.effect.kind==='control'&&target&&owner&&controlValue(target,action.effect.prop)===prepared.target.value?{owner,target:{...prepared.target,fiber:target}}:undefined;
-    const found=action&&(saved??resolveEntry(action,tree,focus));if(!found)return {error:'This presentation entry is not currently available.'};
+    const found=action&&(saved??resolveEntry(action,tree,focus,true));if(!found)return {error:'This presentation entry is not currently available.'};
     if(action.effect.kind==='mount'){
       const owner={type:found.type,elementType:found.type,memoizedProps:{},return:found.context};
       const result=project(owner,{views:action.views,mount:true},found.projection);
       return result.error?result:{...result,expected:action.owner};
     }
     if(action.effect.kind==='state'){
-      if(action.preview)return {...previewState(action,found,tree),expected:action.expected?{component:action.expected.component,scope:action.expected.scope,entry:`${action.id}:expected`}:action.name};
+      if(action.preview)return {...(found.alreadyOpen?{focus:found.consumer??found.binding.fiber,alreadyOpen:true}:previewState(action,found,tree,progress)),expected:action.expected?{component:action.expected.component,scope:action.expected.scope,entry:`${action.id}:expected`}:action.name};
       const b=found.binding;let previous=hookValue(b);for(const part of action.effect.path)previous=previous?.[part];
       undo.push({binding:b,path:action.effect.path,value:previous,nativeDismiss:previous==null||previous===false});
       // Guard discovery only supplies finite presentation values. No session,

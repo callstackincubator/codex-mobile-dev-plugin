@@ -860,3 +860,12 @@ View, ScrollView and SafeAreaView. Masks follow source-bound elements, survive
 ordinary app renders and release only their own current value during cleanup.
 Local native-readiness diagnostics include at most four sets of layout counters;
 no styles, field values, images or new per-probe events enter Sentry.
+
+Form-step progression stays within the existing presentation-open, readiness and
+restoration timings. A single open may now render up to eight intermediate local
+steps before checking the requested view. Each step uses source-bound rendered
+choices. Missing data remains a needs-data outcome and does not start a timeout
+retry. Constants from initialized source modules stay in a bounded in-app table
+keyed to the prepared source hash. A new hash releases prior references. Local
+choice references follow their React marker lifetime. Neither table, projected
+state nor callbacks enter telemetry, and no per-step event is added.

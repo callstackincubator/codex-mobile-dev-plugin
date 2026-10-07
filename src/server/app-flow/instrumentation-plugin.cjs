@@ -127,7 +127,7 @@ module.exports = function flowInstrumentation({types: t}) {
         if(autofocus){
           result=call('input',[result]);effects++;
         }
-        for(const {owner,target} of markers)result=call('entry',[owner.token,t.stringLiteral(target.id),result]);
+        for(const {owner,target} of markers)result=call('entry',[owner.token,t.stringLiteral(target.id),result,...(target.locals?.length?[t.objectExpression(target.locals.filter(name=>path.scope.getBinding(name)).map(name=>t.objectProperty(t.identifier(name),t.identifier(name))))]:[])]);
         if(element.parentPath.isJSXElement()||element.parentPath.isJSXFragment())element.replaceWith(t.jsxExpressionContainer(result));
         else element.replaceWith(result);
         element.skip();
@@ -151,6 +151,8 @@ module.exports = function flowInstrumentation({types: t}) {
       if(destructure)fn.node.body.body.unshift(destructure);
       fn.node.body.body.unshift(t.variableDeclaration('const', [t.variableDeclarator(token, call('useFlowOwner', [t.stringLiteral(`${filename}#${name}`), t.stringLiteral(manifest.sourceHash || ''), name.startsWith('use')?t.identifier('undefined'):t.identifier(name), props, t.booleanLiteral(!!host)]))]));
     }
+    const data=(unit.data??[]).filter(name=>{const binding=program.scope.getBinding(name);return binding?.kind==='const'&&binding.path.isVariableDeclarator()&&binding.scope===program.scope;});
+    if(data.length){program.pushContainer('body',t.expressionStatement(call('moduleData',[t.stringLiteral(manifest.sourceHash||''),t.stringLiteral(filename),t.objectExpression(data.map(name=>t.objectProperty(t.identifier(name),t.identifier(name))))])));effects++;}
     if (owners.size || effects) program.unshiftContainer('body', t.importDeclaration([t.importNamespaceSpecifier(client)], t.stringLiteral(state.opts.client)));
   }}};
 };

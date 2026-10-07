@@ -1276,3 +1276,24 @@ test('a stopped runtime is not a successful heartbeat',async t=>{
  await assert.rejects(connection.invoke({type:'heartbeat'}),/inspector is no longer installed/);
  result={};await assert.rejects(connection.invoke({type:'heartbeat'}),/invalid response/);
 });
+
+for(const outcome of ['ready','needs-data','cancel'] as const)test(`one presentation command carries form choices and restores every checkpoint: ${outcome}`,async t=>{
+  const factory=(options:any)=>{
+    const base=(globalThis as any).installPresentationRuntime(options);let level=0,polls=0;
+    return {...base,checkpoint:()=>level,async rollback(next:number){level=next;},open(){level++;return {focus:(globalThis as any).logical,advance(){
+      polls++;if(polls===1||(globalThis as any).outcome==='cancel')return {pending:true};
+      if((globalThis as any).outcome==='needs-data')return {status:'needs-data',error:'Real choice unavailable'};
+      level++;return {focus:(globalThis as any).logical};
+    }}}};
+  };
+  const app=runtime(t,false,undefined,factory,{installPresentationRuntime,outcome});app.context.logical=app.fiber;
+  const pending=app.invoke({type:'presentation-open',id:'form'});
+  if(outcome==='cancel')await app.invoke({type:'presentation-rollback',level:0});
+  const result=await pending;
+  assert.equal('advance'in result,false,'Internal continuation closures never cross the inspector');
+  if(outcome==='ready')assert.equal((await app.invoke({type:'presentation-checkpoint'})).level,2);
+  if(outcome==='needs-data')assert.equal(result.status,'needs-data');
+  if(outcome==='cancel')assert.equal(result.cancelled,true);
+  await app.invoke({type:'presentation-rollback',level:0});
+  assert.equal((await app.invoke({type:'presentation-checkpoint'})).level,0);
+});

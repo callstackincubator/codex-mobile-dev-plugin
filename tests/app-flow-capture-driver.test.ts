@@ -155,3 +155,12 @@ test('a lost callback expires even when the inspector keeps answering heartbeats
  const rejected=assert.rejects(pending,(error:any)=>error.interrupted===true&&error.fatal===true);
  t.mock.timers.tick(2001);await rejected;
 });
+
+for(const status of ['needs-data','timed-out','unrecognized'])test(`source open preserves missing-data failures without treating them as retries: ${status}`,async()=>{
+  const action:any={id:'choice',effect:{kind:'state'}};
+  const events:string[]=[];
+  const backend:any={runtime:{async invoke(command:any){events.push(command.type);return command.type==='presentation-prepare'?{available:true}:command.type==='presentation-open'?{error:'No rendered choice',status}:{};}}};
+  const result=await captureSource({backend,job:{id:'view',path:[],actions:[action],sourceViews:[]},operation:'open',actionId:'choice',catalog:{states:[],actions:[action]},projectRoot:'/app',signal:new AbortController().signal});
+  assert.equal(result.status,status==='needs-data'?'needs-data':'timed-out');
+  assert.deepEqual(events,['presentation-setup','presentation-prepare','presentation-open']);
+});

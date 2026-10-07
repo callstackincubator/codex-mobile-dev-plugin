@@ -39,7 +39,7 @@ export type InstrumentationManifest = {
   version: 1;
   sourceHash?: string;
   mounts: {source: string; file: string; export: string}[];
-  files: Record<string, {hash: string; states: FlowStateSite[]; hosts?: string[]; mounts?: string[]; controls: {id: string; owner: string; prop: string; outerOwner?: boolean; source: NonNullable<FlowPresentationAction['source']>}[]}>;
+  files: Record<string, {hash: string; states: FlowStateSite[]; data?: string[]; hosts?: string[]; mounts?: string[]; controls: {id: string; owner: string; prop: string; outerOwner?: boolean; locals?:string[]; source: NonNullable<FlowPresentationAction['source']>}[]}>;
 };
 
 /** Build approved jobs for a fixed selection or the live discovery planner. */
@@ -72,15 +72,16 @@ export async function instrumentationManifest(projectRoot: string, graph: FlowGr
   const catalog = graph.presentations;
   const mounts: InstrumentationManifest['mounts'] = [];
   const states = new Map([...(catalog?.states ?? []), ...(catalog?.previewStates ?? [])].map(site => [site.id, site]));
-  const marker=(file:string,owner:string,source:NonNullable<FlowPresentationAction['source']>,outerOwner=false)=>{
+  const marker=(file:string,owner:string,source:NonNullable<FlowPresentationAction['source']>,outerOwner=false,locals:string[]=[])=>{
     const unit=files[file]??={hash:'',states:[],controls:[]},id=`${file}:${source.line}:${source.column}:entry`;
     const previous=unit.controls.find(control=>control.id===id);
-    if(previous){if(outerOwner)previous.outerOwner=true;}else unit.controls.push({id,owner,prop:'',source,...(outerOwner?{outerOwner:true}:{})});
+    if(previous){if(outerOwner)previous.outerOwner=true;if(locals.length)previous.locals=[...new Set([...(previous.locals??[]),...locals])];}else unit.controls.push({id,owner,prop:'',source,...(outerOwner?{outerOwner:true}:{}),...(locals.length?{locals}:{})});
   };
   for (const site of states.values()) {
     (files[site.file] ??= {hash: '', states: [], controls: []}).states.push(site);
     for(const entry of site.ownerEntries??[])marker(entry.file,entry.owner,entry.source);
-    for(const selection of site.selections??[])marker(selection.file,selection.owner,selection.source,true);
+    for(const selection of site.selections??[])marker(selection.file,selection.owner,selection.source,true,selection.locals);
+    for(const value of site.data??[]){const unit=files[value.file]??={hash:'',states:[],controls:[]};if(!unit.data?.includes(value.name))(unit.data??=[]).push(value.name);}
   }
   for (const action of [...(catalog?.actions ?? []), ...(catalog?.previews ?? [])]) {
     if(action.effect.kind!=='mount'&&action.source)marker(action.file,action.owner,action.source);

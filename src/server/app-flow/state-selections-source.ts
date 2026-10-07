@@ -13,7 +13,7 @@ const unknown: FlowStateExpression = {unknown:true};
 const key = (name: ts.PropertyName) => ts.isIdentifier(name)||ts.isStringLiteralLike(name)||ts.isNumericLiteral(name)?name.text:undefined;
 
 /** Compile data reads and object patches, never a handler or reducer call. */
-export function stateSelections(site: FlowStateSite, call: ts.CallExpression, render: Fn, reducer: Fn): FlowStateSelection[] {
+export function stateSelections(site: FlowStateSite, call: ts.CallExpression, render: Fn, reducer: Fn, data?: (node:ts.Node)=>{file:string;name:string;path:string[]}|undefined): FlowStateSelection[] {
   const tuple=call.parent;
   if(!ts.isVariableDeclaration(tuple)||!ts.isArrayBindingPattern(tuple.name))return [];
   const dispatch=tuple.name.elements[1];
@@ -40,6 +40,16 @@ export function stateSelections(site: FlowStateSite, call: ts.CallExpression, re
       const value=scope(parent).get(node.text);if(value)return value;
     }
   };
+  const dataReads=new Map<string,{file:string;name:string}>();
+  function external(node:ts.Node){
+    let root=node;while(ts.isPropertyAccessExpression(root)||ts.isElementAccessExpression(root))root=root.expression;
+    const local=ts.isIdentifier(root)&&binding(root);
+    for(let parent=local&&local.parent;parent;parent=parent.parent)if(ts.isFunctionLike(parent))return;
+    const value=data?.(node);if(!value)return;
+    const {file,name,path}=value;if(path.some(part=>['__proto__','constructor','prototype'].includes(part)))return;
+    const ref={file,name};dataReads.set(`${file}#${name}`,ref);
+    return path.reduce<FlowStateExpression>((get,key)=>({get,key}),{data:ref});
+  }
   function expression(node:ts.Node|undefined,env:Map<ts.Identifier,FlowStateExpression>,depth=0):FlowStateExpression {
     if(!node||depth>20)return unknown;node=unwrap(node);
     if(ts.isStringLiteralLike(node))return {value:node.text};
@@ -47,10 +57,18 @@ export function stateSelections(site: FlowStateSite, call: ts.CallExpression, re
     if(node.kind===ts.SyntaxKind.TrueKeyword)return {value:true};
     if(node.kind===ts.SyntaxKind.FalseKeyword)return {value:false};
     if(node.kind===ts.SyntaxKind.NullKeyword)return {value:null};
-    if(ts.isIdentifier(node))return node.text==='undefined'&&!binding(node)?{undefined:true}:env.get(binding(node)!)??unknown;
+    if(ts.isIdentifier(node))return node.text==='undefined'&&!binding(node)?{undefined:true}:env.get(binding(node)!)??external(node)??unknown;
+    if(ts.isObjectLiteralExpression(node)){
+      const fields:Record<string,FlowStateExpression>={};
+      for(const property of node.properties){if(!ts.isPropertyAssignment(property)||!key(property.name)||['__proto__','constructor','prototype'].includes(key(property.name)!))return unknown;fields[key(property.name)!]=expression(property.initializer,env,depth+1);}
+      return {object:fields};
+    }
+    if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)&&node.expression.name.text==='has'&&node.arguments.length===1)return {has:expression(node.expression.expression,env,depth+1),item:expression(node.arguments[0],env,depth+1)};
     if(ts.isPropertyAccessExpression(node)||ts.isElementAccessExpression(node)){
       const part=ts.isPropertyAccessExpression(node)?node.name.text:node.argumentExpression&&(ts.isStringLiteralLike(node.argumentExpression)||ts.isNumericLiteral(node.argumentExpression))?node.argumentExpression.text:undefined;
       if(part===undefined||['__proto__','constructor','prototype'].includes(part))return unknown;
+      let base:ts.Node=node;while(ts.isPropertyAccessExpression(base))base=base.expression;
+      if(ts.isIdentifier(base)&&!env.has(binding(base)!)){const value=external(node);if(value)return value;}
       return {get:expression(node.expression,env,depth+1),key:part};
     }
     if(ts.isConditionalExpression(node))return {op:'?',args:[expression(node.condition,env,depth+1),expression(node.whenTrue,env,depth+1),expression(node.whenFalse,env,depth+1)]};
@@ -104,7 +122,7 @@ export function stateSelections(site: FlowStateSite, call: ts.CallExpression, re
     if(selections.length>=64||!ts.isJsxOpeningElement(node)&&!ts.isJsxSelfClosingElement(node))return;
     const attributes=node.attributes.properties.filter(ts.isJsxAttribute);
     for(const attribute of attributes){
-      if(!/^on[A-Z]/.test(attribute.name.getText())||!attribute.initializer||!ts.isJsxExpression(attribute.initializer)||!attribute.initializer.expression)continue;
+      if(!attribute.initializer||!ts.isJsxExpression(attribute.initializer)||!attribute.initializer.expression)continue;
       const callback=unwrap(attribute.initializer.expression);
       if(!ts.isArrowFunction(callback)&&!ts.isFunctionExpression(callback)||callback.parameters.length||callback.modifiers?.some(m=>m.kind===ts.SyntaxKind.AsyncKeyword))continue;
       let body:ts.Node=callback.body;
@@ -127,6 +145,11 @@ export function stateSelections(site: FlowStateSite, call: ts.CallExpression, re
         const value=unwrap(prop.initializer.expression);
         if(ts.isIdentifier(value)){const bound=binding(value);if(bound)env.set(bound,{get:{input:'props'},key:prop.name.getText()});}
       }
+      const locals=new Set<string>(),sourceStart=node.getStart();
+      walk(payload,node=>{if(!ts.isIdentifier(node)||ts.isCallExpression(node.parent)&&node.parent.expression===node||ts.isPropertyAccessExpression(node.parent)&&node.parent.name===node||ts.isPropertyAssignment(node.parent)&&node.parent.name===node)return;
+        const declaration=binding(node);if(!declaration||declaration.getStart()>sourceStart||env.has(declaration)||['__proto__','constructor','prototype'].includes(node.text))return;
+        for(let p:ts.Node|undefined=declaration.parent;p;p=p.parent)if(p===render){locals.add(node.text);env.set(declaration,{get:{input:'locals'},key:node.text});break;}
+      });
       const fields:Record<string,FlowStateExpression>={};let valid=true;
       for(const property of payload.properties){
         if(!ts.isPropertyAssignment(property)||!key(property.name)||['__proto__','constructor','prototype'].includes(key(property.name)!)){valid=false;break;}
@@ -135,8 +158,9 @@ export function stateSelections(site: FlowStateSite, call: ts.CallExpression, re
       if(!valid)continue;
       const ast=node.getSourceFile(),start=ast.getLineAndCharacterOfPosition(node.getStart()),end=ast.getLineAndCharacterOfPosition(node.getEnd());
       const source={line:start.line+1,column:start.character,endLine:end.line+1,endColumn:end.character};
-      selections.push({id:createHash('sha256').update(JSON.stringify([site.id,source,attribute.name.getText()])).digest('hex').slice(0,20),file:site.file,owner:site.owner,component:node.tagName.getText().split('.').at(-1)!,source,payload:fields,patch});
+      selections.push({id:createHash('sha256').update(JSON.stringify([site.id,source,attribute.name.getText()])).digest('hex').slice(0,20),file:site.file,owner:site.owner,component:node.tagName.getText().split('.').at(-1)!,source,...(locals.size?{locals:[...locals]}:{}),payload:fields,patch});
     }
   });
+  if(selections.length&&dataReads.size)site.data=[...dataReads.values()];
   return selections;
 }

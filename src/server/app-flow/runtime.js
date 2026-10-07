@@ -629,10 +629,10 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           return;
         }
         if (command.type === 'presentation-open') {
-          const before = presentations?.checkpoint() ?? 0;
-          const result = presentations?.open(command.id,presentationFocus) ?? { error: 'Presentation capture is unavailable.' };
+          let before = presentations?.checkpoint() ?? 0;
+          let result = presentations?.open(command.id,presentationFocus) ?? { error: 'Presentation capture is unavailable.' };
           if (result.error) { reply(result); return; }
-          const after = presentations?.checkpoint() ?? before;
+          let after = presentations?.checkpoint() ?? before;
           for(let level=before;level<after;level++)presentationFrames.push({focus:presentationFocus,expected:presentationExpected});
           presentationExpected=result.expected; presentationObservation = undefined;
           const started=Date.now(),ticket=generation;
@@ -640,6 +640,16 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           const mounted=()=>{
             if(stopped||ticket!==generation){cancelled();return;}
             try {
+              if(result.advance){
+                if(Date.now()-started>=1200){reply({error:'The form choices did not finish rendering.'});return;}
+                const next=result.advance();
+                if(next.pending){later(mounted,16,cancelled);return;}
+                if(next.error){reply(next);return;}
+                before=after;const current=presentations?.checkpoint()??before;
+                for(let level=before;level<current;level++)presentationFrames.push({focus:result.focus??presentationFocus,expected:presentationExpected});
+                after=current;result=next;presentationExpected=result.expected;
+                later(mounted,0,cancelled);return;
+              }
               presentationFocus=result.focus??presentations?.focusFor(result.name,result.scope);
               if(!presentationFocus){
                 if(Date.now()-started>=1200){reply({error:'The presentation target did not mount.'});return;}
