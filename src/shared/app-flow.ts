@@ -31,7 +31,9 @@ export type FlowNode = {
 };
 export type FlowEdge = { from: string; to: string; kind: "contains" | "navigation"; owner?: string; via?: "link" | "call"; guarded?: boolean; file?: string; line?: number };
 export type FlowLink = { target: string; owner: string; params?: FlowParams; guarded: boolean };
-export type FlowStateSite = { id: string; file: string; line: number; column: number; endLine: number; endColumn?: number; owner: string; paths: string[][]; hook?: 'useState' | 'useReducer'; valueName?: string; owners?: string[]; ownerSites?: {file: string; owner: string}[]; ownerEntries?: {component:string; file:string; owner:string; source:{line:number;column:number;endLine:number;endColumn:number}}[] };
+export type FlowStateExpression = {value: string|number|boolean|null} | {undefined:true} | {unknown:true} | {input:'state'|'payload'|'props'} | {get:FlowStateExpression;key:string} | {op:'?'|'!'|'==='|'!=='|'&&'|'||'|'??'|'<'|'<='|'>'|'>=';args:FlowStateExpression[]};
+export type FlowStateSelection = {id:string;file:string;owner:string;component:string;source:{line:number;column:number;endLine:number;endColumn:number};payload:Record<string,FlowStateExpression>;patch:Record<string,FlowStateExpression>};
+export type FlowStateSite = { id: string; file: string; line: number; column: number; endLine: number; endColumn?: number; owner: string; paths: string[][]; selections?: FlowStateSelection[]; hook?: 'useState' | 'useReducer'; valueName?: string; owners?: string[]; ownerSites?: {file: string; owner: string}[]; ownerEntries?: {component:string; file:string; owner:string; source:{line:number;column:number;endLine:number;endColumn:number}}[] };
 export type FlowPresentationAction = {
   id: string; file: string; line: number; owner: string; component: string; prop: string; name: string;
   source?: { line: number; column: number; endLine: number; endColumn: number };

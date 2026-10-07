@@ -3,6 +3,7 @@ import {relative} from 'node:path';
 import ts from 'typescript';
 import type {FlowSourceView, FlowStateSite} from '../../shared/app-flow.ts';
 import type {SourceUnit} from './source-links.ts';
+import {stateSelections} from './state-selections-source.ts';
 
 type Fn = ts.FunctionLikeDeclaration & {body: ts.ConciseBody};
 type Origin = {site: FlowStateSite; path: string[]};
@@ -364,6 +365,11 @@ export function scanSourceViews(units: Map<string,SourceUnit>, root: string, sym
     const callers=sources.flatMap(source=>(entries.get(`${root}/${source.file}#${source.owner}`)??[])
       .flatMap(entry=>entry.source?[{component:source.owner,file:entry.file,owner:entry.owner,source:entry.source}]:[]));
     if(callers.length)site.ownerEntries=[...new Map(callers.map(entry=>[JSON.stringify(entry),entry])).values()];
+  }
+  for(const site of states)if(site.hook==='useReducer'&&site.paths.length){
+    const bound=calls.get(site.id),render=bound&&owner(bound.call);
+    const reducer=bound?.call.arguments[0]&&functions.get(symbol(bound.unit,bound.call.arguments[0].getText()));
+    if(bound&&render&&reducer){const selections=stateSelections(site,bound.call,render,reducer);if(selections.length)site.selections=selections;}
   }
   return {states:states.filter(site=>site.paths.length),views:[...views.values()]};
 }

@@ -39,7 +39,7 @@ export type InstrumentationManifest = {
   version: 1;
   sourceHash?: string;
   mounts: {source: string; file: string; export: string}[];
-  files: Record<string, {hash: string; states: FlowStateSite[]; hosts?: string[]; mounts?: string[]; controls: {id: string; owner: string; prop: string; source: NonNullable<FlowPresentationAction['source']>}[]}>;
+  files: Record<string, {hash: string; states: FlowStateSite[]; hosts?: string[]; mounts?: string[]; controls: {id: string; owner: string; prop: string; outerOwner?: boolean; source: NonNullable<FlowPresentationAction['source']>}[]}>;
 };
 
 /** Build approved jobs for a fixed selection or the live discovery planner. */
@@ -72,13 +72,15 @@ export async function instrumentationManifest(projectRoot: string, graph: FlowGr
   const catalog = graph.presentations;
   const mounts: InstrumentationManifest['mounts'] = [];
   const states = new Map([...(catalog?.states ?? []), ...(catalog?.previewStates ?? [])].map(site => [site.id, site]));
-  const marker=(file:string,owner:string,source:NonNullable<FlowPresentationAction['source']>)=>{
+  const marker=(file:string,owner:string,source:NonNullable<FlowPresentationAction['source']>,outerOwner=false)=>{
     const unit=files[file]??={hash:'',states:[],controls:[]},id=`${file}:${source.line}:${source.column}:entry`;
-    if(!unit.controls.some(control=>control.id===id))unit.controls.push({id,owner,prop:'',source});
+    const previous=unit.controls.find(control=>control.id===id);
+    if(previous){if(outerOwner)previous.outerOwner=true;}else unit.controls.push({id,owner,prop:'',source,...(outerOwner?{outerOwner:true}:{})});
   };
   for (const site of states.values()) {
     (files[site.file] ??= {hash: '', states: [], controls: []}).states.push(site);
     for(const entry of site.ownerEntries??[])marker(entry.file,entry.owner,entry.source);
+    for(const selection of site.selections??[])marker(selection.file,selection.owner,selection.source,true);
   }
   for (const action of [...(catalog?.actions ?? []), ...(catalog?.previews ?? [])]) {
     if(action.effect.kind!=='mount'&&action.source)marker(action.file,action.owner,action.source);

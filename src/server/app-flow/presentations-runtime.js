@@ -402,7 +402,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       const marker=`${target.file}:${target.source.line}:${target.source.column}`;
       const list=sites.get(marker)??[];list.push({source:`${target.file}#${target.owner}`,component:target.component,id});sites.set(marker,list);
     };
-    for(const site of catalog.states)for(const target of site.ownerEntries??[])add(target,`owner:${site.id}:${target.component}`);
+    for(const site of catalog.states){
+      for(const target of site.ownerEntries??[])add(target,`owner:${site.id}:${target.component}`);
+      for(const selection of site.selections??[])add(selection,`selection:${site.id}:${selection.id}`);
+    }
     for(const action of catalog.actions){
       if(action.effect.kind==='mount')continue;
       add(action,action.id);
@@ -542,6 +545,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const structure=committedStructure();bindPreparedEntries(structure);
     const {names,current,all,props}=structure,live=new WeakMap(),boxes=new WeakMap(),states=new Map(),values=new Map(),matched=new Map(),targets=new Set(),openers=new Map();
     if(includeEntries)for(const action of catalog.actions){targets.add(action.component);if(action.effect.kind==='control')targets.add(action.effect.component);if(action.consumer)targets.add(action.consumer.component);for(const handoffSite of action.handoffs??[])targets.add(handoffSite.component);}
+    if(includeEntries)for(const site of catalog.states)for(const selection of site.selections??[])targets.add(selection.component);
     // Source bindings can change without a React commit. Rebuild these matches
     // from the current catalog, while reusing only the committed tree structure.
     for(const n of targets)for(const fiber of names.get(n)??[]){
@@ -972,8 +976,19 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     return {value:matches?Object.defineProperties(Array.isArray(value)?[]:{},descriptors):value,matches};
   }
-  function previewState(action, found) {
-    const before=hookValue(found.binding),value=setPath(before,action.effect.path,action.effect.value);
+  function previewState(action, found, tree) {
+    const before=hookValue(found.binding,tree);
+    const site=catalog.states.find(site=>site.id===action.effect.site);
+    const selections=(site?.selections??[]).filter(selection=>Object.prototype.hasOwnProperty.call(selection.patch,action.effect.path[0]));
+    let value;
+    if(selections.length){
+      const candidates=selections.flatMap(selection=>(tree.entries.get(`selection:${site.id}:${selection.id}`)??[])
+        .filter(fiber=>tree.inside(fiber,found.binding.fiber)&&tree.isVisible(fiber))
+        .slice(0,32).map(fiber=>({id:selection.id,props:fiber.memoizedProps})));
+      const selected=globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.selectState?.(selections,before,action.effect,candidates);
+      if(!selected)return {error:'This form step needs a real rendered choice before it can be previewed.'};
+      value=selected.value;
+    }else value=setPath(before,action.effect.path,action.effect.value);
     const focus=found.consumer??found.binding.fiber;
     if(focus===found.binding.fiber||focus===found.binding.fiber.alternate)return project(focus,{views:action.views,seed:{index:found.binding.index,kind:found.binding.kind,value,applied:false}});
     if(before===undefined||before===null)return {error:'The shared presentation has no real state to copy.'};
@@ -1551,7 +1566,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       return result.error?result:{...result,expected:action.owner};
     }
     if(action.effect.kind==='state'){
-      if(action.preview)return {...previewState(action,found),expected:action.expected?{component:action.expected.component,scope:action.expected.scope,entry:`${action.id}:expected`}:action.name};
+      if(action.preview)return {...previewState(action,found,tree),expected:action.expected?{component:action.expected.component,scope:action.expected.scope,entry:`${action.id}:expected`}:action.name};
       const b=found.binding;let previous=hookValue(b);for(const part of action.effect.path)previous=previous?.[part];
       undo.push({binding:b,path:action.effect.path,value:previous,nativeDismiss:previous==null||previous===false});
       // Guard discovery only supplies finite presentation values. No session,

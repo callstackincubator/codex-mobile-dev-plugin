@@ -3,6 +3,7 @@ import {View} from 'react-native';
 import {createFlowRegistry} from './instrumentation-registry.js';
 import {capturePreviewContext} from './instrumentation-context.js';
 import {installPreparedRuntime} from './prepared-runtime.js';
+import {selectPreviewState} from './state-selections.js';
 
 if (typeof __MOBILE_DEV_FLOW_FINGERPRINT__ === 'string') {
   globalThis.__MOBILE_DEV_FLOW_COMPILED__ = {fingerprint: __MOBILE_DEV_FLOW_FINGERPRINT__, install: installPreparedRuntime};
@@ -13,6 +14,7 @@ export const registry = globalThis[key] ??= createFlowRegistry((owner, projectio
 const Preview = React.createContext(null);
 // The shared executor can place this boundary inside an existing native sheet.
 registry.wrapPreview = (content, preview) => React.createElement(Preview.Provider, {value:preview}, content);
+registry.selectState = selectPreviewState;
 const reducerSetters=new WeakMap();
 const seedAction=Symbol('flow-preview-state');
 
@@ -41,7 +43,7 @@ export function boundary(owner, children) {
 }
 export function entry(owner, id, children) {
   if(!owner.pending.has(id))registry.stage(owner,id,{kind:'entry'});
-  return React.createElement(React.Profiler, {id: `${owner.id}:${id}`, onRender: () => {}}, children);
+  return React.createElement(React.Profiler, {id: `${owner.id}:${id}`, key:children?.key, onRender: () => {}}, children);
 }
 // A prepared View retains its extra children through ordinary app renders.
 // No extra native container, root replacement, or per-View hook is introduced.

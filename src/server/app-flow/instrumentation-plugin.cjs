@@ -32,6 +32,19 @@ module.exports = function flowInstrumentation({types: t}) {
       }
       return owner;
     }
+    function markerOwner(path, target) {
+      if(!target.outerOwner)return ownerFor(path);
+      // A choice inside a row callback belongs to the enclosing state owner.
+      // Reuse its token; never add a hook inside the callback.
+      for(let fn=path.getFunctionParent();fn;fn=fn.getFunctionParent()){
+        let parent=fn.parentPath,name=fn.node.id?.name;
+        for(let depth=0;!name&&parent&&depth<4;depth++,parent=parent.parentPath){
+          if(parent.isVariableDeclarator()&&t.isIdentifier(parent.node.id))name=parent.node.id.name;
+          if(parent.isFunction())break;
+        }
+        if(name===target.owner)return ownerFor(fn,true);
+      }
+    }
     const wrapped = new WeakSet();
     let effects=0;
     function imported(path, name, module, symbol) {
@@ -97,7 +110,7 @@ module.exports = function flowInstrumentation({types: t}) {
         const targets = unit.controls.filter(target => at(path.node, target.source));
         const markers=[];
         for (const target of targets) {
-          const owner = ownerFor(path); if (!owner || owner.name !== target.owner) continue;
+          const owner = markerOwner(path,target); if (!owner || owner.name !== target.owner) continue;
           if(target.prop) {
             const attribute = path.node.attributes.find(value => t.isJSXAttribute(value) && value.name.name === target.prop);
             if (!t.isJSXExpressionContainer(attribute?.value) || t.isJSXEmptyExpression(attribute.value.expression)) continue;

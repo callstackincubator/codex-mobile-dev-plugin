@@ -4,7 +4,7 @@ import type {FlowGraph,FlowPresentationAction,FlowPresentations,FlowStateSite} f
 
 // Only finite presentation selectors become hook previews. Query results,
 // identity fields and request/submit flags remain evidence, never capture state.
-const protectedField=/token|password|secret|authorization|cookie|credential|authenticated|loggedin|signedin|session|identity|currentuser|accesskey|verified|captcha|challenge|account|mutation|submit|fetch|loading|pending|error|success|result|^data$|^status$|^(__proto__|constructor|prototype)$/i;
+export const protectedPreviewField=/token|password|secret|authorization|cookie|credential|authenticated|loggedin|signedin|session|identity|currentuser|accesskey|verified|captcha|challenge|account|mutation|submit|fetch|loading|pending|error|success|result|^data$|^status$|^(__proto__|constructor|prototype)$/i;
 const inlineBody=/^(?:View|Text|Button|Icon|Avatar|Fragment|ActivityIndicator)$|Skeleton|Shimmer|Loading|Spinner|EmptyState|ErrorMessage/;
 const destination=(action:FlowPresentationAction)=>JSON.stringify(action.effect.kind==='state'?[action.effect.site,action.effect.path,action.effect.value]:[action.file,action.owner,action.effect]);
 const id=(key:string)=>`preview-${createHash('sha256').update(key).digest('hex').slice(0,20)}`;
@@ -50,7 +50,7 @@ export function addSourcePreviewPlans(catalog:FlowPresentations, navigators:Flow
     let action:FlowPresentationAction|undefined;
     if(view.state){
       const site=sites.get(view.state.site),field=view.state.path.at(-1)??site?.valueName;
-      if(!site?.hook||!field||view.state.path.some(part=>protectedField.test(part)||/^(?:auth|user)$/.test(part))||protectedField.test(field)||protectedField.test(site.valueName??'')||/^use.*(?:Session|Account|Auth|Query|Mutation)/.test(site.owner))continue;
+      if(!site?.hook||!field||view.state.path.some(part=>protectedPreviewField.test(part)||/^(?:auth|user)$/.test(part))||protectedPreviewField.test(field)||protectedPreviewField.test(site.valueName??'')||/^use.*(?:Session|Account|Auth|Query|Mutation)/.test(site.owner))continue;
       const value=view.state.value;
       if(!['string','number','boolean'].includes(typeof value)||typeof value==='number'&&!Number.isFinite(value))continue;
       // Keep each render origin separate. A row callback can use the same
@@ -89,7 +89,7 @@ export function addSourcePreviewPlans(catalog:FlowPresentations, navigators:Flow
   // local steps are discovered after it mounts; no module factory is executed.
   const owners=new Set([...plans.values()].filter(plan=>plan.effect.kind==='state').map(plan=>JSON.stringify([plan.file,plan.owner])));
   for(const view of catalog.views??[]){
-    if(view.kind!=='component'||!view.mount||!owners.has(JSON.stringify([view.file,view.owner]))||protectedField.test(view.owner))continue;
+    if(view.kind!=='component'||!view.mount||!owners.has(JSON.stringify([view.file,view.owner]))||protectedPreviewField.test(view.owner))continue;
     const effect={kind:'mount' as const,file:view.file,export:view.mount.export};
     const key=JSON.stringify([view.file,view.owner,effect]);
     plans.set(key,{id:id(key),file:view.file,line:view.line,owner:view.owner,component:view.owner,prop:'',name:view.owner,preview:true,views:[view.id],effect});
@@ -117,7 +117,7 @@ export function addSourcePreviewPlans(catalog:FlowPresentations, navigators:Flow
   const queue=[...navigationOwners];
   for(let index=0;index<queue.length;index++)for(const parent of parents.get(queue[index])??[])if(!navigationOwners.has(parent)){navigationOwners.add(parent);queue.push(parent);}
   for(const branch of catalog.views??[]){
-    if(branch.kind!=='branch'||!branch.branch||branch.components.length!==1||!navigationOwners.has(sourceKey(branch.file,branch.owner))||!protectedField.test(branch.branch.condition)||requiresProgress(branch.branch))continue;
+    if(branch.kind!=='branch'||!branch.branch||branch.components.length!==1||!navigationOwners.has(sourceKey(branch.file,branch.owner))||!protectedPreviewField.test(branch.branch.condition)||requiresProgress(branch.branch))continue;
     const target=branch.components[0],body=componentViews.get(sourceKey(target.file,target.component));
     if(!body?.mount||inlineBody.test(body.owner))continue;
     const effect={kind:'mount' as const,file:body.file,export:body.mount.export};

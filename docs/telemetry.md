@@ -845,3 +845,11 @@ loader has no bounds, the nearest measured native parent can prove it is outside
 the viewport. Readiness and loading timings keep their names, units and
 boundaries. Local opening diagnostics now include the fixed loading-reason code;
 no component names, app data or extra per-probe events enter Sentry.
+
+Source-verified form choices run inside the existing catalog and capture timing
+boundaries. Their source descriptors enter the prepared manifest; rendered
+option objects and projected state stay inside the app. The projection reads
+only data properties and never calls the app handler, reducer or a getter.
+Missing choices use the existing needs-data result. No per-choice telemetry or
+new app data is sent. Choice lookup is bounded, keeps no extra data cache and
+uses the shared preview cleanup.
