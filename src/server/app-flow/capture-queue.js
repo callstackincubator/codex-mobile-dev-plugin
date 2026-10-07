@@ -1,6 +1,16 @@
 /** Runs in the app. One frame or planner reply may be awaiting acknowledgement. */
 export function createCaptureQueue(driver, emit) {
-  let run, restoreError, restoreTask, serial = 0;
+  let run, restoreError, restoreTask, serial = 0, elapsedMs = 0;
+  const clock = () => globalThis.performance?.now?.() ?? Date.now();
+  const work = new Map();
+  // App-local work is separate from debugger round trips. Retain fixed numeric
+  // totals only, with no command arguments, route IDs or per-probe events.
+  const phases = new Set(['navigation','source','readiness','probe','checkpoint','rollback','screenshot-wait','planning']);
+  function measure(phase, ms) {
+    if (!phases.has(phase) || !Number.isFinite(ms) || ms < 0) return;
+    const value = work.get(phase) ?? {phase, count:0, totalMs:0, maxMs:0};
+    value.count++; value.totalMs += ms; value.maxMs = Math.max(value.maxMs, ms); work.set(phase, value);
+  }
   function restore() {
     if (restoreTask) return restoreTask;
     const started = Date.now();
@@ -53,11 +63,13 @@ export function createCaptureQueue(driver, emit) {
           return {evidence:before};
         }
         const ticket = ++serial;
+        const frameStarted = clock();
         const captured = await new Promise(resolve => {
           const timer = setTimeout(() => { if (current.pending?.ticket === ticket) { current.pending = undefined; resolve({ok:false, terminal:true}); } }, 8000);
           current.pending = {ticket, resolve:value => { clearTimeout(timer); current.pending = undefined; resolve(value); }};
           send({type:'frame', id:job.id, ticket, key:before.key, signature:before.signature, readinessMs:Date.now()-started});
         });
+        measure('screenshot-wait', clock() - frameStarted);
         if (current.cancelled) return;
         if (captured.terminal) throw Object.assign(new Error('The screenshot connection stopped responding.'), {fatal:true, interrupted:true});
         if(captured.reason){send({type:'result',id:job.id,status:'timed-out',reason:captured.reason,failure:captured.failure,ms:Date.now()-started});return;}
@@ -88,7 +100,10 @@ export function createCaptureQueue(driver, emit) {
         if (current.planning) {
           // The server can discover children while their parent is still open.
           // It returns approved jobs; the app retains the same driver/checkpoints.
-          const planned = await request({type:'plan', ...result});
+          const planStarted = clock();
+          let planned;
+          try { planned = await request({type:'plan', ...result}); }
+          finally { measure('planning', clock() - planStarted); }
           if (!validJobs(planned?.jobs)) throw new Error('Invalid capture plan.');
           current.jobs = planned.jobs.slice();
         }
@@ -101,12 +116,13 @@ export function createCaptureQueue(driver, emit) {
       if (run === current) {
         current.pending?.resolve({ok:false, terminal:true});
         send({type:'done'});
+        elapsedMs = clock() - current.started;
         run = undefined;
       }
     }
   }
   return {
-    request,
+    request, measure,
     source(batch, ticket, value) {
       if (run?.id !== batch || run.source?.ticket !== ticket || run.cancelled) return {accepted:false};
       run.source.resolve(value);
@@ -116,7 +132,8 @@ export function createCaptureQueue(driver, emit) {
       if (run || restoreError || restoreTask) throw new Error('Finish capture cleanup before starting another batch.');
       if (!validJobs(jobs)) throw new Error('Invalid capture manifest.');
       const controller = new AbortController();
-      const current = run = {id, jobs:jobs.slice(), planning, cancelled:false, signal:controller.signal, controller};
+      work.clear(); elapsedMs = 0;
+      const current = run = {id, jobs:jobs.slice(), planning, cancelled:false, signal:controller.signal, controller, started:clock()};
       current.done = execute(current);
       return {started:true, total:jobs.length};
     },
@@ -136,6 +153,7 @@ export function createCaptureQueue(driver, emit) {
       }
       if (restoreError || restoreTask) await restore();
     },
+    get work() { return {elapsedMs:run ? clock() - run.started : elapsedMs, phases:[...work.values()].map(value=>({...value}))}; },
     get preparingAction() { return run?.source?.actionId; },
     get active() { return !!run || !!restoreError || !!restoreTask; },
   };

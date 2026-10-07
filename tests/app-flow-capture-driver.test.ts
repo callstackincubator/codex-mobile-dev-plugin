@@ -164,3 +164,23 @@ for(const status of ['needs-data','timed-out','unrecognized'])test(`source open 
   assert.equal(result.status,status==='needs-data'?'needs-data':'timed-out');
   assert.deepEqual(events,['presentation-setup','presentation-prepare','presentation-open']);
 });
+
+
+test('in-app timing separates source, navigation, readiness and rollback without retaining app data',async()=>{
+  const samples:{phase:string;ms:number}[]=[];
+  const app=fixture((runtime,source)=>createCaptureDriver(runtime,source,(phase:string,ms:number)=>samples.push({phase,ms})));
+  const job=app.job('private-job',['private-opening']),signal=new AbortController().signal;
+  await app.driver.open(job,signal);await app.driver.ready(job,signal);await app.driver.verify(job,signal);await app.driver.restore();
+  for(const phase of ['navigation','source','probe','checkpoint','rollback'])assert.ok(samples.some(value=>value.phase===phase),phase);
+  assert.ok(samples.every(value=>Number.isFinite(value.ms)&&value.ms>=0));
+  assert.equal(JSON.stringify(samples).includes('private'),false);
+});
+
+
+test('a failed diagnostic observer cannot stall an opening or its cleanup',async()=>{
+  const app=fixture((runtime,source)=>createCaptureDriver(runtime,source,()=>{throw Error('diagnostics unavailable')}));
+  const job=app.job('screen',['sheet']),signal=new AbortController().signal;
+  assert.equal((await app.driver.open(job,signal)).ready,true);
+  assert.equal((await app.driver.ready(job,signal)).ready,true);
+  await app.driver.restore();assert.deepEqual(app.frames,[]);
+});

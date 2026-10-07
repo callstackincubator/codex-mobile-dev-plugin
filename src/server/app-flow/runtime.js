@@ -564,7 +564,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           if (!captureQueueFactory || !captureDriverFactory) { reply({error:'Prepare the instrumented development build before starting a capture batch.'}); return; }
           if (captureQueue?.active) { reply({error:'A capture batch is already running.'}); return; }
           let queue;
-          queue = captureQueueFactory(captureDriverFactory(globalThis[key], request => queue.request(request)), event => {
+          queue = captureQueueFactory(captureDriverFactory(globalThis[key], request => queue.request(request), (phase, ms) => queue.measure?.(phase, ms)), event => {
             const binding = globalThis[command.binding];
             if (typeof binding === 'function') binding(JSON.stringify({capture:event}));
           });
@@ -576,7 +576,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (command.type === 'capture-stop') { void captureQueue?.stop().then(() => reply({stopped:true}), () => reply({error:'Capture state could not be restored.'})); if(!captureQueue)reply({stopped:true}); return; }
         if (command.type === 'diagnostics') {
           let mountedFibers=0,mountedHosts=0;fibers(fiber=>{mountedFibers++;if(fiber.tag===5)mountedHosts++;});
-          reply({execution,mountedFibers,mountedHosts,...navigationCounts(),...transitionMode?.diagnostics(),transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,lastOpenProbe,lastPresentationProbe,presentations:presentations?.diagnostics?.()});return;
+          reply({execution,captureWork:captureQueue?.work,mountedFibers,mountedHosts,...navigationCounts(),...transitionMode?.diagnostics(),transitions:transitions.size,transitionsPending:[...transitions.values()].filter(record=>record.busy).length,waitTimers:waitTimers.size,paintFrames:paintFrames.size,lastProbe,lastOpenProbe,lastPresentationProbe,presentations:presentations?.diagnostics?.()});return;
         }
         if (command.type === 'context-data') { reply(contextData()); return; }
         if (command.type === 'observe') { reply(observe()); return; }

@@ -1305,8 +1305,8 @@ test('runtime scopes collection to the queue opening and clears it before later 
   const app=runtime(t,false,{setTimeout,clearTimeout},function(){return {
     collect(states,actions,projectRoot,sourceHash,actionId){return Promise.resolve({actionId})},
     checkpoint(){return 0},cleanup(){},rollback(){return Promise.resolve()},
-  }},{captureEvent(event:string){events.push(JSON.parse(event).capture)}},function(runtime,source){return {
-    async open(){await source({operation:'open',actionId:'sheet'});return {ready:false}},async restore(){},
+  }},{captureEvent(event:string){events.push(JSON.parse(event).capture)}},function(runtime,source,measure){return {
+    async open(){await source({operation:'open',actionId:'sheet'});measure('source',4);return {ready:false}},async restore(){},
   }});
   assert.equal((await app.invoke({type:'presentation-collect'})).actionId,undefined);
   await app.invoke({type:'capture-start',batch:'batch',binding:'captureEvent',jobs:[{id:'sheet'}]});
@@ -1315,4 +1315,6 @@ test('runtime scopes collection to the queue opening and clears it before later 
   await app.invoke({type:'capture-source',batch:'batch',ticket:request.ticket,value:{}});
   assert.equal((await app.invoke({type:'presentation-collect'})).actionId,undefined);
   await app.invoke({type:'capture-stop'});
+  const work=(await app.invoke({type:'diagnostics'})).captureWork;
+  assert.equal(work.phases[0].phase,'source');assert.equal(work.phases[0].totalMs,4);
 });

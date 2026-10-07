@@ -155,3 +155,14 @@ test('an expired source request releases its opening scope',async t=>{
   assert.equal(queue.preparingAction,undefined);
   await queue.stop();
 });
+
+
+test('capture work totals stay bounded, isolate batches and reject unknown labels',async()=>{
+  const queue=createCaptureQueue({async restore(){}},()=>{});
+  queue.start('first',[]);await delay(0);
+  queue.measure('source',4);queue.measure('source',7);queue.measure('private-value',1);queue.measure('probe',NaN);queue.measure('probe',-2);
+  assert.deepEqual(queue.work.phases,[{phase:'source',count:2,totalMs:11,maxMs:7}]);
+  const elapsed=queue.work.elapsedMs;await delay(2);assert.equal(queue.work.elapsedMs,elapsed,'A finished batch does not keep accumulating time');
+  queue.work.phases[0].totalMs=999;assert.equal(queue.work.phases[0].totalMs,11);
+  queue.start('second',[]);await delay(0);assert.deepEqual(queue.work.phases,[]);
+});

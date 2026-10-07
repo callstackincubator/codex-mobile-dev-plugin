@@ -1,13 +1,25 @@
 /** Both discovery and prepared capture use the presentation runtime's state,
  * provider, portal, native lifecycle and rollback implementation. */
-export function createCaptureDriver(runtime, source) {
+export function createCaptureDriver(runtime, source, measure = () => {}) {
+  const clock = () => globalThis.performance?.now?.() ?? Date.now();
+  // Diagnostics must not turn a successful opening into a stalled capture.
+  const record = (phase, ms) => { try { measure(phase, ms); } catch {} };
+  const bind = async request => {
+    const started = clock();
+    try { return await source(request); }
+    finally { record('source', clock() - started); }
+  };
   let base, branch = [], lastReady, routeReady;
   const check = signal => { if (signal?.aborted) throw new Error('Capture stopped.'); };
   const call = (command, signal) => new Promise((resolve, reject) => {
+    const started = clock();
+    const phase = command.type === 'open' ? 'navigation' : command.type === 'presentation-rollback' ? 'rollback'
+      : command.type === 'presentation-checkpoint' ? 'checkpoint' : command.waitMs > 0 ? 'readiness' : 'probe';
     let finished = false;
     const finish = (error, value) => {
       if (finished) return;
       finished = true; clearTimeout(timer); signal?.removeEventListener('abort', abort);
+      record(phase, clock() - started);
       if (error) reject(error); else resolve(value);
     };
     const interrupted = message => Object.assign(new Error(message), {fatal:true, interrupted:true});
@@ -37,7 +49,7 @@ export function createCaptureDriver(runtime, source) {
     }
     const value = await call({type: 'presentation-view', ...route(job), waitMs}, signal);
     if (value?.portalBindings?.length || value?.effectBindings?.length) {
-      const resolved = await source({operation: 'view'});
+      const resolved = await bind({operation: 'view'});
       if (resolved?.portalBindings?.length || resolved?.effectBindings?.length) return {...resolved, ready:false,
         error:'The presentation needs a portal or UI effect that could not be proven from source.'};
       return {...resolved, ready:!!resolved?.ready && resolved.routeMatches !== false};
@@ -100,12 +112,12 @@ export function createCaptureDriver(runtime, source) {
         check(signal);
         // Source approval stays on the server. This uses the same opener as
         // discovery, including shared consumers and previews in native sheets.
-        const opened = await source({operation: 'open', actionId: action.id});
+        const opened = await bind({operation: 'open', actionId: action.id});
         check(signal);
         if (opened?.error) return {ready: false, status: opened.status || 'needs-data', reason: opened.error, failure:opened.failure};
         if (opened?.closed) for (const frame of branch) frame.closed = true;
         if (job.projections?.includes(action.id)) {
-          const projected = await source({operation: 'project', actionId: action.id});
+          const projected = await bind({operation: 'project', actionId: action.id});
           check(signal);
           if (projected?.error) return {ready: false, status: 'blocked', reason: projected.error};
         }

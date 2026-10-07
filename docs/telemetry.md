@@ -891,3 +891,16 @@ than missing timing coverage. Source binding, readiness, native presentation
 and screenshot verification keep their existing measurements. No source IDs
 or opening data are added to telemetry. The scope ends on acknowledgement,
 cancellation or timeout; later discovery keeps its full collection coverage.
+
+
+Active capture diagnostics also include bounded app-side work totals. The fixed
+phases separate navigation, source requests, readiness waits, probes,
+checkpoints, rollback, screenshot acknowledgement waits and planning. These
+are numeric counts and elapsed milliseconds; no command arguments, screen
+names or app data enter the totals. They reset for each batch and stop growing
+when it ends. They add no timer, observer or per-probe bridge event.
+
+These local diagnostics cover the in-app queue, including time that does not
+cross the debugger bridge. Existing Sentry runtime timings still measure bridge
+operations; their names and boundaries stay unchanged. Screenshot wait includes
+transport, encoding and acknowledgement, so it is not device render time.
