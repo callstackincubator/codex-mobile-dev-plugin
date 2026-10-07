@@ -639,6 +639,26 @@ test('only visible initial query loads block capture; cached refetches and offsc
   assert.equal((await app.invoke({type:'verify',name:'Profile'})).loading,false,'a loading component that returns null is not visible');
 });
 
+test('a loader with no native bounds inherits its measured parent visibility', async t => {
+  const app=runtime(t);
+  let y=2800, measured=0;
+  const parent:any={tag:5,type:'View',memoizedProps:{},return:app.fiber,stateNode:{getBoundingClientRect(){measured++;return {x:0,y,width:100,height:240}}}};
+  const flat:any={tag:5,type:'View',memoizedProps:{},return:parent,stateNode:{getBoundingClientRect:()=>({x:0,y:0,width:0,height:0})}};
+  const loader:any={tag:0,type:function ActivityIndicator(){},memoizedProps:{},return:flat};
+  loader.child={tag:5,type:'Spinner',memoizedProps:{},return:loader,stateNode:{getBoundingClientRect:()=>({x:0,y:0,width:0,height:0})}};
+  parent.child=flat;flat.child=loader;app.native.sibling=parent;
+  const loaded=await app.invoke({type:'verify',name:'Home'});
+  assert.equal(loaded.loading,false,'A clipped or flattened spinner below the viewport cannot block capture');
+  assert.equal(measured,1,'The parent layout read is shared with the content probe');
+  y=50;
+  assert.equal((await app.invoke({type:'verify',name:'Home'})).loading,true,'A visible parent keeps an unmeasured loader blocking');
+  parent.stateNode.getBoundingClientRect=()=>undefined;
+  assert.equal((await app.invoke({type:'verify',name:'Home'})).loading,true,'Unknown visibility never proves a loader is hidden');
+  y=2800;parent.stateNode.getBoundingClientRect=()=>({x:0,y,width:100,height:240});
+  const ready=await app.invoke({type:'open',path:['Profile'],timeoutMs:500,loadingTimeoutMs:2000});
+  assert.equal(ready.ready,true);assert.equal(ready.loadingMs,0);
+});
+
 function pagedContent(app: ReturnType<typeof runtime>) {
   const pager:any = {tag:5,type:'NativePager',memoizedProps:{initialPage:0,onPageSelected(){},onPageScroll(){}},stateNode:app.native.stateNode,return:app.fiber};
   const first:any = {tag:5,type:'View',memoizedProps:{},return:pager};

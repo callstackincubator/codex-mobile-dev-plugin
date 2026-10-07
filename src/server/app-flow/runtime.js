@@ -358,9 +358,13 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
       if (fiber.tag === 5) { bounds = nativeRect(fiber); if (bounds) return stopWalk; }
     });
     const visibleLoader = (fiber, includeTransparent = false) => {
-      const { box, host } = rect(fiber, includeTransparent);
+      let { box, host } = rect(fiber, includeTransparent);
       if (!host) return false;
       if (!bounds) return true;
+      // Fabric can omit bounds for clipped or flattened loader hosts. Use the
+      // nearest measured native parent, as the content probe does below. An
+      // offscreen parent proves invisibility; unknown bounds still block.
+      if (!box) for (let parent=fiber.return,count=0;parent&&count++<80&&!box;parent=parent.return) if (parent.tag===5) box=nativeRect(parent);
       // Offscreen list footers and preloaded tabs must not delay this preview.
       return !box || box.x < bounds.x + bounds.width && box.x + box.width > bounds.x && box.y < bounds.y + bounds.height && box.y + box.height > bounds.y;
     };
@@ -751,7 +755,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           if ([...transitions.values()].some(record => record.busy)) visible();
           const transitioning = [...transitions.values()].some(record => record.busy);
           if (transitioning) { quietSince = now; painted = false; painting = false; paintTicket++; }
-          lastOpenProbe={elapsedMs:now-started,quietMs:now-quietSince,matches,found:visual.found,content:visual.content,loading:visual.loading,transitioning,painted};
+          lastOpenProbe={elapsedMs:now-started,quietMs:now-quietSince,matches,found:visual.found,content:visual.content,loading:visual.loading,loadingReason:visual.loadingReason,transitioning,painted};
           if (now - quietSince >= 80 && visual.content && !transitioning && now - transitionAt >= 32) {
             if (painted) { complete({ ready: true, active: actual, name, signature: previous, motion: visual.motion, readinessMs: now - started, loadingMs, ...visible() }); return; }
             if (!painting) {

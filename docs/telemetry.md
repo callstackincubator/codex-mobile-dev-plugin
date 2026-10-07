@@ -839,3 +839,9 @@ checkpoint and run timing names and units stay unchanged. Source validation can
 now reject a stale prepared retry before connecting; the existing fixed
 `app_flow.run` error covers that failure without source paths or app data.
 No extra per-screen metric was added.
+
+Loader visibility shares cached native bounds with content readiness. When a
+loader has no bounds, the nearest measured native parent can prove it is outside
+the viewport. Readiness and loading timings keep their names, units and
+boundaries. Local opening diagnostics now include the fixed loading-reason code;
+no component names, app data or extra per-probe events enter Sentry.
