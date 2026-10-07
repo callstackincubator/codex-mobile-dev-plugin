@@ -96,3 +96,17 @@ test('prepared manifest marks openers, consumers and owner entries as well as na
     'App.tsx:1:0:entry','App.tsx:2:0:control','App.tsx:2:0:entry','App.tsx:3:0:entry','App.tsx:4:0:entry',
   ]);
 });
+
+
+test('prepared native View slots use imports and fixed component hooks, never row callbacks or class methods',()=>{
+  const source=`import React from 'react';
+import RN, {View as Box} from 'react-native';
+export function Screen(){return <Box>{[1].map(row=><Box/>)}<RN.View/></Box>;}
+export const Legacy=class extends React.Component{render(){return <Box/>;}};
+export function Other(){const View=Custom;return <View/>;}`;
+  const code=transformSync(source,{filename:'/app/slots.jsx',configFile:false,babelrc:false,parserOpts:{plugins:['jsx']},plugins:[[plugin,{enabled:true,projectRoot:'/app',client:'flow-client',manifest:{files:{}}}]]}).code;
+  assert.equal((code.match(/useFlowOwner\(/g)??[]).length,1);
+  assert.equal((code.match(/hostView\(/g)??[]).length,2);
+  assert.match(code,/\.map\(row => <Box \/>\)/);
+  assert.match(code,/render\(\) \{\s+return <Box \/>;/);
+});

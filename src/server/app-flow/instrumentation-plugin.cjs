@@ -17,7 +17,7 @@ module.exports = function flowInstrumentation({types: t}) {
     const call = (method, args) => t.callExpression(t.memberExpression(client, t.identifier(method)), args);
     function ownerFor(path, self = false) {
       const fn = self ? path : path.getFunctionParent();
-      if (!fn) return;
+      if (!fn || !(fn.isFunctionDeclaration() || fn.isFunctionExpression() || fn.isArrowFunctionExpression())) return;
       let parent=fn.parentPath,name=fn.node.id?.name;
       for(let depth=0;!name && parent && depth<4;depth++,parent=parent.parentPath) {
         if(parent.isVariableDeclarator() && t.isIdentifier(parent.node.id))name=parent.node.id.name;
@@ -37,6 +37,13 @@ module.exports = function flowInstrumentation({types: t}) {
     function imported(path, name, module, symbol) {
       const binding=path.scope.getBinding(name)?.path;
       return binding?.isImportSpecifier() && binding.parent.source?.value===module && binding.node.imported.name===symbol;
+    }
+    function nativeView(path) {
+      const name=path.node.name;
+      if(t.isJSXIdentifier(name))return imported(path,name.name,'react-native','View');
+      if(!t.isJSXMemberExpression(name)||!t.isJSXIdentifier(name.object)||name.property.name!=='View')return false;
+      const binding=path.scope.getBinding(name.object.name)?.path;
+      return (binding?.isImportNamespaceSpecifier()||binding?.isImportDefaultSpecifier())&&binding.parent.source?.value==='react-native';
     }
     function animationEffect(path) {
       const callback=path.node.arguments[0];
@@ -99,8 +106,10 @@ module.exports = function flowInstrumentation({types: t}) {
           markers.push({owner,target});
         }
         const autofocus=path.node.attributes.some(attribute=>t.isJSXAttribute(attribute)&&attribute.name.name==='autoFocus');
-        if(!markers.length&&!autofocus)return;
+        const hostOwner=nativeView(path)?ownerFor(path):undefined;
+        if(!markers.length&&!autofocus&&!hostOwner)return;
         let result=element.node;
+        if(hostOwner)result=call('hostView',[hostOwner.token,t.stringLiteral(`${filename}:${path.node.loc.start.line}:${path.node.loc.start.column}:host`),result]);
         if(autofocus){
           result=call('input',[result]);effects++;
         }

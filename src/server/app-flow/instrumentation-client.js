@@ -23,8 +23,11 @@ export function useFlowOwner(source, sourceHash, type, props, host) {
   const ref = React.useRef(null);
   if (!ref.current) ref.current = registry.create(source, sourceHash);
   const owner = ref.current;
+  const subscribeSlots=React.useCallback(listener=>registry.subscribeSlots(owner.id,listener),[owner]);
+  const readSlots=React.useCallback(()=>registry.slotSnapshot(owner.id),[owner]);
+  const slots=React.useSyncExternalStore(subscribeSlots,readSlots,readSlots);
   const entries = new Map(),metadata={type,props,host,preview};
-  const frame={...owner,...metadata,pending:entries};
+  const frame={...owner,...metadata,slots,pending:entries};
   React.useLayoutEffect(() => { Object.assign(owner,metadata);registry.commit(owner, entries); });
   React.useLayoutEffect(() => () => registry.remove(owner), [owner]);
   return frame;
@@ -39,6 +42,21 @@ export function boundary(owner, children) {
 export function entry(owner, id, children) {
   if(!owner.pending.has(id))registry.stage(owner,id,{kind:'entry'});
   return React.createElement(React.Profiler, {id: `${owner.id}:${id}`, onRender: () => {}}, children);
+}
+// A prepared View retains its extra children through ordinary app renders.
+// No extra native container, root replacement, or per-View hook is introduced.
+export function hostView(owner, id, element) {
+  const additions=owner.slots?.get(id);
+  let rendered=element;
+  if(additions?.size){
+    const original=element.props.children;
+    const transparent=original?.type===React.Fragment&&original.key==null&&original.props?.ref===undefined;
+    const children=transparent?original.props.children:original;
+    rendered=React.cloneElement(element,{children:React.createElement(React.Fragment,null,...(Array.isArray(children)?children:[children]),...additions.values())});
+  }
+  const previous=owner.pending.get(id);
+  registry.stage(owner,id,{kind:'host',type:element.type,props:rendered.props,ambiguous:!!previous});
+  return rendered;
 }
 export function useFlowInitial(id, initial) {
   const preview=React.useContext(Preview);

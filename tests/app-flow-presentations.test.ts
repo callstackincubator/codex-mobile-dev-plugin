@@ -316,6 +316,26 @@ test('a saved state opener can use an equivalent live source entry without invok
   }finally{runtime.cleanup();app.runtime.cleanup()}
 });
 
+test('a saved control opener uses only an equivalent reachable entry with one live controller',async()=>{
+  const app=tree(),live={...app.action,id:'alternate',line:2};
+  app.button.memoizedProps.disabled=true;
+  const alternate:any={...app.button,sibling:undefined,_debugSource:{fileName:'App.tsx',lineNumber:2,columnNumber:1},memoizedProps:{onPress(){assert.fail('No UI event handler may execute')}}};
+  app.sheet.sibling=alternate;
+  configureFixture(app.runtime,{states:[],actions:[app.action,live]});
+  try{
+    assert.equal(app.runtime.prepare('open').available,true);
+    assert.equal(app.runtime.open('open').focus,app.sheet);assert.equal(app.control.opens,1);
+    await app.runtime.rollback(0,false);assert.equal(app.control.closes,1);
+    alternate.memoizedProps.disabled=true;assert.equal(app.runtime.prepare('open').available,false);
+    alternate.memoizedProps.disabled=false;live.handoffs=['different'];
+    assert.equal(app.runtime.prepare('open').available,false,'Different dismissal prerequisites are not interchangeable');
+    delete live.handoffs;
+    const other={...app.sheet,child:undefined,sibling:undefined,memoizedProps:{control:{open(){assert.fail('Ambiguous controller must not open')},close(){}}}};
+    alternate.sibling=other;
+    assert.equal(app.runtime.prepare('open').available,false,'Repeated source entries cannot choose between controllers');
+  }finally{app.runtime.cleanup()}
+});
+
 test('state hook tracking restores only its presentation field and leaves no wrapped exports',async t=>{
   const app=tree();let state={panel:false,other:1},mounted=true;
   const setter=(update:any)=>{state=update(state);app.root.memoizedState={memoizedState:state,next:null};};

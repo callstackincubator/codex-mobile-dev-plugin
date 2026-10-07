@@ -634,7 +634,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // main window cannot present while one of its native sheets is open.
     for(let parent=focus;parent&&!seen.has(parent);parent=parent.return){seen.add(parent);if(parent.type===native.View||parent.elementType===native.View){ancestor=parent;break;}}
     let root;if(ancestor)fibers(fiber=>{if(fiber===ancestor||fiber===ancestor.alternate)root=fiber;});
-    for(const renderer of hook.renderers.values())if(root&&renderer.rendererPackageName==='react-native-renderer'&&typeof renderer.overrideProps==='function')return {root,renderer,react,native};
+    const registry=globalThis.__MOBILE_DEV_FLOW_REGISTRY__,matches=[];
+    if(root&&sourceHash&&typeof registry?.setHostSlot==='function')for(const owner of registry.matchingOwners(sourceHash))for(const [site,entry]of owner.entries){
+      if(entry.kind==='host'&&!entry.ambiguous&&entry.props===root.memoizedProps&&(entry.type===root.type||entry.type===root.elementType))matches.push({registry,binding:{owner:owner.id,site,sourceHash}});
+    }
+    const slot=matches.length===1?matches[0]:undefined;
+    for(const renderer of hook.renderers.values())if(root&&renderer.rendererPackageName==='react-native-renderer'&&typeof renderer.overrideProps==='function')return {root,renderer,react,native,slot};
   }
   function nativeBodyRoots(focus) {
     const result=[];let text=false;
@@ -758,7 +763,16 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return {pending};
   }
   const projectionElement=(child,record)=>child?.type===record.element.type&&child?.key===record.element.key;
+  function setProjectionSlot(record,element) {
+    if(!record.slot.registry.setHostSlot(record.slot.binding,record.element.key,element))throw new Error('The prepared preview container is no longer available.');
+    record.slotElement=element;structureCache=undefined;
+  }
+  function removeProjectionSlot(record) {
+    if(record.slotElement)record.slot.registry.removeHostSlot(record.slot.binding,record.element.key,record.slotElement);
+    record.slotElement=undefined;structureCache=undefined;
+  }
   function removeProjection(record,root) {
+    if(record.slot){removeProjectionSlot(record);return;}
     const props=root.memoizedProps,children=props.children?.props?.children;
     if(!Array.isArray(children))return;
     const remaining=children.filter(child=>!projectionElement(child,record));
@@ -768,6 +782,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     structureCache=undefined;record.renderer.overrideProps(root,[],{...props,children:restored});
   }
   function project(focus, preview, mountedContext) {
+    focus=index().current.get(focus)??focus;
     if(!focus||!preview&&(!undo.length||projected.some(p=>p.focus===focus||p.focus===focus.alternate)))return {error:'This view cannot be projected.'};
     const owner=previewOwner(focus),tree=owner&&index();
     const ownerBodies=owner?(tree.props.get(owner.child.props)??[]).filter(fiber=>fiber.type===owner.child.type||fiber.elementType===owner.child.type):[];
@@ -797,7 +812,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // after React removes its tree. Retain each body's own undo checkpoint.
     const children=props.children?.props?.children;
     const previousPreview=reusable&&Array.isArray(children)&&children.includes(owner.element)?owner:undefined;
-    const record={root,renderer,react,props,focus,child,content,inline,parent:previousPreview,portals:[],seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:!!inline||!!previousPreview,dismissed:false,failed:false};
+    const record={root,renderer,react,props,focus,child,content,inline,slot:context.slot,parent:previousPreview,portals:[],seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:!!inline||!!previousPreview,dismissed:false,failed:false};
     class PreviewBoundary extends react.Component {
       constructor(props){super(props);this.state={failed:false};}
       static getDerivedStateFromError(){return {failed:true};}
@@ -815,6 +830,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // and query subscriptions alive so the form can finish loading real data.
     // Native placement, identity checks and rollback still use this executor.
     if(record.compiled)content=registry.wrapPreview(content,{seeds:new Map(),sourceHash});
+    record.content=content;
     const body=react.createElement(PreviewBoundary,null,content);
     const key=`mobile-flow-preview-${++sequence}`;
     const modal=previousPreview?react.cloneElement(previousPreview.element,{},body):inline?react.createElement(react.Fragment,{key},body):react.createElement(native.Modal,{key,transparent:false,...modalProps,visible:true,animationType:'none',onShow:()=>{record.shown=true;},onDismiss:()=>{record.dismissed=true;}},body);
@@ -834,7 +850,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     containPreviewErrors(focus,record,PreviewBoundary);
     projected.push(record);undo.push({projection:record});
     if(inline&&!previousPreview)hideInlineBody(record);
-    structureCache=undefined;renderer.overrideProps(root,[],record.next);
+    structureCache=undefined;if(record.slot)setProjectionSlot(record,modal);else renderer.overrideProps(root,[],record.next);
     if(record.seed)seedDeadline(record);
     return {name:name(focus),focus};
   }
@@ -906,7 +922,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const boundary=record.react.cloneElement(record.element.props.children,{},body);
     const modal=record.react.cloneElement(record.element,{},boundary);
     record.next={...props,children:record.react.createElement(record.react.Fragment,null,...children.map(child=>child===record.element?modal:child))};
-    record.element=modal;record.root=root;structureCache=undefined;record.renderer.overrideProps(root,[],record.next);return true;
+    record.element=modal;record.root=root;structureCache=undefined;
+    if(record.slot)setProjectionSlot(record,modal);else record.renderer.overrideProps(root,[],record.next);
+    return true;
   }
   function portalElement(record,fiber,child,id){
     let element=child;const seen=new Set();
@@ -1129,16 +1147,17 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   };
   function resolveEntry(action,tree,focus) {
     const exact=find(action,tree,focus);if(exact)return exact;
-    if(action.preview||action.effect.kind!=='state')return;
+    if(action.preview||!['state','control'].includes(action.effect.kind))return;
     // Saved maps can outlive a feature flag selecting another source opener.
-    // Reuse only an independently reachable entry for the exact same finite
-    // state update and destination, bound to one live setter. No handler runs.
+    // Reuse only an independently reachable entry for the exact same update,
+    // destination and dismissal order, bound to one setter or controller.
     const effect=JSON.stringify(action.effect),expected=JSON.stringify(action.expected);
     const matches=[];
     for(const candidate of catalog.actions){
-      if(candidate.id===action.id||candidate.preview||candidate.name!==action.name||JSON.stringify(candidate.effect)!==effect||JSON.stringify(candidate.expected)!==expected)continue;
+      if(candidate.id===action.id||candidate.preview||candidate.name!==action.name||JSON.stringify(candidate.effect)!==effect||JSON.stringify(candidate.expected)!==expected||JSON.stringify(candidate.handoffs)!==JSON.stringify(action.handoffs))continue;
       const found=find(candidate,tree,focus);
-      if(found?.binding&&!matches.some(match=>match.binding.setter===found.binding.setter))matches.push(found);
+      const identity=found?.binding?.setter??found?.target?.value;
+      if(identity&&!matches.some(match=>(match.binding?.setter??match.target?.value)===identity))matches.push(found);
     }
     return matches.length===1?matches[0]:undefined;
   }
@@ -1560,6 +1579,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return Array.isArray(children)&&children.some(child=>projectionElement(child,record));
   }
   function releaseProjection(record){
+    if(record.slot)removeProjectionSlot(record);
     restoreInlineBody(record);
     clearTimeout(record.seedTimer);releaseUiEffects(record);
     for(const [id,portal]of portalEffects)if(portal.preview===record)portalEffects.delete(id);
@@ -1584,7 +1604,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
             // Replacing the modal body remounts only the temporary form. Seed
             // its saved finite state again before React renders the prior step.
             if(parent.seed){parent.seed.applied=false;if(!patchHooks())throw new Error('Temporary hook restoration is unavailable.');seedDeadline(parent);}
-            structureCache=undefined;record.renderer.overrideProps(root,[],{...props,children:record.react.cloneElement(props.children,{},...children.map(child=>projectionElement(child,record)?modal:child))});
+            structureCache=undefined;if(record.slot)setProjectionSlot(parent,modal);else record.renderer.overrideProps(root,[],{...props,children:record.react.cloneElement(props.children,{},...children.map(child=>projectionElement(child,record)?modal:child))});
           }
           releaseProjection(record);undo.pop();continue;
         }
@@ -1600,9 +1620,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
             // Keep Modal mounted while native dismissal runs. Unmounting first
             // removes React Native's event listener before onDismiss can run.
             const modal=record.react.cloneElement(record.element,{visible:false});
-            const children=record.react.cloneElement(record.next.children,{},...record.next.children.props.children.map(child=>child===record.element?modal:child));
-            record.renderer.overrideProps(record.root,[],{...props,children});
-          }else record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
+            if(record.slot)setProjectionSlot(record,modal);
+            else{
+              const children=record.react.cloneElement(record.next.children,{},...record.next.children.props.children.map(child=>child===record.element?modal:child));
+              record.renderer.overrideProps(record.root,[],{...props,children});
+            }
+          }else if(record.slot)removeProjectionSlot(record);
+          else record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
           entry.closing=true;
         }
         // React Native emits Modal.onDismiss on iOS only. Retain the restore
@@ -1616,7 +1640,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         }
         if(wait&&record.ios&&record.shown){
           const props=record.root.memoizedProps??record.props;structureCache=undefined;
-          record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
+          if(record.slot)removeProjectionSlot(record);else record.renderer.overrideProps(record.root,[],{...props,children:record.props.children});
         }
         releaseProjection(record);
       }else if(entry.control){
@@ -1641,7 +1665,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80,resolve));
   }
-  function cleanup(){preparedStructure=preparedCatalog=preparedRevision=preparedHash=undefined;preparedEntries=new WeakMap();lastCompiledEntries=0;pendingHandoff=undefined;canonicalControls=new WeakMap();captureRoots.clear();releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=sourceHash=undefined;lastCompiledBindings=0;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected){restoreInlineBody(record);clearTimeout(record.seedTimer);}projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){preparedStructure=preparedCatalog=preparedRevision=preparedHash=undefined;preparedEntries=new WeakMap();lastCompiledEntries=0;pendingHandoff=undefined;canonicalControls=new WeakMap();captureRoots.clear();releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=sourceHash=undefined;lastCompiledBindings=0;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected){if(record.slot)removeProjectionSlot(record);restoreInlineBody(record);clearTimeout(record.seedTimer);}projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[],entryId) {
     connected=bodyRoots(scope,tree,connected);
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&(!entryId||entry(fiber,false)?.actions.has(entryId))&&tree.isVisible(fiber));
@@ -1682,6 +1706,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     return result.map(item=>item.value);
   }
-  const diagnostics=()=>({inlineProjections:projected.filter(record=>record.inline).length,nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,lastCompiledEntries,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  function projectionSlots(){
+    const tree=index();
+    return projected.slice(-12).map(record=>({owner:name(record.focus),container:name(record.root),prepared:!!record.slot,attached:projectionAttached(record,tree),bodies:(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type).length}));
+  }
+  const diagnostics=()=>({projectionSlots:projectionSlots(),inlineProjections:projected.filter(record=>record.inline).length,nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,lastCompiledEntries,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
   return {structure:committedStructure,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,collect,records,configure,list,prepare,open,handoff,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

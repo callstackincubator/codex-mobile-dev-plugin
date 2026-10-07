@@ -824,3 +824,11 @@ only in local App Flow diagnostics. Binding caches reset during cleanup. No
 source locations, component data or new per-probe events enter telemetry. The
 lost-target readiness check and resolved base-route params retain existing
 capture and failure measurements.
+
+Prepared native View slots keep the same capture, readiness and restoration
+boundaries when React retains a preview through app updates. Slot listeners
+subscribe only to their owning component and detach on unmount. Local
+`projectionSlots` diagnostics describe at most 12 active previews and their
+attachment state; component names remain local. Portal updates use the same
+slot and preserve the preview context. No per-render metric or new app data
+enters Sentry.

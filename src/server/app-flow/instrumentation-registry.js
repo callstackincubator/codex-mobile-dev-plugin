@@ -1,13 +1,34 @@
 /** In-app references never cross the inspector bridge or enter telemetry. */
 export function createFlowRegistry(preparePreview) {
   const owners = new Map(), listeners = new Set();
-  const loaders = new Map();
+  const loaders = new Map(), slots = new Map(), slotListeners = new Map(), emptySlots = new Map();
   let revision = 0, sequence = 0, projection, releasePreview;
   const notify = () => { revision++; for (const listener of [...listeners]) listener(); };
   return {
     version: 1,
     get revision() { return revision; },
     get projection() { return projection; },
+    slotSnapshot(ownerId) { return slots.get(ownerId) ?? emptySlots; },
+    subscribeSlots(ownerId, listener) {
+      const listeners=slotListeners.get(ownerId)??new Set();listeners.add(listener);slotListeners.set(ownerId,listeners);
+      return ()=>{listeners.delete(listener);if(!listeners.size)slotListeners.delete(ownerId);};
+    },
+    setHostSlot(binding, key, element) {
+      const owner=owners.get(binding.owner),entry=owner?.entries.get(binding.site);
+      if(!owner?.mounted||owner.sourceHash!==binding.sourceHash||entry?.kind!=='host'||entry.ambiguous)return false;
+      const next=new Map(slots.get(owner.id)),children=new Map(next.get(binding.site));
+      children.set(key,element);next.set(binding.site,children);slots.set(owner.id,next);
+      for(const listener of slotListeners.get(owner.id)??[])listener();
+      return true;
+    },
+    removeHostSlot(binding, key, expected) {
+      const previous=slots.get(binding.owner),children=previous?.get(binding.site);
+      if(!children?.has(key)||children.get(key)!==expected)return;
+      const next=new Map(previous),remaining=new Map(children);remaining.delete(key);
+      if(remaining.size)next.set(binding.site,remaining);else next.delete(binding.site);
+      if(next.size)slots.set(binding.owner,next);else slots.delete(binding.owner);
+      for(const listener of slotListeners.get(binding.owner)??[])listener();
+    },
     registerLoaders(entries) { for (const [id, load] of entries) loaders.set(id,load); },
     async project({source, owner, site, value}) {
       if (projection) throw new Error('Close the current preview before mounting another owner.');
@@ -34,7 +55,7 @@ export function createFlowRegistry(preparePreview) {
       owner.entries = new Map(entries); owner.mounted = true;
       owners.set(owner.id, owner); notify();
     },
-    remove(owner) { owner.mounted = false; owner.entries.clear(); owners.delete(owner.id); notify(); },
+    remove(owner) { owner.mounted = false; owner.entries.clear(); owners.delete(owner.id); slots.delete(owner.id); notify(); },
     components(name) {
       return [...owners.values()].filter(owner=>owner.source.endsWith(`#${name}`) && (!projection || owner.preview===projection));
     },
