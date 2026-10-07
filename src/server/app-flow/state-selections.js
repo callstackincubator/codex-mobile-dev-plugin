@@ -34,9 +34,36 @@ export function syncPreviewState(before,plan,locals) {
     const valid=keys.every(key=>{const descriptor=Object.getOwnPropertyDescriptor(value,key);return descriptor&&'value'in descriptor&&transferable(descriptor.value,depth+1);});
     checking.delete(value);if(valid)checked.add(value);return valid;
   };
+  // Object literals/spreads create new references on every read. Reuse equal
+  // data so a transfer whose effect depends on state reaches a fixed point.
+  const equal=(a,b,remaining={left:1600},pairs=new WeakMap(),depth=0)=>{
+    if(Object.is(a,b))return true;
+    if(depth>12||--remaining.left<0||!a||!b||typeof a!=='object'||typeof b!=='object')return false;
+    if(Object.getPrototypeOf(a)!==Object.getPrototypeOf(b)||Object.getOwnPropertySymbols(a).length)return false;
+    const seen=pairs.get(a);if(seen?.has(b))return true;
+    const left=Object.getOwnPropertyNames(a),right=Object.getOwnPropertyNames(b);
+    if(left.length!==right.length||left.length>remaining.left)return false;
+    if(seen)seen.add(b);else pairs.set(a,new WeakSet([b]));
+    for(const key of left){
+      if(--remaining.left<0)return false;
+      const x=Object.getOwnPropertyDescriptor(a,key),y=Object.getOwnPropertyDescriptor(b,key);
+      if(!x||!y||!('value'in x)||!('value'in y)||x.enumerable!==y.enumerable||!equal(x.value,y.value,remaining,pairs,depth+1))return false;
+    }
+    return true;
+  };
   for(const update of plan.updates.slice(0,16)){
     const next=readStatePatch(value,update,{locals},{},budget);
-    if(next&&Object.keys(update.patch).every(key=>transferable(next[key]))&&Object.keys(next).some(key=>!Object.is(next[key],value[key])))value=next;
+    if(!next||!Object.keys(update.patch).every(key=>transferable(next[key])))continue;
+    for(const key of Object.keys(update.patch))if(equal(value[key],next[key]))next[key]=value[key];
+    if(Object.keys(next).some(key=>!Object.is(next[key],value[key])))value=next;
   }
   return value;
+}
+
+
+/** The source plan supplies data reads, never an event callback. */
+export function selectOpeningState(input,before,candidate) {
+  const result=readStatePatch({current:before},{when:input.when,payload:{},patch:{value:input.value}},candidate);
+  if(!result||result.value==null||typeof result.value==='function')return;
+  return {value:result.value};
 }

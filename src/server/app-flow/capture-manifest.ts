@@ -84,7 +84,7 @@ export async function instrumentationManifest(projectRoot: string, graph: FlowGr
     for(const value of site.data??[]){const unit=files[value.file]??={hash:'',states:[],controls:[]};if(!unit.data?.includes(value.name))(unit.data??=[]).push(value.name);}
   }
   for (const action of [...(catalog?.actions ?? []), ...(catalog?.previews ?? [])]) {
-    if(action.effect.kind!=='mount'&&action.source)marker(action.file,action.owner,action.source);
+    if(action.effect.kind!=='mount'&&action.source)marker(action.file,action.owner,action.source,false,action.input?.locals);
     for(const entry of action.consumer?.entries??[])marker(entry.file,entry.owner,entry.source);
     for(const target of action.handoffs??[]) {
       const unit=files[target.file]??={hash:'',states:[],controls:[]};

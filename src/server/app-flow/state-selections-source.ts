@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import ts from 'typescript';
 import type {FlowStateExpression, FlowStateSelection, FlowStateSite} from '../../shared/app-flow.ts';
-import {stateExpressions} from './state-expressions-source.ts';
+import {stateExpressions,statePropertyValue} from './state-expressions-source.ts';
 import {protectedPreviewField} from './preview-plans.ts';
 
 type Fn = ts.FunctionLikeDeclaration & {body: ts.ConciseBody};
@@ -50,8 +50,9 @@ export function stateSelections(site: FlowStateSite, call: ts.CallExpression, re
       if(!ts.isSpreadAssignment(spread)||!ts.isIdentifier(spread.expression)||binding(spread.expression)!==state)continue;
       const patch:Record<string,FlowStateExpression>={};let valid=true;
       for(const property of result.properties.slice(1)){
-        if(!ts.isPropertyAssignment(property)||!key(property.name)||protectedPreviewField.test(key(property.name)!)){valid=false;break;}
-        patch[key(property.name)!]=expression(property.initializer,env);
+        const value=statePropertyValue(property);
+        if(!value||!property.name||!key(property.name)||protectedPreviewField.test(key(property.name)!)){valid=false;break;}
+        patch[key(property.name)!]=expression(value,env);
       }
       if(valid&&Object.keys(patch).length)patches.set(clause.expression.text,patch);
     }
@@ -93,8 +94,9 @@ export function stateSelections(site: FlowStateSite, call: ts.CallExpression, re
       });
       const fields:Record<string,FlowStateExpression>={};let valid=true;
       for(const property of payload.properties){
-        if(!ts.isPropertyAssignment(property)||!key(property.name)||['__proto__','constructor','prototype'].includes(key(property.name)!)){valid=false;break;}
-        fields[key(property.name)!]=expression(property.initializer,env);
+        const value=statePropertyValue(property);
+        if(!value||!property.name||!key(property.name)||['__proto__','constructor','prototype'].includes(key(property.name)!)){valid=false;break;}
+        fields[key(property.name)!]=expression(value,env);
       }
       if(!valid)continue;
       const ast=node.getSourceFile(),start=ast.getLineAndCharacterOfPosition(node.getStart()),end=ast.getLineAndCharacterOfPosition(node.getEnd());

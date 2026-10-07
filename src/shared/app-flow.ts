@@ -31,14 +31,16 @@ export type FlowNode = {
 };
 export type FlowEdge = { from: string; to: string; kind: "contains" | "navigation"; owner?: string; via?: "link" | "call"; guarded?: boolean; file?: string; line?: number };
 export type FlowLink = { target: string; owner: string; params?: FlowParams; guarded: boolean };
-export type FlowStateExpression = {value: string|number|boolean|null} | {undefined:true} | {unknown:true} | {input:'state'|'payload'|'props'|'locals'} | {data:{file:string;name:string}} | {object:Record<string,FlowStateExpression>} | {has:FlowStateExpression;item:FlowStateExpression} | {get:FlowStateExpression;key:string;optional?:boolean;chain?:boolean} | {op:'?'|'!'|'==='|'!=='|'&&'|'||'|'??'|'<'|'<='|'>'|'>=';args:FlowStateExpression[]};
+export type FlowStateExpression = {value: string|number|boolean|null} | {undefined:true} | {unknown:true} | {input:'state'|'payload'|'props'|'locals'} | {data:{file:string;name:string}} | {object:Record<string,FlowStateExpression>} | {merge:FlowStateExpression[]} | {has:FlowStateExpression;item:FlowStateExpression} | {get:FlowStateExpression;key:string;optional?:boolean;chain?:boolean} | {op:'?'|'!'|'==='|'!=='|'&&'|'||'|'??'|'<'|'<='|'>'|'>=';args:FlowStateExpression[]};
 export type FlowStateSelection = {id:string;file:string;owner:string;component:string;source:{line:number;column:number;endLine:number;endColumn:number};locals?:string[];payload:Record<string,FlowStateExpression>;patch:Record<string,FlowStateExpression>};
 export type FlowStateSync = {line:number;column:number;dispatch:string;locals:string[];updates:{when:FlowStateExpression;payload:Record<string,FlowStateExpression>;patch:Record<string,FlowStateExpression>}[]};
 export type FlowStateSite = { id: string; file: string; line: number; column: number; endLine: number; endColumn?: number; owner: string; paths: string[][]; selections?: FlowStateSelection[]; sync?:FlowStateSync[]; data?: {file:string;name:string}[]; hook?: 'useState' | 'useReducer'; valueName?: string; owners?: string[]; ownerSites?: {file: string; owner: string}[]; ownerEntries?: {component:string; file:string; owner:string; source:{line:number;column:number;endLine:number;endColumn:number}}[] };
+export type FlowOpeningData = {value:FlowStateExpression;when:FlowStateExpression;locals:string[]};
 export type FlowPresentationAction = {
   id: string; file: string; line: number; owner: string; component: string; prop: string; name: string;
   source?: { line: number; column: number; endLine: number; endColumn: number };
   trigger?: Record<string,string|number|boolean>;
+  input?: FlowOpeningData;
   handler?: string;
   guard?: FlowUiCondition;
   preview?: boolean;

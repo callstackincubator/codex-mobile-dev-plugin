@@ -904,3 +904,9 @@ These local diagnostics cover the in-app queue, including time that does not
 cross the debugger bridge. Existing Sentry runtime timings still measure bridge
 operations; their names and boundaries stay unchanged. Screenshot wait includes
 transport, encoding and acknowledgement, so it is not device render time.
+
+Source-bound opening data uses the existing scan, binding, presentation-open and
+restoration measurements. It reads committed JSX locals inside the app and keeps
+those references there; payloads do not enter telemetry or the debugger reply.
+Object copying and equal-data checks have fixed work limits. They add no timer,
+observer or event per field. Existing capture phase totals include this work.

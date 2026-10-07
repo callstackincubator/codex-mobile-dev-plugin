@@ -10,6 +10,7 @@ const unwrap=unwrapStateNode;
 const unknown:FlowStateExpression={unknown:true};
 export const stateProperty=(name:ts.PropertyName)=>ts.isIdentifier(name)||ts.isStringLiteralLike(name)||ts.isNumericLiteral(name)?name.text:undefined;
 const key=stateProperty;
+export const statePropertyValue=(property:ts.ObjectLiteralElementLike)=>ts.isPropertyAssignment(property)?property.initializer:ts.isShorthandPropertyAssignment(property)&&!property.objectAssignmentInitializer?property.name:undefined;
 
 /** Resolve lexical data reads without compiling or calling app code. */
 export function stateExpressions(data?:StateDataResolver) {
@@ -52,10 +53,22 @@ export function stateExpressions(data?:StateDataResolver) {
     if(node.kind===ts.SyntaxKind.NullKeyword)return {value:null};
     if(ts.isIdentifier(node))return node.text==='undefined'&&!binding(node)?{undefined:true}:env.get(binding(node)!)??external(node)??unknown;
     if(ts.isObjectLiteralExpression(node)){
-      const fields:Record<string,FlowStateExpression>={};
-      for(const property of node.properties){if(!ts.isPropertyAssignment(property)||!key(property.name)||['__proto__','constructor','prototype'].includes(key(property.name)!))return unknown;fields[key(property.name)!]=expression(property.initializer,env,depth+1);}
-      return {object:fields};
+      if(node.properties.length>64)return unknown;
+      let fields:Record<string,FlowStateExpression>={};const parts:FlowStateExpression[]=[];
+      for(const property of node.properties){
+        if(ts.isSpreadAssignment(property)){
+          if(Object.keys(fields).length){parts.push({object:fields});fields={};}
+          parts.push(expression(property.expression,env,depth+1));continue;
+        }
+        const value=statePropertyValue(property),field=property.name&&key(property.name);
+        if(!value||!field||['__proto__','constructor','prototype'].includes(field))return unknown;
+        fields[field]=expression(value,env,depth+1);
+      }
+      if(!parts.length)return {object:fields};
+      if(Object.keys(fields).length)parts.push({object:fields});
+      return {merge:parts};
     }
+    if(ts.isCallExpression(node)&&ts.isIdentifier(node.expression)&&node.expression.text==='Boolean'&&!binding(node.expression)&&node.arguments.length===1)return {op:'!',args:[{op:'!',args:[expression(node.arguments[0],env,depth+1)]}]};
     if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)&&node.expression.name.text==='has'&&node.arguments.length===1)return {has:expression(node.expression.expression,env,depth+1),item:expression(node.arguments[0],env,depth+1)};
     if(ts.isPropertyAccessExpression(node)||ts.isElementAccessExpression(node)){
       const part=ts.isPropertyAccessExpression(node)?node.name.text:node.argumentExpression&&(ts.isStringLiteralLike(node.argumentExpression)||ts.isNumericLiteral(node.argumentExpression))?node.argumentExpression.text:undefined;

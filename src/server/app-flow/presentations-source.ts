@@ -3,10 +3,12 @@ import { relative } from 'node:path';
 import ts from 'typescript';
 import type { FlowPresentations, FlowPresentationAction, FlowStateSite, FlowUiCondition } from '../../shared/app-flow.ts';
 import type { SourceUnit } from './source-links.ts';
+import {openingData} from './opening-data-source.ts';
+import {stateExpressions} from './state-expressions-source.ts';
 
 type Unit = SourceUnit;
 type Fn = ts.FunctionLikeDeclaration & {body: ts.ConciseBody};
-type State = {site: FlowStateSite; value: string; setter: string; fn: Fn; unit: Unit};
+type State = {site: FlowStateSite; value: string; setter: string; setterNode: ts.Identifier; fn: Fn; unit: Unit};
 type Transition = {state: State; path: string[]; value: unknown};
 const bad = /token|password|secret|authorization|cookie|credential|authenticated|loggedin|signedin|session|identity|currentUser|accessKey|^(__proto__|constructor|prototype)$/i;
 const unwrap = (node: ts.Node): ts.Node => {
@@ -24,7 +26,10 @@ function owner(node: ts.Node): Fn | undefined {
 function functionName(fn: Fn): string {
   if (fn.name && ts.isIdentifier(fn.name)) return fn.name.text;
   let parent: ts.Node = fn;
-  for (let i=0; parent.parent && i<4; i++,parent=parent.parent) if (ts.isVariableDeclaration(parent.parent) && ts.isIdentifier(parent.parent.name)) return parent.parent.name.text;
+  for (let i=0; parent.parent && i<4; i++,parent=parent.parent) {
+    if(ts.isFunctionLike(parent.parent))break;
+    if (ts.isVariableDeclaration(parent.parent) && ts.isIdentifier(parent.parent.name)) return parent.parent.name.text;
+  }
   return 'default';
 }
 function components(node: ts.Node): string[] {
@@ -40,6 +45,7 @@ function components(node: ts.Node): string[] {
 
 /** Source evidence for presentation only. No project modules or expressions run. */
 export function scanPresentations(units: Map<string,Unit>, root: string, symbol: (unit: Unit, name: string) => string): FlowPresentations {
+  const {binding:stateBinding}=stateExpressions();
   const states: State[] = [], functions = new Map<string,Fn>(), enums = new Map<string,Map<string,unknown>>();
   const guards = new Map<string,Set<string>>();
   const views=new Map<string,{unit:Unit;node:ts.ConditionalExpression;name:string;path:string[]}[]>();
@@ -60,7 +66,7 @@ export function scanPresentations(units: Map<string,Unit>, root: string, symbol:
     if(!value||!setter||!ts.isBindingElement(value)||!ts.isBindingElement(setter)||!ts.isIdentifier(value.name)||!ts.isIdentifier(setter.name))return;
     const fn=owner(node);if(!fn)return;
     const start=unit.ast.getLineAndCharacterOfPosition(call.getStart()),end=unit.ast.getLineAndCharacterOfPosition(call.getEnd());
-    states.push({unit,fn,value:value.name.text,setter:setter.name.text,site:{id:key(`${relative(root,unit.file)}:${call.pos}`),file:relative(root,unit.file),line:start.line+1,column:start.character,endLine:end.line+1,owner:functionName(fn),paths:[]}});
+    states.push({unit,fn,value:value.name.text,setter:setter.name.text,setterNode:setter.name,site:{id:key(`${relative(root,unit.file)}:${call.pos}`),file:relative(root,unit.file),line:start.line+1,column:start.character,endLine:end.line+1,owner:functionName(fn),paths:[]}});
   });
   function known(unit:Unit,node:ts.Node|undefined,env:Map<string,unknown>,depth=0):boolean{
     if(!node||depth>12)return false;node=unwrap(node);
@@ -115,12 +121,12 @@ export function scanPresentations(units: Map<string,Unit>, root: string, symbol:
     if(!state.site.paths.some(item=>item.join('.')===p))state.site.paths.push(path);
   };
   for(const unit of units.values()){
-    const aliases = new Map<string,{state:State;path:string[]}>();
+    const aliases = new Map<ts.Identifier,{state:State;path:string[]}>();
     walk(unit.ast,node=>{
       if(!ts.isVariableDeclaration(node)||!node.initializer||!ts.isCallExpression(unwrap(node.initializer)))return;
       const call=unwrap(node.initializer) as ts.CallExpression;const ctx=contextStates.get(contextReaders.get(symbol(unit,call.expression.getText()))??'');if(!ctx)return;
-      if(ts.isIdentifier(node.name))aliases.set(node.name.text,ctx);
-      if(ts.isObjectBindingPattern(node.name))for(const e of node.name.elements)if(ts.isIdentifier(e.name))aliases.set(e.name.text,{state:ctx.state,path:[e.propertyName?.getText()??e.name.text]});
+      if(ts.isIdentifier(node.name))aliases.set(node.name,ctx);
+      if(ts.isObjectBindingPattern(node.name))for(const e of node.name.elements)if(ts.isIdentifier(e.name))aliases.set(e.name,{state:ctx.state,path:[e.propertyName?.getText()??e.name.text]});
     });
     walk(unit.ast,node=>{
       let condition:ts.Node|undefined,body:ts.Node|undefined;
@@ -129,13 +135,13 @@ export function scanPresentations(units: Map<string,Unit>, root: string, symbol:
       if(ts.isIfStatement(node)){condition=node.expression;body=node.thenStatement;}
       if(ts.isSwitchStatement(node)){condition=node.expression;body=node.caseBlock;}
       if((ts.isJsxOpeningElement(node)||ts.isJsxSelfClosingElement(node))&&attributes(node).some(a=>['visible','isOpen','open'].includes(a.name.getText()))){const attr=attributes(node).find(a=>['visible','isOpen','open'].includes(a.name.getText()))!;condition=expression(attr);body=node.parent;}
-      if(condition&&ts.isIdentifier(condition)){const local=lexical(condition,condition.text);if(local)condition=local;}
+      if(condition&&ts.isIdentifier(condition)&&!aliases.has(stateBinding(condition)!)){const local=lexical(condition,condition.text);if(local)condition=local;}
       while(condition&&ts.isPrefixUnaryExpression(condition)&&condition.operator===ts.SyntaxKind.ExclamationToken)condition=condition.operand;
       if(!condition||!body)return;const names=components(body);if(!names.length)return;
       walk(condition,ref=>{
         if(!ts.isIdentifier(ref)||ts.isPropertyAccessExpression(ref.parent)&&ref.parent.name===ref)return;
         let expr:ts.Node=ref,path:string[]=[];while(ts.isPropertyAccessExpression(expr.parent)&&expr.parent.expression===expr){path.push(expr.parent.name.text);expr=expr.parent;}
-        const state=states.find(s=>s.unit===unit&&s.value===ref.text&&s.fn===owner(ref));const alias=aliases.get(ref.text);
+        const state=states.find(s=>s.unit===unit&&s.value===ref.text&&s.fn===owner(ref));const alias=aliases.get(stateBinding(ref)!);
         let selected=names,value:unknown;
         if(ts.isBinaryExpression(condition!)&&[ts.SyntaxKind.EqualsEqualsEqualsToken,ts.SyntaxKind.EqualsEqualsToken].includes(condition!.operatorToken.kind)){
           value=constant(unit,condition!.right);if(value===undefined)value=constant(unit,condition!.left);
@@ -293,8 +299,9 @@ export function scanPresentations(units: Map<string,Unit>, root: string, symbol:
       if(controlAction)continue;
       if(!handler)continue;
       const changes=transitions(unit,handler);
-      if(changes.length!==1)continue;
-      const change=changes[0];if(change.path.some(p=>bad.test(p))||(change.value===false||change.value===null)&&!views.has(`${change.state.site.id}:${change.path.join('.')}`))continue;
+      const supplied=changes.length===0?openingData(unit,handler,fn,node,states,operation):undefined;
+      if(changes.length!==1&&!supplied)continue;
+      const change:Transition=changes[0]??{state:supplied!.state as State,path:[],value:undefined};if(change.path.some(p=>bad.test(p))||(change.value===false||change.value===null)&&!views.has(`${change.state.site.id}:${change.path.join('.')}`))continue;
       let inferred:string[]|undefined;
       for(const view of views.get(`${change.state.site.id}:${change.path.join('.')}`)??[]){
         let stateValue=change.value;for(const part of [...view.path].reverse())stateValue={[part]:stateValue};const env=new Map([[view.name,stateValue]]);
@@ -302,7 +309,7 @@ export function scanPresentations(units: Map<string,Unit>, root: string, symbol:
       }
       const targets=inferred??[...(guards.get(`${change.state.site.id}:${change.path.join('.')}:${JSON.stringify(change.value)}`)??guards.get(`${change.state.site.id}:${change.path.join('.')}`)??[])];
       if(!targets.length)continue;
-      actions.push({...base,name:targets.filter(name=>!['View','Text','Button','ErrorBoundary','Modal'].includes(name)).at(-1)??targets[0],effect:{kind:'state',site:change.state.site.id,path:change.path,value:change.value}});
+      actions.push({...base,...(supplied?{input:supplied.input}:{}),name:targets.filter(name=>!['View','Text','Button','ErrorBoundary','Modal'].includes(name)).at(-1)??targets[0],effect:{kind:'state',site:change.state.site.id,path:change.path,value:change.value}});
     }
   });
   return {states:states.filter(state=>actions.some(a=>a.effect.kind==='state'&&a.effect.site===state.site.id)).map(state=>state.site),actions:actions.slice(0,1500)};

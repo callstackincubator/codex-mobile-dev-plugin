@@ -1,7 +1,7 @@
 import ts from 'typescript';
 import type {FlowStateExpression,FlowStateSite,FlowStateSync} from '../../shared/app-flow.ts';
 import {protectedPreviewField} from './preview-plans.ts';
-import {stateExpressions,stateProperty,unwrapStateNode} from './state-expressions-source.ts';
+import {stateExpressions,stateProperty,statePropertyValue,unwrapStateNode} from './state-expressions-source.ts';
 
 type Fn=ts.FunctionLikeDeclaration & {body:ts.ConciseBody};
 const unwrap=unwrapStateNode;
@@ -49,8 +49,9 @@ export function stateSyncs(site:FlowStateSite,call:ts.CallExpression,render:Fn,r
           const spread=result.properties[0];
           if(!spread||!ts.isSpreadAssignment(spread)||!ts.isIdentifier(spread.expression)||binding(spread.expression)!==state){valid=false;break;}
           for(const property of result.properties.slice(1)){
-            if(!ts.isPropertyAssignment(property)){valid=false;break;}
-            field(stateProperty(property.name),property.initializer);
+            const value=statePropertyValue(property);
+            if(!value||!property.name){valid=false;break;}
+            field(stateProperty(property.name),value);
           }
           break;
         }
@@ -96,8 +97,9 @@ export function stateSyncs(site:FlowStateSite,call:ts.CallExpression,render:Fn,r
         const patch=patches.get(type.initializer.text);if(!patch)return true;
         const fields:Record<string,FlowStateExpression>={};
         for(const property of payload.properties){
-          if(!ts.isPropertyAssignment(property)||!stateProperty(property.name)||['__proto__','constructor','prototype'].includes(stateProperty(property.name)!))return false;
-          fields[stateProperty(property.name)!]=expression(property.initializer,localEnv);
+          const value=statePropertyValue(property);
+          if(!value||!property.name||!stateProperty(property.name)||['__proto__','constructor','prototype'].includes(stateProperty(property.name)!))return false;
+          fields[stateProperty(property.name)!]=expression(value,localEnv);
         }
         updates.push({when,payload:fields,patch});return updates.length<=16;
       };

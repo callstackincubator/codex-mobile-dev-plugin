@@ -29,11 +29,31 @@ export function readStatePatch(before,selection,candidate,options={},budget={lef
     if('value'in node)return node.value;
     if(node.data){const observed=options.data?.(node.data);return observed&&Object.prototype.hasOwnProperty.call(observed,'value')?observed.value:missing;}
     if(node.object){const value={};for(const [key,expression]of Object.entries(node.object)){if(unsafe(key))return missing;const field=read(expression,depth+1);if(field===missing)return missing;value[key]=field;}return value;}
+    if(node.merge){
+      const result={};
+      // Spread copies own data fields in source order. It must never invoke an
+      // accessor or copy a controller/prototype into a temporary state value.
+      for(const part of node.merge){
+        const value=read(part,depth+1);if(value===missing)return missing;
+        if(value==null)continue;
+        if(!plain(value)||Object.getOwnPropertySymbols(value).length)return missing;
+        const fields=Object.getOwnPropertyNames(value);if(fields.length>budget.left)return missing;
+        for(const key of fields){
+          if(--budget.left<0||unsafe(key))return missing;
+          const descriptor=Object.getOwnPropertyDescriptor(value,key);
+          if(!descriptor?.enumerable)continue;
+          if(!('value'in descriptor)||typeof descriptor.value==='function')return missing;
+          Object.defineProperty(result,key,{value:descriptor.value,enumerable:true,writable:true,configurable:true});
+        }
+      }
+      return result;
+    }
     if(node.has){const set=read(node.has,depth+1),item=read(node.item,depth+1);if(set===missing||item===missing)return missing;return nativeHas(set,item);}
     if(node.undefined)return undefined;
     if(node.input)return node.input==='payload'?payload:input[node.input]??missing;
     if(node.get){
       let value=evaluate(node.get,depth+1);
+      if(node.get.input==='locals'&&value!==missing&&!Object.prototype.hasOwnProperty.call(value,node.key))return missing;
       if(value===shortCircuit){if(node.chain)return shortCircuit;value=undefined;}
       return value===missing?missing:value===payload?evaluate(selection.payload[node.key],depth+1):node.optional&&value==null?shortCircuit:own(value,node.key);
     }

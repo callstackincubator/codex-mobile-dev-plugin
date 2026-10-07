@@ -173,3 +173,26 @@ test('intermediate state selection is bounded, preserves real references and ref
   const logical:any={id:'known',payload:{},patch:{step:{op:'?',args:[{op:'||',args:[{op:'===',args:[{unknown:true},{value:'known'}]},{value:true}]},{value:3},{value:2}]}}};
   assert.equal(selectPreviewState([logical],{step:1},target,[{id:'known',props:{}}]).value.step,3);
 });
+
+
+test('real object payloads support shorthand and ordered spreads without mutating observed data',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'flow-choice-object-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await writeFile(join(root,'App.tsx'),`import {useReducer} from 'react';import {reducer} from './reducer';export function Form({item,extra}){const [state,send]=useReducer(reducer,{step:1});return <><Choice item={item} extra={extra} onSelect={()=>send({type:'choose',item,extra})}/>{state.step===2&&<Details/>}</>}function Details(){return <View/>}`);
+  await writeFile(join(root,'reducer.ts'),`export function reducer(state,action){const selected={...action.item,title:'default',...action.extra,kind:'record'};switch(action.type){case 'choose':return {...state,selected,step:2};}}`);
+  const graph=await scanAppFlow(root,'ios'),site=graph.presentations!.previewStates!.find(site=>site.owner==='Form')!,selection=site.selections![0];
+  assert.ok(selection);
+  const child=Object.freeze({id:'real-child'}),item=Object.freeze({id:'real-record',title:'initial',child}),extra=Object.freeze({title:'actual title'}),before=Object.freeze({step:1});
+  const select=(item:any,extra:any)=>selectPreviewState([selection],before,{path:['step'],value:2},[{id:selection.id,props:{item,extra}}]);
+  const result=select(item,extra);
+  assert.deepEqual(result?.value.selected,{id:'real-record',title:'actual title',child,kind:'record'});
+  assert.equal(result.value.selected.child,child);assert.equal(item.title,'initial');assert.equal(before.step,1);
+  assert.equal(select(item,null).value.selected.title,'default');
+  assert.equal(select(item,undefined).value.selected.title,'default');
+  const getter={get title(){assert.fail('A spread must not execute getters')}};
+  assert.equal(select(item,getter),undefined);
+  assert.equal(select(item,{open(){assert.fail('A controller must not execute')}}),undefined);
+  assert.equal(select(item,Object.assign(Object.create({}),{title:'inherited prototype'})),undefined);
+  assert.equal(select(item,JSON.parse('{"__proto__":{"polluted":true}}')),undefined);
+  assert.equal(select(item,{[Symbol('hidden')]:'symbol'}),undefined);
+  assert.equal(select(item,Object.fromEntries(Array.from({length:1000},(_,i)=>['field'+i,i]))),undefined);
+});

@@ -101,3 +101,17 @@ test('temporary form receives a later query result without running the app reduc
  assert.equal(client.registry.find(site.id).value.tuple[0].step,0);assert.equal(client.registry.find(site.id).value.tuple[0].pendingSubmit,null);
  assert.deepEqual(reported,[]);await React.act(()=>root.unmount());assert.equal(client.registry.inventory().owners,0);assert.equal(listeners.size,0);
 });
+
+
+test('query transfers copy shorthand object payloads and settle on unchanged real data',async t=>{
+ const app=`import {useReducer,useEffect} from 'react';import {reducer} from './reducer';export function Form({resource}){const [model,dispatch]=useReducer(reducer,{step:1,description:undefined});useEffect(()=>{if(resource)dispatch({type:'receive',resource})},[resource,model.description]);return <>{model.step===2&&<Details description={model.description}/>}</>}function Details(){return <View/>}`;
+ const body=`export function reducer(state,action){switch(action.type){case 'receive':return {...state,description:{...action.resource,kind:'record'}};}}`;
+ const {site}=await fixture(t,app,body),plan=site.sync![0],resource=Object.freeze({id:'observed',child:Object.freeze({id:'real-child'})}),before={step:2,description:undefined};
+ assert.ok(plan);
+ const next=syncPreviewState(before,plan,{resource});
+ assert.deepEqual(next.description,{id:'observed',child:resource.child,kind:'record'});
+ assert.equal(before.description,undefined);assert.equal(next.description.child,resource.child);
+ assert.equal(syncPreviewState(next,plan,{resource}),next,'Copying equal data must not keep rendering the form');
+ const changed=syncPreviewState(next,plan,{resource:{...resource,id:'new-observation'}});
+ assert.equal(changed.description.id,'new-observation');assert.notEqual(changed,next);
+});

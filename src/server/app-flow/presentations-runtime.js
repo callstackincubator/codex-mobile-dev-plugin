@@ -1193,6 +1193,23 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const owned=(fiber,owner)=>roots(owner,tree).some(root=>tree.inside(fiber,root));
     const candidates=(tree.names.get(action.owner)??[]).filter(owner=>!focus||roots(owner,tree).some(body=>scope.some(root=>tree.inside(body,root)||tree.inside(root,body))));
     const ownersFound=candidates.filter(owner=>entriesFound.some(fiber=>owned(fiber,owner))&&tree.isVisible(owner)&&!candidates.some(child=>child!==owner&&tree.inside(child,owner)&&tree.isVisible(child))).filter(owner=>entriesFound.some(fiber=>owned(fiber,owner)&&tree.isVisible(fiber)));
+    if(action.input&&action.effect.kind==='state'){
+      // Repeated rows may provide different real examples for one shared UI
+      // state. Bind the single setter first; never pick between controllers.
+      const bindings=(tree.states.get(action.effect.site)??[]).filter(binding=>binding.kind==='useState'&&tree.isVisible(binding.fiber));
+      if(bindings.length!==1||action.effect.path.length)return;
+      const binding=bindings[0],before=hookValue(binding,tree);
+      if(before!=null&&before!==false)return;
+      for(const owner of ownersFound.slice(0,32)){
+        if(!tree.inside(owner,binding.fiber)||!condition(action.guard,owner.memoizedProps))continue;
+        for(const entry of entriesFound.filter(entry=>owned(entry,owner)&&tree.isVisible(entry)).slice(0,32)){
+          if(!Object.entries(action.trigger??{}).every(([key,value])=>entry.memoizedProps?.[key]===value))continue;
+          const input=globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.openingState?.(action.input,before,{props:entry.memoizedProps,locals:preparedEntries.get(entry)?.locals});
+          if(input&&!Object.is(input.value,before))return {owner,binding,input};
+        }
+      }
+      return;
+    }
     if(ownersFound.length!==1)return;const owner=ownersFound[0];
     const matching=entriesFound.filter(fiber=>owned(fiber,owner)&&tree.isVisible(fiber)&&Object.entries(action.trigger??{}).every(([key,value])=>fiber.memoizedProps?.[key]===value));
     const callbacks=new Set(matching.map(fiber=>fiber.memoizedProps[action.prop]));
@@ -1229,7 +1246,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const effect=JSON.stringify(action.effect),expected=JSON.stringify(action.expected);
     const matches=[];
     for(const candidate of catalog.actions){
-      if(candidate.id===action.id||candidate.preview||candidate.name!==action.name||JSON.stringify(candidate.effect)!==effect||JSON.stringify(candidate.expected)!==expected||JSON.stringify(candidate.handoffs)!==JSON.stringify(action.handoffs))continue;
+      if(candidate.id===action.id||candidate.preview||candidate.name!==action.name||JSON.stringify(candidate.effect)!==effect||JSON.stringify(candidate.input)!==JSON.stringify(action.input)||JSON.stringify(candidate.expected)!==expected||JSON.stringify(candidate.handoffs)!==JSON.stringify(action.handoffs))continue;
       const found=find(candidate,tree,focus);
       const identity=found?.binding?.setter??found?.target?.value;
       if(identity&&!matches.some(match=>(match.binding?.setter??match.target?.value)===identity))matches.push(found);
@@ -1489,6 +1506,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   async function waitForDismissal(entry) {
     const started=Date.now();
     while(entry.native?.some(status=>!status.closed)){
+      if(entry.input){const current=hookValue(entry.binding);if(!Object.is(current,entry.input.value)&&!Object.is(current,entry.value))return;}
       const tree=index(),waiting=entry.native.filter(status=>!status.closed);
       if(!waiting.some(status=>[...nativeRecords.values()].some(record=>record.status===status&&tree.current.has(record.fiber))))return;
       // A close can run before a native ref exists and silently do nothing.
@@ -1637,10 +1655,11 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(action.effect.kind==='state'){
       if(action.preview)return {...(found.alreadyOpen?{focus:found.consumer??found.binding.fiber,alreadyOpen:true}:previewState(action,found,tree,progress)),expected:action.expected?{component:action.expected.component,scope:action.expected.scope,entry:`${action.id}:expected`}:action.name};
       const b=found.binding;let previous=hookValue(b);for(const part of action.effect.path)previous=previous?.[part];
-      undo.push({binding:b,path:action.effect.path,value:previous,nativeDismiss:previous==null||previous===false});
-      // Guard discovery only supplies finite presentation values. No session,
-      // account, query cache or credential store is modified here.
-      b.setter(previous=>setPath(previous,action.effect.path,action.effect.value));
+      undo.push({binding:b,path:action.effect.path,value:previous,input:found.input,nativeDismiss:previous==null||previous===false});
+      // Apply source-proven UI state only. A queued app update owns its newer
+      // state; never replace it with the captured opening data.
+      const before=previous;
+      b.setter(previous=>found.input&&!Object.is(previous,before)?previous:setPath(previous,action.effect.path,found.input?found.input.value:action.effect.value));
       return {name:action.name,scope:catalog.states.find(s=>s.id===action.effect.site)?.owner===action.owner?b.fiber:undefined};
     }
     if(action.effect.kind==='control'){
@@ -1739,8 +1758,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         if(wait)await waitForDismissal(entry);
       }else{
         if(!entry.closing){
+          if(entry.input&&!Object.is(hookValue(entry.binding),entry.input.value)){undo.pop();continue;}
           if(entry.nativeDismiss)beginDismissal(entry,entry.focus,true);
-          entry.binding.setter(previous=>setPath(previous,entry.path,entry.value));entry.closing=true;
+          entry.binding.setter(previous=>entry.input&&!Object.is(previous,entry.input.value)?previous:setPath(previous,entry.path,entry.value));entry.closing=true;
         }
         if(wait&&entry.nativeDismiss)await waitForDismissal(entry);
       }

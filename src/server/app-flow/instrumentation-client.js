@@ -3,7 +3,7 @@ import {View} from 'react-native';
 import {createFlowRegistry} from './instrumentation-registry.js';
 import {capturePreviewContext} from './instrumentation-context.js';
 import {installPreparedRuntime} from './prepared-runtime.js';
-import {selectPreviewState,syncPreviewState} from './state-selections.js';
+import {selectPreviewState,syncPreviewState,selectOpeningState} from './state-selections.js';
 
 if (typeof __MOBILE_DEV_FLOW_FINGERPRINT__ === 'string') {
   globalThis.__MOBILE_DEV_FLOW_COMPILED__ = {fingerprint: __MOBILE_DEV_FLOW_FINGERPRINT__, install: installPreparedRuntime};
@@ -15,6 +15,7 @@ const Preview = React.createContext(null);
 // The shared executor can place this boundary inside an existing native sheet.
 registry.wrapPreview = (content, preview) => React.createElement(Preview.Provider, {value:preview}, content);
 registry.selectState = selectPreviewState;
+registry.openingState = selectOpeningState;
 const dataModules=new Map();let dataHash;
 export function moduleData(hash,file,values){
   if(hash!==dataHash){dataModules.clear();dataHash=hash;}
