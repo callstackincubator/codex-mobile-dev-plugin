@@ -12,7 +12,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   const queryPatches=[],querySnapshots=new Map();let reusedQueryResults=0,reusedQuerySelections=0;
   let queryCacheDiagnostics={clients:0,caches:0,observerCandidates:0,clientTypes:[],observerTypes:[]};
   let queryPreviewReads=0,queryPreviewRejections={missing:0,representation:0,fields:0};
-  let catalog = {states:[],actions:[]};
+  let catalog = {states:[],actions:[]}, diagnosingOpening, lastOpeningMatch;
   let mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};
   const name = fiber => { const type=fiber.type?.render??fiber.type?.type??fiber.type;return type?.displayName??type?.name; };
   const current = () => {
@@ -488,19 +488,21 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   }
   function configure(next=catalog,matches,checked=[]){catalog=next;for(const match of matches){const binding=bindings.get(match.binding);if(binding)binding.site=match.site;else entries.get(match.binding)?.actions.add(match.site);}for(const id of checked){const binding=bindings.get(id)??entries.get(id);if(binding)binding.checked=true;}}
   const descendants = (fiber,callback) => fibers(callback,fiber);
+  function nativeBounds(fiber,boxes){
+    let measured=boxes?.get(fiber);if(measured)return measured;
+    measured={measurable:false,shown:false};
+    try{const native=fiber.stateNode?.canonical?.publicInstance??fiber.stateNode;
+      if(typeof native?.getBoundingClientRect==='function'){measured.measurable=true;measured.box=native.getBoundingClientRect();measured.shown=measured.box?.width>0&&measured.box?.height>0;}
+    }catch{}
+    boxes?.set(fiber,measured);return measured;
+  }
   function attached(fiber,boxes){
-    const bounds=child=>{
-      let measured=boxes?.get(child);if(measured)return measured;
-      measured={measurable:false,shown:false};
-      try{const native=child.stateNode?.canonical?.publicInstance??child.stateNode;
-        if(typeof native?.getBoundingClientRect==='function'){measured.measurable=true;measured.box=native.getBoundingClientRect();measured.shown=measured.box?.width>0&&measured.box?.height>0;}
-      }catch{}
-      boxes?.set(child,measured);return measured;
-    };
+    const bounds=child=>nativeBounds(child,boxes);
     // Pagers retain their other pages at offscreen coordinates. A nonzero
     // rectangle alone must not make every repeated opening control visible.
-    let viewport,measurable=false,shown=false;
-    for(let parent=fiber.return,count=0;parent&&count++<100;parent=parent.return){
+    let viewport,measurable=false,shown=false;const parents=new Set();
+    for(let parent=fiber.return;parent&&!parents.has(parent);parent=parent.return){
+      parents.add(parent);
       if(parent.tag!==5)continue;const measured=bounds(parent),box=measured.box;
       if(measured.shown&&Number.isFinite(box.x)&&Number.isFinite(box.y))viewport=box;
     }
@@ -513,8 +515,37 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     return !measurable||shown;
   }
 
+  function scrollReachable(fiber,owner,tree,boxes){
+    if(!activeAncestors(fiber)||!tree.isVisible(owner))return false;
+    let scroll;const parents=new Set();
+    for(let parent=fiber.return;parent&&!parents.has(parent);parent=parent.return){
+      parents.add(parent);
+      if(parent.tag!==5)continue;
+      const type=parent.stateNode?.viewConfig?.uiViewClassName??(typeof parent.type==='string'?parent.type:undefined);
+      if(!['RCTScrollView','AndroidScrollView','AndroidHorizontalScrollView'].includes(type))continue;
+      const props=parent.memoizedProps;
+      if(type==='AndroidHorizontalScrollView'||props?.horizontal||props?.pagingEnabled||props?.scrollEnabled===false)return false;
+      scroll=parent;break;
+    }
+    if(!scroll||!tree.inside(owner,scroll)||!tree.isVisible(scroll))return false;
+    const viewport=nativeBounds(scroll,boxes).box;
+    if(!viewport||!Number.isFinite(viewport.x)||!Number.isFinite(viewport.y)||viewport.width<=0||viewport.height<=0)return false;
+    // A mounted row may extend below a vertical scroll viewport. Its exact
+    // entry can supply data without a scroll or event callback. Keep horizontal
+    // page clipping, disabled controls and hidden ancestors as hard gates.
+    let reachable=false;
+    descendants(fiber,child=>{
+      if(reachable)return false;if(child.tag!==5)return;
+      const {shown,box}=nativeBounds(child,boxes);
+      reachable=shown&&Number.isFinite(box.x)&&box.x<viewport.x+viewport.width&&box.x+box.width>viewport.x;
+    });
+    return reachable;
+  }
+
   const activeAncestors = fiber => {
-    for(let parent=fiber,count=0;parent&&count++<100;parent=parent.return){
+    const parents=new Set();
+    for(let parent=fiber;parent&&!parents.has(parent);parent=parent.return){
+      parents.add(parent);
       const p=parent.memoizedProps;if(hidden(p)||p?.visible===false&&(name(parent)==='Modal'||parent.tag===5&&typeof p?.onShow==='function')||p?.disabled===true||p?.accessibilityState?.disabled===true)return false;
       // Native pagers may retain inactive pages at the same layout coordinates.
       // Page focus flags describe visibility; a button's active style does not.
@@ -569,8 +600,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // Native bounds cross into Fabric. Related owners share host descendants;
     // measure each host once during this synchronous lookup, then discard it.
     const isVisible=fiber=>{let value=live.get(fiber);if(value===undefined){value=activeAncestors(fiber)&&attached(fiber,boxes);live.set(fiber,value);}return value;};
-    const inside=(fiber,owner)=>{if(!owner)return false;for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner.alternate)return true;return false;};
-    return {names,entries:matched,isVisible,inside,current,all,props,states,values,openers,scopes:new WeakMap()};
+    const inside=indexInside;
+    const tree={names,entries:matched,isVisible,inside,current,all,props,states,values,openers,scopes:new WeakMap()};
+    tree.isScrollReachable=(fiber,owner)=>scrollReachable(fiber,owner,tree,boxes);
+    return tree;
   }
   function roots(focus,tree) {
     if(!focus)return [];
@@ -595,7 +628,16 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     tree?.scopes?.set(focus,result);return result;
   }
-  const indexInside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner?.alternate)return true;return false;};
+  const indexInside=(fiber,owner)=>{
+    if(!owner)return false;
+    // Prepared JSX and native navigation wrappers can exceed 100 ancestors.
+    // Compare exact fibers and stop on a cycle, not at an arbitrary UI depth.
+    const seen=new Set();
+    for(let parent=fiber;parent&&!seen.has(parent);parent=parent.return){
+      if(parent===owner||parent===owner.alternate)return true;seen.add(parent);
+    }
+    return false;
+  };
   function visualFocus(focus,tree){return roots(focus,tree).at(-1)??focus;}
   const projected=[],caughtPatches=[];
   function previewErrorHandler(original,records,root) {
@@ -1188,24 +1230,33 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
     // Most source plans are absent from the current screen. Reject those by
     // source identity before measuring any same-named owner in a large feed.
+    const checks=action===diagnosingOpening&&action.input?lastOpeningMatch={entries:0,candidates:0,visibleOwners:0,visibleEntries:0,owners:0,states:0,alreadyOpen:0,scopedOwners:0,guardedOwners:0,matchingEntries:0,missingLocals:0,resolvedInputs:0}:undefined;
     const entriesFound=(tree.entries.get(action.id)??[]).filter(fiber=>name(fiber)===action.component&&inScope(fiber)&&typeof fiber.memoizedProps?.[action.prop]==='function'&&fiber.memoizedProps.disabled!==true&&fiber.memoizedProps.accessibilityState?.disabled!==true&&fiber.memoizedProps['aria-disabled']!==true);
+    if(checks)checks.entries=entriesFound.length;
     if(!entriesFound.length)return;
     const owned=(fiber,owner)=>roots(owner,tree).some(root=>tree.inside(fiber,root));
     const candidates=(tree.names.get(action.owner)??[]).filter(owner=>!focus||roots(owner,tree).some(body=>scope.some(root=>tree.inside(body,root)||tree.inside(root,body))));
-    const ownersFound=candidates.filter(owner=>entriesFound.some(fiber=>owned(fiber,owner))&&tree.isVisible(owner)&&!candidates.some(child=>child!==owner&&tree.inside(child,owner)&&tree.isVisible(child))).filter(owner=>entriesFound.some(fiber=>owned(fiber,owner)&&tree.isVisible(fiber)));
+    const reachable=(fiber,owner)=>tree.isVisible(fiber)||!!action.input&&tree.isScrollReachable(fiber,owner);
+    const ownersFound=candidates.filter(owner=>entriesFound.some(fiber=>owned(fiber,owner))&&tree.isVisible(owner)&&!candidates.some(child=>child!==owner&&tree.inside(child,owner)&&tree.isVisible(child))).filter(owner=>entriesFound.some(fiber=>owned(fiber,owner)&&reachable(fiber,owner)));
+    if(checks){checks.owners=ownersFound.length;checks.candidates=candidates.length;checks.visibleOwners=candidates.filter(owner=>tree.isVisible(owner)).length;checks.visibleEntries=entriesFound.filter(entry=>tree.isVisible(entry)).length;}
     if(action.input&&action.effect.kind==='state'){
       // Repeated rows may provide different real examples for one shared UI
       // state. Bind the single setter first; never pick between controllers.
       const bindings=(tree.states.get(action.effect.site)??[]).filter(binding=>binding.kind==='useState'&&tree.isVisible(binding.fiber));
+      if(checks)checks.states=bindings.length;
       if(bindings.length!==1||action.effect.path.length)return;
       const binding=bindings[0],before=hookValue(binding,tree);
-      if(before!=null&&before!==false)return;
+      if(before!=null&&before!==false){if(checks)checks.alreadyOpen=1;return;}
       for(const owner of ownersFound.slice(0,32)){
-        if(!tree.inside(owner,binding.fiber)||!condition(action.guard,owner.memoizedProps))continue;
-        for(const entry of entriesFound.filter(entry=>owned(entry,owner)&&tree.isVisible(entry)).slice(0,32)){
+        if(!tree.inside(owner,binding.fiber))continue;if(checks)checks.scopedOwners++;
+        if(!condition(action.guard,owner.memoizedProps))continue;if(checks)checks.guardedOwners++;
+        for(const entry of entriesFound.filter(entry=>owned(entry,owner)&&reachable(entry,owner)).slice(0,32)){
           if(!Object.entries(action.trigger??{}).every(([key,value])=>entry.memoizedProps?.[key]===value))continue;
-          const input=globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.openingState?.(action.input,before,{props:entry.memoizedProps,locals:preparedEntries.get(entry)?.locals});
-          if(input&&!Object.is(input.value,before))return {owner,binding,input};
+          if(checks)checks.matchingEntries++;
+          const locals=preparedEntries.get(entry)?.locals;
+          if(checks&&action.input.locals.some(key=>!locals||!Object.prototype.hasOwnProperty.call(locals,key)))checks.missingLocals++;
+          const input=globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.openingState?.(action.input,before,{props:entry.memoizedProps,locals});
+          if(input&&!Object.is(input.value,before)){if(checks)checks.resolvedInputs++;return {owner,binding,input};}
         }
       }
       return;
@@ -1274,7 +1325,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         try{globalThis.__r(candidates[0].key);}catch{return {available:false,error:'The source component could not load.'};}
       }
     }
-    const tree=index(true),found=resolveEntry(action,tree,focus,true);
+    const tree=index(true);let found;diagnosingOpening=action;lastOpeningMatch=undefined;
+    try{found=resolveEntry(action,tree,focus,true);}finally{diagnosingOpening=undefined;}
     if(found)return {available:true};
     if(action.preview&&effect.kind==='mount')return {available:false,error:'The source component or its live provider context is unavailable.'};
     const sites=effect.kind==='state'?tree.states.get(effect.site)??[]:[];
@@ -1287,6 +1339,15 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(focus&&!scope.some(root=>tree.inside(binding.fiber,root)||tree.inside(root,binding.fiber)))return {available:false,error:'The opening state is outside the retained presentation body.'};
       let value=hookValue(binding,tree);for(const part of effect.path)value=value?.[part];
       if(value===effect.value&&action.expected)return {available:false,error:'The form state is selected but its source-defined body is not mounted.'};
+    }
+    if(lastOpeningMatch){
+      const checks=lastOpeningMatch;
+      if(checks.alreadyOpen)return {available:false,error:'This shared form is already open.'};
+      if(!checks.owners)return {available:false,error:'The opening control has no visible source owner in the active view.'};
+      if(!checks.scopedOwners)return {available:false,error:'The opening control is outside its source state provider.'};
+      if(!checks.guardedOwners)return {available:false,error:'The opening control does not meet its source condition.'};
+      if(checks.missingLocals&&checks.missingLocals===checks.matchingEntries)return {available:false,error:'The opening control has no committed local data for this view.'};
+      if(checks.matchingEntries)return {available:false,error:'The available real data does not satisfy this opening.'};
     }
     return {available:false,error:'The source-proven entry has no live owner, control, or real context in this app state.'};
   }
@@ -1386,7 +1447,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const state={callback};
     return {original,state,wrapped:function(...args){try{return original.apply(this,args);}finally{state.callback?.();}}};
   }
-  const inside=(fiber,owner)=>{for(let p=fiber,n=0;p&&n++<100;p=p.return)if(p===owner||p===owner?.alternate)return true;return false;};
+  const inside=indexInside;
   const captureRoots=new Set();
   const imageRecords=new Map();
   function imageHandler(handler, record, pending) {
@@ -1769,7 +1830,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(wait&&level===0)clearNative();
     if(wait)await new Promise(resolve=>later(resolve,80,resolve));
   }
-  function cleanup(){preparedStructure=preparedCatalog=preparedRevision=preparedHash=undefined;preparedEntries=new WeakMap();lastCompiledEntries=0;pendingHandoff=undefined;canonicalControls=new WeakMap();captureRoots.clear();releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=sourceHash=undefined;lastCompiledBindings=0;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected){if(record.slot)removeProjectionSlot(record);restoreInlineBody(record);clearTimeout(record.seedTimer);}projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){diagnosingOpening=lastOpeningMatch=undefined;preparedStructure=preparedCatalog=preparedRevision=preparedHash=undefined;preparedEntries=new WeakMap();lastCompiledEntries=0;pendingHandoff=undefined;canonicalControls=new WeakMap();captureRoots.clear();releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=sourceHash=undefined;lastCompiledBindings=0;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected){if(record.slot)removeProjectionSlot(record);restoreInlineBody(record);clearTimeout(record.seedTimer);}projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[],entryId) {
     connected=bodyRoots(scope,tree,connected);
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&(!entryId||entry(fiber,false)?.actions.has(entryId))&&tree.isVisible(fiber));
@@ -1818,6 +1879,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const tree=index();
     return projected.slice(-12).map(record=>({owner:name(record.focus),container:name(record.root),prepared:!!record.slot,attached:projectionAttached(record,tree),bodies:(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type).length}));
   }
-  const diagnostics=()=>({projectionSlots:projectionSlots(),inlineProjections:projected.filter(record=>record.inline).length,nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,lastCompiledEntries,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  const diagnostics=()=>({openingMatch:lastOpeningMatch?{...lastOpeningMatch}:undefined,projectionSlots:projectionSlots(),inlineProjections:projected.filter(record=>record.inline).length,nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,lastCompiledEntries,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
   return {structure:committedStructure,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,collect,records,configure,list,prepare,open,handoff,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

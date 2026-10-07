@@ -56,28 +56,32 @@ test('prepared runtime opens one shared form from real row data and restores its
  const {transformSync}=require('@babel/core'),plugin=require('../src/server/app-flow/instrumentation-plugin.cjs');
  const {build,transform}=await import('esbuild'),{JSDOM}=await import('jsdom'),vm=await import('node:vm');
  const {installPresentationRuntime}=await import('../src/server/app-flow/presentations-runtime.js');
- const body=`import * as React from 'react';import {View} from 'react-native';
+ const body=`import * as React from 'react';import {View,ScrollView} from 'react-native';
+ export const mode={disabled:false,active:true,horizontal:false,paging:false,scrollEnabled:true};
  const State=React.createContext(),Controls=React.createContext();
  export function Provider({children}){const [model,setModel]=React.useState();const open=React.useCallback(opts=>setModel(previous=>previous||opts),[]);const api=React.useMemo(()=>({open}),[open]);return <State.Provider value={model}><Controls.Provider value={api}>{children}</Controls.Provider></State.Provider>}
  export function useModel(){return React.useContext(State)}
  export function useControls(){const {open}=React.useContext(Controls);return React.useMemo(()=>({open}),[open])}
- export function Row({record}){const {open}=useControls();const onPress=()=>{analytics();open({record,subject:{...record,kind:'item'}})};return <Button onPress={onPress}/>}
- export function Button({onPress}){return <button onClick={onPress}>Open</button>}
+ export function Row({record}){const {open}=useControls();const onPress=()=>{analytics();open({record,subject:{...record,kind:'item'}})};return <View><p>Loaded row content</p><Button disabled={mode.disabled} onPress={onPress}/></View>}
+ export function Button({onPress,disabled}){return <button disabled={disabled} onClick={onPress}>Open</button>}
  export function Details({record}){return <p>{record.id}</p>}
  export function Display(){const model=useModel();return <View>{model&&<Details record={model.record}/>}</View>}
- export function App(){return <View><Provider><Row record={{id:'real-first'}}/><Row record={{id:'real-second'}}/><Display/></Provider></View>}`;
+ function Layer({children}){return children}
+ function Deep({children}){for(let i=0;i<140;i++)children=<Layer>{children}</Layer>;return children}
+ export function App(){return <View><Provider><Deep isPageFocused={mode.active}><ScrollView horizontal={mode.horizontal} pagingEnabled={mode.paging} scrollEnabled={mode.scrollEnabled}><Row record={{id:'real-first'}}/><Row record={{id:'real-second'}}/></ScrollView></Deep><Display/></Provider></View>}`;
  const {root:directory,graph,action}=await fixture(t,body),manifest=await instrumentationManifest(directory,graph);
  assert.ok(action);assert.equal(action.name,'Details');
  const site=graph.presentations!.states.find(site=>action.effect.kind==='state'&&site.id===action.effect.site)!;
  const dom=new JSDOM('<div id="root"></div>'),keys=['window','document','IS_REACT_ACT_ENVIRONMENT','__REACT_DEVTOOLS_GLOBAL_HOOK__','__MOBILE_DEV_FLOW_REGISTRY__','__r'];
  const saved=Object.fromEntries(keys.map(key=>[key,globalThis[key]]));
  Object.assign(globalThis,{window:dom.window,document:dom.window.document,IS_REACT_ACT_ENVIRONMENT:true});
- dom.window.HTMLElement.prototype.getBoundingClientRect=()=>({x:0,y:0,width:300,height:500,top:0,left:0,right:300,bottom:500,toJSON(){}});
+ const geometry={entryX:0,entryY:0,viewportX:0,entryHeight:40};
+ dom.window.HTMLElement.prototype.getBoundingClientRect=function(){const button=this.tagName==='BUTTON',x=button?geometry.entryX:this.hasAttribute('data-scroll')?geometry.viewportX:0,y=button?geometry.entryY:0,height=button?geometry.entryHeight:500;return {x,y,width:300,height,top:y,left:x,right:x+300,bottom:y+height,toJSON(){}};};
  const renderers=new Map(),roots=new Set<any>();
  const hook={supportsFiber:true,renderers,inject(renderer:any){renderer.rendererPackageName='react-native-renderer';renderers.set(1,renderer);return 1;},getFiberRoots:()=>roots,onCommitFiberRoot(_id:any,root:any){roots.add(root)},onCommitFiberUnmount(){}};
  globalThis.__REACT_DEVTOOLS_GLOBAL_HOOK__=hook;
  const React=require('react'),{createRoot}=require('react-dom/client');
- const native={View:({children}:any)=>React.createElement('div',null,children)};
+ const native={View:({children}:any)=>React.createElement('div',null,children),ScrollView:({children,...props}:any)=>React.createElement('div',{'data-scroll':true,ref:(element:any)=>{if(element)element.viewConfig={uiViewClassName:'RCTScrollView'}},...props},children)};
  const bundle=await build({entryPoints:['src/server/app-flow/instrumentation-client.js'],bundle:true,write:false,format:'cjs',platform:'node',external:['react','react-native']});
  const clientModule={exports:{} as any},context=vm.createContext({setTimeout,clearTimeout,console,module:clientModule,exports:clientModule.exports,require:(name:string)=>name==='react'?React:native});
  vm.runInContext(bundle.outputFiles[0].text,context);const client=clientModule.exports;
@@ -95,6 +99,22 @@ test('prepared runtime opens one shared form from real row data and restores its
  await React.act(()=>root.render(React.createElement(appModule.exports.App)));
  await React.act(()=>runtime.collect([site],[action],directory,graph.sourceHash));
  assert.equal(runtime.prepare(action.id).available,true);
+ geometry.entryY=750;
+ assert.equal(runtime.prepare(action.id).available,true,'A real opening below the fold is reachable in its active vertical scroll area');
+ geometry.entryX=400;
+ assert.equal(runtime.prepare(action.id).available,false,'Horizontal page clipping still excludes the entry');
+ geometry.entryX=0;geometry.entryHeight=0;
+ assert.equal(runtime.prepare(action.id).available,false,'A zero-size entry cannot open');
+ geometry.entryHeight=40;geometry.viewportX=400;
+ assert.equal(runtime.prepare(action.id).available,false,'An offscreen scroll viewport cannot supply an opening');
+ geometry.viewportX=0;
+ const mode=appModule.exports.mode;
+ for(const [key,blocked,allowed]of [['disabled',true,false],['active',false,true],['horizontal',true,false],['paging',true,false],['scrollEnabled',false,true]]){
+   mode[key]=blocked;await React.act(()=>root.render(React.createElement(appModule.exports.App)));
+   assert.equal(runtime.prepare(action.id).available,false,`Preserve the ${key} gate for an offscreen entry`);
+   mode[key]=allowed;await React.act(()=>root.render(React.createElement(appModule.exports.App)));
+   assert.equal(runtime.prepare(action.id).available,true);
+ }
  await React.act(()=>{assert.equal(runtime.open(action.id).error,undefined)});
  const opened=client.registry.find(site.id).value.tuple[0];
  assert.ok(['real-first','real-second'].includes(opened.record.id));assert.equal(opened.subject.id,opened.record.id);
