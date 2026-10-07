@@ -23,6 +23,11 @@ test('instrumented preview preserves real props/context, isolates state, suppres
   context.module=module;context.exports=module.exports;context.require=(name:string)=>name==='react'?React:native;
   vm.runInContext(bundle.outputFiles[0].text,context);
   const client=module.exports;
+  const markerOwner={id:'key-test',pending:new Map()};
+  const plainMarker=client.entry(markerOwner,'plain',React.createElement('span'));
+  assert.equal(plainMarker.key,null,'An unkeyed element must stay unkeyed, not receive the string null');
+  const keyedMarker=client.entry(markerOwner,'keyed',React.createElement('span',{key:'row'}));
+  assert.equal(keyedMarker.key,'row','Repeated source markers preserve each row key');
   const inputRef=React.createRef(),element=React.createElement('input',{key:'field',ref:inputRef,autoFocus:true});
   const wrapped=client.input(element);assert.equal(wrapped.key,'field');assert.equal(wrapped.props.element,element);assert.equal(wrapped.props.element.props.ref,inputRef);
   const source=`import * as React from 'react';

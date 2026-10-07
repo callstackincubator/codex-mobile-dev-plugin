@@ -53,8 +53,9 @@ module.exports = function flowInstrumentation({types: t}) {
     }
     function nativeView(path) {
       const name=path.node.name;
-      if(t.isJSXIdentifier(name))return imported(path,name.name,'react-native','View');
-      if(!t.isJSXMemberExpression(name)||!t.isJSXIdentifier(name.object)||name.property.name!=='View')return false;
+      const containers=['View','ScrollView','SafeAreaView'];
+      if(t.isJSXIdentifier(name))return containers.some(symbol=>imported(path,name.name,'react-native',symbol));
+      if(!t.isJSXMemberExpression(name)||!t.isJSXIdentifier(name.object)||!containers.includes(name.property.name))return false;
       const binding=path.scope.getBinding(name.object.name)?.path;
       return (binding?.isImportNamespaceSpecifier()||binding?.isImportDefaultSpecifier())&&binding.parent.source?.value==='react-native';
     }

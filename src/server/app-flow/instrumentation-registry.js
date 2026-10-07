@@ -1,33 +1,53 @@
 /** In-app references never cross the inspector bridge or enter telemetry. */
 export function createFlowRegistry(preparePreview) {
   const owners = new Map(), listeners = new Set();
-  const loaders = new Map(), slots = new Map(), slotListeners = new Map(), emptySlots = new Map();
+  const loaders = new Map(), hosts = new Map(), slotListeners = new Map();
+  const emptyHosts={slots:new Map(),masks:new Map()};
+  const hostEntry=binding=>{
+    const owner=owners.get(binding.owner),entry=owner?.entries.get(binding.site);
+    return owner?.mounted&&owner.sourceHash===binding.sourceHash&&entry?.kind==='host'&&!entry.ambiguous?entry:undefined;
+  };
+  const changeHost=(owner,state)=>{
+    hosts.set(owner,state);
+    for(const listener of slotListeners.get(owner)??[])listener();
+  };
   let revision = 0, sequence = 0, projection, releasePreview;
   const notify = () => { revision++; for (const listener of [...listeners]) listener(); };
   return {
     version: 1,
     get revision() { return revision; },
     get projection() { return projection; },
-    slotSnapshot(ownerId) { return slots.get(ownerId) ?? emptySlots; },
+    slotSnapshot(ownerId) { return (hosts.get(ownerId)??emptyHosts).slots; },
+    hostSnapshot(ownerId) { return hosts.get(ownerId)??emptyHosts; },
     subscribeSlots(ownerId, listener) {
       const listeners=slotListeners.get(ownerId)??new Set();listeners.add(listener);slotListeners.set(ownerId,listeners);
       return ()=>{listeners.delete(listener);if(!listeners.size)slotListeners.delete(ownerId);};
     },
     setHostSlot(binding, key, element) {
-      const owner=owners.get(binding.owner),entry=owner?.entries.get(binding.site);
-      if(!owner?.mounted||owner.sourceHash!==binding.sourceHash||entry?.kind!=='host'||entry.ambiguous)return false;
-      const next=new Map(slots.get(owner.id)),children=new Map(next.get(binding.site));
-      children.set(key,element);next.set(binding.site,children);slots.set(owner.id,next);
-      for(const listener of slotListeners.get(owner.id)??[])listener();
-      return true;
+      if(!hostEntry(binding))return false;
+      const state=hosts.get(binding.owner)??emptyHosts,next=new Map(state.slots),children=new Map(next.get(binding.site));
+      children.set(key,element);next.set(binding.site,children);
+      changeHost(binding.owner,{...state,slots:next});return true;
     },
     removeHostSlot(binding, key, expected) {
-      const previous=slots.get(binding.owner),children=previous?.get(binding.site);
+      const state=hosts.get(binding.owner),children=state?.slots.get(binding.site);
       if(!children?.has(key)||children.get(key)!==expected)return;
-      const next=new Map(previous),remaining=new Map(children);remaining.delete(key);
+      const next=new Map(state.slots),remaining=new Map(children);remaining.delete(key);
       if(remaining.size)next.set(binding.site,remaining);else next.delete(binding.site);
-      if(next.size)slots.set(binding.owner,next);else slots.delete(binding.owner);
-      for(const listener of slotListeners.get(binding.owner)??[])listener();
+      changeHost(binding.owner,{...state,slots:next});
+    },
+    setHostMask(binding, expected, mask) {
+      if(!hostEntry(binding))return false;
+      const state=hosts.get(binding.owner)??emptyHosts;
+      if(state.masks.get(binding.site)!==expected)return false;
+      const masks=new Map(state.masks);masks.set(binding.site,mask);
+      changeHost(binding.owner,{...state,masks});return true;
+    },
+    removeHostMask(binding, expected) {
+      const state=hosts.get(binding.owner);
+      if(!state?.masks.has(binding.site)||state.masks.get(binding.site)!==expected)return;
+      const masks=new Map(state.masks);masks.delete(binding.site);
+      changeHost(binding.owner,{...state,masks});
     },
     registerLoaders(entries) { for (const [id, load] of entries) loaders.set(id,load); },
     async project({source, owner, site, value}) {
@@ -55,7 +75,7 @@ export function createFlowRegistry(preparePreview) {
       owner.entries = new Map(entries); owner.mounted = true;
       owners.set(owner.id, owner); notify();
     },
-    remove(owner) { owner.mounted = false; owner.entries.clear(); owners.delete(owner.id); slots.delete(owner.id); notify(); },
+    remove(owner) { owner.mounted = false; owner.entries.clear(); owners.delete(owner.id); hosts.delete(owner.id); notify(); },
     components(name) {
       return [...owners.values()].filter(owner=>owner.source.endsWith(`#${name}`) && (!projection || owner.preview===projection));
     },

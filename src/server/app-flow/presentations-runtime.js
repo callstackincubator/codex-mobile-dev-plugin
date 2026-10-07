@@ -694,8 +694,35 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(sizes.some(size=>!size))return {unavailable:true};
     return {focus,hosts:hosts.map((fiber,i)=>{
       const props=fiber.memoizedProps;
-      return {fiber,props,size:sizes[i],hiddenStyle:[props.style,{position:'absolute',opacity:0,...sizes[i]}]};
+      return {fiber,props,slot:preparedBodyHost(fiber,focus),size:sizes[i],hiddenStyle:[props.style,{position:'absolute',opacity:0,...sizes[i]}]};
     })};
+  }
+  function preparedBodyHost(fiber,focus) {
+    const registry=globalThis.__MOBILE_DEV_FLOW_REGISTRY__;
+    if(!sourceHash||typeof registry?.setHostMask!=='function')return;
+    const owners=registry.matchingOwners(sourceHash);
+    for(let parent=fiber,count=0;parent&&parent!==focus.return&&count++<80;parent=parent.return){
+      const matches=[];
+      for(const owner of owners)for(const [site,entry]of owner.entries){
+        if(entry.kind==='host'&&!entry.ambiguous&&entry.props===parent.memoizedProps&&(entry.type===parent.type||entry.type===parent.elementType))matches.push({registry,binding:{owner:owner.id,site,sourceHash}});
+      }
+      if(matches.length)return matches.length===1?matches[0]:undefined;
+    }
+  }
+  function setBodyMask(host,size) {
+    const mask={style:{position:'absolute',opacity:0,...size}};
+    if(!host.slot.registry.setHostMask(host.slot.binding,host.mask,mask))throw new Error('The prepared presentation body is no longer available.');
+    host.mask=mask;host.size=size;structureCache=undefined;
+  }
+  function bodyMaskApplied(host,fiber) {
+    if(!host.slot)return fiber.memoizedProps.style===host.hiddenStyle;
+    const styles=[fiber.memoizedProps.style],flat={};
+    for(let i=0;styles.length&&i<100;i++){
+      const style=styles.pop();
+      if(Array.isArray(style)){for(let j=style.length-1;j>=0;j--)styles.push(style[j]);}
+      else if(style&&typeof style==='object')Object.assign(flat,style);
+    }
+    return Object.entries(host.mask.style).every(([key,value])=>flat[key]===value);
   }
   function inlineSize(fiber) {
     try {
@@ -706,6 +733,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
   const concealedBodyProps={pointerEvents:'none',accessibilityElementsHidden:true,importantForAccessibility:'no-hide-descendants'};
   function hideInlineBody(record) {
     for(const host of record.inline.hosts){
+      if(host.slot){setBodyMask(host,host.size);continue;}
       structureCache=undefined;record.renderer.overrideProps(host.fiber,[],{...host.fiber.memoizedProps,...concealedBodyProps,style:host.hiddenStyle});
     }
   }
@@ -713,6 +741,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(!record.inline||record.parent)return;
     const tree=index();
     for(const host of record.inline.hosts){
+      if(host.slot){host.slot.registry.removeHostMask(host.slot.binding,host.mask);continue;}
       const fiber=tree.current.get(host.fiber);
       if(!fiber)continue;
       // Restore only fields still owned by this preview, preserving every
@@ -727,11 +756,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     }
   }
   function syncInlineBody(record,tree) {
+    const probe=record.inlineProbe={hosts:record.inline.hosts.length,stylePending:0,missingCopySize:0,resizing:0,geometryPending:0};
     const focus=tree.current.get(record.inline.focus),hosts=focus&&nativeBodyRoots(focus);
     if(!hosts?.length||hosts.length!==record.inline.hosts.length)return {error:'The original native presentation body changed during its preview.'};
     if(hosts.some((fiber,index)=>fiber!==record.inline.hosts[index].fiber&&fiber!==record.inline.hosts[index].fiber.alternate))return {error:'The original native presentation body changed during its preview.'};
     let pending=false;
     for(const host of record.inline.hosts){
+      if(host.slot)continue;
       const fiber=hosts.find(fiber=>fiber===host.fiber||fiber===host.fiber.alternate),props=fiber.memoizedProps;
       if(props.style===host.hiddenStyle||host.previousStyle&&props.style===host.previousStyle)continue;
       // A query commit may replace DevTools' prop override on this same host.
@@ -741,7 +772,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       for(const [key,value]of Object.entries(concealedBodyProps))if(props[key]===value){
         if(Object.prototype.hasOwnProperty.call(host.props,key))original[key]=host.props[key];else delete original[key];
       }
-      host.props=original;host.previousStyle=undefined;host.hiddenStyle=[props.style,{position:'absolute',opacity:0,...host.size}];
+      probe.stylePending++;host.props=original;host.previousStyle=undefined;host.hiddenStyle=[props.style,{position:'absolute',opacity:0,...host.size}];
       structureCache=undefined;record.renderer.overrideProps(fiber,[],{...props,...concealedBodyProps,style:host.hiddenStyle});pending=true;
     }
     const bodies=(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type);
@@ -750,18 +781,20 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     if(copies.length!==hosts.length||copies.some((fiber,i)=>fiber.type!==hosts[i].type))return {error:'The native presentation sizing roots do not match the copied form.'};
     for(let i=0;i<copies.length;i++){
       const size=inlineSize(copies[i]),host=record.inline.hosts[i],fiber=hosts[i];
-      if(!size){pending=true;continue;}
+      if(!size){probe.missingCopySize++;pending=true;continue;}
       // Native sheets can observe their first content UIView by identity.
       // Keep that original root attached and size its invisible layout proxy
       // from the actual copied root. display:none would sever that sizing
       // signal; another sibling's height cannot update the native observer.
       if(size.width!==host.size.width||size.height!==host.size.height){
-        if(fiber.memoizedProps.style!==host.hiddenStyle){pending=true;continue;}
+        probe.resizing++;
+        if(!bodyMaskApplied(host,fiber)){pending=true;continue;}
+        if(host.slot){setBodyMask(host,size);pending=true;continue;}
         host.size=size;host.previousStyle=host.hiddenStyle;host.hiddenStyle=[host.props.style,{position:'absolute',opacity:0,...size}];
         structureCache=undefined;record.renderer.overrideProps(fiber,[],{...fiber.memoizedProps,style:host.hiddenStyle});pending=true;continue;
       }
       const actual=inlineSize(fiber);
-      if(fiber.memoizedProps.style!==host.hiddenStyle||!actual||Math.abs(actual.width-size.width)>.5||Math.abs(actual.height-size.height)>.5)pending=true;
+      if(!bodyMaskApplied(host,fiber)||!actual||Math.abs(actual.width-size.width)>.5||Math.abs(actual.height-size.height)>.5){probe.geometryPending++;pending=true;}
       else host.previousStyle=undefined;
     }
     return {pending};
@@ -1503,7 +1536,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       const layout=syncInlineBody(record,tree);pending||=!!layout.pending;if(layout.error)error=layout.error;
     }
     const describe=record=>({component:name(record.fiber),kind:record.fiber?.tag===5?'host':'adapter',pending:!!record.status.pending,opened:!!record.status.opened,closing:!!record.status.closing,events:record.status.events??0,lastEvent:record.status.lastEvent,visible:typeof record.original?.visible==='boolean'?record.original.visible:undefined});
-    lastNativeProbe={pendingTargets:[...pendingTargets].slice(0,8).map(describe),targets:[...hosts,...related.filter(record=>record.fiber?.tag!==5)].slice(0,8).map(describe),scope:scope.slice(0,8).map(name),observedEvents:[...new Set(boundaries.map(record=>record.status))].reduce((total,status)=>total+(status.events??0),0),unshownPreviews:unshown};
+    lastNativeProbe={inlineLayouts:projected.filter(record=>record.inline).slice(-4).map(record=>record.inlineProbe),pendingTargets:[...pendingTargets].slice(0,8).map(describe),targets:[...hosts,...related.filter(record=>record.fiber?.tag!==5)].slice(0,8).map(describe),scope:scope.slice(0,8).map(name),observedEvents:[...new Set(boundaries.map(record=>record.status))].reduce((total,status)=>total+(status.events??0),0),unshownPreviews:unshown};
     return {pending,signature:JSON.stringify(boxes),error};
   }
   function clearNative(){captureDismissals=new WeakMap();for(const record of imageRecords.values())forgetNative(record);imageRecords.clear();lastNativeProbe=undefined;structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();for(const [instance,record]of nativeClassCallbacks)forgetClassCallbacks(instance,record);nativeCallbackOrigins=new WeakMap();}

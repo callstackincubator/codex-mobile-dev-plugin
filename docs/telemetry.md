@@ -853,3 +853,10 @@ only data properties and never calls the app handler, reducer or a getter.
 Missing choices use the existing needs-data result. No per-choice telemetry or
 new app data is sent. Choice lookup is bounded, keeps no extra data cache and
 uses the shared preview cleanup.
+
+Prepared native body masks retain the capture, readiness and restoration timing
+boundaries. The same per-owner subscription now carries temporary styles for
+View, ScrollView and SafeAreaView. Masks follow source-bound elements, survive
+ordinary app renders and release only their own current value during cleanup.
+Local native-readiness diagnostics include at most four sets of layout counters;
+no styles, field values, images or new per-probe events enter Sentry.
