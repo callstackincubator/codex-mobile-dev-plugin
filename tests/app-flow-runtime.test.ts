@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws';
 import { once } from 'node:events';
 import { FlowConnection } from '../src/server/app-flow/connection.ts';
 import { installPresentationRuntime } from '../src/server/app-flow/presentations-runtime.js';
-import {FlowAppFailure,FlowRuntimeFailure,FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
+import {FlowAppFailure,FlowNativeFailure,FlowRuntimeFailure,FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
 import {sharedLoopRuntime} from './app-flow-runtime-fixtures.ts';
 import {createTransitionMode} from '../src/server/app-flow/transitions-runtime.js';
 import {createCaptureDriver} from '../src/server/app-flow/capture-driver.js';
@@ -417,6 +417,25 @@ test('persistent CDP connection uses binding replies and renews the runtime leas
   assert.ok(requests>=6);
 });
 
+test('commands never send a lone surrogate the app cannot compile',async t=>{
+  const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
+  t.after(()=>new Promise<void>(resolve=>{for(const client of server.clients)client.terminate();server.close(()=>resolve())}));
+  let binding='',sent='';
+  server.on('connection',socket=>socket.on('message',bytes=>{
+    const message=JSON.parse(bytes.toString());
+    if(message.method==='Runtime.addBinding')binding=message.params.name;
+    socket.send(JSON.stringify({id:message.id,result:{result:{type:'undefined'}}}));
+    if(message.id<0){sent=message.params.expression;setTimeout(()=>socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload:JSON.stringify({id:message.id,result:{accepted:true}})}})),5);}
+  }));
+  const connection=new FlowConnection(`ws://127.0.0.1:${(server.address() as {port:number}).port}`);
+  const title='Party \u{1F389}'.slice(0,7);
+  assert.equal((await connection.invoke({type:'capture-source',value:{title,whole:'Done \u{1F389}'}})).accepted,true);
+  assert.equal(/[\ud800-\udfff]/.test(sent),false,'No raw surrogate reaches the app compiler');
+  assert.match(sent,/Party \uFFFD/,'A cut emoji becomes a replacement character');
+  assert.match(sent,/Done \\ud83c\\udf89/,'A whole emoji travels as an escaped pair');
+  await connection.close();
+});
+
 test('reconnections isolate late replies and release debugger objects without restoring between sockets',async t=>{
   const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
   t.after(()=>new Promise<void>(resolve=>{for(const socket of server.clients)socket.terminate();server.close(()=>resolve())}));
@@ -606,6 +625,21 @@ test('resuming cancels an old recovery without leaving its reply or timers pendi
   assert.equal((await app.invoke({type:'diagnostics'})).waitTimers,0);
 });
 
+test('Fabric hosts without a public instance still measure the screen and its loaders',async t=>{
+  const rects=new Map<any,number[]>(),screenNode={},loaderNode={};
+  const app=runtime(t,false,{setTimeout,clearTimeout},false,{nativeFabricUIManager:{getBoundingClientRect:(node:any)=>rects.get(node)}});
+  // Fabric creates public instances lazily; these hosts only have shadow nodes.
+  app.native.stateNode={node:screenNode};rects.set(screenNode,[0,0,400,800]);
+  const loader:any={tag:0,type:function Loader(){},memoizedProps:{},return:app.fiber};
+  loader.child={tag:5,type:'View',memoizedProps:{},stateNode:{node:loaderNode},return:loader};app.native.sibling=loader;
+  rects.set(loaderNode,[180,380,40,40]);
+  const visible=await app.invoke({type:'verify',name:'Home'});
+  assert.equal(visible.loadingReason,'skeleton','A loader inside the measured screen blocks');
+  assert.deepEqual([visible.bounds.x,visible.bounds.y,visible.bounds.width,visible.bounds.height],[0,0,400,800]);
+  rects.set(loaderNode,[180,1200,40,40]);
+  assert.equal((await app.invoke({type:'verify',name:'Home'})).loading,false,'A loader below the measured screen does not block');
+});
+
 test('long screens cap host layout reads while retaining late loaders, queries, headings and opacity',async t=>{
   const app=runtime(t);let measured=0;
   const box=()=>{measured++;return {x:0,y:0,width:100,height:200}};
@@ -627,6 +661,14 @@ test('long screens cap host layout reads while retaining late loaders, queries, 
   assert.equal((await app.invoke({type:'verify',name:'Home'})).loading,true,'Loaders after the signature cap still block');
   loader.type=function QueryView(){};loader.memoizedState={memoizedState:{data:undefined,status:'pending',fetchStatus:'fetching'}};
   assert.equal((await app.invoke({type:'verify',name:'Home'})).loadingReason,'data');
+  // Placeholder rows stand in for a query result; they are not captured content.
+  loader.memoizedState={memoizedState:{data:{rows:[]},status:'success',fetchStatus:'fetching',isFetching:true,isPlaceholderData:true}};
+  const placeholder=await app.invoke({type:'verify',name:'Home'});
+  assert.equal(placeholder.loadingReason,'data');assert.equal(placeholder.loadingComponent,'QueryView');
+  loader.memoizedState={memoizedState:{data:{rows:[]},status:'success',fetchStatus:'idle',isFetching:false,isPlaceholderData:true}};
+  assert.equal((await app.invoke({type:'verify',name:'Home'})).loading,false,'A disabled query keeps placeholders without ever loading');
+  loader.memoizedState={memoizedState:{data:{rows:[1]},status:'success',fetchStatus:'idle',isPlaceholderData:false}};
+  assert.equal((await app.invoke({type:'verify',name:'Home'})).loading,false,'The real result is content');
   loader.memoizedState=null;
   let opacity=.2;loader.memoizedProps={style:opacityStyle({_isReanimatedSharedValue:true,getSync:()=>opacity})};
   const first=await app.invoke({type:'verify',name:'Home'});opacity=.8;
@@ -841,7 +883,7 @@ test('runtime cleanup does not replace an error handler installed later by the a
   await app.invoke({type:'restore'});assert.equal(handler,next);
 });
 
-test('CDP binding replies turn a fatal app error into a fixed capture failure',async t=>{
+for(const [flag,Failure]of [['appFailed',FlowAppFailure],['nativeFailure',FlowNativeFailure]]as const)test(`CDP binding replies turn ${flag} into a fixed capture failure`,async t=>{
   const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');
   t.after(()=>new Promise<void>(resolve=>{for(const client of server.clients)client.terminate();server.close(()=>resolve())}));
   let binding='';
@@ -849,10 +891,10 @@ test('CDP binding replies turn a fatal app error into a fixed capture failure',a
     const message=JSON.parse(bytes.toString());
     if(message.method==='Runtime.addBinding')binding=message.params.name;
     socket.send(JSON.stringify({id:message.id,result:{result:{type:'undefined'}}}));
-    if(message.id<0)socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload:JSON.stringify({id:message.id,result:{appFailed:true}})}}));
+    if(message.id<0)socket.send(JSON.stringify({method:'Runtime.bindingCalled',params:{name:binding,payload:JSON.stringify({id:message.id,result:{[flag]:true,error:'Private runtime data',detail:'Private runtime data'}})}}));
   }));
   const address=server.address()as {port:number},connection=new FlowConnection(`ws://127.0.0.1:${address.port}`);
-  await assert.rejects(connection.invoke({type:'verify'}),error=>error instanceof FlowAppFailure&&error.operation==='verify'&&error.detail===undefined);
+  await assert.rejects(connection.invoke({type:'verify'}),error=>error instanceof Failure&&error.operation==='verify'&&error.detail===undefined&&!error.message.includes('Private'));
   await connection.close();
 });
 
@@ -918,6 +960,23 @@ test('an initialized RN LogBox observer rejects overlays without exporting error
   for(const type of ['verify','presentation-view','presentation-open'])assert.deepEqual(JSON.parse(JSON.stringify(await app.invoke({type}))),{appFailed:true});
   assert.equal((await app.invoke({type:'heartbeat'})).alive,true);
   await app.invoke({type:'restore'});assert.equal(unsubscribed,1);assert.equal(observer,undefined);
+});
+
+test('capture hides LogBox notifications, still fails on a new fatal error, and restores LogBox',async t=>{
+  let observer:any,disabled=false,state:any={isDisabled:false,selectedLogIndex:-1,logs:new Set([{level:'error',message:'earlier'}])};
+  const store={observe(callback:any){observer=callback;callback(state);return {unsubscribe(){observer=undefined}}},
+    isDisabled:()=>disabled,setDisabled(value:boolean){disabled=value;state={...state,isDisabled:value};observer?.(state);}};
+  const __r={getModules:()=>new Map([[1,{isInitialized:true,verboseName:'node_modules/react-native/Libraries/LogBox/Data/LogBoxData.js',publicModule:{exports:store}}]])};
+  const app=runtime(t,false,undefined,false,{__r});
+  assert.equal((await app.invoke({type:'inspect'})).available,true);
+  assert.equal(disabled,true,'Dev notifications stay out of screenshots');
+  assert.equal((await app.invoke({type:'verify',name:'Home'})).appFailed,undefined,'Earlier logs do not fail the capture');
+  state={...state,logs:new Set([...state.logs,{level:'warn',message:'later warning'}])};observer(state);
+  assert.equal((await app.invoke({type:'verify',name:'Home'})).appFailed,undefined);
+  state={...state,logs:new Set([...state.logs,{level:'fatal',message:'private crash'}])};observer(state);
+  assert.deepEqual(JSON.parse(JSON.stringify(await app.invoke({type:'verify',name:'Home'}))),{appFailed:true});
+  await app.invoke({type:'restore'});
+  assert.equal(disabled,false,'Cleanup restores LogBox');assert.equal(observer,undefined);
 });
 
 test('LogBox detection never initializes modules or treats a disabled inspector as visible',async t=>{
@@ -1352,6 +1411,10 @@ test('runtime scopes collection to the queue opening and clears it before later 
   const request=events.find(e=>e.type==='source');assert.ok(request);
   await app.invoke({type:'capture-source',batch:'batch',ticket:request.ticket,value:{}});
   assert.equal((await app.invoke({type:'presentation-collect'})).actionId,undefined);
+  // Source acknowledgement precedes the deferred delivery and its measurement.
+  // Stopping immediately would cancel that work instead of measuring it.
+  for(let i=0;i<20&&!events.some(event=>event.type==='done');i++)await new Promise(resolve=>setTimeout(resolve,5));
+  assert.ok(events.some(event=>event.type==='done'));
   await app.invoke({type:'capture-stop'});
   const work=(await app.invoke({type:'diagnostics'})).captureWork;
   assert.equal(work.phases[0].phase,'source');assert.equal(work.phases[0].totalMs,4);
@@ -1378,4 +1441,21 @@ test('capture logs one bounded work summary and stops probe totals after complet
   await app.invoke({type:'verify',name:'Home'});
   const work=(await app.invoke({type:'diagnostics'})).captureWork;
   assert.equal(work.phases.length,1);assert.equal(work.phases[0].totalMs,2,'Finished capture totals stay frozen');
+});
+
+test('uncertain native ownership blocks routes and pixels while keeping cleanup and diagnostics available',async t=>{
+ const app=runtime(t,false,{setTimeout,clearTimeout},()=>({
+  nativeFailure:()=>globalThis.nativeDetached?'Native presentation dismissal is unconfirmed.':undefined,
+  checkpoint:()=>0,rollback:async()=>{},cleanup(){},diagnostics:()=>({nativeUnconfirmed:true}),
+ }),{nativeDetached:true});
+ for(const type of ['open','verify','presentation-open','presentation-view','capture-start']){
+  const result=await app.invoke({type,path:['Profile'],id:'view'});
+  assert.equal(result.nativeFailure,true);assert.match(result.error,/unconfirmed/);
+ }
+ assert.equal(app.getState(),app.original);
+ assert.equal((await app.invoke({type:'diagnostics'})).presentations.nativeUnconfirmed,true);
+ assert.equal((await app.invoke({type:'heartbeat'})).alive,true);
+ assert.deepEqual(Object.keys(await app.invoke({type:'presentation-rollback',level:0})),[]);
+ app.context.nativeDetached=false;
+ assert.equal((await app.invoke({type:'verify',path:['Home'],name:'Home'})).found,true);
 });

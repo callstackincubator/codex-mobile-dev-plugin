@@ -62,7 +62,7 @@ export function createCaptureQueue(driver, emit) {
       while (!current.cancelled && Date.now() < deadline) {
         const before = await driver.ready(job, current.signal);
         if (!before?.ready) {
-          send({type:'result', id:job.id, status:before?.status || (before?.error ? 'blocked' : 'timed-out'), failure:before?.failure, reason:before?.error || before?.reason || 'The view did not settle.', ms:Date.now()-started});
+          send({type:'result', id:job.id, status:before?.status || (before?.error ? 'blocked' : 'timed-out'), failure:before?.failure, reason:before?.error || (before?.reason==='loading'&&before.loadingReason?`loading (${before.loadingReason}${before.loadingComponent?` in ${before.loadingComponent}`:''})`:before?.reason) || 'The view did not settle.', ms:Date.now()-started});
           return {evidence:before};
         }
         const ticket = ++serial;
@@ -78,7 +78,9 @@ export function createCaptureQueue(driver, emit) {
         if(captured.reason){send({type:'result',id:job.id,status:'timed-out',reason:captured.reason,failure:captured.failure,ms:Date.now()-started});return;}
         const after = await driver.verify(job, current.signal);
         if (captured.ok && driver.same(before, after)) {
-          send({type:'result', id:job.id, ticket, status:'captured', ms:Date.now()-started});
+          const sites = await driver.sites?.(job, current.signal)?.catch(error => { if (error?.fatal) throw error; });
+          if (current.cancelled) return;
+          send({type:'result', id:job.id, ticket, status:'captured', ...(sites ? {sites} : {}), ms:Date.now()-started});
           return {ready:true, evidence:after};
         }
         send({type:'discard', id:job.id, ticket});
@@ -112,7 +114,8 @@ export function createCaptureQueue(driver, emit) {
         }
       }
     } catch (error) {
-      send({type:'error', interrupted:!!error?.interrupted, reason:String(error?.message||error).slice(0,300)});
+      // The host can recover from app state only it can reset by relaunching.
+      send({type:'error', interrupted:!!error?.interrupted, ...(error?.native ? {native:true} : error?.app ? {app:true} : {}), reason:String(error?.message||error).slice(0,300)});
     } finally {
       try { await restore(); }
       catch(error) { send({type:'error',interrupted:!!error?.interrupted,reason:'Capture state could not be restored.'}); }

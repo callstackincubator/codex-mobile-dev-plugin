@@ -234,6 +234,20 @@ The map and scan must have the same source hash, and each counted image must hav
 that hash and a saved PNG. The report includes each reviewed view's capture status
 and attempts. Old maps without image hashes cannot supply this count.
 
+Add `--accepted REVIEW.json` to count only manually accepted images. The file holds
+the run ID and its `verifiedNodeIds`, or a plain array of node IDs. A prepared
+capture build changes `babel.config.js`; `--allow-capture-wrapper` accepts that one
+change and nothing else.
+
+A capture credits its final body only. Runtime discovery lists every active view,
+including ancestors still mounted around the captured body; views opened by an
+earlier step of the same chain never receive the child's image. A generic boundary
+matches either source name of an owner such as `export const A = memo(function B…)`.
+With these rules, the reviewed broad run `cb0247fb` counts 69 of the frozen 260
+views (42 live, 27 previews). The original report counted 68; the extra view is
+the after-report dialog, whose accepted image the export alias had hidden. The
+signup handle image no longer appears among the account-details attempts.
+
 [Reference JSON](../tests/fixtures/app-flow/bluesky-views-reference.json) contains every expected identity, source evidence, guard and selector. [Comparison JSON](../tests/fixtures/app-flow/bluesky-views-comparison.json) contains exact matches, container-only results, collisions and unmatched candidates. The scanner, runtime and comparison implementation have no Bluesky-specific rules. The named views live only in this reference and report.
 
 Functional tests cover exact source bindings, temporary reducer initialization, shared context copies, effect containment, cleanup, failed preview bodies, and capture comparison, as well as the existing extraction and capture paths. Scan and capture telemetry stays intact. Preview metrics count plans, captured previews and blocked previews. Neither sends source, paths, state, hashes or app data.

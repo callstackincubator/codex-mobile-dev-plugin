@@ -4,7 +4,7 @@ import type { FlowBackend } from './runs.ts';
 import { MeasurementWindow } from '../../shared/telemetry.ts';
 import { FlowRuntimeFailure } from './runtime-metrics.ts';
 
-type Action = { id: string; canonicalId?: string; aliases?:string[]; views?:string[]; name: string; file: string; line: number };
+type Action = { id: string; canonicalId?: string; aliases?:string[]; views?:string[]; instance?:string; name: string; file: string; line: number };
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24);
 
 /** Discover live presentation entries, then capture them through the shared queue. */
@@ -75,7 +75,12 @@ export class FlowPresentationDiscovery {
         if(ancestor){this.edge(base,ancestor);continue;}
         const canonical=this.catalog.actions.find(item=>item.id===action.canonicalId)??source;
         const effect = canonical.effect;
-        const destination = effect.kind === 'state' ? [effect.site, effect.path, effect.value] : [canonical.file, canonical.owner, effect];
+        // A shared shell's preview is one view per caller. Its compiled caller
+        // site joins the destination unless the preview targets that site.
+        const target = effect.kind === 'control' ? effect.target : undefined;
+        const instance = canonical.preview && target?.source && typeof action.instance === 'string' && action.instance.length <= 500 &&
+          action.instance !== `${target.file}:${target.source.line}:${target.source.column}` ? action.instance : undefined;
+        const destination = effect.kind === 'state' ? [effect.site, effect.path, effect.value] : [canonical.file, canonical.owner, effect, ...(instance ? [instance] : [])];
         const id = `presentation-${hash(destination)}`;
         // Controller-only entries can remain available while already open.
         // Discover their children without putting this captured parent back
@@ -83,8 +88,10 @@ export class FlowPresentationDiscovery {
         if(id===base.id)continue;
         let node = this.run.nodes.find(item => item.id === id);
         if (!node) {
+          const instances = {...base.presentation?.instances, ...(instance ? {[action.id]: instance} : {})};
           node = {id, name: source.name, kind: 'screen', path: [], required: [], status: 'pending', file: source.file, line: source.line,
-            sourceViews:[...new Set([...(source.views??[]),...(action.views??[])])],presentation: {actions: [...(base.presentation?.actions ?? []), action.id], preview:source.preview||base.presentation?.preview, projections: base.presentation?.projections?.slice(), basePath: base.presentation?.basePath ?? base.path, baseParams: base.presentation?.baseParams ?? base.params, expo: base.presentation?.expo ?? base.component === 'expo-router'}};
+            sourceViews:[...new Set([...(source.views??[]),...(action.views??[])])],presentation: {actions: [...(base.presentation?.actions ?? []), action.id], preview:source.preview||base.presentation?.preview, projections: base.presentation?.projections?.slice(), basePath: base.presentation?.basePath ?? base.path, baseParams: base.presentation?.baseParams ?? base.params, expo: base.presentation?.expo ?? base.component === 'expo-router',
+              ...(Object.keys(instances).length ? {instances} : {})}};
           this.run.nodes.push(node); this.run.revision++;
         }
         node.sourceViews=[...new Set([...(node.sourceViews??[]),...(source.views??[]),...(action.views??[])])];

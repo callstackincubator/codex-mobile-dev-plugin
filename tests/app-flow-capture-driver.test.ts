@@ -233,3 +233,46 @@ test('source phase totals include real local and fallback opening time',async()=
  assert.ok(total>=samples.filter(sample=>['source-local','source-host'].includes(sample.phase)).reduce((sum,sample)=>sum+sample.ms,0));
  await driver.restore();assert.deepEqual(app.frames,[]);
 });
+
+for(const sourceFailure of [false,true])test(`unconfirmed native dismissal stops capture without reconnecting (${sourceFailure?'host fallback':'in-app'})`,async()=>{
+ const failure={nativeFailure:true,error:'Native presentation dismissal is unconfirmed.'};
+ const driver=createCaptureDriver({invoke(command:any,reply:any){
+  if(command.type==='presentation-rollback')reply({});
+  else if(command.type==='presentation-capture-open')reply(sourceFailure?{local:false}:failure);
+  else reply({ready:true});
+ }},async()=>failure);
+ await assert.rejects(driver.open({id:'view',path:[],actions:[{id:'child'}]},new AbortController().signal),(error:any)=>error.fatal===true&&!error.interrupted&&/dismissal is unconfirmed/.test(error.message));
+ await driver.restore();
+});
+
+test('source fallback closes an owned preview child before replacing its body',async()=>{
+ const events:string[]=[];
+ const action:any={id:'choose',preview:true,effect:{kind:'state'}};
+ const backend:any={runtime:{async invoke(command:any){
+  events.push(command.type);
+  if(command.type==='presentation-prepare')return {available:true,handoff:true};
+  if(command.type==='presentation-handoff')return {closed:true};
+  return {ready:true};
+ }}};
+ const result=await captureSource({backend,job:{actions:[action],path:[]} as any,operation:'open',actionId:action.id,catalog:{states:[],actions:[action]},projectRoot:'/fixture',signal:new AbortController().signal});
+ assert.equal(result.closed,true);
+ assert.deepEqual(events,['presentation-setup','presentation-prepare','presentation-handoff','presentation-open']);
+});
+
+test('a shared shell step opens the caller named by the recipe, locally or through the host',async()=>{
+  const app=fixture(),signal=new AbortController().signal;
+  const job={id:'prompt',path:['Home'],actions:[{id:'outer',instance:'src/EditProfile.tsx:74:6'}]};
+  assert.equal((await app.driver.open(job,signal)).ready,true);
+  const local=app.events.find(event=>event.type==='presentation-capture-open');
+  assert.deepEqual(local,{type:'presentation-capture-open',id:'outer',instance:'src/EditProfile.tsx:74:6'});
+  // The app asks the host for the step only; the host reads its own recipe.
+  const host=app.events.find(event=>event.operation==='open');
+  assert.deepEqual(host,{operation:'open',actionId:'outer'});
+  const commands:any[]=[];
+  const action:any={id:'outer',effect:{kind:'control'}};
+  const backend:any={runtime:{async invoke(command:any){commands.push(command);return command.type==='presentation-prepare'?{available:true}:command.type==='presentation-open'?{ready:true}:{};}}};
+  await captureSource({backend,job:{id:'prompt',path:[],actions:[action],sourceViews:[],instances:{outer:'src/EditProfile.tsx:74:6'}},operation:'open',actionId:'outer',
+    catalog:{states:[],actions:[action]},projectRoot:'/fixture',signal});
+  assert.deepEqual(commands.filter(command=>command.type!=='presentation-setup').map(command=>[command.type,command.instance]),
+    [['presentation-prepare','src/EditProfile.tsx:74:6'],['presentation-open','src/EditProfile.tsx:74:6']]);
+});

@@ -5,13 +5,15 @@ import type {FlowBackend} from './runs.ts';
 import type {FlowRun, FlowNode} from '../../shared/app-flow.ts';
 import type {CaptureManifest, CaptureJob} from './capture-manifest.ts';
 import {blankFlowFrame} from './frame.ts';
-import {FlowAppFailure, FlowRuntimeFailure} from './runtime-metrics.ts';
+import {FlowAppFailure, FlowNativeFailure, FlowRuntimeFailure, FlowRuntimeTimeout} from './runtime-metrics.ts';
 import {captureServerError} from '../telemetry.ts';
 import {captureSource} from './capture-source.ts';
 
 // Source code and action definitions stay on the server. The app only needs
 // identities to request approved bindings and the selected route's real data.
-const wireJobs=(jobs:CaptureJob[])=>jobs.map(({sourceViews,actions,...job})=>({...job,actions:actions.map(action=>({id:action.id}))}));
+// `file:line:column:prop`; the prop names which controller the element passed.
+const capturedSites=(value:unknown)=>Array.isArray(value)&&value.length<=12&&value.every(site=>typeof site==='string'&&site.length<=500&&/^[^\n]+:\d+:\d+(?::[A-Za-z_$][\w$]*)?$/.test(site))?value as string[]:undefined;
+const wireJobs=(jobs:CaptureJob[])=>jobs.map(({sourceViews,actions,instances,...job})=>({...job,actions:actions.map(action=>({id:action.id,...(instances?.[action.id]?{instance:instances[action.id]}:{})}))}));
 
 export class CaptureConnectionError extends Error { constructor() { super('The capture connection was interrupted.'); } }
 
@@ -24,6 +26,11 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
   const presentations = run.presentations;
   const catalog = {states:[...new Map([...(presentations?.states??[]),...(presentations?.previewStates??[])].map(site=>[site.id,site])).values()], actions:[...(presentations?.actions??[]),...(presentations?.previews??[])]};
   const frames = new Map<number, {path: string; id: string; bytes:Buffer; identity:string}>();
+  // An app too busy to acknowledge in time interrupts the batch like a lost
+  // connection. The run keeps accepted images and resumes or relaunches.
+  const acknowledge = (command: Record<string, unknown>) => backend.runtime.invoke(command, 2000).catch(error => {
+    throw error instanceof FlowRuntimeTimeout ? new CaptureConnectionError() : error;
+  });
   let previous: {bytes:Buffer; identity:string} | undefined;
   let reportedPresentationError=false;
   let chain = Promise.resolve(), done: () => void, fail: (error: Error) => void, stopped = false;
@@ -49,7 +56,7 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
         byId.clear(); for (const item of run.nodes) byId.set(item.id, item);
         const selected=next.jobs.slice(0,1);
         jobs.clear(); for (const job of selected) jobs.set(job.id, job);
-        const reply = await backend.runtime.invoke({type:'capture-source', batch, ticket:event.ticket, value:{jobs:wireJobs(selected)}}, 2000);
+        const reply = await acknowledge({type:'capture-source', batch, ticket:event.ticket, value:{jobs:wireJobs(selected)}});
         if (!reply?.accepted) throw new Error('The app rejected a stale capture plan.');
       }
       else if (event.type === 'source') {
@@ -58,10 +65,10 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
         let value;
         try {value=await captureSource({backend,job,catalog,projectRoot:options.projectRoot,sourceHash:run.sourceHash,operation:event.operation,actionId:event.actionId,signal});}
         catch(error){
-          if(signal.aborted || error instanceof FlowAppFailure || !(error instanceof FlowRuntimeFailure))throw error;
+          if(signal.aborted || error instanceof FlowAppFailure || error instanceof FlowNativeFailure || !(error instanceof FlowRuntimeFailure))throw error;
           value={ready:false,status:'timed-out',error:event.operation==='open'?error.message:undefined,reason:error.message,failure:{operation:error.operation,detail:error.detail}};
         }
-        const reply = await backend.runtime.invoke({type:'capture-source', batch, ticket:event.ticket, value}, 2000);
+        const reply = await acknowledge({type:'capture-source', batch, ticket:event.ticket, value});
         if (!reply?.accepted) throw new Error('The app rejected a stale source binding acknowledgement.');
       }
       else if (event.type === 'frame' && node) {
@@ -73,7 +80,7 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
           options.timing?.('screenshot',performance.now()-started);
           const reason=error instanceof FlowRuntimeFailure?error.message:'The device screenshot failed.';
           const failure={operation:'screenshot',detail:error instanceof FlowRuntimeFailure?error.detail:undefined};
-          const ack=await backend.runtime.invoke({type:'capture-ack',batch,ticket:event.ticket,value:{ok:false,reason,failure}},2000);
+          const ack=await acknowledge({type:'capture-ack',batch,ticket:event.ticket,value:{ok:false,reason,failure}});
           if(!ack?.accepted)throw new CaptureConnectionError();
           return;
         }
@@ -84,7 +91,7 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
           await writeFile(path, bytes, {mode: 0o600}); frames.set(event.ticket, {path, id: node.id, bytes, identity});
         }
         options.timing?.('screenshot', performance.now() - started);
-        const ack = await backend.runtime.invoke({type: 'capture-ack', batch, ticket: event.ticket, value: {ok}}, 2000);
+        const ack = await acknowledge({type: 'capture-ack', batch, ticket: event.ticket, value: {ok}});
         if (!ack?.accepted) throw new Error('The app rejected a stale screenshot acknowledgement.');
       } else if (event.type === 'discard') {
         const frame = frames.get(event.ticket); if (frame) await rm(frame.path, {force: true}); frames.delete(event.ticket);
@@ -95,6 +102,9 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
           await rename(frame.path, join(directory, run.id, `${node.id}.png`)); frames.delete(event.ticket);
           previous = {bytes:frame.bytes, identity:frame.identity};
           node.image = `mobile-flow://${run.id}/${node.id}`; node.imageSourceHash = run.sourceHash;
+          // Source sites passing the opened controller identify which caller's
+          // instance a shared prompt or sheet shell shows in this image.
+          if (node.presentation) node.capturedSites = capturedSites(event.sites);
         }
         if (jobs.get(node.id)?.discoverOnly) return;
         if(node.presentation && event.status==='blocked' && !reportedPresentationError){reportedPresentationError=true;captureServerError(new Error('App Flow presentation capture failed.'),'app_flow.presentation');}
@@ -102,7 +112,8 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
         options.timing?.('capture', event.ms); if(node.presentation)options.timing?.('presentation',event.ms); run.revision++; await save();
       } else if (event.type === 'uncaptured' && node?.status === 'capturing') {
         node.status = 'timed-out'; node.reason = 'The screenshot did not settle.'; node.captureMs=event.ms; options.timing?.('capture',event.ms); if(node.presentation)options.timing?.('presentation',event.ms); run.revision++; await save();
-      } else if (event.type === 'error') throw event.interrupted ? new CaptureConnectionError() : new Error(event.reason);
+      } else if (event.type === 'error') throw event.interrupted ? new CaptureConnectionError() : event.native ? new FlowNativeFailure('presentation-rollback', event.reason)
+        : event.app ? new FlowAppFailure('presentation-view', event.reason) : new Error(event.reason);
       else if (event.type === 'done') done();
     }).catch(error => { stopped = true; fail(error); });
   });

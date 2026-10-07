@@ -8,14 +8,17 @@ import { compareViewReference } from './lib/compare-app-flow-views.mjs';
 import {compareFlowCapture,assertCaptureProvenance} from './lib/compare-app-flow-capture.mjs';
 
 const [project, referenceFile, ...options] = process.argv.slice(2);
-if (!project || !referenceFile) throw new Error('Usage: node scripts/compare-app-flow-views.mjs PROJECT REFERENCE [--snapshot GRAPH.json] [--write-snapshot GRAPH.json] [--capture-map MAP.json] [--output REPORT.json] [--strict]');
+if (!project || !referenceFile) throw new Error('Usage: node scripts/compare-app-flow-views.mjs PROJECT REFERENCE [--snapshot GRAPH.json] [--write-snapshot GRAPH.json] [--capture-map MAP.json [--accepted REVIEW.json]] [--allow-capture-wrapper] [--output REPORT.json] [--strict]');
 const option = name => { const index = options.indexOf(name); return index < 0 ? undefined : options[index + 1]; };
 const json = async file => JSON.parse(await readFile(file, 'utf8'));
 const reference = await json(referenceFile), root = resolve(project);
 const pluginVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const revision = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 if (reference.revision !== revision) throw new Error(`Reference revision ${reference.revision} differs from checkout ${revision}. Review the reference first.`);
-if (execFileSync('git', ['-C', root, 'status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8' }).trim()) throw new Error('Reference evidence requires an unchanged checkout.');
+// A prepared capture build changes only its Babel config; the scan reads the
+// saved original, and capture comparison still requires the same source hash.
+const changed = execFileSync('git', ['-C', root, 'status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8' }).trim();
+if (changed && !(options.includes('--allow-capture-wrapper') && changed === 'M babel.config.js')) throw new Error('Reference evidence requires an unchanged checkout.');
 const graph = option('--snapshot') ? await json(option('--snapshot')) : await scanAppFlow(root, reference.platform);
 const provenance = { revision, platform: reference.platform, pluginVersion };
 if (option('--snapshot') && JSON.stringify(graph.audit) !== JSON.stringify(provenance)) throw new Error('Snapshot provenance differs from this checkout, platform or plugin version. Rescan before comparing.');
@@ -69,10 +72,21 @@ const symbol = (file, name, seen = new Set()) => {
   return { file: relative(root, file), component: name };
 };
 const owner = node => { for (let p = node.parent; p; p = p.parent) if (ts.isFunctionLike(p) && p.body) return p; };
-const ownerName = fn => {
-  if (fn.name && ts.isIdentifier(fn.name)) return fn.name.text;
-  for (let p = fn, i = 0; p.parent && i < 4; p = p.parent, i++) if (ts.isVariableDeclaration(p.parent) && ts.isIdentifier(p.parent.name)) return p.parent.name.text;
-  return 'default';
+// The function's own name first, then a binding that wraps it, as in
+// `const A = memo(function B() {…})`. Both name one source owner.
+const ownerNames = fn => {
+  const names = fn.name && ts.isIdentifier(fn.name) ? [fn.name.text] : [];
+  for (let p = fn, i = 0; p.parent && i < 4; p = p.parent, i++) {
+    if (ts.isVariableDeclaration(p.parent) && ts.isIdentifier(p.parent.name)) { names.push(p.parent.name.text); break; }
+    if (!ts.isCallExpression(p.parent) && !ts.isParenthesizedExpression(p.parent) && !ts.isAsExpression(p.parent)) break;
+  }
+  return names.length ? [...new Set(names)] : ['default'];
+};
+const ownerAliases = (file, name) => {
+  const unit = readUnit(resolve(root, file)), names = new Set();
+  const visit = node => { if (ts.isFunctionLike(node) && node.body) { const own = ownerNames(node); if (own.includes(name)) own.forEach(item => names.add(item)); } ts.forEachChild(node, visit); };
+  if (unit) visit(unit.ast);
+  return [...names];
 };
 const targetCache = new Map();
 const targetsForAction = action => {
@@ -82,12 +96,12 @@ const targetsForAction = action => {
   const visit = node => {
     if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText().split('.').at(-1) === action.effect.component &&
       node.attributes.properties.some(prop => ts.isJsxAttribute(prop) && prop.name.getText() === action.effect.prop && prop.initializer) &&
-      owner(node) && ownerName(owner(node)) === action.owner) {
+      owner(node) && ownerNames(owner(node)).includes(action.owner)) {
       const target = action.effect.target;
       if (target && (target.file !== action.file || target.line !== unit.ast.getLineAndCharacterOfPosition(node.getStart()).line + 1)) return;
-      const resolved = symbol(unit.file, node.tagName.getText());
+      const resolved = symbol(unit.file, node.tagName.getText()), [primary, ...aliases] = ownerNames(owner(node));
       targets.push({ file: action.file, line: unit.ast.getLineAndCharacterOfPosition(node.getStart()).line + 1, prop: action.effect.prop,
-        owner: ownerName(owner(node)), generic: node.tagName.getText().includes('.'), definition: resolved });
+        owner: primary, ...(aliases.length ? { ownerAliases: aliases } : {}), generic: node.tagName.getText().includes('.'), definition: resolved });
     }
     ts.forEachChild(node, visit);
   };
@@ -102,7 +116,7 @@ for (const row of reference.views) for (const evidence of row.evidence) {
   const lines = readFileSync(resolve(root, evidence.file), 'utf8').split('\n');
   if (evidence.line < 1 || evidence.line > lines.length) throw new Error(`Invalid evidence for ${row.id}.`);
 }
-const compared = compareViewReference(graph, reference, targetsForAction);
+const compared = compareViewReference(graph, reference, targetsForAction, ownerAliases);
 const report = { ...provenance,
   method: reference.method, adjudication: reference.adjudication, exclusions: reference.excluded,
   scope: reference.scope, limits: reference.limits,
@@ -118,6 +132,13 @@ if(option('--capture-map')){
     let file;try{file=await open(join(dirname(map),`${node.id}.png`),'r');const header=Buffer.alloc(24);await file.read(header,0,24,0);
       if(header.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))&&header.readUInt32BE(16)>0&&header.readUInt32BE(20)>0)verified.add(node.id);
     }catch{/* Missing image files never count as successful captures. */}finally{await file?.close();}
+  }
+  // Manual review rejects images that passed capture gates. Only accepted
+  // node IDs from the same run can count; an absent review keeps saved PNGs.
+  if(option('--accepted')){
+    const review=await json(option('--accepted')),accepted=new Set(Array.isArray(review)?review:review.verifiedNodeIds);
+    if(!Array.isArray(review)&&review.runId!==run.id)throw new Error('Accepted images belong to another run.');
+    for(const id of verified)if(!accepted.has(id))verified.delete(id);
   }
   report.capture=compareFlowCapture(graph,compared,run,verified);
 }

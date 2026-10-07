@@ -8,11 +8,12 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
     const started = clock();
     try {
       if(request.operation==='open') {
-        const local=await call({type:'presentation-capture-open',id:request.actionId},signal,false);
+        const local=await call({type:'presentation-capture-open',id:request.actionId,...(request.instance?{instance:request.instance}:{})},signal,false);
         if(local?.local){record('source-local',clock()-started);return local;}
       }
       const hostStarted=clock();
-      try{return await source(request);}
+      // The host reads a shared shell's caller from its own prepared job.
+      try{const {instance,...hostRequest}=request;const result=await source(hostRequest);if(result?.nativeFailure)throw Object.assign(new Error(result.error),{fatal:true,native:true});return result;}
       finally{record('source-host',clock()-hostStarted);}
     }
     finally { record('source', clock() - started); }
@@ -41,7 +42,8 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
     signal?.addEventListener('abort', abort, {once:true});
     if (signal?.aborted) { abort(); return; }
     try { runtime.invoke(command, result => {
-      if (result?.appFailed) finish(Object.assign(new Error('The app reported a fatal JavaScript error.'), {fatal:true}));
+      if (result?.appFailed) finish(Object.assign(new Error('The app reported a fatal JavaScript error.'), {fatal:true, app:true}));
+      else if (result?.nativeFailure) finish(Object.assign(new Error(result.error || 'Native presentation dismissal is unconfirmed.'), {fatal:true, native:true}));
       else if (result?.cancelled || result?.runtimeUnavailable || result?.stopped) finish(interrupted('The app runtime changed during capture.'));
       else finish(undefined, result);
     }); } catch (error) { finish(error); }
@@ -120,7 +122,7 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
         check(signal);
         // The host approved this recipe. Live registered bindings run the same
         // opener as discovery; unresolved entries retain host source resolution.
-        const opened = await bind({operation: 'open', actionId: action.id},signal);
+        const opened = await bind({operation: 'open', actionId: action.id, ...(typeof action.instance === 'string' ? {instance: action.instance} : {})},signal);
         check(signal);
         if (opened?.error) return {ready: false, status: opened.status || 'needs-data', reason: opened.error, failure:opened.failure};
         if (opened?.closed) for (const frame of branch) frame.closed = true;
@@ -130,7 +132,7 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
           if (projected?.error) return {ready: false, status: 'blocked', reason: projected.error};
         }
         const view = opened.view?.ready && !job.projections?.includes(action.id) ? opened.view : await settled(job, signal);
-        if (!view?.ready) return {ready: false, status: view?.status || (view?.error ? 'blocked' : 'timed-out'), failure:view?.failure, reason: view?.error || view?.reason || 'The presentation did not settle.'};
+        if (!view?.ready) return {ready: false, status: view?.status || (view?.error ? 'blocked' : 'timed-out'), failure:view?.failure, reason: view?.error || (view?.reason === 'loading' && view.loadingReason ? `loading (${view.loadingReason}${view.loadingComponent ? ` in ${view.loadingComponent}` : ''})` : view?.reason) || 'The presentation did not settle.'};
         const checkpoint = await call({type: 'presentation-checkpoint'}, signal);
         if (!Number.isInteger(checkpoint?.level)) throw new Error('The presentation checkpoint is unavailable.');
         branch.push({id: action.id, level: checkpoint.level, projected: !!job.projections?.includes(action.id)});
@@ -153,6 +155,13 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
       return settled(job, signal);
     },
     verify(job, signal) { return read(job, 0, signal); },
+    // Compiled source sites passing the opened controller. A shared shell's
+    // capture names the caller that rendered it, not every possible caller.
+    async sites(job, signal) {
+      if (!job.actions.length) return;
+      const sites = await call({type:'presentation-sites'}, signal);
+      return Array.isArray(sites) ? sites : undefined;
+    },
     same,
     async restore() {
       await rollback(0);

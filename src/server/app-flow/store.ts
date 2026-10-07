@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, realpath, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FlowResolution, FlowRun } from '../../shared/app-flow.ts';
 import {publicFlowRun} from '../../shared/app-flow.ts';
 import type { FlowStart, FlowTargetIdentity, RuntimeInfo } from './runs.ts';
+import {mergeCatalog, reviewCatalog, type FlowCatalog, type FlowCatalogReview} from './screen-catalog.ts';
 
 export type SavedFlow = { run: FlowRun; input?: FlowStart; info?: RuntimeInfo; target?: FlowTargetIdentity };
 export type FlowCommand = { type: 'resolve'; resolutions: FlowResolution[] } | { type: 'retry' } | { type: 'stop' } | { type: 'capture-step'; label?: string };
@@ -64,6 +65,43 @@ export class FlowStore {
       this.catalogs.set(catalog.views,{key:value.run.sourceCatalogKey,value:catalog});this.savedCatalogs.set(id,value.run.sourceCatalogKey);
     }
     return value;
+  }
+  // One screen catalog per project folder and platform. Updates in this
+  // process run in order; the file write itself is atomic.
+  private catalogUpdates = new Map<string, Promise<unknown>>();
+  private async catalogFile(projectRoot: string, platform: string) {
+    const root = await realpath(projectRoot).catch(() => projectRoot);
+    return join(this.directory, 'catalogs', `${createHash('sha256').update(`${platform}:${root}`).digest('hex')}.json`);
+  }
+  async loadCatalog(projectRoot: string, platform: string): Promise<FlowCatalog | undefined> {
+    let value;
+    try { value = await this.json(await this.catalogFile(projectRoot, platform)); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
+    if (value?.version !== 1 || !Array.isArray(value.entries) || !Array.isArray(value.edges)) throw new Error('Invalid App Flow screen catalog.');
+    return value;
+  }
+  async updateCatalog(projectRoot: string, platform: string, run: FlowRun): Promise<FlowCatalog> {
+    return this.changeCatalog(projectRoot, platform, catalog => mergeCatalog(catalog, run));
+  }
+  async reviewCatalog(projectRoot: string, platform: string, runId: string, reviews: FlowCatalogReview[]) {
+    let applied = 0;
+    const catalog = await this.changeCatalog(projectRoot, platform, current => {
+      if (!current) throw new Error('This project has no screen catalog yet. Map the app first.');
+      const result = reviewCatalog(current, runId, reviews); applied = result.applied; return result.catalog;
+    });
+    return {catalog, applied};
+  }
+  private async changeCatalog(projectRoot: string, platform: string, change: (catalog: FlowCatalog | undefined) => FlowCatalog): Promise<FlowCatalog> {
+    const path = await this.catalogFile(projectRoot, platform);
+    const previous = this.catalogUpdates.get(path) ?? Promise.resolve();
+    const next = previous.catch(() => {}).then(async () => {
+      const catalog = change(await this.loadCatalog(projectRoot, platform));
+      await mkdir(join(this.directory, 'catalogs'), { recursive: true, mode: 0o700 });
+      await this.write(path, catalog);
+      return catalog;
+    });
+    this.catalogUpdates.set(path, next);
+    try { return await next; } finally { if (this.catalogUpdates.get(path) === next) this.catalogUpdates.delete(path); }
   }
   async enqueue(id: string, command: FlowCommand) {
     const folder = join(this.folder(id), 'commands');

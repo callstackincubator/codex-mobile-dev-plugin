@@ -2,7 +2,14 @@ import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import {flowRuntimeSource} from './runtime-source.ts';
 import { bindPresentationSites } from './presentations-bindings.ts';
-import {FlowAppFailure,FlowRuntimeFailure,FlowRuntimeMetrics,FlowRuntimeTimeout,runtimeOperation} from './runtime-metrics.ts';
+import {FlowAppFailure,FlowNativeFailure,FlowRuntimeFailure,FlowRuntimeMetrics,FlowRuntimeTimeout,runtimeOperation} from './runtime-metrics.ts';
+
+// The debugger path re-encodes a raw emoji as two separate surrogates, which
+// Hermes cannot compile. Expressions carry every surrogate as a \uXXXX escape;
+// raw ones can only sit in strings, regexes, templates or comments, where the
+// escape is valid. Command strings are made well formed first.
+const wellFormed=(_key:string,value:unknown)=>typeof value==='string'?value.toWellFormed():value;
+const escapeSurrogates=(source:string)=>source.replace(/[\ud800-\udfff]/g,unit=>`\\u${unit.charCodeAt(0).toString(16)}`);
 
 /** A reconnect can reuse the runtime lease and original navigation state. */
 export class FlowConnection {
@@ -98,7 +105,8 @@ export class FlowConnection {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => this.finish(id, undefined, new FlowRuntimeTimeout(operation)), timeout);
       this.pending.set(id, { resolve, reject, timer,operation:runtimeOperation(operation),started:performance.now() });
-      this.socket.send(JSON.stringify({ id, method, params }), error => { if (error) this.finish(id, undefined, new Error("Metro disconnected.")); });
+      const safe = method === 'Runtime.evaluate' && typeof (params as {expression?: unknown})?.expression === 'string' ? {...params as object, expression: escapeSurrogates((params as {expression: string}).expression)} : params;
+      this.socket.send(JSON.stringify({ id, method, params: safe }), error => { if (error) this.finish(id, undefined, new Error("Metro disconnected.")); });
     });
   }
   async invoke(command: Record<string, unknown>, timeout = 1500): Promise<any> {
@@ -129,10 +137,11 @@ export class FlowConnection {
     }
     const id = -(++this.sequence);
     const deadline=this.appClockOffset===undefined?undefined:performance.now()+timeout+this.appClockOffset;
-    const expression = `(()=>{const runtime=globalThis[${JSON.stringify(this.key)}],reply=result=>globalThis[${JSON.stringify(this.binding)}]?.(JSON.stringify({id:${id},result}));${deadline===undefined?'':`if((globalThis.performance?.now?.()??Date.now())>${deadline}){reply({commandExpired:true});return;}`}if(!runtime?.invoke){reply({runtimeUnavailable:true});return;}runtime.invoke(${JSON.stringify(command)},reply);})()`;
+    const expression = `(()=>{const runtime=globalThis[${JSON.stringify(this.key)}],reply=result=>globalThis[${JSON.stringify(this.binding)}]?.(JSON.stringify({id:${id},result}));${deadline===undefined?'':`if((globalThis.performance?.now?.()??Date.now())>${deadline}){reply({commandExpired:true});return;}`}if(!runtime?.invoke){reply({runtimeUnavailable:true});return;}runtime.invoke(${JSON.stringify(command,wellFormed)},reply);})()`;
     let result=await this.send("Runtime.evaluate", { expression, silent: true, returnByValue: true, objectGroup: this.key }, timeout, id,runtimeOperation(command.type));
     if(result?.runtimeUnavailable || result?.stopped && command.type!=='capture-stop')throw new Error('App Flow inspector is no longer installed. Reconnecting.');
     if(result?.appFailed)throw new FlowAppFailure(String(command.type));
+    if(result?.nativeFailure)throw new FlowNativeFailure(String(command.type));
     if(command.type==='heartbeat' && result?.alive!==true)throw new FlowRuntimeFailure('heartbeat','returned an invalid response');
     if(['presentation-open','presentation-view'].includes(String(command.type))){
       const attempted=new Set<string>();

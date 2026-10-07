@@ -35,9 +35,15 @@ export class FlowRuntimeTimeout extends FlowRuntimeFailure {
   constructor(operation:string){super(operation,'timed out');}
 }
 export class FlowAppFailure extends FlowRuntimeFailure {
-  constructor(operation:string) {
-    super(operation);
+  constructor(operation:string, detail?:unknown) {
+    super(operation,'failed',detail);
     this.message='App Flow stopped because the app reported a fatal JavaScript error. Check the app error screen before retrying.';
+  }
+}
+export class FlowNativeFailure extends FlowRuntimeFailure {
+  constructor(operation:string, detail?:unknown) {
+    super(operation,'failed',detail);
+    this.message='App Flow stopped because a native presentation did not confirm dismissal. Wait for it to close or reload the app before mapping again.';
   }
 }
 /** Fixed operation names and bounded samples. Never retain commands or app data. */

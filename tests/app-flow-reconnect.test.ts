@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { type FlowStart } from '../src/server/app-flow/runs.ts';
 import { reconnectFlowTarget } from '../src/server/app-flow/target.ts';
 import { flowProgress, flowRunning, type FlowGraph } from '../src/shared/app-flow.ts';
+import {FlowAppFailure,FlowNativeFailure} from '../src/server/app-flow/runtime-metrics.ts';
 
 const input: FlowStart = {projectRoot:'/fixture',platform:'ios',deviceId:'device',targetId:'old-target',metroUrl:'http://127.0.0.1:8081',useAi:false};
 const graph = (): FlowGraph => ({files:1,scanMs:1,warnings:[],edges:[],nodes:['Home','Profile','Settings'].map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending'}))});
@@ -147,19 +148,88 @@ test('fatal app errors stop capture before saving an error overlay or opening la
   await assert.rejects(readFile(join(path,run.id,'Profile.png')),{code:'ENOENT'});
 });
 
-test('a fatal app error during reconnect ends the run instead of retrying forever',async t=>{
-  const {FlowAppFailure}=await import('../src/server/app-flow/runtime-metrics.ts');
+for(const Failure of [FlowAppFailure,FlowNativeFailure])test(`${Failure.name} during reconnect ends the run instead of retrying forever`,async t=>{
   let connections=0;
   const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>graph(),connect:async()=>{
     connections++;
     return {runtime:{async invoke(command){
       if(command.type==='inspect')return {available:true};
-      if(command.type==='resume')throw new FlowAppFailure('resume');
+      if(command.type==='resume')throw new Failure('resume');
       throw Error('connection lost');
     },async close(){}},async screenshot(){throw Error('must not capture')}};
   }});
   const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
   assert.equal(runs.read(run.id).phase,'failed');assert.equal(connections,2);
+});
+
+function relaunchFixture(fails:(generation:number,screen:string)=>Error|undefined,relaunch?:(appId:string)=>Promise<void>) {
+  const shots:string[]=[],relaunched:string[]=[];let generation=0;
+  const runs=(path:string)=>new AppFlowRuns({directory:path,scan:async()=>graph(),
+    relaunch:async(_input,appId)=>{relaunched.push(appId);await relaunch?.(appId);},
+    connect:async()=>{
+      const current=++generation;let screen='Home';
+      return {target:{appId:'example.app',deviceId:'device'},runtime:{async invoke(command){
+        if(command.type==='inspect'||command.type==='resume')return {available:true};
+        if(command.type==='recover'||command.type==='heartbeat')return {alive:true,recovered:true};
+        if(command.type==='open'){screen=(command.path as string[])[0];return {ready:true,active:[screen],name:screen,signature:screen};}
+        const failure=command.type==='verify'?fails(current,screen):undefined;if(failure)throw failure;
+        return {found:true,active:[screen]};
+      },async close(){}},async screenshot(){shots.push(screen);return Buffer.from(screen)}};
+    }});
+  return {runs,shots,relaunched,get generation(){return generation}};
+}
+
+test('a fatal app error relaunches the app, retries that view once and resumes the queue',async t=>{
+  const app=relaunchFixture((generation,screen)=>generation===1&&screen==='Profile'?new FlowAppFailure('verify'):undefined);
+  const runs=app.runs(await directory(t));
+  const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
+  const result=runs.read(run.id);
+  assert.equal(result.phase,'complete');assert.deepEqual(app.relaunched,['example.app']);assert.equal(app.generation,2);
+  assert.deepEqual(app.shots,['Home','Profile','Settings'],'Accepted images stay; the interrupted view is captured in the fresh app');
+  assert.ok(result.warnings.some(warning=>/relaunched/.test(warning)));
+});
+
+test('a view that leaves a native sheet open twice is blocked while the run continues',async t=>{
+  const app=relaunchFixture((_generation,screen)=>screen==='Profile'?new FlowNativeFailure('presentation-rollback'):undefined);
+  const runs=app.runs(await directory(t));
+  const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
+  const result=runs.read(run.id),profile=result.nodes.find(node=>node.name==='Profile')!;
+  assert.equal(result.phase,'partial');assert.deepEqual(app.relaunched,['example.app','example.app']);
+  assert.equal(profile.status,'blocked');assert.match(profile.reason!,/did not confirm dismissal twice/);
+  assert.deepEqual(app.shots,['Home','Settings']);
+});
+
+test('relaunches continue while captures progress and stop when a failure recurs without progress',async t=>{
+  const many=():FlowGraph=>({files:1,scanMs:1,warnings:[],edges:[],nodes:Array.from({length:60},(_,index)=>`Screen${index}`).map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending'}))});
+  // Every fresh app fails on its twelfth route after eleven new captures.
+  let generation=0,opened=0;const relaunched:string[]=[];
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>many(),relaunch:async(_input,appId)=>{relaunched.push(appId);},connect:async()=>{
+    generation++;opened=0;let screen='';
+    return {target:{appId:'example.app',deviceId:'device'},runtime:{async invoke(command){
+      if(command.type==='inspect'||command.type==='resume')return {available:true};
+      if(command.type==='recover'||command.type==='heartbeat')return {alive:true,recovered:true};
+      if(command.type==='open'){screen=(command.path as string[])[0];opened++;return {ready:true,active:[screen],name:screen,signature:screen};}
+      if(command.type==='verify'&&opened===12)throw new FlowAppFailure('verify');
+      return {found:true,active:[screen]};
+    },async close(){}},async screenshot(){return Buffer.from(screen)}};
+  }});
+  const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
+  const result=runs.read(run.id);
+  assert.equal(result.phase,'complete','Each fresh app captured enough to earn another relaunch');
+  assert.equal(relaunched.length,5);assert.equal(result.nodes.filter(node=>node.status==='captured').length,60);
+  // Without progress, the same failure ends the run after the allowance.
+  const stuck=relaunchFixture(()=>new FlowAppFailure('verify'));
+  const stuckRuns=stuck.runs(await directory(t));
+  const failed=stuckRuns.start(input);await until(()=>!flowRunning(stuckRuns.read(failed.id)));await stuckRuns.close();
+  assert.equal(stuckRuns.read(failed.id).phase,'failed');assert.equal(stuck.relaunched.length,3);
+});
+
+test('a device that cannot relaunch the app keeps the original failure',async t=>{
+  const app=relaunchFixture((_generation,screen)=>screen==='Profile'?new FlowAppFailure('verify'):undefined,async()=>{throw new Error('No booted simulator.');});
+  const runs=app.runs(await directory(t));
+  const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
+  const result=runs.read(run.id);
+  assert.equal(result.phase,'failed');assert.match(result.error!,/fatal JavaScript error/);assert.equal(app.generation,1);
 });
 
 test('route and presentation retries preserve the failed runtime step in their saved reason',async t=>{

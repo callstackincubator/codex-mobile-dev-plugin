@@ -24,15 +24,17 @@ export async function captureSource(options: {
     return invoke({type:'presentation-project'}, 2000);
   }
   await invoke({type:'presentation-setup', catalog, projectRoot, sourceHash}, 5000);
-  const prepared = await invoke({type:'presentation-prepare', id:action.id}, 2000);
+  // The prepared recipe, not the app, names a shared shell's caller site.
+  const instance = job.instances?.[action.id];
+  const prepared = await invoke({type:'presentation-prepare', id:action.id, ...(instance ? {instance} : {})}, 2000);
   if (!prepared?.available) return {error:prepared?.error || 'The source-proven entry has no live owner, control, or real context in this app state.', status:'needs-data'};
   let closed = false;
-  if (action.handoffs?.length) {
+  if (prepared.handoff || action.handoffs?.length) {
     const result = await invoke({type:'presentation-handoff', id:action.id}, 5000);
-    if (result?.error) return {error:result.error, status:'needs-data'};
+    if (result?.error) return {...result, status:'needs-data'};
     closed = !!result.closed;
   }
-  const view = await invoke({type:'presentation-open', id:action.id}, 2000);
-  if (view?.error) return {error:view.error, status:view.status==='needs-data'?'needs-data':'timed-out'};
+  const view = await invoke({type:'presentation-open', id:action.id, ...(instance ? {instance} : {})}, 2000);
+  if (view?.error) return {...view, status:view.status==='needs-data'?'needs-data':'timed-out'};
   return {closed, view};
 }

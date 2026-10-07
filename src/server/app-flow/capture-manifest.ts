@@ -15,6 +15,8 @@ export type CaptureJob = {
   discoverOnly?: boolean;
   entryKey?: string;
   attempt?: number;
+  /** Caller site of a shared shell step, keyed by action ID. */
+  instances?: Record<string, string>;
 };
 export type CaptureManifest = {version: 1; sourceHash?: string; jobs: CaptureJob[]; total: number};
 export type CaptureRecipe = {baseNodeId?: string; actions: string[]};
@@ -31,7 +33,7 @@ export function captureRecipeNodes(graph: FlowGraph, known: FlowNode[], recipes:
     const leaf=catalog.get(recipe.actions.at(-1)!)!;
     const id=`recipe-${createHash('sha256').update(JSON.stringify([recipe.baseNodeId??null,recipe.actions])).digest('hex').slice(0,24)}`;
     nodes.set(id,{id,name:leaf.name,kind:'screen',file:leaf.file,line:leaf.line,path:[],required:base?.required??[],params:base?.params,paramVariants:base?.paramVariants,status:'pending',sourceViews:leaf.views??[],
-      presentation:{actions:[...(base?.presentation?.actions??[]),...recipe.actions],basePath:base?.presentation?.basePath??base?.path??[],baseParams:base?.presentation?.baseParams??base?.params,expo:base?.presentation?.expo??base?.component==='expo-router',preview:true,projections:base?.presentation?.projections?.slice()}} satisfies FlowNode);
+      presentation:{actions:[...(base?.presentation?.actions??[]),...recipe.actions],basePath:base?.presentation?.basePath??base?.path??[],baseParams:base?.presentation?.baseParams??base?.params,expo:base?.presentation?.expo??base?.component==='expo-router',preview:true,projections:base?.presentation?.projections?.slice(),...(base?.presentation?.instances?{instances:{...base.presentation.instances}}:{})}} satisfies FlowNode);
   }
   return [...nodes.values()];
 }
@@ -54,7 +56,7 @@ export function captureManifest(graph: FlowGraph, nodes: FlowNode[] = graph.node
     const missing = missingFlowParams(node);
     let blocked = missing.length ? `Real data is required for: ${missing.join(', ')}.` : undefined;
     if (actions.length !== (node.presentation?.actions.length ?? 0)) blocked = 'The source recipe changed. Prepare the map again.';
-    jobs.push({id: node.id, path: node.presentation?.basePath ?? node.path, params: node.presentation?.baseParams ?? node.params, expo: node.presentation?.expo ?? node.component==='expo-router', actions, sourceViews: node.sourceViews ?? [], projections: node.presentation?.projections, entryKey:node.presentation?.entryKey, blocked});
+    jobs.push({id: node.id, path: node.presentation?.basePath ?? node.path, params: node.presentation?.baseParams ?? node.params, expo: node.presentation?.expo ?? node.component==='expo-router', actions, sourceViews: node.sourceViews ?? [], projections: node.presentation?.projections, entryKey:node.presentation?.entryKey, ...(node.presentation?.instances?{instances:node.presentation.instances}:{}), blocked});
   }
   // Parent paths and shared opening steps remain adjacent, retaining providers
   // and real query caches. IDs break ties so repeated preparation is stable.
@@ -107,6 +109,12 @@ export async function instrumentationManifest(projectRoot: string, graph: FlowGr
     const id = `${target.file}:${target.source.line}:${target.source.column}:${effect.prop}`;
     const unit = files[target.file] ??= {hash: '', states: [], controls: []};
     if (!unit.controls.some(control => control.id === id)) unit.controls.push({id, owner: target.owner, prop: effect.prop, source: target.source});
+  }
+  // A capture records the source sites that pass its opened controller. Mark
+  // every controller site, so a shared prompt or sheet shell names its caller.
+  for (const view of catalog?.views ?? []) {
+    if (view.kind !== 'control' || files[view.file]?.controls.some(control => control.source.line === view.source.line && control.source.column === view.source.column)) continue;
+    marker(view.file, view.owner, view.source);
   }
   for (const node of graph.nodes) if(node.kind==='navigator' && node.path.length===0 && node.file) {
     const unit=files[node.file]??={hash:'',states:[],controls:[]};

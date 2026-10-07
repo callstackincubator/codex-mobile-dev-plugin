@@ -27,7 +27,7 @@ async function fixture(t: test.TestContext, slow = false, presentation = false) 
   const directory = await mkdtemp(join(tmpdir(), 'flow-prepared-resume-'));
   const store = new FlowStore(directory), instances: QueuedAppFlowRuns[] = [];
   const shots: string[] = [], opened: {path: string[]; params?: Record<string, unknown>}[] = [];
-  const state = {fail: slow, sourceHash: 'source', connections: 0};
+  const state: {fail: boolean; sourceHash: string; connections: number; reason?: string; failOnce?: boolean} = {fail: slow, sourceHash: 'source', connections: 0};
   const action: any = {id: 'details', name: 'Details', file: 'App.tsx', line: 1, owner: 'App', component: 'Details', prop: 'onPress', effect: {kind: 'control', component: 'Details', prop: 'control', method: 'open', close: 'close'}};
   const graph: FlowGraph = {files: 1, scanMs: 0, warnings: [], sourceHash: 'source', edges: [{from: 'home', to: 'profile', kind: 'navigation'}], nodes: [
     {id: 'home', name: 'Home', kind: 'screen', path: ['Home'], required: [], status: 'pending', entry: true},
@@ -51,7 +51,7 @@ async function fixture(t: test.TestContext, slow = false, presentation = false) 
         if (command.type === 'capture-inventory') return {sourceHashes: [state.sourceHash]};
         if (command.type === 'open') {
           current = command.path.at(-1); opened.push({path: command.path, params: command.params});
-          if (current === 'Profile' && state.fail) return {ready: false, reason: 'Screen is still loading (skeleton).'};
+          if (current === 'Profile' && state.fail) { if (state.failOnce) state.fail = false; return {ready: false, reason: state.reason ?? 'Screen is still loading (skeleton).'}; }
         }
         if (command.type === 'presentation-prepare') return {available: true};
         if (command.type === 'presentation-open') sheet = true;
@@ -150,4 +150,19 @@ test('fresh selections reuse resolved base data before creating recipes without 
   assert.deepEqual(f.opened.at(-1)?.params, {mode: 'view', id: 'observed-id'});
   assert.deepEqual(after.nodes[0].presentation?.baseParams, {mode: 'view', id: 'observed-id'});
   assert.deepEqual((await f.store.load(f.plan.id)).run.nodes[1].params, {mode: 'view'});
+});
+
+test('a prepared view waiting for query data gets one later attempt; other timeouts do not', async t => {
+  const f = await fixture(t, true), runs = f.make();
+  f.state.reason = 'Screen is still loading (data in Feed).'; f.state.failOnce = true;
+  const retried = await finished(runs, runs.start(f.input).id);
+  assert.equal(retried.phase, 'complete', retried.error);
+  assert.deepEqual(retried.nodes.map(node => [node.status, node.captureAttempts]), [['captured', 1], ['captured', 2]]);
+  assert.deepEqual(f.shots, ['Home', 'Profile'], 'The retry runs after the rest of the queue');
+  f.state.fail = true; f.state.failOnce = false; f.state.reason = undefined; f.shots.length = 0;
+  const skeleton = await finished(runs, runs.start(f.input).id);
+  assert.deepEqual(skeleton.nodes.map(node => [node.status, node.captureAttempts]), [['captured', 1], ['timed-out', 1]]);
+  f.state.reason = 'Screen is still loading (data in Feed).';
+  const stillLoading = await finished(runs, runs.start(f.input).id);
+  assert.deepEqual(stillLoading.nodes.map(node => [node.status, node.captureAttempts]), [['captured', 1], ['timed-out', 2]], 'One extra attempt only');
 });

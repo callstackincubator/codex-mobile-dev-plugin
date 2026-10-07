@@ -222,3 +222,127 @@ check. A moving backdrop may keep full-frame comparison from settling; this
 is an open limitation, not evidence of correct capture. Prepared capture queues
 still require a capture host inside a native sheet and do not yet share this
 inline path. Do not use that smaller queue as proof of default-run coverage.
+
+## Screen catalog
+
+Every finished run updates a screen catalog for its project and platform, stored
+under `catalogs/` in Mobile Dev's local App Flow folder. One entry per screen
+holds the best known opening recipe: its route path, real params, opening chain
+and natural parent. It also holds the latest attempt and the latest accepted
+capture. A later failure records the attempt but keeps the last working recipe
+and image. Recorded flow steps and the no-navigator entry fallback stay out.
+
+Each entry has a category for what the screen needs: `no-inputs`, `real-inputs`
+for routes with required params or openers that take real data, and `app-state`
+for UI previews of guarded state. Params resolved by AI or the resolve action
+reach the catalog through the run that used them, so later runs reuse them.
+
+`options.capture.catalog` runs the prepared queue from the catalog instead of a
+saved `planRunId`: `all` replays every current screen, `missing` only screens
+whose latest attempt didn't capture. `include` still narrows the selection. An
+entry whose opening action or base route no longer exists in the current scan is
+stale and stays out. The `catalog` action reads the list with counts by category
+and latest status. The catalog holds real identifiers and image links, so it
+stays local and out of the app repository.
+
+## Readiness and preview placement fixes, 7 October 2026
+
+Fabric creates a host's public instance lazily, so many native views had no
+`getBoundingClientRect`. Readiness then measured a screen by whichever small
+host happened to have one, such as a back button, and treated loaders outside
+that box as offscreen. Readiness, preview visibility, inline sizing and motion
+now fall back to the Fabric UI manager's rectangle for the same shadow node.
+Loaders and pending queries in the visible screen block capture again.
+
+Query results shown as React Query placeholder data count as loading while the
+query fetches. A disabled query that keeps its placeholders does not block. A
+loading timeout names the component that was still loading, for example
+`loading (data in StepProfiles)`; the name stays in the local map.
+
+A preview mounted in a temporary Modal keeps its original body's window frame,
+so a screen body below the status bar stays below it. Previews in an existing
+native content slot keep their slot.
+
+Capture hides LogBox notifications while it runs and restores LogBox afterwards.
+Development toasts can no longer cover screenshots. Logs keep being recorded;
+a new fatal or syntax error still fails the capture, and an inspector already
+open at the start still blocks.
+
+Debugger expressions carry every UTF-16 surrogate as a `\uXXXX` escape, and
+command strings are made well formed. The debugger path re-encoded a raw emoji
+as separate surrogates, which Hermes could not compile; one emoji in a screen
+title or param could fail a whole run.
+
+A prepared or catalog run gives a view that timed out waiting for query data one
+more attempt after the rest of the queue. The request keeps warming the cache in
+the meantime. Other timeouts are not retried. A failed run keeps the bounded
+runtime error detail in its local error message.
+
+Catalog runs seed screens that no run has reached yet. The scan records, for
+each opening action, the registered screens whose render tree contains the
+opener's owner. A seeded opener gets a one-step recipe: open such a screen, or
+the entry screen for openers outside every route, then bind the opener. A parent
+that needs params uses real params from a catalog entry that captured it. Routes
+are seeded only when app UI links to them. Refs on primitives and React Native
+refresh controls are not views, and a live opener and a preview of the same
+controlled element share one recipe. Live binding still decides whether a seeded
+recipe works; a failure records its named reason.
+
+The `catalog` action also records review verdicts for one run's images. A
+rejected image stops being the screen's accepted capture, so `missing` attempts
+that screen again; a new attempt clears the old verdict.
+
+The native ownership guard counts only native records that reported a lifecycle
+event. A modal host can mount with `visible` set and unmount before it ever
+shows; without an event there is no native window to orphan. Sheets that
+reported opening still stop capture when their owner detaches before closing.
+
+## Capture identity for shared shells
+
+A generic shell, such as a prompt or dialog wrapper, has one source site but is
+rendered by many callers. Discovery used to give it one node per source
+destination, so captures under different callers collapsed into one node. That
+node also collected every caller's controller views, which let the comparator
+credit a profile discard prompt as the new-account chat prompt.
+
+The capture build now marks every controller site the scan found, not only
+opener targets. On Bluesky this adds 31 markers to components that were already
+instrumented, with no new hooks. When a presentation's image is saved, the app
+walks up from the opened element and records the marked sites whose element
+passes the same controller: the shell's own sites, then each caller up to the
+component that created the controller. An enclosing sheet passes a different
+controller and is not recorded. The node keeps these sites as `capturedSites`,
+and the comparator credits controller views only from them. Older captures
+without sites keep the previous behavior.
+
+Discovery names each listed controller by the outermost recorded site. When an
+alias previews that caller's own site, it becomes the canonical step and keeps
+its existing node ID. Otherwise the caller site becomes part of the node ID, so
+each caller of a shell is its own view. The recipe stores the caller per step,
+and replay opens only that caller's copy. This also opens a shell that was
+ambiguous because two callers were mounted in one scope. The catalog replaces
+an older entry with the same recipe that lacks a caller.
+
+On the live app the profile and list editors' discard prompts recorded
+`EditProfileDialog.tsx:74` and `CreateOrEditListDialog.tsx:97` beside the
+shared prompt sites. The comparator credited each to its own row and no longer
+credits the chat prompt.
+
+## Relaunch recovery
+
+Some app states cannot be restored in place: a native sheet that never confirms
+dismissal, a fatal JavaScript error, or an app too busy to answer the inspector.
+A run now relaunches the mapped app through its device (`simctl` on the iOS
+simulator, `adb` on Android), reconnects and resumes the remaining queue.
+Accepted images stay. The view that was opening when the failure surfaced gets
+one more attempt, because the cause can be the view before it; a second failure
+while opening it blocks only that view. Inspector acknowledgements that time out
+count as interruptions, and the third interruption in a row relaunches instead
+of failing the run. A run relaunches at most three times and records a warning.
+If the device cannot relaunch the app, the run ends with the original failure.
+
+In the default run that motivated this, the app climbed from 1.3 to 3.7 GB and
+ended at about 200% CPU. After 264 seconds and 50 captures, a 2-second
+acknowledgement timed out and the whole run failed. Afterwards the app idled at
+83% CPU in native networking, animation and audio threads while its JavaScript
+thread was idle. A relaunch clears that state.

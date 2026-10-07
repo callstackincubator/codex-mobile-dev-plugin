@@ -132,6 +132,42 @@ test('runtime rejects disabled entries, unmet props and ambiguous controller ins
   app.runtime.cleanup();
 });
 
+test('a sheet control opens from a vertical scroll entry below the fold',async()=>{
+  const app=tree(),box=(y:number,height:number)=>({stateNode:{getBoundingClientRect:()=>({x:0,y,width:400,height})}});
+  const screen:any={tag:5,type:'View',memoizedProps:{},...box(0,800),return:app.root};
+  const scroll:any={tag:5,type:'RCTScrollView',memoizedProps:{},...box(0,800),return:screen};
+  const native:any={tag:5,type:'NativeButton',memoizedProps:{},...box(1200,40),return:app.button};
+  app.root.child=screen;screen.child=scroll;scroll.child=app.button;app.button.return=scroll;app.button.child=native;
+  app.button.sibling=undefined;screen.sibling=app.sheet;
+  assert.deepEqual(app.runtime.list().map((entry:any)=>entry.id),['open'],'The opener is reachable by scrolling its vertical list');
+  assert.equal(app.runtime.open('open').focus,app.sheet);assert.equal(app.control.opens,1);
+  await app.runtime.rollback(0,false);assert.equal(app.control.closes,1);
+  for(const [change,reason]of [[()=>{scroll.memoizedProps.horizontal=true},'horizontal page'],[()=>{scroll.memoizedProps.pagingEnabled=true},'pager'],
+    [()=>{scroll.memoizedProps.scrollEnabled=false},'fixed scroll view'],[()=>{scroll.type='View'},'plain container'],[()=>{app.button.memoizedProps.disabled=true},'disabled entry']] as const){
+    const props={...scroll.memoizedProps},type=scroll.type,buttonProps={...app.button.memoizedProps};change();
+    assert.deepEqual(app.runtime.list(),[],`An offscreen entry in a ${reason} stays unavailable`);
+    scroll.memoizedProps=props;scroll.type=type;app.button.memoizedProps=buttonProps;
+  }
+  assert.equal(app.runtime.list().length,1);
+  app.runtime.cleanup();
+});
+
+test('a blocked plain opener names its first unmet requirement',()=>{
+  const app=tree(),reason=()=>app.runtime.prepare('open').error;
+  assert.equal(app.runtime.prepare('open').available,true);
+  app.button.memoizedProps.disabled=true;
+  assert.equal(reason(),'The opening control is disabled in this app state.');
+  app.button.memoizedProps.disabled=false;app.action.guard={prop:['allowed']};
+  assert.equal(reason(),'The opening control does not meet its source condition.');
+  app.root.memoizedProps.allowed=true;
+  app.sheet.sibling={...app.sheet,memoizedProps:{control:{open(){},close(){}}},child:undefined};
+  assert.equal(reason(),'More than one live controller matches this opening.');
+  app.sheet.sibling=undefined;app.sheet.memoizedProps={control:{}};
+  assert.equal(reason(),'The opening control has no live controller.');
+  assert.equal(app.control.opens,0,'Diagnosis never opens the control');
+  app.runtime.cleanup();
+});
+
 test('presentation lookup skips native bounds for source plans absent from a busy screen',()=>{
   const app=tree();let measured=0;
   app.button.child={tag:5,type:'NativeButton',memoizedProps:{},stateNode:{getBoundingClientRect(){measured++;return {width:10,height:20}}},return:app.button};
@@ -523,6 +559,29 @@ test('native projection keeps deep live contexts, contains render errors and res
   await runtime.rollback(0,false);
   assert.equal(ancestor.memoizedProps.children,undefined,'The nearest native container restores its children');
   assert.deepEqual(app.root.memoizedProps,{children:'original',marker:2});assert.equal(app.control.closes,1);runtime.cleanup();
+});
+
+test('a temporary modal preview keeps its body at the original frame below the status bar',async t=>{
+  const app=tree();function View(){}function Modal(){}
+  const originalRequire=(globalThis as any).__r;
+  (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:React}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}]])};
+  t.after(()=>{(globalThis as any).__r=originalRequire});
+  app.root.type=View;app.root.memoizedProps={children:'original'};
+  function App(){}const owner:any={type:App,memoizedProps:{},child:app.button,return:app.root};app.root.child=owner;app.button.return=owner;
+  const container:any={type:View,memoizedProps:{},return:owner};app.button.sibling=container;container.child=app.sheet;app.sheet.return=container;
+  const host:any={tag:5,type:'NativeBody',memoizedProps:{},return:app.sheet,stateNode:{getBoundingClientRect:()=>({x:0,y:59,width:402,height:700})}};
+  app.nested.child=host;host.return=app.nested;
+  const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??app.root];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+  const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,{rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){fiber.memoizedProps=props}}]])},fibers,hidden:()=>false,later:setTimeout});
+  configureFixture(runtime,{states:[],actions:[app.action]});runtime.open('open');
+  assert.equal(runtime.project(app.sheet).error,undefined);
+  const element=container.memoizedProps.children.props.children.at(-1);
+  assert.equal(element.type,Modal);
+  const frame=element.props.children;
+  assert.equal(frame.type,View);
+  assert.deepEqual(frame.props.style,{position:'absolute',left:0,top:59,width:402,height:700},'The copy stays below the status bar');
+  assert.equal(frame.props.children.props.children.type,app.sheet.type,'The error boundary still wraps the copy inside the frame');
+  await runtime.rollback(0,false);runtime.cleanup();
 });
 
 for(const install of [installPresentationRuntime,sharedLoopRuntime()])test(`adding a preview preserves app instances for root child shapes (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
@@ -1473,14 +1532,19 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??wrapper];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
   let writes=0;const renderer={rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){writes++;fiber.memoizedProps=props}};
   (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:{...React}}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}]])};
-  const runtime=install({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});
+  const hook={renderers:new Map([[1,renderer]])};
+  const runtime=install({hook,fibers,hidden:()=>false,later:setTimeout}),next=install({hook,fibers,hidden:()=>false,later:setTimeout});
   try{
-   assert.equal(runtime.project(app.root,{}).error,undefined);wrapper.memoizedProps.children.props.children.at(-1).props.onShow();
+   assert.equal(runtime.project(app.root,{}).error,undefined);
+   const modal=wrapper.memoizedProps.children.props.children.at(-1);modal.props.onShow();
    wrapper.memoizedProps={children:updated};
    assert.equal(runtime.diagnostics().detachedProjections,1);
-   await runtime.rollback();assert.equal(writes,1);assert.equal(wrapper.memoizedProps.children,updated);
-   assert.equal(runtime.checkpoint(),0);assert.equal(runtime.diagnostics().projections,0);
-  }finally{runtime.cleanup()}
+   await assert.rejects(runtime.rollback(),/dismissal is unconfirmed/);
+   assert.equal(writes,1);assert.equal(wrapper.memoizedProps.children,updated);
+   assert.equal(runtime.checkpoint(),1);assert.equal(runtime.diagnostics().projections,1);
+   assert.match(next.nativeFailure(),/dismissal is unconfirmed/);
+   modal.props.onDismiss();assert.equal(next.nativeFailure(),undefined,'The retained native preview close confirms dismissal across inspectors');
+  }finally{runtime.cleanup();next.cleanup()}
  });
  test(`a completely unmounted controller needs no stale close callback (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
   const app=tree(install);app.runtime.open('open');app.root.child=app.button;app.button.sibling=undefined;
@@ -1540,16 +1604,36 @@ test('a preview removed during native dismissal preserves the next app render',a
  const runtime=installPresentationRuntime({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});
  try{
   assert.equal(runtime.project(app.root,{}).error,undefined);wrapper.memoizedProps.children.props.children.at(-1).props.onShow();
-  await runtime.rollback();assert.equal(writes,2);assert.equal(wrapper.memoizedProps.children,updated);assert.equal(runtime.checkpoint(),0);
+  await assert.rejects(runtime.rollback(),/dismissal is unconfirmed/);
+  assert.equal(writes,2);assert.equal(wrapper.memoizedProps.children,updated);assert.equal(runtime.checkpoint(),1);
  }finally{runtime.cleanup()}
 });
 
-test('a native host removed while closing does not wait for its removed listener',async()=>{
+test('a native host that never reported a lifecycle event cannot block capture when it unmounts',async()=>{
+ const app=tree(),props={visible:true,onShow(){}},canonical={currentProps:props};
+ // A modal host mounted visible but never shown natively: no event proves a window.
+ const native:any={tag:5,type:'ModalHost',memoizedProps:props,stateNode:{canonical},return:app.sheet};app.sheet.child=native;
+ app.control.open=()=>{};
+ app.control.close=()=>{app.control.closes++;app.sheet.child=undefined;};
+ try{
+  app.runtime.open('open');
+  await app.runtime.rollback(0,false);
+  assert.equal(app.control.closes,1);assert.equal(app.runtime.checkpoint(),0);
+  assert.equal(app.runtime.nativeFailure(),undefined,'Without a native event there is no orphaned window to guard');
+ }finally{app.runtime.cleanup()}
+});
+
+test('an unmounted native host cannot prove that its presentation closed',async()=>{
  const app=tree(),instance={props:{onStateChange(){}}};
  const native:any={tag:1,type:function NativeSheet(){},memoizedProps:instance.props,stateNode:instance,return:app.sheet};app.sheet.child=native;
  app.control.open=()=>instance.props.onStateChange({nativeEvent:{state:'open'}});
  app.control.close=()=>{app.control.closes++;setTimeout(()=>{app.sheet.child=undefined},20)};
- try{app.runtime.open('open');await app.runtime.rollback();assert.equal(app.control.closes,1);assert.equal(app.runtime.checkpoint(),0);}finally{app.runtime.cleanup()}
+ try{
+  app.runtime.open('open');
+  await assert.rejects(app.runtime.rollback(),/dismissal|detached|unconfirmed/i);
+  assert.equal(app.control.closes,1);assert.equal(app.runtime.checkpoint(),1);
+  assert.ok(app.runtime.nativeFailure(),'Capture must stay blocked after its native owner disappears');
+ }finally{app.runtime.cleanup()}
 });
 
 for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
@@ -2216,4 +2300,120 @@ test('a lost presentation target cannot become an unrestricted app capture on th
   app.button.sibling=app.sheet;
   assert.equal(app.runtime.probeFocus(focus).expectedReady,true);
   app.runtime.cleanup();
+});
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
+ test(`a preview body keeps its owned child sheet until native dismissal (${install===installPresentationRuntime?'normal':'shared loops'})`,async t=>{
+  const app=tree(install),previous=(globalThis as any).__r;
+  function View(){}function Modal(){}function Opener(){}
+  const wrapper:any={type:View,memoizedProps:{children:React.createElement('span',null,'App')},child:app.root};app.root.return=wrapper;
+  let current:any,body:any,native:any,closeRequested=0,shown=false;
+  const react={...React,useState(initial:any){const value=typeof initial==='function'?initial():initial;current.memoizedState={memoizedState:value,next:null};return [value,()=>assert.fail('Live state must not change')];},useReducer(){}};
+  const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??wrapper];while(stack.length){const f=stack.pop();if(f!==subtree&&f.sibling)stack.push(f.sibling);if(visit(f)!==false&&f.child)stack.push(f.child)}};
+  const renderState=(fiber:any)=>{const value=fiber.memoizedState?.memoizedState??0;fiber.memoizedState=null;current=fiber;react.useState(value);current=undefined;};
+  const renderer={rendererPackageName:'react-native-renderer',getCurrentFiber:()=>current,scheduleUpdate:renderState,overrideProps(fiber:any,_path:any,props:any){
+   fiber.memoizedProps=props;
+   const modal=props.children?.props?.children?.at(-1);
+   if(modal?.type!==Modal){app.root.sibling=undefined;return;}
+   if(modal.props.visible===false){setTimeout(()=>modal.props.onDismiss(),10);return;}
+   if(!shown){shown=true;modal.props.onShow();}
+   const element=modal.props.children.props.children;
+   body={type:element.type,memoizedProps:element.props,return:wrapper};app.root.sibling=body;
+   const owner:any={type:Opener,memoizedProps:{},return:body};body.child=owner;
+   const button={...app.button,return:owner,sibling:undefined};owner.child=button;
+   const sheet:any={...app.sheet,return:owner,sibling:undefined};button.sibling=sheet;
+   const propsNative={onStateChange(){}};native={currentProps:propsNative,publicInstance:{getBoundingClientRect(){return {x:0,y:0,width:300,height:500}}}};
+   sheet.child={tag:5,type:'SheetHost',memoizedProps:propsNative,stateNode:{canonical:native},return:sheet};
+   renderState(body);
+  }};
+  (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:react}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}]])};
+  const runtime=install({hook:{renderers:new Map([[1,renderer]])},fibers,hidden:()=>false,later:setTimeout});
+  t.after(()=>{runtime.cleanup();app.runtime.cleanup();(globalThis as any).__r=previous});
+  assert.equal(runtime.project(app.root,{props:{}}).error,undefined);
+  const site:any={id:'step',file:'App.tsx',line:1,column:0,endLine:1,owner:'App',paths:[[]]};
+  const page=await runtime.collect([site]),bindings=page.bindings.filter(b=>b.kind==='useState');
+  const choose={...app.action,id:'choose',preview:true,effect:{kind:'state',site:'step',path:[],value:1}};
+  configureFixture(runtime,{states:[site],actions:[{...app.action,owner:'Opener'},choose]},bindings.map(b=>({binding:b.id,site:'step'})),page.bindings.map(b=>b.id));
+  app.control.open=()=>native.currentProps.onStateChange({nativeEvent:{state:'open'}});
+  app.control.close=()=>{closeRequested++;native.currentProps.onStateChange({nativeEvent:{state:'closing'}});};
+  const opened=runtime.open('open',body);assert.equal(opened.error,undefined);
+  const originalBody=body,originalNative=native;
+  assert.match(runtime.project(body,{props:{}}).error,/Close the owned native presentation/);
+  assert.equal(body,originalBody,'An open child must not lose its React owner');
+  assert.equal(runtime.prepare('choose',opened.focus).handoff,true);
+  const handoff=runtime.handoff('choose',opened.focus);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(closeRequested,1);assert.equal(body,originalBody);
+  originalNative.currentProps.onStateChange({nativeEvent:{state:'closed'}});
+  const closed=await handoff;assert.equal(closed.closed,true);assert.equal(closed.focus,body);
+  assert.equal(runtime.open('choose',closed.focus).error,undefined);
+  assert.notEqual(body,originalBody);assert.equal(body.memoizedState.memoizedState,1);
+  assert.equal(runtime.nativeFailure(),undefined);
+  await runtime.rollback();assert.equal(closeRequested,1);assert.equal(runtime.checkpoint(),0);
+ });
+}
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()])test(`a silent class adapter cannot outlive its confirmed native host dismissal (${install===installPresentationRuntime?'normal':'shared loops'})`,async()=>{
+ const app=tree(install),instance={props:{visible:true,onShow(){},onDismiss(){}}};
+ const adapter:any={tag:1,type:function ModalAdapter(){},memoizedProps:instance.props,stateNode:instance,return:app.sheet};app.sheet.child=adapter;
+ const props={visible:true,onShow(){},onDismiss(){}},canonical={currentProps:props};
+ adapter.child={tag:5,type:'ModalHost',memoizedProps:props,stateNode:{canonical},return:adapter};
+ app.control.open=()=>canonical.currentProps.onShow();
+ app.control.close=()=>{app.control.closes++;canonical.currentProps.onDismiss();app.sheet.child=undefined;};
+ try{
+  app.runtime.open('open');await app.runtime.rollback();
+  assert.equal(app.control.closes,1);assert.equal(app.runtime.nativeFailure(),undefined);
+  assert.equal(app.runtime.checkpoint(),0);assert.equal(app.runtime.diagnostics().nativeRecords,0);
+ }finally{app.runtime.cleanup()}
+});
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()])test(`detached silent adapters release their observers before the run ends (${install===installPresentationRuntime?'normal':'shared loops'})`,()=>{
+ const hook={renderers:new Map(),onCommitFiberRoot(){}},app=tree(options=>install({...options,hook}));
+ const props={visible:true,onShow(){},onDismiss(){}},instance={props};
+ const adapter:any={tag:1,type:function ModalAdapter(){},memoizedProps:props,stateNode:instance,return:app.sheet};app.sheet.child=adapter;
+ const hostProps={onShow(){},onDismiss(){}},canonical={currentProps:hostProps};
+ adapter.child={tag:5,type:'ModalHost',memoizedProps:hostProps,stateNode:{canonical},return:adapter};
+ try{
+  app.runtime.captureNative(app.sheet);canonical.currentProps.onShow();canonical.currentProps.onDismiss();
+  app.sheet.child=undefined;hook.onCommitFiberRoot();
+  assert.equal(app.runtime.nativeFailure(),undefined);
+  assert.equal(app.runtime.diagnostics().nativeRecords,0);assert.equal(app.runtime.diagnostics().nativeClassCallbacks,0);
+  assert.equal(instance.props,props);assert.equal(canonical.currentProps,hostProps);
+ }finally{app.runtime.cleanup()}
+});
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()])test(`native ownership reuse invalidates on commits and late lifecycle events (${install===installPresentationRuntime?'normal':'shared loops'})`,()=>{
+ const hook={renderers:new Map(),onCommitFiberRoot(){}},app=tree(options=>install({...options,hook}));
+ const props={onShow(){},onDismiss(){}},canonical={currentProps:props};
+ app.sheet.child={tag:5,type:'ModalHost',memoizedProps:props,stateNode:{canonical},return:app.sheet};
+ try{
+  app.runtime.captureNative(app.sheet);canonical.currentProps.onShow();
+  assert.equal(app.runtime.nativeFailure(),undefined);
+  const checks=app.runtime.diagnostics().nativeOwnershipChecks;
+  app.runtime.nativeFailure();app.runtime.nativeFailure();
+  assert.equal(app.runtime.diagnostics().nativeOwnershipChecks,checks);
+  app.sheet.child=undefined;hook.onCommitFiberRoot();
+  assert.match(app.runtime.nativeFailure(),/dismissal is unconfirmed/);
+  const afterCommit=app.runtime.diagnostics().nativeOwnershipChecks;
+  assert.ok(afterCommit>checks);
+  canonical.currentProps.onDismiss();
+  assert.equal(app.runtime.nativeFailure(),undefined,'A late real close recovers the same detached host');
+  assert.ok(app.runtime.diagnostics().nativeOwnershipChecks>afterCommit);
+ }finally{app.runtime.cleanup()}
+});
+
+for(const install of [installPresentationRuntime,sharedLoopRuntime()])test(`a new inspector cannot clear an unconfirmed native dismissal (${install===installPresentationRuntime?'normal':'shared loops'})`,()=>{
+ const hook={renderers:new Map(),onCommitFiberRoot(){}},app=tree(options=>install({...options,hook}));
+ const props={onShow(){},onDismiss(){}},canonical={currentProps:props};
+ app.sheet.child={tag:5,type:'ModalHost',memoizedProps:props,stateNode:{canonical},return:app.sheet};
+ const next=install({hook,fibers(){},hidden:()=>false,later:setTimeout});
+ try{
+  app.runtime.captureNative(app.sheet);canonical.currentProps.onShow();
+  app.sheet.child=undefined;hook.onCommitFiberRoot();
+  assert.match(app.runtime.nativeFailure(),/dismissal is unconfirmed/);
+  assert.match(next.nativeFailure(),/dismissal is unconfirmed/,'Reinstalling cannot make an unknown native window safe');
+  next.cleanup();assert.match(next.nativeFailure(),/dismissal is unconfirmed/);
+  canonical.currentProps.onDismiss();
+  assert.equal(next.nativeFailure(),undefined,'Only the original host\'s real close can clear the shared failure');
+ }finally{app.runtime.cleanup();next.cleanup()}
 });

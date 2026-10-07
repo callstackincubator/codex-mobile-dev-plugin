@@ -27,7 +27,11 @@ export type FlowNode = {
   groupId?: string;
   capture?: 'observed';
   sourceViews?: string[];
-  presentation?: { actions: string[]; projections?: string[]; preview?: boolean; basePath: string[]; baseParams?: FlowParams; expo?: boolean; entryKey?: string };
+  /** Compiled JSX sites (`file:line:column:prop`) passing the opened controller when the image was saved. */
+  capturedSites?: string[];
+  presentation?: { actions: string[]; projections?: string[]; preview?: boolean; basePath: string[]; baseParams?: FlowParams; expo?: boolean; entryKey?: string;
+    /** Caller site (`file:line:column`) for a step that previews a shared shell, keyed by action ID. */
+    instances?: Record<string, string> };
 };
 export type FlowEdge = { from: string; to: string; kind: "contains" | "navigation"; owner?: string; via?: "link" | "call"; guarded?: boolean; file?: string; line?: number };
 export type FlowLink = { target: string; owner: string; params?: FlowParams; guarded: boolean };
@@ -45,6 +49,8 @@ export type FlowPresentationAction = {
   guard?: FlowUiCondition;
   preview?: boolean;
   views?: string[];
+  /** Registered screens whose render tree contains the opener's owner. */
+  parents?: string[];
   expected?: {scope?: 'owner'; component: string; file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}};
   handoffs?: {file: string; owner: string; component: string; prop: string; source: {line: number; column: number; endLine: number; endColumn: number}; contextPath: string[]; close: string}[];
   consumer?: {component: string; entries: {file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}}[]};

@@ -13,11 +13,12 @@ import { FlowStore, type FlowLease, type SavedFlow } from './store.ts';
 import { CapturePlanner } from './capture-planner.ts';
 import { recordFlow } from './recording.ts';
 import { PLUGIN_VERSION } from '../../shared/version.ts';
-import { FlowAppFailure, FlowRuntimeFailure, FlowRuntimeMetrics } from './runtime-metrics.ts';
+import { FlowAppFailure, FlowNativeFailure, FlowRuntimeFailure, FlowRuntimeMetrics } from './runtime-metrics.ts';
 import {captureManifest,captureRecipeNodes,type CaptureRecipe} from './capture-manifest.ts';
 import {captureBatch,CaptureConnectionError} from './capture-batch.ts';
+import {catalogNodes,catalogSummary,seedCatalog,type FlowCatalogReview,type FlowCatalogSelection} from './screen-catalog.ts';
 
-export type FlowStart = { projectRoot: string; platform: "ios" | "android"; deviceId: string; targetId: string; metroUrl: string; useAi: boolean; capture?: {planRunId?: string; include?: string[]; recipes?: CaptureRecipe[]} };
+export type FlowStart = { projectRoot: string; platform: "ios" | "android"; deviceId: string; targetId: string; metroUrl: string; useAi: boolean; capture?: {planRunId?: string; catalog?: FlowCatalogSelection; include?: string[]; recipes?: CaptureRecipe[]} };
 export type RuntimeInfo = FlowEvidence & { available: boolean; data?: unknown[] };
 export type FlowRuntime = { invoke(command: Record<string, unknown>, timeout?: number): Promise<any>; close(options?: { restore?: boolean }): Promise<void>; onCapture?(listener: (event: any) => void): () => void };
 export type FlowTargetIdentity = { appId?: string; deviceId?: string; deviceName?: string };
@@ -26,10 +27,16 @@ export type FlowDependencies = {
   connect(input: FlowStart, signal: AbortSignal, resume?: { sessionId: string; target?: FlowTargetIdentity; metrics?:FlowRuntimeMetrics }): Promise<FlowBackend>;
   scan?: typeof scanAppFlow;
   resolve?: (context: unknown, signal: AbortSignal) => Promise<FlowResolution[]>;
+  /** Terminate and launch the mapped app on its device. Recovery only. */
+  relaunch?: (input: FlowStart, appId: string, signal: AbortSignal) => Promise<void>;
   directory?: string;
 };
 type Active = { run: FlowRun; input: FlowStart; abort: AbortController; done?: Promise<void>; runtime?: FlowRuntime; runtimeMetrics?:FlowRuntimeMetrics; info?: RuntimeInfo; target?: FlowTargetIdentity; saving?: Promise<void>; savedRevision?: number; checkpoints?: MeasurementWindow; lease?: FlowLease; writing: Set<Promise<void>>; settled: boolean; contextRefresh?: Promise<void> };
 const discoveryWarning="Presentation discovery failed on some screens. The partial map was kept.";
+const relaunchWarning="The app was relaunched to recover from state that could not be restored in place.";
+// Three relaunches per run, and one more after every ten new captures. A
+// failure that recurs without progress still ends the run.
+const relaunchAllowance=3,capturesPerRelaunch=10;
 export const FLOW_DIRECTORY = join(homedir(), "Library/Application Support/mobile-dev/app-flow");
 
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -330,7 +337,8 @@ export class AppFlowRuns {
     const captureTimings = new MeasurementWindow();
     const readinessTimings = new MeasurementWindow(), loadingTimings = new MeasurementWindow();
     const reconnectTimings = new MeasurementWindow(), planningTimings = new MeasurementWindow();
-    let reconnects = 0, recoveryContinuations = 0;
+    let reconnects = 0, recoveryContinuations = 0, relaunches = 0, capturedAtRelaunch = 0;
+    const relaunchTimings = new MeasurementWindow(), strikes = new Map<string, number>();
     let retries = 0;
     const presentationTimings = new MeasurementWindow(), restorationTimings = new MeasurementWindow();
     const attributes = { surface: "app-flow", device_platform: input.platform };
@@ -349,7 +357,7 @@ export class AppFlowRuns {
         if(result?.error)throw new FlowRuntimeFailure('recover','was rejected',result.error);
       }
       catch (error) {
-        if(signal.aborted||error instanceof FlowAppFailure)throw error;
+        if(signal.aborted||error instanceof FlowAppFailure||error instanceof FlowNativeFailure)throw error;
         // A delayed render/transition is not a disconnected debugger. Keep the
         // inspector when it still answers; the next open cancels stale waits
         // and must pass its own route, native motion and content checks.
@@ -384,11 +392,30 @@ export class AppFlowRuns {
             return;
           } catch (error) {
             if (active.runtime === next?.runtime) active.runtime = undefined;
-            await next?.runtime.close({ restore: signal.aborted || error instanceof FlowAppFailure }).catch(() => {});
-            if (signal.aborted || error instanceof FlowAppFailure) throw error;
+            await next?.runtime.close({ restore: signal.aborted || error instanceof FlowAppFailure || error instanceof FlowNativeFailure }).catch(() => {});
+            if (signal.aborted || error instanceof FlowAppFailure || error instanceof FlowNativeFailure) throw error;
           }
         }
       } finally { reconnectTimings.record(performance.now() - started); }
+    };
+    // Only the app can reset a native sheet that never dismissed, a fatal
+    // JavaScript error or an overloaded runtime. Relaunch it a bounded number
+    // of times; accepted images stay and the queue resumes in the fresh app.
+    const captured = () => run.nodes.filter(node => node.status === 'captured').length;
+    const canRelaunch = () => !!this.dependencies.relaunch && !!active.target?.appId && !signal.aborted &&
+      (relaunches < relaunchAllowance || captured() - capturedAtRelaunch >= capturesPerRelaunch);
+    const relaunch = async (cause: unknown) => {
+      relaunches++; capturedAtRelaunch = captured(); run.phase = "reconnecting"; run.revision++;
+      await Promise.allSettled(active.writing);
+      await save();
+      await backend?.runtime.close({ restore: false }).catch(() => {});
+      const started = performance.now();
+      // A device that cannot relaunch the app keeps the original failure.
+      try { await abortable(this.dependencies.relaunch!(input, active.target!.appId!, signal), signal); }
+      catch (error) { throw signal.aborted ? error : cause; }
+      finally { relaunchTimings.record(performance.now() - started); }
+      if (!run.warnings.includes(relaunchWarning)) run.warnings.push(relaunchWarning);
+      await reconnect();
     };
     try {
       active.lease ??= await this.store.claim(input);
@@ -420,9 +447,17 @@ export class AppFlowRuns {
         const preparedAt = performance.now();
         // A resumed run owns its selection, accepted images and resolved data.
         // Rebuilding it from its original plan loses replies and repeats captures.
+        if (input.capture.catalog && input.capture.planRunId) throw new Error('Choose a saved plan or the screen catalog, not both.');
         const saved = !resume && input.capture.planRunId ? await this.saved(input.capture.planRunId) : undefined;
         if (saved && (saved.input?.projectRoot !== input.projectRoot || saved.input?.platform !== input.platform || saved.run.sourceHash !== graph.sourceHash)) throw new Error('The prepared capture plan does not match this project source. Prepare it again.');
-        const known = previousCapture?.nodes ?? withResolvedParams(saved?.run.nodes ?? graph.nodes, cached);
+        // The screen catalog collects every screen earlier runs reached, with
+        // its best opening recipe and real params. Stale recipes stay out.
+        // Source seeds add screens no run has reached yet, so a catalog run
+        // attempts every known screen once.
+        const catalog = !resume && input.capture.catalog ? seedCatalog(await this.store.loadCatalog(input.projectRoot, input.platform), graph) : undefined;
+        const listed = catalog ? catalogNodes(catalog, graph, input.capture.catalog) : undefined;
+        if (!resume && input.capture.catalog && !listed?.nodes.length) throw new Error('The screen catalog has no current screens to capture.');
+        const known = previousCapture?.nodes ?? withResolvedParams(listed?.nodes ?? saved?.run.nodes ?? graph.nodes, cached);
         const nodes = previousCapture ? known : withResolvedParams([...known, ...captureRecipeNodes(graph, known, input.capture.recipes)], cached);
         const manifest = captureManifest(graph, nodes, previousCapture ? undefined : input.capture.include);
         if (!manifest.total) throw new Error('The capture selection contains no prepared views.');
@@ -431,7 +466,7 @@ export class AppFlowRuns {
         if (inventory.sourceHashes?.length !== 1 || inventory.sourceHashes[0] !== graph.sourceHash) throw new Error('The running capture build is stale. Prepare and reload it before mapping.');
         const selected = new Set(manifest.jobs.map(job => job.id));
         run.nodes = structuredClone(nodes.filter(node => selected.has(node.id))).map(node => previousCapture ? node : ({...node, status:'pending', image:undefined, imageSourceHash:undefined, reason:undefined, failure:undefined, captureMs:undefined, captureAttempts:0}));
-        run.edges = (previousCapture?.edges ?? saved?.run.edges ?? graph.edges).filter(edge => selected.has(edge.from) && selected.has(edge.to));
+        run.edges = (previousCapture?.edges ?? catalog?.edges ?? saved?.run.edges ?? graph.edges).filter(edge => selected.has(edge.from) && selected.has(edge.to));
         run.ai = 'off'; run.phase='capturing'; run.revision++;
         run.captureMode='instrumented';run.manifestTotal=manifest.total;run.preparationMs=Date.now()-sessionStarted;
         runtimeMetrics.record('capture-prepare',performance.now()-preparedAt,false);
@@ -447,7 +482,15 @@ export class AppFlowRuns {
       let interrupted=0;
       while(!signal.aborted){
         await this.drain(active);
-        const manifest=nextManifest();
+        let manifest=nextManifest();
+        // A prepared view that timed out waiting for query data gets one more
+        // attempt after the rest of the queue; its request keeps warming the
+        // cache meanwhile. Other failures do not change by waiting.
+        if(!manifest.jobs.length&&!planner&&!signal.aborted){
+          const waiting=run.nodes.filter(node=>node.kind==='screen'&&node.status==='timed-out'&&(node.captureAttempts??0)<2&&/loading \(data\b/.test(node.reason??''));
+          for(const node of waiting){node.status='pending';node.reason=undefined;}
+          if(waiting.length){run.revision++;manifest=nextManifest();}
+        }
         if(!manifest.jobs.length){
           if(run.ai==='waiting'){
             const unresolved=run.nodes.some(node=>node.status==='needs-data');
@@ -482,12 +525,33 @@ export class AppFlowRuns {
           });
           interrupted=0;
         } catch(error) {
-          if(!(error instanceof CaptureConnectionError) || ++interrupted>2 || signal.aborted)throw error;
+          const appState=error instanceof FlowNativeFailure||error instanceof FlowAppFailure;
+          if(appState&&canRelaunch()){
+            // The failure can surface on the job after the one that left the
+            // sheet open. Retry the interrupted view once; a second failure
+            // while opening it blocks only that view.
+            for(const node of run.nodes)if(node.status==='capturing'){
+              const count=(strikes.get(node.id)??0)+1;strikes.set(node.id,count);
+              if(count<2){node.status='pending';node.captureAttempts=Math.max(0,(node.captureAttempts??1)-1);continue;}
+              node.status='blocked';node.failure={operation:error.operation,detail:error.detail};
+              node.reason=error instanceof FlowNativeFailure?'A native presentation did not confirm dismissal twice while opening this view.':'The app reported a fatal JavaScript error twice while opening this view.';
+            }
+            await relaunch(error);interrupted=0;
+            continue;
+          }
+          if(!(error instanceof CaptureConnectionError) || signal.aborted)throw error;
           // Keep accepted images. The interrupted job has not consumed a retry.
           for(const node of run.nodes)if(node.status==='capturing'){
             node.status='pending';node.captureAttempts=Math.max(0,(node.captureAttempts??1)-1);
           }
-          await reconnect();
+          // Repeated interruptions mean the app stopped answering in time.
+          if(++interrupted>2){
+            if(!canRelaunch())throw error;
+            await relaunch(error);interrupted=0;
+          }else await reconnect().catch(async failure=>{
+            if(!(failure instanceof FlowNativeFailure||failure instanceof FlowAppFailure)||!canRelaunch())throw failure;
+            await relaunch(failure);interrupted=0;
+          });
           await backend.runtime.invoke({type:'capture-stop'},10000);
         }
       }
@@ -497,7 +561,8 @@ export class AppFlowRuns {
       else if(!run.warnings.includes(discoveryWarning))run.warnings.push(discoveryWarning);
     } catch (error) {
       if (!signal.aborted) {
-        run.phase = "failed"; run.error = error instanceof Error ? error.message : "App Flow failed.";
+        // The runtime detail stays in the local map to make the failure diagnosable.
+        run.phase = "failed"; run.error = error instanceof FlowRuntimeFailure && error.detail ? `${error.message} ${error.detail.slice(0, 300)}` : error instanceof Error ? error.message : "App Flow failed.";
         captureServerError(new Error("App Flow capture run failed."), "app_flow.run");
       }
     } finally {
@@ -524,10 +589,20 @@ export class AppFlowRuns {
       run.retrying = false;
       await save();
       await active.lease?.release(); active.lease = undefined;
+      // Every finished run teaches the screen catalog: new screens, real params,
+      // working recipes and the latest result. A failed update keeps the run.
+      const catalogStarted = performance.now();
+      const catalog = await this.store.updateCatalog(input.projectRoot, input.platform, run)
+        .catch(() => { captureServerError(new Error('App Flow screen catalog update failed.'), 'app_flow.catalog'); });
+      if (catalog && process.env.MOBILE_DEV_TELEMETRY !== "off") {
+        Sentry.metrics.distribution('app_flow.catalog_update', performance.now() - catalogStarted, { unit: 'millisecond', attributes });
+        Sentry.metrics.gauge('app_flow.catalog_entries', catalog.entries.length, { attributes });
+        Sentry.metrics.gauge('app_flow.catalog_captured', catalog.entries.filter(entry => entry.captured).length, { attributes });
+      }
       if (process.env.MOBILE_DEV_TELEMETRY !== "off") {
         const timings = captureTimings.take();
         if (timings) for (const statistic of ["mean", "p95", "max"] as const) Sentry.metrics.gauge(`app_flow.capture.${statistic}`, timings[statistic], { unit: "millisecond", attributes });
-        for (const [name, window] of [["planning",planningTimings], ["readiness", readinessTimings], ["loading", loadingTimings], ["reconnect", reconnectTimings], ['checkpoint', active.checkpoints]] as const) {
+        for (const [name, window] of [["planning",planningTimings], ["readiness", readinessTimings], ["loading", loadingTimings], ["reconnect", reconnectTimings], ["relaunch", relaunchTimings], ['checkpoint', active.checkpoints]] as const) {
           const values = window?.take();
           if (values) for (const statistic of ["mean", "p95", "max"] as const) Sentry.metrics.gauge(`app_flow.${name}.${statistic}`, values[statistic], { unit: "millisecond", attributes });
         }
@@ -547,10 +622,21 @@ export class AppFlowRuns {
         Sentry.metrics.gauge('app_flow.previews_captured',run.nodes.filter(node=>node.presentation?.preview&&node.status==='captured').length,{attributes});
         Sentry.metrics.gauge('app_flow.previews_blocked',run.nodes.filter(node=>node.presentation?.preview&&node.status==='blocked').length,{attributes});
         Sentry.metrics.gauge("app_flow.reconnects", reconnects, { attributes });
+        Sentry.metrics.gauge("app_flow.relaunches", relaunches, { attributes });
         Sentry.metrics.gauge('app_flow.recovery_continuations',recoveryContinuations,{attributes});
         Sentry.metrics.gauge('app_flow.retries', retries, { attributes });
       }
     }
+  }
+  /** The project's screen list with categories and latest results. Local only.
+   * Review verdicts for one run's images are recorded first when supplied. */
+  async catalog(projectRoot: string, platform: string, review?: {runId: string; reviews: FlowCatalogReview[]}) {
+    const reviewed = review ? await this.store.reviewCatalog(projectRoot, platform, review.runId, review.reviews) : undefined;
+    const catalog = reviewed?.catalog ?? await this.store.loadCatalog(projectRoot, platform);
+    return {...catalogSummary(catalog), ...(reviewed ? {reviewsApplied: reviewed.applied} : {}), sourceHash: catalog?.sourceHash, updatedAt: catalog?.updatedAt,
+      screens: (catalog?.entries ?? []).map(({id, name, category, node, last, captured, review: verdict}) => ({id, name, category, preview: !!node.presentation?.preview,
+        ...(last ? {last: {status: last.status, reason: last.reason, runId: last.runId}} : {}), ...(captured ? {image: captured.image} : {}),
+        ...(verdict ? {review: {accepted: verdict.accepted, reason: verdict.reason}} : {})}))};
   }
   async image(runId: string, nodeId: string) {
     if (!/^[a-f\d-]{36}$/.test(runId) || !/^[a-z\d-]{1,64}$/.test(nodeId)) throw new Error("Invalid App Flow image.");

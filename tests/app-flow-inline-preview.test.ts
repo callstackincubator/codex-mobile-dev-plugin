@@ -143,8 +143,13 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   await runtime.rollback(1);
   assert.equal(container.memoizedProps.children,child);assert.equal('style' in host.memoizedProps,false);
   assert.equal(app.originalHost.memoizedProps.style.at(-1).opacity,0);
-  await runtime.rollback();
+  // The child sheet is still open. Removing the parent preview would orphan it,
+  // so the rollback reports an unresolved native state.
+  await assert.rejects(runtime.rollback(),/Native presentation dismissal is unconfirmed/);
   assert.equal(app.originalHost.memoizedProps.style,app.originalStyle);
+  // A real close event from that sheet clears the failure.
+  canonical.currentProps.onStateChange({nativeEvent:{state:'closed'}} as any);
+  await runtime.rollback();
  });
 }
 

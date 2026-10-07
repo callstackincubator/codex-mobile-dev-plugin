@@ -8,13 +8,17 @@ export function presentationDestination(action) {
     : [action.file, action.owner, effect]);
 }
 
+// A generic boundary belongs to its owner. `export const A = memo(function B…)`
+// gives that owner two source names; either identifies the same body.
+const ownedBy = (target, name) => target.owner === name || !!target.ownerAliases?.includes(name);
 const controlMatches = (selector, target) => (selector.prop === undefined || selector.prop === target.prop) &&
   (selector.line !== undefined ? selector.file === target.file && selector.line === target.line
     : selector.file === target.definition?.file && selector.component === target.definition.component ||
-      selector.file === target.file && selector.component === target.owner && target.generic);
+      selector.file === target.file && ownedBy(target, selector.component) && target.generic);
 
-/** Compare reviewed identities, never labels inferred from a whole render branch. */
-export function compareViewReference(graph, reference, targetsForAction) {
+/** Compare reviewed identities, never labels inferred from a whole render branch.
+ * `ownerAliases(file, owner)` may return other source names of the same owner. */
+export function compareViewReference(graph, reference, targetsForAction, ownerAliases = () => []) {
   const states = new Map([...(graph.presentations?.states ?? []),...(graph.presentations?.viewStates ?? [])].map(site => [site.id, site]));
   const groups = new Map();
   const viewsById=new Map((graph.presentations?.views??[]).map(view=>[view.id,view]));
@@ -33,7 +37,8 @@ export function compareViewReference(graph, reference, targetsForAction) {
       const group = groups.get(key) ?? {key, actions:[{effect}], targets:[]};
       group.views = [...(group.views ?? []), view]; groups.set(key, group);
     } else if (view.control) {
-      const key = `source:${view.id}`, target = {file:view.file,line:view.line,prop:view.control.prop,owner:view.owner,generic:view.control.boundary&&view.control.generic,
+      const aliases = ownerAliases(view.file, view.owner).filter(name => name !== view.owner);
+      const key = `source:${view.id}`, target = {file:view.file,line:view.line,prop:view.control.prop,owner:view.owner,...(aliases.length?{ownerAliases:aliases}:{}),generic:view.control.boundary&&view.control.generic,
         definition:view.components.find(c=>c.component===view.control.component) ?? view.components[0]};
       groups.set(key,{key,actions:[{effect:{kind:'control'}}],targets:[target],views:[view]});
     } else groups.set(`source:${view.id}`,{key:`source:${view.id}`,actions:[{effect:{kind:view.kind}}],targets:[],views:[view]});

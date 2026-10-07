@@ -146,6 +146,14 @@ Mounted entries, disabled props, and simple prop conditions limit which transiti
 run. A controller must have one matching live instance and a matching close method.
 Ambiguous instances and opening arguments that require unknown data stay out.
 An open controller cannot requeue its own captured preview while discovering children.
+A sheet, dialog or prompt control may open from an entry below the fold of its
+screen's vertical scroll view, because it presents over the screen. Horizontal
+pages, pagers, fixed scroll views, hidden ancestors and disabled entries still
+block it. State openers that render inline keep requiring a visible entry.
+A blocked plain opener reports its first unmet requirement: disabled entry, entry
+not in the active view, unreachable entry, unmet source condition, ambiguous owner
+or entry, or a missing or ambiguous live controller. These fixed reasons stay in
+the local map.
 The runner follows nested views in place, captures each once, and connects it to
 its parent. It checks visible loading, opacity, native bounds, and available native
 show/state-change events. JavaScript portals match through React element props

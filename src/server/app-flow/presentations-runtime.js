@@ -1,5 +1,8 @@
 /** Temporary hook tracking. Setters keep working after cleanup, without retaining fibers. */
 export function installPresentationRuntime({ hook, fibers, hidden, later, measure = () => {} }) {
+  // An inspector reconnect cannot prove that a detached native window closed.
+  // Share only its fixed failure and an owner token across runs in this app.
+  const nativeFailures=globalThis.__MOBILE_DEV_FLOW_NATIVE_FAILURES__??=new WeakMap(),nativeOwner={};
   let sequence = 0, owners = new WeakMap(), collecting = new Set();
   const bindings = new Map(), patches = [], effectPatches = [], undo = [];
   let collected = [];
@@ -493,9 +496,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
   function nativeBounds(fiber,boxes){
     let measured=boxes?.get(fiber);if(measured)return measured;
     measured={measurable:false,shown:false};
-    try{const native=fiber.stateNode?.canonical?.publicInstance??fiber.stateNode;
-      if(typeof native?.getBoundingClientRect==='function'){measured.measurable=true;measured.box=native.getBoundingClientRect();measured.shown=measured.box?.width>0&&measured.box?.height>0;}
-    }catch{}
+    try{const box=windowRect(fiber);if(box){measured.measurable=true;measured.box=box;measured.shown=box.width>0&&box.height>0;}}catch{}
     boxes?.set(fiber,measured);return measured;
   }
   function attached(fiber,boxes){
@@ -529,7 +530,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       if(type==='AndroidHorizontalScrollView'||props?.horizontal||props?.pagingEnabled||props?.scrollEnabled===false)return false;
       scroll=parent;break;
     }
-    if(!scroll||!tree.inside(owner,scroll)||!tree.isVisible(scroll))return false;
+    // The entry's nearest vertical list may hold its owner, as for a row, or
+    // belong to it, as for a screen rendering its own scroll content.
+    if(!scroll||!tree.inside(owner,scroll)&&!tree.inside(scroll,owner)||!tree.isVisible(scroll))return false;
     const viewport=nativeBounds(scroll,boxes).box;
     if(!viewport||!Number.isFinite(viewport.x)||!Number.isFinite(viewport.y)||viewport.width<=0||viewport.height<=0)return false;
     // A mounted row may extend below a vertical scroll viewport. Its exact
@@ -564,8 +567,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     let structure=observed&&structureCache;
     if(!structure){
       const started=Date.now();
-      const names=new Map(),current=new WeakMap(),all=[],props=new Map(),images=[],concealed=new WeakSet();
+      const names=new Map(),current=new WeakMap(),mounted=new WeakSet(),all=[],props=new Map(),images=[],concealed=new WeakSet();
       fibers(fiber=>{
+        mounted.add(fiber);if(fiber.alternate)mounted.add(fiber.alternate);
         // Hidden tabs keep their native images mounted and can finish loading
         // in the background. Keep their event history until actual unmount;
         // they must not become new pending images when the tab regains focus.
@@ -576,7 +580,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
         const n=name(fiber);if(n){const list=names.get(n)??[];list.push(fiber);names.set(n,list);}
         const p=fiber.memoizedProps;if(p&&typeof p==='object'){const list=props.get(p)??[];list.push(fiber);props.set(p,list);}
       });
-      structure={names,current,all,props,images};if(observed)structureCache=structure;
+      structure={names,current,mounted,all,props,images};if(observed)structureCache=structure;
       measure('self-structure',Date.now()-started);
     }
     return structure;
@@ -605,7 +609,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     // measure each host once during this synchronous lookup, then discard it.
     const isVisible=fiber=>{let value=live.get(fiber);if(value===undefined){value=activeAncestors(fiber)&&attached(fiber,boxes);live.set(fiber,value);}return value;};
     const inside=indexInside;
-    const tree={names,entries:matched,isVisible,inside,current,all,props,states,values,openers,scopes:new WeakMap()};
+    const tree={names,entries:matched,isVisible,inside,current,mounted:structure.mounted,all,props,states,values,openers,scopes:new WeakMap()};
     tree.isScrollReachable=(fiber,owner)=>scrollReachable(fiber,owner,tree,boxes);
     return tree;
   }
@@ -781,9 +785,36 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
   }
   function inlineSize(fiber) {
     try {
-      const instance=fiber?.stateNode?.canonical?.publicInstance??fiber?.stateNode,box=instance?.getBoundingClientRect?.();
+      const box=fiber&&windowRect(fiber);
       if(box&&Number.isFinite(box.width)&&Number.isFinite(box.height)&&box.width>0&&box.height>0)return {width:box.width,height:box.height};
     }catch{}
+  }
+  // Fabric creates a host's public instance lazily. Without one, ask the
+  // framework UI manager for the same window rectangle by shadow node.
+  function windowRect(fiber) {
+    const instance=fiber.stateNode?.canonical?.publicInstance??fiber.stateNode;
+    if(typeof instance?.getBoundingClientRect==='function')return instance.getBoundingClientRect();
+    const node=fiber.stateNode?.node,manager=globalThis.nativeFabricUIManager;
+    const rect=node&&typeof manager?.getBoundingClientRect==='function'?manager.getBoundingClientRect(node,true):undefined;
+    if(!Array.isArray(rect)||rect.length!==4)return;
+    const [x,y,width,height]=rect;return {x,y,width,height,left:x,top:y,right:x+width,bottom:y+height};
+  }
+  // The union of a component's outermost native views, in window coordinates.
+  function bodyFrame(focus) {
+    let left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity,hosts=0;
+    const stack=[focus?.child];
+    while(stack.length&&hosts<50){
+      const fiber=stack.pop();if(!fiber)continue;
+      if(fiber.sibling)stack.push(fiber.sibling);
+      if(fiber.tag!==5){stack.push(fiber.child);continue;}
+      hosts++;
+      try{
+        const box=windowRect(fiber);
+        if(!box||![box.x,box.y,box.width,box.height].every(Number.isFinite)||box.width<=0||box.height<=0)continue;
+        left=Math.min(left,box.x);top=Math.min(top,box.y);right=Math.max(right,box.x+box.width);bottom=Math.max(bottom,box.y+box.height);
+      }catch{}
+    }
+    return right>left&&bottom>top?{x:left,y:top,width:right-left,height:bottom-top}:undefined;
   }
   const concealedBodyProps={pointerEvents:'none',accessibilityElementsHidden:true,importantForAccessibility:'no-hide-descendants'};
   function hideInlineBody(record) {
@@ -883,6 +914,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     if(copiesLiveNavigation(focus,preview?.props??focus.memoizedProps,tree))return {status:'needs-data',error:'This preview would duplicate live navigation. Its source recipe must isolate the presentation from the existing app children.'};
     const owner=previewOwner(focus);
     const ownerBodies=owner?(tree.props.get(owner.child.props)??[]).filter(fiber=>fiber.type===owner.child.type||fiber.elementType===owner.child.type):[];
+    if(replacementNative(focus,tree).length)return {error:'Close the owned native presentation before replacing its preview body.'};
     const nestedNative=owner&&nativeTargets(focus,true).some(record=>record.status.opened&&!record.status.closed&&ownerBodies.some(body=>inside(record.fiber,body)));
     // Reuse the current slot only within the same native presentation. A
     // sheet opened by the copied form has its own container and close order.
@@ -934,7 +966,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     record.content=content;
     const body=react.createElement(PreviewBoundary,null,content);
     const key=`mobile-flow-preview-${++sequence}`;
-    const modal=previousPreview?react.cloneElement(previousPreview.element,{},body):inline?react.createElement(react.Fragment,{key},body):react.createElement(native.Modal,{key,transparent:false,...modalProps,visible:true,animationType:'none',onShow:()=>{record.shown=true;},onDismiss:()=>{record.dismissed=true;}},body);
+    // A temporary Modal starts at the window origin. Keep the copy at its
+    // original body's frame, so a body below the status bar stays below it.
+    record.frame=inline?undefined:previousPreview?previousPreview.frame:bodyFrame(focus);
+    const frame=record.frame,placed=frame&&(frame.x>=1||frame.y>=1)?react.createElement(native.View,{style:{position:'absolute',left:frame.x,top:frame.y,width:frame.width,height:frame.height}},body):body;
+    record.positioned=placed!==body;
+    const modal=previousPreview?react.cloneElement(previousPreview.element,{},placed):inline?react.createElement(react.Fragment,{key},body):react.createElement(native.Modal,{key,transparent:false,...modalProps,visible:true,animationType:'none',onShow:()=>{record.shown=true;nativeRevision++;},onDismiss:()=>{record.dismissed=true;nativeRevision++;if(nativeFailures.get(hook)?.owner===nativeOwner)nativeFailure();}},placed);
     // React unwraps one unkeyed root Fragment before reconciling children.
     // Append at that same level. Nesting the existing Fragment under a new
     // sibling array would remount the live app and rerun all of its effects.
@@ -1012,7 +1049,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
         if(!undo.some(entry=>entry.control===value)){
           const close=['close','dismiss','hide','collapse'].find(key=>typeof Object.getOwnPropertyDescriptor(value,key)?.value==='function');
           const target=controllerFocus(record.fiber,value);armNative(target);
-          undo.push({control:value,close,focus:target,nativeFocus:target,uiEffect:record,views:record.preview.views?.slice()});
+          undo.push({control:value,close,focus:target,nativeFocus:target,origin:record.fiber,uiEffect:record,views:record.preview.views?.slice()});
         }
         const cleanup=record.callback();if(typeof cleanup==='function')record.cleanup=cleanup;
         opened++;openedUiEffects++;
@@ -1037,8 +1074,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     const children=props?.children?.props?.children;
     if(!Array.isArray(children)||!children.includes(record.element))return false;
     const body=record.react.createElement(record.react.Fragment,null,record.content,...record.portals.map(portal=>portal.element));
-    const boundary=record.react.cloneElement(record.element.props.children,{},body);
-    const modal=record.react.cloneElement(record.element,{},boundary);
+    // A positioned preview wraps its boundary in a frame view; keep both.
+    const outer=record.element.props.children,inner=record.positioned?outer.props.children:outer;
+    const boundary=record.react.cloneElement(inner,{},body);
+    const modal=record.react.cloneElement(record.element,{},record.positioned?record.react.cloneElement(outer,{},boundary):boundary);
     record.next={...props,children:record.react.createElement(record.react.Fragment,null,...children.map(child=>child===record.element?modal:child))};
     record.element=modal;record.root=root;structureCache=undefined;
     if(record.slot)setProjectionSlot(record,modal);else record.renderer.overrideProps(root,[],record.next);
@@ -1221,7 +1260,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     for(const fiber of tree.all)if(fiber.tag===5&&tree.isVisible(fiber)){if(only)return;only=fiber;}
     return only;
   }
-  const find = (action,tree=index(true),focus,scope=bodyRoots(focus,tree),allowCurrent=false) => {
+  const find = (action,tree=index(true),focus,scope=bodyRoots(focus,tree),allowCurrent=false,instance) => {
     const inScope=fiber=>!focus||scope.some(root=>tree.inside(fiber,root));
     if(action.preview&&action.effect.kind==='mount'){
       // Bootstrap owners at a route boundary, never inside an unrelated sheet.
@@ -1250,7 +1289,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       return found.length===1?found[0]:undefined;
     }
     if(action.preview&&action.effect.kind==='control'){
-      const targets=(tree.entries.get(`${action.id}:target`)??[]).filter(f=>name(f)===action.effect.component&&(!focus||scope.some(root=>tree.inside(f,root)||tree.inside(root,f)))&&activeAncestors(f.return));
+      // A recipe for one caller of a shared shell opens only that caller's copy.
+      const targets=(tree.entries.get(`${action.id}:target`)??[]).filter(f=>name(f)===action.effect.component&&(!focus||scope.some(root=>tree.inside(f,root)||tree.inside(root,f)))&&activeAncestors(f.return)&&
+        (!instance||controlSites(f,controlValue(f,action.effect.prop),tree).some(entry=>entry.site===instance)));
       const found=[];
       for(const fiber of targets){
         const value=controlValue(fiber,action.effect.prop);
@@ -1267,13 +1308,17 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     }
     // Most source plans are absent from the current screen. Reject those by
     // source identity before measuring any same-named owner in a large feed.
-    const checks=action===diagnosingOpening&&action.input?lastOpeningMatch={entries:0,candidates:0,visibleOwners:0,visibleEntries:0,owners:0,states:0,alreadyOpen:0,scopedOwners:0,guardedOwners:0,matchingEntries:0,missingLocals:0,resolvedInputs:0}:undefined;
+    const checks=action===diagnosingOpening?lastOpeningMatch={entries:0,disabledEntries:0,candidates:0,visibleOwners:0,visibleEntries:0,owners:0,states:0,alreadyOpen:0,scopedOwners:0,guardedOwners:0,matchingEntries:0,missingLocals:0,resolvedInputs:0,ambiguousOwners:0,callbacks:0,unmetCondition:0,controllers:0}:undefined;
     const entriesFound=(tree.entries.get(action.id)??[]).filter(fiber=>name(fiber)===action.component&&inScope(fiber)&&typeof fiber.memoizedProps?.[action.prop]==='function'&&fiber.memoizedProps.disabled!==true&&fiber.memoizedProps.accessibilityState?.disabled!==true&&fiber.memoizedProps['aria-disabled']!==true);
-    if(checks)checks.entries=entriesFound.length;
+    if(checks){checks.entries=entriesFound.length;checks.disabledEntries=(tree.entries.get(action.id)??[]).filter(fiber=>name(fiber)===action.component&&inScope(fiber)&&typeof fiber.memoizedProps?.[action.prop]==='function').length-entriesFound.length;}
     if(!entriesFound.length)return;
     const owned=(fiber,owner)=>roots(owner,tree).some(root=>tree.inside(fiber,root));
     const candidates=(tree.names.get(action.owner)??[]).filter(owner=>!focus||roots(owner,tree).some(body=>scope.some(root=>tree.inside(body,root)||tree.inside(root,body))));
-    const reachable=(fiber,owner)=>tree.isVisible(fiber)||!!action.input&&tree.isScrollReachable(fiber,owner);
+    // Data-bearing entries and presentation controls may sit below a vertical
+    // scroll viewport. A control presents its sheet or prompt over the screen;
+    // a state opener can render inline, so it still needs a visible entry.
+    const scrollable=!!action.input||action.effect.kind==='control';
+    const reachable=(fiber,owner)=>tree.isVisible(fiber)||scrollable&&tree.isScrollReachable(fiber,owner);
     const ownersFound=candidates.filter(owner=>entriesFound.some(fiber=>owned(fiber,owner))&&tree.isVisible(owner)&&!candidates.some(child=>child!==owner&&tree.inside(child,owner)&&tree.isVisible(child))).filter(owner=>entriesFound.some(fiber=>owned(fiber,owner)&&reachable(fiber,owner)));
     if(checks){checks.owners=ownersFound.length;checks.candidates=candidates.length;checks.visibleOwners=candidates.filter(owner=>tree.isVisible(owner)).length;checks.visibleEntries=entriesFound.filter(entry=>tree.isVisible(entry)).length;}
     if(action.input&&action.effect.kind==='state'){
@@ -1298,11 +1343,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       }
       return;
     }
-    if(ownersFound.length!==1)return;const owner=ownersFound[0];
-    const matching=entriesFound.filter(fiber=>owned(fiber,owner)&&tree.isVisible(fiber)&&Object.entries(action.trigger??{}).every(([key,value])=>fiber.memoizedProps?.[key]===value));
+    if(ownersFound.length!==1){if(checks)checks.ambiguousOwners=+(ownersFound.length>1);return;}const owner=ownersFound[0];
+    const matching=entriesFound.filter(fiber=>owned(fiber,owner)&&reachable(fiber,owner)&&Object.entries(action.trigger??{}).every(([key,value])=>fiber.memoizedProps?.[key]===value));
     const callbacks=new Set(matching.map(fiber=>fiber.memoizedProps[action.prop]));
     if(callbacks.size>1&&action.handler){for(const callback of callbacks)if(callback.name!==action.handler)callbacks.delete(callback);}
-    if(callbacks.size!==1||!condition(action.guard,owner.memoizedProps))return;
+    if(checks){checks.matchingEntries=matching.length;checks.callbacks=callbacks.size;}
+    if(callbacks.size!==1)return;
+    if(!condition(action.guard,owner.memoizedProps)){if(checks)checks.unmetCondition=1;return;}
     if(action.effect.kind==='state'){
       const site=catalog.states.find(s=>s.id===action.effect.site);
       const matches=(tree.states.get(action.effect.site)??[]).filter(b=>{if(b.kind!=='useState')return false;hookValue(b,tree);return tree.isVisible(b.fiber)&&(site?.owner!==action.owner||tree.inside(b.fiber,owner));});
@@ -1322,11 +1369,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       // Shared controls can appear in alternate JSX branches. Require one live
       // instance and never select between two mounted controllers.
       const unique=[];for(const target of targets){const existing=unique.find(t=>t.value===target.value);if(!existing)unique.push(target);else if(tree.inside(target.fiber,existing.fiber))existing.fiber=target.fiber;}
+      if(checks)checks.controllers=unique.length;
       if(unique.length===1)return {owner,target:unique[0]};
     }
   };
-  function resolveEntry(action,tree,focus,allowCurrent=false) {
-    const exact=find(action,tree,focus,bodyRoots(focus,tree),allowCurrent);if(exact)return exact;
+  function resolveEntry(action,tree,focus,allowCurrent=false,instance) {
+    const exact=find(action,tree,focus,bodyRoots(focus,tree),allowCurrent,instance);if(exact)return exact;
     if(action.preview||!['state','control'].includes(action.effect.kind))return;
     // Saved maps can outlive a feature flag selecting another source opener.
     // Reuse only an independently reachable entry for the exact same update,
@@ -1341,7 +1389,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     }
     return matches.length===1?matches[0]:undefined;
   }
-  function prepare(id,focus) {
+  function prepare(id,focus,instance) {
     const action=catalog.actions.find(action=>action.id===id);
     if(!action)return {available:false,error:'The requested view is not in the source catalog.'};
     const effect=action.effect;
@@ -1363,8 +1411,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       }
     }
     const tree=index(true);let found;diagnosingOpening=action;lastOpeningMatch=undefined;
-    try{found=resolveEntry(action,tree,focus,true);}finally{diagnosingOpening=undefined;}
-    if(found)return {available:true};
+    try{found=resolveEntry(action,tree,focus,true,instance);}finally{diagnosingOpening=undefined;}
+    if(found)return {available:true,handoff:!!action.handoffs?.length||!!(action.preview&&effect.kind==='state'&&!found.alreadyOpen&&replacementNative(found.consumer??found.binding.fiber,tree).length)};
     if(action.preview&&effect.kind==='mount')return {available:false,error:'The source component or its live provider context is unavailable.'};
     const sites=effect.kind==='state'?tree.states.get(effect.site)??[]:[];
     if(effect.kind==='state'&&!sites.length)return {available:false,error:'The opening state could not be bound to its source.'};
@@ -1377,7 +1425,20 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       let value=hookValue(binding,tree);for(const part of effect.path)value=value?.[part];
       if(value===effect.value&&action.expected)return {available:false,error:'The form state is selected but its source-defined body is not mounted.'};
     }
-    if(lastOpeningMatch){
+    if(lastOpeningMatch&&!action.input){
+      // Name the first unmet requirement of a plain opener. Fixed messages
+      // only; they never include app content.
+      const checks=lastOpeningMatch;
+      if(!checks.entries)return {available:false,error:checks.disabledEntries?'The opening control is disabled in this app state.':'The opening control is not in the active view.'};
+      if(checks.ambiguousOwners)return {available:false,error:'More than one live owner renders this opening control.'};
+      if(!checks.owners)return {available:false,error:checks.visibleOwners?'The opening control is not reachable in the active view.':'The opening control has no visible source owner in the active view.'};
+      if(checks.unmetCondition)return {available:false,error:'The opening control does not meet its source condition.'};
+      if(!checks.matchingEntries)return {available:false,error:'The opening control is not reachable in the active view.'};
+      if(checks.callbacks>1)return {available:false,error:'More than one opening entry matches this control.'};
+      if(effect.kind==='control'&&checks.controllers>1)return {available:false,error:'More than one live controller matches this opening.'};
+      if(effect.kind==='control')return {available:false,error:'The opening control has no live controller.'};
+    }
+    if(lastOpeningMatch&&action.input){
       const checks=lastOpeningMatch;
       if(checks.alreadyOpen)return {available:false,error:'This shared form is already open.'};
       if(!checks.owners)return {available:false,error:'The opening control has no visible source owner in the active view.'};
@@ -1391,7 +1452,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
   // The host installs the source catalog once. Rebind only this operation's
   // registered state to current owners; never retain a setter or controller
   // across commits. Uninstrumented and newly hidden JSX use host resolution.
-  function prepareCapture(id,focus) {
+  function prepareCapture(id,focus,instance) {
     const action=catalog.actions.find(action=>action.id===id);
     const owners=sourceHash&&globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.matchingOwners?.(sourceHash);
     if(!action||!owners?.length)return {available:false};
@@ -1406,13 +1467,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     for(const [key,binding]of bindings)if(!mounted.has(binding.fiber)&&!mounted.has(binding.fiber.alternate))bindings.delete(key);
     if(action.effect.kind==='state')collectPreparedStates(catalog.states.filter(site=>site.id===action.effect.site),mounted);
     bindPreparedEntries(structure);
-    const result=prepare(id,focus);
-    return {...result,handoff:!!action.handoffs?.length};
+    const result=prepare(id,focus,instance);
+    return {...result,handoff:!!result.handoff||!!action.handoffs?.length};
   }
   let lastAvailable=0,canonicalControls=new WeakMap();
   const list = focus => {
     mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};
-    const tree=index(true),scope=bodyRoots(focus,tree),seen=new Map();
+    const tree=index(true),scope=bodyRoots(focus,tree),seen=new Map(),controllers=new Map();
     catalog.actions.forEach(action=>{
       const found=find(action,tree,focus,scope);if(!found)return false;
       const key=found.target?.value??JSON.stringify(action.effect.kind==='mount'?['mount',action.effect.file,action.effect.export]:[action.effect.site,action.effect.path,action.effect.value]);
@@ -1423,8 +1484,19 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       }
       if(seen.has(key)){seen.get(key).views.push(...(action.views??[]));seen.get(key).aliases.push(action.id);return false;}
       if(found.target&&!canonicalControls.has(key))canonicalControls.set(key,action.id);
+      if(found.target)controllers.set(key,found.target.fiber);
       seen.set(key,{id:action.id,canonicalId:found.target?canonicalControls.get(key):action.id,aliases:[action.id],name:action.name,file:action.file,line:action.line,views:[...(action.views??[])]});return true;
     });
+    // A shared shell previewed under several callers is one view per caller.
+    // The outermost compiled site passing its controller names the caller;
+    // a preview of that caller's own site stays the view's canonical step.
+    const ownSite=id=>{const target=catalog.actions.find(action=>action.id===id)?.effect.target;return target?.source?`${target.file}:${target.source.line}:${target.source.column}`:undefined;};
+    for(const [key,fiber]of controllers){
+      const item=seen.get(key),instance=controlSites(fiber,key,tree).at(-1)?.site;if(!instance)continue;
+      item.instance=instance;
+      const own=item.aliases.find(id=>ownSite(id)===instance);
+      if(own&&own!==item.canonicalId){item.canonicalId=own;canonicalControls.set(key,own);}
+    }
     const items=[...seen.values()].map(item=>({...item,views:[...new Set(item.views)]}));
     lastAvailable=items.length;return items;
   };
@@ -1443,12 +1515,44 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     }
     return [...ids];
   }
+  // Compiled markers wrap exact JSX elements. The marked elements above an
+  // opened element that pass its controller name this instance: a shared
+  // prompt shell first, then each caller up to the owner of the controller.
+  // Each site keeps the props carrying it; one element can pass several.
+  function controlSites(origin,value,structure=committedStructure()) {
+    const sites=[];
+    const carriers=fiber=>{
+      const keys=fiber.ref===value||fiber.ref?.current===value?['ref']:[];
+      const props=fiber.memoizedProps;if(!props||typeof props!=='object')return keys;
+      for(const [key,descriptor]of Object.entries(Object.getOwnPropertyDescriptors(props))){
+        if(key==='children'||!('value'in descriptor)||keys.includes(key))continue;
+        const current=key==='ref'&&descriptor.value&&typeof descriptor.value==='object'?Object.getOwnPropertyDescriptor(descriptor.value,'current'):undefined;
+        if(descriptor.value===value||!!current&&'value'in current&&current.value===value)keys.push(key);
+      }
+      return keys;
+    };
+    for(let fiber=structure.current.get(origin)??origin,depth=0;fiber&&depth<1500&&sites.length<12;fiber=fiber.return,depth++){
+      const id=fiber.tag===12?fiber.memoizedProps?.id:undefined;
+      const site=typeof id==='string'?/^flow-owner-\d+:(.+:\d+:\d+):[^:]+$/.exec(id)?.[1]:undefined;
+      if(!site||sites.some(entry=>entry.site===site))continue;
+      let element=fiber.child;for(let n=0;element?.tag===12&&n<8;n++)element=element.child;
+      const props=element?carriers(element):[];
+      if(props.length)sites.push({site,props});
+    }
+    return sites;
+  }
+  function openedSites() {
+    const opened=undo[undo.length-1];
+    if(!opened?.control||!opened.origin||opened.closed)return [];
+    return controlSites(opened.origin,opened.control).flatMap(({site,props})=>props.map(prop=>`${site}:${prop}`)).slice(0,12);
+  }
   function setPath(value,path,next) {
     if(!path.length)return next;
     const [first,...rest]=path;const copy=Array.isArray(value)?value.slice():{...value};copy[first]=setPath(value?.[first],rest,next);return copy;
   }
   const nativeRecords=new Map(),nativeClassCallbacks=new Map();let nativeCallbackOrigins=new WeakMap();
-  let commitPatch,nativeArmed=false,nativeCloseRequests=0,nativeCloseRetries=0,lastNativeProbe;
+  let commitPatch,nativeArmed=false,nativeCloseRequests=0,nativeCloseRetries=0,lastNativeProbe,lastNativeFailure;
+  let nativeRevision=0,nativeCheck,nativeOwnershipChecks=0,nativeOwnershipReuses=0;
   function forgetClassCallbacks(instance,record) {
     for(const [key,handler]of record.handlers){
       if(Object.getOwnPropertyDescriptor(instance,key)?.value===handler.wrapped)Object.defineProperty(instance,key,handler.descriptor);
@@ -1484,6 +1588,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       const status=record?.status,event=args[0],previous=status?.dispatch;
       const duplicate=previous?.key===key&&previous.event===event;
       if(status&&!duplicate){
+        nativeRevision++;
         // Deduplicate only a synchronous forwarding chain. Native can pool and
         // reuse an event object for a later, different lifecycle transition.
         status.dispatch={key,event};
@@ -1493,7 +1598,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
         else if(['open','opened','presented'].includes(state)){status.openEvents=(status.openEvents??0)+1;status.closed=false;status.opened=true;status.pending=!!status.closing;}
         else if(['opening','closing'].includes(state)){status.pending=true;if(state==='closing')status.dismissAcknowledged=true;}
       }
-      try{return handler.apply(this,args);}finally{if(status&&!duplicate)status.dispatch=previous;}
+      try{return handler.apply(this,args);}finally{
+        if(status&&!duplicate)status.dispatch=previous;
+        if(nativeFailures.get(hook)?.owner===nativeOwner)nativeFailure();
+      }
     };
   }
   function forgetNative(record) {
@@ -1537,6 +1645,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     for(const [canonical,record]of imageRecords)if(!mounted.has(canonical)){forgetNative(record);imageRecords.delete(canonical);}
   }
   function watchNative(focus, pending = false, ancestors = false, mounting = false) {
+    nativeRevision++;
     const hosts=[],adapters=[],mounted=new Set();let openingRoots;
     for(const fiber of committedStructure().all){
       if(fiber.tag!==5&&fiber.tag!==1)continue;
@@ -1544,8 +1653,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       if(!props||typeof props.onShow!=='function'&&typeof props.onDismiss!=='function'&&typeof props.onStateChange!=='function')continue;
       mounted.add(canonical);(fiber.tag===5?hosts:adapters).push({fiber,canonical,field,props});
     }
-    for(const [instance,record]of nativeClassCallbacks)if(!mounted.has(instance))forgetClassCallbacks(instance,record);
-    for(const [canonical,record]of nativeRecords)if(!mounted.has(canonical)&&!record.status.pending&&!record.status.opened){forgetNative(record);nativeRecords.delete(canonical);}
+    for(const [instance,record]of nativeClassCallbacks)if(!mounted.has(instance)&&(!record.status.events||!record.status.pending&&!record.status.opened))forgetClassCallbacks(instance,record);
+    for(const [canonical,record]of nativeRecords)if(!mounted.has(canonical)&&(!record.status.pending&&!record.status.opened||record.fiber?.tag===1&&!record.status.events)){forgetNative(record);nativeRecords.delete(canonical);}
     // Register cached class callbacks before matching hosts which forward them.
     // Both boundaries share one status and deduplicate the same event object.
     for(const {canonical,props}of adapters){
@@ -1614,6 +1723,43 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     const hosts=children.filter(record=>record.fiber.tag===5),boundaries=hosts.length?hosts:children;
     return boundaries.filter(record=>!boundaries.some(other=>other!==record&&inside(record.fiber,other.fiber)));
   }
+  // A finite preview step can replace a body containing an open child sheet.
+  // Its ancestor Modal staying mounted does not keep that child's native owner
+  // alive. Close only controls already opened by this executor, before copying.
+  function replacementNative(focus,tree=index()) {
+    const owner=previewOwner(focus);
+    if(!owner?.shown||!projectionAttached(owner,tree))return [];
+    const bodies=(tree.props.get(owner.child.props)??[]).filter(fiber=>fiber.type===owner.child.type||fiber.elementType===owner.child.type);
+    if(bodies.length!==1||focus!==bodies[0])return [];
+    return nativeTargets(bodies[0]).filter(record=>(record.status.opened||record.status.pending)&&!record.status.closed);
+  }
+  function nativeFailure(tree) {
+    const inherited=nativeFailures.get(hook);
+    if(inherited&&inherited.owner!==nativeOwner)return inherited.message;
+    if(!nativeRecords.size&&!projected.length)return inherited?.message;
+    tree??=committedStructure();
+    // The same committed tree and native lifecycle state need one ownership
+    // check. Events, bindings and preview changes invalidate this evidence.
+    if(nativeCheck?.current===tree.current&&nativeCheck.revision===nativeRevision){nativeOwnershipReuses++;return nativeCheck.error;}
+    nativeCheck={current:tree.current,revision:nativeRevision};nativeOwnershipChecks++;
+    // A class adapter can retain visible=true without ever receiving native
+    // events. Its real dispatch host owns the lifecycle in that case. Only
+    // observed adapter events or a native host can prove a lost presentation.
+    const active=[...nativeRecords.values()].filter(record=>!record.status.closed&&record.status.events>0&&(record.status.opened||['opening','closing'].includes(record.status.lastEvent)));
+    const statuses=new Set(active.map(record=>record.status));
+    const failure=message=>{
+      nativeFailures.set(hook,{owner:nativeOwner,message});
+      lastNativeFailure??={message,records:active.slice(0,12).map(record=>({kind:record.fiber?.tag===5?'host':'adapter',mounted:tree.mounted.has(record.fiber),opened:!!record.status.opened,pending:!!record.status.pending,closing:!!record.status.closing,lastEvent:record.status.lastEvent,events:record.status.events??0,visible:record.visible})),projections:projected.slice(-8).map(record=>({attached:projectionAttached(record,tree),shown:record.shown,dismissed:record.dismissed,inline:!!record.inline,parent:!!record.parent}))};
+      nativeCheck.error=message;return message;
+    };
+    for(const status of statuses){
+      const related=active.filter(record=>record.status===status),hosts=related.filter(record=>record.fiber?.tag===5);
+      if(!(hosts.length?hosts:related).some(record=>tree.mounted.has(record.fiber)))return failure('Native presentation dismissal is unconfirmed after its owner detached.');
+    }
+    if(projected.some(record=>record.ios&&!record.inline&&record.shown&&!record.dismissed&&!projectionAttached(record,tree)))return failure('Temporary modal dismissal is unconfirmed after its owner detached.');
+    if(inherited?.owner===nativeOwner)nativeFailures.delete(hook);
+    lastNativeFailure=undefined;
+  }
   function beginDismissal(entry,focus,ancestors=false) {
     watchNative();
     entry.native=nativeTargets(focus,ancestors,entry.unownedNative).filter(record=>record.status.opened||record.status.pending).map(record=>record.status);
@@ -1628,14 +1774,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     while(entry.native?.some(status=>!status.closed)){
       if(entry.input){const current=hookValue(entry.binding);if(!Object.is(current,entry.input.value)&&!Object.is(current,entry.value))return;}
       const tree=index(),waiting=entry.native.filter(status=>!status.closed);
-      if(!waiting.some(status=>[...nativeRecords.values()].some(record=>record.status===status&&tree.current.has(record.fiber))))return;
       // A close can run before a native ref exists and silently do nothing.
       // Retry once only after a later real open event, and only if native has
       // not acknowledged any closing transition. An accepted close stays single.
       if(entry.control&&!entry.closeRetried&&!waiting.some(status=>status.dismissAcknowledged)&&waiting.some(status=>status.opened&&(status.openEvents??0)>(entry.closeOpenEvents?.get(status)??0))){
         entry.closeRetried=true;nativeCloseRetries++;requestControlClose(entry);
       }
-      if(Date.now()-started>=2000)throw new Error('Native presentation dismissal has not finished.');
+      if(Date.now()-started>=2000)throw new Error(nativeFailure(tree)||'Native presentation dismissal has not finished.');
       await new Promise(resolve=>later(resolve,40,resolve));
     }
   }
@@ -1684,7 +1829,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     armNative(focus);
   }
   function motion(focus,viewport,tree=index(),scope=roots(focus,tree),geometry) {
-    for(const [canonical,record]of nativeRecords)if(!tree.current.has(record.fiber)&&!tree.current.has(record.fiber?.alternate)){forgetNative(record);nativeRecords.delete(canonical);}
+    for(const [canonical,record]of nativeRecords)if((!record.status.opened&&!record.status.pending||record.fiber?.tag===1&&!record.status.events)&&!tree.mounted.has(record.fiber)){forgetNative(record);nativeRecords.delete(canonical);}
     const related=[...nativeRecords.values()].filter(r=>scope.some(root=>inside(r.fiber,root)||inside(root,r.fiber)));
     const hosts=related.filter(r=>r.fiber.tag===5),boundaries=hosts.length?hosts:related;
     const pendingTargets=new Set(boundaries.filter(r=>r.status.pending));let pending=pendingTargets.size>0;const boxes=[];
@@ -1702,7 +1847,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       // Remaining hosts still contribute transition events, but their bounds
       // cannot change this capped signature. Avoid extra Fabric layout reads.
       if(boxes.length>=24)continue;
-      try{const native=canonical?.publicInstance;const box=typeof native?.getBoundingClientRect==='function'?(geometry?.has(fiber)?geometry.get(fiber):native.getBoundingClientRect()):undefined;if(box&&boxes.length<24){let {x,y,width,height}=box;if(viewport){const right=Math.min(x+width,viewport.x+viewport.width),bottom=Math.min(y+height,viewport.y+viewport.height);x=Math.max(x,viewport.x);y=Math.max(y,viewport.y);width=right-x;height=bottom-y;if(width<=0||height<=0)continue;}boxes.push([x,y,width,height].map(v=>Math.round(v)));}}catch{}
+      try{const box=geometry?.has(fiber)?geometry.get(fiber):windowRect(fiber);if(box&&boxes.length<24){let {x,y,width,height}=box;if(viewport){const right=Math.min(x+width,viewport.x+viewport.width),bottom=Math.min(y+height,viewport.y+viewport.height);x=Math.max(x,viewport.x);y=Math.max(y,viewport.y);width=right-x;height=bottom-y;if(width<=0||height<=0)continue;}boxes.push([x,y,width,height].map(v=>Math.round(v)));}}catch{}
     }
     const unshown=projected.filter(record=>!record.shown&&(focus===record.focus||roots(record.focus).includes(focus))).length;
     if(unshown)pending=true;
@@ -1730,13 +1875,31 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     }
     const describe=record=>({component:name(record.fiber),kind:record.fiber?.tag===5?'host':'adapter',pending:!!record.status.pending,opened:!!record.status.opened,closing:!!record.status.closing,events:record.status.events??0,lastEvent:record.status.lastEvent,visible:typeof record.original?.visible==='boolean'?record.original.visible:undefined});
     lastNativeProbe={inlineLayouts:projected.filter(record=>record.inline).slice(-4).map(record=>record.inlineProbe),pendingTargets:[...pendingTargets].slice(0,8).map(describe),targets:[...hosts,...related.filter(record=>record.fiber?.tag!==5)].slice(0,8).map(describe),scope:scope.slice(0,8).map(name),observedEvents:[...new Set(boundaries.map(record=>record.status))].reduce((total,status)=>total+(status.events??0),0),unshownPreviews:unshown};
+    const failure=nativeFailure(tree);if(failure){pending=true;error=failure;}
     return {pending,signature:JSON.stringify(boxes),error};
   }
-  function clearNative(){captureDismissals=new WeakMap();for(const record of imageRecords.values())forgetNative(record);imageRecords.clear();lastNativeProbe=undefined;structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();for(const [instance,record]of nativeClassCallbacks)forgetClassCallbacks(instance,record);nativeCallbackOrigins=new WeakMap();}
+  function clearNative(){captureDismissals=new WeakMap();for(const record of imageRecords.values())forgetNative(record);imageRecords.clear();lastNativeProbe=lastNativeFailure=nativeCheck=undefined;nativeRevision++;structureCache=undefined;nativeArmed=false;if(commitPatch)commitPatch.state.callback=undefined;if(commitPatch&&hook.onCommitFiberRoot===commitPatch.wrapped)hook.onCommitFiberRoot=commitPatch.original;commitPatch=undefined;for(const record of nativeRecords.values())forgetNative(record);nativeRecords.clear();for(const [instance,record]of nativeClassCallbacks)forgetClassCallbacks(instance,record);nativeCallbackOrigins=new WeakMap();}
   let pendingHandoff;
   async function handoff(id,focus,cancelled=()=>false) {
     pendingHandoff=undefined;
     const action=catalog.actions.find(action=>action.id===id);
+    if(action?.preview&&action.effect.kind==='state'){
+      const tree=index(true),found=resolveEntry(action,tree,focus,true),body=found&&(found.consumer??found.binding.fiber);
+      if(!body||found.alreadyOpen)return {closed:false};
+      const targets=new Set(replacementNative(body,tree).map(record=>record.status));
+      if(!targets.size)return {closed:false};
+      const owners=[...undo].reverse().filter(entry=>entry.control&&!entry.closed&&nativeTargets(entry.nativeFocus).some(record=>targets.has(record.status)));
+      if([...targets].some(status=>!owners.some(entry=>nativeTargets(entry.nativeFocus).some(record=>record.status===status))))return {error:'The preview has an open native child without an owned dismissal control.'};
+      for(const entry of owners){
+        if(cancelled())return {error:'Presentation handoff was cancelled.'};
+        if(!entry.closing){beginDismissal(entry,entry.nativeFocus);requestControlClose(entry);}
+        await waitForDismissal(entry);entry.closed=true;entry.closing=false;
+      }
+      const current=index().current.get(body);
+      if(cancelled())return {error:'Presentation handoff was cancelled.'};
+      if(!current)return {error:'The preview owner unmounted when its child closed.'};
+      return {closed:true,focus:current};
+    }
     if(!action?.handoffs?.length)return {closed:false};
     const tree=index(true),found=find(action,tree,focus);
     if(!found?.target)return {error:'The handoff target is no longer available.'};
@@ -1778,7 +1941,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     pendingHandoff={id,owner:current.get(owner),target:{...found.target,fiber:current.get(found.target.fiber)}};
     return {closed:true,focus:current.get(owner)};
   }
-  function open(id,focus,progress) {
+  function open(id,focus,progress,instance) {
     if(undo.some(entry=>entry.closing))return {error:'A native presentation is still dismissing.'};
     armNative();
     const prepared=pendingHandoff;pendingHandoff=undefined;
@@ -1787,7 +1950,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     const tree=index(true);
     const target=prepared?.id===id&&tree.current.get(prepared.target.fiber),owner=prepared?.id===id&&tree.current.get(prepared.owner);
     const saved=action?.effect.kind==='control'&&target&&owner&&controlValue(target,action.effect.prop)===prepared.target.value?{owner,target:{...prepared.target,fiber:target}}:undefined;
-    const found=action&&(saved??resolveEntry(action,tree,focus,true));if(!found)return {error:'This presentation entry is not currently available.'};
+    const found=action&&(saved??resolveEntry(action,tree,focus,true,instance));if(!found)return {error:'This presentation entry is not currently available.'};
     if(action.effect.kind==='mount'){
       const owner={type:found.type,elementType:found.type,memoizedProps:{},return:found.context};
       const result=project(owner,{views:action.views,mount:true},found.projection);
@@ -1812,7 +1975,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       const {value,close}=found.target,fiber=controllerFocus(found.target.fiber,value);
       const opened=undo.find(entry=>!entry.closed&&entry.control===value);
       if(opened){if(opened===undo[undo.length-1])opened.views=[...new Set([...(opened.views??[]),...(action.views??[])])];return {name:action.name,focus:fiber,alreadyOpen:true};}
-      armNative(fiber);undo.push({control:value,close,focus:fiber,nativeFocus:fiber,views:action.views?.slice()});value[found.target.method??action.effect.method]();
+      armNative(fiber);undo.push({control:value,close,focus:fiber,nativeFocus:fiber,origin:found.target.fiber,views:action.views?.slice()});value[found.target.method??action.effect.method]();
       return {name:action.name,focus:fiber};
     }
     return {error:'Unsupported presentation transition.'};
@@ -1828,6 +1991,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     return Array.isArray(children)&&children.some(child=>projectionElement(child,record));
   }
   function releaseProjection(record){
+    nativeRevision++;
     if(record.slot)removeProjectionSlot(record);
     restoreInlineBody(record);
     clearTimeout(record.seedTimer);releaseUiEffects(record);
@@ -1836,16 +2000,19 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     releasePreviewErrors();if(record.seed&&!projected.some(p=>p.seed&&!p.seed.applied&&!p.failed))unpatch();if(!projected.length)unpatchPreviewEffects();
   }
   async function restorePresentations(level,wait) {
-    restoring:while(undo.length>Math.max(0,level)){
+    while(undo.length>Math.max(0,level)){
       // Keep the checkpoint until its close operation succeeds. A thrown close
       // must not discard the only way to restore the app on the next attempt.
       const entry=undo[undo.length-1];
       if(entry.closed){undo.pop();continue;}
       if(entry.projection){
         const record=entry.projection;clearTimeout(record.seedTimer);releaseUiEffects(record);
-        // An app commit may remove the entire preview before its native callback.
-        // The old Modal listener is gone. Keep the app's new children intact.
-        if(!projectionAttached(record)){releaseProjection(record);undo.pop();continue;}
+        // Preserve new app children, but never infer native dismissal from
+        // an unmount which removed the callback needed to confirm it.
+        if(!projectionAttached(record)){
+          if(record.ios&&!record.inline&&record.shown&&!record.dismissed)throw new Error('Temporary modal dismissal is unconfirmed after its owner detached.');
+          releaseProjection(record);undo.pop();continue;
+        }
         if(record.parent){
           const root=index().current.get(record.root),props=root?.memoizedProps,children=props?.children?.props?.children;
           if(Array.isArray(children)){
@@ -1882,7 +2049,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
         // record when an already shown iOS modal is still dismissing.
         if(wait&&record.ios&&record.shown){
           const started=Date.now();while(!record.dismissed){
-            if(!projectionAttached(record)){releaseProjection(record);undo.pop();continue restoring;}
+            if(!projectionAttached(record))throw new Error('Temporary modal dismissal is unconfirmed after its owner detached.');
             if(Date.now()-started>=2000)throw new Error('Temporary modal dismissal has not finished.');
             await new Promise(resolve=>later(resolve,40,resolve));
           }
@@ -1897,7 +2064,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
         // opening must not race the restoration of its temporary form.
         if(entry.uiEffect?.cleanup){const cleanup=entry.uiEffect.cleanup;entry.uiEffect.cleanup=undefined;cleanup();}
         const tree=index(),connected=roots(entry.nativeFocus,tree);
-        if(!connected.some(fiber=>tree.current.has(fiber))){undo.pop();continue;}
+        if(!connected.some(fiber=>tree.current.has(fiber))){const failure=nativeFailure(tree);if(failure)throw new Error(failure);undo.pop();continue;}
         if(!entry.closing){
           beginDismissal(entry,entry.nativeFocus);requestControlClose(entry);
         }
@@ -1912,10 +2079,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       }
       undo.pop();
     }
-    if(wait&&level===0)clearNative();
+    if(wait&&level===0){const failure=nativeFailure();if(failure)throw new Error(failure);clearNative();}
     if(wait)await new Promise(resolve=>later(resolve,80,resolve));
   }
-  function cleanup(){diagnosingOpening=lastOpeningMatch=undefined;preparedStructure=preparedCatalog=preparedRevision=preparedHash=undefined;preparedEntries=new WeakMap();lastCompiledEntries=0;pendingHandoff=undefined;canonicalControls=new WeakMap();captureRoots.clear();releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=sourceHash=undefined;lastCompiledBindings=0;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected){if(record.slot)removeProjectionSlot(record);restoreInlineBody(record);clearTimeout(record.seedTimer);}projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){diagnosingOpening=lastOpeningMatch=undefined;preparedStructure=preparedCatalog=preparedRevision=preparedHash=undefined;preparedEntries=new WeakMap();lastCompiledEntries=0;pendingHandoff=undefined;canonicalControls=new WeakMap();captureRoots.clear();releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=sourceHash=undefined;lastCompiledBindings=0;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;nativeOwnershipChecks=nativeOwnershipReuses=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected){if(record.slot)removeProjectionSlot(record);restoreInlineBody(record);clearTimeout(record.seedTimer);}projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[],entryId) {
     connected=bodyRoots(scope,tree,connected);
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&(!entryId||entry(fiber,false)?.actions.has(entryId))&&tree.isVisible(fiber));
@@ -1964,6 +2131,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     const tree=index();
     return projected.slice(-12).map(record=>({owner:name(record.focus),container:name(record.root),prepared:!!record.slot,attached:projectionAttached(record,tree),bodies:(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type).length}));
   }
-  const diagnostics=()=>({openingMatch:lastOpeningMatch?{...lastOpeningMatch}:undefined,projectionSlots:projectionSlots(),inlineProjections:projected.filter(record=>record.inline).length,nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,lastCompiledEntries,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
-  return {structure:committedStructure,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,collect,records,configure,list,prepare,prepareCapture,open,handoff,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
+  const diagnostics=()=>({openingMatch:lastOpeningMatch?{...lastOpeningMatch}:undefined,projectionSlots:projectionSlots(),inlineProjections:projected.filter(record=>record.inline).length,nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,lastCompiledEntries,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeUnconfirmed:!!nativeFailure(),nativeOwnershipChecks,nativeOwnershipReuses,nativeFailure:lastNativeFailure,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  return {structure:committedStructure,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,nativeFailure,collect,records,configure,list,prepare,prepareCapture,open,handoff,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,openedSites,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

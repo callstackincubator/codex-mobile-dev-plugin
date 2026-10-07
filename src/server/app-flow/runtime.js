@@ -23,16 +23,28 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
       }
     }
   } catch { /* Not every development runtime exposes RN ErrorUtils. */ }
-  let logBoxSubscription, logBoxVisible = false;
+  let logBoxSubscription, logBoxVisible = false, logBoxRestore;
   function observeLogBox() {
     if(logBoxSubscription)return;
     // Read only RN's initialized framework store. Do not initialize an app
     // module, suppress errors, or send log content through the capture bridge.
     for(const module of globalThis.__r?.getModules?.()?.values?.()??[]){
       if(!module.isInitialized||typeof module.verboseName!=='string'||!/(?:^|\/)react-native\/Libraries\/LogBox\/Data\/LogBoxData\.js$/.test(module.verboseName.replaceAll('\\','/')))continue;
-      const exports=module.publicModule?.exports,descriptor=exports&&Object.getOwnPropertyDescriptor(exports,'observe');
-      if(typeof descriptor?.value!=='function')continue;
-      try{logBoxSubscription=descriptor.value(state=>{logBoxVisible=state?.isDisabled!==true&&Number.isInteger(state?.selectedLogIndex)&&state.selectedLogIndex>=0;});}catch{}
+      const exports=module.publicModule?.exports,own=name=>{const descriptor=exports&&Object.getOwnPropertyDescriptor(exports,name);return typeof descriptor?.value==='function'?descriptor.value:undefined;};
+      const observe=own('observe'),setDisabled=own('setDisabled'),isDisabled=own('isDisabled');
+      if(!observe)continue;
+      let initial,inspector=false;
+      try{logBoxSubscription=observe(state=>{
+        const logs=state?.logs instanceof Set||Array.isArray(state?.logs)?[...state.logs]:[];
+        initial??=new Set(logs);
+        inspector=state?.isDisabled!==true&&Number.isInteger(state?.selectedLogIndex)&&state.selectedLogIndex>=0;
+        // A hidden LogBox still records logs. A new fatal or syntax error fails
+        // the capture as the visible inspector would.
+        logBoxVisible=inspector||logs.some(log=>!initial.has(log)&&(log?.level==='fatal'||log?.level==='syntax'));
+      });}catch{}
+      // Dev notifications can cover any screen. Hide LogBox while capture runs
+      // and restore it on cleanup; an inspector already open still blocks.
+      try{if(logBoxSubscription&&setDisabled&&isDisabled&&!inspector&&!isDisabled()){setDisabled(true);logBoxRestore=()=>{try{if(isDisabled())setDisabled(false);}catch{}};}}catch{}
       break;
     }
   }
@@ -130,6 +142,8 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     }
   }
   const measure = (phase, ms) => { if(captureQueue?.active)captureQueue.measure?.(phase, ms); };
+  // A prepared recipe names a shared shell's caller by its compiled JSX site.
+  const callerSite = value => typeof value === 'string' && value.length <= 500 && /^[^\n]+:\d+:\d+$/.test(value) ? value : undefined;
   const presentations = presentationFactory?.({ hook, fibers, hidden: props => hidden(props), later, measure });
   let presentationFocus, presentationObservation, presentationExpected, lastProbe, lastPresentationProbe, lastOpenProbe;
   const presentationFrames = [];
@@ -274,7 +288,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     }
   }
   function visualSignature(name, wholeApp = false, focus, geometry) {
-    let hosts = 0, content = 0, screen = focus, loadingReason, bounds, title;
+    let hosts = 0, content = 0, screen = focus, loadingReason, loadingComponent, bounds, title;
     const started=Date.now(),probe={fibers:0,layoutReads:0,layoutMs:0,opacityReads:0,totalMs:0};
     const signature = [], motion = [], motionSources = new Set(), motionStyles = new Set(), components = new Set();
     if (!wholeApp) fibers(fiber => {
@@ -318,9 +332,15 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
       try {
         const native = fiber.stateNode?.canonical?.publicInstance ?? fiber.stateNode;
         let value;
-        if(typeof native?.getBoundingClientRect==='function'){
+        // Fabric creates public instances lazily. The UI manager measures the
+        // same shadow node when a host has none yet.
+        const node=fiber.stateNode?.node,manager=globalThis.nativeFabricUIManager;
+        if(typeof native?.getBoundingClientRect==='function'||node&&typeof manager?.getBoundingClientRect==='function'){
           probe.layoutReads++;const before=Date.now();
-          try{value=native.getBoundingClientRect();}finally{probe.layoutMs+=Date.now()-before;}
+          try{
+            if(typeof native?.getBoundingClientRect==='function')value=native.getBoundingClientRect();
+            else{const rect=manager.getBoundingClientRect(node,true);if(Array.isArray(rect)&&rect.length===4){const [x,y,width,height]=rect;value={x,y,width,height,left:x,top:y,right:x+width,bottom:y+height};}}
+          }finally{probe.layoutMs+=Date.now()-before;}
         }
         geometry?.set(fiber,value);
         if (value && value.width > 0 && value.height > 0) result = value;
@@ -375,6 +395,9 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         // Query observers belong to the component's hooks, so background queries
         // elsewhere in the app do not block the focused screen.
         if (typeof value.getCurrentResult === 'function' && typeof value.getCurrentQuery === 'function') value = value.getCurrentResult();
+        // Placeholder data stands in for a result that is still on its way. A
+        // disabled query can keep placeholders forever; that cannot block.
+        if (value.isPlaceholderData === true && !value.error && (value.isFetching === true || value.fetchStatus === 'fetching')) return true;
         return value.data === undefined && !value.error && (value.isLoading === true || value.loading === true || (value.isPending === true || value.status === 'pending' || value.status === 'loading') && value.fetchStatus === 'fetching');
       } catch { return false; }
     };
@@ -431,7 +454,8 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
             hook = hook.next;
           }
         }
-        if (reason && visibleLoader(fiber)) loadingReason = reason;
+        // The component name stays in the local reason for diagnosis only.
+        if (reason && visibleLoader(fiber)) { loadingReason = reason; loadingComponent = component.slice(0, 60) || undefined; }
       }
       if (fiber.tag !== 5 || !props) return;
       // After the signature is full and visible content is proven, another
@@ -454,7 +478,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     probe.totalMs=Date.now()-started;lastProbe=probe;
     measure('self-visual',probe.totalMs);measure('self-layout',probe.layoutMs);
     if (motion.length) signature.push(['opacity', motion]);
-    return { found: wholeApp ? hosts > 0 : !!screen, loading: !!loadingReason, loadingReason, hosts, content, bounds, motion: motion.length ? JSON.stringify(motion) : undefined, title: typeof title === 'string' ? title.slice(0, 80) : undefined, components: wholeApp ? [...components] : undefined, signature: JSON.stringify(signature) };
+    return { found: wholeApp ? hosts > 0 : !!screen, loading: !!loadingReason, loadingReason, loadingComponent, hosts, content, bounds, motion: motion.length ? JSON.stringify(motion) : undefined, title: typeof title === 'string' ? title.slice(0, 80) : undefined, components: wholeApp ? [...components] : undefined, signature: JSON.stringify(signature) };
   }
   function observe() {
     // Recording only watches the app. Even watchdog cleanup must never reset
@@ -534,7 +558,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     try { if(presentations?.checkpoint())await presentations.rollback(0,true); }
     catch(error){stopped=false;renewLease();throw error;}
     try { if (errorHandler && errorUtils.getGlobalHandler() === errorHandler) errorUtils.setGlobalHandler(originalErrorHandler); } catch {}
-    try{logBoxSubscription?.unsubscribe?.();}catch{}logBoxSubscription=undefined;logBoxVisible=false;
+    try{logBoxSubscription?.unsubscribe?.();}catch{}logBoxSubscription=undefined;logBoxVisible=false;logBoxRestore?.();logBoxRestore=undefined;
     presentations?.cleanup(); transitionMode?.restore(); presentationFrames.length=0; presentationFocus=presentationObservation=presentationExpected=undefined;
     cancelWaits();
     try { if (!observing && root && original) root.dispatch({ type: 'RESET', payload: original }); } catch {}
@@ -552,7 +576,13 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
       const callback = reply;
       const originalReply = value => { if (!replied) { replied = true; callback(value); } };
       const cleanup = ['restore', 'heartbeat', 'presentation-rollback', 'capture-stop'].includes(command.type);
-      const failed = () => { if ((!appFailed&&!logBoxVisible) || cleanup) return false; originalReply({appFailed:true}); return true; };
+      const failed = () => {
+        if(cleanup||command.type==='diagnostics')return false;
+        if(appFailed||logBoxVisible){originalReply({appFailed:true});return true;}
+        const error=presentations?.nativeFailure?.();
+        if(error){originalReply({nativeFailure:true,error});return true;}
+        return false;
+      };
       reply = value => { if (!failed()) originalReply(value); };
       try {
         if (command.type === 'restore') { void restore().then(() => reply({restored:true}),()=>reply({error:'App Flow restoration failed.'})); return; }
@@ -570,7 +600,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           queue = captureQueueFactory(captureDriverFactory(globalThis[key], request => queue.request(request), (phase, ms) => queue.measure?.(phase, ms)), event => {
             // One bounded local summary per batch. No app content, identities or
             // per-frame logs; it survives inspector teardown for diagnosis.
-            if(event.type==='done')try{console.info('[mobile-dev] App Flow capture work',JSON.stringify({execution,...queue.work}));}catch{}
+            if(event.type==='done')try{console.info('[mobile-dev] App Flow capture work',JSON.stringify({execution,...queue.work,nativeFailure:presentations?.diagnostics?.().nativeFailure}));}catch{}
             const binding = globalThis[command.binding];
             if (typeof binding === 'function') binding(JSON.stringify({capture:event}));
           });
@@ -590,16 +620,16 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (command.type === 'presentation-collect') { if (!presentations) { reply({bindings:[]}); return; } void presentations.collect(command.states,command.actions,command.projectRoot,command.sourceHash,command.actionId??captureQueue?.preparingAction).then(reply, error => reply({error:'Presentation bindings could not be read.',detail:String(error?.message??error).slice(0,1000)})); return; }
         if (command.type === 'presentation-bindings') { reply(presentations?.records(command.offset ?? 0) ?? {bindings:[]}); return; }
         if (command.type === 'presentation-configure') { presentations?.configure(command.catalog, command.matches ?? [], command.checked ?? []); reply({}); return; }
-        if (command.type === 'presentation-prepare') { reply(presentations?.prepare(command.id,presentationFocus) ?? {error:'Presentation capture is unavailable.'}); return; }
+        if (command.type === 'presentation-prepare') { reply(presentations?.prepare(command.id,presentationFocus,callerSite(command.instance)) ?? {error:'Presentation capture is unavailable.'}); return; }
         if (command.type === 'presentation-capture-open') {
-          const prepared=presentations?.prepareCapture?.(command.id,presentationFocus);
+          const prepared=presentations?.prepareCapture?.(command.id,presentationFocus,callerSite(command.instance));
           // Fallback happens before any opening. Once the operation starts,
           // return its result and let the normal view path resolve portals.
           if(!prepared?.available){reply({local:false});return;}
           const ticket=generation;
           const open=closed=>{
             if(stopped||ticket!==generation){reply({local:true,cancelled:true});return;}
-            globalThis[key].invoke({type:'presentation-open',id:command.id},view=>reply({local:true,closed,view,
+            globalThis[key].invoke({type:'presentation-open',id:command.id,instance:callerSite(command.instance)},view=>reply({local:true,closed,view,
               ...(view?.error?{error:view.error,status:view.status==='needs-data'?'needs-data':'timed-out'}:{})}));
           };
           if(prepared.handoff)globalThis[key].invoke({type:'presentation-handoff',id:command.id},result=>{
@@ -610,6 +640,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         }
         if (command.type === 'presentations') { reply(presentations?.list(presentationFocus) ?? []); return; }
         if (command.type === 'presentation-active') { reply(presentations?.activeViews(presentationFocus) ?? []); return; }
+        if (command.type === 'presentation-sites') { reply(presentations?.openedSites() ?? []); return; }
         if (command.type === 'presentation-portals') {
           const result=presentations?.previewPortals(command.ids??[],presentationFocus);
           if(!result||result.error){reply(result??{error:'Temporary portal preview is unavailable.'});return;}
@@ -638,7 +669,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           check();return;
         }
         if (command.type === 'presentation-checkpoint') { reply({level:presentations?.checkpoint()??0}); return; }
-        if (command.type === 'presentation-rollback') { generation++; cancelWaits(); const level=command.level??0; void (presentations?.rollback(level) ?? Promise.resolve()).then(() => {while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined;reply({});}, error => reply({error:'Presentation restoration failed.',detail:String(error?.message??error).slice(0,1000)})); return; }
+        if (command.type === 'presentation-rollback') { generation++; cancelWaits(); const level=command.level??0; void (presentations?.rollback(level) ?? Promise.resolve()).then(() => {while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined;reply({});}, error => reply({error:presentations?.nativeFailure?.()||'Presentation restoration failed.',nativeFailure:!!presentations?.nativeFailure?.(),detail:String(error?.message??error).slice(0,1000)})); return; }
         if (command.type === 'presentation-project') {
           const result=presentations?.project(presentationFocus);if(!result||result.error){reply(result??{error:'Presentation projection is unavailable.'});return;}
           presentationFrames.push({focus:presentationFocus,expected:presentationExpected});presentationObservation=undefined;later(()=>{try{reply(presentationView());}catch(error){reply({error:'Presentation inspection is unavailable.',detail:String(error?.message??error).slice(0,1000)});}},80);return;
@@ -648,12 +679,12 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           void (presentations?.handoff(command.id,presentationFocus,()=>stopped||ticket!==generation)??Promise.resolve({closed:false})).then(result=>{
             if(result.closed){presentationFocus=result.focus;presentationExpected=undefined;presentationObservation=undefined;}
             reply({closed:result.closed,error:result.error});
-          },()=>reply({error:'Presentation handoff failed.'}));
+          },error=>reply({error:'Presentation handoff failed.',detail:String(error?.message??error).slice(0,1000)}));
           return;
         }
         if (command.type === 'presentation-open') {
           let before = presentations?.checkpoint() ?? 0;
-          let result = presentations?.open(command.id,presentationFocus) ?? { error: 'Presentation capture is unavailable.' };
+          let result = presentations?.open(command.id,presentationFocus,undefined,callerSite(command.instance)) ?? { error: 'Presentation capture is unavailable.' };
           if (result.error) { reply(result); return; }
           let after = presentations?.checkpoint() ?? before;
           for(let level=before;level<after;level++)presentationFrames.push({focus:presentationFocus,expected:presentationExpected});
@@ -804,7 +835,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
             // and changing content cannot extend this bounded grace repeatedly.
             const settling=!sawLoading&&matches&&visual.found&&visual.content&&!transitioning;
             if(settling&&settleUntil===undefined)settleUntil=now+500;
-            if(!settling||now>=settleUntil){complete({ ready: false, active: actual, redirected: !routeMatches && visualSignature(actual[actual.length - 1]).found, reason: !matches ? 'Navigation redirected or the target did not mount.' : visual.loading ? `Screen is still loading (${visual.loadingReason}).` : transitioning ? 'Native transition did not finish.' : !visual.content ? 'Screen has no visible content yet.' : 'Screen did not settle in time.', readinessMs: now - started, loadingMs, ...visible() }); return;}
+            if(!settling||now>=settleUntil){complete({ ready: false, active: actual, redirected: !routeMatches && visualSignature(actual[actual.length - 1]).found, reason: !matches ? 'Navigation redirected or the target did not mount.' : visual.loading ? `Screen is still loading (${visual.loadingReason}${visual.loadingComponent ? ` in ${visual.loadingComponent}` : ''}).` : transitioning ? 'Native transition did not finish.' : !visual.content ? 'Screen has no visible content yet.' : 'Screen did not settle in time.', readinessMs: now - started, loadingMs, ...visible() }); return;}
           }
           later(check, painting ? 16 : visual.loading ? 100 : 40, cancelled);
           } catch { complete({ ready: false, reason: 'The screen detached while opening. It will be retried.' }); }

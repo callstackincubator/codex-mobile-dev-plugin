@@ -469,11 +469,29 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
   }
   graph.links = links.filter(link => link.via === "call" && !owned.has(link.owner)).map(({ owner, target, params, guarded }) => ({ owner: owner.split("#").at(-1)!, target, params, guarded }));
   graph.presentations = scanPresentations(units, root, (unit, name) => symbol(units.get(unit.file)!, name));
+  // A planner can open a screen that renders an opener's owner before binding
+  // the opener itself. The live binding still has to prove the entry exists.
+  const screensByOwner = new Map<string, string[]>();
+  for (const node of graph.nodes) {
+    if (!node.definition) continue;
+    for (const owner of ownerCache.get(resolve(root, node.definition)) ?? []) {
+      const list = screensByOwner.get(owner) ?? [];
+      if (list.length < 8 && !list.includes(node.id)) { list.push(node.id); screensByOwner.set(owner, list); }
+    }
+  }
+  for (const action of graph.presentations.actions) {
+    const parents = screensByOwner.get(`${resolve(root, action.file)}#${action.owner}`);
+    if (parents?.length) action.parents = parents.slice();
+  }
   const catalogStarted = performance.now();
   const catalog = scanSourceViews(units, root, (unit, name) => symbol(units.get(unit.file)!, name));
   graph.presentations.views = catalog.views;
   graph.presentations.viewStates = catalog.states;
   addSourcePreviewPlans(graph.presentations,graph.nodes);
+  for (const preview of graph.presentations.previews ?? []) {
+    const parents = screensByOwner.get(`${resolve(root, preview.file)}#${preview.owner}`);
+    if (parents?.length) preview.parents = parents.slice();
+  }
   attachSourceHandoffs(graph.presentations,units,root,(unit,name)=>symbol(units.get(unit.file)!,name),platform);
   graph.catalogMs = performance.now() - catalogStarted;
   const sourceHash=createHash('sha256').update(platform);for(const unit of [...units.values()].sort((a,b)=>a.file.localeCompare(b.file))){sourceHash.update(relative(root,unit.file));sourceHash.update('\0');sourceHash.update(unit.ast.text);sourceHash.update('\0');}graph.sourceHash=sourceHash.digest('hex');

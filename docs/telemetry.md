@@ -938,6 +938,21 @@ each batch. Logging failures do not interrupt completion. No timer, observer,
 per-frame bridge event or Sentry event was added. Existing Sentry capture,
 readiness, source binding and restoration measurements keep their boundaries.
 
+Native owner handoffs keep the existing source-opening, capture, readiness and
+restoration timing boundaries. Closing a child sheet before replacing its body
+counts as opening work. An unconfirmed native dismissal stops the run; the
+existing fixed `app_flow.run` error covers it without an app exception or source
+data. Reconnecting cannot turn that failure into a successful capture.
+
+Local diagnostics add native ownership check/reuse counts and one bounded
+failure snapshot. The snapshot contains at most 12 lifecycle records and eight
+preview records, using booleans, counts and fixed event names. The existing
+end-of-batch console summary includes that snapshot on failure. These fields
+do not enter Sentry. Checks reuse only the same committed tree and native event
+revision. Cleanup clears counters, observers, snapshots and retained fibers.
+A weak map keeps a fixed failure message and an owner token across inspector
+connections when native closure remains unknown; it keeps no app data or fiber.
+
 Preview navigation guards, native context isolation and dismissal ownership use
 the same capture, readiness and restoration timing windows. A rejected preview
 keeps its reason in the local map; component names, provider values and native
@@ -945,3 +960,23 @@ callback arguments never enter Sentry. Deferred source acknowledgements still
 measure the debugger reply separately from actual opening work. Their pending
 delivery timer is cancelled when capture stops. No per-render metric or new
 telemetry field was added; focused tests cover cancellation and observer cleanup.
+
+Every finished App Flow run updates the project's local screen catalog.
+`app_flow.catalog_update` measures that read, merge and atomic write in
+milliseconds. `app_flow.catalog_entries` counts catalog screens and
+`app_flow.catalog_captured` counts screens with an accepted capture, both as
+gauges with the usual surface and platform attributes. A failed update reports
+the fixed `app_flow.catalog` error and keeps the run. Screen names, params,
+recipes, images and project paths stay in the local catalog file and never enter
+Sentry.
+
+A run can relaunch the mapped app to recover from a native presentation that
+never confirmed dismissal, a fatal JavaScript error, or three consecutive
+interruptions, including inspector acknowledgements that time out. At most three
+relaunches happen per run. `app_flow.relaunches` counts them per run, and
+`app_flow.relaunch.mean`, `.p95` and `.max` measure the device relaunch command
+in milliseconds. The reconnect that follows stays in the reconnect timings. Both
+use the usual surface and platform attributes. The app identifier, device
+identifier and failure details stay in the local map. Captured source sites of
+shared presentations stay local as well; the extra in-app read is part of the
+existing `probe` phase of in-app capture work.

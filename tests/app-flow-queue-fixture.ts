@@ -1,7 +1,7 @@
 import {AppFlowRuns, type FlowBackend, type FlowDependencies} from '../src/server/app-flow/runs.ts';
 import {createCaptureDriver} from '../src/server/app-flow/capture-driver.js';
 import {createCaptureQueue} from '../src/server/app-flow/capture-queue.js';
-import {FlowAppFailure, FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
+import {FlowAppFailure, FlowNativeFailure, FlowRuntimeTimeout} from '../src/server/app-flow/runtime-metrics.ts';
 
 /** Test transport. RN commands are supplied by each fixture; scheduling, source
  * approval, frame acknowledgements and cancellation use the production queue. */
@@ -29,6 +29,7 @@ export function queuedBackend(backend:FlowBackend):FlowBackend {
         queue=createCaptureQueue(createCaptureDriver({invoke(command:any,reply:any){
           void invoke(command).then(reply,error=>{
             if(error instanceof FlowAppFailure)reply({appFailed:true});
+            else if(error instanceof FlowNativeFailure)reply({nativeFailure:true,error:error.message});
             else if(error instanceof FlowRuntimeTimeout)reply({ready:false,status:'timed-out',reason:error.message,error:command.type==='presentation-rollback'?error.message:undefined});
             else {reply({cancelled:true});for(const listener of listeners)listener({type:'connection-error'});}
           });
