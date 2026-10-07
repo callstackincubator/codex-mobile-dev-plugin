@@ -1,5 +1,5 @@
 /** Temporary hook tracking. Setters keep working after cleanup, without retaining fibers. */
-export function installPresentationRuntime({ hook, fibers, hidden, later }) {
+export function installPresentationRuntime({ hook, fibers, hidden, later, measure = () => {} }) {
   let sequence = 0, owners = new WeakMap(), collecting = new Set();
   const bindings = new Map(), patches = [], effectPatches = [], undo = [];
   let collected = [];
@@ -401,6 +401,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     preparedStructure=structure;preparedCatalog=catalog;preparedRevision=revision;preparedHash=sourceHash;
     preparedEntries=new WeakMap();lastCompiledEntries=0;
     if(!sourceHash||typeof registry?.matchingOwners!=='function')return;
+    const started=Date.now();
     const sites=new Map();
     const add=(target,id)=>{
       if(!target?.source)return;
@@ -438,6 +439,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
       if(!record){record={actions:new Set(),locals:marker.memoizedProps?.flowLocals};preparedEntries.set(fiber,record);lastCompiledEntries++;}
       for(const target of matches)record.actions.add(target.id);
     }
+    measure('self-bind-entries',Date.now()-started);
   }
   function records(offset) {
     // Later pages read the same collection. Rewalking a changing React tree for
@@ -561,6 +563,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     const observed=observeCommits();
     let structure=observed&&structureCache;
     if(!structure){
+      const started=Date.now();
       const names=new Map(),current=new WeakMap(),all=[],props=new Map(),images=[],concealed=new WeakSet();
       fibers(fiber=>{
         // Hidden tabs keep their native images mounted and can finish loading
@@ -574,6 +577,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
         const p=fiber.memoizedProps;if(p&&typeof p==='object'){const list=props.get(p)??[];list.push(fiber);props.set(p,list);}
       });
       structure={names,current,all,props,images};if(observed)structureCache=structure;
+      measure('self-structure',Date.now()-started);
     }
     return structure;
   }
@@ -1621,7 +1625,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later }) {
     // the old callback and observe the current chain before reusing metadata.
     if(commitPatch){commitPatch.state.callback=undefined;commitPatch=undefined;structureCache=undefined;}
     if(typeof hook?.onCommitFiberRoot!=='function')return false;
-    const patch=commitHandler(hook.onCommitFiberRoot,()=>{structureCache=undefined;if(nativeArmed){watchImages(true);watchNative(undefined,false,false,true);syncPortalPreviews();}});
+    const patch=commitHandler(hook.onCommitFiberRoot,()=>{
+      const started=Date.now();
+      try{
+        structureCache=undefined;
+        if(nativeArmed){watchImages(true);watchNative(undefined,false,false,true);syncPortalPreviews();}
+      }finally{measure('self-commit',Date.now()-started);}
+    });
     try{hook.onCommitFiberRoot=patch.wrapped;}catch{patch.state.callback=undefined;return false;}
     if(hook.onCommitFiberRoot!==patch.wrapped){patch.state.callback=undefined;return false;}
     commitPatch=patch;return true;

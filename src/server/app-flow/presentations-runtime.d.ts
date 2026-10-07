@@ -3,6 +3,7 @@ export type PresentationBinding = {id: string; owner: string; stack: string; kin
 export function installPresentationRuntime(options: {
   hook: any; fibers(callback: (fiber: any) => unknown, subtree?: any): void;
   hidden(props: any): boolean; later(callback: () => void, ms: number): unknown;
+  measure?(phase: string, ms: number): void;
 }): {
   collect(states: FlowStateSite[], actions?: FlowPresentationAction[], projectRoot?: string, sourceHash?: string, actionId?: string): Promise<{bindings: PresentationBinding[]; next?: number}>;
   records(offset: number): {bindings: PresentationBinding[]; next?: number};

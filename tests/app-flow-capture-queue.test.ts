@@ -164,5 +164,8 @@ test('capture work totals stay bounded, isolate batches and reject unknown label
   assert.deepEqual(queue.work.phases,[{phase:'source',count:2,totalMs:11,maxMs:7}]);
   const elapsed=queue.work.elapsedMs;await delay(2);assert.equal(queue.work.elapsedMs,elapsed,'A finished batch does not keep accumulating time');
   queue.work.phases[0].totalMs=999;assert.equal(queue.work.phases[0].totalMs,11);
+  const selfPhases=['self-visual','self-layout','self-focus','self-visible','self-motion','self-commit','self-structure','self-bind-entries'];
+  for(const phase of selfPhases){queue.measure(phase,1);queue.measure(phase,2);}
+  assert.deepEqual(queue.work.phases.slice(1),selfPhases.map(phase=>({phase,count:2,totalMs:3,maxMs:2})));
   queue.start('second',[]);await delay(0);assert.deepEqual(queue.work.phases,[]);
 });

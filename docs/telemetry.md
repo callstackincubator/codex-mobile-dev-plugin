@@ -920,3 +920,20 @@ Sentry's existing capture, presentation, screenshot and restoration boundaries
 remain unchanged. Fewer host runtime samples mean fewer bridge calls, not less
 capture coverage. Binding refresh drops retired owners; cleanup releases the
 catalog and all retained bindings.
+
+Local capture work totals now include synchronous elapsed time for visual
+inspection, native layout reads, presentation focus, visible metadata, native
+motion, commit observation, structure indexing and prepared entry binding.
+The fixed `self-*` labels retain numeric count, total and maximum milliseconds.
+Despite the label, these are inclusive function timings, not exclusive CPU
+time. Structure indexing can occur inside commit observation or focus lookup;
+layout reads occur inside visual inspection. Do not add these totals together
+or add them to the outer capture phases.
+
+One local console summary at batch completion preserves these bounded totals
+after inspector teardown. It includes the execution mode and queue elapsed
+time, with no source, route, run or device identifiers, screenshots or app data.
+Probe totals accumulate only while the capture queue is active and reset with
+each batch. Logging failures do not interrupt completion. No timer, observer,
+per-frame bridge event or Sentry event was added. Existing Sentry capture,
+readiness, source binding and restoration measurements keep their boundaries.

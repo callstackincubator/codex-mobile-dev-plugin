@@ -1356,3 +1356,26 @@ test('runtime scopes collection to the queue opening and clears it before later 
   const work=(await app.invoke({type:'diagnostics'})).captureWork;
   assert.equal(work.phases[0].phase,'source');assert.equal(work.phases[0].totalMs,4);
 });
+
+test('capture logs one bounded work summary and stops probe totals after completion',async t=>{
+  const events:any[]=[],logs:any[]=[];
+  const app=runtime(t,false,{setTimeout,clearTimeout},function({measure}){
+    globalThis.recordWork=measure;
+    return {checkpoint:()=>0,cleanup(){},rollback:async()=>{}};
+  },{captureEvent(event:string){events.push(JSON.parse(event).capture)},console:{info(...args:any[]){logs.push(args);throw Error('Console unavailable');}}},function(){return {
+    async open(){globalThis.recordWork('self-commit',2);globalThis.recordWork('private app content',9);return {ready:false,status:'needs-data'};},async restore(){},
+  }});
+  app.context.recordWork('self-commit',100);
+  await app.invoke({type:'capture-start',batch:'private-run-id',binding:'captureEvent',jobs:[{id:'private-view-id'}]});
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(events.at(-1).type,'done','Logging failure must not interrupt completion');
+  assert.equal(logs.length,1);
+  const summary=JSON.parse(logs[0][1]);
+  assert.equal(summary.execution,'debugger');assert.ok(Number.isFinite(summary.elapsedMs));
+  assert.deepEqual(summary.phases,[{phase:'self-commit',count:1,totalMs:2,maxMs:2}]);
+  assert.equal(JSON.stringify(logs).includes('private-'),false);
+  app.context.recordWork('self-commit',100);
+  await app.invoke({type:'verify',name:'Home'});
+  const work=(await app.invoke({type:'diagnostics'})).captureWork;
+  assert.equal(work.phases.length,1);assert.equal(work.phases[0].totalMs,2,'Finished capture totals stay frozen');
+});

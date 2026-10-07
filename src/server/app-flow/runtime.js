@@ -129,7 +129,8 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
       if (result !== false && fiber.child) stack.push(fiber.child);
     }
   }
-  const presentations = presentationFactory?.({ hook, fibers, hidden: props => hidden(props), later });
+  const measure = (phase, ms) => { if(captureQueue?.active)captureQueue.measure?.(phase, ms); };
+  const presentations = presentationFactory?.({ hook, fibers, hidden: props => hidden(props), later, measure });
   let presentationFocus, presentationObservation, presentationExpected, lastProbe, lastPresentationProbe, lastOpenProbe;
   const presentationFrames = [];
   function navigation(value) {
@@ -451,6 +452,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
       if (signature.length < 250) signature.push([typeof fiber.type === 'string' ? fiber.type : '', text, !!props.source]);
     }, screen);
     probe.totalMs=Date.now()-started;lastProbe=probe;
+    measure('self-visual',probe.totalMs);measure('self-layout',probe.layoutMs);
     if (motion.length) signature.push(['opacity', motion]);
     return { found: wholeApp ? hosts > 0 : !!screen, loading: !!loadingReason, loadingReason, hosts, content, bounds, motion: motion.length ? JSON.stringify(motion) : undefined, title: typeof title === 'string' ? title.slice(0, 80) : undefined, components: wholeApp ? [...components] : undefined, signature: JSON.stringify(signature) };
   }
@@ -495,6 +497,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     const componentTree = visual.components;
     const nativeMotion=presentationProbe?.motion(visual.bounds,geometry)??presentations?.motion(presentationFocus,visual.bounds,geometry);
     probe.motionMs=Date.now()-before;
+    for(const [phase,ms]of [['self-focus',probe.focusMs],['self-visible',probe.visibleMs],['self-motion',probe.motionMs]])measure(phase,ms);
     if(nativeMotion){visual.signature+=nativeMotion.signature;visual.motion=JSON.stringify([visual.motion,nativeMotion.signature]);}
     const key = JSON.stringify([active(root?.getRootState?.() ?? root?.getState?.()), visual.components?.sort(), visual.title]),now=Date.now();
     const keyChanged=presentationObservation?.key!==key,signatureChanged=presentationObservation?.signature!==visual.signature;
@@ -565,6 +568,9 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           if (captureQueue?.active) { reply({error:'A capture batch is already running.'}); return; }
           let queue;
           queue = captureQueueFactory(captureDriverFactory(globalThis[key], request => queue.request(request), (phase, ms) => queue.measure?.(phase, ms)), event => {
+            // One bounded local summary per batch. No app content, identities or
+            // per-frame logs; it survives inspector teardown for diagnosis.
+            if(event.type==='done')try{console.info('[mobile-dev] App Flow capture work',JSON.stringify({execution,...queue.work}));}catch{}
             const binding = globalThis[command.binding];
             if (typeof binding === 'function') binding(JSON.stringify({capture:event}));
           });
