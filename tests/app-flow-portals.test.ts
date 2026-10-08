@@ -24,9 +24,9 @@ function createGroup(){
 }`;
 const line=source.slice(0,source.indexOf('  useEffect')).split('\n').length;
 test('portal source proves UI state output before previewing suppressed portal children',()=>{
- assert.equal(sourceUiPortal(source,line,2),true);
+ assert.deepEqual(sourceUiPortal(source,line,2),{append:'append',remove:'remove'},'The proof names the provider methods');
  const effect=source.split('\n')[line-1];
- assert.equal(sourceUiPortal(source,line,effect.indexOf('append(id')),true,'A symbolicated callback column still proves its owning portal');
+ assert.deepEqual(sourceUiPortal(source,line,effect.indexOf('append(id')),{append:'append',remove:'remove'},'A symbolicated callback column still proves its owning portal');
  for(const changed of [
   source.replace('append(id,children)','append(id,credentials)'),
   source.replace('remove(id)','remove(other)'),
@@ -42,7 +42,7 @@ test('portal bindings can verify library source but cannot read source outside t
  const root=await mkdtemp(join(tmpdir(),'flow-portals-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const file=join(root,'node_modules','ui-portal','index.tsx');await mkdir(join(file,'..'),{recursive:true});await writeFile(file,source);
  const binding:any={id:'portal-1',owner:'Portal',kind:'portal',source:{file,line,column:2}};
- assert.deepEqual(await bindPresentationSites('http://127.0.0.1:8082',root,[binding],[]),[{binding:'portal-1',site:'portal'}]);
+ assert.deepEqual(await bindPresentationSites('http://127.0.0.1:8082',root,[binding],[]),[{binding:'portal-1',site:'portal:append:remove'}]);
  assert.deepEqual(await bindPresentationSites('http://127.0.0.1:8082',root,[{...binding,source:{file:'/private/tmp/unrelated-ui.tsx',line,column:2}}],[]),[]);
  assert.deepEqual(await bindPresentationSites('http://127.0.0.1:8082',root,[{...binding,kind:'entry'}],[],[{id:'unknown',file:'node_modules/ui-portal/index.tsx',line}as any]),[]);
 });

@@ -377,10 +377,17 @@ evidence.
 **Forms behind a mount.** Discovery lists a mount preview whose module has not
 loaded yet; only its own opening loads the module, in a prepared build. Catalog
 seeds and never-captured entries open a step of such a form after the mount
-preview of its owner. Onboarding now opens all its steps with real data. Its
-step buttons are still misplaced: they reach the footer through a nested portal
-whose registration effect a preview contains, and the portal copy renders at
-the top instead.
+preview of its owner. Onboarding now opens all its steps with real data.
+
+**Portals inside a copy.** Onboarding's step buttons reach its footer through a
+nested portal. A preview contains the portal's registration effect, so the
+relocated copy used to render the buttons at the top of the screen. The portal
+source proof now names the provider's attach and detach methods. When the
+portal's nearest provider is inside the temporary copy, the runtime calls that
+provider's proven attach method and the buttons render in their own outlet. It
+follows later children with detach and attach, as the app's effect does.
+Portals whose provider is in the live app keep the relocated copy. All six
+onboarding steps were captured with their footers in place.
 
 **Missing app data.** When nothing on the parent screen renders an opener's
 owner, the reason names that owner and suggests adding the data in the app. A

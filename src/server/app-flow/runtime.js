@@ -659,7 +659,8 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (command.type === 'presentation-active') { reply(presentations?.activeViews(presentationFocus) ?? []); return; }
         if (command.type === 'presentation-sites') { reply(presentations?.openedSites() ?? []); return; }
         if (command.type === 'presentation-portals') {
-          const result=presentations?.previewPortals(command.ids??[],presentationFocus);
+          const methods=command.methods&&typeof command.methods==='object'?command.methods:{};
+          const result=presentations?.previewPortals(command.ids??[],presentationFocus,methods);
           if(!result||result.error){reply(result??{error:'Temporary portal preview is unavailable.'});return;}
           presentationObservation=undefined;later(()=>{try{reply({...presentationView(),...result,portalBindings:presentations?.portalBindings(presentationFocus),effectBindings:presentations?.uiEffectBindings?.(presentationFocus)});}catch(error){reply({error:'Presentation inspection is unavailable.',detail:String(error?.message??error).slice(0,1000)});}},80);return;
         }

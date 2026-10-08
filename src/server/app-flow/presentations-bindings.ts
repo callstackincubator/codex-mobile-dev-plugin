@@ -80,7 +80,8 @@ export async function bindPresentationSites(base: string, root: string, bindings
       let source=portalSources.get(file);if(source===undefined){source=await readFile(file,'utf8');portalSources.set(file,source);}
       const kind=bindings.find(candidate=>candidate.id===binding)?.kind;
       const opening=kind==='ui-effect'?sourceUiOpenEffect(source,frame.lineNumber!,frame.column??0):undefined;
-      const site=opening?`ui-effect:${opening.dependency}:${opening.method}`:kind==='portal'&&sourceUiPortal(source,frame.lineNumber!,frame.column??0)?'portal':undefined;
+      const portal=!opening&&kind==='portal'?sourceUiPortal(source,frame.lineNumber!,frame.column??0):false;
+      const site=opening?`ui-effect:${opening.dependency}:${opening.method}`:portal?`portal:${portal.append}:${portal.remove}`:undefined;
       if(site){matches.push({binding,site});matchedPortals.add(binding);}
     }catch{/* Unknown or unavailable source never enables a portal preview. */}
   }

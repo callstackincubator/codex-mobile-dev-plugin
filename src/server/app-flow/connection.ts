@@ -153,10 +153,14 @@ export class FlowConnection {
         try{matches=await bindPresentationSites(this.metroBase,this.presentationRoot??'',bindings.filter((binding:any)=>!binding.approved&&!binding.approval),[]);}
         catch(error){throw new FlowRuntimeFailure('presentation-symbolicate','failed',error instanceof Error?error.message:undefined);}
         finally{this.metrics.record('presentation-symbolicate',performance.now()-started,false);}
-        const ids=[...bindings.filter((binding:any)=>binding.approved).map((binding:any)=>binding.id),...matches.filter(match=>match.site==='portal').map(match=>match.binding)];
+        const portals=matches.filter(match=>/^portal(?::|$)/.test(match.site));
+        const ids=[...bindings.filter((binding:any)=>binding.approved).map((binding:any)=>binding.id),...portals.map(match=>match.binding)];
+        // Source-proven attach/detach names let a portal render in a provider
+        // inside the temporary copy instead of at the preview's top level.
+        const methods=Object.fromEntries(portals.flatMap(match=>{const [,append,remove]=match.site.split(':');return append&&remove?[[match.binding,{append,remove}]]:[];}));
         const effects=[...bindings.filter((binding:any)=>binding.kind==='ui-effect'&&binding.approval).map((binding:any)=>({binding:binding.id,site:binding.approval})),...matches.filter(match=>match.site.startsWith('ui-effect:'))];
         if(!ids.length&&!effects.length)break;
-        if(ids.length)result=await this.invoke({type:'presentation-portals',ids},2000);
+        if(ids.length)result=await this.invoke({type:'presentation-portals',ids,methods},2000);
         if(effects.length)result=await this.invoke({type:'presentation-effects',matches:effects},2000);
       }
     }

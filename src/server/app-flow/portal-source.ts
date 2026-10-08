@@ -9,7 +9,9 @@ const called=(node:ts.Node,name:string)=>{
   return ts.isIdentifier(node)?node.text===name:ts.isPropertyAccessExpression(node)&&node.name.text===name;
 };
 
-function contextRendersChildren(fn:ts.FunctionLikeDeclaration,context:ts.VariableDeclaration,appendName:string,removeName:string){
+/** The provider value's attach and detach property names, when proven. */
+export type UiPortalMethods = {append: string; remove: string};
+function contextRendersChildren(fn:ts.FunctionLikeDeclaration,context:ts.VariableDeclaration,appendName:string,removeName:string):UiPortalMethods|false{
   if(!context.initializer||!ts.isObjectBindingPattern(context.name))return false;
   const call=unwrap(context.initializer);if(!ts.isCallExpression(call)||!call.arguments[0]||!ts.isIdentifier(call.arguments[0]))return false;
   const contextName=call.arguments[0].text;
@@ -47,14 +49,15 @@ function contextRendersChildren(fn:ts.FunctionLikeDeclaration,context:ts.Variabl
       if(ts.isCallExpression(node)&&ts.isIdentifier(node.expression)&&setters.has(node.expression.text)&&node.arguments[0]&&(ts.isJsxElement(node.arguments[0])||ts.isJsxFragment(node.arguments[0]))){if(removing)clearsState=true;else showsState=true;}
       ts.forEachChild(node,child=>inspect(child,removing));
     };
-    inspect(attach.body);inspect(detach.body,true);if(storesChild&&showsState&&clearsState)return true;
+    inspect(attach.body);inspect(detach.body,true);if(storesChild&&showsState&&clearsState)return {append:member(appendName),remove:member(removeName)};
   }
   return false;
 }
 
 /** Prove a null-rendering portal attaches its children through one context and
- * removes the same entry on cleanup. The preview never executes either callback. */
-export function sourceUiPortal(source:string,line:number,column=0){
+ * removes the same entry on cleanup. Returns the provider value's method names.
+ * A preview calls the attach method only on a provider inside its own copy. */
+export function sourceUiPortal(source:string,line:number,column=0):UiPortalMethods|false{
   if(source.length>512_000||!Number.isInteger(line)||line<1)return false;
   const ast=ts.createSourceFile('portal.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   if(line>ast.getLineStarts().length||!Number.isInteger(column)||column<0)return false;
@@ -96,7 +99,8 @@ export function sourceUiPortal(source:string,line:number,column=0){
     if(!ts.isCallExpression(detached)||!ts.isIdentifier(detached.expression)||detached.arguments.length!==1)continue;
     if(append.arguments[0].getText()!==detached.arguments[0].getText()||append.expression.text===detached.expression.text)continue;
     const context=contexts.get(append.expression.text);
-    if(context&&contexts.get(detached.expression.text)===context&&contextRendersChildren(fn,context,append.expression.text,detached.expression.text))return true;
+    const methods=context&&contexts.get(detached.expression.text)===context&&contextRendersChildren(fn,context,append.expression.text,detached.expression.text);
+    if(methods)return methods;
   }
   return false;
 }

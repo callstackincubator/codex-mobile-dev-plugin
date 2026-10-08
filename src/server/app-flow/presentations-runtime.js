@@ -9,7 +9,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
   const entries = new Map(), entryKeys = new Map(); let entrySources = new WeakMap(), preparedEntries = new WeakMap();
   let preparedStructure, preparedCatalog, preparedRevision, preparedHash, lastCompiledEntries = 0;
   let lastScheduled = 0, lastExactScheduled = 0, lastFallbackScheduled = 0, lastCompiledBindings = 0, structureCache, sourceRoot, sourceHash;
-  const portalEffects=new Map();let portalOwners=new WeakMap(),approvedPortals=new WeakSet(),syncingPortals=false;
+  const portalEffects=new Map();let portalOwners=new WeakMap(),approvedPortals=new WeakMap(),syncingPortals=false;
   let previewRefs=new WeakSet(),containedImperativeHandles=0,containedSubscriptions=0,preservedRootFragments=0;
   const uiEffects=new Map();let uiEffectOwners=new WeakMap(),openedUiEffects=0;
   const queryPatches=[],querySnapshots=new Map();let reusedQueryResults=0,reusedQuerySelections=0;
@@ -1094,11 +1094,27 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     }
     return record.react.createElement(record.react.Fragment,{key:id},element);
   }
-  function previewPortals(ids,focus){
+  // The nearest provider of the context a portal reads. React 19 uses the
+  // context itself as the provider type; earlier versions use Context.Provider.
+  function portalProvider(fiber){
+    const context=fiber.dependencies?.firstContext?.context;if(!context)return;
+    for(let parent=fiber.return,depth=0;parent&&depth<200;parent=parent.return,depth++)if(parent.tag===10&&(parent.type===context||parent.type?._context===context))return parent;
+  }
+  function previewPortals(ids,focus,methods={}){
     const available=new Set(portalBindings(focus).map(binding=>binding.id)),changed=new Set();
     for(const id of ids){
       if(!available.has(id))continue;const portal=portalEffects.get(id),fiber=portal.fiber,child=fiber.memoizedProps.children,record=portal.preview;
-      approvedPortals.add(fiber.type);record.portals.push({...portal,child,element:portalElement(record,fiber,child,portal.id)});changed.add(record);
+      const proven=methods[id]&&typeof methods[id].append==='string'&&typeof methods[id].remove==='string'?methods[id]:approvedPortals.get(fiber.type);
+      approvedPortals.set(fiber.type,proven??approvedPortals.get(fiber.type)??true);
+      // A provider inside the temporary copy renders this portal in its own
+      // outlet, such as a form footer. Call only its source-proven attach.
+      const provider=proven&&proven!==true&&portalProvider(fiber),value=provider?.memoizedProps?.value;
+      const attach=provider&&previewOwner(provider)===record?Object.getOwnPropertyDescriptor(value??{},proven.append):undefined;
+      const detach=attach&&Object.getOwnPropertyDescriptor(value,proven.remove);
+      if(attach&&typeof attach.value==='function'&&attach.value.length>=2&&typeof detach?.value==='function'){
+        try{attach.value(`mobile-flow-${portal.id}`,child);portal.attached={append:attach.value,remove:detach.value,child};continue;}catch{}
+      }
+      record.portals.push({...portal,child,element:portalElement(record,fiber,child,portal.id)});changed.add(record);
     }
     for(const record of changed)if(!updatePortalPreview(record))return {error:'The temporary portal preview is no longer mounted.'};
     return {portals:changed.size};
@@ -1110,6 +1126,11 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       for(const [id,portal]of portalEffects){
         const fiber=tree.current.get(portal.fiber);
         if(fiber&&!fiber.child&&fiber.memoizedProps?.children?.props){
+          // An attached portal follows its children like the app's own effect.
+          if(portal.attached&&portal.attached.child!==fiber.memoizedProps.children){
+            const key=`mobile-flow-${portal.id}`,child=fiber.memoizedProps.children;
+            try{portal.attached.remove(key);portal.attached.append(key,child);portal.attached.child=child;}catch{}
+          }
           portal.fiber=fiber;const attached=portal.preview.portals.find(item=>item.id===id),child=fiber.memoizedProps.children;
           if(attached&&attached.child!==child){attached.child=child;attached.element=portalElement(portal.preview,fiber,child,id);changed.add(portal.preview);}
           continue;
@@ -2165,7 +2186,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     if(wait&&level===0){const failure=nativeFailure();if(failure)throw new Error(failure);clearNative();}
     if(wait)await new Promise(resolve=>later(resolve,80,resolve));
   }
-  function cleanup(){diagnosingOpening=lastOpeningMatch=undefined;preparedStructure=preparedCatalog=preparedRevision=preparedHash=undefined;preparedEntries=new WeakMap();lastCompiledEntries=0;pendingHandoff=undefined;canonicalControls=new WeakMap();captureRoots.clear();releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=sourceHash=undefined;lastCompiledBindings=0;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;nativeOwnershipChecks=nativeOwnershipReuses=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakSet();for(const record of projected){if(record.slot)removeProjectionSlot(record);restoreInlineBody(record);clearTimeout(record.seedTimer);}projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
+  function cleanup(){diagnosingOpening=lastOpeningMatch=undefined;preparedStructure=preparedCatalog=preparedRevision=preparedHash=undefined;preparedEntries=new WeakMap();lastCompiledEntries=0;pendingHandoff=undefined;canonicalControls=new WeakMap();captureRoots.clear();releaseUiEffects();uiEffectOwners=new WeakMap();openedUiEffects=0;sourceRoot=sourceHash=undefined;lastCompiledBindings=0;mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};nativeCloseRequests=0;nativeCloseRetries=0;nativeOwnershipChecks=nativeOwnershipReuses=0;previewRefs=new WeakSet();containedImperativeHandles=containedSubscriptions=preservedRootFragments=0;portalEffects.clear();portalOwners=new WeakMap();approvedPortals=new WeakMap();for(const record of projected){if(record.slot)removeProjectionSlot(record);restoreInlineBody(record);clearTimeout(record.seedTimer);}projected.length=0;releasePreviewErrors(true);clearNative();unpatch();unpatchPreviewEffects();unpatchQueryResults();collecting.clear();bindings.clear();for(const record of entries.values()){record.fibers.clear();record.fiber=undefined;}entries.clear();entryKeys.clear();collected=[];entrySources=new WeakMap();undo.length=0;catalog={states:[],actions:[]};owners=new WeakMap();}
   function focusedComponent(name_,scope,tree,connected=scope?roots(scope,tree):[],entryId) {
     connected=bodyRoots(scope,tree,connected);
     const candidates=(tree.names.get(name_)??[]).filter(fiber=>(!scope||connected.some(root=>tree.inside(fiber,root)))&&(!entryId||entry(fiber,false)?.actions.has(entryId))&&tree.isVisible(fiber));
