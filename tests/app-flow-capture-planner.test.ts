@@ -8,7 +8,7 @@ const sheet = (reason: string, captureAttempts = 1): FlowNode => ({id: reason, n
 const route = (reason: string, captureAttempts = 1): FlowNode => ({id: reason, name: 'Route', kind: 'screen', path: ['Route'], required: [], status: 'timed-out', reason, captureAttempts});
 
 test('only a wait that time can end earns a second attempt', () => {
-  for (const reason of ['loading (skeleton in Loader)', 'paint', 'settling', 'native', 'transition', 'The screenshot did not settle.', 'App Flow runtime timed out while opening a presentation.'])
+  for (const reason of ['loading (skeleton in Loader)', 'paint', 'settling', 'native', 'transition', 'The screenshot did not settle.', 'App Flow runtime timed out while opening a presentation.', 'The navigator is remounting. This screen will be retried.'])
     assert.equal(retryableCapture(sheet(reason)), true, reason);
   for (const reason of ['target', 'missing', 'empty', 'preview-error', 'The presentation target did not mount.', 'This step has no exact content slot inside its native presentation.', 'The shared presentation has no real state to copy.'])
     assert.equal(retryableCapture(sheet(reason)), false, reason);
