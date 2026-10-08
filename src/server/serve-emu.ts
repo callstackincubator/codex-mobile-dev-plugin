@@ -14,7 +14,7 @@ import { adbPath } from "./native-logs.ts";
 import { errorMessage, parseBaseUrl } from "../shared/protocol.ts";
 import type { SimulatorDevice, Status } from "../shared/protocol.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
-import { recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
+import { recordAndroidEmulatorReconnect, recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
 import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "../shared/android-startup-diagnostics.ts";
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "../shared/android-startup-diagnostics.ts";
 
@@ -35,6 +35,7 @@ export function androidDisplaySize(output: string, video: { width: number; heigh
 
 export class ServeEmu {
   private readonly avdNames = new Map<string, string>();
+  private readonly reconnects = new Map<string, number>();
   private readonly backends = new Map<string, Backend>();
   private readonly booting = new Map<string, Promise<Status>>();
   private readonly lifetime = new AbortController();
@@ -79,7 +80,8 @@ export class ServeEmu {
           const model = rawModel?.replace(/_/g, " ");
           let name = model ?? match[1];
           const emulatorDevice = /^emulator-\d+$/.test(match[1]);
-          if (emulatorDevice && match[2] === "device") {
+          // The emulator console names the AVD before adb authorizes the device.
+          if (emulatorDevice) {
             const response = await execute(adb, ["-s", match[1], "emu", "avd", "name"], { timeout: 3000 }).catch(() => undefined);
             const avdName = parseAvdName(response?.stdout);
             if (avdName) this.avdNames.set(match[1], avdName);
@@ -93,7 +95,7 @@ export class ServeEmu {
         })()];
       });
       const running = await Promise.all(runningReads);
-      for (const serial of this.avdNames.keys()) if (!running.some(device => device.udid === serial)) this.avdNames.delete(serial);
+      for (const serials of [this.avdNames, this.reconnects]) for (const serial of serials.keys()) if (!running.some(device => device.udid === serial)) serials.delete(serial);
       const avdOutput = avds.stdout.trim();
       const avdLines = avdOutput.split(/\r?\n/);
       const stoppedNames = avdLines.filter(name => {
@@ -133,20 +135,43 @@ export class ServeEmu {
   private async ensureBooted(id: string): Promise<Status> {
     const device = await this.device(id);
     if (device.state === "Booted") return this.list();
+    if (device.kind === "emulator" && device.state === "unauthorized") return this.awaitRunningEmulator(id);
     if (!id.startsWith("avd:")) throw new SimulatorUnavailableError("Reconnect and authorize this Android device through adb.");
-    const adb = await adbPath();
     // Launch separately from serve-emu so closing the panel never stops the AVD.
     return bootAndroidEmulator({
       name: device.name, executable: await this.emulatorPath(), signal: this.lifetime.signal,
-      ready: async () => {
-        const status = await this.list();
-        if (!status.connected) throw new Error(status.error);
-        const running = status.devices.find(item => item.kind === "emulator" && item.name === device.name && item.state === "Booted");
-        if (!running) return;
-        const response = await execute(adb, ["-s", running.udid, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch(() => undefined);
-        if (response?.stdout.trim() === "1") return status;
-      },
+      ready: () => this.emulatorReady(item => item.name === device.name, "boot"),
     });
+  }
+
+  // Ready means adb authorized the emulator and Android finished booting.
+  private async emulatorReady(matches: (device: SimulatorDevice) => boolean, trigger: "boot" | "selection"): Promise<Status | undefined> {
+    const status = await this.list();
+    if (!status.connected) throw new Error(status.error);
+    const running = status.devices.find(item => item.kind === "emulator" && matches(item));
+    if (running?.state === "unauthorized") await this.reconnectEmulator(running.udid, trigger);
+    if (running?.state !== "Booted") return;
+    const response = await execute(await adbPath(), ["-s", running.udid, "shell", "getprop", "sys.boot_completed"], { timeout: 3000 }).catch(() => undefined);
+    if (response?.stdout.trim() === "1") return status;
+  }
+
+  // A quick-boot snapshot can restore an emulator after adb has marked it unauthorized, and adb
+  // never checks again. Reconnecting the transport repeats the key exchange, at most every 5 s.
+  private async reconnectEmulator(serial: string, trigger: "boot" | "selection") {
+    if (Date.now() - (this.reconnects.get(serial) ?? -Infinity) < 5000) return;
+    this.reconnects.set(serial, Date.now());
+    recordAndroidEmulatorReconnect(trigger);
+    await execute(await adbPath(), ["-s", serial, "reconnect"], { timeout: 5000 }).catch(() => {});
+  }
+
+  private async awaitRunningEmulator(serial: string): Promise<Status> {
+    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(15000)]);
+    while (!signal.aborted) {
+      const status = await this.emulatorReady(device => device.udid === serial, "selection");
+      if (status) return status;
+      await delay(500, undefined, { signal }).catch(() => {});
+    }
+    throw new SimulatorUnavailableError("The Android emulator is still unauthorized. Restart it with a cold boot, or run adb kill-server and try again.");
   }
 
   async shutdown(id: string) {

@@ -34,6 +34,17 @@ async function sourceHash() {
   return hash.digest("hex");
 }
 
+// npm ci records what it installed. Refuse to package dependencies from an older lockfile.
+async function assertInstalledDependencies() {
+  const packages = async path => {
+    const text = await readFile(join(runtime, path), "utf8").catch(() => "{}");
+    const entries = Object.entries(JSON.parse(text).packages ?? {}).filter(([name]) => name);
+    return JSON.stringify(entries.map(([name, item]) => [name, item.version]).sort());
+  };
+  const [locked, installed] = await Promise.all([packages("package-lock.json"), packages("node_modules/.package-lock.json")]);
+  if (locked !== installed) throw new Error("runtimes/serve-emu/node_modules does not match its package-lock.json. Run npm run vendor:serve-emu.");
+}
+
 export async function buildServeEmu(directory) {
   const outputDirectory = resolve(directory);
   if (outputDirectory === runtime) throw new Error("Build the Android runtime into a separate output directory.");
@@ -48,6 +59,7 @@ export async function buildServeEmu(directory) {
   const scrcpyClientPath = join(runtime, "src/scrcpy.ts");
   const scrcpyClientSHA256 = await sha256(scrcpyClientPath);
   const sourceSHA256 = await sourceHash();
+  await assertInstalledDependencies();
   await rm(outputDirectory, { recursive: true, force: true });
   await mkdir(outputDirectory, { recursive: true });
   for (const path of ["src", "scripts", "node_modules", "vendor", "LICENSE", "README.md", "upstream.json", "package-lock.json"]) {

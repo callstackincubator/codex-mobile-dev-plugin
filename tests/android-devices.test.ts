@@ -38,6 +38,11 @@ if (args[0] === "devices") {
   process.stdout.write(output);
 }
 else if (args.join(" ") === "-s emulator-5554 emu avd name") console.log("RunningAVD\\nOK");
+else if (args.join(" ") === "-s emulator-5554 shell getprop sys.boot_completed") console.log("1");
+else if (args.join(" ") === "-s emulator-5554 reconnect") {
+  const output = fs.readFileSync(${JSON.stringify(devicesPath)}, "utf8");
+  fs.writeFileSync(${JSON.stringify(devicesPath)}, output.replace("emulator-5554 unauthorized", "emulator-5554 device"));
+}
 else process.exit(1);
 `, { mode: 0o755 });
   const emulator = join(emulatorDirectory, "emulator");
@@ -103,4 +108,16 @@ test("Android discovery identifies USB, TCP, mDNS and IPv6 phones separately fro
   const disconnected = await f.backend.list();
   const remainingPhysical = disconnected.devices.filter(device => device.kind === "physical");
   assert.equal(remainingPhysical.length, 0);
+});
+
+test("an emulator restored while adb marked it unauthorized keeps its AVD name and reconnects when selected", async t => {
+  const f = await fixture(t, "List of devices attached\nemulator-5554 unauthorized transport_id:7\n", ["RunningAVD"]);
+  const before = await f.backend.list();
+  // The console names the AVD, so it is not listed again as a stopped AVD.
+  assert.deepEqual(before.devices, [{ udid: "emulator-5554", name: "RunningAVD", state: "unauthorized", runtime: "Android", platform: "android", kind: "emulator" }]);
+  const status = await f.backend.boot("emulator-5554");
+  assert.equal(status.devices[0].state, "Booted");
+  assert.ok((await f.calls()).some(args => args.join(" ") === "-s emulator-5554 shell getprop sys.boot_completed"), "Selection waits for Android to finish booting.");
+  const reconnects = (await f.calls()).filter(args => args.join(" ") === "-s emulator-5554 reconnect");
+  assert.equal(reconnects.length, 1);
 });
