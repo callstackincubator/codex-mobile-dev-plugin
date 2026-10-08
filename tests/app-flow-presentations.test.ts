@@ -812,37 +812,6 @@ test('failed discovery retries after fresh routes and discovers sheets without r
   assert.ok(!saved.warnings.some(warning=>warning.includes('partial map')));
 });
 
-test('discovery reads a ready view while its screenshot is captured, and the app waits for both',async t=>{
-  const directory=await fixture(t,{}),events:string[]=[];let active='Home',release:()=>void=()=>{};
-  const action:any={id:'sheet',owner:'Home',file:'App.tsx',component:'Button',prop:'onPress',name:'Sheet',line:1,effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};
-  const runs=flowRuns(t,{directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes:[{id:'Home',name:'Home',kind:'screen',path:['Home'],required:[],status:'pending',entry:true}],edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>({
-    runtime:{async close(){},async invoke(command:any){
-      if(command.type==='inspect')return {available:true};
-      if(command.type==='open'){active=command.path[0];return {ready:true,name:active,active:[active],signature:active};}
-      if(command.type==='verify'){events.push(`verify:${active}`);return {found:true,active:[command.name]};}
-      if(command.type==='presentations'){events.push(`discover:${active}`);release();return active==='Home'?[action]:[];}
-      if(command.type==='presentation-open')active='Sheet';
-      if(command.type==='presentation-rollback')active='Home';
-      if(command.type==='presentation-view')return {key:active,ready:true,found:true,signature:active,active:[active]};
-      return {};
-    }},async screenshot(){
-      const shown=active;events.push(`capture:${shown}`);
-      // The device finishes only after discovery has read the same view.
-      if(shown==='Home')await new Promise<void>(resolve=>{release=resolve;setTimeout(resolve,1000)});
-      events.push(`captured:${shown}`);return Buffer.from(shown);
-    },
-  })});
-  const run=runs.start({projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'fixture',metroUrl:'http://127.0.0.1:8081',useAi:false});
-  while(flowRunning(runs.read(run.id)))await new Promise(resolve=>setTimeout(resolve,5));
-  const saved=runs.read(run.id);
-  assert.equal(saved.phase,'complete');
-  assert.deepEqual(saved.nodes.filter(node=>node.status==='captured').map(node=>node.name).sort(),['Home','Sheet']);
-  const at=events.indexOf('capture:Home');
-  assert.deepEqual(events.slice(at,at+3),['capture:Home','discover:Home','captured:Home'],'Discovery runs during the screenshot');
-  assert.ok(events.indexOf('verify:Home',at)>events.indexOf('captured:Home'),'The app verifies only after both finish');
-  assert.equal(events.filter(event=>event==='discover:Home').length,1,'Planning does not repeat it');
-});
-
 test('extending a captured route discovers newly available sheets and keeps its original image',async t=>{
   const directory=await fixture(t,{});let active='Home',available=false,shots=0;
   const action:any={id:'sheet',owner:'Home',file:'App.tsx',component:'Button',prop:'onPress',name:'Sheet',line:1,effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};

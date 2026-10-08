@@ -558,7 +558,7 @@ export class AppFlowRuns {
         }
         try {
           await captureBatch({backend,manifest,run,directory:this.directory,projectRoot:input.projectRoot,signal,save,interrupt:()=>slowed()&&canRelaunch(),
-            ...(planner?{discover:(node:FlowNode)=>planner!.discover(backend!,node),plan:async(node:FlowNode,result:{ready?:boolean;evidence?:FlowEvidence})=>{
+            ...(planner?{plan:async(node:FlowNode,result:{ready?:boolean;evidence?:FlowEvidence})=>{
               await this.drain(active);
               const next=await planner!.after(backend!,node,result);
               run.discoveryFailures=[...planner!.presentations.failures.values()];
