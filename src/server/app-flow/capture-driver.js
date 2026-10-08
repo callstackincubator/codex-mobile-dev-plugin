@@ -14,6 +14,8 @@ export function createCaptureDriver(runtime, source, measure = () => {}, timing 
     empty: 'The presentation stayed empty, and the app had no rendering or network activity.',
   };
   const loadingText = view => `${view.loadingReason}${view.loadingComponent ? ` in ${view.loadingComponent}` : ''}`;
+  // The runtime's original timers; the app's own timers count as activity.
+  const {setTimeout: setTimer = setTimeout, clearTimeout: clearTimer = clearTimeout} = runtime?.timers ?? {};
   const clock = () => globalThis.performance?.now?.() ?? Date.now();
   // Diagnostics must not turn a successful opening into a stalled capture.
   const record = (phase, ms) => { try { measure(phase, ms); } catch {} };
@@ -47,7 +49,7 @@ export function createCaptureDriver(runtime, source, measure = () => {}, timing 
     let finished = false;
     const finish = (error, value) => {
       if (finished) return;
-      finished = true; clearTimeout(timer); signal?.removeEventListener('abort', abort);
+      finished = true; clearTimer(timer); signal?.removeEventListener('abort', abort);
       if(measured)record(phase, clock() - started);
       if (error) reject(error); else resolve(value);
     };
@@ -58,7 +60,7 @@ export function createCaptureDriver(runtime, source, measure = () => {}, timing 
     const timeout = command.type === 'presentation-capture-open' ? 8000 : command.type === 'presentation-rollback' ? 10000
       : command.type === 'open' ? Math.max(command.timeoutMs || 0, command.loadingTimeoutMs || 0) + 1500
       : (command.waitMs || 0) + 2000;
-    const timer = setTimeout(() => finish(interrupted('The capture step stopped responding.')), timeout);
+    const timer = setTimer(() => finish(interrupted('The capture step stopped responding.')), timeout);
     signal?.addEventListener('abort', abort, {once:true});
     if (signal?.aborted) { abort(); return; }
     try { runtime.invoke(command, result => {
@@ -106,7 +108,7 @@ export function createCaptureDriver(runtime, source, measure = () => {}, timing 
         if (receiving && until < started + deadlines[1]) { until = started + deadlines[1]; continue; }
         return value;
       }
-      await new Promise(resolve => setTimeout(resolve, 40));
+      await new Promise(resolve => setTimer(resolve, 40));
     } while (true);
   }
   async function rollback(level, signal) {
@@ -205,6 +207,7 @@ export function createCaptureDriver(runtime, source, measure = () => {}, timing 
       return Array.isArray(sites) ? sites : undefined;
     },
     same,
+    timers: {setTimeout: setTimer, clearTimeout: clearTimer},
     async restore() {
       await rollback(0);
       branch = []; base = routeReady = undefined;

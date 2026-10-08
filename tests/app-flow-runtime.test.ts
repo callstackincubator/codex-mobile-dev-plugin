@@ -246,7 +246,7 @@ test('presentation inspection reaches portal outlets beyond a large feed and use
   view=await app.invoke({type:'presentation-view'});assert.equal(view.ready,true);assert.equal(view.loading,false);
 });
 
-test('a waiting presentation reports idle time from commits, requests and fetching queries, then restores the request APIs',async t=>{
+test('a waiting presentation reports idle time from commits, requests, app timers and fetching queries, then restores the wrapped APIs',async t=>{
   class Request{listeners:any={};addEventListener(type:string,listener:()=>void){(this.listeners[type]??=[]).push(listener)}send(){}finish(){for(const listener of this.listeners.loadend??[])listener()}}
   const send=Request.prototype.send;
   let resolveFetch:(value:string)=>void;const fetch=Object.assign(()=>new Promise<string>(resolve=>{resolveFetch=resolve}),{polyfill:true});
@@ -273,8 +273,34 @@ test('a waiting presentation reports idle time from commits, requests and fetchi
   queries.fetching=1;assert.equal(await idle(),0,'A query fetching or waiting to retry');queries.fetching=0;
   app.context.commitAt=Date.now();assert.ok(await idle()<50,'A commit restarts idle time');
   assert.equal(app.context.fetch.polyfill,true);
+  // A pending app timeout, such as a retry delay, counts; the runtime's own
+  // waits and immediate app timers do not.
+  const retry=app.context.setTimeout(()=>{},1000);assert.equal(await idle(),0,'A pending retry delay');
+  app.context.clearTimeout(retry);app.context.setTimeout(()=>{},0);app.context.commitAt=Date.now()-5000;
+  await app.invoke({type:'presentation-view',waitMs:120});assert.ok(await idle()>=100,'Runtime waits are not app activity');
+  let fired=false;app.context.setTimeout(()=>{fired=true},60);assert.equal(await idle(),0);
+  await new Promise(resolve=>setTimeout(resolve,90));assert.equal(fired,true);assert.ok(await idle()>0,'A fired timeout no longer counts');
+  // Discovery waits until React stops committing, within its bound.
+  app.context.commitAt=Date.now();
+  const quiet=await app.invoke({type:'presentation-quiet',quietMs:80,maxMs:500});assert.ok(quiet.waitedMs>=60&&quiet.waitedMs<300);
+  app.context.commitAt=Date.now()+10_000;
+  const bounded=await app.invoke({type:'presentation-quiet',quietMs:80,maxMs:150});assert.ok(bounded.waitedMs>=140&&bounded.waitedMs<400);
   await app.invoke({type:'restore'});
   assert.equal(Request.prototype.send,send);assert.equal(app.context.fetch,fetch);
+  assert.equal(app.context.setTimeout,setTimeout);assert.equal(app.context.clearTimeout,clearTimeout);
+});
+
+test('a navigation reset returns to the starting state with new keys and refuses an open presentation',async t=>{
+  const app=runtime(t);
+  await app.invoke({type:'inspect'});
+  await app.invoke({type:'open',path:['Profile'],timeoutMs:200});
+  const actions:any[]=[];const dispatch=app.navigation.dispatch;app.navigation.dispatch=(action:any)=>{actions.push(action);dispatch(action)};
+  const result=await app.invoke({type:'navigation-reset'});
+  assert.equal(result.reset,true);
+  const reset=actions.find(action=>action.type==='RESET');
+  assert.deepEqual(reset.payload.routes.map((route:any)=>route.name),app.original.routes.map((route:any)=>route.name));
+  assert.equal(JSON.stringify(reset.payload).includes('"key"'),false,'Every route remounts with a new key');
+  assert.equal('stale' in reset.payload||'routeNames' in reset.payload,false);
 });
 
 test('restoration waits for child sheet dismissal before resetting parent navigation',async t=>{

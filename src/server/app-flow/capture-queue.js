@@ -1,6 +1,8 @@
 /** Runs in the app. One frame or planner reply may be awaiting acknowledgement. */
 export function createCaptureQueue(driver, emit) {
   let run, restoreError, restoreTask, serial = 0, elapsedMs = 0;
+  // The runtime's original timers; the app's own timers count as activity.
+  const {setTimeout: setTimer = setTimeout, clearTimeout: clearTimer = clearTimeout} = driver?.timers ?? {};
   const clock = () => globalThis.performance?.now?.() ?? Date.now();
   const work = new Map();
   // App-local work is separate from debugger round trips. Retain fixed numeric
@@ -38,14 +40,14 @@ export function createCaptureQueue(driver, emit) {
     if (!current || current.cancelled || !current.job || current.source) return Promise.reject(new Error('Capture source request is unavailable.'));
     const ticket = ++serial;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const timer = setTimer(() => {
         if (current.source?.ticket !== ticket) return;
         current.source = undefined;
         reject(Object.assign(new Error('Capture source binding stopped responding.'), {fatal:true, interrupted:true}));
       }, 12000);
       const pending={ticket,timer,actionId:request.operation==='open'&&typeof request.actionId==='string'?request.actionId:undefined,
-        resolve:value=>{clearTimeout(timer);current.source=undefined;resolve(value);},
-        reject:error=>{clearTimeout(timer);clearTimeout(pending.deliveryTimer);if(current.delivery===pending)current.delivery=undefined;current.source=undefined;reject(error);}};
+        resolve:value=>{clearTimer(timer);current.source=undefined;resolve(value);},
+        reject:error=>{clearTimer(timer);clearTimer(pending.deliveryTimer);if(current.delivery===pending)current.delivery=undefined;current.source=undefined;reject(error);}};
       current.source=pending;
       send({type:'source', ...request, id:current.job.id, ticket});
     });
@@ -80,8 +82,8 @@ export function createCaptureQueue(driver, emit) {
         const ticket = ++serial;
         const frameStarted = clock();
         const captured = await new Promise(resolve => {
-          const timer = setTimeout(() => { if (current.pending?.ticket === ticket) { current.pending = undefined; resolve({ok:false, terminal:true}); } }, 8000);
-          current.pending = {ticket, resolve:value => { clearTimeout(timer); current.pending = undefined; resolve(value); }};
+          const timer = setTimer(() => { if (current.pending?.ticket === ticket) { current.pending = undefined; resolve({ok:false, terminal:true}); } }, 8000);
+          current.pending = {ticket, resolve:value => { clearTimer(timer); current.pending = undefined; resolve(value); }};
           send({type:'frame', id:job.id, ticket, key:before.key, signature:before.signature, readinessMs:Date.now()-started});
         });
         measure('screenshot-wait', clock() - frameStarted);
@@ -98,7 +100,7 @@ export function createCaptureQueue(driver, emit) {
         send({type:'discard', id:job.id, ticket});
         // Yield before a new native frame even when an in-process test or
         // screenshot cache replies synchronously. Stop remains responsive.
-        await new Promise(resolve=>setTimeout(resolve,32));
+        await new Promise(resolve=>setTimer(resolve,32));
       }
       if (!current.cancelled) send({type:'uncaptured', id:job.id, ms:Date.now()-started, diagnostics:diagnostics(measured,cpu)});
     } catch (error) {
@@ -144,11 +146,11 @@ export function createCaptureQueue(driver, emit) {
     source(batch, ticket, value) {
       if (run?.id !== batch || run.source?.ticket !== ticket || run.cancelled) return {accepted:false};
       const current=run,pending=current.source;
-      clearTimeout(pending.timer);current.source=undefined;current.delivery=pending;
+      clearTimer(pending.timer);current.source=undefined;current.delivery=pending;
       // Return the debugger acknowledgement before starting the next opening.
       // Promise continuations can otherwise drain inside Runtime.evaluate and
       // make a valid reply time out while React is already rendering that view.
-      pending.deliveryTimer=setTimeout(()=>{
+      pending.deliveryTimer=setTimer(()=>{
         if(current.delivery!==pending)return;
         current.delivery=undefined;pending.resolve(value);
       },0);

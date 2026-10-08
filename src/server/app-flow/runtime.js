@@ -61,8 +61,12 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
   const transitions = new Map();
   const waitTimers = new Set(), paintFrames = new Set();
   const cancelledWaits = new Map();
+  // The runtime's own timers use the app's original timer functions, so the
+  // activity check below counts only timers the app schedules.
+  const ownTimer = value => typeof value?.__mobileDevOriginal === 'function' ? value.__mobileDevOriginal : value;
+  const setTimer = ownTimer(globalThis.setTimeout), clearTimer = ownTimer(globalThis.clearTimeout);
   const later = (callback, ms, onCancel) => {
-    const timer = setTimeout(() => { waitTimers.delete(timer); cancelledWaits.delete(timer); callback(); }, ms);
+    const timer = setTimer(() => { waitTimers.delete(timer); cancelledWaits.delete(timer); callback(); }, ms);
     if(onCancel)cancelledWaits.set(timer,onCancel);
     waitTimers.add(timer); return timer;
   };
@@ -72,7 +76,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     paintFrames.add(id); return id;
   };
   const cancelWaits = () => {
-    for (const timer of waitTimers) clearTimeout(timer);
+    for (const timer of waitTimers) clearTimer(timer);
     for (const id of paintFrames) globalThis.cancelAnimationFrame?.(id);
     waitTimers.clear(); paintFrames.clear();
     const cancelled=[...cancelledWaits.values()];cancelledWaits.clear();
@@ -114,12 +118,13 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     } catch { /* Optional query caches may be unavailable. */ }
   }
   // Whether a waiting view can still change: HTTP requests in flight, the last
-  // request start or end, and fetching queries, with the presentation runtime's
-  // last React commit. Counts and times only; no URL, header, body or query key
-  // is read. Requests continue unchanged and the wrappers are removed on restore.
-  const network = {open: 0, at: 0, undo: undefined};
+  // request start or end, pending short app timers and fetching queries, with
+  // the presentation runtime's last React commit. Counts and times only; no
+  // URL, header, body, callback or query key is read. Requests and timers run
+  // unchanged, and the wrappers are removed on restore.
+  const network = {open: 0, at: 0, undo: undefined, timers: new Set()};
   let queryClients;
-  function watchNetwork() {
+  function watchActivity() {
     if (network.undo) return;
     const undo = network.undo = [];
     network.at = Date.now();
@@ -137,6 +142,24 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
       };
       try { request.send = tracked; undo.push(() => { if (request.send === tracked) request.send = send; }); } catch {}
     }
+    // A retry delay or deferred step can change a view without a commit or
+    // request. App timeouts from 50 ms to 5 s count while pending.
+    const set = globalThis.setTimeout, clear = globalThis.clearTimeout, timers = network.timers;
+    if (typeof set === 'function' && typeof clear === 'function') {
+      const tracked = Object.assign(function(callback, ms) {
+        const delay = Number(ms);
+        if (typeof callback !== 'function' || !(delay >= 50 && delay <= 5000)) return set.apply(this, arguments);
+        const rest = Array.prototype.slice.call(arguments, 2);
+        const id = set.call(this, function() { timers.delete(id); return callback.apply(this, arguments); }, ms, ...rest);
+        timers.add(id);
+        return id;
+      }, {__mobileDevOriginal: ownTimer(set)});
+      const cleared = Object.assign(function(id) { timers.delete(id); return clear.apply(this, arguments); }, {__mobileDevOriginal: ownTimer(clear)});
+      try {
+        globalThis.setTimeout = tracked; globalThis.clearTimeout = cleared;
+        undo.push(() => { if (globalThis.setTimeout === tracked) globalThis.setTimeout = set; if (globalThis.clearTimeout === cleared) globalThis.clearTimeout = clear; timers.clear(); });
+      } catch {}
+    }
     // React Native's fetch uses XMLHttpRequest; another fetch implementation
     // is counted here. A derived promise keeps the app's unhandled rejections.
     const fetch = globalThis.fetch;
@@ -151,7 +174,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
       try { globalThis.fetch = tracked; undo.push(() => { if (globalThis.fetch === tracked) globalThis.fetch = fetch; }); } catch {}
     }
   }
-  function unwatchNetwork() {
+  function unwatchActivity() {
     for (const step of (network.undo ?? []).reverse()) { try { step(); } catch {} }
     network.undo = queryClients = undefined; network.open = 0;
   }
@@ -166,12 +189,12 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     for (const client of queryClients) { try { if (client.isFetching() > 0) return true; } catch {} }
     return false;
   }
-  // Milliseconds without a commit, request or fetching query. Unknown without
-  // the commit observer or the request wrappers.
+  // Milliseconds without a commit, request, pending app timer or fetching
+  // query. Unknown without the commit observer or the wrappers.
   function idleMs() {
     const commit = presentations?.lastCommit?.();
     if (!network.undo || !Number.isFinite(commit)) return undefined;
-    if (network.open > 0 || fetchingQueries()) return 0;
+    if (network.open > 0 || network.timers.size > 0 || fetchingQueries()) return 0;
     return Math.max(0, Date.now() - Math.max(commit, network.at));
   }
   // A fixed amount of JavaScript work. Its duration follows CPU contention in
@@ -648,14 +671,14 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
   async function restore() {
     if (stopped) return;
     if (captureQueue) await captureQueue.stop();
-    stopped = true; generation++; clearTimeout(watchdog); cancelWaits();
+    stopped = true; generation++; clearTimer(watchdog); cancelWaits();
     // Native sheets must dismiss before their parent modal unmounts. Dropping
     // both at once can leave UIKit showing a detached, blank presentation.
     try { if(presentations?.checkpoint())await presentations.rollback(0,true); }
     catch(error){stopped=false;renewLease();throw error;}
     try { if (errorHandler && errorUtils.getGlobalHandler() === errorHandler) errorUtils.setGlobalHandler(originalErrorHandler); } catch {}
     try{logBoxSubscription?.unsubscribe?.();}catch{}logBoxSubscription=undefined;logBoxVisible=false;logBoxRestore?.();logBoxRestore=undefined;
-    presentations?.cleanup(); transitionMode?.restore(); unwatchNetwork(); presentationFrames.length=0; presentationFocus=presentationObservation=presentationExpected=undefined;
+    presentations?.cleanup(); transitionMode?.restore(); unwatchActivity(); presentationFrames.length=0; presentationFocus=presentationObservation=presentationExpected=undefined;
     cancelWaits();
     try { if (!observing && root && original) root.dispatch({ type: 'RESET', payload: original }); } catch {}
     for (const record of transitions.values()) for (const off of record.off) { try { off(); } catch {} }
@@ -664,9 +687,10 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     delete globalThis[key];
   }
   let watchdog;
-  function renewLease() { clearTimeout(watchdog); watchdog = setTimeout(() => { void restore().catch(() => {}); }, Math.max(1, leaseMs)); }
+  function renewLease() { clearTimer(watchdog); watchdog = setTimer(() => { void restore().catch(() => {}); }, Math.max(1, leaseMs)); }
   renewLease();
   globalThis[key] = {
+      timers: {setTimeout: setTimer, clearTimeout: clearTimer},
       invoke(command, reply) {
       let replied = false;
       const callback = reply;
@@ -685,7 +709,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (stopped) { reply({ stopped:true, error: 'Capture stopped.' }); return; }
         renewLease();
         if (failed()) return;
-        if (['open','capture-start','presentation-open'].includes(command.type) && !observing) { transitionMode?.enable(); watchNetwork(); }
+        if (['open','capture-start','presentation-open'].includes(command.type) && !observing) { transitionMode?.enable(); watchActivity(); }
         if (command.type === 'heartbeat') { reply({ alive: true }); return; }
         if (command.type === 'cpu') { const fibers = presentations?.treeSize?.(); reply({ ms: cpuProbe(), ...(Number.isInteger(fibers) ? { fibers } : {}) }); return; }
         if (command.type === 'capture-inventory') { reply(globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.inventory?.() ?? {unavailable:true}); return; }
@@ -767,6 +791,19 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           check();return;
         }
         if (command.type === 'presentation-checkpoint') { reply({level:presentations?.checkpoint()??0}); return; }
+        if (command.type === 'presentation-quiet') {
+          // Discovery reads openers once React stops committing, such as rows
+          // a list renders after its view is ready, within a bounded wait.
+          const started = Date.now(), ticket = generation;
+          const quietMs = Math.min(2000, Math.max(0, Number(command.quietMs) || 0)), maxMs = Math.min(5000, Math.max(0, Number(command.maxMs) || 0));
+          const check = () => {
+            if (stopped || ticket !== generation) { reply({cancelled: true}); return; }
+            const commit = presentations?.lastCommit?.(), now = Date.now();
+            if (!Number.isFinite(commit) || now - commit >= quietMs || now - started >= maxMs) { reply({waitedMs: now - started}); return; }
+            later(check, Math.max(16, Math.min(50, quietMs - (now - commit))), () => reply({cancelled: true}));
+          };
+          check(); return;
+        }
         if (command.type === 'presentation-rollback') { generation++; cancelWaits(); const level=command.level??0; void (presentations?.rollback(level) ?? Promise.resolve()).then(() => {while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined;reply({});}, error => reply({error:presentations?.nativeFailure?.()||'Presentation restoration failed.',nativeFailure:!!presentations?.nativeFailure?.(),detail:String(error?.message??error).slice(0,1000)})); return; }
         if (command.type === 'presentation-project') {
           const result=presentations?.project(presentationFocus);if(!result||result.error){reply(result??{error:'Presentation projection is unavailable.'});return;}
@@ -827,7 +864,32 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           reply(info); return;
         }
         if (command.type === 'inspect') { reply(inspect()); return; }
-        if (['open','recover'].includes(command.type)&&presentations?.checkpoint()) { reply({error:'Restore presentations before changing navigation.'});return; }
+        if (['open','recover','navigation-reset'].includes(command.type)&&presentations?.checkpoint()) { reply({error:'Restore presentations before changing navigation.'});return; }
+        if (command.type === 'navigation-reset') {
+          // Navigators keep every visited tab mounted, and readiness checks and
+          // discovery pay for that tree. The run's starting state with new
+          // route keys mounts only its initial screens again.
+          if (observing || !root || !original) { reply({error: 'Navigation reset is unavailable.'}); return; }
+          const fresh = state => {
+            if (!state || typeof state !== 'object' || !Array.isArray(state.routes)) return state;
+            const {key, stale, routeNames, history, preloadedRoutes, preloadedRouteKeys, ...rest} = state;
+            return {...rest, routes: state.routes.map(({key, state: child, ...route}) => child ? {...route, state: fresh(child)} : route)};
+          };
+          cancelWaits(); generation++; observation = presentationObservation = undefined;
+          try { root.dispatch({ type: 'RESET', payload: fresh(original) }); }
+          catch { reply({error: 'Navigation reset failed.'}); return; }
+          const started = Date.now(), ticket = generation;
+          const settled = () => {
+            if (stopped || ticket !== generation) { reply({cancelled: true}); return; }
+            const commit = presentations?.lastCommit?.(), now = Date.now();
+            // The next job's readiness checks wait for content; the reset only
+            // waits for the navigators to remount.
+            if (now - started >= 1500 || now - started >= 300 && (!Number.isFinite(commit) || now - commit >= 300)) { reply({reset: true, waitedMs: now - started}); return; }
+            later(settled, 50, () => reply({cancelled: true}));
+          };
+          later(settled, 50, () => reply({cancelled: true}));
+          return;
+        }
         if (!navigatorState()?.routeNames?.length) inspect();
         if (command.type === 'recover') {
           cancelWaits();

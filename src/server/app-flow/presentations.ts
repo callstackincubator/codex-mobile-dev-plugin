@@ -64,6 +64,10 @@ export class FlowPresentationDiscovery {
     if (!this.enabled || this.visited.has(base.id)) return;
     const started = performance.now();
     try {
+      // A ready view can still mount rows below the screenshot, such as a
+      // list's later batches, with openers inside. Read once React stops
+      // committing, within a bounded wait.
+      await backend.runtime.invoke({type:'presentation-quiet',quietMs:300,maxMs:800},2000).catch(()=>{});
       // Newly mounted forms can introduce hooks absent from the initial tree.
       await this.setup(backend);
       const available: Action[] = await backend.runtime.invoke({type: 'presentations'}, 2000);
