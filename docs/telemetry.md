@@ -999,13 +999,7 @@ phase in milliseconds, as one gauge per phase with a `run_phase` attribute of
 `connect`, `first-attempt`, `retry-attempt`, `discovery-reopen`, `planning`,
 `reconnect` or `relaunch`, plus the usual surface and platform attributes. The
 same totals stay in the local map with their counts. `app_flow.unshown` counts
-source-proven openers a run marked as not shown on screens it explored.
-`app_flow.idle_failures` counts presentations a run stopped early because the
-app had no React commit, HTTP request or fetching query while they stayed
-blocked. To decide this, the app runtime counts its own HTTP requests in flight
-and keeps the time of the last start or end; it reads no URL, header, body or
-query key, nothing leaves the app, and the request wrappers are removed when
-capture ends. Their
+source-proven openers a run marked as not shown on screens it explored. Their
 reasons quote source conditions and file positions; those stay in the local
 map, never enter Sentry and are not sent into the app. The local relaunch log
 keeps each relaunch's cause and the open view's node ID; neither enters Sentry.
@@ -1013,3 +1007,22 @@ Each job's diagnostics in the local map also keep the app's CPU probe in
 milliseconds and the fiber count of its last structure walk. They set the run
 pace and stay local. The probe takes about a millisecond per job, is not
 counted in the in-app work phases and adds no metric.
+
+Since 8 October 2026, a presentation no longer gets a second attempt after
+loading or after its screenshot kept changing; routes, native motion, paint and
+settling waits, a changed screen beneath and slow runtime replies still do.
+`app_flow.retries` keeps its meaning. `app_flow.idle_failures` counts
+presentations a run stopped early because the app had no React commit, HTTP
+request or fetching query while they stayed blocked. To decide this, the app
+runtime counts its own HTTP requests in flight and keeps the time of the last
+start or end; it reads no URL, header, body or query key, nothing leaves the
+app, and the request wrappers are removed when capture ends. Readiness reads
+now return every 500 ms instead of every second, so the local readiness waits
+of each job are attributed in finer steps; their names and units are unchanged.
+
+Discovery of a captured view now runs while the device takes its screenshot,
+and the app continues once both finish. The in-app `screenshot-wait` phase then
+also covers any discovery time beyond the screenshot, the `planning` run phase
+and `app_flow.planning` windows no longer include that discovery, and the
+server `screenshot` operation still measures only the screenshot.
+`app_flow.presentation_discovery` keeps measuring each discovery.

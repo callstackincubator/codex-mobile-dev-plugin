@@ -35,7 +35,7 @@ export class CaptureConnectionError extends Error { constructor() { super('The c
 export class CaptureRelaunchRequest extends Error { constructor() { super('The app slowed down during capture.'); } }
 
 /** The server binds approved source recipes, captures native frames and saves results. */
-export async function captureBatch(options: {backend: FlowBackend; manifest: CaptureManifest; run: FlowRun; directory: string; projectRoot?: string; signal: AbortSignal; save(): Promise<void>; interrupt?(): boolean; plan?(node: FlowNode, result: {ready?:boolean; evidence?:any}): Promise<CaptureManifest>; timing?(operation: string, ms: number): void}) {
+export async function captureBatch(options: {backend: FlowBackend; manifest: CaptureManifest; run: FlowRun; directory: string; projectRoot?: string; signal: AbortSignal; save(): Promise<void>; interrupt?(): boolean; discover?(node: FlowNode): Promise<void>; plan?(node: FlowNode, result: {ready?:boolean; evidence?:any}): Promise<CaptureManifest>; timing?(operation: string, ms: number): void}) {
   const {backend, manifest, run, directory, signal, save} = options;
   if (!backend.runtime.onCapture) throw new Error('This connection does not support in-app capture batches.');
   const batch = randomUUID(), byId = new Map(run.nodes.map(node => [node.id, node]));
@@ -101,9 +101,19 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
       }
       else if (event.type === 'frame' && node) {
         const started = performance.now();
+        // The app waits, with its settled view open, while the device captures
+        // it. Discovery reads that same view meanwhile instead of afterwards.
+        // The app continues only after both finish, so nothing closes the view
+        // under discovery.
+        const discovery = options.discover?.(node).then(() => undefined, (error: unknown) => error);
+        const discovered = async () => {
+          const error = await discovery;
+          if (error && (signal.aborted || error instanceof FlowAppFailure)) throw error;
+        };
         let bytes:Buffer;
         try {bytes=await backend.screenshot(AbortSignal.any([signal,AbortSignal.timeout(5000)]));}
         catch(error){
+          await discovered();
           signal.throwIfAborted();
           options.timing?.('screenshot',performance.now()-started);
           const reason=error instanceof FlowRuntimeFailure?error.message:'The device screenshot failed.';
@@ -112,13 +122,14 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
           if(!ack?.accepted)throw new CaptureConnectionError();
           return;
         }
+        options.timing?.('screenshot', performance.now() - started);
+        await discovered();
         const identity = JSON.stringify([event.key,event.signature]);
         const ok = !blankFlowFrame(bytes) && !(previous && previous.identity !== identity && previous.bytes.equals(bytes));
         if (ok) {
           const path = join(directory, run.id, `${node.id}.${event.ticket}.pending`);
           await writeFile(path, bytes, {mode: 0o600}); frames.set(event.ticket, {path, id: node.id, bytes, identity});
         }
-        options.timing?.('screenshot', performance.now() - started);
         const ack = await acknowledge({type: 'capture-ack', batch, ticket: event.ticket, value: {ok}});
         if (!ack?.accepted) throw new Error('The app rejected a stale screenshot acknowledgement.');
       } else if (event.type === 'discard') {

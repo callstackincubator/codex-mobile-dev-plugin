@@ -21,6 +21,7 @@ export function retryableCapture(node:FlowNode) {
 export class CapturePlanner {
   readonly presentations: FlowPresentationDiscovery;
   private discoveries = new Map<string,number>();
+  private discoveredAtFrame = new Set<string>();
   private run:FlowRun; private signal:AbortSignal; private reachability?:FlowReachability; private initialPath?:string[];
   constructor(run:FlowRun, root:string, directory:string, signal:AbortSignal,
     save:()=>Promise<void>, reachability?:FlowReachability, initialPath?:string[]) {
@@ -52,15 +53,24 @@ export class CapturePlanner {
       selected.findIndex(node=>node.id===a.id)-selected.findIndex(node=>node.id===b.id));
     return manifest;
   }
+  /** Discovery of a ready view while the device captures its screenshot.
+   * after() does not repeat it for this job; a failed one reopens the view
+   * later, like a failed discovery after the capture. */
+  async discover(backend:FlowBackend,node:FlowNode) {
+    if(!this.presentations.enabled||this.presentations.hasVisited(node.id)||this.discoveredAtFrame.has(node.id))return;
+    this.discoveredAtFrame.add(node.id);
+    await this.presentations.explore(backend,node);
+  }
   async after(backend:FlowBackend,node:FlowNode,result:{ready?:boolean;evidence?:FlowEvidence}) {
     this.signal.throwIfAborted();
+    const discovered=this.discoveredAtFrame.delete(node.id);
     if(!node.presentation && result.evidence)this.reachability?.reveal(node,result.evidence);
     // A presentation reveals only links inside its own body, with their real
     // params; the screen beneath it already reported its links.
     else if(node.presentation && result.ready && result.evidence?.bodyLinks?.length)this.reachability?.reveal(node,{links:result.evidence.bodyLinks,components:[]});
     if(result.ready && this.presentations.enabled){
       this.discoveries.set(node.id,(this.discoveries.get(node.id)??0)+1);
-      try { await this.presentations.explore(backend,node); }
+      if(!discovered)try { await this.presentations.explore(backend,node); }
       catch(error) { if(this.signal.aborted || error instanceof FlowAppFailure)throw error; }
     } else if(node.status==='captured' && this.presentations.enabled) {
       this.presentations.failures.set(node.id,{nodeId:node.id,operation:'open',message:'The saved view could not be reopened for discovery.'});

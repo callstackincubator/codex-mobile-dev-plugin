@@ -547,3 +547,11 @@ since it already had its longest wait or went idle, nor after its screenshot
 kept changing; neither ever captured on a second attempt. Route failures,
 native motion, paint and settling waits, a changed screen beneath and slow
 runtime replies still get one more attempt.
+
+**Discovery during the screenshot.** After each capture, the run looked for
+the dialogs and sheets a captured view can open: about 230 ms of scanning in the
+app, while the app had waited about 280 ms for the device screenshot just
+before. Planning took 52 seconds of run 10. Discovery now runs while the device
+takes the screenshot, and the app verifies and continues once both finish, so
+nothing closes the view under discovery. Planning no longer repeats it for that
+view; a failed discovery still reopens the view later.
