@@ -1522,7 +1522,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       const action=catalog.actions.find(action=>action.id===id);
       const mount=action?.effect.kind==='mount'?Object.fromEntries(Object.entries(mountChecks).filter(([,count])=>count)):undefined;
       return {...result,scope:{focus:focus?current?'mounted':'detached':'none',roots:focus?bodyRoots(focus,tree).length:0,projected:projected.length,undo:undo.length,
-        entries:(tree.entries.get(id)??[]).length,targets:(tree.entries.get(`${id}:target`)??[]).length,...(mount?{mount,context:!!mountContext(tree)}:{})}};
+        entries:(tree.entries.get(id)??[]).length,targets:(tree.entries.get(`${id}:target`)??[]).length,...(mount?{mount,context:!!mountContext(tree)}:{}),
+        // Which matching check stopped the opening: counts only, no app data.
+        ...(lastOpeningMatch?{match:Object.fromEntries(Object.entries(lastOpeningMatch).filter(([,count])=>typeof count==='number'&&count))}:{})}};
     }catch{return result;}
   }
   function prepareOpening(id,focus,instance) {

@@ -145,3 +145,19 @@ export function addRenderConditions(actions: FlowPresentationAction[], units: Ma
     for (const action of list) { const own = action.when ?? []; action.when = [...outer.slice(-Math.max(0, 5 - own.length)), ...own].slice(-5); }
   }
 }
+
+/** The runtime finds an opener by its component's declared name. A tag that
+ * reaches the component through a renamed re-export, such as
+ * `export {FABInner as FAB}`, would never match its live element. */
+export function resolveOpenerComponents(actions: FlowPresentationAction[], units: Map<string, SourceUnit>, root: string, symbol: (unit: SourceUnit, name: string) => string) {
+  for (const action of actions) {
+    if (action.preview || !action.source) continue;
+    const unit = units.get(resolve(root, action.file));
+    const element = unit && (elementAt(unit.ast, {line: action.source.endLine, column: Math.max(0, action.source.endColumn - 1)}) ?? elementAt(unit.ast, action.source));
+    if (!unit || !element) continue;
+    const tag = (ts.isJsxElement(element) ? element.openingElement : element as ts.JsxSelfClosingElement).tagName.getText(unit.ast);
+    if (tag.split('.').at(-1) !== action.component) continue;
+    const resolved = symbol(unit, tag), declared = resolved.slice(resolved.lastIndexOf('#') + 1);
+    if (declared !== action.component && /^[A-Z][\w$]*$/.test(declared) && units.has(resolved.slice(0, resolved.lastIndexOf('#')))) action.component = declared;
+  }
+}

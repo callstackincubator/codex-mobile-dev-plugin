@@ -506,3 +506,11 @@ exported component renders outside the dialog that hosts it. The 2FA Disable
 form was drawn at the top of the screen without its sheet. A mount preview is
 now dropped when a parent's finite state already renders the same component as
 one of its steps; onboarding and other full-screen forms keep their mounts.
+
+**Renamed components.** The runtime finds an opener's element by its
+component's declared name. A tag that reaches its component through a renamed
+re-export never matched: `FAB` is `export {FABInner as FAB}`, so the new chat
+button and eight compose buttons were never found. The scan now resolves each
+opener tag to its declared component. The new chat recipient picker captures
+again. Failed openings also keep the opening matcher's counts in their local
+evidence, which showed this case: one registered entry, zero matching names.
