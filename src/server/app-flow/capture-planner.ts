@@ -5,10 +5,12 @@ import {FlowPresentationDiscovery} from './presentations.ts';
 import type {FlowEvidence, FlowReachability} from './reachability.ts';
 import {FlowAppFailure} from './runtime-metrics.ts';
 
-// Waits that time can end: loading, native motion, paint, settling and slow
-// runtime replies. A presentation whose target never mounted, that stayed
-// empty or has no content slot fails the same way again.
-const transientWait=/^(?:loading\b|paint$|settling$|transition$|native$|changed$)|still loading|did not settle|Native transition|timed out while|stopped responding|navigator is remounting/;
+// Waits that time can end: native motion, paint, settling, the screen beneath
+// and slow runtime replies. A presentation already had its longest wait while
+// loading, and one whose target never mounted, that stayed empty, went idle,
+// has no content slot or whose screenshot kept changing fails the same way
+// again.
+const transientWait=/^(?:paint$|settling$|transition$|native$|changed$)|still loading|(?:Screen|presentation|view) did not settle|Native transition|timed out while|stopped responding|navigator is remounting/;
 /** One more attempt for a timed-out view, only when another can end differently. */
 export function retryableCapture(node:FlowNode) {
   if(node.status!=='timed-out' || (node.captureAttempts??0)>=2)return false;

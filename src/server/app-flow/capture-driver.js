@@ -1,6 +1,19 @@
 /** Both discovery and prepared capture use the presentation runtime's state,
  * provider, portal, native lifecycle and rollback implementation. */
-export function createCaptureDriver(runtime, source, measure = () => {}) {
+export function createCaptureDriver(runtime, source, measure = () => {}, timing = {}) {
+  // A view stops waiting before its deadline when it cannot change: still
+  // blocked after `idleAfterMs`, while the app had no React commit, HTTP
+  // request or fetching query for `idleQuietMs`. Images and query hooks report
+  // their own loading. A loader still receiving data keeps waiting until the
+  // longest deadline.
+  const {deadlines, idleAfterMs, idleQuietMs} = {deadlines: [6000, 10000], idleAfterMs: 2000, idleQuietMs: 1500, ...timing};
+  const idleLoaders = new Set(['skeleton', 'busy', 'suspense']);
+  const idleReasons = {
+    target: 'The expected content did not render, and the app had no rendering or network activity.',
+    missing: 'The presentation did not appear, and the app had no rendering or network activity.',
+    empty: 'The presentation stayed empty, and the app had no rendering or network activity.',
+  };
+  const loadingText = view => `${view.loadingReason}${view.loadingComponent ? ` in ${view.loadingComponent}` : ''}`;
   const clock = () => globalThis.performance?.now?.() ?? Date.now();
   // Diagnostics must not turn a successful opening into a stalled capture.
   const record = (phase, ms) => { try { measure(phase, ms); } catch {} };
@@ -73,16 +86,26 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
     }
     return {...value, ready:!!value?.ready && value.routeMatches !== false && (!job.entryKey || value.key===job.entryKey)};
   }
+  const deadline = job => job.attempt === undefined ? 8000 : deadlines[Math.min(job.attempt, 1)];
+  const idle = view => view?.idleMs >= idleQuietMs && (idleReasons[view.reason] || view.reason === 'loading' && idleLoaders.has(view.loadingReason));
   async function settled(job, signal) {
-    const deadline = Date.now() + (job.attempt===undefined?8000:[6000,10000][Math.min(job.attempt,1)]);
+    const started = Date.now();
+    let until = started + deadline(job);
     do {
       check(signal);
       const readStarted = clock();
-      const value = await read(job, Math.min(1000, Math.max(0, deadline - Date.now())), signal);
+      const value = await read(job, Math.min(500, Math.max(0, until - Date.now())), signal);
       waited(value, clock() - readStarted);
       check(signal);
       if (value?.ready || value?.error || value?.status==='timed-out') return value;
-      if (Date.now() >= deadline) return value;
+      if (Date.now() - started >= idleAfterMs && idle(value)) return {...value, status: 'timed-out', idle: true,
+        reason: value.reason === 'loading' ? `A loader (${loadingText(value)}) stayed on screen, and the app had no rendering or network activity.` : idleReasons[value.reason]};
+      if (Date.now() >= until) {
+        // Native image loads have no JavaScript activity to observe.
+        const receiving = value?.reason === 'loading' && (value.loadingReason === 'image' || value.idleMs < idleQuietMs);
+        if (receiving && until < started + deadlines[1]) { until = started + deadlines[1]; continue; }
+        return value;
+      }
       await new Promise(resolve => setTimeout(resolve, 40));
     } while (true);
   }
@@ -120,7 +143,7 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
         // The runtime owns all presentation checkpoints, including failed opens.
         await rollback(0, signal);
         if (job.path.length) {
-          const opened = await call({type: 'open', ...route(job), timeoutMs:4000, loadingTimeoutMs:(job.attempt===undefined?8000:[6000,10000][Math.min(job.attempt,1)])}, signal);
+          const opened = await call({type: 'open', ...route(job), timeoutMs:4000, loadingTimeoutMs:deadline(job)}, signal);
           check(signal);
           if (opened?.error || opened?.redirected) return {ready: false, status: 'blocked', reason: opened.error || 'This route redirects to another screen.', evidence:opened};
           if (!opened?.ready) return {ready: false, status: 'timed-out', reason: opened?.reason, evidence:opened};
@@ -142,7 +165,7 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
           if (projected?.error) return {ready: false, status: 'blocked', reason: projected.error};
         }
         const view = opened.view?.ready && !job.projections?.includes(action.id) ? opened.view : await settled(job, signal);
-        if (!view?.ready) return {ready: false, status: view?.status || (view?.error ? 'blocked' : 'timed-out'), failure:view?.failure, reason: view?.error || (view?.reason === 'loading' && view.loadingReason ? `loading (${view.loadingReason}${view.loadingComponent ? ` in ${view.loadingComponent}` : ''})` : view?.reason) || 'The presentation did not settle.'};
+        if (!view?.ready) return {ready: false, status: view?.status || (view?.error ? 'blocked' : 'timed-out'), failure:view?.failure, reason: view?.error || (view?.reason === 'loading' && view.loadingReason ? `loading (${loadingText(view)})` : view?.reason) || 'The presentation did not settle.'};
         const checkpoint = await call({type: 'presentation-checkpoint'}, signal);
         if (!Number.isInteger(checkpoint?.level)) throw new Error('The presentation checkpoint is unavailable.');
         branch.push({id: action.id, level: checkpoint.level, projected: !!job.projections?.includes(action.id)});

@@ -1724,7 +1724,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     const [first,...rest]=path;const copy=Array.isArray(value)?value.slice():{...value};copy[first]=setPath(value?.[first],rest,next);return copy;
   }
   const nativeRecords=new Map(),nativeClassCallbacks=new Map();let nativeCallbackOrigins=new WeakMap();
-  let commitPatch,nativeArmed=false,nativeCloseRequests=0,nativeCloseRetries=0,lastNativeProbe,lastNativeFailure;
+  let commitPatch,lastCommit,nativeArmed=false,nativeCloseRequests=0,nativeCloseRetries=0,lastNativeProbe,lastNativeFailure;
   let nativeRevision=0,nativeCheck,nativeOwnershipChecks=0,nativeOwnershipReuses=0;
   function forgetClassCallbacks(instance,record) {
     for(const [key,handler]of record.handlers){
@@ -1998,6 +1998,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     if(typeof hook?.onCommitFiberRoot!=='function')return false;
     const patch=commitHandler(hook.onCommitFiberRoot,(_renderer,root)=>{
       const started=Date.now();
+      lastCommit=started;
       try{
         structureCache=undefined;
         if(nativeArmed){
@@ -2010,7 +2011,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     });
     try{hook.onCommitFiberRoot=patch.wrapped;}catch{patch.state.callback=undefined;return false;}
     if(hook.onCommitFiberRoot!==patch.wrapped){patch.state.callback=undefined;return false;}
-    commitPatch=patch;return true;
+    // Commits before this observer are unknown; count them as just now.
+    commitPatch=patch;lastCommit=Date.now();return true;
   }
   function armNative(focus) {
     if(!nativeArmed)structureCache=undefined;
@@ -2330,5 +2332,5 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     return projected.slice(-12).map(record=>({owner:name(record.focus),container:name(record.root),prepared:!!record.slot,attached:projectionAttached(record,tree),bodies:(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type).length}));
   }
   const diagnostics=()=>({inputCheck:lastInputCheck?{...lastInputCheck}:undefined,openingMatch:lastOpeningMatch?{...lastOpeningMatch}:undefined,projectionSlots:projectionSlots(),inlineProjections:projected.filter(record=>record.inline).length,nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,lastCompiledEntries,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeUnconfirmed:!!nativeFailure(),nativeOwnershipChecks,nativeOwnershipReuses,nativeFailure:lastNativeFailure,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
-  return {structure:committedStructure,treeSize:()=>lastWalked,missingInputs,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,nativeFailure,collect,records,configure,list,prepare,prepareCapture,open,handoff,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,openedSites,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
+  return {structure:committedStructure,treeSize:()=>lastWalked,lastCommit:()=>observeCommits()?lastCommit:undefined,missingInputs,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,nativeFailure,collect,records,configure,list,prepare,prepareCapture,open,handoff,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,openedSites,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

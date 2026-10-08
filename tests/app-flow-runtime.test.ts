@@ -246,6 +246,37 @@ test('presentation inspection reaches portal outlets beyond a large feed and use
   view=await app.invoke({type:'presentation-view'});assert.equal(view.ready,true);assert.equal(view.loading,false);
 });
 
+test('a waiting presentation reports idle time from commits, requests and fetching queries, then restores the request APIs',async t=>{
+  class Request{listeners:any={};addEventListener(type:string,listener:()=>void){(this.listeners[type]??=[]).push(listener)}send(){}finish(){for(const listener of this.listeners.loadend??[])listener()}}
+  const send=Request.prototype.send;
+  let resolveFetch:(value:string)=>void;const fetch=Object.assign(()=>new Promise<string>(resolve=>{resolveFetch=resolve}),{polyfill:true});
+  const app=runtime(t,false,{setTimeout,clearTimeout},false,{XMLHttpRequest:Request,fetch});await app.invoke({type:'restore'});
+  const box=()=>({x:0,y:0,width:100,height:200});
+  const focus:any={type:function Sheet(){},memoizedProps:{},return:app.fiber};
+  const loader:any={type:function Skeleton(){},memoizedProps:{},return:focus};
+  loader.child={tag:5,type:'View',memoizedProps:{children:'Loading'},stateNode:{getBoundingClientRect:box},return:loader};
+  focus.child=loader;app.native.sibling=focus;
+  const queries={fetching:0,isFetching(){return this.fetching},getQueryCache(){return {getAll:()=>[]}}};
+  app.fiber.memoizedProps.client=queries;
+  Object.assign(app.context,{focus,commitAt:Date.now()-5000});
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,(options)=>{const p=(${installPresentationRuntime.toString()})(options);return {...p,lastCommit:()=>commitAt,open:()=>({name:'Sheet',focus})}})`,app.context);
+  await app.invoke({type:'inspect'});await app.invoke({type:'presentation-open',id:'sheet'});
+  const idle=async()=>{const view=await app.invoke({type:'presentation-view'});assert.equal(view.reason,'loading');return view.idleMs};
+  await new Promise(resolve=>setTimeout(resolve,120));
+  assert.ok(await idle()>=100,'No commit or request since the wrappers were installed');
+  const request=new app.context.XMLHttpRequest();request.send();
+  assert.equal(await idle(),0,'A request in flight');
+  request.finish();await new Promise(resolve=>setTimeout(resolve,60));
+  const afterRequest=await idle();assert.ok(afterRequest>=50&&afterRequest<1000,'Idle time restarts when the request ends');
+  const response=app.context.fetch();assert.equal(await idle(),0,'A fetch in flight');
+  resolveFetch!('response');assert.equal(await response,'response');assert.ok(await idle()<1000);
+  queries.fetching=1;assert.equal(await idle(),0,'A query fetching or waiting to retry');queries.fetching=0;
+  app.context.commitAt=Date.now();assert.ok(await idle()<50,'A commit restarts idle time');
+  assert.equal(app.context.fetch.polyfill,true);
+  await app.invoke({type:'restore'});
+  assert.equal(Request.prototype.send,send);assert.equal(app.context.fetch,fetch);
+});
+
 test('restoration waits for child sheet dismissal before resetting parent navigation',async t=>{
   const app=runtime(t);await app.invoke({type:'restore'});app.context.order=[];
   const dispatch=app.navigation.dispatch;app.navigation.dispatch=action=>{app.context.order.push('navigation');dispatch(action)};

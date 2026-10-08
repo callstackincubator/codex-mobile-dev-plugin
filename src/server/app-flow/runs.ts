@@ -692,6 +692,8 @@ export class AppFlowRuns {
         Sentry.metrics.gauge('app_flow.recovery_continuations',recoveryContinuations,{attributes});
         Sentry.metrics.gauge('app_flow.retries', retries, { attributes });
         Sentry.metrics.gauge('app_flow.unshown', unshown, { attributes });
+        // Views the in-app driver stopped early because the app went idle.
+        Sentry.metrics.gauge('app_flow.idle_failures', run.nodes.filter(node => node.status === 'timed-out' && /no rendering or network activity\.$/.test(node.reason ?? '')).length, { attributes });
         for (const [run_phase, value] of phases) Sentry.metrics.gauge('app_flow.run_phase', Math.round(value.totalMs), { unit: 'millisecond', attributes: { ...attributes, run_phase } });
       }
     }

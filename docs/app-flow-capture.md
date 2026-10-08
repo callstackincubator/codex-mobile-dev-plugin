@@ -514,3 +514,36 @@ button and eight compose buttons were never found. The scan now resolves each
 opener tag to its declared component. The new chat recipient picker captures
 again. Failed openings also keep the opening matcher's counts in their local
 evidence, which showed this case: one registered entry, zero matching names.
+
+## Halving run time, 8 October 2026
+
+**Views that cannot change stop waiting.** In runs 7 to 10 the same views
+failed every time and took about 290 of the run's 717 seconds. Six presentations
+kept a loader on screen that nothing would replace, such as an email
+verification dialog without a code or a join dialog whose query had no code to
+fetch. Each took a 6 second attempt and a 10 second retry. Nine others waited
+the full 6 seconds for content that never rendered. No captured view ever waited
+a full second for its expected content, its presentation or any content.
+
+The runtime now knows whether the app can still change a waiting view: the
+presentation runtime's last React commit, HTTP requests in flight and their last
+start or end, and fetching queries, including ones waiting to retry. It counts
+requests through `XMLHttpRequest`, which React Native's `fetch` uses, and
+through another `fetch` implementation; it reads no URL, header, body or query
+key, and removes its wrappers on restore. A presentation still blocked after two
+seconds, with no commit, request or fetching query for 1.5 seconds, fails at
+once as timed out: "A loader (skeleton in Loader) stayed on screen, and the app
+had no rendering or network activity.", or the same ending for content that did
+not render, a presentation that did not appear or one that stayed empty.
+Images, query hooks that are fetching and native motion keep their deadlines.
+
+A loader still receiving data keeps its first attempt until 10 seconds instead
+of 6. An age-check dialog polls its server for about six seconds before showing
+its result; it failed its first attempt in every run and captured on its retry.
+
+**Retries that never helped.** Runs 7 to 10 retried 36 views and captured 4,
+always that age-check dialog. A presentation no longer retries after loading,
+since it already had its longest wait or went idle, nor after its screenshot
+kept changing; neither ever captured on a second attempt. Route failures,
+native motion, paint and settling waits, a changed screen beneath and slow
+runtime replies still get one more attempt.

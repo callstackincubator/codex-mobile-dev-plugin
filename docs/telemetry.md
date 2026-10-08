@@ -999,7 +999,13 @@ phase in milliseconds, as one gauge per phase with a `run_phase` attribute of
 `connect`, `first-attempt`, `retry-attempt`, `discovery-reopen`, `planning`,
 `reconnect` or `relaunch`, plus the usual surface and platform attributes. The
 same totals stay in the local map with their counts. `app_flow.unshown` counts
-source-proven openers a run marked as not shown on screens it explored. Their
+source-proven openers a run marked as not shown on screens it explored.
+`app_flow.idle_failures` counts presentations a run stopped early because the
+app had no React commit, HTTP request or fetching query while they stayed
+blocked. To decide this, the app runtime counts its own HTTP requests in flight
+and keeps the time of the last start or end; it reads no URL, header, body or
+query key, nothing leaves the app, and the request wrappers are removed when
+capture ends. Their
 reasons quote source conditions and file positions; those stay in the local
 map, never enter Sentry and are not sent into the app. The local relaunch log
 keeps each relaunch's cause and the open view's node ID; neither enters Sentry.

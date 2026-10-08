@@ -113,6 +113,67 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
       }
     } catch { /* Optional query caches may be unavailable. */ }
   }
+  // Whether a waiting view can still change: HTTP requests in flight, the last
+  // request start or end, and fetching queries, with the presentation runtime's
+  // last React commit. Counts and times only; no URL, header, body or query key
+  // is read. Requests continue unchanged and the wrappers are removed on restore.
+  const network = {open: 0, at: 0, undo: undefined};
+  let queryClients;
+  function watchNetwork() {
+    if (network.undo) return;
+    const undo = network.undo = [];
+    network.at = Date.now();
+    const started = () => {
+      let open = true;
+      network.open++; network.at = Date.now();
+      return () => { if (!open) return; open = false; network.open = Math.max(0, network.open - 1); network.at = Date.now(); };
+    };
+    const request = globalThis.XMLHttpRequest?.prototype, send = request && Object.getOwnPropertyDescriptor(request, 'send')?.value;
+    if (typeof send === 'function') {
+      const tracked = function() {
+        const end = started();
+        try { this.addEventListener('loadend', end); } catch { end(); }
+        try { return send.apply(this, arguments); } catch (error) { end(); throw error; }
+      };
+      try { request.send = tracked; undo.push(() => { if (request.send === tracked) request.send = send; }); } catch {}
+    }
+    // React Native's fetch uses XMLHttpRequest; another fetch implementation
+    // is counted here. A derived promise keeps the app's unhandled rejections.
+    const fetch = globalThis.fetch;
+    if (typeof fetch === 'function') {
+      const tracked = Object.assign(function() {
+        const end = started();
+        let result;
+        try { result = fetch.apply(this, arguments); } catch (error) { end(); throw error; }
+        if (typeof result?.then !== 'function') { end(); return result; }
+        return result.then(value => { end(); return value; }, error => { end(); throw error; });
+      }, fetch);
+      try { globalThis.fetch = tracked; undo.push(() => { if (globalThis.fetch === tracked) globalThis.fetch = fetch; }); } catch {}
+    }
+  }
+  function unwatchNetwork() {
+    for (const step of (network.undo ?? []).reverse()) { try { step(); } catch {} }
+    network.undo = queryClients = undefined; network.open = 0;
+  }
+  function fetchingQueries() {
+    if (!queryClients) {
+      queryClients = new Set();
+      fibers(fiber => {
+        const client = ownValue(fiber.memoizedProps, 'client');
+        if (typeof client?.isFetching === 'function' && typeof client.getQueryCache === 'function') { queryClients.add(client); return stopWalk; }
+      });
+    }
+    for (const client of queryClients) { try { if (client.isFetching() > 0) return true; } catch {} }
+    return false;
+  }
+  // Milliseconds without a commit, request or fetching query. Unknown without
+  // the commit observer or the request wrappers.
+  function idleMs() {
+    const commit = presentations?.lastCommit?.();
+    if (!network.undo || !Number.isFinite(commit)) return undefined;
+    if (network.open > 0 || fetchingQueries()) return 0;
+    return Math.max(0, Date.now() - Math.max(commit, network.at));
+  }
   // A fixed amount of JavaScript work. Its duration follows CPU contention in
   // the app process whichever view is open, unlike a capture's duration.
   function cpuProbe() {
@@ -566,7 +627,8 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     const reason=missingInput?'inputs':!expectedReady?'target':nativeMotion?.error?'preview-error':!visual.found?'missing':!visual.content?'empty':visual.loading?'loading':live.transitioning?'transition':nativeMotion?.pending?'native':!presentationObservation.painted?'paint':now-presentationObservation.since<160?'settling':undefined;
     Object.assign(probe,{stage:'done',totalMs:Date.now()-start,expectedReady,found:visual.found,hosts:visual.hosts,content:visual.content,loading:visual.loading,transitioning:live.transitioning,nativePending:!!nativeMotion?.pending,painted:presentationObservation.painted,quietMs:now-presentationObservation.since,keyChanged,signatureChanged,reason});
     const state=root?.getRootState?.()??root?.getState?.();
-    return { ...visual, key, active: active(state), routeMatches:expectedRoute?.path?.length?matchesRoute(state,expectedRoute):undefined, ready: !reason, reason, ...live, ...(!reason&&presentationFocus?{bodyLinks:bodyLinks(visualFocus)}:{}), nativePending:nativeMotion?.pending, error:missingInput??nativeMotion?.error, ...(missingInput?{status:'needs-data'}:{}), components:componentTree };
+    const idle=reason?idleMs():undefined;
+    return { ...visual, key, active: active(state), routeMatches:expectedRoute?.path?.length?matchesRoute(state,expectedRoute):undefined, ready: !reason, reason, ...live, ...(!reason&&presentationFocus?{bodyLinks:bodyLinks(visualFocus)}:{}), nativePending:nativeMotion?.pending, error:missingInput??nativeMotion?.error, ...(missingInput?{status:'needs-data'}:{}), ...(Number.isFinite(idle)?{idleMs:idle}:{}), components:componentTree };
   }
   function sameRouteParams(before,next,depth=0,budget={left:200}) {
     if(Object.is(before,next))return true;
@@ -593,7 +655,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     catch(error){stopped=false;renewLease();throw error;}
     try { if (errorHandler && errorUtils.getGlobalHandler() === errorHandler) errorUtils.setGlobalHandler(originalErrorHandler); } catch {}
     try{logBoxSubscription?.unsubscribe?.();}catch{}logBoxSubscription=undefined;logBoxVisible=false;logBoxRestore?.();logBoxRestore=undefined;
-    presentations?.cleanup(); transitionMode?.restore(); presentationFrames.length=0; presentationFocus=presentationObservation=presentationExpected=undefined;
+    presentations?.cleanup(); transitionMode?.restore(); unwatchNetwork(); presentationFrames.length=0; presentationFocus=presentationObservation=presentationExpected=undefined;
     cancelWaits();
     try { if (!observing && root && original) root.dispatch({ type: 'RESET', payload: original }); } catch {}
     for (const record of transitions.values()) for (const off of record.off) { try { off(); } catch {} }
@@ -623,7 +685,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (stopped) { reply({ stopped:true, error: 'Capture stopped.' }); return; }
         renewLease();
         if (failed()) return;
-        if (['open','capture-start','presentation-open'].includes(command.type) && !observing) transitionMode?.enable();
+        if (['open','capture-start','presentation-open'].includes(command.type) && !observing) { transitionMode?.enable(); watchNetwork(); }
         if (command.type === 'heartbeat') { reply({ alive: true }); return; }
         if (command.type === 'cpu') { const fibers = presentations?.treeSize?.(); reply({ ms: cpuProbe(), ...(Number.isInteger(fibers) ? { fibers } : {}) }); return; }
         if (command.type === 'capture-inventory') { reply(globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.inventory?.() ?? {unavailable:true}); return; }

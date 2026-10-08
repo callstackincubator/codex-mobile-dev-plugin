@@ -289,3 +289,42 @@ test('readiness waits are attributed to the reason each read still reported',asy
   await app.driver.open(app.job('child',['sheet']),signal);
   assert.deepEqual(app.driver.waits(),{},'Each opening starts a new record');
 });
+
+function sheetDriver(view:(elapsed:number)=>any) {
+  const started=Date.now(),reads:number[]=[];
+  const runtime={invoke(command:any,reply:any){
+    if(command.type==='presentation-checkpoint')reply({level:0});
+    else if(command.type==='presentation-rollback')reply({});
+    else{if(command.type==='presentation-view')reads.push(command.waitMs);reply({key:'sheet',signature:'sheet',found:true,content:1,...view(Date.now()-started)});}
+  }};
+  const driver=createCaptureDriver(runtime,async()=>({view:{ready:false}}),undefined,{deadlines:[400,1500],idleAfterMs:150,idleQuietMs:300});
+  return {driver,reads,open:()=>driver.open({id:'sheet',path:[],attempt:0,actions:[{id:'sheet'}]},new AbortController().signal)};
+}
+
+test('a blocked presentation stops waiting once the app has no rendering or network activity',async()=>{
+  const loader={ready:false,reason:'loading',loading:true,loadingReason:'skeleton',loadingComponent:'Loader'};
+  for(const [view,reason] of [[{ready:false,reason:'target'},/expected content did not render/],[{ready:false,reason:'empty'},/stayed empty/],[loader,/^A loader \(skeleton in Loader\) stayed on screen/]] as const){
+    const app=sheetDriver(()=>({...view,idleMs:500})),started=Date.now();
+    const result=await app.open();
+    assert.equal(result.status,'timed-out');assert.match(result.reason,reason);
+    assert.ok(Date.now()-started<400,'An idle view fails before its deadline');
+  }
+  // A query hook's own fetch and native motion are not idle reasons.
+  for(const view of [{...loader,loadingReason:'data'},{ready:false,reason:'native'}]){
+    const app=sheetDriver(()=>({...view,idleMs:500})),started=Date.now();
+    const result=await app.open();
+    assert.equal(result.status,'timed-out');assert.ok(Date.now()-started>=400);
+  }
+});
+
+test('a loader still receiving data keeps its attempt past the first deadline',async()=>{
+  const loading={ready:false,reason:'loading',loading:true,loadingReason:'skeleton',loadingComponent:'Loader'};
+  const app=sheetDriver(elapsed=>elapsed<700?{...loading,idleMs:0}:{ready:true});
+  assert.equal((await app.open()).ready,true);
+  assert.ok(app.reads.every(ms=>ms<=500),'Reads stay short enough to notice an idle app');
+  // Activity extends the attempt only up to the longest deadline.
+  const busy=sheetDriver(()=>({...loading,idleMs:0})),started=Date.now();
+  const result=await busy.open();
+  assert.equal(result.ready,false);assert.equal(result.reason,'loading (skeleton in Loader)');
+  assert.ok(Date.now()-started>=1500&&Date.now()-started<2500);
+});
