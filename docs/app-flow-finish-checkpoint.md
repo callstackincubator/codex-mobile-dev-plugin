@@ -16,6 +16,8 @@ to 181 images, depending on the feed content of the day. Runs 7 to 10 took
 waiting, took 9.9 minutes and saved 178 images, including every view runs 7 to
 10 always captured. Retries now take 7 seconds instead of about 100, and
 failures 135 seconds instead of 229. Single runs vary by 10 to 15 percent.
+With the iOS simulator animation library, presentations captured 22 to 27
+percent faster per view than in run 15; whole runs took 9.3 and 10.4 minutes.
 
 | Run | Minutes | Images | Relaunches |
 | --- | ---: | ---: | ---: |
@@ -25,6 +27,7 @@ failures 135 seconds instead of 229. Single runs vary by 10 to 15 percent.
 | 9 | 12.3 | 177 | 7 |
 | 10 | 12.0 | 175 | 4 |
 | 15, idle views stop waiting | 9.9 | 178 | 4 |
+| 19, plus fast native animations | 10.4 | 178 | 3 and a fresh start |
 
 Each run marks about 63 views it did not find as needs-data, under the screen
 that should show them, with the source conditions that can hide them. Retrying
