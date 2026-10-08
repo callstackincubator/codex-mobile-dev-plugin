@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import { z } from "zod";
 import { metroTargets } from "./metro-logs.ts";
+import type { InspectorTarget } from "./metro-logs.ts";
 import { collectReactNativeTree } from "./react-native-snapshot.js";
 import type { ScreenBounds, ReactElementContext } from "../shared/screen-annotations.ts";
 import { resolveReactNativeSources } from "./react-native-source.ts";
@@ -14,19 +15,25 @@ const stackIds = z.array(z.number().int().min(0).max(511)).max(12).optional();
 const node: z.ZodType<InspectorNode> = z.lazy(() => z.object({ source: z.literal("react-native"), role: z.string().max(256), label: z.string().max(256).optional(), identifier: z.string().max(256).optional(), frame, nodeId: z.string().max(256).optional(), parentId: z.string().max(256).optional(), depth: z.number().int().min(0).max(10000).optional(), children: z.array(node).max(3000).default([]), react: react.optional(), creationStackIds: stackIds, ownerStackIds: stackIds }));
 const creationFrame = z.object({ url: z.number().int().min(0).max(31), line: z.number().int().positive(), column: z.number().int().nonnegative(), methodName: z.string().max(256) });
 const snapshot = z.object({ available: z.boolean(), tree: z.array(node).max(3000).optional(), windowWidth: z.number().nonnegative().finite().optional(), truncated: z.boolean().optional(), sourceUrls: z.array(z.string().max(2048)).max(32).default([]), sourceStacks: z.array(z.array(creationFrame).max(3)).max(512).default([]) });
-export type InspectorRequest = { url?: string; targetId?: string; deviceName: string; deviceAliases?: string[]; appName?: string; appId?: string; platform: "ios" | "android"; screenWidth: number };
+export type InspectorRequest = { url?: string; targetId?: string; deviceName: string; deviceAliases?: string[]; appName?: string; appId?: string; resolveForegroundAppId?: () => Promise<string | undefined>; platform: "ios" | "android"; screenWidth: number };
 const normalized = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+// Never pick another app merely because it has an inspector on this device.
+async function appTargets(targets: InspectorTarget[], request: InspectorRequest): Promise<InspectorTarget[]> {
+  const names = [request.deviceName, ...(request.deviceAliases ?? [])].map(normalized);
+  const onDevice = targets.filter(target => target.deviceName && names.includes(normalized(target.deviceName)));
+  if (request.appId) return onDevice.filter(target => target.appId === request.appId);
+  const app = normalized(request.appName ?? "");
+  const named = onDevice.filter(target => app && target.appId && normalized(target.appId.split(".").at(-1)!) === app);
+  if (named.length || !onDevice.length || !request.resolveForegroundAppId) return named;
+  // Display names can differ from bundle IDs, such as Expo Go and host.exp.Exponent.
+  const appId = await request.resolveForegroundAppId().catch(() => undefined);
+  return appId ? onDevice.filter(target => target.appId === appId) : [];
+}
 
 export async function inspectReactNative(request: InspectorRequest, signal?: AbortSignal) {
   const targets = await metroTargets(request.url ?? "http://127.0.0.1:8081", signal);
-  const matches = targets.filter(target => {
-    if (request.targetId) return target.id === request.targetId;
-    if (!target.deviceName || ![request.deviceName, ...(request.deviceAliases ?? [])].some(name => normalized(target.deviceName!) === normalized(name))) return false;
-    if (request.appId) return target.appId === request.appId;
-    // Never pick another app merely because it has an inspector on this device.
-    const app = normalized(request.appName ?? "");
-    return !!app && !!target.appId && normalized(target.appId.split(".").at(-1)!) === app;
-  });
+  const matches = request.targetId ? targets.filter(target => target.id === request.targetId) : await appTargets(targets, request);
   if (matches.length !== 1) return { available: false as const, reason: matches.length > 1 ? "ambiguous-target" : "no-matching-target" };
   const target = matches[0];
   if (!target.supportsMultipleDebuggers) return { available: false as const, reason: "exclusive-debugger" };
