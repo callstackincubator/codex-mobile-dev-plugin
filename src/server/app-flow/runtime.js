@@ -791,19 +791,6 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           check();return;
         }
         if (command.type === 'presentation-checkpoint') { reply({level:presentations?.checkpoint()??0}); return; }
-        if (command.type === 'presentation-quiet') {
-          // Discovery reads openers once React stops committing, such as rows
-          // a list renders after its view is ready, within a bounded wait.
-          const started = Date.now(), ticket = generation;
-          const quietMs = Math.min(2000, Math.max(0, Number(command.quietMs) || 0)), maxMs = Math.min(5000, Math.max(0, Number(command.maxMs) || 0));
-          const check = () => {
-            if (stopped || ticket !== generation) { reply({cancelled: true}); return; }
-            const commit = presentations?.lastCommit?.(), now = Date.now();
-            if (!Number.isFinite(commit) || now - commit >= quietMs || now - started >= maxMs) { reply({waitedMs: now - started}); return; }
-            later(check, Math.max(16, Math.min(50, quietMs - (now - commit))), () => reply({cancelled: true}));
-          };
-          check(); return;
-        }
         if (command.type === 'presentation-rollback') { generation++; cancelWaits(); const level=command.level??0; void (presentations?.rollback(level) ?? Promise.resolve()).then(() => {while(presentationFrames.length>level){const previous=presentationFrames.pop();presentationFocus=previous.focus;presentationExpected=previous.expected;}presentationObservation=undefined;reply({});}, error => reply({error:presentations?.nativeFailure?.()||'Presentation restoration failed.',nativeFailure:!!presentations?.nativeFailure?.(),detail:String(error?.message??error).slice(0,1000)})); return; }
         if (command.type === 'presentation-project') {
           const result=presentations?.project(presentationFocus);if(!result||result.error){reply(result??{error:'Presentation projection is unavailable.'});return;}
@@ -864,32 +851,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           reply(info); return;
         }
         if (command.type === 'inspect') { reply(inspect()); return; }
-        if (['open','recover','navigation-reset'].includes(command.type)&&presentations?.checkpoint()) { reply({error:'Restore presentations before changing navigation.'});return; }
-        if (command.type === 'navigation-reset') {
-          // Navigators keep every visited tab mounted, and readiness checks and
-          // discovery pay for that tree. The run's starting state with new
-          // route keys mounts only its initial screens again.
-          if (observing || !root || !original) { reply({error: 'Navigation reset is unavailable.'}); return; }
-          const fresh = state => {
-            if (!state || typeof state !== 'object' || !Array.isArray(state.routes)) return state;
-            const {key, stale, routeNames, history, preloadedRoutes, preloadedRouteKeys, ...rest} = state;
-            return {...rest, routes: state.routes.map(({key, state: child, ...route}) => child ? {...route, state: fresh(child)} : route)};
-          };
-          cancelWaits(); generation++; observation = presentationObservation = undefined;
-          try { root.dispatch({ type: 'RESET', payload: fresh(original) }); }
-          catch { reply({error: 'Navigation reset failed.'}); return; }
-          const started = Date.now(), ticket = generation;
-          const settled = () => {
-            if (stopped || ticket !== generation) { reply({cancelled: true}); return; }
-            const commit = presentations?.lastCommit?.(), now = Date.now();
-            // The next job's readiness checks wait for content; the reset only
-            // waits for the navigators to remount.
-            if (now - started >= 1500 || now - started >= 300 && (!Number.isFinite(commit) || now - commit >= 300)) { reply({reset: true, waitedMs: now - started}); return; }
-            later(settled, 50, () => reply({cancelled: true}));
-          };
-          later(settled, 50, () => reply({cancelled: true}));
-          return;
-        }
+        if (['open','recover'].includes(command.type)&&presentations?.checkpoint()) { reply({error:'Restore presentations before changing navigation.'});return; }
         if (!navigatorState()?.routeNames?.length) inspect();
         if (command.type === 'recover') {
           cancelWaits();

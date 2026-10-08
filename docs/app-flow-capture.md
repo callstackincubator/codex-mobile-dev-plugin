@@ -527,12 +527,14 @@ a full second for its expected content, its presentation or any content.
 
 The runtime now knows whether the app can still change a waiting view: the
 presentation runtime's last React commit, HTTP requests in flight and their last
-start or end, and fetching queries, including ones waiting to retry. It counts
-requests through `XMLHttpRequest`, which React Native's `fetch` uses, and
-through another `fetch` implementation; it reads no URL, header, body or query
-key, and removes its wrappers on restore. A presentation still blocked after two
-seconds, with no commit, request or fetching query for 1.5 seconds, fails at
-once as timed out: "A loader (skeleton in Loader) stayed on screen, and the app
+start or end, pending app timeouts from 50 ms to 5 seconds, and fetching
+queries, including ones waiting to retry. It counts requests through
+`XMLHttpRequest`, which React Native's `fetch` uses, and through another `fetch`
+implementation; it reads no URL, header, body, callback or query key, the
+runtime's own timers use the original functions, and the wrappers are removed on
+restore. A presentation still blocked after two seconds, with no commit,
+request, pending timer or fetching query for 1.5 seconds, fails at once as
+timed out: "A loader (skeleton in Loader) stayed on screen, and the app
 had no rendering or network activity.", or the same ending for content that did
 not render, a presentation that did not appear or one that stayed empty.
 Images, query hooks that are fetching and native motion keep their deadlines.
@@ -540,6 +542,9 @@ Images, query hooks that are fetching and native motion keep their deadlines.
 A loader still receiving data keeps its first attempt until 10 seconds instead
 of 6. An age-check dialog polls its server for about six seconds before showing
 its result; it failed its first attempt in every run and captured on its retry.
+In the simulator it has no location, so it makes no request and only waits
+between attempts with timers. Without timers counted, run 11 stopped it as
+idle; with them, run 12 captured it on its first attempt.
 
 **Retries that never helped.** Runs 7 to 10 retried 36 views and captured 4,
 always that age-check dialog. A presentation no longer retries after loading,
@@ -547,3 +552,16 @@ since it already had its longest wait or went idle, nor after its screenshot
 kept changing; neither ever captured on a second attempt. Route failures,
 native motion, paint and settling waits, a changed screen beneath and slow
 runtime replies still get one more attempt.
+
+**Tried and dropped.** Two further changes did not pay off:
+
+- Discovery ran while the device took the screenshot, instead of after it.
+  At the screenshot, lists had not rendered every row, and run 11 lost four
+  dialogs that runs 7 to 10 always captured. Waiting for React to stop
+  committing restored them, but then discovery cost as much as the planning
+  time it replaced. Discovery runs after the capture again.
+- When only the tree grew too large, a navigation reset with new route keys
+  unmounted the visited tabs: 31,000 fibers back to 12,000 within about a
+  second, instead of an 8 second relaunch. Runs with resets were not faster,
+  and both had slow stretches and an app stall around captures 93 to 112 that
+  the run without them did not. The run relaunches as before.
