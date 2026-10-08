@@ -127,7 +127,7 @@ export function createCaptureQueue(driver, emit) {
       }
     } catch (error) {
       // The host can recover from app state only it can reset by relaunching.
-      send({type:'error', interrupted:!!error?.interrupted, ...(error?.native ? {native:true} : error?.app ? {app:true} : {}), reason:String(error?.message||error).slice(0,300)});
+      send({type:'error', interrupted:!!error?.interrupted, ...(error?.native ? {native:true} : error?.app ? {app:true} : {}), reason:String(error?.message||error).slice(0,300), ...(typeof error?.detail==='string'?{detail:error.detail.slice(0,300)}:{})});
     } finally {
       try { await restore(); }
       catch(error) { send({type:'error',interrupted:!!error?.interrupted,reason:'Capture state could not be restored.'}); }

@@ -98,7 +98,7 @@ export type FlowRun = FlowGraph & {
   /** Nodes whose live presentation entries were listed; a resumed run keeps them. */
   explored?: string[];
   /** Local record of the last relaunches: what forced each one and the open view. */
-  relaunchLog?: {cause: 'native' | 'app' | 'pace' | 'interrupted'; nodeId?: string; captured: number}[];
+  relaunchLog?: {cause: 'native' | 'app' | 'pace' | 'interrupted'; nodeId?: string; captured: number; detail?: string}[];
   groups?: { id: string; name: string }[];
   recording?: { groupId: string; message: string };
   startedAt: number;

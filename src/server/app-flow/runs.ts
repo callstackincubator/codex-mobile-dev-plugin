@@ -451,7 +451,8 @@ export class AppFlowRuns {
       relaunches++; settledAtRelaunch = settled(); run.phase = "reconnecting"; run.revision++;
       // Local evidence of what forced each relaunch, and which view was open.
       const kind = cause instanceof FlowNativeFailure ? 'native' : cause instanceof FlowAppFailure ? 'app' : cause instanceof CaptureRelaunchRequest ? 'pace' : 'interrupted';
-      (run.relaunchLog ??= []).push({cause: kind, ...(opening ? {nodeId: opening} : {}), captured: run.nodes.filter(node => node.status === 'captured').length});
+      const detail = (cause instanceof FlowNativeFailure || cause instanceof FlowAppFailure) && cause.detail ? cause.detail.slice(0, 200) : undefined;
+      (run.relaunchLog ??= []).push({cause: kind, ...(opening ? {nodeId: opening} : {}), captured: run.nodes.filter(node => node.status === 'captured').length, ...(detail ? {detail} : {})});
       if (run.relaunchLog.length > 20) run.relaunchLog.shift();
       await Promise.allSettled(active.writing);
       await save();

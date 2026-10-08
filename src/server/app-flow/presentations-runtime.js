@@ -1970,7 +1970,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       if(entry.control&&!entry.closeRetried&&!waiting.some(status=>status.dismissAcknowledged)&&waiting.some(status=>status.opened&&(status.openEvents??0)>(entry.closeOpenEvents?.get(status)??0))){
         entry.closeRetried=true;nativeCloseRetries++;requestControlClose(entry);
       }
-      if(Date.now()-started>=2000)throw new Error(nativeFailure(tree)||'Native presentation dismissal has not finished.');
+      // A full-height sheet in a long-running, larger app can take more than
+      // two seconds to report its dismissal; a confirmed close returns at once.
+      if(Date.now()-started>=4000)throw new Error(nativeFailure(tree)||'Native presentation dismissal has not finished.');
       await new Promise(resolve=>later(resolve,40,resolve));
     }
   }

@@ -145,7 +145,7 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
       } else if (event.type === 'uncaptured' && node?.status === 'capturing') {
         node.status = 'timed-out'; node.reason = 'The screenshot did not settle.'; node.captureMs=event.ms; node.captureDiagnostics=captureDiagnostics(event.diagnostics); options.timing?.('capture',event.ms); options.timing?.(node.presentation ? 'presentation' : 'route', event.ms); run.revision++; await save();
       } else if (event.type === 'error') throw event.interrupted ? new CaptureConnectionError() : event.native ? new FlowNativeFailure('presentation-rollback', event.reason)
-        : event.app ? new FlowAppFailure('presentation-view', event.reason) : new Error(event.reason);
+        : event.app ? new FlowAppFailure('presentation-view', typeof event.detail === 'string' ? event.detail : event.reason) : new Error(event.reason);
       else if (event.type === 'done') done();
     }).catch(error => { stopped = true; fail(error); });
   });

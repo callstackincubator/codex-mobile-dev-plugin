@@ -49,7 +49,7 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
     signal?.addEventListener('abort', abort, {once:true});
     if (signal?.aborted) { abort(); return; }
     try { runtime.invoke(command, result => {
-      if (result?.appFailed) finish(Object.assign(new Error('The app reported a fatal JavaScript error.'), {fatal:true, app:true}));
+      if (result?.appFailed) finish(Object.assign(new Error('The app reported a fatal JavaScript error.'), {fatal:true, app:true, ...(typeof result.detail==='string'?{detail:result.detail.slice(0,300)}:{})}));
       else if (result?.nativeFailure) finish(Object.assign(new Error(result.error || 'Native presentation dismissal is unconfirmed.'), {fatal:true, native:true}));
       else if (result?.cancelled || result?.runtimeUnavailable || result?.stopped) finish(interrupted('The app runtime changed during capture.'));
       else finish(undefined, result);

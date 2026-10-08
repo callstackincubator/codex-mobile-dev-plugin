@@ -9,14 +9,22 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
   const transitionMode = transitionFactory?.();
   // Preserve RN's error handler. A live navigator behind LogBox is not a
   // capturable screen, even when its React tree has finished rendering.
-  let appFailed = false, errorUtils, originalErrorHandler, errorHandler;
+  let appFailed = false, appFailure, errorUtils, originalErrorHandler, errorHandler;
+  // Local evidence for the run's relaunch log: the error's type and the first
+  // stack frames' function names. Code identifiers only; a message can carry
+  // app data, so it is never kept. Never sent to telemetry.
+  const describeError = error => {
+    const type = typeof error?.name === 'string' && /^[A-Z][\w$]{0,40}$/.test(error.name) ? error.name : 'Error';
+    const frames = String(error?.stack ?? '').split('\n').slice(1).map(line => /at ([A-Za-z_$][\w$.<>]{0,60})/.exec(line)?.[1]).filter(Boolean).slice(0, 4);
+    return frames.length ? `${type} in ${frames.join(' < ')}` : type;
+  };
   try {
     errorUtils = globalThis.ErrorUtils;
     if (typeof errorUtils?.getGlobalHandler === 'function' && typeof errorUtils?.setGlobalHandler === 'function') {
       originalErrorHandler = errorUtils.getGlobalHandler();
       if (typeof originalErrorHandler === 'function') {
         errorHandler = function(error, fatal) {
-          if (fatal) appFailed = true;
+          if (fatal) { appFailed = true; appFailure ??= describeError(error); }
           return originalErrorHandler.apply(this, arguments);
         };
         errorUtils.setGlobalHandler(errorHandler);
@@ -604,7 +612,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
       const cleanup = ['restore', 'heartbeat', 'presentation-rollback', 'capture-stop'].includes(command.type);
       const failed = () => {
         if(cleanup||command.type==='diagnostics')return false;
-        if(appFailed||logBoxVisible){originalReply({appFailed:true});return true;}
+        if(appFailed||logBoxVisible){originalReply({appFailed:true,...(appFailure?{detail:appFailure}:{})});return true;}
         const error=presentations?.nativeFailure?.();
         if(error){originalReply({nativeFailure:true,error});return true;}
         return false;
