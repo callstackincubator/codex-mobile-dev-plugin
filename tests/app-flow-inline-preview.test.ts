@@ -196,3 +196,83 @@ for(const install of [installPresentationRuntime,sharedLoopRuntime()]){
   await runtime.rollback();assert.equal(app.originalHost.memoizedProps.style,app.originalStyle);
  });
 }
+
+// A dialog shell, such as a scroll view, renders the step's element deeper
+// than the nearest View: sheet > View > Shell > host > Step, Close.
+function shellFixture(t:test.TestContext,{laterRenders=false,stepRenders=true}={}) {
+  const previous=(globalThis as any).__r;
+  function View(){}function Modal(){}function Shell(){}function Step(){}function Close(){}
+  const original=React.createElement(Step,{label:'Original'}),close=React.createElement(Close,null);
+  const shellElement=React.createElement(Shell,null,original,close);
+  const lifecycle={onStateChange(){}},canonical={currentProps:lifecycle};
+  const sheet:any={tag:5,type:'NativePresentation',memoizedProps:lifecycle,stateNode:{canonical}};
+  const container:any={type:View,memoizedProps:{children:shellElement},return:sheet};sheet.child=container;
+  const shell:any={tag:0,type:Shell,memoizedProps:shellElement.props,return:container};container.child=shell;
+  const scroll:any={tag:5,type:'NativeScroll',memoizedProps:{},return:shell};shell.child=scroll;
+  const step:any={tag:0,type:Step,memoizedProps:original.props,return:scroll};scroll.child=step;
+  const closeFiber:any={tag:0,type:Close,memoizedProps:close.props,return:scroll};step.sibling=closeFiber;
+  if(laterRenders)closeFiber.child={tag:5,type:'NativeButton',memoizedProps:{},return:closeFiber};
+  const originalStyle=[{padding:8}],originalHost:any={tag:5,type:'NativeBody',memoizedProps:{style:originalStyle},return:step,stateNode:{getBoundingClientRect:()=>({width:300,height:100})}};
+  if(stepRenders)step.child=originalHost;
+  let body:any;
+  const hook={renderers:new Map(),onCommitFiberRoot(){}};
+  const fibers=(visit:any,subtree?:any)=>{const stack=[subtree??sheet];while(stack.length){const fiber=stack.pop();if(fiber!==subtree&&fiber.sibling)stack.push(fiber.sibling);if(visit(fiber)!==false&&fiber.child)stack.push(fiber.child)}};
+  const renderer={rendererPackageName:'react-native-renderer',overrideProps(fiber:any,_path:any,props:any){
+    fiber.memoizedProps=props;
+    if(fiber===shell){
+      const element=props.children?.props?.children?.at?.(-1);closeFiber.sibling=undefined;
+      if(element?.key?.startsWith('mobile-flow-preview-')){
+        const child=element.props.children.props.children;
+        body={tag:0,type:child.type,elementType:child.type,memoizedProps:child.props,pendingProps:child.props,return:scroll};
+        body.child={tag:5,type:'NativeBody',memoizedProps:{},stateNode:{getBoundingClientRect:()=>({width:300,height:180})},return:body};closeFiber.sibling=body;
+      }
+    }
+    hook.onCommitFiberRoot();
+  }};
+  hook.renderers.set(1,renderer);
+  (globalThis as any).__r={getModules:()=>new Map([[1,{isInitialized:true,publicModule:{exports:{...React}}}],[2,{isInitialized:true,publicModule:{exports:{View,Modal,Platform:{OS:'ios'},StyleSheet:{create(){}}}}}]])};
+  const runtime=installPresentationRuntime({hook,fibers,hidden:()=>false,later:setTimeout});
+  runtime.captureNative(sheet);canonical.currentProps.onStateChange({nativeEvent:{state:'open'}} as any);
+  t.after(()=>{runtime.cleanup();(globalThis as any).__r=previous});
+  return {runtime,container,shell,step,original,close,originalHost,originalStyle,shellElement,body:()=>body};
+}
+
+test('a step inside a dialog shell is copied beside its own element when later siblings render nothing',async t=>{
+  const app=shellFixture(t),{runtime}=app;
+  assert.equal(runtime.project(app.step,{views:['step']}).error,undefined);
+  const children=app.shell.memoizedProps.children.props.children;
+  assert.equal(children[0],app.original);assert.equal(children[1],app.close);
+  assert.ok(children[2].key.startsWith('mobile-flow-preview-'),'The copy follows the step inside the shell, not after the shell');
+  assert.equal(app.container.memoizedProps.children,app.shellElement,'The outer View keeps its children');
+  assert.equal(app.originalHost.memoizedProps.style.at(-1).opacity,0);
+  assert.equal(runtime.motion(app.step).pending,false,'A nested step needs no sizing proxy once its copy renders');
+  await runtime.rollback();
+  assert.deepEqual(app.shell.memoizedProps.children,[app.original,app.close]);
+  assert.equal(app.originalHost.memoizedProps.style,app.originalStyle);assert.equal(runtime.checkpoint(),0);
+});
+
+test('a nested step copy may render other native roots than the original step',async t=>{
+  const app=shellFixture(t),{runtime}=app;
+  assert.equal(runtime.project(app.step,{views:['step']}).error,undefined);
+  // The copied step renders two native roots where the original had one.
+  const body=app.body();body.child.sibling={tag:5,type:'NativeFooter',memoizedProps:{},stateNode:{getBoundingClientRect:()=>({width:300,height:40})},return:body};
+  const view=runtime.motion(app.step);
+  assert.equal(view.error,undefined);assert.equal(view.pending,false);
+  assert.equal(app.originalHost.memoizedProps.style.at(-1).opacity,0,'The original stays concealed');
+  await runtime.rollback();
+});
+
+test('a later sibling that renders a native view keeps the step without a slot',t=>{
+  const app=shellFixture(t,{laterRenders:true});
+  const result=app.runtime.project(app.step,{views:['step']});
+  assert.match(result.error,/exact content slot/);assert.match(result.detail,/later-sibling/);
+  assert.equal(app.runtime.checkpoint(),0);
+});
+
+test('a step that renders nothing yet takes its copy without concealing anything',async t=>{
+  const app=shellFixture(t,{stepRenders:false}),{runtime}=app;
+  assert.equal(runtime.project(app.step,{views:['step']}).error,undefined);
+  assert.equal(runtime.motion(app.step).error,undefined,'No original body has to match the copy');
+  await runtime.rollback();
+  assert.deepEqual(app.shell.memoizedProps.children,[app.original,app.close]);
+});

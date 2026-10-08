@@ -74,7 +74,7 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
     return {...value, ready:!!value?.ready && value.routeMatches !== false && (!job.entryKey || value.key===job.entryKey)};
   }
   async function settled(job, signal) {
-    const deadline = Date.now() + (job.attempt===undefined?8000:[6000,10000,20000][Math.min(job.attempt,2)]);
+    const deadline = Date.now() + (job.attempt===undefined?8000:[6000,10000][Math.min(job.attempt,1)]);
     do {
       check(signal);
       const readStarted = clock();
@@ -120,7 +120,7 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
         // The runtime owns all presentation checkpoints, including failed opens.
         await rollback(0, signal);
         if (job.path.length) {
-          const opened = await call({type: 'open', ...route(job), timeoutMs:4000, loadingTimeoutMs:(job.attempt===undefined?8000:[6000,10000,20000][Math.min(job.attempt,2)])}, signal);
+          const opened = await call({type: 'open', ...route(job), timeoutMs:4000, loadingTimeoutMs:(job.attempt===undefined?8000:[6000,10000][Math.min(job.attempt,1)])}, signal);
           check(signal);
           if (opened?.error || opened?.redirected) return {ready: false, status: 'blocked', reason: opened.error || 'This route redirects to another screen.', evidence:opened};
           if (!opened?.ready) return {ready: false, status: 'timed-out', reason: opened?.reason, evidence:opened};
@@ -165,6 +165,14 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
       return settled(job, signal);
     },
     verify(job, signal) { return read(job, 0, signal); },
+    // App health, read once per job: CPU contention from the same fixed work,
+    // and the size of the tree each readiness probe walks.
+    async cpu(signal) {
+      try {
+        const value = await call({type:'cpu'}, signal, false);
+        return Number.isFinite(value?.ms) ? {ms: value.ms, ...(Number.isInteger(value.fibers) ? {fibers: value.fibers} : {})} : undefined;
+      } catch (error) { if (error?.fatal && !error?.interrupted) throw error; }
+    },
     waits() { return Object.fromEntries(Object.entries(waits).map(([reason, ms]) => [reason, Math.round(ms)])); },
     // Compiled source sites passing the opened controller. A shared shell's
     // capture names the caller that rendered it, not every possible caller.

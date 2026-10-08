@@ -24,6 +24,9 @@ export class FlowPresentationDiscovery {
     const catalog=run.presentations;
     this.catalog = {states: [...new Map([...(catalog?.states??[]),...(catalog?.previewStates??[])].map(site=>[site.id,site])).values()], actions: [...(catalog?.actions??[]),...(catalog?.previews??[])]};
     for(const failure of run.discoveryFailures??[])if(run.nodes.some(node=>node.id===failure.nodeId))this.failures.set(failure.nodeId,failure);
+    // A resumed run, such as a single-screen retry, does not reopen every
+    // screen it already explored.
+    for(const id of run.explored??[])if(run.nodes.some(node=>node.id===id&&node.status==='captured'))this.visited.add(id);
   }
   get enabled() { return this.catalog.actions.length > 0; }
   async setup(backend: FlowBackend) {
@@ -98,10 +101,11 @@ export class FlowPresentationDiscovery {
         this.edge(base, node);
       }
       this.visited.add(base.id);
+      this.run.explored=[...this.visited];
       await this.changed();
       this.failures.delete(base.id);
     } catch (error) {
-      this.visited.delete(base.id);
+      this.visited.delete(base.id);this.run.explored=[...this.visited];
       this.failures.set(base.id,{nodeId:base.id,operation:error instanceof FlowRuntimeFailure?error.operation:'other',message:error instanceof FlowRuntimeFailure?error.message:'App Flow presentation discovery failed.',detail:error instanceof FlowRuntimeFailure?error.detail:undefined});
       throw error;
     }

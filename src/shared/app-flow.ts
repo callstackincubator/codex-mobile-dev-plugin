@@ -24,7 +24,7 @@ export type FlowNode = {
   imageSourceHash?: string;
   captureMs?: number;
   /** Local timing evidence for the last attempt: in-app work per phase and readiness waits per reason, in ms. Never telemetry. */
-  captureDiagnostics?: { work?: Record<string, number>; waits?: Record<string, number> };
+  captureDiagnostics?: { work?: Record<string, number>; waits?: Record<string, number>; cpu?: number; fibers?: number };
   captureAttempts?: number;
   groupId?: string;
   capture?: 'observed';
@@ -42,6 +42,8 @@ export type FlowStateSelection = {id:string;file:string;owner:string;component:s
 export type FlowStateSync = {line:number;column:number;dispatch:string;locals:string[];updates:{when:FlowStateExpression;payload:Record<string,FlowStateExpression>;patch:Record<string,FlowStateExpression>}[]};
 export type FlowStateSite = { id: string; file: string; line: number; column: number; endLine: number; endColumn?: number; owner: string; paths: string[][]; selections?: FlowStateSelection[]; sync?:FlowStateSync[]; data?: {file:string;name:string}[]; hook?: 'useState' | 'useReducer'; valueName?: string; owners?: string[]; ownerSites?: {file: string; owner: string}[]; ownerEntries?: {component:string; file:string; owner:string; source:{line:number;column:number;endLine:number;endColumn:number}}[] };
 export type FlowOpeningData = {value:FlowStateExpression;when:FlowStateExpression;locals:string[]};
+/** A source condition that decides whether an opener renders, as written. */
+export type FlowRenderCondition = {kind: 'when' | 'unless' | 'each'; text: string; file: string; line: number};
 export type FlowPresentationAction = {
   id: string; file: string; line: number; owner: string; component: string; prop: string; name: string;
   source?: { line: number; column: number; endLine: number; endColumn: number };
@@ -53,6 +55,10 @@ export type FlowPresentationAction = {
   views?: string[];
   /** Registered screens whose render tree contains the opener's owner. */
   parents?: string[];
+  /** Conditions around the opener and its owner's single render site. */
+  when?: FlowRenderCondition[];
+  /** Source text of the controller value a control target receives. */
+  controller?: string;
   expected?: {scope?: 'owner'; component: string; file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}};
   handoffs?: {file: string; owner: string; component: string; prop: string; source: {line: number; column: number; endLine: number; endColumn: number}; contextPath: string[]; close: string}[];
   consumer?: {component: string; entries: {file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}}[]};
@@ -81,8 +87,14 @@ export type FlowRun = FlowGraph & {
   id: string;
   pluginVersion?: string;
   runtimeTimings?: {operation:string;count:number;totalMs:number;maxMs:number;timeouts:number}[];
+  /** Local wall time per fixed run phase, such as first attempts and retries. */
+  phaseTimings?: {phase:string;count:number;totalMs:number}[];
   phase: "scanning" | "connecting" | "reconnecting" | "capturing" | "recording" | "finishing" | "complete" | "partial" | "stopped" | "failed";
   discoveryFailures?: {nodeId:string;operation:string;message:string;detail?:string}[];
+  /** Nodes whose live presentation entries were listed; a resumed run keeps them. */
+  explored?: string[];
+  /** Local record of the last relaunches: what forced each one and the open view. */
+  relaunchLog?: {cause: 'native' | 'app' | 'pace' | 'interrupted'; nodeId?: string; captured: number}[];
   groups?: { id: string; name: string }[];
   recording?: { groupId: string; message: string };
   startedAt: number;
@@ -104,7 +116,7 @@ export function publicFlowRun(run: FlowRun): FlowRun {
 }
 /** Polling renders a graph, not its source analysis or executable recipes. */
 export function flowProgressRun(run: FlowRun): FlowRun {
-  const {presentations,links,...progress}=run;
+  const {presentations,links,explored,...progress}=run;
   return progress;
 }
 export type FlowResolution = { nodeId: string; params: FlowParams };

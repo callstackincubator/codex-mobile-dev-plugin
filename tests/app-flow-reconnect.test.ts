@@ -62,7 +62,7 @@ test('slow recovery with a healthy connection retries the route without reinstal
       if(command.type==='inspect')return {available:true};
       if(command.type==='open'){
         screen=(command.path as string[])[0];opens.push(screen);
-        if(screen==='Profile'&&opens.filter(name=>name==='Profile').length<3)throw new FlowRuntimeTimeout('open');
+        if(screen==='Profile'&&opens.filter(name=>name==='Profile').length<2)throw new FlowRuntimeTimeout('open');
         return {ready:true,active:[screen],name:screen,signature:screen};
       }
       if(command.type==='recover'){recoveries++;throw new FlowRuntimeTimeout('recover');}
@@ -73,7 +73,7 @@ test('slow recovery with a healthy connection retries the route without reinstal
   const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
   assert.equal(connections,1);assert.equal(recoveries,0);assert.equal(heartbeats,0);
   assert.deepEqual(shots,['Home','Settings','Profile']);
-  assert.equal(runs.read(run.id).nodes.find(n=>n.name==='Profile')?.captureAttempts,3);
+  assert.equal(runs.read(run.id).nodes.find(n=>n.name==='Profile')?.captureAttempts,2);
   assert.equal(runs.read(run.id).phase,'complete');
 });
 
@@ -221,7 +221,12 @@ test('relaunches continue while captures progress and stop when a failure recurs
   const stuck=relaunchFixture(()=>new FlowAppFailure('verify'));
   const stuckRuns=stuck.runs(await directory(t));
   const failed=stuckRuns.start(input);await until(()=>!flowRunning(stuckRuns.read(failed.id)));await stuckRuns.close();
-  assert.equal(stuckRuns.read(failed.id).phase,'failed');assert.equal(stuck.relaunched.length,3);
+  // Each view fails twice and is blocked, which counts as progress once the
+  // first three relaunches are spent; the next unblocked failure ends the run.
+  const stuckResult=stuckRuns.read(failed.id);
+  assert.equal(stuckResult.phase,'failed');assert.equal(stuck.relaunched.length,4);
+  assert.deepEqual(stuckResult.nodes.map(node=>node.status),['blocked','blocked','timed-out']);
+  assert.deepEqual(stuckResult.relaunchLog?.map(item=>[item.cause,item.nodeId]),[['app','Home'],['app','Home'],['app','Profile'],['app','Profile']]);
 });
 
 test('a device that cannot relaunch the app keeps the original failure',async t=>{
@@ -252,8 +257,8 @@ test('route and presentation retries preserve the failed runtime step in their s
   const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
   const nodes=runs.read(run.id).nodes;
   const route=nodes.find(n=>n.name==='Profile')!,sheet=nodes.find(n=>n.presentation)!;
-  assert.equal(route.status,'timed-out');assert.match(route.reason!,/opening a route/);assert.equal(route.captureAttempts,3);
-  assert.equal(sheet.status,'timed-out');assert.match(sheet.reason!,/checking presentation readiness/);assert.equal(sheet.captureAttempts,3);
+  assert.equal(route.status,'timed-out');assert.match(route.reason!,/opening a route/);assert.equal(route.captureAttempts,2);
+  assert.equal(sheet.status,'timed-out');assert.match(sheet.reason!,/checking presentation readiness/);assert.equal(sheet.captureAttempts,2);
 });
 
 
@@ -265,7 +270,7 @@ test('a native screenshot failure keeps its own step and local evidence',async t
     return {ready:true,active:['Home'],name:'Home',signature:'Home',found:true};
   },async close(){}},async screenshot(){throw new FlowRuntimeFailure('screenshot','failed','Screenshot failed with HTTP 503.')}})});
   const run=runs.start(input);await until(()=>!flowRunning(runs.read(run.id)));await runs.close();
-  const node=runs.read(run.id).nodes[0];assert.equal(node.status,'timed-out');assert.equal(node.captureAttempts,3);
+  const node=runs.read(run.id).nodes[0];assert.equal(node.status,'timed-out');assert.equal(node.captureAttempts,2);
   assert.match(node.reason!,/device screenshot/);assert.deepEqual(node.failure,{operation:'screenshot',detail:'Screenshot failed with HTTP 503.'});
 });
 
@@ -340,7 +345,7 @@ for(const failOpening of [false,true])test(`slow presentation cleanup resumes wi
       if(command.type==='open'){assert.equal(level,0,'Never navigate under a sheet that is still closing');screen=(command.path as string[])[0];return {...view(),name:screen};}
       if(command.type==='presentations')return screen==='Home'&&level===0?[action]:[];
       if(command.type==='presentation-checkpoint')return {level};
-      if(command.type==='presentation-open'){level=1;if(failOpening&&openingFailures++===0)return {error:'Body not available yet'};return view();}
+      if(command.type==='presentation-open'){level=1;if(failOpening&&openingFailures++===0)return {error:'The presentation did not settle.'};return view();}
       if(command.type==='presentation-rollback'){
         if(level){closeRequests++;if(!cleanupFailed){cleanupFailed=true;throw new FlowRuntimeTimeout('presentation-rollback');}}
         level=0;return {};
@@ -355,20 +360,17 @@ for(const failOpening of [false,true])test(`slow presentation cleanup resumes wi
   assert.ok(runs.read(run.id).nodes.every(node=>node.status==='captured'));
 });
 
-test('captures that slow far below the run pace relaunch the app once and resume',async t=>{
+test('an app whose CPU probe slows far below the run pace relaunches once and resumes',async t=>{
   const many=():FlowGraph=>({files:1,scanMs:1,warnings:[],edges:[],nodes:Array.from({length:40},(_,index)=>`Screen${index}`).map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending'}))});
   let generation=0,opened=0;const relaunched:string[]=[];
-  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>many(),pace:{window:6,factor:2.5,floorMs:40},relaunch:async(_input,appId)=>{relaunched.push(appId);},connect:async()=>{
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>many(),pace:{window:6,factor:2.5,floorMs:5},relaunch:async(_input,appId)=>{relaunched.push(appId);},connect:async()=>{
     const current=++generation;let screen='';
     return {target:{appId:'example.app',deviceId:'device'},runtime:{async invoke(command){
       if(command.type==='inspect'||command.type==='resume')return {available:true};
       if(command.type==='recover'||command.type==='heartbeat')return {alive:true,recovered:true};
-      if(command.type==='open'){
-        screen=(command.path as string[])[0];opened++;
-        // The first app degrades after twenty screens; a fresh app is fast.
-        if(current===1&&opened>20)await delay(80);
-        return {ready:true,active:[screen],name:screen,signature:screen};
-      }
+      // The first app degrades after twenty screens; a fresh app is fast.
+      if(command.type==='cpu')return {ms:current===1&&opened>20?30:2};
+      if(command.type==='open'){screen=(command.path as string[])[0];opened++;return {ready:true,active:[screen],name:screen,signature:screen};}
       return {found:true,active:[screen]};
     },async close(){}},async screenshot(){return Buffer.from(screen)}};
   }});
@@ -379,17 +381,43 @@ test('captures that slow far below the run pace relaunch the app once and resume
   assert.equal(result.phase,'complete');
   assert.deepEqual(relaunched,['example.app'],'One relaunch restores the pace');
   assert.equal(result.nodes.filter(node=>node.status==='captured').length,40);
+  assert.deepEqual(result.relaunchLog?.map(item=>item.cause),['pace']);
+  assert.ok(result.nodes.every(node=>typeof node.captureDiagnostics?.cpu==='number'),'Each view keeps its probe locally');
 });
 
-test('content that stays slow in a fresh app does not relaunch it again',async t=>{
-  const many=():FlowGraph=>({files:1,scanMs:1,warnings:[],edges:[],nodes:Array.from({length:40},(_,index)=>`Screen${index}`).map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending'}))});
+test('a tree that keeps growing past twice its first size relaunches the app',async t=>{
+  const many=():FlowGraph=>({files:1,scanMs:1,warnings:[],edges:[],nodes:Array.from({length:30},(_,index)=>`Screen${index}`).map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending'}))});
+  let generation=0,opened=0;const relaunched:string[]=[];
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>many(),pace:{window:6,treeFactor:2,treeFloor:5000},relaunch:async(_input,appId)=>{relaunched.push(appId);},connect:async()=>{
+    const current=++generation;let screen='';
+    return {target:{appId:'example.app',deviceId:'device'},runtime:{async invoke(command){
+      if(command.type==='inspect'||command.type==='resume')return {available:true};
+      if(command.type==='recover'||command.type==='heartbeat')return {alive:true,recovered:true};
+      // Each visited screen stays mounted in the first app; a fresh app starts small.
+      if(command.type==='cpu')return {ms:1,fibers:current===1?10000+opened*1000:10000};
+      if(command.type==='open'){screen=(command.path as string[])[0];opened++;return {ready:true,active:[screen],name:screen,signature:screen};}
+      return {found:true,active:[screen]};
+    },async close(){}},async screenshot(){return Buffer.from(screen)}};
+  }});
+  const run=runs.start(input);
+  for(let wait=0;wait<1000&&flowRunning(runs.read(run.id));wait++)await delay(10);
+  await runs.close();
+  const result=runs.read(run.id);
+  assert.equal(result.phase,'complete');
+  assert.deepEqual(relaunched,['example.app'],'One relaunch resets the tree');
+  assert.ok(result.nodes.every(node=>Number.isInteger(node.captureDiagnostics?.fibers)));
+});
+
+test('heavy views alone do not relaunch a healthy app',async t=>{
+  const many=():FlowGraph=>({files:1,scanMs:1,warnings:[],edges:[],nodes:Array.from({length:30},(_,index)=>`Screen${index}`).map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending'}))});
   let opened=0;const relaunched:string[]=[];
-  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>many(),pace:{window:6,factor:2.5,floorMs:40},relaunch:async(_input,appId)=>{relaunched.push(appId);},connect:async()=>{
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>many(),pace:{window:6,factor:2.5,floorMs:5},relaunch:async(_input,appId)=>{relaunched.push(appId);},connect:async()=>{
     let screen='';
     return {target:{appId:'example.app',deviceId:'device'},runtime:{async invoke(command){
       if(command.type==='inspect'||command.type==='resume')return {available:true};
       if(command.type==='recover'||command.type==='heartbeat')return {alive:true,recovered:true};
-      if(command.type==='open'){screen=(command.path as string[])[0];opened++;if(opened>12)await delay(80);return {ready:true,active:[screen],name:screen,signature:screen};}
+      if(command.type==='cpu')return {ms:2};
+      if(command.type==='open'){screen=(command.path as string[])[0];opened++;if(opened>8)await delay(60);return {ready:true,active:[screen],name:screen,signature:screen};}
       return {found:true,active:[screen]};
     },async close(){}},async screenshot(){return Buffer.from(screen)}};
   }});
@@ -397,5 +425,25 @@ test('content that stays slow in a fresh app does not relaunch it again',async t
   for(let wait=0;wait<1000&&flowRunning(runs.read(run.id));wait++)await delay(10);
   await runs.close();
   assert.equal(runs.read(run.id).phase,'complete');
-  assert.deepEqual(relaunched,['example.app'],'Slow screens after the relaunch keep capturing without another relaunch');
+  assert.deepEqual(relaunched,[],'Slower content with a steady probe keeps the app');
+});
+
+test('an app that stays slow after a relaunch is not relaunched again',async t=>{
+  const many=():FlowGraph=>({files:1,scanMs:1,warnings:[],edges:[],nodes:Array.from({length:40},(_,index)=>`Screen${index}`).map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending'}))});
+  let opened=0;const relaunched:string[]=[];
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>many(),pace:{window:6,factor:2.5,floorMs:5},relaunch:async(_input,appId)=>{relaunched.push(appId);},connect:async()=>{
+    let screen='';
+    return {target:{appId:'example.app',deviceId:'device'},runtime:{async invoke(command){
+      if(command.type==='inspect'||command.type==='resume')return {available:true};
+      if(command.type==='recover'||command.type==='heartbeat')return {alive:true,recovered:true};
+      if(command.type==='cpu')return {ms:opened>12?30:2};
+      if(command.type==='open'){screen=(command.path as string[])[0];opened++;return {ready:true,active:[screen],name:screen,signature:screen};}
+      return {found:true,active:[screen]};
+    },async close(){}},async screenshot(){return Buffer.from(screen)}};
+  }});
+  const run=runs.start(input);
+  for(let wait=0;wait<1000&&flowRunning(runs.read(run.id));wait++)await delay(10);
+  await runs.close();
+  assert.equal(runs.read(run.id).phase,'complete');
+  assert.deepEqual(relaunched,['example.app'],'A slow probe after the relaunch keeps capturing without another relaunch');
 });

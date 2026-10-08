@@ -338,7 +338,8 @@ Accepted images stay. The view that was opening when the failure surfaced gets
 one more attempt, because the cause can be the view before it; a second failure
 while opening it blocks only that view. Inspector acknowledgements that time out
 count as interruptions, and the third interruption in a row relaunches instead
-of failing the run. A run relaunches at most three times and records a warning.
+of failing the run. A run relaunches three times freely, then again whenever a
+view settled since the last relaunch, up to twelve times, and records a warning.
 If the device cannot relaunch the app, the run ends with the original failure.
 
 In the default run that motivated this, the app climbed from 1.3 to 3.7 GB and
@@ -402,3 +403,71 @@ check failed. None of this enters telemetry.
 **Commit work.** React commits no longer walk the whole tree. They visit only
 subtrees the commit rendered, where new and updated image and native hosts
 are; readiness scans and openings still release removed hosts.
+
+## Faster runs and views not found, 8 October 2026
+
+**Fail fast.** The last full run before this change took 23.8 minutes. Its
+final 12 minutes saved no new image: every timed-out view got three attempts,
+with 6, 10 and 20 second readiness deadlines, and retries ran after the rest of
+the queue. Retries had rescued 3 of 172 captures. A timed-out view now gets
+one more attempt only when its failure can end differently: loading, native
+motion, paint or settling waits, and slow runtime replies. A presentation whose
+target never mounted, stayed empty or has no content slot fails the same way
+again and is not retried. No view gets a third attempt. The next full run took
+11.3 minutes and saved 166 images. With the changes below, run 7 took 12.3
+minutes and saved 179 images, 9 more than before and 2 fewer: a picker
+inside the add-account preview was blocked after leaving its native sheet open
+twice, and one dialog had no live owner in that run.
+
+**Run timeline.** Each map keeps its wall time per fixed phase, locally: first
+attempts, retries, discovery reopenings of captured views, planning, connection,
+reconnects and relaunches. Each relaunch records its cause and the open view.
+
+**Relaunch budget.** Two views that each left a native sheet open twice used
+four relaunches and ended a run while it was still making progress. A run now
+relaunches three times freely, then again whenever a view settled since the
+last relaunch: a capture, or a view blocked after its second failure. Twelve
+relaunches end the run.
+
+**Pace from app health.** The pace check compared capture times with the
+run's first captures, so heavy views, such as a report dialog's steps, and
+failed attempts that waited for their deadline triggered relaunches: four in
+one run. Before each job the app now reports two health values. One is a fixed
+loop of JavaScript, about 0.6 ms in a healthy app; the degraded state seen
+before ran JavaScript about nine times slower. The other is the size of the
+tree its last structure walk visited. Bottom tabs keep every visited tab
+mounted: a fresh app had 12,500 fibers, the same app after a run 31,000, and
+per-capture structure work grew from 148 to 496 ms. Without a relaunch,
+captures slowed from 1.9 to 3.1 seconds within 60 views. The run relaunches
+when the median of eight jobs exceeds three times its first probe median and
+4 ms, or when the tree exceeds twice its first size and 8,000 more fibers.
+
+**Views not found.** A discovery map used to show nothing for an opener that
+never appeared on the screens it explored. After discovery, every source-proven
+dialog, sheet, prompt or menu opener whose owner renders under an explored
+screen, and that no node covers, becomes a needs-data node under that screen.
+Its reason quotes the source conditions around the opener and around its
+owner's single render site, with file and line: `&&` and ternary branches,
+`.map` and list `renderItem` rows, `if` and `case` branches and earlier guard
+returns. A handler guard is quoted too. For example: "Not found on Settings in
+this app state. It renders when `accounts.length > 1` (Settings.tsx:123),
+`showAccounts` (Settings.tsx:151) and `accounts.filter(…)` has items
+(Settings.tsx:154)." Nothing is evaluated or opened, and no model writes the
+text. Openers that pass one controller value from one owner, and a dialog's own
+body with the opener passing it the controller, become one node. A body whose
+dialog the map already opened through any caller is not repeated. Retry screen
+on such a node tries the real opening; if the opener is still absent, the node
+keeps its conditions. A resumed run, such as a single-screen retry, no longer
+reopens every screen it already explored; mapping more screens still does.
+
+**Steps deeper than their container.** A step preview inside a native sheet is
+appended to the nearest View above it, and must be that View's exact last
+child. Steps inside a dialog's scroll view, such as the delete-account and
+email dialog steps, failed this check. Such a step is now copied by the
+component that received its own element as a child, right after it, when every
+later sibling renders no native view. A step whose original rendered nothing,
+such as an email dialog opened without a screen, takes the copy without
+anything to conceal. Such a nested copy also needs no one-to-one sizing proxy,
+because the sheet sizes itself from its own first content view. Run 7 captured
+the email dialog's Update, Verify, Verify reminder, security-code and
+enter-code steps, and a focused run captured both delete-account steps.

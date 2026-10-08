@@ -8,6 +8,7 @@ import { missingFlowParams } from "../../shared/app-flow.ts";
 import { sourceLinkMatches, sourceLinkReader } from "./source-links.ts";
 import {attachSourceHandoffs} from './handoff-source.ts';
 import { scanPresentations } from './presentations-source.ts';
+import { addRenderConditions } from './render-conditions.ts';
 import { scanSourceViews } from './views-source.ts';
 import { addSourcePreviewPlans } from './preview-plans.ts';
 import {originalCaptureConfig} from './capture-build.ts';
@@ -492,6 +493,9 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
     const parents = screensByOwner.get(`${resolve(root, preview.file)}#${preview.owner}`);
     if (parents?.length) preview.parents = parents.slice();
   }
+  // A view whose opener never renders on its screen is reported with the
+  // source conditions that hide it, so nobody has to guess the missing data.
+  addRenderConditions([...graph.presentations.actions, ...graph.presentations.previews ?? []], units, root, (unit, name) => symbol(units.get(unit.file)!, name));
   attachSourceHandoffs(graph.presentations,units,root,(unit,name)=>symbol(units.get(unit.file)!,name),platform);
   graph.catalogMs = performance.now() - catalogStarted;
   const sourceHash=createHash('sha256').update(platform);for(const unit of [...units.values()].sort((a,b)=>a.file.localeCompare(b.file))){sourceHash.update(relative(root,unit.file));sourceHash.update('\0');sourceHash.update(unit.ast.text);sourceHash.update('\0');}graph.sourceHash=sourceHash.digest('hex');

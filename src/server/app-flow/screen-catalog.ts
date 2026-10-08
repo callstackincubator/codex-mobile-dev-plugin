@@ -113,11 +113,13 @@ export function reviewCatalog(catalog: FlowCatalog, runId: string, reviews: Flow
 // share one entry.
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24);
 const destination = (action: FlowPresentationAction) => action.effect.kind === 'state' ? [action.effect.site, action.effect.path, action.effect.value] : [action.file, action.owner, action.effect];
+export const presentationNodeId = (action: FlowPresentationAction) => `presentation-${hash(destination(action))}`;
 // A live opener and a preview of the same controlled element open one view.
-const site = (action: FlowPresentationAction) => action.effect.kind === 'control' && action.effect.target
+export const presentationSite = (action: FlowPresentationAction) => action.effect.kind === 'control' && action.effect.target
   ? `control:${action.effect.target.file}:${action.effect.target.line}:${action.effect.prop}` : JSON.stringify(destination(action));
+const site = presentationSite;
 // Refs on primitives and React Native refresh controls are not views.
-const viewOpener = (action: FlowPresentationAction) => action.effect.kind !== 'control' || !['ref', 'refreshControl'].includes(action.effect.prop);
+export const viewOpener = (action: FlowPresentationAction) => action.effect.kind !== 'control' || !['ref', 'refreshControl'].includes(action.effect.prop);
 
 /** Add screens no run has reached yet. Routes need a source link from app UI;
  * an opener gets a one-step recipe: open a screen that renders its owner, or
@@ -176,7 +178,7 @@ export function seedCatalog(catalog: FlowCatalog | undefined, graph: Pick<FlowGr
     if (!previous || previous.preview && !action.preview) seeds.set(site(action), action);
   }
   for (const [key, action] of seeds) {
-    const id = `presentation-${hash(destination(action))}`, base = parent(action), mount = mountFor(action);
+    const id = presentationNodeId(action), base = parent(action), mount = mountFor(action);
     if (covered.has(key) || ids.has(id) || !base) continue;
     const node: FlowNode = {id, name: action.name, kind: 'screen', path: [], required: [], status: 'pending', file: action.file, line: action.line, sourceViews: action.views ?? [],
       presentation: {actions: [...(mount ? [mount.id] : []), action.id], ...(action.preview ? {preview: true} : {}), basePath: base.path, ...(Object.keys(base.params).length ? {baseParams: base.params} : {}), expo: base.expo}};

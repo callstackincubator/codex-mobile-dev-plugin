@@ -105,6 +105,14 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
       }
     } catch { /* Optional query caches may be unavailable. */ }
   }
+  // A fixed amount of JavaScript work. Its duration follows CPU contention in
+  // the app process whichever view is open, unlike a capture's duration.
+  function cpuProbe() {
+    const clock = () => globalThis.performance?.now?.() ?? Date.now(), started = clock();
+    let value = 0;
+    for (let index = 0; index < 20000; index++) value = (value * 31 + index) % 1000003;
+    return value < 0 ? 0 : Math.round((clock() - started) * 100) / 100;
+  }
   function contextData() {
     safeBudget = 2000;
     const data = [], clients = new Set();
@@ -608,6 +616,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (failed()) return;
         if (['open','capture-start','presentation-open'].includes(command.type) && !observing) transitionMode?.enable();
         if (command.type === 'heartbeat') { reply({ alive: true }); return; }
+        if (command.type === 'cpu') { const fibers = presentations?.treeSize?.(); reply({ ms: cpuProbe(), ...(Number.isInteger(fibers) ? { fibers } : {}) }); return; }
         if (command.type === 'capture-inventory') { reply(globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.inventory?.() ?? {unavailable:true}); return; }
         if (command.type === 'capture-start') {
           if(observing){reply({error:'Stop recording before starting a capture batch.'});return;}

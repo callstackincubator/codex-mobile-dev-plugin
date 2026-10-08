@@ -5,6 +5,16 @@ import {FlowPresentationDiscovery} from './presentations.ts';
 import type {FlowEvidence, FlowReachability} from './reachability.ts';
 import {FlowAppFailure} from './runtime-metrics.ts';
 
+// Waits that time can end: loading, native motion, paint, settling and slow
+// runtime replies. A presentation whose target never mounted, that stayed
+// empty or has no content slot fails the same way again.
+const transientWait=/^(?:loading\b|paint$|settling$|transition$|native$|changed$)|still loading|did not settle|Native transition|timed out while|stopped responding/;
+/** One more attempt for a timed-out view, only when another can end differently. */
+export function retryableCapture(node:FlowNode) {
+  if(node.status!=='timed-out' || (node.captureAttempts??0)>=2)return false;
+  return node.presentation ? transientWait.test(node.reason??'') : !/did not mount/.test(node.reason??'');
+}
+
 /** Chooses work only. The in-app queue owns all opening, capture and cleanup. */
 export class CapturePlanner {
   readonly presentations: FlowPresentationDiscovery;
@@ -17,7 +27,7 @@ export class CapturePlanner {
   }
   manifest(current?:FlowNode) {
     const selected = this.run.nodes.filter(node=>node.kind==='screen' && node.capture!=='observed' &&
-      (node.status==='pending' && (node.captureAttempts??0)<3 || node.status==='captured' && this.presentations.enabled &&
+      (node.status==='pending' && (node.captureAttempts??0)<2 || node.status==='captured' && this.presentations.enabled &&
         !this.presentations.hasVisited(node.id) && (this.discoveries.get(node.id)??0)<3));
     const manifest = captureManifest(this.run,selected);
     const currentJob = current?.status==='captured' && captureManifest(this.run,[current]).jobs[0];
@@ -54,7 +64,7 @@ export class CapturePlanner {
       this.presentations.failures.set(node.id,{nodeId:node.id,operation:'open',message:'The saved view could not be reopened for discovery.'});
       this.discoveries.set(node.id,(this.discoveries.get(node.id)??0)+1);
     }
-    if(node.status==='timed-out' && (node.captureAttempts??0)<3)node.status='pending';
+    if(retryableCapture(node))node.status='pending';
     this.run.revision++;
     return this.manifest(node);
   }

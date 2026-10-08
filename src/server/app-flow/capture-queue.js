@@ -15,12 +15,12 @@ export function createCaptureQueue(driver, emit) {
   // Per-view diagnostics stay in the local map: in-app milliseconds per fixed
   // phase spent on this job, and what its readiness waits were waiting for.
   const snapshot = () => new Map([...work].map(([phase, value]) => [phase, value.totalMs]));
-  function diagnostics(before) {
+  function diagnostics(before, cpu) {
     const spent = {};
     for (const [phase, value] of work) { const ms = value.totalMs - (before.get(phase) ?? 0); if (ms >= 1) spent[phase] = Math.round(ms); }
     let waits;
     try { waits = driver.waits?.(); } catch {}
-    return {work: spent, ...(waits ? {waits} : {})};
+    return {work: spent, ...(waits ? {waits} : {}), ...(Number.isFinite(cpu?.ms) ? {cpu: cpu.ms} : {}), ...(Number.isInteger(cpu?.fibers) ? {fibers: cpu.fibers} : {})};
   }
   function restore() {
     if (restoreTask) return restoreTask;
@@ -53,13 +53,15 @@ export function createCaptureQueue(driver, emit) {
   async function capture(current, job) {
     const started = Date.now(), measured = snapshot();
     send({type:'opening', id:job.id});
+    let cpu;
     try {
+      if (driver.cpu) { cpu = await driver.cpu(current.signal); if (current.cancelled) return; }
       const opened = await driver.open(job, current.signal);
       if (current.cancelled) return;
       for(const [operation,ms] of [['readiness',opened?.evidence?.readinessMs],['loading',opened?.evidence?.loadingMs]])if(Number.isFinite(ms))send({type:'timing',operation,ms});
       if (!opened?.ready) {
         await restore();
-        send({type:'result', id:job.id, status:opened?.status || 'blocked', failure:opened?.failure, reason:opened?.reason || 'The capture recipe is not available.', ms:Date.now()-started, diagnostics:diagnostics(measured)});
+        send({type:'result', id:job.id, status:opened?.status || 'blocked', failure:opened?.failure, reason:opened?.reason || 'The capture recipe is not available.', ms:Date.now()-started, diagnostics:diagnostics(measured,cpu)});
         return {evidence:opened?.evidence};
       }
       // Discovery of a saved view uses the same navigation and readiness checks,
@@ -72,7 +74,7 @@ export function createCaptureQueue(driver, emit) {
       while (!current.cancelled && Date.now() < deadline) {
         const before = await driver.ready(job, current.signal);
         if (!before?.ready) {
-          send({type:'result', id:job.id, status:before?.status || (before?.error ? 'blocked' : 'timed-out'), failure:before?.failure, reason:before?.error || (before?.reason==='loading'&&before.loadingReason?`loading (${before.loadingReason}${before.loadingComponent?` in ${before.loadingComponent}`:''})`:before?.reason) || 'The view did not settle.', ms:Date.now()-started, diagnostics:diagnostics(measured)});
+          send({type:'result', id:job.id, status:before?.status || (before?.error ? 'blocked' : 'timed-out'), failure:before?.failure, reason:before?.error || (before?.reason==='loading'&&before.loadingReason?`loading (${before.loadingReason}${before.loadingComponent?` in ${before.loadingComponent}`:''})`:before?.reason) || 'The view did not settle.', ms:Date.now()-started, diagnostics:diagnostics(measured,cpu)});
           return {evidence:before};
         }
         const ticket = ++serial;
@@ -85,12 +87,12 @@ export function createCaptureQueue(driver, emit) {
         measure('screenshot-wait', clock() - frameStarted);
         if (current.cancelled) return;
         if (captured.terminal) throw Object.assign(new Error('The screenshot connection stopped responding.'), {fatal:true, interrupted:true});
-        if(captured.reason){send({type:'result',id:job.id,status:'timed-out',reason:captured.reason,failure:captured.failure,ms:Date.now()-started, diagnostics:diagnostics(measured)});return;}
+        if(captured.reason){send({type:'result',id:job.id,status:'timed-out',reason:captured.reason,failure:captured.failure,ms:Date.now()-started, diagnostics:diagnostics(measured,cpu)});return;}
         const after = await driver.verify(job, current.signal);
         if (captured.ok && driver.same(before, after)) {
           const sites = await driver.sites?.(job, current.signal)?.catch(error => { if (error?.fatal) throw error; });
           if (current.cancelled) return;
-          send({type:'result', id:job.id, ticket, status:'captured', ...(sites ? {sites} : {}), ms:Date.now()-started, diagnostics:diagnostics(measured)});
+          send({type:'result', id:job.id, ticket, status:'captured', ...(sites ? {sites} : {}), ms:Date.now()-started, diagnostics:diagnostics(measured,cpu)});
           return {ready:true, evidence:after};
         }
         send({type:'discard', id:job.id, ticket});
@@ -98,11 +100,11 @@ export function createCaptureQueue(driver, emit) {
         // screenshot cache replies synchronously. Stop remains responsive.
         await new Promise(resolve=>setTimeout(resolve,32));
       }
-      if (!current.cancelled) send({type:'uncaptured', id:job.id, ms:Date.now()-started, diagnostics:diagnostics(measured)});
+      if (!current.cancelled) send({type:'uncaptured', id:job.id, ms:Date.now()-started, diagnostics:diagnostics(measured,cpu)});
     } catch (error) {
       if (current.cancelled) return;
       if (error?.fatal) throw error;
-      send({type:'result', id:job.id, status:'blocked', reason:String(error?.message||error).slice(0,300), ms:Date.now()-started, diagnostics:diagnostics(measured)});
+      send({type:'result', id:job.id, status:'blocked', reason:String(error?.message||error).slice(0,300), ms:Date.now()-started, diagnostics:diagnostics(measured,cpu)});
       await restore();
     }
   }

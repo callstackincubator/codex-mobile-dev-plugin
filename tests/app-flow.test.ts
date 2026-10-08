@@ -123,7 +123,7 @@ test("capture loop acknowledges screenshots, keeps missing data, and restores na
   const result = runs.read(run.id);
   assert.equal(result.nodes[0].status,'captured');
   assert.equal(result.nodes[1].status,'needs-data');
-  assert.deepEqual(events,['inspect','presentation-rollback','open','verify','screenshot','verify','presentation-rollback','restore']);
+  assert.deepEqual(events,['inspect','cpu','presentation-rollback','open','verify','screenshot','verify','presentation-rollback','restore']);
   assert.equal((await runs.image(run.id,'first')).toString(),'fixture');
 });
 

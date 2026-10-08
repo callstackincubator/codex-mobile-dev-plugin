@@ -118,7 +118,7 @@ export class FlowConnection {
       const catalog = command.catalog as import('../../shared/app-flow.ts').FlowPresentations;
       let matched=0;
       for(let pass=0;pass<2;pass++){
-        let page = await this.invoke({ type: 'presentation-collect', ...(this.presentationCatalog===catalog?{}:{states:catalog.states,actions:catalog.actions,projectRoot:command.projectRoot,sourceHash:command.sourceHash}) }, 2500);
+        let page = await this.invoke({ type: 'presentation-collect', ...(this.presentationCatalog===catalog?{}:{states:catalog.states,actions:catalog.actions.map(({when,controller,...action})=>action),projectRoot:command.projectRoot,sourceHash:command.sourceHash}) }, 2500);
         const bindings = [];
         for (let i=0;i<30;i++) { bindings.push(...(page.bindings ?? [])); if (page.next === undefined) break; page = await this.invoke({type:'presentation-bindings',offset:page.next},1500); }
         if(!bindings.length){this.presentationCatalog=catalog;break;}

@@ -17,6 +17,7 @@ import { FlowAppFailure, FlowNativeFailure, FlowRuntimeFailure, FlowRuntimeMetri
 import {captureManifest,captureRecipeNodes,type CaptureRecipe} from './capture-manifest.ts';
 import {captureBatch,CaptureConnectionError,CaptureRelaunchRequest} from './capture-batch.ts';
 import {catalogNodes,catalogSummary,seedCatalog,type FlowCatalogReview,type FlowCatalogSelection} from './screen-catalog.ts';
+import {markUnshown} from './unshown.ts';
 
 export type FlowStart = { projectRoot: string; platform: "ios" | "android"; deviceId: string; targetId: string; metroUrl: string; useAi: boolean; capture?: {planRunId?: string; catalog?: FlowCatalogSelection; include?: string[]; recipes?: CaptureRecipe[]} };
 export type RuntimeInfo = FlowEvidence & { available: boolean; data?: unknown[] };
@@ -29,20 +30,28 @@ export type FlowDependencies = {
   resolve?: (context: unknown, signal: AbortSignal) => Promise<FlowResolution[]>;
   /** Terminate and launch the mapped app on its device. Recovery only. */
   relaunch?: (input: FlowStart, appId: string, signal: AbortSignal) => Promise<void>;
-  /** Pace check: relaunch when the median of the last `window` captures exceeds `factor` × the first ones and `floorMs`. */
-  pace?: { window: number; factor: number; floorMs: number };
+  /** Pace check: relaunch when the median of the app's last `window` CPU probes exceeds `factor` × its first ones and `floorMs`, or its tree exceeds `treeFactor` × and `treeFloor` more fibers than at first. */
+  pace?: { window?: number; factor?: number; floorMs?: number; treeFactor?: number; treeFloor?: number };
   directory?: string;
 };
-type Active = { run: FlowRun; input: FlowStart; abort: AbortController; done?: Promise<void>; runtime?: FlowRuntime; runtimeMetrics?:FlowRuntimeMetrics; info?: RuntimeInfo; target?: FlowTargetIdentity; saving?: Promise<void>; savedRevision?: number; checkpoints?: MeasurementWindow; lease?: FlowLease; writing: Set<Promise<void>>; settled: boolean; contextRefresh?: Promise<void> };
+type Active = { run: FlowRun; input: FlowStart; abort: AbortController; done?: Promise<void>; runtime?: FlowRuntime; runtimeMetrics?:FlowRuntimeMetrics; phases?:Map<RunPhase,{count:number;totalMs:number}>; info?: RuntimeInfo; target?: FlowTargetIdentity; saving?: Promise<void>; savedRevision?: number; checkpoints?: MeasurementWindow; lease?: FlowLease; writing: Set<Promise<void>>; settled: boolean; contextRefresh?: Promise<void> };
 const discoveryWarning="Presentation discovery failed on some screens. The partial map was kept.";
 const relaunchWarning="The app was relaunched to recover from state that could not be restored in place.";
-// Three relaunches per run, and one more after every ten new captures. A
-// failure that recurs without progress still ends the run.
-const relaunchAllowance=3,capturesPerRelaunch=10;
-// A degraded app keeps answering, but every capture slows down. Compare the
-// median of recent captures with this run's first ones.
-const defaultPace={window:8,factor:2,floorMs:2500};
+// Three relaunches per run, then one more whenever a view settled since the
+// last: a capture, or a view blocked after failing twice. A failure that recurs
+// without progress still ends the run, and so does the hard cap.
+const relaunchAllowance=3,relaunchCap=12;
+// A degraded app keeps answering, but its JavaScript slows down. Compare the
+// median of recent CPU probes, fixed work timed in the app before each job,
+// with this run's first ones. Heavy or failing views do not change the probe.
+// Visited tabs also stay mounted, so every tree walk grows; a tree more than
+// twice its first size, and 8,000 fibers larger, also relaunches the app.
+const defaultPace={window:8,factor:3,floorMs:4,treeFactor:2,treeFloor:8000};
 const median=(values:number[])=>[...values].sort((a,b)=>a-b)[Math.floor(values.length/2)];
+// Where a run's wall time goes, as fixed phases. Totals stay in the local map
+// and reach Sentry once per run as gauges with a fixed phase attribute.
+const runPhases=['connect','first-attempt','retry-attempt','discovery-reopen','planning','reconnect','relaunch'] as const;
+type RunPhase=typeof runPhases[number];
 export const FLOW_DIRECTORY = join(homedir(), "Library/Application Support/mobile-dev/app-flow");
 
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -156,6 +165,8 @@ export class AppFlowRuns {
     active.run.elapsedMs ??= Math.max(0, (active.run.finishedAt ?? Date.now()) - active.run.startedAt);
     active.run.phase = 'connecting'; active.run.finishedAt = undefined; active.run.error = undefined;
     active.run.ai = input.useAi ? 'waiting' : 'off'; active.run.revision++;
+    // Mapping more screens looks at every captured screen again.
+    active.run.explored = undefined;
     try { await this.persist(active); } catch (error) { await lease.release(); throw error; }
     this.sessions.set(id, active); this.launch(active, true);
     return structuredClone(active.run);
@@ -172,6 +183,7 @@ export class AppFlowRuns {
   private persist(active: Active) {
     if (active.savedRevision === active.run.revision) return active.saving ?? Promise.resolve();
     if(active.runtimeMetrics)active.run.runtimeTimings=active.runtimeMetrics.snapshot();
+    if(active.phases)active.run.phaseTimings=[...active.phases].map(([phase,value])=>({phase,count:value.count,totalMs:Math.round(value.totalMs)}));
     const value = structuredClone({ run: publicFlowRun(active.run), input: active.input, info: active.info, target: active.target });
     if(active.run.presentations?.views&&value.run.presentations){value.run.presentations.views=active.run.presentations.views;value.run.presentations.viewStates=active.run.presentations.viewStates;}
     active.savedRevision = value.run.revision;
@@ -350,28 +362,29 @@ export class AppFlowRuns {
     const captureTimings = new MeasurementWindow();
     const readinessTimings = new MeasurementWindow(), loadingTimings = new MeasurementWindow();
     const reconnectTimings = new MeasurementWindow(), planningTimings = new MeasurementWindow();
-    let reconnects = 0, recoveryContinuations = 0, relaunches = 0, capturedAtRelaunch = 0;
+    let reconnects = 0, recoveryContinuations = 0, relaunches = 0, settledAtRelaunch = 0;
     const relaunchTimings = new MeasurementWindow(), strikes = new Map<string, number>();
-    // Routes and presentations keep separate paces; a map moves from quick
-    // routes to slower sheets. A pace relaunch must help: content that is
-    // simply slow stays slow in a fresh app, so another one waits for a
-    // healthy window first.
+    // A pace relaunch must help: an app that stays slow after a fresh launch
+    // waits for a healthy window before another one.
     type Pace = {first: number[]; recent: number[]; baseline?: number};
-    const paces: Record<'route'|'presentation', Pace> = {route: {first: [], recent: []}, presentation: {first: [], recent: []}};
-    const limits = this.dependencies.pace ?? defaultPace;
+    const limits = {...defaultPace, ...this.dependencies.pace};
+    const cpuPace: Pace = {first: [], recent: []}, treePace: Pace = {first: [], recent: []};
     let paceArmed = true;
-    const slow = (pace: Pace) => pace.baseline !== undefined && pace.recent.length === limits.window && median(pace.recent) > Math.max(limits.floorMs, pace.baseline * limits.factor);
-    const paced = (kind: 'route'|'presentation', ms: number) => {
-      const pace = paces[kind];
-      if (pace.baseline === undefined) { pace.first.push(ms); if (pace.first.length === limits.window) pace.baseline = median(pace.first); }
-      else { pace.recent.push(ms); if (pace.recent.length > limits.window) pace.recent.shift(); }
-      if (pace.recent.length === limits.window && !slow(pace)) paceArmed = true;
+    const over = (pace: Pace, factor: number, floor: number, add: boolean) => pace.baseline !== undefined && pace.recent.length === limits.window &&
+      median(pace.recent) > (add ? Math.max(pace.baseline * factor, pace.baseline + floor) : Math.max(floor, pace.baseline * factor));
+    const slow = () => over(cpuPace, limits.factor, limits.floorMs, false) || over(treePace, limits.treeFactor, limits.treeFloor, true);
+    const paced = (pace: Pace, value: number) => {
+      if (pace.baseline === undefined) { pace.first.push(value); if (pace.first.length === limits.window) pace.baseline = median(pace.first); }
+      else { pace.recent.push(value); if (pace.recent.length > limits.window) pace.recent.shift(); }
+      if (pace.recent.length === limits.window && !slow()) paceArmed = true;
     };
-    const slowed = () => paceArmed && (slow(paces.route) || slow(paces.presentation));
-    let retries = 0;
+    const slowed = () => paceArmed && slow();
+    let retries = 0, unshown = 0;
     const presentationTimings = new MeasurementWindow(), restorationTimings = new MeasurementWindow();
     const attributes = { surface: "app-flow", device_platform: input.platform };
     const runtimeMetrics=active.runtimeMetrics=new FlowRuntimeMetrics(input.platform);
+    const phases=active.phases??=new Map();
+    const phase=(name:RunPhase,ms:number)=>{if(!Number.isFinite(ms)||ms<0)return;const value=phases.get(name)??{count:0,totalMs:0};value.count++;value.totalMs+=ms;phases.set(name,value);};
     const save = async () => {
       try { await this.persist(active); }
       catch { captureServerError(new Error("App Flow map could not be saved."), "app_flow.save"); }
@@ -425,16 +438,20 @@ export class AppFlowRuns {
             if (signal.aborted || error instanceof FlowAppFailure || error instanceof FlowNativeFailure) throw error;
           }
         }
-      } finally { reconnectTimings.record(performance.now() - started); }
+      } finally { reconnectTimings.record(performance.now() - started); phase('reconnect', performance.now() - started); }
     };
     // Only the app can reset a native sheet that never dismissed, a fatal
     // JavaScript error or an overloaded runtime. Relaunch it a bounded number
     // of times; accepted images stay and the queue resumes in the fresh app.
-    const captured = () => run.nodes.filter(node => node.status === 'captured').length;
-    const canRelaunch = () => !!this.dependencies.relaunch && !!active.target?.appId && !signal.aborted &&
-      (relaunches < relaunchAllowance || captured() - capturedAtRelaunch >= capturesPerRelaunch);
-    const relaunch = async (cause: unknown) => {
-      relaunches++; capturedAtRelaunch = captured(); run.phase = "reconnecting"; run.revision++;
+    const settled = () => run.nodes.filter(node => node.status === 'captured' || node.status === 'blocked').length;
+    const canRelaunch = () => !!this.dependencies.relaunch && !!active.target?.appId && !signal.aborted && relaunches < relaunchCap &&
+      (relaunches < relaunchAllowance || settled() > settledAtRelaunch);
+    const relaunch = async (cause: unknown, opening?: string) => {
+      relaunches++; settledAtRelaunch = settled(); run.phase = "reconnecting"; run.revision++;
+      // Local evidence of what forced each relaunch, and which view was open.
+      const kind = cause instanceof FlowNativeFailure ? 'native' : cause instanceof FlowAppFailure ? 'app' : cause instanceof CaptureRelaunchRequest ? 'pace' : 'interrupted';
+      (run.relaunchLog ??= []).push({cause: kind, ...(opening ? {nodeId: opening} : {}), captured: run.nodes.filter(node => node.status === 'captured').length});
+      if (run.relaunchLog.length > 20) run.relaunchLog.shift();
       await Promise.allSettled(active.writing);
       await save();
       await backend?.runtime.close({ restore: false }).catch(() => {});
@@ -442,9 +459,9 @@ export class AppFlowRuns {
       // A device that cannot relaunch the app keeps the original failure.
       try { await abortable(this.dependencies.relaunch!(input, active.target!.appId!, signal), signal); }
       catch (error) { throw signal.aborted ? error : cause; }
-      finally { relaunchTimings.record(performance.now() - started); }
+      finally { relaunchTimings.record(performance.now() - started); phase('relaunch', performance.now() - started); }
       if (!run.warnings.includes(relaunchWarning)) run.warnings.push(relaunchWarning);
-      paces.route.recent = []; paces.presentation.recent = [];
+      cpuPace.recent = []; treePace.recent = [];
       await reconnect();
     };
     try {
@@ -462,10 +479,12 @@ export class AppFlowRuns {
       const cached = this.resolved.get(this.cacheKey(input));
       graph.nodes = withResolvedParams(graph.nodes, cached);
       run.phase = "connecting"; run.revision++;
+      const connectStarted = performance.now();
       backend = await connect();
       active.runtime = backend.runtime; active.target = backend.target;
       if (signal.aborted) { await backend.runtime.close(); signal.throwIfAborted(); }
       active.info = await abortable(backend.runtime.invoke({ type: "inspect" }, 2000), signal);
+      phase('connect', performance.now() - connectStarted);
       if (!input.capture) {
         if (active.info?.available) discovery = new FlowReachability(graph, active.info, resume ? run : undefined);
         else { graph.nodes = resume ? run.nodes.filter(node => node.presentation) : []; graph.edges = resume ? run.edges : []; }
@@ -545,13 +564,15 @@ export class AppFlowRuns {
             }}:{}),
             timing:(operation,ms)=>{
               if(operation==='capture')captureTimings.record(ms);
-              if(operation==='route'||operation==='presentation')paced(operation,ms);
+              if(operation==='cpu')paced(cpuPace,ms);
+              if(operation==='fibers')paced(treePace,ms);
               if(operation==='presentation')presentationTimings.record(ms);
               if(operation==='restoration')restorationTimings.record(ms);
               if(operation==='readiness')readinessTimings.record(ms);
               if(operation==='loading')loadingTimings.record(ms);
               if(operation==='planning')planningTimings.record(ms);
               if(operation==='retry')retries++;
+              if((runPhases as readonly string[]).includes(operation))phase(operation as RunPhase,ms);
             },
           });
           interrupted=0;
@@ -564,17 +585,19 @@ export class AppFlowRuns {
             continue;
           }
           const appState=error instanceof FlowNativeFailure||error instanceof FlowAppFailure;
-          if(appState&&canRelaunch()){
+          if(appState){
             // The failure can surface on the job after the one that left the
             // sheet open. Retry the interrupted view once; a second failure
-            // while opening it blocks only that view.
+            // while opening it blocks only that view, which counts as progress.
+            const opening=run.nodes.find(node=>node.status==='capturing')?.id;
             for(const node of run.nodes)if(node.status==='capturing'){
               const count=(strikes.get(node.id)??0)+1;strikes.set(node.id,count);
               if(count<2){node.status='pending';node.captureAttempts=Math.max(0,(node.captureAttempts??1)-1);continue;}
               node.status='blocked';node.failure={operation:error.operation,detail:error.detail};
               node.reason=error instanceof FlowNativeFailure?'A native presentation did not confirm dismissal twice while opening this view.':'The app reported a fatal JavaScript error twice while opening this view.';
             }
-            await relaunch(error);interrupted=0;
+            if(!canRelaunch())throw error;
+            await relaunch(error,opening);interrupted=0;
             continue;
           }
           if(!(error instanceof CaptureConnectionError) || signal.aborted)throw error;
@@ -593,6 +616,9 @@ export class AppFlowRuns {
           await backend.runtime.invoke({type:'capture-stop'},10000);
         }
       }
+      // Openers never found on an explored screen stay on the map as
+      // needs-data, with the source conditions that can hide them.
+      if(planner&&!signal.aborted)unshown+=markUnshown(run,id=>planner!.presentations.hasVisited(id)).length;
       run.discoveryFailures=planner?[...planner.presentations.failures.values()]:[];
       run.phase=run.discoveryFailures.length || run.nodes.some(node=>node.kind==='screen'&&node.status!=='captured')?'partial':'complete';
       if(!run.discoveryFailures.length)run.warnings=run.warnings.filter(warning=>warning!==discoveryWarning);
@@ -663,6 +689,8 @@ export class AppFlowRuns {
         Sentry.metrics.gauge("app_flow.relaunches", relaunches, { attributes });
         Sentry.metrics.gauge('app_flow.recovery_continuations',recoveryContinuations,{attributes});
         Sentry.metrics.gauge('app_flow.retries', retries, { attributes });
+        Sentry.metrics.gauge('app_flow.unshown', unshown, { attributes });
+        for (const [run_phase, value] of phases) Sentry.metrics.gauge('app_flow.run_phase', Math.round(value.totalMs), { unit: 'millisecond', attributes: { ...attributes, run_phase } });
       }
     }
   }

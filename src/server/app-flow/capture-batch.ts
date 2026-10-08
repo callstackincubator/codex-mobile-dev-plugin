@@ -4,6 +4,7 @@ import {join} from 'node:path';
 import type {FlowBackend} from './runs.ts';
 import type {FlowRun, FlowNode} from '../../shared/app-flow.ts';
 import type {CaptureManifest, CaptureJob} from './capture-manifest.ts';
+import {unshownReason} from './unshown.ts';
 import {blankFlowFrame} from './frame.ts';
 import {FlowAppFailure, FlowNativeFailure, FlowRuntimeFailure, FlowRuntimeTimeout} from './runtime-metrics.ts';
 import {captureServerError} from '../telemetry.ts';
@@ -19,9 +20,13 @@ const timingRecord=(value:unknown)=>{
   const entries=Object.entries(value as Record<string,unknown>).filter(([key,ms])=>/^[a-z-]{1,24}$/.test(key)&&typeof ms==='number'&&Number.isFinite(ms)&&ms>=0).slice(0,32);
   return entries.length?Object.fromEntries(entries.map(([key,ms])=>[key,Math.round(ms as number)])):undefined;
 };
+// Milliseconds of the app's fixed CPU probe before this job opened.
+const cpuProbe=(value:unknown)=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<60000?Math.round(value*100)/100:undefined;
+// Fibers the app's last structure walk visited.
+const treeSize=(value:unknown)=>Number.isInteger(value)&&(value as number)>=0&&(value as number)<10_000_000?value as number:undefined;
 const captureDiagnostics=(value:any)=>{
-  const work=timingRecord(value?.work),waits=timingRecord(value?.waits);
-  return work||waits?{...(work?{work}:{}),...(waits?{waits}:{})}:undefined;
+  const work=timingRecord(value?.work),waits=timingRecord(value?.waits),cpu=cpuProbe(value?.cpu),fibers=treeSize(value?.fibers);
+  return work||waits||cpu!==undefined||fibers!==undefined?{...(work?{work}:{}),...(waits?{waits}:{}),...(cpu!==undefined?{cpu}:{}),...(fibers!==undefined?{fibers}:{})}:undefined;
 };
 const wireJobs=(jobs:CaptureJob[])=>jobs.map(({sourceViews,actions,instances,...job})=>({...job,actions:actions.map(action=>({id:action.id,...(instances?.[action.id]?{instance:instances[action.id]}:{})}))}));
 
@@ -45,6 +50,10 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
   });
   let previous: {bytes:Buffer; identity:string} | undefined;
   let reportedPresentationError=false;
+  // Wall time per job, from opening to its result, split into first
+  // attempts, retries and discovery reopenings of captured views.
+  const openings=new Map<string,{at:number;kind:'first-attempt'|'retry-attempt'|'discovery-reopen'}>();
+  const closeOpening=(id:string)=>{const opening=openings.get(id);if(!opening)return;openings.delete(id);options.timing?.(opening.kind,performance.now()-opening.at);};
   let chain = Promise.resolve(), done: () => void, fail: (error: Error) => void, stopped = false;
   const completed = new Promise<void>((resolve, reject) => { done = resolve; fail = reject; });
   // Attach the rejection handler before starting native work or accepting events.
@@ -57,6 +66,13 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
     chain = chain.then(async () => {
       signal.throwIfAborted();
       const node = byId.get(event.id);
+      if (event.type === 'opening' && node) openings.set(node.id, {at: performance.now(), kind: jobs.get(node.id)?.discoverOnly ? 'discovery-reopen' : (node.captureAttempts ?? 0) > 0 ? 'retry-attempt' : 'first-attempt'});
+      else if ((event.type === 'result' || event.type === 'uncaptured' || event.type === 'plan') && node) closeOpening(node.id);
+      // The app's CPU probe and tree size set the run pace, whatever the view's content.
+      const finished = event.type === 'result' || event.type === 'uncaptured';
+      const cpu = finished ? cpuProbe(event.diagnostics?.cpu) : undefined, fibers = finished ? treeSize(event.diagnostics?.fibers) : undefined;
+      if (cpu !== undefined) options.timing?.('cpu', cpu);
+      if (fibers !== undefined) options.timing?.('fibers', fibers);
       if (event.type === 'opening' && node && !jobs.get(node.id)?.discoverOnly) { run.retrying=(node.captureAttempts??0)>0; if(run.retrying)options.timing?.('retry',1); node.status = 'capturing'; node.reason=undefined;node.failure=undefined;node.captureAttempts = (node.captureAttempts ?? 0) + 1; run.revision++; }
       else if (event.type === 'timing' && ['restoration','readiness','loading'].includes(event.operation) && Number.isFinite(event.ms) && event.ms>=0) options.timing?.(event.operation,event.ms);
       else if (event.type === 'plan') {
@@ -121,6 +137,9 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
         if (jobs.get(node.id)?.discoverOnly) return;
         if(node.presentation && event.status==='blocked' && !reportedPresentationError){reportedPresentationError=true;captureServerError(new Error('App Flow presentation capture failed.'),'app_flow.presentation');}
         node.status = event.status; node.reason = event.reason; node.failure=event.failure; node.captureMs = event.ms; node.captureDiagnostics=captureDiagnostics(event.diagnostics);
+        // An opener that is still absent keeps the conditions that hide it.
+        const last = jobs.get(node.id)?.actions.at(-1);
+        if (event.status === 'needs-data' && last?.when?.length && node.presentation?.actions.length === 1) node.reason = unshownReason(last, node.presentation.basePath.at(-1));
         options.timing?.('capture', event.ms); options.timing?.(node.presentation ? 'presentation' : 'route', event.ms); run.revision++; await save();
         if (options.interrupt?.()) throw new CaptureRelaunchRequest();
       } else if (event.type === 'uncaptured' && node?.status === 'capturing') {

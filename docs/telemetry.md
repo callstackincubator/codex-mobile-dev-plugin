@@ -988,3 +988,22 @@ node, stay in the local map. So do the search scope of unavailable openings and
 content-slot check names; none of them is sent to Sentry. Commit observers now
 visit only subtrees each commit rendered; `self-commit` and `self-structure`
 keep their names and units in the in-app capture work.
+
+A timed-out view now gets one more attempt only when its failure can end
+differently: loading, native motion, paint or settling waits, slow runtime
+replies, and timed-out routes that did not redirect. A presentation whose target
+never mounted, stayed empty or has no content slot is not retried, and no view
+gets a third attempt. `app_flow.retries` keeps its meaning and counts those
+second attempts. `app_flow.run_phase` reports each run's wall time per fixed
+phase in milliseconds, as one gauge per phase with a `run_phase` attribute of
+`connect`, `first-attempt`, `retry-attempt`, `discovery-reopen`, `planning`,
+`reconnect` or `relaunch`, plus the usual surface and platform attributes. The
+same totals stay in the local map with their counts. `app_flow.unshown` counts
+source-proven openers a run marked as not shown on screens it explored. Their
+reasons quote source conditions and file positions; those stay in the local
+map, never enter Sentry and are not sent into the app. The local relaunch log
+keeps each relaunch's cause and the open view's node ID; neither enters Sentry.
+Each job's diagnostics in the local map also keep the app's CPU probe in
+milliseconds and the fiber count of its last structure walk. They set the run
+pace and stay local. The probe takes about a millisecond per job, is not
+counted in the in-app work phases and adds no metric.

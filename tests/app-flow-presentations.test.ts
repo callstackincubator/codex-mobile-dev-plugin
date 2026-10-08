@@ -293,7 +293,7 @@ test('presentation focus treats a missing alternate as outside the scope',()=>{
   }
 });
 
-test('presentation retries yield to untouched screens and retain all three readiness attempts',async t=>{
+test('presentation retries yield to untouched screens and retain both readiness attempts',async t=>{
   const directory=await fixture(t,{}),events:string[]=[];let clock=0,key='Home',slow=0;
   t.mock.method(Date,'now',()=>clock);
   const actions:any[]=['Slow','Quick'].map(name=>({id:name,name,file:'Home.tsx',line:1,owner:'Home',component:'Button',prop:'onPress',effect:{kind:'control',component:name,prop:'control',method:'open',close:['close']}}));
@@ -305,7 +305,7 @@ test('presentation retries yield to untouched screens and retain all three readi
       if(command.type==='presentation-rollback')key='Home';
       if(command.type==='presentations')return key==='Home'?actions:[];
       if(command.type==='presentation-open'){key=command.id;if(key==='Slow')slow++;events.push(`${key}:${key==='Slow'?slow:1}`);}
-      if(command.type==='presentation-view'&&key==='Slow'&&slow<3){clock+=25000;return {key,ready:false,found:true,loading:true};}
+      if(command.type==='presentation-view'&&key==='Slow'&&slow<2){clock+=25000;return {key,ready:false,found:true,loading:true};}
       return {key,ready:true,found:true,active:[key],signature:key};
     }}
   })});
@@ -315,9 +315,9 @@ test('presentation retries yield to untouched screens and retain all three readi
   await runs.close();
   const result=runs.read(run.id);
   assert.equal(result.phase,'complete');
-  assert.deepEqual(events,['Home','Slow:1','Search','Home','Quick:1','Slow:2','Home','Slow:3']);
+  assert.deepEqual(events,['Home','Slow:1','Search','Home','Quick:1','Slow:2']);
   assert.ok(result.nodes.every(node=>node.status==='captured'&&node.image));
-  assert.equal(result.nodes.find(node=>node.name==='Slow')?.captureAttempts,3);
+  assert.equal(result.nodes.find(node=>node.name==='Slow')?.captureAttempts,2);
 });
 
 test('a saved state opener can use an equivalent live source entry without invoking callbacks',async t=>{
@@ -823,6 +823,36 @@ test('extending a captured route discovers newly available sheets and keeps its 
   const saved=runs.read(run.id);assert.equal(saved.phase,'complete');assert.equal(saved.nodes.filter(node=>node.status==='captured').length,2);
   assert.equal(saved.nodes.find(node=>node.id==='Home')?.captureAttempts,1);
   assert.deepEqual(await readFile(join(directory,run.id,'Home.png')),image);
+});
+
+test('a single-screen retry does not reopen screens the map already explored',async t=>{
+  const directory=await fixture(t,{});let active='Home',listings=0;const opened:string[]=[];
+  const action:any={id:'sheet',owner:'Home',file:'App.tsx',component:'Button',prop:'onPress',name:'Sheet',line:1,effect:{kind:'control',component:'Sheet',prop:'control',method:'open',close:'close'}};
+  const nodes:any[]=[{id:'Home',name:'Home',kind:'screen',path:['Home'],required:[],status:'pending',entry:true},{id:'Search',name:'Search',kind:'screen',path:['Search'],required:[],status:'pending'}];
+  const runs=flowRuns(t,{directory,scan:async()=>({files:1,scanMs:1,warnings:[],nodes:structuredClone(nodes),edges:[],presentations:{states:[],actions:[action]}}),connect:async()=>({
+    runtime:{async close(){},async invoke(command:any){
+      if(command.type==='inspect')return {available:true};
+      if(command.type==='open'){active=command.path.at(-1);if(!command.settleOnly)opened.push(active);return {ready:true,name:active,active:[active],signature:active};}
+      if(command.type==='verify')return {found:true,active:[command.name]};
+      if(command.type==='presentations'){listings++;return active==='Home'?[action]:[];}
+      if(command.type==='presentation-open')active='Sheet';
+      if(command.type==='presentation-rollback')active=active==='Sheet'?'Home':active;
+      if(command.type==='presentation-view')return {key:active,ready:true,found:true,signature:active,active:[active]};
+      return {};
+    }},async screenshot(){return Buffer.from(active)},
+  })});
+  t.after(()=>runs.close());
+  const input:any={projectRoot:directory,platform:'ios',deviceId:'fixture',targetId:'fixture',metroUrl:'http://127.0.0.1:8081',useAi:false};
+  const run=runs.start(input);while(flowRunning(runs.read(run.id)))await new Promise(resolve=>setTimeout(resolve,5));
+  const sheet=runs.read(run.id).nodes.find(node=>node.presentation)!;
+  assert.deepEqual(runs.read(run.id).nodes.filter(node=>node.status==='captured').map(node=>node.name),['Home','Sheet']);
+  opened.length=0;const before=listings;
+  // A retry queued while the first session settles resumes right after it.
+  await runs.retry(run.id,input,[sheet.id]);
+  for(let i=0;i<1000&&(!opened.length||flowRunning(runs.read(run.id)));i++)await new Promise(resolve=>setTimeout(resolve,5));
+  assert.deepEqual(opened,['Home'],'Only the retried sheet\'s own base opens');
+  assert.equal(listings-before,1,'Home stays explored; only the retried sheet is explored again');
+  assert.equal(runs.read(run.id).nodes.find(node=>node.id===sheet.id)?.status,'captured');
 });
 
 test('motion limits native layout reads while retaining transition events beyond the signature cap',()=>{

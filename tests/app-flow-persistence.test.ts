@@ -128,20 +128,23 @@ test('a live owner consumes another process reply and competing clients never ca
   assert.deepEqual(shots, ['Home', 'Profile']);
 });
 
-test('timeouts get two later adaptive retries, fast screens finish first, and final failures stay truthful', async t => {
+test('a timeout gets one later adaptive retry, fast screens finish first, and final failures stay truthful', async t => {
   const directory = await fixture(t), shots: string[] = [], opens: { name: string; loading: number }[] = [];
   const routes = (): FlowGraph => ({ ...graph(), nodes: ['Slow', 'Fast', 'Broken'].map(name => ({ id: name.toLowerCase(), name, kind: 'screen', path: [name], required: [], status: 'pending' })) });
   const runs = new AppFlowRuns({ directory, scan: async () => routes(), connect: backend(shots, async (name, command) => {
     opens.push({ name, loading: command.loadingTimeoutMs });
-    if (name === 'Broken' || name === 'Slow' && command.loadingTimeoutMs < 20000) return { ready: false, reason: 'Screen is still loading (skeleton).' };
+    if (name === 'Broken' || name === 'Slow' && command.loadingTimeoutMs < 10000) return { ready: false, reason: 'Screen is still loading (skeleton).' };
   }) });
   t.after(() => runs.close());
   const { id } = runs.start(input), result = await finished(runs, id);
-  assert.deepEqual(opens.map(item => item.name), ['Slow', 'Fast', 'Broken', 'Slow', 'Broken', 'Slow', 'Broken']);
-  assert.deepEqual(opens.filter(item => item.name === 'Slow').map(item => item.loading), [6000, 10000, 20000]);
+  assert.deepEqual(opens.map(item => item.name), ['Slow', 'Fast', 'Broken', 'Slow', 'Broken']);
+  assert.deepEqual(opens.filter(item => item.name === 'Slow').map(item => item.loading), [6000, 10000]);
   assert.deepEqual(shots, ['Fast', 'Slow']);
   assert.equal(result.nodes[2].status, 'timed-out');
-  assert.equal(result.nodes[2].captureAttempts, 3);
+  assert.equal(result.nodes[2].captureAttempts, 2);
+  const phases = Object.fromEntries((result.phaseTimings ?? []).map(item => [item.phase, item.count]));
+  assert.equal(phases['first-attempt'], 3, 'The local timeline separates first attempts');
+  assert.equal(phases['retry-attempt'], 2, 'from later retries');
   assert.equal(result.nodes[2].image, undefined);
   const before = shots.length;
   await runs.retry(id);

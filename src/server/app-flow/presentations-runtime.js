@@ -562,14 +562,19 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     }
     return true;
   };
+  // Fibers the last structure walk visited while native presentations were
+  // tracked. That walk includes hidden tabs, so it is the whole tree a
+  // presentation's readiness probes pay for. Read without another walk.
+  let lastWalked;
   function committedStructure() {
     const observed=observeCommits();
     let structure=observed&&structureCache;
     if(!structure){
       const started=Date.now();
       const names=new Map(),current=new WeakMap(),mounted=new WeakSet(),all=[],props=new Map(),images=[],concealed=new WeakSet();
+      let walked=0;
       fibers(fiber=>{
-        mounted.add(fiber);if(fiber.alternate)mounted.add(fiber.alternate);
+        walked++;mounted.add(fiber);if(fiber.alternate)mounted.add(fiber.alternate);
         // Hidden tabs keep their native images mounted and can finish loading
         // in the background. Keep their event history until actual unmount;
         // they must not become new pending images when the tab regains focus.
@@ -581,7 +586,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
         const p=fiber.memoizedProps;if(p&&typeof p==='object'){const list=props.get(p)??[];list.push(fiber);props.set(p,list);}
       });
       structure={names,current,mounted,all,props,images};if(observed)structureCache=structure;
-      measure('self-structure',Date.now()-started);
+      if(nativeArmed||lastWalked===undefined)lastWalked=walked;measure('self-structure',Date.now()-started);
     }
     return structure;
   }
@@ -749,12 +754,46 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       });
       if(text||contents.length!==hosts.length||contents.some((host,index)=>host!==hosts[index]))return {unavailable:text?'container-text':'siblings'};
     }
+    return placementHosts(focus,hosts);
+  }
+  function placementHosts(focus,hosts) {
     const sizes=hosts.map(inlineSize);
     if(sizes.some(size=>!size))return {unavailable:'size'};
     return {focus,hosts:hosts.map((fiber,i)=>{
       const props=fiber.memoizedProps;
       return {fiber,props,slot:preparedBodyHost(fiber,focus),size:sizes[i],hiddenStyle:[props.style,{position:'absolute',opacity:0,...sizes[i]}]};
     })};
+  }
+  // A step deeper than its nearest View, such as inside a dialog's scroll
+  // view, cannot be appended to that View. The component that received the
+  // step's own element as a child renders it in place: appending the copy to
+  // that prop puts it right after the step, when every later sibling renders
+  // no native view. A step that renders nothing yet leaves nothing to conceal.
+  function inlineParent(focus,react) {
+    if(!nativeTargets(focus,true).some(record=>record.status.opened&&!record.status.closed)||nativeTargets(focus).some(record=>record.status.opened&&!record.status.closed))return;
+    const hosts=nativeBodyRoots(focus);if(!hosts)return {unavailable:'text'};
+    const flat=(value,out=[],depth=0)=>{
+      if(depth>8)return out;
+      if(Array.isArray(value))for(const item of value)flat(item,out,depth+1);
+      else if(value&&typeof value==='object'&&value.type===react.Fragment&&value.key==null)flat(value.props?.children,out,depth+1);
+      else out.push(value);
+      return out;
+    };
+    for(let parent=focus.return,depth=0;parent&&depth<80;parent=parent.return,depth++){
+      if(parent.tag===3||parent.tag===5||parent.tag===6)continue;
+      const list=flat(parent.memoizedProps?.children),index=list.findIndex(child=>child&&typeof child==='object'&&child.props===focus.memoizedProps);
+      if(index<0)continue;
+      for(const element of list.slice(index+1)){
+        if(!element||typeof element!=='object')continue;
+        const rendered=[];
+        descendants(parent,fiber=>{if(fiber.memoizedProps===element.props&&(fiber.type===element.type||fiber.elementType===element.type)){rendered.push(fiber);return false;}});
+        if(!rendered.length||rendered.some(fiber=>nativeBodyRoots(fiber)?.length!==0))return {unavailable:'later-sibling'};
+      }
+      const placed=placementHosts(focus,hosts);
+      // The sheet sizes itself from its own first content view, not from this
+      // nested step, so the copy may render other native roots than the step.
+      return placed.unavailable?placed:{root:parent,inline:{...placed,nested:true}};
+    }
   }
   function preparedBodyHost(fiber,focus) {
     const registry=globalThis.__MOBILE_DEV_FLOW_REGISTRY__;
@@ -844,6 +883,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
   function syncInlineBody(record,tree) {
     const probe=record.inlineProbe={hosts:record.inline.hosts.length,stylePending:0,missingCopySize:0,resizing:0,geometryPending:0};
     const focus=tree.current.get(record.inline.focus),hosts=focus&&nativeBodyRoots(focus);
+    if(!record.inline.hosts.length){
+      // The original step rendered nothing: no body to conceal or size.
+      if(!hosts||hosts.length)return {error:'The original native presentation body changed during its preview.'};
+      const bodies=(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type);
+      return {pending:!(bodies.length===1&&nativeBodyRoots(bodies[0])?.length)};
+    }
     if(!hosts?.length||hosts.length!==record.inline.hosts.length)return {error:'The original native presentation body changed during its preview.'};
     if(hosts.some((fiber,index)=>fiber!==record.inline.hosts[index].fiber&&fiber!==record.inline.hosts[index].fiber.alternate))return {error:'The original native presentation body changed during its preview.'};
     let pending=false;
@@ -864,6 +909,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     const bodies=(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type);
     const copies=bodies.length===1&&nativeBodyRoots(bodies[0]);
     if(!copies?.length)return {pending:true};
+    if(record.inline.nested)return {pending};
     if(copies.length!==hosts.length||copies.some((fiber,i)=>fiber.type!==hosts[i].type))return {error:'The native presentation sizing roots do not match the copied form.'};
     for(let i=0;i<copies.length;i++){
       const size=inlineSize(copies[i]),host=record.inline.hosts[i],fiber=hosts[i];
@@ -923,9 +969,15 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     const context=reusable?projectionRoot(owner.root):mountedContext??projectionRoot(focus);if(!context)return {error:'This renderer cannot project a local view.'};
     const type=focus.elementType??focus.type;
     if(!type||typeof type==='string')return {error:'No component view to project.'};
-    const {root,renderer,react,native}=context,props=root.memoizedProps;
-    const inline=reusable?owner.inline:inlinePlacement(focus,context,!!nestedBody&&!nestedNative);
+    let {root}=context,inline=reusable?owner.inline:inlinePlacement(focus,context,!!nestedBody&&!nestedNative),slot=context.slot;
+    const {renderer,react,native}=context;
+    if(inline?.unavailable&&!reusable){
+      const parent=inlineParent(focus,react);
+      if(parent?.root){root=parent.root;inline=parent.inline;slot=undefined;}
+      else if(parent?.unavailable)inline={unavailable:`${inline.unavailable}+${parent.unavailable}`};
+    }
     if(inline?.unavailable)return {error:'This step has no exact content slot inside its native presentation.',detail:`slot:${inline.unavailable}`};
+    const props=root.memoizedProps;
     const child=react.createElement(type,preview?.props??focus.memoizedProps);
     let content=child;
     // Keep live app providers. A new Modal resets native list/scroll ownership;
@@ -945,7 +997,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     // after React removes its tree. Retain each body's own undo checkpoint.
     const children=props.children?.props?.children;
     const previousPreview=reusable&&Array.isArray(children)&&children.includes(owner.element)?owner:undefined;
-    const record={root,renderer,react,props,focus,child,content,inline,nativeLayoutContexts,slot:context.slot,parent:previousPreview,focusAliases:new WeakSet(),portals:[],seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:!!inline||!!previousPreview,dismissed:false,failed:false};
+    const record={root,renderer,react,props,focus,child,content,inline,nativeLayoutContexts,slot,parent:previousPreview,focusAliases:new WeakSet(),portals:[],seed:preview?.seed,views:preview?.views,mount:preview?.mount,ios:native.Platform.OS==='ios',shown:!!inline||!!previousPreview,dismissed:false,failed:false};
     class PreviewBoundary extends react.Component {
       constructor(props){super(props);this.state={failed:false};}
       static getDerivedStateFromError(){return {failed:true};}
@@ -2236,5 +2288,5 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     return projected.slice(-12).map(record=>({owner:name(record.focus),container:name(record.root),prepared:!!record.slot,attached:projectionAttached(record,tree),bodies:(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type).length}));
   }
   const diagnostics=()=>({openingMatch:lastOpeningMatch?{...lastOpeningMatch}:undefined,projectionSlots:projectionSlots(),inlineProjections:projected.filter(record=>record.inline).length,nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,lastCompiledEntries,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeUnconfirmed:!!nativeFailure(),nativeOwnershipChecks,nativeOwnershipReuses,nativeFailure:lastNativeFailure,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
-  return {structure:committedStructure,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,nativeFailure,collect,records,configure,list,prepare,prepareCapture,open,handoff,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,openedSites,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
+  return {structure:committedStructure,treeSize:()=>lastWalked,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,nativeFailure,collect,records,configure,list,prepare,prepareCapture,open,handoff,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,openedSites,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }
