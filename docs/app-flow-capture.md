@@ -527,12 +527,15 @@ a full second for its expected content, its presentation or any content.
 
 The runtime now knows whether the app can still change a waiting view: the
 presentation runtime's last React commit, HTTP requests in flight and their last
-start or end, and fetching queries, including ones waiting to retry. It counts
-requests through `XMLHttpRequest`, which React Native's `fetch` uses, and
-through another `fetch` implementation; it reads no URL, header, body or query
-key, and removes its wrappers on restore. A presentation still blocked after two
-seconds, with no commit, request or fetching query for 1.5 seconds, fails at
-once as timed out: "A loader (skeleton in Loader) stayed on screen, and the app
+start or end, pending app timeouts from 50 ms to 5 seconds, and fetching
+queries, including ones waiting to retry. It counts requests through
+`XMLHttpRequest`, which React Native's `fetch` uses, and through another `fetch`
+implementation; it reads no URL, header, body, callback or query key, the
+runtime's own timers use the original functions, and the wrappers are removed on
+restore. The age-check dialog below waits between attempts with timers and,
+without a location in the simulator, makes no request; timers keep it waiting.
+A presentation still blocked after two seconds, with no commit, request,
+pending timer or fetching query for 1.5 seconds, fails at once as timed out: "A loader (skeleton in Loader) stayed on screen, and the app
 had no rendering or network activity.", or the same ending for content that did
 not render, a presentation that did not appear or one that stayed empty.
 Images, query hooks that are fetching and native motion keep their deadlines.
@@ -555,3 +558,26 @@ before. Planning took 52 seconds of run 10. Discovery now runs while the device
 takes the screenshot, and the app verifies and continues once both finish, so
 nothing closes the view under discovery. Planning no longer repeats it for that
 view; a failed discovery still reopens the view later.
+
+A view is ready before a list has rendered every row below the screenshot.
+Discovery used to start about 0.4 seconds after the screenshot request and
+found openers in those rows; at the screenshot itself, run 11 lost a repost
+dialog from notifications and three dialogs from a post menu preview that runs
+7 to 10 always captured. Discovery now first waits until React has not
+committed for 300 ms, at most 800 ms, which overlaps the screenshot.
+
+**Navigation reset instead of a relaunch.** Bottom tabs keep every visited tab
+mounted. Visiting all five tabs of the test app grew its tree from 13,000 to
+31,000 fibers, and routes captured with a tree above 21,000 fibers took a
+median 2.4 to 2.9 seconds instead of about 1 second. The run relaunched the app
+for this, about 8 seconds each time, and the tree grew back within about 20
+captures. When only the tree is too large, the run now resets navigation to its
+starting state with new route keys: navigators mount only their initial
+screens, and the tree was back at 12,000 fibers within about a second. A reset
+has to show a full window of healthy tree sizes before the next one; otherwise,
+or when the CPU probe is slow, the run relaunches as before. The tree limit
+stays at twice its first size and 8,000 more fibers, so a reset replaces a
+relaunch at the same points. In run 13 a reset waited up to 3 seconds while
+the remounted feed kept rendering; it now waits at most 1.5 seconds and leaves
+content to the next view's readiness checks. A lower limit of 1.6 times was
+tried once; single runs vary too much to show whether it helps.

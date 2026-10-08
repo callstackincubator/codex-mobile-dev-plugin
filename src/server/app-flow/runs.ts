@@ -50,7 +50,7 @@ const defaultPace={window:8,factor:3,floorMs:4,treeFactor:2,treeFloor:8000};
 const median=(values:number[])=>[...values].sort((a,b)=>a-b)[Math.floor(values.length/2)];
 // Where a run's wall time goes, as fixed phases. Totals stay in the local map
 // and reach Sentry once per run as gauges with a fixed phase attribute.
-const runPhases=['connect','first-attempt','retry-attempt','discovery-reopen','planning','reconnect','relaunch'] as const;
+const runPhases=['connect','first-attempt','retry-attempt','discovery-reopen','planning','reconnect','relaunch','navigation-reset'] as const;
 type RunPhase=typeof runPhases[number];
 export const FLOW_DIRECTORY = join(homedir(), "Library/Application Support/mobile-dev/app-flow");
 
@@ -373,13 +373,31 @@ export class AppFlowRuns {
     const over = (pace: Pace, factor: number, floor: number, add: boolean) => pace.baseline !== undefined && pace.recent.length === limits.window &&
       median(pace.recent) > (add ? Math.max(pace.baseline * factor, pace.baseline + floor) : Math.max(floor, pace.baseline * factor));
     const slow = () => over(cpuPace, limits.factor, limits.floorMs, false) || over(treePace, limits.treeFactor, limits.treeFloor, true);
+    // Tabs a run visits stay mounted. A navigation reset unmounts them in
+    // about a second; a relaunch takes several. A reset must show a healthy
+    // window before the next one, and a slow CPU still relaunches.
+    const treeOnly = () => !over(cpuPace, limits.factor, limits.floorMs, false) && over(treePace, limits.treeFactor, limits.treeFloor, true);
+    let navigationResets = 0, resetUnproven = false;
     const paced = (pace: Pace, value: number) => {
       if (pace.baseline === undefined) { pace.first.push(value); if (pace.first.length === limits.window) pace.baseline = median(pace.first); }
       else { pace.recent.push(value); if (pace.recent.length > limits.window) pace.recent.shift(); }
       if (pace.recent.length === limits.window && !slow()) paceArmed = true;
+      // A reset proves itself with a full window of healthy tree sizes.
+      if (pace === treePace && pace.recent.length === limits.window && !over(treePace, limits.treeFactor, limits.treeFloor, true)) resetUnproven = false;
     };
     const slowed = () => paceArmed && slow();
+    const canReset = () => treeOnly() && !resetUnproven;
     let retries = 0, unshown = 0;
+    const resetNavigation = async () => {
+      const started = performance.now();
+      try {
+        const result = await backend?.runtime.invoke({type: 'navigation-reset'}, 5000);
+        if (!result?.reset) return false;
+        navigationResets++; resetUnproven = true; treePace.recent = []; run.navigationResets = navigationResets; run.revision++;
+        return true;
+      } catch (error) { if (signal.aborted) throw error; return false; }
+      finally { phase('navigation-reset', performance.now() - started); }
+    };
     const presentationTimings = new MeasurementWindow(), restorationTimings = new MeasurementWindow();
     const attributes = { surface: "app-flow", device_platform: input.platform };
     const runtimeMetrics=active.runtimeMetrics=new FlowRuntimeMetrics(input.platform);
@@ -557,7 +575,7 @@ export class AppFlowRuns {
           break;
         }
         try {
-          await captureBatch({backend,manifest,run,directory:this.directory,projectRoot:input.projectRoot,signal,save,interrupt:()=>slowed()&&canRelaunch(),
+          await captureBatch({backend,manifest,run,directory:this.directory,projectRoot:input.projectRoot,signal,save,interrupt:()=>slowed()&&(canReset()||canRelaunch()),
             ...(planner?{discover:(node:FlowNode)=>planner!.discover(backend!,node),plan:async(node:FlowNode,result:{ready?:boolean;evidence?:FlowEvidence})=>{
               await this.drain(active);
               const next=await planner!.after(backend!,node,result);
@@ -582,6 +600,7 @@ export class AppFlowRuns {
           if(error instanceof CaptureRelaunchRequest){
             // The job that was opening has not consumed an attempt.
             for(const node of run.nodes)if(node.status==='capturing'){node.status='pending';node.captureAttempts=Math.max(0,(node.captureAttempts??1)-1);}
+            if(canReset()&&await resetNavigation())continue;
             paceArmed=false;
             if(canRelaunch()){await relaunch(error);interrupted=0;}
             continue;
@@ -689,6 +708,7 @@ export class AppFlowRuns {
         Sentry.metrics.gauge('app_flow.previews_blocked',run.nodes.filter(node=>node.presentation?.preview&&node.status==='blocked').length,{attributes});
         Sentry.metrics.gauge("app_flow.reconnects", reconnects, { attributes });
         Sentry.metrics.gauge("app_flow.relaunches", relaunches, { attributes });
+        Sentry.metrics.gauge("app_flow.navigation_resets", navigationResets, { attributes });
         Sentry.metrics.gauge('app_flow.recovery_continuations',recoveryContinuations,{attributes});
         Sentry.metrics.gauge('app_flow.retries', retries, { attributes });
         Sentry.metrics.gauge('app_flow.unshown', unshown, { attributes });
