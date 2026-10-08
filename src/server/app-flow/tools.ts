@@ -5,7 +5,7 @@ import { readFile, realpath } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { resolve, relative, isAbsolute } from "node:path";
-import { AppFlowRuns, type FlowStart } from "./runs.ts";
+import { AppFlowRuns, FLOW_DIRECTORY, type FlowStart } from "./runs.ts";
 import { flowProgressRun, type FlowRun } from "../../shared/app-flow.ts";
 import { discoverFlowSetup } from "./discovery.ts";
 import * as Sentry from "@sentry/node";
@@ -13,6 +13,7 @@ import { FlowConnection } from "./connection.ts";
 import {FlowRuntimeFailure,FlowRuntimeTimeout} from "./runtime-metrics.ts";
 import { reconnectFlowTarget } from "./target.ts";
 import { readFlowScreenshot } from "./screenshot.ts";
+import { SimulatorAnimations } from "./animation-speed.ts";
 import { metroTargets } from "../metro-logs.ts";
 import type { Baguette } from "../baguette.ts";
 import type { ServeEmu } from "../serve-emu.ts";
@@ -38,6 +39,7 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
   // Run results carry the graph and progress, like polling. The source analysis
   // is many megabytes on a real app and stays with context and diagnostics.
   const progress = (run: FlowRun) => flowProgressRun(run);
+  const animations = new SimulatorAnimations(FLOW_DIRECTORY);
   const runs = new AppFlowRuns({
     async connect(input, signal, resume) {
       parseBaseUrl(input.metroUrl, "Metro URL");
@@ -87,12 +89,18 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
       if (input.platform === "ios") {
         const udid = udidSchema.parse(input.deviceId);
         await run("xcrun", ["simctl", "terminate", udid, appId]).catch(() => {});
-        await run("xcrun", ["simctl", "launch", udid, appId]);
+        // Native sheets and transitions settle sooner with the plugin's
+        // animation library. Without its confirmation the app launches normally.
+        if (!await animations.launch(udid, appId, signal)) await run("xcrun", ["simctl", "launch", udid, appId]);
       } else {
         const serial = androidIdSchema.parse(input.deviceId), adb = await adbPath();
         await run(adb, ["-s", serial, "shell", "am", "force-stop", appId]);
         await run(adb, ["-s", serial, "shell", "monkey", "-p", appId, "-c", "android.intent.category.LAUNCHER", "1"]);
       }
+    },
+    animations: {
+      loaded: (input, appId, signal) => input.platform === "ios" ? animations.loaded(udidSchema.parse(input.deviceId), appId, signal) : Promise.resolve(false),
+      speed: async (input, speed) => { if (input.platform === "ios") await animations.speed(udidSchema.parse(input.deviceId), speed); },
     },
     async resolve(context, signal) {
       if (!server.server.getClientCapabilities()?.sampling) throw new Error("This host does not support background AI resolution. Use Resolve with AI in the tab.");

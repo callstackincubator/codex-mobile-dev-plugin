@@ -106,6 +106,7 @@ try {
   assert.equal(comparisonUri, `ui://mobile-dev/${manifest.version}/comparison.html`);
   const comparisonResource = await client.readResource({ uri: comparisonUri });
   assert.match(comparisonResource.contents[0].text, /data-view="comparison"/);
+  await access(join(plugin, "dist/ios-animation/MobileDevAnimationSpeed.dylib"));
   await access(join(plugin, "dist/ios-fps/mobile-dev-ios-fps"));
   await access(join(plugin, "dist/ios-fps/third-party-licenses.txt"));
   for (const abi of ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]) await access(join(plugin, `dist/android-fps/${abi}/mobile-dev-fps`));

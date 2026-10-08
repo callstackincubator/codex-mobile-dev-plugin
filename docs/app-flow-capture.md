@@ -553,6 +553,43 @@ kept changing; neither ever captured on a second attempt. Route failures,
 native motion, paint and settling waits, a changed screen beneath and slow
 runtime replies still get one more attempt.
 
+**Faster native animations.** About 500 ms of a sheet's readiness was the
+sheet sliding in, and most of its 670 ms rollback the sheet sliding out. The
+`-UIAnimationDragCoefficient` launch argument changed nothing, at 0.1 or 10. On
+iOS simulators, App Flow now launches the app with the plugin's animation
+library ([native/ios-animation](../native/ios-animation/README.md)), which sets
+the Core Animation speed of the app's windows to ten times normal. Fourteen
+notification and chat settings sheets captured at a median of 1,132 ms instead
+of 1,838: readiness 426 instead of 708 ms and rollback 220 instead of 668 ms,
+with identical screenshots. A full run with it took 477 seconds.
+
+A full or catalog run starts from a fresh launch with the library, outside the
+recovery relaunch budget; it records the relaunch as `start` in the local
+relaunch log. Run 17 reused the app an earlier run had left with every tab
+mounted: the pace measures the tree against its size at the start, so the first
+pace relaunch came after 58 captures instead of 20, and the run took 784
+seconds. Other runs, such as chosen views or a retry, use the library when the
+running app already has it. Recovery relaunches load it too. The app starts at
+ten times speed, a run that finds the library already loaded sets that speed,
+and every run returns the app to normal speed when it ends. If the new process does not confirm the library
+within five seconds, the app is terminated and launched normally. The library
+is copied to `app-flow/native/` in the plugin's data folder first: the simulator
+cannot load it from `~/Documents`, and the app stopped on its launch screen.
+
+Faster animations can change the order of an app's own events. The age-check
+dialog's polling effect depends on its dialog control; when the control changes
+after the dialog mounts, the effect marks itself unmounted, and the next poll
+stops without showing a result. With fast animations this happened in three of
+five attempts, so the dialog kept its loader and the idle rule stopped it; at
+normal speed it showed its error state in every run. A retry now runs at normal
+speed, and with fast animations a view the idle rule stopped on a loader, which
+the screen catalog has captured before, gets one. Allowing every view the catalog
+had captured once retried 13 views in run 17 instead of 4. The speed follows
+each job: in run 18 a retry that came up while discovery was still finding
+views switched the rest of the run to normal speed, and readiness rose from
+about 250 to 670 ms for those views. Views found after a retry run fast again,
+and a relaunched app starts fast.
+
 **Tried and dropped.** Two further changes did not pay off:
 
 - Discovery ran while the device took the screenshot, instead of after it.

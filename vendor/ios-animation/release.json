@@ -1,0 +1,7 @@
+{
+  "name": "mobile-dev-ios-animation",
+  "target": "ios-simulator arm64 x86_64, iOS 15.0 or later",
+  "sdk": "iphonesimulator 27.0",
+  "sourceSHA256": "36ec869ce57697e6b8ad51de765059ad31383818ebf84b7b01a7c38593ed70db",
+  "binarySHA256": "a5d05f9b3eaa826a63fd90328704272a45018ed228a5e97cbc08671028ed96dc"
+}

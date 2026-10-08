@@ -13,6 +13,7 @@
     "vendor:baguette": "node scripts/vendor-baguette.mjs",
     "vendor:agent-device": "npm ci --prefix runtimes/agent-device --ignore-scripts --no-audit --no-fund",
     "rebuild:baguette": "node scripts/rebuild-baguette.mjs",
+    "rebuild:ios-animation": "node scripts/build-ios-animation.mjs",
     "rebuild:ios-fps": "node scripts/build-fps.mjs ios",
     "rebuild:android-fps": "node scripts/build-fps.mjs android",
     "rebuild:android-cpu": "node scripts/build-android-cpu.mjs",

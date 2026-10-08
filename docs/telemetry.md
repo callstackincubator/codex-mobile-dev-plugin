@@ -1021,3 +1021,12 @@ the app, and the wrappers are removed when capture ends. The runtime's own
 timers use the original timer functions and are not counted. Readiness reads
 now return every 500 ms instead of every second, so the local readiness waits
 of each job are attributed in finer steps; their names and units are unchanged.
+
+`app_flow.fast_animations` is 1 when an iOS simulator run captured with the
+plugin's animation library and 0 otherwise, so capture timings can be compared
+with and without it. A full or catalog run's fresh launch with the library
+counts in the `relaunch` and `reconnect` run phases, the relaunch timing windows
+and `app_flow.reconnects`; `app_flow.relaunches` still counts recovery
+relaunches only, and the local relaunch log records the launch as `start`. The library reads no app data and sends nothing; its process record and
+speed are simulator notification states, and the run's flag stays in the local
+map as `fastAnimations`.

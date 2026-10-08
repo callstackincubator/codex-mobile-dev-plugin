@@ -14,6 +14,7 @@ await access("dist/server.mjs");
 await access("dist/app.html");
 await access("dist/baguette/Baguette");
 await access("dist/baguette/Baguette_Baguette.bundle");
+await access("dist/ios-animation/MobileDevAnimationSpeed.dylib");
 await access("dist/agent-device-server.mjs");
 await access("dist/ios-fps/mobile-dev-ios-fps");
 for (const abi of ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]) await access(`dist/android-fps/${abi}/mobile-dev-fps`);

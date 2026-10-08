@@ -18,6 +18,7 @@ import {captureManifest,captureRecipeNodes,type CaptureRecipe} from './capture-m
 import {captureBatch,CaptureConnectionError,CaptureRelaunchRequest} from './capture-batch.ts';
 import {catalogNodes,catalogSummary,seedCatalog,type FlowCatalogReview,type FlowCatalogSelection} from './screen-catalog.ts';
 import {markUnshown} from './unshown.ts';
+import {FAST_ANIMATIONS} from './animation-speed.ts';
 
 export type FlowStart = { projectRoot: string; platform: "ios" | "android"; deviceId: string; targetId: string; metroUrl: string; useAi: boolean; capture?: {planRunId?: string; catalog?: FlowCatalogSelection; include?: string[]; recipes?: CaptureRecipe[]} };
 export type RuntimeInfo = FlowEvidence & { available: boolean; data?: unknown[] };
@@ -28,8 +29,11 @@ export type FlowDependencies = {
   connect(input: FlowStart, signal: AbortSignal, resume?: { sessionId: string; target?: FlowTargetIdentity; metrics?:FlowRuntimeMetrics }): Promise<FlowBackend>;
   scan?: typeof scanAppFlow;
   resolve?: (context: unknown, signal: AbortSignal) => Promise<FlowResolution[]>;
-  /** Terminate and launch the mapped app on its device. Recovery only. */
+  /** Terminate and launch the mapped app on its device. Recovery, and loading
+   * the iOS simulator animation library before a full run. */
   relaunch?: (input: FlowStart, appId: string, signal: AbortSignal) => Promise<void>;
+  /** iOS simulators: the plugin's animation library, which the relaunch loads. */
+  animations?: { loaded(input: FlowStart, appId: string, signal: AbortSignal): Promise<boolean>; speed(input: FlowStart, speed: number): Promise<void> };
   /** Pace check: relaunch when the median of the app's last `window` CPU probes exceeds `factor` × its first ones and `floorMs`, or its tree exceeds `treeFactor` × and `treeFloor` more fibers than at first. */
   pace?: { window?: number; factor?: number; floorMs?: number; treeFactor?: number; treeFloor?: number };
   directory?: string;
@@ -37,6 +41,8 @@ export type FlowDependencies = {
 type Active = { run: FlowRun; input: FlowStart; abort: AbortController; done?: Promise<void>; runtime?: FlowRuntime; runtimeMetrics?:FlowRuntimeMetrics; phases?:Map<RunPhase,{count:number;totalMs:number}>; info?: RuntimeInfo; target?: FlowTargetIdentity; saving?: Promise<void>; savedRevision?: number; checkpoints?: MeasurementWindow; lease?: FlowLease; writing: Set<Promise<void>>; settled: boolean; contextRefresh?: Promise<void> };
 const discoveryWarning="Presentation discovery failed on some screens. The partial map was kept.";
 const relaunchWarning="The app was relaunched to recover from state that could not be restored in place.";
+/** A fresh launch with the iOS simulator animation library before a run. */
+class StartRelaunch extends Error { constructor() { super('Start the run from a fresh launch.'); } }
 // Three relaunches per run, then one more whenever a view settled since the
 // last: a capture, or a view blocked after failing twice. A failure that recurs
 // without progress still ends the run, and so does the hard cap.
@@ -379,7 +385,15 @@ export class AppFlowRuns {
       if (pace.recent.length === limits.window && !slow()) paceArmed = true;
     };
     const slowed = () => paceArmed && slow();
-    let retries = 0, unshown = 0;
+    let retries = 0, unshown = 0, animationSpeed = false, appliedSpeed = FAST_ANIMATIONS;
+    // With fast animations, a retry runs at normal speed: an app can depend on
+    // animation timing. Views discovered later run fast again.
+    const paceJob = async (next: {jobs: {attempt?: number; discoverOnly?: boolean}[]}) => {
+      const job = next.jobs[0], speed = job?.attempt && !job.discoverOnly ? 1 : FAST_ANIMATIONS;
+      if (!run.fastAnimations || !job || speed === appliedSpeed) return;
+      appliedSpeed = speed;
+      await this.dependencies.animations?.speed(input, speed).catch(() => {});
+    };
     const presentationTimings = new MeasurementWindow(), restorationTimings = new MeasurementWindow();
     const attributes = { surface: "app-flow", device_platform: input.platform };
     const runtimeMetrics=active.runtimeMetrics=new FlowRuntimeMetrics(input.platform);
@@ -448,9 +462,12 @@ export class AppFlowRuns {
     const canRelaunch = () => !!this.dependencies.relaunch && !!active.target?.appId && !signal.aborted && relaunches < relaunchCap &&
       (relaunches < relaunchAllowance || settled() > settledAtRelaunch);
     const relaunch = async (cause: unknown, opening?: string) => {
-      relaunches++; settledAtRelaunch = settled(); run.phase = "reconnecting"; run.revision++;
+      // A fresh start is not a recovery and keeps the budget.
+      const recovery = !(cause instanceof StartRelaunch);
+      if (recovery) { relaunches++; settledAtRelaunch = settled(); }
+      run.phase = "reconnecting"; run.revision++;
       // Local evidence of what forced each relaunch, and which view was open.
-      const kind = cause instanceof FlowNativeFailure ? 'native' : cause instanceof FlowAppFailure ? 'app' : cause instanceof CaptureRelaunchRequest ? 'pace' : 'interrupted';
+      const kind = cause instanceof FlowNativeFailure ? 'native' : cause instanceof FlowAppFailure ? 'app' : cause instanceof CaptureRelaunchRequest ? 'pace' : cause instanceof StartRelaunch ? 'start' : 'interrupted';
       const detail = (cause instanceof FlowNativeFailure || cause instanceof FlowAppFailure) && cause.detail ? cause.detail.slice(0, 200) : undefined;
       (run.relaunchLog ??= []).push({cause: kind, ...(opening ? {nodeId: opening} : {}), captured: run.nodes.filter(node => node.status === 'captured').length, ...(detail ? {detail} : {})});
       if (run.relaunchLog.length > 20) run.relaunchLog.shift();
@@ -462,9 +479,11 @@ export class AppFlowRuns {
       try { await abortable(this.dependencies.relaunch!(input, active.target!.appId!, signal), signal); }
       catch (error) { throw signal.aborted ? error : cause; }
       finally { relaunchTimings.record(performance.now() - started); phase('relaunch', performance.now() - started); }
-      if (!run.warnings.includes(relaunchWarning)) run.warnings.push(relaunchWarning);
+      if (recovery && !run.warnings.includes(relaunchWarning)) run.warnings.push(relaunchWarning);
       cpuPace.recent = []; treePace.recent = [];
       await reconnect();
+      // A relaunched app starts fast; the next job sets the speed it needs.
+      appliedSpeed = FAST_ANIMATIONS;
     };
     try {
       active.lease ??= await this.store.claim(input);
@@ -487,6 +506,20 @@ export class AppFlowRuns {
       if (signal.aborted) { await backend.runtime.close(); signal.throwIfAborted(); }
       active.info = await abortable(backend.runtime.invoke({ type: "inspect" }, 2000), signal);
       phase('connect', performance.now() - connectStarted);
+      // iOS simulators: native sheets and transitions settle ten times faster
+      // with the plugin's animation library. A full or catalog run starts from
+      // a fresh launch with it: tabs an earlier run visited stay mounted, and
+      // the run's pace is measured against its first tree size. Other runs use
+      // the library when the app already has it. Apps without a navigator never
+      // reconnect after a relaunch, so they keep their running process.
+      const animations = input.platform === 'ios' ? this.dependencies.animations : undefined, appId = active.target?.appId;
+      if (animations && appId) {
+        animationSpeed = true;
+        if (!resume && (!input.capture || input.capture.catalog) && active.info?.available && this.dependencies.relaunch) await relaunch(new StartRelaunch());
+        else if (await animations.loaded(input, appId, signal)) await animations.speed(input, FAST_ANIMATIONS).catch(() => {});
+        run.fastAnimations = await animations.loaded(input, appId, signal);
+        run.revision++;
+      }
       if (!input.capture) {
         if (active.info?.available) discovery = new FlowReachability(graph, active.info, resume ? run : undefined);
         else { graph.nodes = resume ? run.nodes.filter(node => node.presentation) : []; graph.edges = resume ? run.edges : []; }
@@ -524,6 +557,15 @@ export class AppFlowRuns {
         await save();
       } else {
         planner = new CapturePlanner(run,input.projectRoot,this.directory,signal,save,discovery,active.info?.active);
+        if (run.fastAnimations) {
+          // An app can wait on its own animations in a different order; one
+          // dialog kept its loader with fast animations and showed its result at
+          // normal speed. A view the idle rule stopped on a loader, which the
+          // catalog has captured before, gets a normal-speed retry.
+          const catalog = await this.store.loadCatalog(input.projectRoot, input.platform).catch(() => undefined);
+          const captured = new Set(catalog?.entries.filter(entry => entry.captured).map(entry => entry.id) ?? []);
+          planner.normalSpeedRetry = node => captured.has(node.id) && /^A loader \(.*no rendering or network activity\.$/.test(node.reason ?? '');
+        }
         if(!active.info?.available)await planner.presentations.entry(backend);
         if(!resume)run.ai=input.useAi?'waiting':'off';
       }
@@ -557,10 +599,12 @@ export class AppFlowRuns {
           break;
         }
         try {
+          await paceJob(manifest);
           await captureBatch({backend,manifest,run,directory:this.directory,projectRoot:input.projectRoot,signal,save,interrupt:()=>slowed()&&canRelaunch(),
             ...(planner?{plan:async(node:FlowNode,result:{ready?:boolean;evidence?:FlowEvidence})=>{
               await this.drain(active);
               const next=await planner!.after(backend!,node,result);
+              await paceJob(next);
               run.discoveryFailures=[...planner!.presentations.failures.values()];
               await save();return next;
             }}:{}),
@@ -643,6 +687,8 @@ export class AppFlowRuns {
       if (["waiting", "resolving"].includes(run.ai)) run.ai = "unavailable";
       run.revision++;
       await backend?.runtime.close().catch(() => {});
+      // The app keeps the library until it is relaunched; it returns to normal speed.
+      if (animationSpeed) await this.dependencies.animations?.speed(input, 1).catch(() => {});
       await Promise.allSettled(active.writing);
       discovery?.finish();
       run.revision++;
@@ -689,6 +735,7 @@ export class AppFlowRuns {
         Sentry.metrics.gauge('app_flow.previews_blocked',run.nodes.filter(node=>node.presentation?.preview&&node.status==='blocked').length,{attributes});
         Sentry.metrics.gauge("app_flow.reconnects", reconnects, { attributes });
         Sentry.metrics.gauge("app_flow.relaunches", relaunches, { attributes });
+        Sentry.metrics.gauge("app_flow.fast_animations", run.fastAnimations ? 1 : 0, { attributes });
         Sentry.metrics.gauge('app_flow.recovery_continuations',recoveryContinuations,{attributes});
         Sentry.metrics.gauge('app_flow.retries', retries, { attributes });
         Sentry.metrics.gauge('app_flow.unshown', unshown, { attributes });

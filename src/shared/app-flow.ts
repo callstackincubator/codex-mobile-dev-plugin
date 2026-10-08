@@ -98,7 +98,9 @@ export type FlowRun = FlowGraph & {
   /** Nodes whose live presentation entries were listed; a resumed run keeps them. */
   explored?: string[];
   /** Local record of the last relaunches: what forced each one and the open view. */
-  relaunchLog?: {cause: 'native' | 'app' | 'pace' | 'interrupted'; nodeId?: string; captured: number; detail?: string}[];
+  relaunchLog?: {cause: 'native' | 'app' | 'pace' | 'interrupted' | 'start'; nodeId?: string; captured: number; detail?: string}[];
+  /** iOS simulators: the app ran with the plugin's animation library when capture started. */
+  fastAnimations?: boolean;
   groups?: { id: string; name: string }[];
   recording?: { groupId: string; message: string };
   startedAt: number;

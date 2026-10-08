@@ -20,6 +20,9 @@ export function retryableCapture(node:FlowNode) {
 /** Chooses work only. The in-app queue owns all opening, capture and cleanup. */
 export class CapturePlanner {
   readonly presentations: FlowPresentationDiscovery;
+  /** With fast animations: timed-out views this selects get one more attempt,
+   * which runs at normal speed with the other retries. */
+  normalSpeedRetry?: (node: FlowNode) => boolean;
   private discoveries = new Map<string,number>();
   private run:FlowRun; private signal:AbortSignal; private reachability?:FlowReachability; private initialPath?:string[];
   constructor(run:FlowRun, root:string, directory:string, signal:AbortSignal,
@@ -66,7 +69,7 @@ export class CapturePlanner {
       this.presentations.failures.set(node.id,{nodeId:node.id,operation:'open',message:'The saved view could not be reopened for discovery.'});
       this.discoveries.set(node.id,(this.discoveries.get(node.id)??0)+1);
     }
-    if(retryableCapture(node))node.status='pending';
+    if(retryableCapture(node) || node.status==='timed-out' && (node.captureAttempts??0)<2 && this.normalSpeedRetry?.(node))node.status='pending';
     this.run.revision++;
     return this.manifest(node);
   }

@@ -32,3 +32,14 @@ test('the planner queues a retry only for a transient presentation failure', asy
   assert.equal(structural.status, 'timed-out');
   assert.equal(structural.reason, 'target');
 });
+
+test('with fast animations a timed-out view that captured before gets one more attempt', async () => {
+  const idle = sheet('A loader (skeleton in Loader) stayed on screen, and the app had no rendering or network activity.'), known = {...idle, id: 'known'}, final = {...sheet('target'), id: 'final', captureAttempts: 2};
+  const run: any = {id: 'run', revision: 0, files: 1, scanMs: 0, warnings: [], edges: [], nodes: [idle, known, final], presentations: {states: [], actions: []}};
+  const planner = new CapturePlanner(run, '/fixture', '/fixture', new AbortController().signal, async () => {});
+  planner.normalSpeedRetry = node => node.id !== idle.id;
+  for (const node of [idle, known, final]) await planner.after({} as any, node, {ready: false});
+  assert.equal(idle.status, 'timed-out', 'A view that never captured stays failed');
+  assert.equal(known.status, 'pending');
+  assert.equal(final.status, 'timed-out', 'No view gets a third attempt');
+});

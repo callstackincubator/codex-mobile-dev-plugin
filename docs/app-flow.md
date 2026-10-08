@@ -50,15 +50,27 @@ earlier maps remain saved locally. Pinch to zoom; preview frames use a 9:16 aspe
 
 One persistent Metro debugger connection drives the run. The server requests
 screenshots directly from the existing device backend; it does not launch a
-screenshot process or make a model call per screen. The first readiness attempt
-lasts up to 1 second. Two deferred retries allow 2 and 4 seconds. Visible loaders
-extend these waits to 6, 10, and 20 seconds, with capture as soon as content settles.
+screenshot process or make a model call per screen. A view gets up to 6 seconds
+to become ready, and a loader still receiving data up to 10, with capture as soon
+as content settles. A view that stays blocked for 2 seconds while the app has no
+React commit, network request, pending short timer or fetching query fails at
+once; the runtime only counts these and reads none of their content. A timed-out
+view gets one more attempt only when waiting longer can change the result.
 The runtime checks focused content, pending initial queries, native transitions,
 and paint frames. Inactive pager pages do not delay capture, even when the native
 pager reports their bounds at the same position as the selected page. The selected
 page still waits for visible loaders. Blank or stale screenshots and screen changes
 during capture invalidate the image. These waits are estimates of readiness, not
 proof that every image or request has finished.
+
+On iOS simulators, App Flow loads the plugin's animation library into the app it
+launches, so native sheets, modals and navigation transitions run ten times
+faster while a run captures; final layouts are unchanged. The library belongs to
+the plugin: nothing is added to the app's project or bundle. A full or catalog
+run starts from a fresh launch with it, other runs use it when the app already
+has it, and every run returns the app to normal speed when it ends. Retries run
+at normal speed. Opening the app normally removes it. See
+[native/ios-animation/README.md](../native/ios-animation/README.md).
 
 Readiness also samples visible Reanimated opacity inputs. Changes restart the
 quiet period even when React content stays the same. If a fade starts during the
