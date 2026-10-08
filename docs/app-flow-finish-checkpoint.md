@@ -10,10 +10,12 @@
 Manually reviewed captures now cover **149 of 260** reference views: 88 live
 and 61 UI previews. The previous checkpoint counted 138.
 
-A default "Map app" run takes about **12 minutes** instead of 24 and saves 175
+A default "Map app" run takes about **10 minutes** instead of 24 and saves 175
 to 181 images, depending on the feed content of the day. Runs 7 to 10 took
-12.3, 12.4, 12.3 and 12.0 minutes. Retries take about 1.5 minutes of that, and
-captures run at a median of 1.7 seconds.
+12.3, 12.4, 12.3 and 12.0 minutes; run 15, after views that cannot change stop
+waiting, took 9.9 minutes and saved 178 images, including every view runs 7 to
+10 always captured. Retries now take 7 seconds instead of about 100, and
+failures 135 seconds instead of 229. Single runs vary by 10 to 15 percent.
 
 | Run | Minutes | Images | Relaunches |
 | --- | ---: | ---: | ---: |
@@ -22,6 +24,7 @@ captures run at a median of 1.7 seconds.
 | 8 | 12.4 | 181 | 4 |
 | 9 | 12.3 | 177 | 7 |
 | 10 | 12.0 | 175 | 4 |
+| 15, idle views stop waiting | 9.9 | 178 | 4 |
 
 Each run marks about 63 views it did not find as needs-data, under the screen
 that should show them, with the source conditions that can hide them. Retrying
