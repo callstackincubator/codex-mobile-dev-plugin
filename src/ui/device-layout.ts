@@ -7,11 +7,9 @@ export function isDeviceActive(device?: SimulatorDevice): boolean {
   return device?.state === "Booted";
 }
 
+// Open one platform by default. iOS wins when both have an active device; the
+// platform select can still show both.
 export function activeDeviceLayout(ios?: SimulatorDevice, android?: SimulatorDevice): DeviceLayout {
-  const iosActive = isDeviceActive(ios);
-  const androidActive = isDeviceActive(android);
-  if (iosActive && androidActive) return "both";
-  if (iosActive) return "ios";
-  if (androidActive) return "android";
-  return "none";
+  if (isDeviceActive(ios)) return "ios";
+  return isDeviceActive(android) ? "android" : "none";
 }

@@ -23,7 +23,7 @@ export type { DeviceLayout } from "../device-layout.ts";
 export function Workspace({ logs, performance, recordingController, updates, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; recordingController: RecordingController; updates?: PluginUpdateController; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout) => void }) {
   const [tool, setTool] = useState<"logs" | "performance">("logs");
   const [savedVisible, setSavedVisible] = useState(false);
-  const [layout, setLayout] = useState<DeviceLayout>(automaticLayout ?? "both");
+  const [layout, setLayout] = useState<DeviceLayout>(automaticLayout ?? "ios");
   const manualLayout = useRef(false);
   const recordingState = useSyncExternalStore(recordingController.subscribe, recordingController.getSnapshot);
   useEffect(() => {

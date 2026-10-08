@@ -11,12 +11,12 @@ const iosPhone: SimulatorDevice = {
 };
 const androidPhone: SimulatorDevice = { udid: "phone", name: "Pixel", model: "Pixel", state: "Booted", runtime: "Android", platform: "android", kind: "physical", transportType: "wired" };
 
-test("only active platforms are visible for simulators, emulators, and physical phones", () => {
+test("one active platform opens by default, preferring iOS when both have active devices", () => {
   for (const ios of [iosSimulator, iosPhone]) {
     assert.equal(activeDeviceLayout(ios), "ios");
     for (const android of [androidEmulator, androidPhone]) {
       assert.equal(activeDeviceLayout(undefined, android), "android");
-      assert.equal(activeDeviceLayout(ios, android), "both");
+      assert.equal(activeDeviceLayout(ios, android), "ios");
     }
   }
 });
