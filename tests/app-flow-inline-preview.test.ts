@@ -262,6 +262,19 @@ test('a nested step copy may render other native roots than the original step',a
   await runtime.rollback();
 });
 
+test('a nested copy dropped by its parent re-rendering is attached again',async t=>{
+  const app=shellFixture(t),{runtime}=app;
+  assert.equal(runtime.project(app.step,{views:['step']}).error,undefined);
+  // The dialog re-renders its shell with fresh children and no copy.
+  app.shell.memoizedProps={children:[app.original,app.close]};
+  const view=runtime.motion(app.step);
+  assert.equal(view.pending,true,'Readiness waits while the copy returns');
+  const children=app.shell.memoizedProps.children.props.children;
+  assert.equal(children.length,3);assert.ok(children[2].key.startsWith('mobile-flow-preview-'));
+  await runtime.rollback();
+  assert.deepEqual(app.shell.memoizedProps.children.props?.children??app.shell.memoizedProps.children,[app.original,app.close]);
+});
+
 test('a later sibling that renders a native view keeps the step without a slot',t=>{
   const app=shellFixture(t,{laterRenders:true});
   const result=app.runtime.project(app.step,{views:['step']});

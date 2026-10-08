@@ -880,6 +880,17 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       if(changed){structureCache=undefined;record.renderer.overrideProps(fiber,[],props);}
     }
   }
+  // A nested copy lives in the children its parent component received. The
+  // app re-rendering that parent with fresh children drops it; append it to
+  // the parent's current children again, a bounded number of times.
+  function reattachNested(record,tree){
+    if((record.reattached=(record.reattached??0)+1)>20)return false;
+    const root=tree.current.get(record.root)??record.root,props=root?.memoizedProps;if(!props)return false;
+    const react=record.react,transparent=props.children?.type===react.Fragment&&props.children.key==null&&props.children.props?.ref===undefined;
+    const body=transparent?props.children.props.children:props.children,children=Array.isArray(body)?body:[body];
+    record.root=root;record.next={...props,children:react.createElement(react.Fragment,null,...children,record.element)};
+    structureCache=undefined;record.renderer.overrideProps(root,[],record.next);return true;
+  }
   function syncInlineBody(record,tree) {
     const probe=record.inlineProbe={hosts:record.inline.hosts.length,stylePending:0,missingCopySize:0,resizing:0,geometryPending:0};
     const focus=tree.current.get(record.inline.focus),hosts=focus&&nativeBodyRoots(focus);
@@ -1634,6 +1645,32 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     const items=[...seen.values()].map(item=>({...item,views:[...new Set(item.views)]}));
     lastAvailable=items.length;return items;
   };
+  // A body that renders data its opener supplies, such as a link warning's
+  // destination, is incoherent when opened without it. Once that body mounts,
+  // name the first empty input; nothing is filled in.
+  let lastInputCheck;
+  function missingInputs() {
+    const entries=undo.filter(entry=>!entry.closed&&entry.inputs?.length);
+    lastInputCheck={entries:entries.length,found:0,empty:0};
+    if(!entries.length)return;
+    const tree=index(),empty=value=>value===undefined||value===null||value===''||Array.isArray(value)&&!value.length;
+    for(let index=entries.length-1;index>=0;index--){
+      const entry=entries[index],from=tree.current.get(entry.origin)??tree.current.get(entry.focus)??entry.origin??entry.focus;
+      if(!from)continue;
+      for(const input of entry.inputs){
+        let missing=false;
+        // The opener's own element and everything it renders, including a
+        // sheet body rendered through a portal.
+        for(const root of roots(from,tree))descendants(root,fiber=>{
+          if(missing)return false;
+          if(name(fiber)!==input.component||!fiber.memoizedProps||!(input.prop in fiber.memoizedProps))return;
+          lastInputCheck.found++;
+          if(empty(fiber.memoizedProps[input.prop])){missing=true;lastInputCheck.empty++;}
+        });
+        if(missing)return `This view shows \`${input.prop}\` (\`${input.text}\`, line ${input.line}), which its opener supplies; this app state has none.`;
+      }
+    }
+  }
   function activeViews(focus) {
     const tree=index(),visual=visualFocus(focus,tree),ids=new Set();
     const opened=undo[undo.length-1];
@@ -2026,7 +2063,8 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     // Local diagnostics only. Keep bounded primitive evidence, never fibers,
     // callback arguments or app content. Telemetry still uses aggregate timings.
     for(const record of projected){
-      if(!record.inline||!projectionAttached(record,tree)||projected.some(child=>child.parent===record))continue;
+      if(!record.inline||projected.some(child=>child.parent===record))continue;
+      if(!projectionAttached(record,tree)){if(record.inline.nested&&!record.slot&&reattachNested(record,tree))pending=true;continue;}
       const layout=syncInlineBody(record,tree);pending||=!!layout.pending;if(layout.error)error=layout.error;
     }
     const describe=record=>({component:name(record.fiber),kind:record.fiber?.tag===5?'host':'adapter',pending:!!record.status.pending,opened:!!record.status.opened,closing:!!record.status.closing,events:record.status.events??0,lastEvent:record.status.lastEvent,visible:typeof record.original?.visible==='boolean'?record.original.visible:undefined});
@@ -2131,7 +2169,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       const {value,close}=found.target,fiber=controllerFocus(found.target.fiber,value);
       const opened=undo.find(entry=>!entry.closed&&entry.control===value);
       if(opened){if(opened===undo[undo.length-1])opened.views=[...new Set([...(opened.views??[]),...(action.views??[])])];return {name:action.name,focus:fiber,alreadyOpen:true};}
-      armNative(fiber);undo.push({control:value,close,focus:fiber,nativeFocus:fiber,origin:found.target.fiber,views:action.views?.slice()});value[found.target.method??action.effect.method]();
+      armNative(fiber);undo.push({control:value,close,focus:fiber,nativeFocus:fiber,origin:found.target.fiber,views:action.views?.slice(),inputs:action.inputs});value[found.target.method??action.effect.method]();
       return {name:action.name,focus:fiber};
     }
     return {error:'Unsupported presentation transition.'};
@@ -2287,6 +2325,6 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     const tree=index();
     return projected.slice(-12).map(record=>({owner:name(record.focus),container:name(record.root),prepared:!!record.slot,attached:projectionAttached(record,tree),bodies:(tree.props.get(record.child.props)??[]).filter(fiber=>fiber.type===record.child.type||fiber.elementType===record.child.type).length}));
   }
-  const diagnostics=()=>({openingMatch:lastOpeningMatch?{...lastOpeningMatch}:undefined,projectionSlots:projectionSlots(),inlineProjections:projected.filter(record=>record.inline).length,nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,lastCompiledEntries,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeUnconfirmed:!!nativeFailure(),nativeOwnershipChecks,nativeOwnershipReuses,nativeFailure:lastNativeFailure,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
-  return {structure:committedStructure,treeSize:()=>lastWalked,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,nativeFailure,collect,records,configure,list,prepare,prepareCapture,open,handoff,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,openedSites,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
+  const diagnostics=()=>({inputCheck:lastInputCheck?{...lastInputCheck}:undefined,openingMatch:lastOpeningMatch?{...lastOpeningMatch}:undefined,projectionSlots:projectionSlots(),inlineProjections:projected.filter(record=>record.inline).length,nativeProbe:lastNativeProbe,nativeWaiters:nativeWaiters(),lastExactScheduled,lastFallbackScheduled,lastCompiledBindings,lastCompiledEntries,containedImperativeHandles,containedSubscriptions,preservedRootFragments,reusedQueryResults,reusedQuerySelections,queryPreviewReads,queryPreviewRejections,mountChecks:{...mountChecks},imageObservers:imageRecords.size,pendingImages:[...imageRecords.values()].filter(record=>record.pending).length,queryObservers:queryPatches.length,queryCache:queryCacheDiagnostics,querySnapshots:querySnapshots.size,bindings:bindings.size,matchedBindings:[...bindings.values()].filter(b=>b.site).length,entries:entries.size,entryInstances:[...entries.values()].reduce((total,record)=>total+record.fibers.size,0),lastScheduled,matchedEntries:[...entries.values()].filter(e=>e.actions.size).length,actions:catalog.actions.length,lastAvailable,nativeClassCallbacks:[...nativeClassCallbacks.values()].reduce((total,record)=>total+record.handlers.size,0),nativeCloseRequests,nativeCloseRetries,nativeUnconfirmed:!!nativeFailure(),nativeOwnershipChecks,nativeOwnershipReuses,nativeFailure:lastNativeFailure,nativeClosingAcknowledged:[...nativeRecords.values()].filter(r=>r.status.dismissAcknowledged).length,nativeRecords:nativeRecords.size,nativeHosts:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5).length,nativePending:[...nativeRecords.values()].filter(r=>r.status.pending).length,nativeHostPending:[...nativeRecords.values()].filter(r=>r.fiber?.tag===5&&r.status.pending).length,dismissalWaiters:undo.reduce((total,entry)=>total+(entry.native?.filter(status=>!status.closed).length??0),0),checkpoints:undo.length,projections:projected.length,detachedProjections:projected.filter(record=>!projectionAttached(record)).length,closingProjections:undo.filter(entry=>entry.projection&&entry.closing).length,shownProjections:projected.filter(record=>record.shown).length,dismissedProjections:projected.filter(record=>record.dismissed).length,uiEffectBindings:uiEffects.size,openedUiEffects,portalBindings:portalEffects.size,portalPreviews:projected.reduce((total,record)=>total+record.portals.length,0)});
+  return {structure:committedStructure,treeSize:()=>lastWalked,missingInputs,imagePending:fiber=>!!imageRecords.get(fiber.stateNode?.canonical)?.pending,captureClose,captureNative,nativeFailure,collect,records,configure,list,prepare,prepareCapture,open,handoff,portalBindings,previewPortals,uiEffectBindings,previewEffects,activeViews,openedSites,rollback,cleanup,motion:(focus,viewport,geometry)=>motion(focus,viewport,undefined,undefined,geometry), visualFocus, project, diagnostics, probeFocus, focusFor:(name_,scope)=>focusedComponent(name_,scope,index()), focused:focus=>{if(undo.length){const entry=undo[undo.length-1];entry.focus=focus;if(entry.projection?.mount)entry.projection.focus=focus;}}, checkpoint:()=>undo.length};
 }

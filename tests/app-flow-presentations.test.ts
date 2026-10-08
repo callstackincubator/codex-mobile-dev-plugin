@@ -94,6 +94,18 @@ test('controller capture calls only the matched open/close methods and rolls bac
   app.runtime.cleanup();assert.equal(app.runtime.list().length,0);
 });
 
+test('an opened body without the data its opener supplies is reported, never filled in',async()=>{
+  const app=tree();app.action.inputs=[{component:'Nested',prop:'link',text:'ctl.value',line:3}];
+  app.nested.memoizedProps={link:undefined};
+  app.runtime.open('open');
+  assert.match(app.runtime.missingInputs(),/shows `link` \(`ctl.value`, line 3\), which its opener supplies/);
+  app.nested.memoizedProps={link:{href:'https://example.com'}};
+  assert.equal(app.runtime.missingInputs(),undefined,'Real data passes');
+  await app.runtime.rollback(0,false);
+  assert.equal(app.runtime.missingInputs(),undefined,'Nothing is checked once the view closes');
+  app.runtime.cleanup();
+});
+
 test('a failed close keeps its checkpoint and can be retried',async()=>{
   const app=tree();let attempts=0;
   app.control.close=()=>{if(++attempts===1)throw Error('close not ready');app.control.closes++};

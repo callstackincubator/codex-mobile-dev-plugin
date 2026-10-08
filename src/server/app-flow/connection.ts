@@ -171,7 +171,9 @@ export class FlowConnection {
       result=await this.invoke({type:'presentation-view'},2000);
     }
     if (['presentation-collect','presentation-bindings','presentation-configure','presentation-active','presentations','presentation-rollback','presentation-portals','presentation-effects'].includes(String(command.type))) {
-      if(result?.error)throw new FlowRuntimeFailure(String(command.type),'was rejected',result.detail??result.error);
+      // A view that lacks its opener's data is a verdict on that view, also
+      // when it arrives with a portal or effect reply. Only other errors fail.
+      if(result?.error&&!(result.status==='needs-data'&&['presentation-portals','presentation-effects'].includes(String(command.type))))throw new FlowRuntimeFailure(String(command.type),'was rejected',result.detail??result.error);
       if(['presentation-active','presentations'].includes(String(command.type))&&!Array.isArray(result))throw new FlowRuntimeFailure(String(command.type),'returned an invalid response');
       if(['presentation-collect','presentation-bindings'].includes(String(command.type))&&!Array.isArray(result?.bindings))throw new FlowRuntimeFailure(String(command.type),'returned an invalid response');
     }

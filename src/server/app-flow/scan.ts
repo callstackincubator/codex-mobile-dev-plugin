@@ -9,6 +9,7 @@ import { sourceLinkMatches, sourceLinkReader } from "./source-links.ts";
 import {attachSourceHandoffs} from './handoff-source.ts';
 import { scanPresentations } from './presentations-source.ts';
 import { addRenderConditions } from './render-conditions.ts';
+import { addOpeningInputs } from './opening-inputs.ts';
 import { scanSourceViews } from './views-source.ts';
 import { addSourcePreviewPlans } from './preview-plans.ts';
 import {originalCaptureConfig} from './capture-build.ts';
@@ -489,6 +490,11 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
   graph.presentations.views = catalog.views;
   graph.presentations.viewStates = catalog.states;
   addSourcePreviewPlans(graph.presentations,graph.nodes);
+  // A mounted copy renders a component outside the dialog that hosts it. When
+  // a parent's finite state already renders that component as one of its
+  // steps, that state, inside its real container, is the only path to it.
+  const stepped=new Set((graph.presentations.previews??[]).flatMap(preview=>preview.effect.kind==='state'&&preview.expected?[preview.expected.component]:[]));
+  if(graph.presentations.previews)graph.presentations.previews=graph.presentations.previews.filter(preview=>preview.effect.kind!=='mount'||!stepped.has(preview.effect.export));
   for (const preview of graph.presentations.previews ?? []) {
     const parents = screensByOwner.get(`${resolve(root, preview.file)}#${preview.owner}`);
     if (parents?.length) preview.parents = parents.slice();
@@ -496,6 +502,7 @@ export async function scanAppFlow(projectRoot: string, platform: "ios" | "androi
   // A view whose opener never renders on its screen is reported with the
   // source conditions that hide it, so nobody has to guess the missing data.
   addRenderConditions([...graph.presentations.actions, ...graph.presentations.previews ?? []], units, root, (unit, name) => symbol(units.get(unit.file)!, name));
+  addOpeningInputs([...graph.presentations.actions, ...graph.presentations.previews ?? []], units, root, (unit, name) => symbol(units.get(unit.file)!, name));
   attachSourceHandoffs(graph.presentations,units,root,(unit,name)=>symbol(units.get(unit.file)!,name),platform);
   graph.catalogMs = performance.now() - catalogStarted;
   const sourceHash=createHash('sha256').update(platform);for(const unit of [...units.values()].sort((a,b)=>a.file.localeCompare(b.file))){sourceHash.update(relative(root,unit.file));sourceHash.update('\0');sourceHash.update(unit.ast.text);sourceHash.update('\0');}graph.sourceHash=sourceHash.digest('hex');

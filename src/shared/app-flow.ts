@@ -42,6 +42,8 @@ export type FlowStateSelection = {id:string;file:string;owner:string;component:s
 export type FlowStateSync = {line:number;column:number;dispatch:string;locals:string[];updates:{when:FlowStateExpression;payload:Record<string,FlowStateExpression>;patch:Record<string,FlowStateExpression>}[]};
 export type FlowStateSite = { id: string; file: string; line: number; column: number; endLine: number; endColumn?: number; owner: string; paths: string[][]; selections?: FlowStateSelection[]; sync?:FlowStateSync[]; data?: {file:string;name:string}[]; hook?: 'useState' | 'useReducer'; valueName?: string; owners?: string[]; ownerSites?: {file: string; owner: string}[]; ownerEntries?: {component:string; file:string; owner:string; source:{line:number;column:number;endLine:number;endColumn:number}}[] };
 export type FlowOpeningData = {value:FlowStateExpression;when:FlowStateExpression;locals:string[]};
+/** A body prop fed by data its opener supplies, such as `link={ctl.value}`. */
+export type FlowOpeningInput = {component: string; prop: string; text: string; line: number};
 /** A source condition that decides whether an opener renders, as written. */
 export type FlowRenderCondition = {kind: 'when' | 'unless' | 'each'; text: string; file: string; line: number};
 export type FlowPresentationAction = {
@@ -59,6 +61,8 @@ export type FlowPresentationAction = {
   when?: FlowRenderCondition[];
   /** Source text of the controller value a control target receives. */
   controller?: string;
+  /** Body props that must not be empty once the body mounts. */
+  inputs?: FlowOpeningInput[];
   expected?: {scope?: 'owner'; component: string; file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}};
   handoffs?: {file: string; owner: string; component: string; prop: string; source: {line: number; column: number; endLine: number; endColumn: number}; contextPath: string[]; close: string}[];
   consumer?: {component: string; entries: {file: string; owner: string; source: {line: number; column: number; endLine: number; endColumn: number}}[]};

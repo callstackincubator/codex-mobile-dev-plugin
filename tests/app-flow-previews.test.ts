@@ -378,6 +378,17 @@ test('capture comparison counts verified automatic images once and separates UI 
 });
 
 
+test('a form that a parent step already renders is not mounted outside that parent',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'preview-stepped-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  await writeFile(join(root,'App.tsx'),`import {useState} from 'react';
+    export function Disable(){const [step]=useState<'email'|'token'>('email');return step==='email'?<Email/>:<Token/>}
+    export function Manage(){const [action]=useState<'enable'|'disable'|null>(null);if(action==='disable')return <Disable/>;return <Enable/>}
+    export function Standalone(){const [screen]=useState<'start'|'next'>('start');return screen==='start'?<Start/>:<Next/>}`);
+  const graph=await scanAppFlow(root,'ios'),previews=graph.presentations!.previews!;
+  assert.ok(previews.some(p=>p.effect.kind==='state'&&p.expected?.component==='Disable'),'The parent step renders the form in place');
+  assert.deepEqual(previews.filter(p=>p.effect.kind==='mount').map(p=>p.owner).sort(),['Manage','Standalone']);
+});
+
 test('unmounted owner plans require an export with optional props, including inherited members',async t=>{
   const root=await mkdtemp(join(tmpdir(),'preview-owners-'));t.after(()=>rm(root,{recursive:true,force:true}));
   await writeFile(join(root,'Props.ts'),`export interface Base {record:string};export interface ImportedRequired extends Base {label?:string};export interface ImportedOptional {label?:string}`);

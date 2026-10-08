@@ -481,3 +481,28 @@ MB before, which closed a strict MCP client's connection; the analysis stays
 available through `context` and `diagnostics`. Retrying one not-found node now
 takes about 10 seconds and keeps its source conditions when the opener is
 still absent.
+
+**Data an opener supplies.** Some dialogs show data their opener provides at
+open time: a link warning shows the destination passed to its control's
+`open(value)`, and a hosting confirmation shows the provider its sign-in
+handler stores right before opening it. Opening such a dialog bare produced a
+screenshot with empty fields. The scan now records body props fed by `X.value`
+where `X.control` opens the dialog, or by state the opening handler sets to a
+non-literal value. Only props the receiving component renders count, so a
+consent dialog that uses its link only in button callbacks still captures.
+Once the body mounts, an empty input ends the attempt as needs-data: "This view
+shows `link` (`linkWarningDialogControl.value`, line 26), which its opener
+supplies; this app state has none." This verdict also passes through portal
+and effect replies. Nothing is filled in.
+
+**Nested copies stay attached.** A step copied beside its own element lives in
+the children its parent component received. When the app re-renders that
+parent, the copy dropped out and the step timed out waiting for its target.
+Readiness probes now attach it again, at most 20 times per copy. The email
+dialog's Manage 2FA step now captures as "Enable email 2FA".
+
+**Mounts a parent step already renders.** A form previewed by mounting its
+exported component renders outside the dialog that hosts it. The 2FA Disable
+form was drawn at the top of the screen without its sheet. A mount preview is
+now dropped when a parent's finite state already renders the same component as
+one of its steps; onboarding and other full-screen forms keep their mounts.
