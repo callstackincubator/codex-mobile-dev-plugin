@@ -43,6 +43,28 @@ test('callers of one specific dialog become one node, on every pass', () => {
   assert.deepEqual(markUnshown(run, () => true), [], 'The other caller of the same dialog stays covered');
 });
 
+test('a dialog whose own opener represents it keeps its callers covered on the next pass', () => {
+  // The screen passes a controller to NewChat; NewChat's own button opens its sheet.
+  const caller = control('caller', 'Messages', 'NewChat', 30, {preview: true});
+  const own = control('own', 'NewChat', 'Outer', 12);
+  const run = {id: 'run', revision: 0, files: 1, scanMs: 0, warnings: [], phase: 'capturing', startedAt: 0, ai: 'off', edges: [],
+    nodes: [screen('settings')], presentations: {states: [], actions: [own], previews: [caller]}} as unknown as FlowRun;
+  assert.deepEqual(markUnshown(run, () => true).map(node => node.presentation?.actions[0]), ['own']);
+  assert.deepEqual(markUnshown(run, () => true), [], 'The caller stays part of the same view');
+});
+
+test('one controller passed to two different dialogs in alternative branches keeps two views', () => {
+  // isMe ? <EditLive control={c} /> : <LiveStatus control={c} />; each dialog renders a shared sheet.
+  const outers = Array.from({length: 4}, (_, index) => control(`outer-${index}`, `Other${index}`, 'Outer', 50 + index, {preview: true}));
+  const edit = control('edit', 'Header', 'EditLive', 10, {preview: true, controller: 'liveControl'}), status = control('status', 'Header', 'LiveStatus', 11, {preview: true, controller: 'liveControl'});
+  const editBody = control('edit-body', 'EditLive', 'Outer', 3, {preview: true}), statusBody = control('status-body', 'LiveStatus', 'Outer', 4, {preview: true});
+  const run = {id: 'run', revision: 0, files: 1, scanMs: 0, warnings: [], phase: 'capturing', startedAt: 0, ai: 'off', edges: [],
+    nodes: [screen('settings'), ...outers.map((outer, index) => ({...screen(`o${index}`), path: [], presentation: {actions: [outer.id], basePath: ['settings']}}))],
+    presentations: {states: [], actions: [], previews: [...outers, edit, status, editBody, statusBody]}} as unknown as FlowRun;
+  assert.deepEqual(markUnshown(run, () => true).map(node => node.name).sort(), ['EditLive', 'LiveStatus']);
+  assert.deepEqual(markUnshown(run, () => true), []);
+});
+
 test('a shell shared by many callers keeps each caller distinct', () => {
   const callers = Array.from({length: 5}, (_, index) => control(`caller-${index}`, `Screen${index}`, 'Basic', 10 + index));
   const shellBody = control('basic-body', 'Basic', 'Outer', 4, {preview: true});

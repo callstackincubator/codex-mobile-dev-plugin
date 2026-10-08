@@ -383,7 +383,8 @@ export class AppFlowRuns {
     const presentationTimings = new MeasurementWindow(), restorationTimings = new MeasurementWindow();
     const attributes = { surface: "app-flow", device_platform: input.platform };
     const runtimeMetrics=active.runtimeMetrics=new FlowRuntimeMetrics(input.platform);
-    const phases=active.phases??=new Map();
+    // A resumed session, such as a single-screen retry, adds to the saved totals.
+    const phases=active.phases??=new Map((run.phaseTimings??[]).filter(item=>(runPhases as readonly string[]).includes(item.phase)).map(item=>[item.phase as RunPhase,{count:item.count,totalMs:item.totalMs}]));
     const phase=(name:RunPhase,ms:number)=>{if(!Number.isFinite(ms)||ms<0)return;const value=phases.get(name)??{count:0,totalMs:0};value.count++;value.totalMs+=ms;phases.set(name,value);};
     const save = async () => {
       try { await this.persist(active); }

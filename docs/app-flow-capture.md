@@ -454,8 +454,10 @@ this app state. It renders when `accounts.length > 1` (Settings.tsx:123),
 `showAccounts` (Settings.tsx:151) and `accounts.filter(…)` has items
 (Settings.tsx:154)." Nothing is evaluated or opened, and no model writes the
 text. Openers that pass one controller value from one owner, and a dialog's own
-body with the opener passing it the controller, become one node. A body whose
-dialog the map already opened through any caller is not repeated. Retry screen
+body with the opener passing it the controller, become one node; two different
+dialogs given one controller in alternative branches stay two. A body whose
+dialog the map already opened through any caller is not repeated, and marking
+twice adds nothing. Run 8 kept 65 such nodes. Retry screen
 on such a node tries the real opening; if the opener is still absent, the node
 keeps its conditions. A resumed run, such as a single-screen retry, no longer
 reopens every screen it already explored; mapping more screens still does.
@@ -471,3 +473,11 @@ anything to conceal. Such a nested copy also needs no one-to-one sizing proxy,
 because the sheet sizes itself from its own first content view. Run 7 captured
 the email dialog's Update, Verify, Verify reminder, security-code and
 enter-code steps, and a focused run captured both delete-account steps.
+
+**Run results from tools.** `start`, `extend`, `retry`, `resolve`, `stop` and
+`capture-step` return the same compact run as `mobile_read_app_flow`: the graph
+and progress without the source analysis. A retry on a real map returned 23.7
+MB before, which closed a strict MCP client's connection; the analysis stays
+available through `context` and `diagnostics`. Retrying one not-found node now
+takes about 10 seconds and keeps its source conditions when the opener is
+still absent.

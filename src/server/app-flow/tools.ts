@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { resolve, relative, isAbsolute } from "node:path";
 import { AppFlowRuns, type FlowStart } from "./runs.ts";
+import { flowProgressRun, type FlowRun } from "../../shared/app-flow.ts";
 import { discoverFlowSetup } from "./discovery.ts";
 import * as Sentry from "@sentry/node";
 import { FlowConnection } from "./connection.ts";
@@ -34,6 +35,9 @@ const startSchema = z.object({ projectRoot: z.string().min(1).max(2048), platfor
 const execute = promisify(execFile);
 
 export function registerAppFlowTools(server: McpServer, baguette: Baguette, android: ServeEmu) {
+  // Run results carry the graph and progress, like polling. The source analysis
+  // is many megabytes on a real app and stays with context and diagnostics.
+  const progress = (run: FlowRun) => flowProgressRun(run);
   const runs = new AppFlowRuns({
     async connect(input, signal, resume) {
       parseBaseUrl(input.metroUrl, "Metro URL");
@@ -150,16 +154,16 @@ export function registerAppFlowTools(server: McpServer, baguette: Baguette, andr
     if (["start", "extend", "record"].includes(action)) {
       const input: FlowStart = startSchema.parse(options); parseBaseUrl(input.metroUrl, "Metro URL");
       if (input.platform === "ios") udidSchema.parse(input.deviceId); else androidIdSchema.parse(input.deviceId);
-      return { run: action === 'record' ? await runs.record(input, label ?? 'Recorded flow', runId) : action === 'extend' ? await runs.extend(z.uuid().parse(runId), input) : runs.start(input) };
+      return { run: progress(action === 'record' ? await runs.record(input, label ?? 'Recorded flow', runId) : action === 'extend' ? await runs.extend(z.uuid().parse(runId), input) : runs.start(input)) };
     }
     const id = z.uuid().parse(runId);
-    if (action === 'capture-step') return { run: await runs.captureStep(id, label) };
+    if (action === 'capture-step') return { run: progress(await runs.captureStep(id, label)) };
     if (action === "prepare") return { context: await runs.prepare(id, options) };
     if (action === "context") return { context: await runs.contextShared(id) };
     if (action === "diagnostics") return { diagnostics: await runs.diagnostics(id) };
-    if (action === "resolve") return { run: await runs.submit(id, safeResolutions(resolutions)) };
-    if (action === "retry") return { run: await runs.retry(id, options, nodeIds) };
-    return { run: await runs.stopShared(id) };
+    if (action === "resolve") return { run: progress(await runs.submit(id, safeResolutions(resolutions))) };
+    if (action === "retry") return { run: progress(await runs.retry(id, options, nodeIds)) };
+    return { run: progress(await runs.stopShared(id)) };
   }));
   registerAppTool(server, "mobile_read_app_flow", {
     title: "Read App Flow progress", description: "Read the route map and capture progress. Screenshots are local mobile-flow resources. Poll at most twice per second.",
