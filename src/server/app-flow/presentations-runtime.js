@@ -718,7 +718,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     if(!boundaries.length&&!previewContainer)return;
     // A native sheet owns its coordinates, safe area and height. Render a
     // copied step in that same container, never in a second native window.
-    if(root===focus||!previewContainer&&!boundaries.some(record=>inside(root,record.fiber))||nativeTargets(focus).some(record=>record.status.opened&&!record.status.closed))return {unavailable:true};
+    if(root===focus||!previewContainer&&!boundaries.some(record=>inside(root,record.fiber))||nativeTargets(focus).some(record=>record.status.opened&&!record.status.closed))return {unavailable:root===focus?'root':'boundary'};
     const children=root.memoizedProps.children;
     const wrappers=new Set([react.Fragment,react.Profiler]);
     for(let parent=focus.return;parent&&parent!==root;parent=parent.return)if(parent.tag===10){wrappers.add(parent.type);wrappers.add(parent.elementType);}
@@ -735,7 +735,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     // Require an exact last-child match so no footer or sibling moves ahead
     // of this step. Ambiguous containers must not produce a false capture.
     const hosts=nativeBodyRoots(focus);
-    if(!hosts?.length)return {unavailable:true};
+    if(!hosts?.length)return {unavailable:hosts?'no-hosts':'text'};
     const exactLast=last&&last.props===focus.memoizedProps&&(last.type===focus.type||last.type===focus.elementType);
     // A copied full-screen form can have non-layout wrappers between its
     // native container and the next step. Keep that container (and its safe
@@ -747,10 +747,10 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
         if(fiber.tag===6){text=true;return false;}
         if(fiber.tag===5){contents.push(fiber);return false;}
       });
-      if(text||contents.length!==hosts.length||contents.some((host,index)=>host!==hosts[index]))return {unavailable:true};
+      if(text||contents.length!==hosts.length||contents.some((host,index)=>host!==hosts[index]))return {unavailable:text?'container-text':'siblings'};
     }
     const sizes=hosts.map(inlineSize);
-    if(sizes.some(size=>!size))return {unavailable:true};
+    if(sizes.some(size=>!size))return {unavailable:'size'};
     return {focus,hosts:hosts.map((fiber,i)=>{
       const props=fiber.memoizedProps;
       return {fiber,props,slot:preparedBodyHost(fiber,focus),size:sizes[i],hiddenStyle:[props.style,{position:'absolute',opacity:0,...sizes[i]}]};
@@ -925,7 +925,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     if(!type||typeof type==='string')return {error:'No component view to project.'};
     const {root,renderer,react,native}=context,props=root.memoizedProps;
     const inline=reusable?owner.inline:inlinePlacement(focus,context,!!nestedBody&&!nestedNative);
-    if(inline?.unavailable)return {error:'This step has no exact content slot inside its native presentation.'};
+    if(inline?.unavailable)return {error:'This step has no exact content slot inside its native presentation.',detail:`slot:${inline.unavailable}`};
     const child=react.createElement(type,preview?.props??focus.memoizedProps);
     let content=child;
     // Keep live app providers. A new Modal resets native list/scroll ownership;
@@ -1203,6 +1203,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     // instead of selecting a sheet by position or component name.
     return leaves.length===1?leaves[0]:fiber;
   }
+  let listingCold=false;
+  function coldModule(action,tree) {
+    if(!sourceHash||!globalThis.__MOBILE_DEV_FLOW_REGISTRY__?.matchingOwners?.(sourceHash)?.length)return false;
+    const registered=sourceModule(tree.registeredModules??new Map(),action.effect.file);
+    return !!registered&&!registered.isInitialized&&typeof globalThis.__r==='function';
+  }
   function mountedExport(action,tree) {
     mountChecks.plans++;
     if(!tree.modules){
@@ -1265,10 +1271,12 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     if(action.preview&&action.effect.kind==='mount'){
       // Bootstrap owners at a route boundary, never inside an unrelated sheet.
       if(focus||projected.length)return;
-      const type=mountedExport(action,tree);if(!type)return;
-      const context=mountContext(tree);
+      const type=mountedExport(action,tree);
+      const context=(type||listingCold&&coldModule(action,tree))&&mountContext(tree);
       const projection=context&&projectionRoot(context);
-      if(projection)return {type,context,projection};
+      // A listed module that has not loaded yet is still a view. Only its own
+      // opening may load it, in a prepared build; listing never does.
+      if(projection)return type?{type,context,projection}:{cold:true};
       return;
     }
     if(action.preview&&action.effect.kind==='state'){
@@ -1343,36 +1351,68 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       }
       return;
     }
-    if(ownersFound.length!==1){if(checks)checks.ambiguousOwners=+(ownersFound.length>1);return;}const owner=ownersFound[0];
-    const matching=entriesFound.filter(fiber=>owned(fiber,owner)&&reachable(fiber,owner)&&Object.entries(action.trigger??{}).every(([key,value])=>fiber.memoizedProps?.[key]===value));
-    const callbacks=new Set(matching.map(fiber=>fiber.memoizedProps[action.prop]));
-    if(callbacks.size>1&&action.handler){for(const callback of callbacks)if(callback.name!==action.handler)callbacks.delete(callback);}
-    if(checks){checks.matchingEntries=matching.length;checks.callbacks=callbacks.size;}
-    if(callbacks.size!==1)return;
-    if(!condition(action.guard,owner.memoizedProps)){if(checks)checks.unmetCondition=1;return;}
-    if(action.effect.kind==='state'){
-      const site=catalog.states.find(s=>s.id===action.effect.site);
-      const matches=(tree.states.get(action.effect.site)??[]).filter(b=>{if(b.kind!=='useState')return false;hookValue(b,tree);return tree.isVisible(b.fiber)&&(site?.owner!==action.owner||tree.inside(b.fiber,owner));});
-      if(matches.length!==1)return;const binding=matches[0];
-      let value=hookValue(binding,tree);for(const part of action.effect.path)value=value?.[part];
-      if(JSON.stringify(value)===JSON.stringify(action.effect.value))return;
-      if(!action.effect.path.length&&typeof action.effect.value==='object'&&value!=null)return;
-      return {owner,binding};
-    }
-    if(action.effect.kind==='control'){
-      const candidates=action.effect.target?tree.entries.get(`${action.id}:target`)??[]:tree.names.get(action.effect.component)??[];
-      const targets=candidates.filter(fiber=>name(fiber)===action.effect.component&&tree.inside(fiber,owner)).flatMap(fiber=>{
-        const value=action.effect.prop==='ref'?fiber.ref?.current??fiber.memoizedProps?.ref?.current:fiber.memoizedProps?.[action.effect.prop];
-        const close=(Array.isArray(action.effect.close)?action.effect.close:[action.effect.close]).find(key=>typeof value?.[key]==='function');
-        return value&&typeof value[action.effect.method]==='function'&&close?[{fiber,value,close}]:[];
-      });
-      // Shared controls can appear in alternate JSX branches. Require one live
-      // instance and never select between two mounted controllers.
-      const unique=[];for(const target of targets){const existing=unique.find(t=>t.value===target.value);if(!existing)unique.push(target);else if(tree.inside(target.fiber,existing.fiber))existing.fiber=target.fiber;}
-      if(checks)checks.controllers=unique.length;
-      if(unique.length===1)return {owner,target:unique[0]};
-    }
+    // A menu or sheet opener repeated in list rows is the same source view in
+    // each row. Open the first fully visible row whose owner meets the
+    // opener's source condition. Data-bearing openers still need one owner.
+    const list=ownersFound.length>1&&listOf(ownersFound[0],tree);
+    const rows=!!list&&!action.input&&(action.effect.kind==='state'||action.effect.kind==='control')&&ownersFound.every(owner=>listOf(owner,tree)===list);
+    if(ownersFound.length!==1&&!rows){if(checks)checks.ambiguousOwners=+(ownersFound.length>1);return;}
+    const resolveOwner=owner=>{
+      const matching=entriesFound.filter(fiber=>owned(fiber,owner)&&(rows?tree.isVisible(fiber):reachable(fiber,owner))&&Object.entries(action.trigger??{}).every(([key,value])=>fiber.memoizedProps?.[key]===value));
+      const callbacks=new Set(matching.map(fiber=>fiber.memoizedProps[action.prop]));
+      if(callbacks.size>1&&action.handler){for(const callback of callbacks)if(callback.name!==action.handler)callbacks.delete(callback);}
+      if(checks){checks.matchingEntries=matching.length;checks.callbacks=callbacks.size;}
+      if(callbacks.size!==1)return;
+      if(!condition(action.guard,owner.memoizedProps)){if(checks)checks.unmetCondition=1;return;}
+      if(action.effect.kind==='state'){
+        const site=catalog.states.find(s=>s.id===action.effect.site);
+        const matches=(tree.states.get(action.effect.site)??[]).filter(b=>{if(b.kind!=='useState')return false;hookValue(b,tree);return tree.isVisible(b.fiber)&&(site?.owner!==action.owner||tree.inside(b.fiber,owner));});
+        if(matches.length!==1)return;const binding=matches[0];
+        let value=hookValue(binding,tree);for(const part of action.effect.path)value=value?.[part];
+        if(JSON.stringify(value)===JSON.stringify(action.effect.value))return;
+        if(!action.effect.path.length&&typeof action.effect.value==='object'&&value!=null)return;
+        return {owner,binding};
+      }
+      if(action.effect.kind==='control'){
+        const candidates=action.effect.target?tree.entries.get(`${action.id}:target`)??[]:tree.names.get(action.effect.component)??[];
+        const targets=candidates.filter(fiber=>name(fiber)===action.effect.component&&tree.inside(fiber,owner)).flatMap(fiber=>{
+          const value=action.effect.prop==='ref'?fiber.ref?.current??fiber.memoizedProps?.ref?.current:fiber.memoizedProps?.[action.effect.prop];
+          const close=(Array.isArray(action.effect.close)?action.effect.close:[action.effect.close]).find(key=>typeof value?.[key]==='function');
+          return value&&typeof value[action.effect.method]==='function'&&close?[{fiber,value,close}]:[];
+        });
+        // Shared controls can appear in alternate JSX branches. Require one live
+        // instance and never select between two mounted controllers.
+        const unique=[];for(const target of targets){const existing=unique.find(t=>t.value===target.value);if(!existing)unique.push(target);else if(tree.inside(target.fiber,existing.fiber))existing.fiber=target.fiber;}
+        if(checks)checks.controllers=unique.length;
+        if(unique.length===1)return {owner,target:unique[0]};
+      }
+    };
+    if(!rows)return resolveOwner(ownersFound[0]);
+    if(checks)checks.rows=ownersFound.length;
+    return rowOrder(ownersFound.slice(0,24),owner=>entriesFound.find(fiber=>owned(fiber,owner)&&tree.isVisible(fiber))).reduce((found,owner)=>found??resolveOwner(owner),undefined);
   };
+  // Rows are owners inside the same vertical list. Pager pages, horizontal
+  // lists and separate owners elsewhere on screen stay ambiguous.
+  function listOf(fiber,tree) {
+    for(let parent=fiber.return,depth=0;parent&&depth<400;parent=parent.return,depth++){
+      if(parent.tag!==5)continue;
+      const type=parent.stateNode?.viewConfig?.uiViewClassName??(typeof parent.type==='string'?parent.type:undefined);
+      if(type!=='RCTScrollView'&&type!=='AndroidScrollView')continue;
+      const props=parent.memoizedProps;
+      return props?.horizontal||props?.pagingEnabled||props?.scrollEnabled===false?undefined:tree.current.get(parent)??parent;
+    }
+  }
+  // Rows in reading order: top to bottom, then left to right, by each row's
+  // visible opener. A row without a measurable opener is not a candidate.
+  function rowOrder(owners,opener) {
+    const placed=[];
+    for(const owner of owners){
+      const entry=opener(owner);let box;
+      try{box=entry&&(entry.tag===5?windowRect(entry):bodyFrame(entry));}catch{}
+      if(box&&Number.isFinite(box.y)&&Number.isFinite(box.x))placed.push({owner,y:box.y,x:box.x});
+    }
+    return placed.sort((a,b)=>a.y-b.y||a.x-b.x).map(entry=>entry.owner);
+  }
   function resolveEntry(action,tree,focus,allowCurrent=false,instance) {
     const exact=find(action,tree,focus,bodyRoots(focus,tree),allowCurrent,instance);if(exact)return exact;
     if(action.preview||!['state','control'].includes(action.effect.kind))return;
@@ -1389,7 +1429,19 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     }
     return matches.length===1?matches[0]:undefined;
   }
+  // An unavailable opening keeps local evidence about the scope it searched.
   function prepare(id,focus,instance) {
+    const result=prepareOpening(id,focus,instance);
+    if(result.available)return result;
+    try{
+      const tree=index(true),current=focus&&tree.current.get(focus);
+      const action=catalog.actions.find(action=>action.id===id);
+      const mount=action?.effect.kind==='mount'?Object.fromEntries(Object.entries(mountChecks).filter(([,count])=>count)):undefined;
+      return {...result,scope:{focus:focus?current?'mounted':'detached':'none',roots:focus?bodyRoots(focus,tree).length:0,projected:projected.length,undo:undo.length,
+        entries:(tree.entries.get(id)??[]).length,targets:(tree.entries.get(`${id}:target`)??[]).length,...(mount?{mount,context:!!mountContext(tree)}:{})}};
+    }catch{return result;}
+  }
+  function prepareOpening(id,focus,instance) {
     const action=catalog.actions.find(action=>action.id===id);
     if(!action)return {available:false,error:'The requested view is not in the source catalog.'};
     const effect=action.effect;
@@ -1411,6 +1463,7 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       }
     }
     const tree=index(true);let found;diagnosingOpening=action;lastOpeningMatch=undefined;
+    if(effect.kind==='mount')mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};
     try{found=resolveEntry(action,tree,focus,true,instance);}finally{diagnosingOpening=undefined;}
     if(found)return {available:true,handoff:!!action.handoffs?.length||!!(action.preview&&effect.kind==='state'&&!found.alreadyOpen&&replacementNative(found.consumer??found.binding.fiber,tree).length)};
     if(action.preview&&effect.kind==='mount')return {available:false,error:'The source component or its live provider context is unavailable.'};
@@ -1429,7 +1482,13 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       // Name the first unmet requirement of a plain opener. Fixed messages
       // only; they never include app content.
       const checks=lastOpeningMatch;
-      if(!checks.entries)return {available:false,error:checks.disabledEntries?'The opening control is disabled in this app state.':'The opening control is not in the active view.'};
+      if(!checks.entries){
+        if(checks.disabledEntries)return {available:false,error:'The opening control is disabled in this app state.'};
+        // Nothing here renders the opener's owner. On its usual parent this
+        // means the account has no record for it yet, such as an empty list.
+        const shown=(tree.names.get(action.owner)??[]).some(owner=>tree.isVisible(owner));
+        return {available:false,error:shown?'The opening control is not in the active view.':`This screen shows no ${String(action.owner).slice(0,60)}, which opens this view. It may need app data this account doesn't have yet. Add it in the app, then retry this screen.`};
+      }
       if(checks.ambiguousOwners)return {available:false,error:'More than one live owner renders this opening control.'};
       if(!checks.owners)return {available:false,error:checks.visibleOwners?'The opening control is not reachable in the active view.':'The opening control has no visible source owner in the active view.'};
       if(checks.unmetCondition)return {available:false,error:'The opening control does not meet its source condition.'};
@@ -1475,7 +1534,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     mountChecks={plans:0,moduleMissing:0,moduleCold:0,moduleUnknown:0,exportMissing:0,ownerMismatch:0,alreadyMounted:0,available:0};
     const tree=index(true),scope=bodyRoots(focus,tree),seen=new Map(),controllers=new Map();
     catalog.actions.forEach(action=>{
-      const found=find(action,tree,focus,scope);if(!found)return false;
+      let found;listingCold=true;
+      try{found=find(action,tree,focus,scope);}finally{listingCold=false;}
+      if(!found)return false;
       const key=found.target?.value??JSON.stringify(action.effect.kind==='mount'?['mount',action.effect.file,action.effect.export]:[action.effect.site,action.effect.path,action.effect.value]);
       const opened=found.target&&undo.find(entry=>!entry.closed&&entry.control===key);
       if(opened){
@@ -1609,9 +1670,24 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     if(record.canonical&&record.canonical[record.field]===record.patched)record.canonical[record.field]=record.original;
     record.fiber=record.canonical=record.original=record.patched=undefined;
   }
+  // A subtree that bailed out of a commit keeps its previous child pointer;
+  // only rendered subtrees are visited. Hidden branches supply no native hosts.
+  function renderedHosts(rootFiber) {
+    const images=[],hosts=[],stack=[[rootFiber,false]];let visited=0;
+    while(stack.length&&visited<200000){
+      const [fiber,concealedParent]=stack.pop();visited++;
+      if(fiber.tag===5&&/image/i.test(typeof fiber.type==='string'?fiber.type:name(fiber)??''))images.push(fiber);
+      const concealed=concealedParent||hidden(fiber.memoizedProps);
+      if(!concealed&&(fiber.tag===5||fiber.tag===1))hosts.push(fiber);
+      const alternate=fiber.alternate;
+      if(alternate&&fiber.child===alternate.child)continue;
+      for(let child=fiber.child;child;child=child.sibling)stack.push([child,concealed]);
+    }
+    return {images,hosts};
+  }
   function commitHandler(original,callback) {
     const state={callback};
-    return {original,state,wrapped:function(...args){try{return original.apply(this,args);}finally{state.callback?.();}}};
+    return {original,state,wrapped:function(...args){try{return original.apply(this,args);}finally{state.callback?.(...args);}}};
   }
   const inside=indexInside;
   const captureRoots=new Set();
@@ -1623,9 +1699,9 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       return handler.apply(this,args);
     };
   }
-  function watchImages(mounting=false) {
+  function watchImages(mounting=false,changed) {
     const mounted=new Set();
-    for(const fiber of committedStructure().images) {
+    for(const fiber of changed??committedStructure().images) {
       const canonical=fiber.stateNode?.canonical,props=canonical?.currentProps;
       if(!props || typeof props.onLoad!=='function' || typeof props.onLoadStart!=='function')continue;
       mounted.add(canonical);
@@ -1642,19 +1718,21 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
       record.patched=patched;
       try{canonical.currentProps=patched;imageRecords.set(canonical,record);}catch{forgetNative(record);imageRecords.delete(canonical);}
     }
-    for(const [canonical,record]of imageRecords)if(!mounted.has(canonical)){forgetNative(record);imageRecords.delete(canonical);}
+    if(!changed)for(const [canonical,record]of imageRecords)if(!mounted.has(canonical)){forgetNative(record);imageRecords.delete(canonical);}
   }
-  function watchNative(focus, pending = false, ancestors = false, mounting = false) {
+  function watchNative(focus, pending = false, ancestors = false, mounting = false, changed) {
     nativeRevision++;
     const hosts=[],adapters=[],mounted=new Set();let openingRoots;
-    for(const fiber of committedStructure().all){
+    for(const fiber of changed??committedStructure().all){
       if(fiber.tag!==5&&fiber.tag!==1)continue;
       const canonical=fiber.tag===1?fiber.stateNode:fiber.stateNode?.canonical,field=fiber.tag===1?'props':'currentProps',props=canonical?.[field];
       if(!props||typeof props.onShow!=='function'&&typeof props.onDismiss!=='function'&&typeof props.onStateChange!=='function')continue;
       mounted.add(canonical);(fiber.tag===5?hosts:adapters).push({fiber,canonical,field,props});
     }
-    for(const [instance,record]of nativeClassCallbacks)if(!mounted.has(instance)&&(!record.status.events||!record.status.pending&&!record.status.opened))forgetClassCallbacks(instance,record);
-    for(const [canonical,record]of nativeRecords)if(!mounted.has(canonical)&&(!record.status.pending&&!record.status.opened||record.fiber?.tag===1&&!record.status.events)){forgetNative(record);nativeRecords.delete(canonical);}
+    if(!changed){
+      for(const [instance,record]of nativeClassCallbacks)if(!mounted.has(instance)&&(!record.status.events||!record.status.pending&&!record.status.opened))forgetClassCallbacks(instance,record);
+      for(const [canonical,record]of nativeRecords)if(!mounted.has(canonical)&&(!record.status.pending&&!record.status.opened||record.fiber?.tag===1&&!record.status.events)){forgetNative(record);nativeRecords.delete(canonical);}
+    }
     // Register cached class callbacks before matching hosts which forward them.
     // Both boundaries share one status and deduplicate the same event object.
     for(const {canonical,props}of adapters){
@@ -1804,11 +1882,16 @@ export function installPresentationRuntime({ hook, fibers, hidden, later, measur
     // the old callback and observe the current chain before reusing metadata.
     if(commitPatch){commitPatch.state.callback=undefined;commitPatch=undefined;structureCache=undefined;}
     if(typeof hook?.onCommitFiberRoot!=='function')return false;
-    const patch=commitHandler(hook.onCommitFiberRoot,()=>{
+    const patch=commitHandler(hook.onCommitFiberRoot,(_renderer,root)=>{
       const started=Date.now();
       try{
         structureCache=undefined;
-        if(nativeArmed){watchImages(true);watchNative(undefined,false,false,true);syncPortalPreviews();}
+        if(nativeArmed){
+          // New and updated image and native hosts are inside subtrees this
+          // commit rendered. Readiness scans release removed ones.
+          const changed=root?.current?renderedHosts(root.current):undefined;
+          watchImages(true,changed?.images);watchNative(undefined,false,false,true,changed?.hosts);syncPortalPreviews();
+        }
       }finally{measure('self-commit',Date.now()-started);}
     });
     try{hook.onCommitFiberRoot=patch.wrapped;}catch{patch.state.callback=undefined;return false;}

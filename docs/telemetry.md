@@ -980,3 +980,11 @@ use the usual surface and platform attributes. The app identifier, device
 identifier and failure details stay in the local map. Captured source sites of
 shared presentations stay local as well; the extra in-app read is part of the
 existing `probe` phase of in-app capture work.
+
+A run may also relaunch the app when its captures slow far below the run's own
+pace, and those relaunches count in `app_flow.relaunches` too. Per-view capture
+diagnostics, the phase milliseconds and readiness waits stored with each map
+node, stay in the local map. So do the search scope of unavailable openings and
+content-slot check names; none of them is sent to Sentry. Commit observers now
+visit only subtrees each commit rendered; `self-commit` and `self-structure`
+keep their names and units in the in-app capture work.

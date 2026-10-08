@@ -1459,3 +1459,22 @@ test('uncertain native ownership blocks routes and pixels while keeping cleanup 
  app.context.nativeDetached=false;
  assert.equal((await app.invoke({type:'verify',path:['Home'],name:'Home'})).found,true);
 });
+
+test('a route opening with no open presentation clears an earlier presentation focus',async t=>{
+  const app=runtime(t);await app.invoke({type:'restore'});
+  const seen:any[]=[];(app.context as any).seen=seen;
+  // The opening adds no checkpoint, so rollback has no frame to restore from.
+  vm.runInContext(`(${installFlowRuntime.toString()})('flow',5000,()=>({
+    open:()=>({focus:{detached:true}}),prepare:(id,focus)=>{seen.push(focus);return {available:false}},
+    probeFocus:focus=>({focus,visualFocus:focus,expectedReady:true,motion:()=>({pending:false,signature:''})}),
+    portalBindings:()=>[],uiEffectBindings:()=>[],focusFor(){},visualFocus:focus=>focus,
+    checkpoint:()=>0,focused(){},cleanup(){},rollback:async()=>{}
+  }))`,app.context);
+  await app.invoke({type:'inspect'});
+  await app.invoke({type:'presentation-open',id:'sheet'});
+  await app.invoke({type:'presentation-rollback',level:0});
+  await app.invoke({type:'presentation-prepare',id:'next'});
+  await app.invoke({type:'open',path:['Profile'],params:{id:'real'},timeoutMs:300});
+  await app.invoke({type:'presentation-prepare',id:'next'});
+  assert.deepEqual(seen.map(focus=>!!focus),[true,false],'The new base searches the whole app again');
+});

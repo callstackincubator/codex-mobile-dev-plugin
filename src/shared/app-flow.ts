@@ -23,6 +23,8 @@ export type FlowNode = {
   image?: string;
   imageSourceHash?: string;
   captureMs?: number;
+  /** Local timing evidence for the last attempt: in-app work per phase and readiness waits per reason, in ms. Never telemetry. */
+  captureDiagnostics?: { work?: Record<string, number>; waits?: Record<string, number> };
   captureAttempts?: number;
   groupId?: string;
   capture?: 'observed';

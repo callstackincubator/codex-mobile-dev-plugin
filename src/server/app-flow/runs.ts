@@ -15,7 +15,7 @@ import { recordFlow } from './recording.ts';
 import { PLUGIN_VERSION } from '../../shared/version.ts';
 import { FlowAppFailure, FlowNativeFailure, FlowRuntimeFailure, FlowRuntimeMetrics } from './runtime-metrics.ts';
 import {captureManifest,captureRecipeNodes,type CaptureRecipe} from './capture-manifest.ts';
-import {captureBatch,CaptureConnectionError} from './capture-batch.ts';
+import {captureBatch,CaptureConnectionError,CaptureRelaunchRequest} from './capture-batch.ts';
 import {catalogNodes,catalogSummary,seedCatalog,type FlowCatalogReview,type FlowCatalogSelection} from './screen-catalog.ts';
 
 export type FlowStart = { projectRoot: string; platform: "ios" | "android"; deviceId: string; targetId: string; metroUrl: string; useAi: boolean; capture?: {planRunId?: string; catalog?: FlowCatalogSelection; include?: string[]; recipes?: CaptureRecipe[]} };
@@ -29,6 +29,8 @@ export type FlowDependencies = {
   resolve?: (context: unknown, signal: AbortSignal) => Promise<FlowResolution[]>;
   /** Terminate and launch the mapped app on its device. Recovery only. */
   relaunch?: (input: FlowStart, appId: string, signal: AbortSignal) => Promise<void>;
+  /** Pace check: relaunch when the median of the last `window` captures exceeds `factor` × the first ones and `floorMs`. */
+  pace?: { window: number; factor: number; floorMs: number };
   directory?: string;
 };
 type Active = { run: FlowRun; input: FlowStart; abort: AbortController; done?: Promise<void>; runtime?: FlowRuntime; runtimeMetrics?:FlowRuntimeMetrics; info?: RuntimeInfo; target?: FlowTargetIdentity; saving?: Promise<void>; savedRevision?: number; checkpoints?: MeasurementWindow; lease?: FlowLease; writing: Set<Promise<void>>; settled: boolean; contextRefresh?: Promise<void> };
@@ -37,6 +39,10 @@ const relaunchWarning="The app was relaunched to recover from state that could n
 // Three relaunches per run, and one more after every ten new captures. A
 // failure that recurs without progress still ends the run.
 const relaunchAllowance=3,capturesPerRelaunch=10;
+// A degraded app keeps answering, but every capture slows down. Compare the
+// median of recent captures with this run's first ones.
+const defaultPace={window:8,factor:2,floorMs:2500};
+const median=(values:number[])=>[...values].sort((a,b)=>a-b)[Math.floor(values.length/2)];
 export const FLOW_DIRECTORY = join(homedir(), "Library/Application Support/mobile-dev/app-flow");
 
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -232,10 +238,13 @@ export class AppFlowRuns {
     await this.resumeSaved(id);
     return (await this.saved(id)).run;
   }
-  async retry(id: string, input?: FlowStart) {
-    if ((await this.saved(id)).run.recording) throw new Error('Finish recording before retrying routes.');
+  /** Repeat timed-out screens, or only `nodeIds`, for example after adding the app data a screen needs. */
+  async retry(id: string, input?: FlowStart, nodeIds?: string[]) {
+    const saved = (await this.saved(id)).run;
+    if (saved.recording) throw new Error('Finish recording before retrying routes.');
+    if (nodeIds?.some(nodeId => !saved.nodes.some(node => node.id === nodeId && node.kind === 'screen'))) throw new Error('The retry names a screen that is not in this map.');
     await this.prepare(id, input);
-    await this.store.enqueue(id, { type: 'retry' });
+    await this.store.enqueue(id, nodeIds?.length ? { type: 'retry', nodeIds } : { type: 'retry' });
     await this.resumeSaved(id);
     return (await this.saved(id)).run;
   }
@@ -250,7 +259,11 @@ export class AppFlowRuns {
     const commands = await this.store.commands(active.run.id);
     for (const { command } of commands) {
       if (command.type === 'resolve') { this.resolve(active.run.id, command.resolutions); active.run.ai = 'done'; }
-      if (command.type === 'retry') for (const node of active.run.nodes) if (node.status === 'timed-out') { node.status = 'pending'; node.captureAttempts = 0; }
+      if (command.type === 'retry') for (const node of active.run.nodes) {
+        if (command.nodeIds ? !command.nodeIds.includes(node.id) || node.kind !== 'screen' : node.status !== 'timed-out') continue;
+        // A named screen starts over; its earlier image stays in the catalog.
+        Object.assign(node, { status: 'pending', captureAttempts: 0, reason: undefined, failure: undefined, image: undefined, imageSourceHash: undefined, capturedSites: undefined, captureDiagnostics: undefined });
+      }
       if (command.type === 'stop') this.stop(active.run.id);
     }
     if (commands.length) {
@@ -339,6 +352,22 @@ export class AppFlowRuns {
     const reconnectTimings = new MeasurementWindow(), planningTimings = new MeasurementWindow();
     let reconnects = 0, recoveryContinuations = 0, relaunches = 0, capturedAtRelaunch = 0;
     const relaunchTimings = new MeasurementWindow(), strikes = new Map<string, number>();
+    // Routes and presentations keep separate paces; a map moves from quick
+    // routes to slower sheets. A pace relaunch must help: content that is
+    // simply slow stays slow in a fresh app, so another one waits for a
+    // healthy window first.
+    type Pace = {first: number[]; recent: number[]; baseline?: number};
+    const paces: Record<'route'|'presentation', Pace> = {route: {first: [], recent: []}, presentation: {first: [], recent: []}};
+    const limits = this.dependencies.pace ?? defaultPace;
+    let paceArmed = true;
+    const slow = (pace: Pace) => pace.baseline !== undefined && pace.recent.length === limits.window && median(pace.recent) > Math.max(limits.floorMs, pace.baseline * limits.factor);
+    const paced = (kind: 'route'|'presentation', ms: number) => {
+      const pace = paces[kind];
+      if (pace.baseline === undefined) { pace.first.push(ms); if (pace.first.length === limits.window) pace.baseline = median(pace.first); }
+      else { pace.recent.push(ms); if (pace.recent.length > limits.window) pace.recent.shift(); }
+      if (pace.recent.length === limits.window && !slow(pace)) paceArmed = true;
+    };
+    const slowed = () => paceArmed && (slow(paces.route) || slow(paces.presentation));
     let retries = 0;
     const presentationTimings = new MeasurementWindow(), restorationTimings = new MeasurementWindow();
     const attributes = { surface: "app-flow", device_platform: input.platform };
@@ -415,6 +444,7 @@ export class AppFlowRuns {
       catch (error) { throw signal.aborted ? error : cause; }
       finally { relaunchTimings.record(performance.now() - started); }
       if (!run.warnings.includes(relaunchWarning)) run.warnings.push(relaunchWarning);
+      paces.route.recent = []; paces.presentation.recent = [];
       await reconnect();
     };
     try {
@@ -465,7 +495,7 @@ export class AppFlowRuns {
         if (inventory?.unavailable) throw new Error('Prepare and reload the instrumented development build before mapping.');
         if (inventory.sourceHashes?.length !== 1 || inventory.sourceHashes[0] !== graph.sourceHash) throw new Error('The running capture build is stale. Prepare and reload it before mapping.');
         const selected = new Set(manifest.jobs.map(job => job.id));
-        run.nodes = structuredClone(nodes.filter(node => selected.has(node.id))).map(node => previousCapture ? node : ({...node, status:'pending', image:undefined, imageSourceHash:undefined, reason:undefined, failure:undefined, captureMs:undefined, captureAttempts:0}));
+        run.nodes = structuredClone(nodes.filter(node => selected.has(node.id))).map(node => previousCapture ? node : ({...node, status:'pending', image:undefined, imageSourceHash:undefined, reason:undefined, failure:undefined, captureMs:undefined, captureDiagnostics:undefined, capturedSites:undefined, captureAttempts:0}));
         run.edges = (previousCapture?.edges ?? catalog?.edges ?? saved?.run.edges ?? graph.edges).filter(edge => selected.has(edge.from) && selected.has(edge.to));
         run.ai = 'off'; run.phase='capturing'; run.revision++;
         run.captureMode='instrumented';run.manifestTotal=manifest.total;run.preparationMs=Date.now()-sessionStarted;
@@ -506,7 +536,7 @@ export class AppFlowRuns {
           break;
         }
         try {
-          await captureBatch({backend,manifest,run,directory:this.directory,projectRoot:input.projectRoot,signal,save,
+          await captureBatch({backend,manifest,run,directory:this.directory,projectRoot:input.projectRoot,signal,save,interrupt:()=>slowed()&&canRelaunch(),
             ...(planner?{plan:async(node:FlowNode,result:{ready?:boolean;evidence?:FlowEvidence})=>{
               await this.drain(active);
               const next=await planner!.after(backend!,node,result);
@@ -515,6 +545,7 @@ export class AppFlowRuns {
             }}:{}),
             timing:(operation,ms)=>{
               if(operation==='capture')captureTimings.record(ms);
+              if(operation==='route'||operation==='presentation')paced(operation,ms);
               if(operation==='presentation')presentationTimings.record(ms);
               if(operation==='restoration')restorationTimings.record(ms);
               if(operation==='readiness')readinessTimings.record(ms);
@@ -525,6 +556,13 @@ export class AppFlowRuns {
           });
           interrupted=0;
         } catch(error) {
+          if(error instanceof CaptureRelaunchRequest){
+            // The job that was opening has not consumed an attempt.
+            for(const node of run.nodes)if(node.status==='capturing'){node.status='pending';node.captureAttempts=Math.max(0,(node.captureAttempts??1)-1);}
+            paceArmed=false;
+            if(canRelaunch()){await relaunch(error);interrupted=0;}
+            continue;
+          }
           const appState=error instanceof FlowNativeFailure||error instanceof FlowAppFailure;
           if(appState&&canRelaunch()){
             // The failure can surface on the job after the one that left the

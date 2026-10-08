@@ -43,6 +43,9 @@ export class CapturePlanner {
   async after(backend:FlowBackend,node:FlowNode,result:{ready?:boolean;evidence?:FlowEvidence}) {
     this.signal.throwIfAborted();
     if(!node.presentation && result.evidence)this.reachability?.reveal(node,result.evidence);
+    // A presentation reveals only links inside its own body, with their real
+    // params; the screen beneath it already reported its links.
+    else if(node.presentation && result.ready && result.evidence?.bodyLinks?.length)this.reachability?.reveal(node,{links:result.evidence.bodyLinks,components:[]});
     if(result.ready && this.presentations.enabled){
       this.discoveries.set(node.id,(this.discoveries.get(node.id)??0)+1);
       try { await this.presentations.explore(backend,node); }

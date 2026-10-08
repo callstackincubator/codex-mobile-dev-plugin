@@ -276,3 +276,16 @@ test('a shared shell step opens the caller named by the recipe, locally or throu
   assert.deepEqual(commands.filter(command=>command.type!=='presentation-setup').map(command=>[command.type,command.instance]),
     [['presentation-prepare','src/EditProfile.tsx:74:6'],['presentation-open','src/EditProfile.tsx:74:6']]);
 });
+
+test('readiness waits are attributed to the reason each read still reported',async()=>{
+  const app=fixture(),signal=new AbortController().signal;
+  await app.driver.open(app.job('child',['sheet']),signal);
+  app.loading(true);
+  const pending=app.driver.ready(app.job('child',['sheet']),signal);
+  await delay(120);app.loading(false);
+  assert.equal((await pending).ready,true);
+  const waits=app.driver.waits();
+  assert.ok(waits.loading>=0&&Object.keys(waits).every(reason=>/^[a-z-]+$/.test(reason)));
+  await app.driver.open(app.job('child',['sheet']),signal);
+  assert.deepEqual(app.driver.waits(),{},'Each opening starts a new record');
+});

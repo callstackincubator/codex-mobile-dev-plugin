@@ -18,7 +18,14 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
     }
     finally { record('source', clock() - started); }
   };
-  let base, branch = [], lastReady, routeReady;
+  let base, branch = [], lastReady, routeReady, waits = {};
+  // Attribute each readiness read to the reason it still reported.
+  const waited = (value, ms) => {
+    if (value?.ready || !Number.isFinite(ms)) return;
+    const reason = value?.reason ?? (value?.found === false ? 'missing' : value?.content === 0 ? 'empty' : value?.loading ? 'loading'
+      : value?.transitioning ? 'transition' : value?.routeMatches === false ? 'route' : 'changed');
+    if (/^[a-z-]{1,20}$/.test(reason)) waits[reason] = (waits[reason] ?? 0) + ms;
+  };
   const check = signal => { if (signal?.aborted) throw new Error('Capture stopped.'); };
   const call = (command, signal, measured = true) => new Promise((resolve, reject) => {
     const started = clock();
@@ -70,7 +77,9 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
     const deadline = Date.now() + (job.attempt===undefined?8000:[6000,10000,20000][Math.min(job.attempt,2)]);
     do {
       check(signal);
+      const readStarted = clock();
       const value = await read(job, Math.min(1000, Math.max(0, deadline - Date.now())), signal);
+      waited(value, clock() - readStarted);
       check(signal);
       if (value?.ready || value?.error || value?.status==='timed-out') return value;
       if (Date.now() >= deadline) return value;
@@ -91,6 +100,7 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
   }
   return {
     async open(job, signal) {
+      waits = {};
       check(signal);
       if (job.blocked) return {ready: false, status: 'needs-data', reason: job.blocked};
       let navigationEvidence;
@@ -155,6 +165,7 @@ export function createCaptureDriver(runtime, source, measure = () => {}) {
       return settled(job, signal);
     },
     verify(job, signal) { return read(job, 0, signal); },
+    waits() { return Object.fromEntries(Object.entries(waits).map(([reason, ms]) => [reason, Math.round(ms)])); },
     // Compiled source sites passing the opened controller. A shared shell's
     // capture names the caller that rendered it, not every possible caller.
     async sites(job, signal) {

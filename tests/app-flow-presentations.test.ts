@@ -1142,7 +1142,7 @@ test('a selected cold form loads once and renders with live context while its te
       assert.equal(runtime.prepare('mount').available,false,'An unprepared app cannot initialize a module');
       assert.equal(loads,0);
       await runtime.collect([], [action], '/app', 'prepared');
-      assert.deepEqual(runtime.list(),[]);assert.equal(loads,0,'Listing must not initialize cold modules');
+      assert.deepEqual(runtime.list().map((item:any)=>item.id),['mount'],'A prepared build lists the cold view');assert.equal(loads,0,'Listing must not initialize cold modules');
       assert.equal(runtime.prepare('unknown').available,false);assert.equal(loads,0);
       assert.equal(runtime.prepare('mount').available,true);assert.equal(loads,1);
       assert.equal(runtime.prepare('mount').available,true);assert.equal(loads,1,'Repeated preparation reuses the loaded module');

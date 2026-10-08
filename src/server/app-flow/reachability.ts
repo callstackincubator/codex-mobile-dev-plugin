@@ -7,6 +7,8 @@ export type FlowEvidence = {
   entries?: string[][];
   registrations?: { name: string; path: string[] }[];
   links?: (string | { screen?: string; name?: string; pathname?: string; params?: FlowParams })[];
+  /** Links inside an opened presentation's own body. */
+  bodyLinks?: FlowEvidence['links'];
   components?: string[];
   candidates?: { name: string; params: FlowParams }[];
 };

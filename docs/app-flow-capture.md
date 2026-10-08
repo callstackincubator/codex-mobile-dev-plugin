@@ -346,3 +346,52 @@ ended at about 200% CPU. After 264 seconds and 50 captures, a 2-second
 acknowledgement timed out and the whole run failed. Afterwards the app idled at
 83% CPU in native networking, animation and audio threads while its JavaScript
 thread was idle. A relaunch clears that state.
+
+## Replay, rows and missing data, 8 October 2026
+
+**Replay.** A catalog replay of the 181 accepted screens first captured only 78:
+every presentation after a find-contacts step preview failed. Rollback had
+restored a focus saved for the preview's first form step, so later openings
+searched a detached copy. A route opening with no presentation open now starts
+a new base and clears that focus, and a form's first level keeps the focus from
+before it opened. The same replay then captured 176 and 177 of 181.
+
+**Pace relaunch.** On a long replay the app reached 100% CPU and kept growing.
+Nothing failed, but every capture slowed: tree walks took 225 ms instead of
+26 ms. A run now compares the median of the last eight captures with the
+median of its first eight, separately for routes and presentations. When recent
+captures are more than twice as slow and above 2.5 seconds, the run stops after
+the current job, relaunches the app and resumes. Another pace relaunch waits
+for a healthy window, so content that is simply slow does not relaunch again.
+Pace relaunches share the relaunch budget.
+
+**Menus in rows.** A menu or sheet opener repeated in the rows of one vertical
+list opens on the first visible row that meets the opener's source condition,
+in reading order. Pager pages, horizontal lists, separate owners elsewhere on
+screen and openers that pass data or route parameters still need one owner.
+
+**Links inside sheets.** A captured presentation reveals routes linked from its
+own body, with the link's real params. The screen beneath it keeps its own link
+evidence.
+
+**Forms behind a mount.** Discovery lists a mount preview whose module has not
+loaded yet; only its own opening loads the module, in a prepared build. Catalog
+seeds and never-captured entries open a step of such a form after the mount
+preview of its owner. Onboarding now opens all its steps with real data. Its
+step buttons are still misplaced: they reach the footer through a nested portal
+whose registration effect a preview contains, and the portal copy renders at
+the top instead.
+
+**Missing app data.** When nothing on the parent screen renders an opener's
+owner, the reason names that owner and suggests adding the data in the app. A
+selected screen that is not captured has a Retry screen action, and
+`mobile_app_flow` `retry` accepts `nodeIds` to repeat only those screens.
+
+**Diagnostics.** Each attempt keeps local per-view timing: in-app milliseconds
+per phase and how long readiness waited per reason. Unavailable openings keep
+the scope they searched, and a step without a content slot records which slot
+check failed. None of this enters telemetry.
+
+**Commit work.** React commits no longer walk the whole tree. They visit only
+subtrees the commit rendered, where new and updated image and native hosts
+are; readiness scans and openings still release removed hosts.

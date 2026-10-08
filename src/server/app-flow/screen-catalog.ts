@@ -39,7 +39,7 @@ export function catalogCategory(node: FlowNode, actions: Map<string, FlowPresent
 
 // Run-specific capture fields stay in the run; the catalog keeps the recipe.
 function executable(node: FlowNode): FlowNode {
-  const {image, imageSourceHash, reason, failure, captureMs, captureAttempts, capturedSites, groupId, capture, ...recipe} = structuredClone(node);
+  const {image, imageSourceHash, reason, failure, captureMs, captureDiagnostics, captureAttempts, capturedSites, groupId, capture, ...recipe} = structuredClone(node);
   return {...recipe, status: 'pending'};
 }
 
@@ -158,6 +158,17 @@ export function seedCatalog(catalog: FlowCatalog | undefined, graph: Pick<FlowGr
     const last = entry.node.presentation?.actions.at(-1), action = last ? actions.get(last) : undefined;
     return action ? [site(action)] : [];
   }));
+  // A step of a form that only mounts for some accounts, such as onboarding,
+  // opens after a preview mounts its exported owner. An entry that never
+  // captured gains that first step as well.
+  const mounts = [...actions.values()].filter(action => action.preview && action.effect.kind === 'mount');
+  const mountFor = (action: FlowPresentationAction) => action.preview && action.effect.kind === 'state'
+    ? mounts.find(mount => mount.file === action.file && mount.owner === action.owner) : undefined;
+  for (const entry of result.entries) {
+    const plan = entry.node.presentation, last = plan?.actions.at(-1), action = last ? actions.get(last) : undefined, mount = action && mountFor(action);
+    if (!plan || entry.captured || !mount || plan.actions.includes(mount.id)) continue;
+    entry.node = {...entry.node, presentation: {...plan, actions: [mount.id, ...plan.actions]}};
+  }
   const seeds = new Map<string, FlowPresentationAction>();
   for (const action of actions.values()) {
     if (!viewOpener(action)) continue;
@@ -165,10 +176,10 @@ export function seedCatalog(catalog: FlowCatalog | undefined, graph: Pick<FlowGr
     if (!previous || previous.preview && !action.preview) seeds.set(site(action), action);
   }
   for (const [key, action] of seeds) {
-    const id = `presentation-${hash(destination(action))}`, base = parent(action);
+    const id = `presentation-${hash(destination(action))}`, base = parent(action), mount = mountFor(action);
     if (covered.has(key) || ids.has(id) || !base) continue;
     const node: FlowNode = {id, name: action.name, kind: 'screen', path: [], required: [], status: 'pending', file: action.file, line: action.line, sourceViews: action.views ?? [],
-      presentation: {actions: [action.id], ...(action.preview ? {preview: true} : {}), basePath: base.path, ...(Object.keys(base.params).length ? {baseParams: base.params} : {}), expo: base.expo}};
+      presentation: {actions: [...(mount ? [mount.id] : []), action.id], ...(action.preview ? {preview: true} : {}), basePath: base.path, ...(Object.keys(base.params).length ? {baseParams: base.params} : {}), expo: base.expo}};
     result.entries.push({id, name: action.name, category: catalogCategory(node, actions), node, seeded: true});
     ids.add(id);
   }

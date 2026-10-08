@@ -354,3 +354,48 @@ for(const failOpening of [false,true])test(`slow presentation cleanup resumes wi
   assert.equal(heartbeats,0);assert.ok(closeRequests>=2);assert.equal(level,0);
   assert.ok(runs.read(run.id).nodes.every(node=>node.status==='captured'));
 });
+
+test('captures that slow far below the run pace relaunch the app once and resume',async t=>{
+  const many=():FlowGraph=>({files:1,scanMs:1,warnings:[],edges:[],nodes:Array.from({length:40},(_,index)=>`Screen${index}`).map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending'}))});
+  let generation=0,opened=0;const relaunched:string[]=[];
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>many(),pace:{window:6,factor:2.5,floorMs:40},relaunch:async(_input,appId)=>{relaunched.push(appId);},connect:async()=>{
+    const current=++generation;let screen='';
+    return {target:{appId:'example.app',deviceId:'device'},runtime:{async invoke(command){
+      if(command.type==='inspect'||command.type==='resume')return {available:true};
+      if(command.type==='recover'||command.type==='heartbeat')return {alive:true,recovered:true};
+      if(command.type==='open'){
+        screen=(command.path as string[])[0];opened++;
+        // The first app degrades after twenty screens; a fresh app is fast.
+        if(current===1&&opened>20)await delay(80);
+        return {ready:true,active:[screen],name:screen,signature:screen};
+      }
+      return {found:true,active:[screen]};
+    },async close(){}},async screenshot(){return Buffer.from(screen)}};
+  }});
+  const run=runs.start(input);
+  for(let wait=0;wait<1000&&flowRunning(runs.read(run.id));wait++)await delay(10);
+  await runs.close();
+  const result=runs.read(run.id);
+  assert.equal(result.phase,'complete');
+  assert.deepEqual(relaunched,['example.app'],'One relaunch restores the pace');
+  assert.equal(result.nodes.filter(node=>node.status==='captured').length,40);
+});
+
+test('content that stays slow in a fresh app does not relaunch it again',async t=>{
+  const many=():FlowGraph=>({files:1,scanMs:1,warnings:[],edges:[],nodes:Array.from({length:40},(_,index)=>`Screen${index}`).map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending'}))});
+  let opened=0;const relaunched:string[]=[];
+  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>many(),pace:{window:6,factor:2.5,floorMs:40},relaunch:async(_input,appId)=>{relaunched.push(appId);},connect:async()=>{
+    let screen='';
+    return {target:{appId:'example.app',deviceId:'device'},runtime:{async invoke(command){
+      if(command.type==='inspect'||command.type==='resume')return {available:true};
+      if(command.type==='recover'||command.type==='heartbeat')return {alive:true,recovered:true};
+      if(command.type==='open'){screen=(command.path as string[])[0];opened++;if(opened>12)await delay(80);return {ready:true,active:[screen],name:screen,signature:screen};}
+      return {found:true,active:[screen]};
+    },async close(){}},async screenshot(){return Buffer.from(screen)}};
+  }});
+  const run=runs.start(input);
+  for(let wait=0;wait<1000&&flowRunning(runs.read(run.id));wait++)await delay(10);
+  await runs.close();
+  assert.equal(runs.read(run.id).phase,'complete');
+  assert.deepEqual(relaunched,['example.app'],'Slow screens after the relaunch keep capturing without another relaunch');
+});

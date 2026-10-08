@@ -13,12 +13,24 @@ import {captureSource} from './capture-source.ts';
 // identities to request approved bindings and the selected route's real data.
 // `file:line:column:prop`; the prop names which controller the element passed.
 const capturedSites=(value:unknown)=>Array.isArray(value)&&value.length<=12&&value.every(site=>typeof site==='string'&&site.length<=500&&/^[^\n]+:\d+:\d+(?::[A-Za-z_$][\w$]*)?$/.test(site))?value as string[]:undefined;
+// Local per-view timing: fixed phase and wait-reason names with milliseconds.
+const timingRecord=(value:unknown)=>{
+  if(!value||typeof value!=='object')return;
+  const entries=Object.entries(value as Record<string,unknown>).filter(([key,ms])=>/^[a-z-]{1,24}$/.test(key)&&typeof ms==='number'&&Number.isFinite(ms)&&ms>=0).slice(0,32);
+  return entries.length?Object.fromEntries(entries.map(([key,ms])=>[key,Math.round(ms as number)])):undefined;
+};
+const captureDiagnostics=(value:any)=>{
+  const work=timingRecord(value?.work),waits=timingRecord(value?.waits);
+  return work||waits?{...(work?{work}:{}),...(waits?{waits}:{})}:undefined;
+};
 const wireJobs=(jobs:CaptureJob[])=>jobs.map(({sourceViews,actions,instances,...job})=>({...job,actions:actions.map(action=>({id:action.id,...(instances?.[action.id]?{instance:instances[action.id]}:{})}))}));
 
 export class CaptureConnectionError extends Error { constructor() { super('The capture connection was interrupted.'); } }
+/** The app kept answering but slowed far below this run's own pace. */
+export class CaptureRelaunchRequest extends Error { constructor() { super('The app slowed down during capture.'); } }
 
 /** The server binds approved source recipes, captures native frames and saves results. */
-export async function captureBatch(options: {backend: FlowBackend; manifest: CaptureManifest; run: FlowRun; directory: string; projectRoot?: string; signal: AbortSignal; save(): Promise<void>; plan?(node: FlowNode, result: {ready?:boolean; evidence?:any}): Promise<CaptureManifest>; timing?(operation: string, ms: number): void}) {
+export async function captureBatch(options: {backend: FlowBackend; manifest: CaptureManifest; run: FlowRun; directory: string; projectRoot?: string; signal: AbortSignal; save(): Promise<void>; interrupt?(): boolean; plan?(node: FlowNode, result: {ready?:boolean; evidence?:any}): Promise<CaptureManifest>; timing?(operation: string, ms: number): void}) {
   const {backend, manifest, run, directory, signal, save} = options;
   if (!backend.runtime.onCapture) throw new Error('This connection does not support in-app capture batches.');
   const batch = randomUUID(), byId = new Map(run.nodes.map(node => [node.id, node]));
@@ -108,10 +120,11 @@ export async function captureBatch(options: {backend: FlowBackend; manifest: Cap
         }
         if (jobs.get(node.id)?.discoverOnly) return;
         if(node.presentation && event.status==='blocked' && !reportedPresentationError){reportedPresentationError=true;captureServerError(new Error('App Flow presentation capture failed.'),'app_flow.presentation');}
-        node.status = event.status; node.reason = event.reason; node.failure=event.failure; node.captureMs = event.ms;
-        options.timing?.('capture', event.ms); if(node.presentation)options.timing?.('presentation',event.ms); run.revision++; await save();
+        node.status = event.status; node.reason = event.reason; node.failure=event.failure; node.captureMs = event.ms; node.captureDiagnostics=captureDiagnostics(event.diagnostics);
+        options.timing?.('capture', event.ms); options.timing?.(node.presentation ? 'presentation' : 'route', event.ms); run.revision++; await save();
+        if (options.interrupt?.()) throw new CaptureRelaunchRequest();
       } else if (event.type === 'uncaptured' && node?.status === 'capturing') {
-        node.status = 'timed-out'; node.reason = 'The screenshot did not settle.'; node.captureMs=event.ms; options.timing?.('capture',event.ms); if(node.presentation)options.timing?.('presentation',event.ms); run.revision++; await save();
+        node.status = 'timed-out'; node.reason = 'The screenshot did not settle.'; node.captureMs=event.ms; node.captureDiagnostics=captureDiagnostics(event.diagnostics); options.timing?.('capture',event.ms); options.timing?.(node.presentation ? 'presentation' : 'route', event.ms); run.revision++; await save();
       } else if (event.type === 'error') throw event.interrupted ? new CaptureConnectionError() : event.native ? new FlowNativeFailure('presentation-rollback', event.reason)
         : event.app ? new FlowAppFailure('presentation-view', event.reason) : new Error(event.reason);
       else if (event.type === 'done') done();

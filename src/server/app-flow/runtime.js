@@ -499,6 +499,23 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     const component = visual.components.find(name => /(?:Screen|Page|Form)$/.test(name) && !/^(?:Native|RN|Animated|Screen$)/.test(name));
     return { key, ready, active: path, title: visual.title ?? component, signature: visual.signature, loading: visual.loading };
   }
+  // Links rendered inside an opened presentation, such as a feed's liked-by
+  // link in its info sheet. The screen beneath keeps its own link evidence.
+  function bodyLinks(focus) {
+    const links=[],destinations=new Set();
+    if(!focus)return links;
+    safeBudget=2000;
+    fibers(fiber=>{
+      const props=fiber.memoizedProps;
+      if(hidden(props))return false;
+      const href=props?.href??props?.to;
+      if(href&&links.length<100){
+        safeBudget=120;const value=safe(href),key=JSON.stringify(value);
+        if(value&&!destinations.has(key)){links.push(value);destinations.add(key);}
+      }
+    },focus);
+    return links;
+  }
   function presentationView(expectedRoute) {
     const start=Date.now(),probe=lastPresentationProbe={stage:'focus',focusMs:0,expectedMs:0,visualMs:0,visibleMs:0,motionMs:0,totalMs:0};
     let presentationProbe;
@@ -532,7 +549,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
     const reason=!expectedReady?'target':nativeMotion?.error?'preview-error':!visual.found?'missing':!visual.content?'empty':visual.loading?'loading':live.transitioning?'transition':nativeMotion?.pending?'native':!presentationObservation.painted?'paint':now-presentationObservation.since<160?'settling':undefined;
     Object.assign(probe,{stage:'done',totalMs:Date.now()-start,expectedReady,found:visual.found,hosts:visual.hosts,content:visual.content,loading:visual.loading,transitioning:live.transitioning,nativePending:!!nativeMotion?.pending,painted:presentationObservation.painted,quietMs:now-presentationObservation.since,keyChanged,signatureChanged,reason});
     const state=root?.getRootState?.()??root?.getState?.();
-    return { ...visual, key, active: active(state), routeMatches:expectedRoute?.path?.length?matchesRoute(state,expectedRoute):undefined, ready: !reason, reason, ...live, nativePending:nativeMotion?.pending, error:nativeMotion?.error, components:componentTree };
+    return { ...visual, key, active: active(state), routeMatches:expectedRoute?.path?.length?matchesRoute(state,expectedRoute):undefined, ready: !reason, reason, ...live, ...(!reason&&presentationFocus?{bodyLinks:bodyLinks(visualFocus)}:{}), nativePending:nativeMotion?.pending, error:nativeMotion?.error, components:componentTree };
   }
   function sameRouteParams(before,next,depth=0,budget={left:200}) {
     if(Object.is(before,next))return true;
@@ -630,7 +647,7 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
           const open=closed=>{
             if(stopped||ticket!==generation){reply({local:true,cancelled:true});return;}
             globalThis[key].invoke({type:'presentation-open',id:command.id,instance:callerSite(command.instance)},view=>reply({local:true,closed,view,
-              ...(view?.error?{error:view.error,status:view.status==='needs-data'?'needs-data':'timed-out'}:{})}));
+              ...(view?.error?{error:view.error,status:view.status==='needs-data'?'needs-data':'timed-out',...(typeof view.detail==='string'?{failure:{operation:'presentation-open',detail:view.detail.slice(0,300)}}:{})}:{})}));
           };
           if(prepared.handoff)globalThis[key].invoke({type:'presentation-handoff',id:command.id},result=>{
             if(result?.error)reply({local:true,error:result.error,status:'needs-data'});else open(!!result?.closed);
@@ -700,7 +717,9 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
                 if(next.pending){later(mounted,16,cancelled);return;}
                 if(next.error){reply(next);return;}
                 before=after;const current=presentations?.checkpoint()??before;
-                for(let level=before;level<current;level++)presentationFrames.push({focus:result.focus??presentationFocus,expected:presentationExpected});
+                // A level restores the focus that was active before it. The
+                // first level of a form keeps the focus before the form opened.
+                for(let level=before;level<current;level++)presentationFrames.push({focus:presentationFrames.length?result.focus??presentationFocus:presentationFocus,expected:presentationExpected});
                 after=current;result=next;presentationExpected=result.expected;
                 later(mounted,0,cancelled);return;
               }
@@ -759,6 +778,9 @@ export function installFlowRuntime(key, leaseMs, presentationFactory, captureQue
         if (command.type === 'open' && !navigatorState()?.routeNames?.length) { reply({ready: false, reason: 'The navigator is remounting. This screen will be retried.'}); return; }
         if (command.type !== 'open' || !root) { reply({ error: 'No mounted navigator found. Use Record a flow for screens outside navigation.' }); return; }
         cancelWaits();
+        // A route opening with no presentation open starts a new base. A focus
+        // left from an earlier presentation would scope later openings to it.
+        if(!command.settleOnly&&!presentationFrames.length&&!(presentations?.checkpoint()>0)){presentationFocus=presentationExpected=presentationObservation=undefined;}
         const ticket = ++generation, path = command.path;
         let expected = path[path.length - 1];
         if(command.settleOnly){

@@ -7,7 +7,7 @@ import type { FlowStart, FlowTargetIdentity, RuntimeInfo } from './runs.ts';
 import {mergeCatalog, reviewCatalog, type FlowCatalog, type FlowCatalogReview} from './screen-catalog.ts';
 
 export type SavedFlow = { run: FlowRun; input?: FlowStart; info?: RuntimeInfo; target?: FlowTargetIdentity };
-export type FlowCommand = { type: 'resolve'; resolutions: FlowResolution[] } | { type: 'retry' } | { type: 'stop' } | { type: 'capture-step'; label?: string };
+export type FlowCommand = { type: 'resolve'; resolutions: FlowResolution[] } | { type: 'retry'; nodeIds?: string[] } | { type: 'stop' } | { type: 'capture-step'; label?: string };
 export type FlowLease = { release(): Promise<void> };
 const uuid = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
 

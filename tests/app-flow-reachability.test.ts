@@ -80,3 +80,20 @@ test('query data and one complete union variant can satisfy a real navigation li
   assert.equal(graph.nodes.find(n=>n.name==='Video')!.status,'pending');
   assert.deepEqual(matchFlowLink('/users/:id','/users/actual?id=wrong&x=1'),{id:'actual',x:'1'});
 });
+
+test('a captured sheet reveals routes linked inside its own body with their real params', async () => {
+  const {CapturePlanner} = await import('../src/server/app-flow/capture-planner.ts');
+  const likedBy = {...node('CustomFeedLikedBy'),path:['HomeTab','CustomFeedLikedBy'],urls:['/profile/:name/feed/:rkey/liked-by'],required:['name','rkey'],status:'needs-data' as const};
+  const graph: FlowGraph = {files:1,scanMs:0,warnings:[],nodes:[{...node('Home',true),path:['HomeTab','Home']},likedBy],edges:[]};
+  const reach = new FlowReachability(graph,{active:['HomeTab','Home'],entries:[['HomeTab','Home']]});
+  const sheet: FlowNode = {id:'feed-info',name:'FeedInfo',kind:'screen',path:[],required:[],status:'captured',presentation:{actions:['open-info'],basePath:['HomeTab','CustomFeed']}};
+  graph.nodes.push(sheet);
+  const run: any = Object.assign(graph,{id:'run',revision:0,presentations:{states:[],actions:[]}});
+  const planner = new CapturePlanner(run,'/fixture','/fixture',new AbortController().signal,async()=>{},reach);
+  // The screen beneath links elsewhere; only the sheet's own body counts.
+  await planner.after({} as any,sheet,{ready:true,evidence:{links:['/settings'],bodyLinks:['/profile/did:plc:feed-owner/feed/real-rkey/liked-by']} as any});
+  const revealed = graph.nodes.find(item => item.name === 'CustomFeedLikedBy')!;
+  assert.deepEqual(revealed.params,{name:'did:plc:feed-owner',rkey:'real-rkey'});
+  assert.equal(revealed.status,'pending');
+  assert.deepEqual(graph.edges.map(edge=>[edge.from,edge.to]),[['feed-info','CustomFeedLikedBy']]);
+});

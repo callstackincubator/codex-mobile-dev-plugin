@@ -64,7 +64,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
     </div>
     <AppFlowRecording panel={panel} run={run} ready={!!project.trim() && !!target && !!devices.device} busy={state.busy} group={group} selectGroup={selectGroup} />
     <AppFlowCanvas panel={panel} run={shown} graph={graph} images={state.images} scale={scale} onScaleChange={setScale} selected={selected} select={setSelected} viewport={viewport} />
-    {current && <aside className="app-flow-detail"><strong>{current.name}</strong><span>{current.path.join(" → ")}</span>{current.file && <code>{current.file}:{current.line ?? 1}</code>}{current.required.length > 0 && <span>Required: {current.required.join(", ")}</span>}{current.reason && <span>{current.reason}</span>}</aside>}
+    {current && <aside className="app-flow-detail"><strong>{current.name}</strong><span>{current.path.join(" → ")}</span>{current.file && <code>{current.file}:{current.line ?? 1}</code>}{current.required.length > 0 && <span>Required: {current.required.join(", ")}</span>}{current.reason && <span>{current.reason}</span>}{current.kind === 'screen' && current.status !== 'captured' && !running && <Button variant="ghost" size="sm" disabled={state.busy} title="Add any app data this screen needs, then capture it again" onClick={() => { void panel.retryTimedOut([current.id]); }}><RefreshCwIcon />Retry screen</Button>}</aside>}
     {!!run?.warnings.length && <details className="app-flow-warnings"><summary>{run.warnings.length} discovery notes</summary>{run.warnings.map((warning, index) => <p key={index}>{warning}</p>)}</details>}
   </section>;
 }

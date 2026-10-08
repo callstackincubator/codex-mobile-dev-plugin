@@ -90,6 +90,7 @@ test('a saved presentation keeps the compiled caller sites read with its frame',
   await captureBatch({backend:{runtime,async screenshot(){return Buffer.from(`frame-${++shots}`)}},manifest:{version:1,total:3,jobs:[job('prompt'),job('invalid'),job('route')]},run,directory,signal:new AbortController().signal,async save(){}});
   assert.deepEqual(run.nodes.map((node:any)=>node.status),['captured','captured','captured']);
   assert.deepEqual(run.nodes[0].capturedSites,sites.prompt);
+  assert.deepEqual(Object.keys(run.nodes[0].captureDiagnostics?.work??{}).filter(phase=>!/^[a-z-]+$/.test(phase)),[],'Diagnostics keep fixed phase names only');
   assert.equal(run.nodes[1].capturedSites,undefined,'Malformed site evidence is dropped');
   assert.equal(run.nodes[2].capturedSites,undefined,'Route screens are identified by their route');
 });

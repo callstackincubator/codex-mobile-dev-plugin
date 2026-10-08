@@ -112,6 +112,20 @@ test('source seeds plan unreached screens with a parent route, once per controll
   assert.equal(seedCatalog(seedCatalog(undefined, graph), graph).entries.length, seeded.entries.length, 'Seeding twice adds nothing');
 });
 
+test('a form step that mounts only for some accounts seeds behind its owner mount preview', () => {
+  const mount: any = {id: 'mount-form', file: 'Onboarding.tsx', line: 3, owner: 'Onboarding', component: 'Onboarding', prop: '', name: 'Onboarding', preview: true, effect: {kind: 'mount', file: 'Onboarding.tsx', export: 'Onboarding'}};
+  const step: any = {id: 'step-profile', file: 'Onboarding.tsx', line: 9, owner: 'Onboarding', component: 'Layout', prop: '', name: 'Layout', preview: true, effect: {kind: 'state', site: 'onboarding', path: ['activeStep'], value: 'profile'}};
+  const graph: any = {nodes: [route('home', 'Home', {entry: true})], edges: [], links: [], presentations: {states: [], actions: [], previews: [mount, step]}};
+  const seeded = seedCatalog(undefined, graph, 1);
+  const recipe = seeded.entries.find(entry => entry.node.presentation?.actions.at(-1) === 'step-profile')?.node.presentation;
+  assert.deepEqual(recipe?.actions, ['mount-form', 'step-profile']);
+  assert.deepEqual(recipe?.basePath, ['Home']);
+  // An earlier one-step entry that never captured gains the mount step.
+  const earlier: any = {version: 1, updatedAt: 1, edges: [], entries: [{id: 'old', name: 'Layout', category: 'app-state', last: {runId: 'r', status: 'needs-data', at: 1},
+    node: {...route('old', 'Layout', {path: []}), presentation: {actions: ['step-profile'], preview: true, basePath: ['Home']}}}]};
+  assert.deepEqual(seedCatalog(earlier, graph, 2).entries.find(entry => entry.id === 'old')?.node.presentation?.actions, ['mount-form', 'step-profile']);
+});
+
 test('the scan names the registered screens that render each opener', async t => {
   const root = await mkdtemp(join(tmpdir(), 'flow-parents-'));
   t.after(() => rm(root, {recursive: true, force: true}));

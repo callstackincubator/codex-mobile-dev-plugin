@@ -250,3 +250,25 @@ test('real data resolves the presentation base route and survives a saved map wi
   const saved=(await new FlowStore(directory).load(id)).run;
   assert.deepEqual(captureManifest(saved,saved.nodes,['sheet']).jobs[0].params,job.params);
 });
+
+test('a single screen retries alone after its app data is added', async t => {
+  const directory = await fixture(t), shots: string[] = [], opens: string[] = [];
+  let added = false;
+  const routes = (): FlowGraph => ({ ...graph(), nodes: ['Home', 'Drafts', 'Settings', 'Slow'].map(name => ({ id: name.toLowerCase(), name, kind: 'screen', path: [name], required: [], status: 'pending' })) });
+  const runs = new AppFlowRuns({ directory, scan: async () => routes(), connect: backend(shots, async (name) => {
+    opens.push(name);
+    if (name === 'Drafts' && !added) return { error: 'This screen shows no DraftItem, which opens this view.' };
+    if (name === 'Slow') return { ready: false, reason: 'Screen is still loading (skeleton).' };
+  }) });
+  t.after(() => runs.close());
+  const { id } = runs.start(input), first = await finished(runs, id);
+  assert.equal(first.nodes.find(node => node.id === 'drafts')?.status, 'blocked');
+  await assert.rejects(runs.retry(id, undefined, ['missing']), /not in this map/);
+  added = true; opens.length = 0;
+  await runs.retry(id, undefined, ['drafts']);
+  const retried = await finished(runs, id);
+  assert.deepEqual(opens.filter(name => name !== 'Home'), ['Drafts'], 'Only the named screen opens; the timed-out one waits for its own retry');
+  assert.equal(retried.nodes.find(node => node.id === 'drafts')?.status, 'captured');
+  assert.equal(retried.nodes.find(node => node.id === 'slow')?.status, 'timed-out');
+  assert.equal(retried.nodes.find(node => node.id === 'settings')?.image, first.nodes.find(node => node.id === 'settings')?.image);
+});

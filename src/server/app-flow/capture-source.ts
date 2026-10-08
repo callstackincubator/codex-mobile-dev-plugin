@@ -27,7 +27,8 @@ export async function captureSource(options: {
   // The prepared recipe, not the app, names a shared shell's caller site.
   const instance = job.instances?.[action.id];
   const prepared = await invoke({type:'presentation-prepare', id:action.id, ...(instance ? {instance} : {})}, 2000);
-  if (!prepared?.available) return {error:prepared?.error || 'The source-proven entry has no live owner, control, or real context in this app state.', status:'needs-data'};
+  if (!prepared?.available) return {error:prepared?.error || 'The source-proven entry has no live owner, control, or real context in this app state.', status:'needs-data',
+    ...(prepared?.scope ? {failure:{operation:'presentation-prepare', detail:JSON.stringify(prepared.scope).slice(0,300)}} : {})};
   let closed = false;
   if (prepared.handoff || action.handoffs?.length) {
     const result = await invoke({type:'presentation-handoff', id:action.id}, 5000);

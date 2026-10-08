@@ -151,11 +151,12 @@ export class AppFlowPanel {
     try { await this.call('mobile_app_flow', { action: 'capture-step', runId: this.state.run.id, label: label?.trim() || undefined }); }
     catch (error) { this.failure(error); }
   }
-  async retryTimedOut() {
+  /** Retry all timed-out screens, or only the given screens, for example after adding the app data they need. */
+  async retryTimedOut(nodeIds?: string[]) {
     if (!this.state.run) return;
     this.update({ busy: true, error: '' });
     try {
-      const result = await this.call('mobile_app_flow', { action: 'retry', runId: this.state.run.id, options: this.runOptions() });
+      const result = await this.call('mobile_app_flow', { action: 'retry', runId: this.state.run.id, options: this.runOptions(), ...(nodeIds?.length ? { nodeIds } : {}) });
       this.update({ run: result.run });
       void this.poll();
     } catch (error) { this.failure(error); }
