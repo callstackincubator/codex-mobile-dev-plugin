@@ -1,5 +1,7 @@
 import { SENTRY_ORIGIN } from "../src/shared/telemetry.ts";
 import { setImmediate } from "node:timers/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { SimulatorInputService } from "../src/server/simulator-input.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -377,6 +379,32 @@ test("a reused backend survives disposal of the adapter", async t => {
   assert.equal((await baguette.start()).managed, false);
   baguette.dispose();
   assert.equal((await fetch(`${fake.url}/simulators.json`)).status, 200);
+});
+
+test("a stale accessibility bridge restarts once before reading the UI again", async t => {
+  let now = 0;
+  t.mock.method(Date, "now", () => now);
+  let responses: unknown[] = [];
+  const server = createServer((_request, response) => response.end(JSON.stringify(responses.shift() ?? { ok: false, error: "no accessibility data" })));
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const restarts: string[] = [];
+  const baguette = new Baguette(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, async udid => { restarts.push(udid); });
+  t.after(() => baguette.dispose());
+
+  responses = [{ ok: false, error: "no accessibility data" }, { ok: true, tree: { label: "HorseTinder" } }];
+  assert.equal((await baguette.describeUi(UDID)).tree?.label, "HorseTinder");
+  assert.deepEqual(restarts, [UDID]);
+
+  // A screen with genuinely no data does not restart the bridge on every read.
+  now = 5000;
+  await assert.rejects(baguette.describeUi(UDID), /no accessibility data/);
+  assert.equal(restarts.length, 1);
+
+  now = 20000;
+  responses = [{ ok: false, error: "describe failed" }];
+  await assert.rejects(baguette.describeUi(UDID), /describe failed/);
+  assert.equal(restarts.length, 1);
 });
 
 test("panel input reaches the native socket during a pending refresh and blocks after it reports Device Hub", { timeout: 2000 }, async t => {

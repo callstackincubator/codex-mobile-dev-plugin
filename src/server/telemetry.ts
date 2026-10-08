@@ -26,6 +26,12 @@ export function recordPluginUpdate(operation: "check" | "install", outcome: "dis
   Sentry.metrics.gauge("plugin.update.duration", duration, { unit: "millisecond", attributes });
 }
 
+export function recordAccessibilityBridgeRestart(outcome: "recovered" | "unavailable" | "failed") {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", device_platform: "ios", device_kind: "simulator", outcome };
+  Sentry.metrics.count("ios.accessibility_bridge.restarts", 1, { attributes });
+}
+
 export function recordAndroidBackendStartup(duration: number, outcome: "ready" | "failed") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };

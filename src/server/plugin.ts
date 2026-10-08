@@ -318,7 +318,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     inputSchema: deviceInput, annotations: read,
   }, guarded(async ({ udid }: { udid: string }) => {
     await baguette.device(udid, true);
-    const tree = await baguette.json(`/simulators/${udid}/describe-ui.json`);
+    const tree = await baguette.describeUi(udid);
     return result({ udid, tree }, JSON.stringify(tree));
   }));
 

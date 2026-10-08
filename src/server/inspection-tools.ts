@@ -31,7 +31,7 @@ export function registerInspectionTools(server: McpServer, baguette: Baguette, a
       if (platform === "ios") {
         const device = await baguette.device(udidSchema.parse(deviceId), true);
         deviceName = device.name;
-        const response = await baguette.json(`/simulators/${deviceId}/describe-ui.json`);
+        const response = await baguette.describeUi(deviceId);
         native = response;
         appName = typeof response.tree?.label === "string" ? response.tree.label : undefined;
       } else {
