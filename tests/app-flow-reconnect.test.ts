@@ -408,33 +408,6 @@ test('a tree that keeps growing past twice its first size relaunches the app',as
   assert.ok(result.nodes.every(node=>Number.isInteger(node.captureDiagnostics?.fibers)));
 });
 
-for(const shrinks of [true,false])test(`a growing tree first resets navigation and relaunches only when the reset ${shrinks?'is not needed again':'does not help'}`,async t=>{
-  const many=():FlowGraph=>({files:1,scanMs:1,warnings:[],edges:[],nodes:Array.from({length:50},(_,index)=>`Screen${index}`).map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending'}))});
-  let generation=0,opened=0,mounted=0;const relaunched:string[]=[],commands:string[]=[];
-  const runs=new AppFlowRuns({directory:await directory(t),scan:async()=>many(),pace:{window:6,treeFactor:2,treeFloor:5000},relaunch:async(_input,appId)=>{relaunched.push(appId);},connect:async()=>{
-    const current=++generation;let screen='';mounted=0;
-    return {target:{appId:'example.app',deviceId:'device'},runtime:{async invoke(command){
-      if(command.type==='inspect'||command.type==='resume')return {available:true};
-      if(command.type==='recover'||command.type==='heartbeat')return {alive:true,recovered:true};
-      // Visited screens stay mounted until a reset unmounts them, if it can.
-      if(command.type==='navigation-reset'){commands.push(command.type);if(shrinks)mounted=0;return {reset:true};}
-      if(command.type==='cpu')return {ms:1,fibers:current===1?10000+mounted*1000:10000};
-      if(command.type==='open'){screen=(command.path as string[])[0];opened++;mounted++;return {ready:true,active:[screen],name:screen,signature:screen};}
-      return {found:true,active:[screen]};
-    },async close(){}},async screenshot(){return Buffer.from(screen)}};
-  }});
-  const run=runs.start(input);
-  for(let wait=0;wait<1000&&flowRunning(runs.read(run.id));wait++)await delay(10);
-  await runs.close();
-  const result=runs.read(run.id);
-  assert.equal(result.phase,'complete');
-  assert.equal(result.nodes.filter(node=>node.status==='captured').length,50);
-  if(shrinks){assert.deepEqual(relaunched,[],'Resets replace relaunches');assert.ok(commands.length>=2,'The tree grows back and resets again');}
-  else{assert.deepEqual(commands,['navigation-reset'],'An unproven reset is not repeated');assert.deepEqual(relaunched,['example.app']);}
-  assert.equal(result.navigationResets,commands.length);
-  assert.ok(result.phaseTimings?.some(item=>item.phase==='navigation-reset'&&item.count===commands.length));
-});
-
 test('heavy views alone do not relaunch a healthy app',async t=>{
   const many=():FlowGraph=>({files:1,scanMs:1,warnings:[],edges:[],nodes:Array.from({length:30},(_,index)=>`Screen${index}`).map(name=>({id:name,name,kind:'screen',path:[name],required:[],status:'pending'}))});
   let opened=0;const relaunched:string[]=[];

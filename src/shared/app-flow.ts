@@ -99,8 +99,6 @@ export type FlowRun = FlowGraph & {
   explored?: string[];
   /** Local record of the last relaunches: what forced each one and the open view. */
   relaunchLog?: {cause: 'native' | 'app' | 'pace' | 'interrupted'; nodeId?: string; captured: number; detail?: string}[];
-  /** Navigation resets that unmounted screens the run had visited, instead of a relaunch. */
-  navigationResets?: number;
   groups?: { id: string; name: string }[];
   recording?: { groupId: string; message: string };
   startedAt: number;

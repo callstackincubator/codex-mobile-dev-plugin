@@ -1013,25 +1013,16 @@ loading or after its screenshot kept changing; routes, native motion, paint and
 settling waits, a changed screen beneath and slow runtime replies still do.
 `app_flow.retries` keeps its meaning. `app_flow.idle_failures` counts
 presentations a run stopped early because the app had no React commit, HTTP
-request, pending app timeout or fetching query while they stayed blocked. To
-decide this, the app runtime counts its own HTTP requests in flight with the
-time of the last start or end, and its pending timeouts from 50 ms to 5
-seconds; it reads no URL, header, body, callback or query key, nothing leaves
-the app, and the wrappers are removed when capture ends. The runtime's own
-timers use the original timer functions and are not counted. Readiness reads
+request or fetching query while they stayed blocked. To decide this, the app
+runtime counts its own HTTP requests in flight and keeps the time of the last
+start or end; it reads no URL, header, body or query key, nothing leaves the
+app, and the request wrappers are removed when capture ends. Readiness reads
 now return every 500 ms instead of every second, so the local readiness waits
 of each job are attributed in finer steps; their names and units are unchanged.
 
 Discovery of a captured view now runs while the device takes its screenshot,
-and the app continues once both finish. Discovery first waits, at most 800 ms,
-until React has not committed for 300 ms. The in-app `screenshot-wait` phase
-then also covers any discovery time, including that wait, beyond the screenshot, the `planning` run phase
+and the app continues once both finish. The in-app `screenshot-wait` phase then
+also covers any discovery time beyond the screenshot, the `planning` run phase
 and `app_flow.planning` windows no longer include that discovery, and the
 server `screenshot` operation still measures only the screenshot.
 `app_flow.presentation_discovery` keeps measuring each discovery.
-
-`app_flow.navigation_resets` counts navigation resets a run used instead of a
-relaunch when only its React tree grew too large. `app_flow.run_phase` adds the
-fixed `navigation-reset` phase for their wall time; the other phases keep their
-meaning. The local map keeps the count as `navigationResets`. A reset sends no
-route names or params anywhere.
