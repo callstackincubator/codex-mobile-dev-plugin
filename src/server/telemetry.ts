@@ -32,6 +32,12 @@ export function recordAccessibilityBridgeRestart(outcome: "recovered" | "unavail
   Sentry.metrics.count("ios.accessibility_bridge.restarts", 1, { attributes });
 }
 
+export function recordAndroidEmulatorReconnect(trigger: "boot" | "selection") {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "simulator", device_platform: "android", device_kind: "emulator", trigger };
+  Sentry.metrics.count("android.emulator.adb_reconnects", 1, { attributes });
+}
+
 export function recordAndroidBackendStartup(duration: number, outcome: "ready" | "failed") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };
