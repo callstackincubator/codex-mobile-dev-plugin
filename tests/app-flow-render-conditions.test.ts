@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import ts from 'typescript';
-import {addRenderConditions, elementAt, renderConditions} from '../src/server/app-flow/render-conditions.ts';
+import {addRenderConditions, elementAt, renderConditions, resolveOpenerComponents} from '../src/server/app-flow/render-conditions.ts';
 import type {FlowPresentationAction} from '../src/shared/app-flow.ts';
 
 const parse = (file: string, text: string) => ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -56,4 +56,19 @@ test("an owner's single render site adds its own conditions; several sites add n
   assert.deepEqual(opener.when?.map(item => [item.kind, item.text, item.file, item.line]), [
     ['when', 'open', 'src/Screen.tsx', 3], ['each', 'items', 'src/Screen.tsx', 3], ['when', 'item.mine', 'src/Row.tsx', 2]]);
   assert.equal(shared.when, undefined, 'Two render sites with different conditions name neither');
+});
+
+test('an opener tag re-exported under another name matches its declared component', () => {
+  const screen = parse('/app/src/Screen.tsx', `import {FAB} from './fab'\nexport function Screen() {\n  return <FAB onPress={() => control.open()} />\n}\n`);
+  const units = new Map([[screen.fileName, {file: screen.fileName, ast: screen, imports: new Map([['FAB', {module: './fab', name: 'FAB'}]])}],
+    ['/app/src/FABInner.tsx', {file: '/app/src/FABInner.tsx', ast: parse('/app/src/FABInner.tsx', 'export function FABInner() { return null }'), imports: new Map()}]]);
+  // The scanner's resolver follows `export {FABInner as FAB}` to its declaration.
+  const symbol = (_unit: unknown, name: string) => name === 'FAB' ? '/app/src/FABInner.tsx#FABInner' : `/app/src/Screen.tsx#${name}`;
+  const opener: FlowPresentationAction = {id: 'fab', file: 'src/Screen.tsx', line: 3, owner: 'Screen', component: 'FAB', prop: 'onPress', name: 'Sheet', source: {...at(screen, '<FAB'), endLine: 3, endColumn: 46},
+    effect: {kind: 'control', component: 'Sheet', prop: 'control', method: 'open', close: 'close'}};
+  const unknown = {...opener, id: 'other', component: 'FAB'};
+  resolveOpenerComponents([opener], units, '/app', symbol);
+  assert.equal(opener.component, 'FABInner');
+  resolveOpenerComponents([unknown], units, '/app', () => '/app/src/Missing.tsx#Other');
+  assert.equal(unknown.component, 'FAB', 'A name that resolves outside the project stays as written');
 });
