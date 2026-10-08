@@ -77,18 +77,41 @@ export function componentAt(components: ScreenComponent[], point: ScreenPoint, s
   return componentsAt(components, point, screen)[0];
 }
 
+// Hover hit tests run per pointer move, so index each component list once.
+type ComponentIndex = { order: Map<ScreenComponent, number>; byId: Map<string, ScreenComponent> };
+const componentIndexes = new WeakMap<ScreenComponent[], ComponentIndex>();
+function componentIndex(components: ScreenComponent[]): ComponentIndex {
+  let index = componentIndexes.get(components);
+  if (!index) {
+    index = { order: new Map(components.map((item, position) => [item, position])), byId: new Map(components.flatMap(item => item.nodeId ? [[item.nodeId, item] as const] : [])) };
+    componentIndexes.set(components, index);
+  }
+  return index;
+}
+
+function ancestorIds(component: ScreenComponent, byId: Map<string, ScreenComponent>): Set<string> {
+  const ids = new Set<string>();
+  for (let parentId = component.parentId; parentId && !ids.has(parentId); parentId = byId.get(parentId)?.parentId) ids.add(parentId);
+  return ids;
+}
+
+// React Native paints later branches over earlier ones. Image, text or SVG drawn later in another
+// branch hides earlier elements at that point, such as the next card under a card stack.
+const PAINTED_CONTENT = /Image|Text|Svg/;
+function unoccluded(hits: ScreenComponent[], { order, byId }: ComponentIndex): ScreenComponent[] {
+  const covers = hits.filter(item => item.source === "react-native" && PAINTED_CONTENT.test(item.role ?? "")).map(cover => ({ order: order.get(cover)!, ancestors: ancestorIds(cover, byId) }));
+  return hits.filter(item => item.source !== "react-native" || !item.nodeId
+    || !covers.some(cover => cover.order > order.get(item)! && !cover.ancestors.has(item.nodeId!)));
+}
+
 export function componentsAt(components: ScreenComponent[], point: ScreenPoint, screen?: { width: number; height: number }): ScreenComponent[] {
-  const hits = components.filter(({ bounds: b }) => (!screen || b.width < screen.width * .95 || b.height < screen.height * .95) && point.x >= b.x && point.x < b.x + b.width && point.y >= b.y && point.y < b.y + b.height)
+  const index = componentIndex(components);
+  const hits = unoccluded(components.filter(({ bounds: b }) => (!screen || b.width < screen.width * .95 || b.height < screen.height * .95) && point.x >= b.x && point.x < b.x + b.width && point.y >= b.y && point.y < b.y + b.height), index)
     .sort((a, b) => Number(b.source === "react-native") - Number(a.source === "react-native") || a.bounds.width * a.bounds.height - b.bounds.width * b.bounds.height || b.depth - a.depth);
   const selected = hits[0];
   if (!selected) return [];
   // Nested trees supply real ancestors. Flat Android snapshots supply only bounds.
-  const ancestors = new Set<string>();
-  let parentId = selected.parentId;
-  while (parentId && !ancestors.has(parentId)) {
-    ancestors.add(parentId);
-    parentId = components.find(item => item.nodeId === parentId)?.parentId;
-  }
+  const ancestors = ancestorIds(selected, index.byId);
   return hits.filter(item => item === selected || (selected.parentId ? ancestors.has(item.nodeId ?? "") :
     item.bounds.x <= selected.bounds.x && item.bounds.y <= selected.bounds.y
     && item.bounds.x + item.bounds.width >= selected.bounds.x + selected.bounds.width

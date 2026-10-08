@@ -95,6 +95,32 @@ test("screen-wide containers never win and smaller controls beat deeper containe
   assert.equal(componentAt(components, { x: 350, y: 500 }, screen), undefined);
 });
 
+test("a card painted on top hides the slightly smaller next card under a stack", () => {
+  const card = (key: string, inset: number) => ({ source: "react-native", role: "Animated(View)", react: { component: "Animated(View)", owners: [], key }, frame: { x: inset, y: inset, width: 400 - inset * 2, height: 600 - inset * 2 }, children: [
+    { source: "react-native", role: "RCTImageView", frame: { x: inset, y: inset, width: 400 - inset * 2, height: 600 - inset * 2 }, children: [] },
+    { source: "react-native", role: "RCTView", frame: { x: 20 + inset, y: 500, width: 90, height: 30 }, children: [
+      { source: "react-native", role: "RCTText", label: `${key} chip`, frame: { x: 30 + inset, y: 505, width: 70, height: 20 }, children: [] },
+    ] },
+  ] });
+  // The next card renders first and is inset, so its elements are smaller and offset.
+  const components = screenComponents([{ source: "react-native", role: "View", frame: { x: 0, y: 0, width: 400, height: 600 }, children: [card("preview", 8), card("active", 0)] }]);
+  const screen = { width: 402, height: 874 };
+  assert.equal(componentAt(components, { x: 45, y: 515 }, screen)?.label, "active chip");
+  assert.equal(componentAt(components, { x: 25, y: 515 }, screen)?.role, "RCTView");
+  const enclosing = componentsAt(components, { x: 45, y: 515 }, screen);
+  assert.deepEqual(enclosing.map(item => item.role), ["RCTText", "RCTView", "Animated(View)", "View"]);
+  assert.equal(enclosing[2].react?.key, "active");
+  assert.equal(componentAt(components, { x: 200, y: 300 }, screen)?.role, "RCTImageView");
+  assert.ok(componentsAt(components, { x: 200, y: 300 }, screen).every(item => item.react?.key !== "preview"));
+
+  // A later transparent container does not hide content beneath it.
+  const overlay = screenComponents([{ source: "react-native", role: "View", frame: { x: 0, y: 0, width: 400, height: 600 }, children: [
+    { source: "react-native", role: "RCTText", label: "Under overlay", frame: { x: 10, y: 10, width: 100, height: 20 }, children: [] },
+    { source: "react-native", role: "RCTView", frame: { x: 0, y: 0, width: 200, height: 200 }, children: [] },
+  ] }]);
+  assert.equal(componentAt(overlay, { x: 20, y: 15 }, screen)?.label, "Under overlay");
+});
+
 test("a sparse accessibility tree supports explicit regions without pixel guesses", async () => {
   const f = fixture();
   f.store.readTree = async () => ({ role: "AXApplication", frame: { x: 0, y: 0, width: 393, height: 852 } });
