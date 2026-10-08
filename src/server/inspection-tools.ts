@@ -10,7 +10,8 @@ import type { InspectorRequest } from "./react-native-inspector.ts";
 import { readDeviceApps } from "./device-apps/sources.ts";
 import { captureServerError } from "./telemetry.ts";
 import { errorMessage, udidSchema } from "../shared/protocol.ts";
-import { screenComponents } from "../shared/screen-annotations.ts";
+import { accessibilityScreen, screenComponents } from "../shared/screen-annotations.ts";
+import type { ScreenSize } from "../shared/screen-annotations.ts";
 import { adbPath } from "./native-logs.ts";
 
 const execute = promisify(execFile);
@@ -18,6 +19,7 @@ const execute = promisify(execFile);
 type NativeSnapshot = {
   native: unknown;
   app: Pick<InspectorRequest, "deviceName" | "deviceAliases" | "appName" | "appId" | "resolveForegroundAppId">;
+  screen?: ScreenSize;
 };
 
 async function iosSnapshot(baguette: Baguette, deviceId: string, signal: AbortSignal): Promise<NativeSnapshot> {
@@ -26,6 +28,7 @@ async function iosSnapshot(baguette: Baguette, deviceId: string, signal: AbortSi
   const response = await baguette.describeUi(udid);
   return {
     native: response,
+    screen: accessibilityScreen(response.tree),
     app: {
       deviceName: device.name,
       appName: typeof response.tree?.label === "string" ? response.tree.label : undefined,
@@ -69,7 +72,7 @@ export function registerInspectionTools(server: McpServer, baguette: Baguette, a
     _meta: { ui: { visibility: ["app", "model"] } },
   }, async ({ platform, deviceId, deviceName, screenWidth, metroUrl, targetId }) => {
     try {
-      const { native, app } = platform === "ios"
+      const { native, app, screen } = platform === "ios"
         ? await iosSnapshot(baguette, deviceId, controller.signal)
         : await androidSnapshot(android, deviceId, deviceName, screenWidth);
       let runtime: Awaited<ReturnType<typeof inspectReactNative>>;
@@ -80,7 +83,7 @@ export function registerInspectionTools(server: McpServer, baguette: Baguette, a
         runtime = { available: false, reason: "inspector-unavailable" };
       }
       // Deep React trees exceed host JSON decoder limits. Keep ancestry as IDs on flat records.
-      const data = { tree: screenComponents(runtime.available ? [runtime.tree, native] : native), runtime: { available: runtime.available, truncated: runtime.available ? runtime.truncated : false } };
+      const data = { tree: screenComponents(runtime.available ? [runtime.tree, native] : native), runtime: { available: runtime.available, truncated: runtime.available ? runtime.truncated : false }, ...(screen && { screen }) };
       return { content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data };
     } catch (error) {
       captureServerError(error, "inspection.tool");

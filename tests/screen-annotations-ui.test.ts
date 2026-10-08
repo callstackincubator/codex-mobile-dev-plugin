@@ -39,7 +39,7 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   const store = getScreenAnnotations(dom.window.document.querySelector('[data-element="stage"]'));
   const context = new PanelContext({ getHostCapabilities: () => ({ updateModelContext: { image: {} }, message: { text: {} } }), async sendMessage() { return { isError: true }; } } as unknown as App, { modelContext: { getCurrent: () => undefined, update: async () => ({ updateId: "annotation-update" }) } } as unknown as OpenAIExtensions);
   store.capture = () => ({ screenshot: { id: "capture", data: "AA==", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 390, height: 844, units: "points" } });
-  store.readTree = async () => ({ label: "Continue", identifier: "continue", role: "AXButton", frame: { x: 10, y: 20, width: 100, height: 40 } });
+  store.readTree = async () => ({ tree: { label: "Continue", identifier: "continue", role: "AXButton", frame: { x: 10, y: 20, width: 100, height: 40 } } });
   await act(async () => {
     store.connect(context); store.configure({ udid: "iphone", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios" }, false);
     store.setViewport({ x: 16, y: 16, width: 150, height: 300, stageWidth: 640, stageHeight: 360 });

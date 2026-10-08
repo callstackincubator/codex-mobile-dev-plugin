@@ -1,7 +1,8 @@
 import type { SimulatorDevice } from "./protocol.ts";
 
 export type ScreenPoint = { x: number; y: number };
-export type ScreenBounds = ScreenPoint & { width: number; height: number };
+export type ScreenSize = { width: number; height: number };
+export type ScreenBounds = ScreenPoint & ScreenSize;
 export type ReactElementContext = { component: string; owners: string[]; key?: string; sourceKind?: "element" | "owner"; source?: { file: string; line: number; column?: number; functionName?: string } };
 export type ScreenComponent = { name: string; bounds: ScreenBounds; role?: string; identifier?: string; label?: string; value?: string; depth: number; source?: "accessibility" | "screen" | "react-native"; nodeId?: string; parentId?: string; react?: ReactElementContext };
 export type ScreenSelectionContext = { ancestors: ScreenComponent[]; siblings: ScreenComponent[]; siblingCount: number; children: ScreenComponent[]; childCount: number; instance?: { index: number; total: number } };
@@ -11,7 +12,7 @@ export type ScreenAnnotation = {
   text: string;
   simulator: SimulatorDevice;
   point: ScreenPoint;
-  screen: { width: number; height: number; units: "points" | "pixels" };
+  screen: ScreenSize & { units: "points" | "pixels" };
   component: ScreenComponent;
   selection?: ScreenSelectionContext;
   nearbyText?: string[];
@@ -46,6 +47,18 @@ function bounds(value: unknown): ScreenBounds | undefined {
     return { x: x as number, y: y as number, width: width as number, height: height as number };
 }
 
+export function screenSize(value: unknown): ScreenSize | undefined {
+  const size = record(value), width = size?.width, height = size?.height;
+  if (typeof width === "number" && typeof height === "number" && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) return { width, height };
+}
+
+// iOS accessibility roots span the full screen in points. Bezel definitions can describe a
+// slightly smaller screen cutout, such as 400×872 for a 402×874 device.
+export function accessibilityScreen(tree: unknown): ScreenSize | undefined {
+  const root = record(tree), frame = bounds(root?.frame);
+  if (frame?.x === 0 && frame.y === 0 && /^(AX)?Application$/i.test(String(root?.role ?? ""))) return screenSize(frame);
+}
+
 // Accept backend trees and normalized, flat MCP snapshots with explicit parents.
 export function screenComponents(tree: unknown, scale = 1): ScreenComponent[] {
   const components: ScreenComponent[] = [];
@@ -73,7 +86,7 @@ export function screenComponents(tree: unknown, scale = 1): ScreenComponent[] {
   return components;
 }
 
-export function componentAt(components: ScreenComponent[], point: ScreenPoint, screen?: { width: number; height: number }): ScreenComponent | undefined {
+export function componentAt(components: ScreenComponent[], point: ScreenPoint, screen?: ScreenSize): ScreenComponent | undefined {
   return componentsAt(components, point, screen)[0];
 }
 
@@ -104,7 +117,7 @@ function unoccluded(hits: ScreenComponent[], { order, byId }: ComponentIndex): S
     || !covers.some(cover => cover.order > order.get(item)! && !cover.ancestors.has(item.nodeId!)));
 }
 
-export function componentsAt(components: ScreenComponent[], point: ScreenPoint, screen?: { width: number; height: number }): ScreenComponent[] {
+export function componentsAt(components: ScreenComponent[], point: ScreenPoint, screen?: ScreenSize): ScreenComponent[] {
   const index = componentIndex(components);
   const hits = unoccluded(components.filter(({ bounds: b }) => (!screen || b.width < screen.width * .95 || b.height < screen.height * .95) && point.x >= b.x && point.x < b.x + b.width && point.y >= b.y && point.y < b.y + b.height), index)
     .sort((a, b) => Number(b.source === "react-native") - Number(a.source === "react-native") || a.bounds.width * a.bounds.height - b.bounds.width * b.bounds.height || b.depth - a.depth);
