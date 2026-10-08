@@ -49,7 +49,7 @@ const panels = (["ios", "android"] as const).map(platform => {
 });
 const [ios, android] = panels;
 logsPanel.setLayout(document.documentElement.dataset.view === "workspace");
-changeLayout("both");
+changeLayout("ios");
 
 function updateSelection() {
   const visible = panels.filter(panel => !panel.root.hidden);

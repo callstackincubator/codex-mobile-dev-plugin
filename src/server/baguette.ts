@@ -14,6 +14,19 @@ import { definitionDeviceState, getDefinitionDiagnostic, parseDefinitionDiagnost
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { ExpectedOperationError } from "../shared/error-reporting.ts";
 import { baguetteEnvironment } from "./baguette-runtime.ts";
+import { captureServerError, recordAccessibilityBridgeRestart } from "./telemetry.ts";
+
+type DescribedUi = { tree?: { label?: unknown } };
+const NO_ACCESSIBILITY_DATA = "no accessibility data";
+const BRIDGE_RESTART_INTERVAL = 10000;
+
+// CoreSimulatorBridge can lose its accessibility connection after backboardd and SpringBoard
+// restart, then report no data for every foreground app until it restarts.
+async function kickstartAccessibilityBridge(udid: string, signal: AbortSignal): Promise<void> {
+  await promisify(execFile)("/usr/bin/xcrun", ["simctl", "spawn", udid, "launchctl", "kickstart", "-k", "user/foreground/com.apple.CoreSimulator.bridge"], {
+    timeout: 10000, maxBuffer: 64 * 1024, encoding: "utf8", signal,
+  });
+}
 
 export const definitionSchema = z.object({
   identity: z.object({ udid: udidSchema, name: z.string(), model: z.string() }),
@@ -36,10 +49,13 @@ export class Baguette {
   private diagnostics = "";
   private disposed = false;
   private readonly embedded: boolean;
+  private readonly kickstartBridge: (udid: string, signal: AbortSignal) => Promise<void>;
+  private readonly bridgeRestarts = new Map<string, number>();
 
-  constructor(baseUrl?: string) {
+  constructor(baseUrl?: string, kickstartBridge = kickstartAccessibilityBridge) {
     this.embedded = baseUrl == null;
     this.baseUrl = parseBaseUrl(baseUrl ?? "http://127.0.0.1:0");
+    this.kickstartBridge = kickstartBridge;
   }
 
   async json(path: string, options: RequestInit = {}, timeout = 10000): Promise<unknown> {
@@ -61,6 +77,37 @@ export class Baguette {
     const payload = await response.json();
     if (payload?.ok === false) throw new Error(payload.error ?? "Baguette rejected the request.");
     return payload;
+  }
+
+  async describeUi(udid: string): Promise<DescribedUi> {
+    const path = `/simulators/${udidSchema.parse(udid)}/describe-ui.json`;
+    try { return await this.json(path) as DescribedUi; }
+    catch (error) {
+      if (!(error instanceof Error) || error.message !== NO_ACCESSIBILITY_DATA || !await this.restartAccessibilityBridge(udid)) throw error;
+    }
+    try {
+      const result = await this.json(path) as DescribedUi;
+      recordAccessibilityBridgeRestart("recovered");
+      return result;
+    } catch (error) {
+      recordAccessibilityBridgeRestart("unavailable");
+      throw error;
+    }
+  }
+
+  // A foreground app with no data usually means a stale bridge. Restart it at most every 10 s per device.
+  private async restartAccessibilityBridge(udid: string): Promise<boolean> {
+    if (Date.now() - (this.bridgeRestarts.get(udid) ?? -Infinity) < BRIDGE_RESTART_INTERVAL) return false;
+    this.bridgeRestarts.set(udid, Date.now());
+    try {
+      await this.kickstartBridge(udid, this.lifecycle.signal);
+      return true;
+    } catch (error) {
+      if (this.lifecycle.signal.aborted) throw error;
+      recordAccessibilityBridgeRestart("failed");
+      captureServerError(error, "simulator.accessibility_bridge");
+      return false;
+    }
   }
 
   async status(signal?: AbortSignal): Promise<Status> {
