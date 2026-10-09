@@ -122,6 +122,13 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     const platformLabel = layout === "both" ? "Both" : layout === "none" ? "Platforms" : layout === "ios" ? "iOS" : "Android";
     const triggerText = dom.window.document.getElementById("platform-select")?.textContent ?? "";
     assert.ok(triggerText.startsWith(platformLabel));
+    // The sidebar shows the tools and platform selects in one bar under the simulators.
+    const toolbars = dom.window.document.querySelectorAll('nav[aria-label="Developer tools"]');
+    assert.equal(toolbars.length, 1);
+    const simulators = dom.window.document.getElementById("simulator-panels")!;
+    assert.equal(toolbars[0].previousElementSibling === simulators, layout !== "none");
+    assert.deepEqual([...toolbars[0].querySelectorAll("button")].map(button => button.id), ["tool-select", "platform-select"]);
+    assert.equal(dom.window.document.querySelector('[role="toolbar"] #tool-select'), null);
   }
   layouts.length = 0;
   const picker = dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]');
