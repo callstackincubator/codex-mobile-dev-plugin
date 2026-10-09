@@ -81,6 +81,8 @@ relevant checks, and packaging steps again.
 
 The host installs a cache copy. After changing source, rebuild and package, then run `codex plugin add mobile-dev@mobile-dev-local` to update it. Reopen Mobile Dev from a new chat to load the new copy.
 
+`npm run test:ios-mirror-sharing -- <hardware UDID>` opens independent MCP processes for the same iPhone, pauses one reader, closes one panel, and joins another. It verifies frame fan-out and recovery without sending input. It excludes the iframe bridge and browser rendering. Close Device Hub’s mirror before running it.
+
 ## Native iOS test app
 
 The repo includes a small [SwiftUI test app](examples/ios-test-app/README.md) for

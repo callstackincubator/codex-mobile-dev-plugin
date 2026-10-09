@@ -41,7 +41,9 @@ const client = Sentry.init({
   beforeSendMetric: scrubMetric,
   beforeBreadcrumb: breadcrumb => breadcrumb.category === "mobile-dev" ? breadcrumb : null,
 });
-const component = process.argv[1]?.endsWith("agent-device-server.mjs") ? "agent-device-wrapper" : "server";
+const executable = process.argv[1] ?? "";
+const mirrorService = executable.endsWith("ios-mirror-service.mjs") || executable.endsWith("ios-mirror-service.ts");
+const component = mirrorService ? "ios-mirror-service" : executable.endsWith("agent-device-server.mjs") ? "agent-device-wrapper" : "server";
 Sentry.setTag("component", component);
 Sentry.setAttribute("component", component);
 client?.on("spanStart", span => {

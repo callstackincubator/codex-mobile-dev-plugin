@@ -1,6 +1,7 @@
 import { parseResourceInput } from "./resource-input.ts";
 import { openRequestSession } from "./request-session.ts";
 import { ExpectedOperationError } from "../shared/error-reporting.ts";
+import { IosMirrorInputBusyError } from "../shared/ios-mirror-errors.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
@@ -57,7 +58,8 @@ export function registerIosMirrorTools(server: McpServer, appUri: string, sessio
       await sessions.input(id, messages, generation);
       return { content: [{ type: "text", text: "Touch input delivered." }] };
     } catch (error) {
-      return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { streamDisconnected: true } };
+      const inputBusy = error instanceof IosMirrorInputBusyError;
+      return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { streamDisconnected: inputBusy === false, inputBusy } };
     }
   });
 
@@ -65,7 +67,7 @@ export function registerIosMirrorTools(server: McpServer, appUri: string, sessio
     title: "Reset physical iOS video", description: "Request a new HEVC keyframe for this mirroring session.", inputSchema: { sessionId }, annotations,
     _meta: { ui: { visibility: ["app"] } },
   }, async ({ sessionId: id }) => {
-    sessions.reset(id);
+    await sessions.reset(id);
     return { content: [{ type: "text", text: "Requested a keyframe." }] };
   });
   registerAppTool(server, "mobile_ios_mirror_capture_screenshot", {
@@ -97,7 +99,7 @@ export function registerIosMirrorTools(server: McpServer, appUri: string, sessio
     }
   });
   registerAppTool(server, "mobile_ios_mirror_close", {
-    title: "Close physical iOS mirroring", description: "Stop the media streams owned by this mirroring session.", inputSchema: { sessionId }, annotations,
+    title: "Close physical iOS mirroring", description: "Close this panel’s subscription. Other panels keep mirroring the device.", inputSchema: { sessionId }, annotations,
     _meta: { ui: { visibility: ["app"] } },
   }, async ({ sessionId: id }) => {
     await sessions.closeSession(id);

@@ -55,6 +55,8 @@ try {
   await assert.rejects(skillAccess, { code: "ENOENT" });
   await access(join(plugin, "dist/baguette/Baguette"));
   await access(join(plugin, "dist/baguette/Baguette_Baguette.bundle/Web"));
+  const mirrorServicePath = join(plugin, "dist/ios-mirror-service.mjs");
+  await access(mirrorServicePath);
   const mirrorPath = join(plugin, "dist/ios-mirror/darwin-arm64.node");
   const mirrorProbe = "const mirror = require(process.argv[1]); if (typeof mirror.openDevice !== 'function') process.exit(1);";
   const mirror = spawnSync(serverConfig.command, [launcher, "-e", mirrorProbe, mirrorPath], { cwd: serverCwd, env: serverEnv, encoding: "utf8" });

@@ -1,7 +1,8 @@
 import type { SimulatorDevice } from "./protocol.ts";
 
 export type ScreenPoint = { x: number; y: number };
-export type ScreenBounds = ScreenPoint & { width: number; height: number };
+export type ScreenSize = { width: number; height: number };
+export type ScreenBounds = ScreenPoint & ScreenSize;
 export type ReactElementContext = { component: string; owners: string[]; key?: string; sourceKind?: "element" | "owner"; source?: { file: string; line: number; column?: number; functionName?: string } };
 export type ScreenComponent = { name: string; bounds: ScreenBounds; role?: string; identifier?: string; label?: string; value?: string; depth: number; source?: "accessibility" | "screen" | "react-native"; nodeId?: string; parentId?: string; react?: ReactElementContext };
 export type ScreenSelectionContext = { ancestors: ScreenComponent[]; siblings: ScreenComponent[]; siblingCount: number; children: ScreenComponent[]; childCount: number; instance?: { index: number; total: number } };
@@ -11,7 +12,7 @@ export type ScreenAnnotation = {
   text: string;
   simulator: SimulatorDevice;
   point: ScreenPoint;
-  screen: { width: number; height: number; units: "points" | "pixels" };
+  screen: ScreenSize & { units: "points" | "pixels" };
   component: ScreenComponent;
   selection?: ScreenSelectionContext;
   nearbyText?: string[];
@@ -46,6 +47,18 @@ function bounds(value: unknown): ScreenBounds | undefined {
     return { x: x as number, y: y as number, width: width as number, height: height as number };
 }
 
+export function screenSize(value: unknown): ScreenSize | undefined {
+  const size = record(value), width = size?.width, height = size?.height;
+  if (typeof width === "number" && typeof height === "number" && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) return { width, height };
+}
+
+// iOS accessibility roots span the full screen in points. Bezel definitions can describe a
+// slightly smaller screen cutout, such as 400×872 for a 402×874 device.
+export function accessibilityScreen(tree: unknown): ScreenSize | undefined {
+  const root = record(tree), frame = bounds(root?.frame);
+  if (frame?.x === 0 && frame.y === 0 && /^(AX)?Application$/i.test(String(root?.role ?? ""))) return screenSize(frame);
+}
+
 // Accept backend trees and normalized, flat MCP snapshots with explicit parents.
 export function screenComponents(tree: unknown, scale = 1): ScreenComponent[] {
   const components: ScreenComponent[] = [];
@@ -73,22 +86,45 @@ export function screenComponents(tree: unknown, scale = 1): ScreenComponent[] {
   return components;
 }
 
-export function componentAt(components: ScreenComponent[], point: ScreenPoint, screen?: { width: number; height: number }): ScreenComponent | undefined {
+export function componentAt(components: ScreenComponent[], point: ScreenPoint, screen?: ScreenSize): ScreenComponent | undefined {
   return componentsAt(components, point, screen)[0];
 }
 
-export function componentsAt(components: ScreenComponent[], point: ScreenPoint, screen?: { width: number; height: number }): ScreenComponent[] {
-  const hits = components.filter(({ bounds: b }) => (!screen || b.width < screen.width * .95 || b.height < screen.height * .95) && point.x >= b.x && point.x < b.x + b.width && point.y >= b.y && point.y < b.y + b.height)
+// Hover hit tests run per pointer move, so index each component list once.
+type ComponentIndex = { order: Map<ScreenComponent, number>; byId: Map<string, ScreenComponent> };
+const componentIndexes = new WeakMap<ScreenComponent[], ComponentIndex>();
+function componentIndex(components: ScreenComponent[]): ComponentIndex {
+  let index = componentIndexes.get(components);
+  if (!index) {
+    index = { order: new Map(components.map((item, position) => [item, position])), byId: new Map(components.flatMap(item => item.nodeId ? [[item.nodeId, item] as const] : [])) };
+    componentIndexes.set(components, index);
+  }
+  return index;
+}
+
+function ancestorIds(component: ScreenComponent, byId: Map<string, ScreenComponent>): Set<string> {
+  const ids = new Set<string>();
+  for (let parentId = component.parentId; parentId && !ids.has(parentId); parentId = byId.get(parentId)?.parentId) ids.add(parentId);
+  return ids;
+}
+
+// React Native paints later branches over earlier ones. Image, text or SVG drawn later in another
+// branch hides earlier elements at that point, such as the next card under a card stack.
+const PAINTED_CONTENT = /Image|Text|Svg/;
+function unoccluded(hits: ScreenComponent[], { order, byId }: ComponentIndex): ScreenComponent[] {
+  const covers = hits.filter(item => item.source === "react-native" && PAINTED_CONTENT.test(item.role ?? "")).map(cover => ({ order: order.get(cover)!, ancestors: ancestorIds(cover, byId) }));
+  return hits.filter(item => item.source !== "react-native" || !item.nodeId
+    || !covers.some(cover => cover.order > order.get(item)! && !cover.ancestors.has(item.nodeId!)));
+}
+
+export function componentsAt(components: ScreenComponent[], point: ScreenPoint, screen?: ScreenSize): ScreenComponent[] {
+  const index = componentIndex(components);
+  const hits = unoccluded(components.filter(({ bounds: b }) => (!screen || b.width < screen.width * .95 || b.height < screen.height * .95) && point.x >= b.x && point.x < b.x + b.width && point.y >= b.y && point.y < b.y + b.height), index)
     .sort((a, b) => Number(b.source === "react-native") - Number(a.source === "react-native") || a.bounds.width * a.bounds.height - b.bounds.width * b.bounds.height || b.depth - a.depth);
   const selected = hits[0];
   if (!selected) return [];
   // Nested trees supply real ancestors. Flat Android snapshots supply only bounds.
-  const ancestors = new Set<string>();
-  let parentId = selected.parentId;
-  while (parentId && !ancestors.has(parentId)) {
-    ancestors.add(parentId);
-    parentId = components.find(item => item.nodeId === parentId)?.parentId;
-  }
+  const ancestors = ancestorIds(selected, index.byId);
   return hits.filter(item => item === selected || (selected.parentId ? ancestors.has(item.nodeId ?? "") :
     item.bounds.x <= selected.bounds.x && item.bounds.y <= selected.bounds.y
     && item.bounds.x + item.bounds.width >= selected.bounds.x + selected.bounds.width

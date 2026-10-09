@@ -14,7 +14,7 @@ import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { PanelContext } from "./model-context.ts";
 import { getScreenAnnotations } from "./screen-annotations.ts";
 import type { ScreenAnnotation } from "../shared/screen-annotations.ts";
-import { screenComponents } from "../shared/screen-annotations.ts";
+import { accessibilityScreen, screenComponents, screenSize } from "../shared/screen-annotations.ts";
 import { AndroidVideo } from "./android-video.ts";
 import { PhysicalIosVideo } from "./ios-mirror-video.ts";
 import { iosVideoBatchSchema } from "../shared/ios-video.ts";
@@ -141,6 +141,14 @@ export function createSimulatorPanel(
           ? { sessionId: session.id, messages, generation: session.generation }
           : { sessionId: session.id, messages };
         await call(tool, parameters, { timeout: 5000 });
+      } catch (error) {
+        if (error instanceof Error && "inputBusy" in error && error.inputBusy === true) {
+          session.input?.clear();
+          cancelPointer();
+          notice(error.message);
+          return;
+        }
+        throw error;
       } finally {
         const elapsed = performance.now() - started;
         session.reader?.inputTiming(elapsed);
@@ -204,7 +212,8 @@ export function createSimulatorPanel(
     if (result.isError) {
       const message = result.content.filter(item => item.type === "text").map(item => item.text).join("\n");
       const error = result._meta?.retryable === false ? new StopReconnectError(message) : new Error(message);
-      throw Object.assign(error, { inputBlocked: result._meta?.inputBlocked === true, streamDisconnected: result._meta?.streamDisconnected === true });
+      const failure = Object.assign(error, { inputBlocked: result._meta?.inputBlocked === true, streamDisconnected: result._meta?.streamDisconnected === true, inputBusy: result._meta?.inputBusy === true });
+      throw failure;
     }
     return result;
   }
@@ -232,25 +241,25 @@ export function createSimulatorPanel(
   }
   annotations.capture = captureScreen;
   annotations.readTree = async simulator => {
-    if (simulator.kind === "physical" && simulator.platform === "ios") return [];
+    if (simulator.kind === "physical" && simulator.platform === "ios") return { tree: [] };
     const screenWidth = annotations.getSnapshot().capture?.screen.width ?? points.width;
     const startedAt = performance.now();
     try {
       try {
         const result = await call("mobile_inspect_ui", { platform, deviceId: simulator.udid, deviceName: simulator.name, screenWidth }, { timeout: 10000 });
-        if (!result.structuredContent?.tree) throw new Error("Component inspection returned no tree.");
-        const runtime = result.structuredContent.runtime;
+        const content = result.structuredContent;
+        if (!content?.tree) throw new Error("Component inspection returned no tree.");
+        const runtime = content.runtime;
         if (runtime && typeof runtime === "object" && "available" in runtime && runtime.available === true) countUiEvent("ui.annotations.runtime_available");
         if (runtime && typeof runtime === "object" && "truncated" in runtime && runtime.truncated === true) countUiEvent("ui.annotations.inspection_truncated");
-        return result.structuredContent.tree;
+        return { tree: content.tree, screen: screenSize(content.screen) };
       } catch {
         // Hosts with an older tool list and failed inspectors can still read AX.
         countUiEvent("ui.annotations.inspection_fallback");
         const result = await call(platform === "android" ? "mobile_android_describe_ui" : "mobile_describe_ui", platform === "android" ? { deviceId: simulator.udid } : { udid: simulator.udid }, { timeout: 5000 });
-        const screen = result.structuredContent?.screen as { width?: number } | undefined;
-        if (platform === "android" && screen?.width && Number.isFinite(screen.width) && screen.width > 0)
-          return screenComponents(result.structuredContent?.tree, screenWidth / screen.width);
-        return result.structuredContent?.tree;
+        const screen = screenSize(result.structuredContent?.screen);
+        if (platform === "android" && screen) return { tree: screenComponents(result.structuredContent?.tree, screenWidth / screen.width) };
+        return { tree: result.structuredContent?.tree, screen: accessibilityScreen(result.structuredContent?.tree) };
       }
     } finally { recordUiTiming("ui.annotations.inspection", performance.now() - startedAt); }
   };

@@ -1,10 +1,11 @@
 import { componentAt, componentsAt, formatAnnotationMessage, screenComponents, screenSelectionContext } from "../shared/screen-annotations.ts";
-import type { ScreenAnnotation, ScreenBounds, ScreenComponent, ScreenPoint, ScreenSelectionContext } from "../shared/screen-annotations.ts";
+import type { ScreenAnnotation, ScreenBounds, ScreenComponent, ScreenPoint, ScreenSelectionContext, ScreenSize } from "../shared/screen-annotations.ts";
 import { recordUiTiming, countUiEvent } from "./telemetry.ts";
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import type { PanelContext } from "./model-context.ts";
 
 type Capture = { screenshot: ScreenAnnotation["screenshot"]; screen: ScreenAnnotation["screen"] };
+export type InspectedTree = { tree: unknown; screen?: ScreenSize };
 type Draft = Capture & { id: string; number: number; component: ScreenComponent; point: ScreenPoint; text: string; nearbyText?: string[]; selection?: ScreenSelectionContext };
 export class ScreenAnnotationsStore {
   private state = {
@@ -26,7 +27,7 @@ export class ScreenAnnotationsStore {
   private revision = 0;
   private nextNumber = 1;
   capture?: () => Capture;
-  readTree?: (simulator: SimulatorDevice) => Promise<unknown>;
+  readTree?: (simulator: SimulatorDevice) => Promise<InspectedTree>;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.state;
   get messageText() { return formatAnnotationMessage(this.state.annotations); }
@@ -76,21 +77,41 @@ export class ScreenAnnotationsStore {
       this.hoverPoint = undefined;
       this.cancelSelection();
       this.update({ selecting: true, loading: true, capture, hovered: undefined, draft: undefined, candidates: [], error: "", status: "" });
-      const tree = await this.readTree(this.simulator);
+      const { tree, screen } = await this.readTree(this.simulator);
       if (revision === this.revision) {
+        this.adoptScreen(screen);
         const startedAt = performance.now();
         this.components = screenComponents(tree);
         recordUiTiming("ui.annotations.tree_processing", performance.now() - startedAt);
         if (this.components.some(component => component.react?.source)) countUiEvent("ui.annotations.source_available");
         const draft = this.state.draft;
         if (draft?.component.source === "screen" && !draft.component.role) {
-          const candidates = componentsAt(this.components, draft.point, capture.screen);
+          const candidates = componentsAt(this.components, draft.point, draft.screen);
           if (candidates.length) this.update({ draft: { ...draft, component: candidates[0], selection: this.selectionContext(candidates[0]), nearbyText: this.nearbyText(candidates[0]) }, candidates });
         }
       }
     } catch (error) {
       if (revision === this.revision) this.update({ error: `Could not read component names. You can still annotate a screen region. ${error instanceof Error ? error.message : String(error)}` });
     } finally { if (revision === this.revision) { this.update({ loading: false }); this.hover(this.hoverPoint); } }
+  }
+  // Bezel definitions can describe a smaller screen cutout than the accessibility screen that
+  // element bounds use, such as 400×872 for a 402×874 iPhone. Move this capture's pointer state to it.
+  private adoptScreen(size?: ScreenSize) {
+    const capture = this.state.capture;
+    if (!size || !capture || capture.screen.units !== "points" || (size.width === capture.screen.width && size.height === capture.screen.height)) return;
+    const scaleX = size.width / capture.screen.width, scaleY = size.height / capture.screen.height;
+    const point = (value: ScreenPoint) => ({ x: value.x * scaleX, y: value.y * scaleY });
+    const bounds = (value: ScreenBounds) => ({ ...point(value), width: value.width * scaleX, height: value.height * scaleY });
+    const screen = { ...capture.screen, ...size };
+    const draft = this.state.draft;
+    if (this.dragStart) this.dragStart = point(this.dragStart);
+    if (this.hoverPoint) this.hoverPoint = point(this.hoverPoint);
+    this.update({
+      capture: { ...capture, screen },
+      selectionBounds: this.state.selectionBounds && bounds(this.state.selectionBounds),
+      ...(draft?.screenshot.id === capture.screenshot.id && { draft: { ...draft, screen, point: point(draft.point),
+        component: draft.component.source === "screen" ? { ...draft.component, bounds: bounds(draft.component.bounds) } : draft.component } }),
+    });
   }
   exit() {
     if (this.state.busy) return;
@@ -100,8 +121,8 @@ export class ScreenAnnotationsStore {
     this.update({ selecting: false, loading: false, draft: undefined, hovered: undefined, candidates: [] });
   }
   hover(point?: ScreenPoint) {
-    if (this.dragStart && point) { this.moveSelection(point); return; }
     this.hoverPoint = point;
+    if (this.dragStart && point) { this.moveSelection(point); return; }
     if (!this.state.selecting || this.state.draft) return;
     const hovered = point ? componentAt(this.components, point, this.state.capture?.screen) : undefined;
     if (hovered !== this.state.hovered) this.update({ hovered });

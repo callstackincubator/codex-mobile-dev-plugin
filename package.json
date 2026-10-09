@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.132",
+  "version": "0.1.141",
   "private": true,
   "type": "module",
   "engines": {
@@ -37,6 +37,7 @@
     "test:stream": "node scripts/smoke-stream.mjs",
     "rebuild:ios-mirror": "node scripts/build-ios-mirror.mjs",
     "test:ios-mirror": "node scripts/smoke-ios-mirror.mjs",
+    "test:ios-mirror-sharing": "node scripts/smoke-ios-mirror-sharing.mjs",
     "test:native-telemetry": "node scripts/smoke-native-telemetry.mjs",
     "sentry:upload": "node scripts/upload-sourcemaps.mjs",
     "typecheck:telemetry": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution bundler --allowImportingTsExtensions src/shared/telemetry.ts src/server/instrument.ts src/server/telemetry.ts src/server/storage-metrics.ts src/ui/telemetry.ts",

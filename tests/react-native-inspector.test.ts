@@ -100,6 +100,29 @@ test("automatic inspection refuses ambiguous apps, wrong devices and exclusive d
   assert.equal(server.calls(), 0);
 });
 
+test("a display name that differs from the bundle ID matches the foreground app on the same device", async t => {
+  const server = await backend(t);
+  const expo = { ...server.target, id: "expo", appId: "host.exp.Exponent" };
+  const otherDevice = { ...expo, id: "android", deviceName: "Pixel 9" };
+  server.setTargets([expo, otherDevice]);
+  let lookups = 0;
+  const resolveForegroundAppId = async () => { lookups++; return "host.exp.Exponent"; };
+  assert.equal((await inspectReactNative({ ...request, appName: "Expo Go", url: server.origin })).available, false);
+  assert.equal((await inspectReactNative({ ...request, appName: "Expo Go", resolveForegroundAppId, url: server.origin })).available, true);
+  assert.equal(lookups, 1);
+
+  // A backgrounded React Native app never stands in for a different foreground app.
+  const native = async () => "com.example.native";
+  assert.equal((await inspectReactNative({ ...request, appName: "Expo Go", resolveForegroundAppId: native, url: server.origin })).available, false);
+  const failing = async () => { throw new Error("foreground unavailable"); };
+  assert.equal((await inspectReactNative({ ...request, appName: "Expo Go", resolveForegroundAppId: failing, url: server.origin })).available, false);
+
+  // Name matches skip the lookup.
+  server.setTargets([server.target]);
+  assert.equal((await inspectReactNative({ ...request, resolveForegroundAppId, url: server.origin })).available, true);
+  assert.equal(lookups, 1);
+});
+
 test("Android runtime bounds convert from DIPs to screen pixels", async t => {
   const server = await backend(t);
   const result = await inspectReactNative({ ...request, url: server.origin, platform: "android", appId: server.target.appId, screenWidth: 1200 });

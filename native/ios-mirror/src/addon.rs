@@ -26,7 +26,7 @@ struct Shared {
 }
 
 enum Command {
-    Reset,
+    RequestKeyframe,
     Close,
     Touch { samples: Vec<TouchSample>, generation: u32, reply: tokio::sync::oneshot::Sender<std::result::Result<(), String>> },
 }
@@ -89,7 +89,7 @@ impl Capture {
     }
 
     #[napi]
-    pub fn reset(&self) { let _ = self.commands.send(Command::Reset); }
+    pub fn request_keyframe(&self) { let _ = self.commands.send(Command::RequestKeyframe); }
 
     #[napi]
     pub async fn touch(&self, samples: Vec<TouchSample>, generation: u32) -> Result<()> {
@@ -261,19 +261,12 @@ async fn run(udid: &str, shared: &Shared, mut commands: mpsc::UnboundedReceiver<
                             let _ = reply.send(result);
                             if let Some(error) = failure { return Err(error); }
                         }
-                        Some(Command::Reset) => {
-                            if let Some(touch) = input.as_mut() {
-                                touch.release().await?;
+                        Some(Command::RequestKeyframe) => {
+                            if key_requested == false {
+                                let started = Instant::now();
+                                recovery_started = Some(started);
                             }
-                            assembler.mark_stream_discontinuity(); key_requested = true;
-                            let now = Instant::now();
-                            recovery_started = Some(now);
-                            let mut queue = shared.queue.lock().unwrap();
-                            queue.invalidate();
-                            let generation = queue.generation;
-                            let dropped = queue.dropped;
-                            drop(queue);
-                            eprintln!("[mobile-dev:ios-mirror] reset_requested receiver_ssrc={our_ssrc} generation={generation} dropped={dropped}");
+                            key_requested = true;
                         }
                     },
                     _ = interval.tick() => {

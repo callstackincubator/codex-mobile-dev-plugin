@@ -1,43 +1,22 @@
 import { ExpectedOperationError } from "../shared/error-reporting.ts";
-import { createRequire as createNativeRequire } from "node:module";
 import { randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import type { IosVideoBatch } from "../shared/ios-video.ts";
 import type { TouchInput } from "../shared/protocol.ts";
+import { openSharedIosCapture } from "./ios-mirror-client.ts";
+import type { IosCapture, NativeTouchSample } from "./ios-native-capture.ts";
+export type { NativeCapture, NativeTouchSample } from "./ios-native-capture.ts";
+export type OpenCapture = (udid: string) => Promise<IosCapture>;
 
-type NativeConfiguration = { revision: number; width: number; height: number; codec: string; description: Buffer };
-type NativeBatch = { generation: number; frames: { data: Buffer; timestamp: number; key: boolean }[]; configuration?: NativeConfiguration; dropped: number };
-export type NativeTouchSample = { phase: number; x: number; y: number; width: number; height: number };
-export type NativeCapture = { read(): Promise<NativeBatch>; touch(samples: NativeTouchSample[], generation: number): Promise<void>; reset(): void; close(): Promise<void> };
-type NativeAddon = { openDevice(udid: string): Promise<NativeCapture> };
-export type OpenCapture = (udid: string) => Promise<NativeCapture>;
-
-let addon: NativeAddon | undefined;
-async function openCapture(udid: string) {
-  if (process.platform !== "darwin" || process.arch !== "arm64") throw new ExpectedOperationError("unsupported_platform", "Physical iOS mirroring requires an Apple Silicon Mac.");
-  if (addon === undefined) {
-    const root = import.meta.url.endsWith("/server.mjs") ? "./ios-mirror/" : "../../vendor/ios-mirror/";
-    const url = new URL(`${root}darwin-arm64.node`, import.meta.url);
-    const path = fileURLToPath(url);
-    if (existsSync(path) === false) throw new Error("The physical iOS capture addon is missing. Run npm run rebuild:ios-mirror and rebuild the plugin.");
-    const require = createNativeRequire(import.meta.url);
-    const loaded: NativeAddon = require(path);
-    addon = loaded;
-  }
-  return addon.openDevice(udid);
-}
-
-type Session = { capture: NativeCapture; udid: string; expires: number; sequence: number; reading: boolean; inputting: boolean; generation?: number; closed: boolean; configuration?: IosVideoBatch["configuration"] };
+type Session = { capture: IosCapture; udid: string; expires: number; reading: boolean; inputting: boolean; generation?: number; closed: boolean };
 
 export class IosMirrorSessions {
   private readonly sessions = new Map<string, Session>();
-  private readonly opening = new Set<string>();
+  private opening = 0;
   private readonly openCapture: OpenCapture;
   private readonly expiry: NodeJS.Timeout;
   private disposed = false;
 
-  constructor(open: OpenCapture = openCapture) {
+  constructor(open: OpenCapture = openSharedIosCapture) {
     this.openCapture = open;
     this.expiry = setInterval(() => {
       for (const [id, session] of this.sessions) {
@@ -49,17 +28,16 @@ export class IosMirrorSessions {
 
   async open(udid: string) {
     if (this.disposed) throw new Error("The plugin server has closed.");
-    if (this.opening.has(udid) || [...this.sessions.values()].some(session => session.udid === udid)) throw new Error("This iPhone already has a mirroring session. Close its other panel first.");
-    if (this.sessions.size + this.opening.size >= 4) throw new Error("Too many physical device streams. Close another panel first.");
-    this.opening.add(udid);
+    if (this.sessions.size + this.opening >= 4) throw new Error("Too many physical device streams. Close another panel first.");
+    this.opening++;
     try {
       const capture = await this.openCapture(udid);
       if (this.disposed) { await capture.close(); throw new Error("The plugin server has closed."); }
       const bytes = randomBytes(32);
       const id = bytes.toString("hex");
-      this.sessions.set(id, { capture, udid, expires: Date.now() + 300000, sequence: 0, reading: false, inputting: false, closed: false });
+      this.sessions.set(id, { capture, udid, expires: Date.now() + 300000, reading: false, inputting: false, closed: false });
       return id;
-    } finally { this.opening.delete(udid); }
+    } finally { this.opening--; }
   }
 
   private session(id: string) {
@@ -81,12 +59,7 @@ export class IosMirrorSessions {
       if (session.closed) throw new ExpectedOperationError("session_closed", "The physical device stream closed.");
       if (session.generation !== batch.generation) session.generation = undefined;
       if (batch.frames.some(frame => frame.key)) session.generation = batch.generation;
-      if (batch.configuration) {
-        const { description, ...configuration } = batch.configuration;
-        session.configuration = { ...configuration, description: description.toString("base64") };
-      }
-      const frames = batch.frames.map(frame => ({ sequence: ++session.sequence, timestamp: frame.timestamp, key: frame.key, data: frame.data.toString("base64") }));
-      return { generation: batch.generation, sequence: session.sequence, dropped: batch.dropped, configuration: session.configuration, frames };
+      return batch;
     } finally { session.reading = false; }
   }
 
@@ -104,10 +77,10 @@ export class IosMirrorSessions {
     } finally { session.inputting = false; }
   }
 
-  reset(id: string) {
+  async reset(id: string) {
     const session = this.session(id);
     session.generation = undefined;
-    session.capture.reset();
+    await session.capture.reset();
   }
 
   deviceId(id: string) {

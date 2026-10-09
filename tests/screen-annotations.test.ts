@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { componentAt, componentsAt, screenComponents, formatAnnotationContext, screenSelectionContext, ANNOTATION_EDIT_GUIDANCE } from "../src/shared/screen-annotations.ts";
+import { accessibilityScreen, componentAt, componentsAt, screenComponents, screenSize, formatAnnotationContext, screenSelectionContext, ANNOTATION_EDIT_GUIDANCE } from "../src/shared/screen-annotations.ts";
 import { ScreenAnnotationsStore } from "../src/ui/screen-annotations.ts";
+import type { InspectedTree } from "../src/ui/screen-annotations.ts";
 import type { ScreenAnnotation } from "../src/shared/screen-annotations.ts";
 import { PanelContext } from "../src/ui/model-context.ts";
 import { App } from "@modelcontextprotocol/ext-apps";
@@ -39,7 +40,7 @@ function fixture(messageApp?: App) {
   } } as unknown as OpenAIExtensions);
   const store = new ScreenAnnotationsStore();
   store.connect(context); store.configure(simulator, false); store.capture = () => capture;
-  store.readTree = async () => ({ elements: [{ ...component, label: component.name, frame: component.bounds }] });
+  store.readTree = async () => ({ tree: { elements: [{ ...component, label: component.name, frame: component.bounds }] } });
   return { context, store, updates, messages,
     clear() { current = null; context.hostChanged(); },
     remove(id: string) { if (current) current = { ...current, updateId: "removed", content: current.content?.filter(item => item._meta?.["mobile-dev/annotationId"] !== id) }; context.hostChanged(); },
@@ -95,9 +96,35 @@ test("screen-wide containers never win and smaller controls beat deeper containe
   assert.equal(componentAt(components, { x: 350, y: 500 }, screen), undefined);
 });
 
+test("a card painted on top hides the slightly smaller next card under a stack", () => {
+  const card = (key: string, inset: number) => ({ source: "react-native", role: "Animated(View)", react: { component: "Animated(View)", owners: [], key }, frame: { x: inset, y: inset, width: 400 - inset * 2, height: 600 - inset * 2 }, children: [
+    { source: "react-native", role: "RCTImageView", frame: { x: inset, y: inset, width: 400 - inset * 2, height: 600 - inset * 2 }, children: [] },
+    { source: "react-native", role: "RCTView", frame: { x: 20 + inset, y: 500, width: 90, height: 30 }, children: [
+      { source: "react-native", role: "RCTText", label: `${key} chip`, frame: { x: 30 + inset, y: 505, width: 70, height: 20 }, children: [] },
+    ] },
+  ] });
+  // The next card renders first and is inset, so its elements are smaller and offset.
+  const components = screenComponents([{ source: "react-native", role: "View", frame: { x: 0, y: 0, width: 400, height: 600 }, children: [card("preview", 8), card("active", 0)] }]);
+  const screen = { width: 402, height: 874 };
+  assert.equal(componentAt(components, { x: 45, y: 515 }, screen)?.label, "active chip");
+  assert.equal(componentAt(components, { x: 25, y: 515 }, screen)?.role, "RCTView");
+  const enclosing = componentsAt(components, { x: 45, y: 515 }, screen);
+  assert.deepEqual(enclosing.map(item => item.role), ["RCTText", "RCTView", "Animated(View)", "View"]);
+  assert.equal(enclosing[2].react?.key, "active");
+  assert.equal(componentAt(components, { x: 200, y: 300 }, screen)?.role, "RCTImageView");
+  assert.ok(componentsAt(components, { x: 200, y: 300 }, screen).every(item => item.react?.key !== "preview"));
+
+  // A later transparent container does not hide content beneath it.
+  const overlay = screenComponents([{ source: "react-native", role: "View", frame: { x: 0, y: 0, width: 400, height: 600 }, children: [
+    { source: "react-native", role: "RCTText", label: "Under overlay", frame: { x: 10, y: 10, width: 100, height: 20 }, children: [] },
+    { source: "react-native", role: "RCTView", frame: { x: 0, y: 0, width: 200, height: 200 }, children: [] },
+  ] }]);
+  assert.equal(componentAt(overlay, { x: 20, y: 15 }, screen)?.label, "Under overlay");
+});
+
 test("a sparse accessibility tree supports explicit regions without pixel guesses", async () => {
   const f = fixture();
-  f.store.readTree = async () => ({ role: "AXApplication", frame: { x: 0, y: 0, width: 393, height: 852 } });
+  f.store.readTree = async () => ({ tree: { role: "AXApplication", frame: { x: 0, y: 0, width: 393, height: 852 } } });
   await f.store.toggle();
   f.store.hover({ x: 150, y: 280 });
   assert.equal(f.store.getSnapshot().hovered, undefined);
@@ -115,7 +142,7 @@ test("a sparse accessibility tree supports explicit regions without pixel guesse
 
 test("pending inspection accepts clicks and upgrades the open note when elements arrive", async () => {
   const f = fixture();
-  let release!: (tree: unknown) => void;
+  let release!: (result: InspectedTree) => void;
   f.store.readTree = () => new Promise(resolve => { release = resolve; });
   const reading = f.store.toggle();
   assert.equal(f.store.getSnapshot().loading, true);
@@ -123,10 +150,42 @@ test("pending inspection accepts clicks and upgrades the open note when elements
   f.store.endSelection({ x: 50, y: 40 });
   assert.equal(f.store.getSnapshot().draft?.component.name, "Screen point");
   f.store.setText("Make this wider");
-  release({ label: "Continue", role: "AXButton", frame: component.bounds });
+  release({ tree: { label: "Continue", role: "AXButton", frame: component.bounds } });
   await reading;
   assert.equal(f.store.getSnapshot().draft?.component.name, "Continue");
   assert.equal(f.store.getSnapshot().draft?.text, "Make this wider");
+  f.store.dispose();
+});
+
+test("the accessibility screen size replaces a smaller bezel cutout and rescales pending pointer state", async () => {
+  const f = fixture();
+  // The bezel cutout reports 400×872 for a 402×874 device; element bounds use the real screen.
+  f.store.capture = () => ({ ...capture, screen: { width: 400, height: 872, units: "points" } });
+  let release!: (result: InspectedTree) => void;
+  f.store.readTree = () => new Promise(resolve => { release = resolve; });
+  const reading = f.store.toggle();
+  f.store.hover({ x: 200, y: 436 });
+  assert.equal(f.store.beginSelection({ x: 100, y: 218 }), true);
+  f.store.hover({ x: 300, y: 654 });
+  release({ tree: [{ label: "Info", role: "AXButton", frame: { x: 334.3, y: 550.7, width: 32.7, height: 32.3 } }], screen: { width: 402, height: 874 } });
+  await reading;
+  const state = f.store.getSnapshot();
+  assert.deepEqual(state.capture?.screen, { width: 402, height: 874, units: "points" });
+  assert.deepEqual(Object.values(state.selectionBounds!).map(value => Math.round(value * 10) / 10), [100.5, 218.5, 201, 437]);
+  f.store.cancelSelection();
+  f.store.hover({ x: 350, y: 567 });
+  assert.equal(f.store.getSnapshot().hovered?.label, "Info");
+
+  // Pixel captures keep their size, and the MCP boundary rejects invalid sizes.
+  f.store.exit();
+  f.store.capture = () => ({ ...capture, screen: { width: 1080, height: 2400, units: "pixels" } });
+  f.store.readTree = async () => ({ tree: [], screen: { width: 402, height: 874 } });
+  await f.store.toggle();
+  assert.equal(f.store.getSnapshot().capture?.screen.width, 1080);
+  assert.equal(screenSize({ width: -1, height: 874 }), undefined);
+  assert.equal(screenSize({ width: 402, height: "874" }), undefined);
+  assert.deepEqual(accessibilityScreen({ role: "AXApplication", frame: { x: 0, y: 0, width: 402, height: 874 } }), { width: 402, height: 874 });
+  assert.equal(accessibilityScreen({ role: "AXWindow", frame: { x: 0, y: 0, width: 402, height: 874 } }), undefined);
   f.store.dispose();
 });
 
@@ -155,7 +214,7 @@ test("real parents remain selectable without choosing overlapping siblings", asy
   assert.equal(candidates[0].parentId, candidates[1].nodeId);
   assert.equal(componentAt(items, { x: 300, y: 130 }, capture.screen)?.name, "Card");
   const f = fixture();
-  f.store.readTree = async () => tree;
+  f.store.readTree = async () => ({ tree });
   await f.store.toggle();
   f.store.select({ x: 40, y: 125 });
   assert.deepEqual(f.store.getSnapshot().draft?.selection?.ancestors.map(item => item.name), ["Card"]);
@@ -178,7 +237,7 @@ test("a child deletion identifies one repeated instance and keeps enclosing rows
       { source: "react-native", role: "RCTText", label: "Subtitle", nodeId: `subtitle-${index}`, frame: { x: 30, y: 140 + index * 90, width: 150, height: 20 }, react: { component: "Text", owners: ["HomeScreen", "Row"], source } },
     ],
   }));
-  f.store.readTree = async () => rows;
+  f.store.readTree = async () => ({ tree: rows });
   await f.store.toggle();
   f.store.select({ x: 40, y: 235 }); f.store.setText("Remove this subtitle"); await f.store.save();
   const saved = f.context.screenAnnotations[0];
@@ -235,7 +294,7 @@ test("flat MCP snapshots retain element names, depths and real parents", async (
   const snapshot = JSON.parse(JSON.stringify(items));
   assert.deepEqual(screenComponents(snapshot), items);
   const f = fixture();
-  f.store.readTree = async () => snapshot;
+  f.store.readTree = async () => ({ tree: snapshot });
   await f.store.toggle();
   f.store.hover({ x: 300, y: 130 });
   assert.equal(f.store.getSnapshot().hovered?.name, "Card");
@@ -249,7 +308,7 @@ test("flat MCP snapshots retain element names, depths and real parents", async (
 test("a saved and sent note retains its source location, owners, testID and nearby text", async () => {
   const react = { component: "Text", owners: ["HomeScreen", "CardRow", "Text"], source: { file: "/project/src/HomeScreen.tsx", line: 49, column: 11, functionName: "HomeScreen.renderItem" } };
   const f = fixture();
-  f.store.readTree = async () => [{ ...component, source: "react-native", react, label: "Continue" }, { name: "Go to the next step", label: "Go to the next step", role: "Text", bounds: { x: 10, y: 65, width: 100, height: 20 } }];
+  f.store.readTree = async () => ({ tree: [{ ...component, source: "react-native", react, label: "Continue" }, { name: "Go to the next step", label: "Go to the next step", role: "Text", bounds: { x: 10, y: 65, width: 100, height: 20 } }] });
   await f.store.toggle(); f.store.select({ x: 50, y: 40 }); f.store.setText("Make this larger"); await f.store.save();
   assert.deepEqual(f.context.screenAnnotations[0].component.react, react);
   assert.deepEqual(f.context.screenAnnotations[0].nearbyText, ["Go to the next step"]);
@@ -374,9 +433,9 @@ test("selecting supports hover, multiple notes, edits, regions, and Escape witho
   f.store.edit(f.context.screenAnnotations[0]); f.store.setText("Make it blue"); await f.store.save();
   assert.equal(f.context.screenAnnotations.length, 2); assert.equal(f.context.screenAnnotations.at(-1)?.text, "Make it blue");
   f.store.exit();
-  let release!: (value: unknown) => void;
+  let release!: (result: InspectedTree) => void;
   f.store.readTree = () => new Promise(resolve => { release = resolve; });
-  const reading = f.store.toggle(); f.store.exit(); release({ elements: [component] }); await reading;
+  const reading = f.store.toggle(); f.store.exit(); release({ tree: { elements: [component] } }); await reading;
   assert.equal(f.store.getSnapshot().selecting, false); assert.equal(f.store.getSnapshot().loading, false);
   f.store.dispose();
 });

@@ -5,7 +5,7 @@ import { parseBaseUrl, errorMessage } from "../shared/protocol.ts";
 import { parseMetroEvent } from "./log-parsers.ts";
 import type { LogSink, StopLogSource } from "./native-logs.ts";
 
-type InspectorTarget = MetroTarget & { webSocketDebuggerUrl: string; supportsMultipleDebuggers: boolean };
+export type InspectorTarget = MetroTarget & { webSocketDebuggerUrl: string; supportsMultipleDebuggers: boolean };
 
 export async function metroTargets(origin: string, signal?: AbortSignal): Promise<InspectorTarget[]> {
   const base = parseBaseUrl(origin, "Metro URL");

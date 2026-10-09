@@ -11,11 +11,31 @@ import { getDiscoveryCommandDiagnostic } from "../shared/device-apps-command-dia
 import { androidStartupDiagnosticTags } from "../shared/android-startup-diagnostics.ts";
 import type { AndroidStartupSummary, AndroidStartupContext, AndroidStartupFailure, AndroidDeviceState } from "../shared/android-startup-diagnostics.ts";
 
+export function recordIosMirrorSharing(captures: number, subscribers: number, dropped: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "ios-mirror-service", surface: "simulator", device_platform: "ios", device_kind: "physical" };
+  Sentry.metrics.gauge("ios.mirror.shared.captures", captures, { attributes });
+  Sentry.metrics.gauge("ios.mirror.shared.subscribers", subscribers, { attributes });
+  if (dropped > 0) Sentry.metrics.count("ios.mirror.shared.queue_dropped", dropped, { attributes });
+}
+
 export function recordPluginUpdate(operation: "check" | "install", outcome: "disabled" | "unavailable" | "current" | "available" | "updated" | "failed", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", operation, outcome };
   Sentry.metrics.count("plugin.update.operations", 1, { attributes });
   Sentry.metrics.gauge("plugin.update.duration", duration, { unit: "millisecond", attributes });
+}
+
+export function recordAccessibilityBridgeRestart(outcome: "recovered" | "unavailable" | "failed") {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", device_platform: "ios", device_kind: "simulator", outcome };
+  Sentry.metrics.count("ios.accessibility_bridge.restarts", 1, { attributes });
+}
+
+export function recordAndroidEmulatorReconnect(trigger: "boot" | "selection") {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "simulator", device_platform: "android", device_kind: "emulator", trigger };
+  Sentry.metrics.count("android.emulator.adb_reconnects", 1, { attributes });
 }
 
 export function recordAndroidBackendStartup(duration: number, outcome: "ready" | "failed") {

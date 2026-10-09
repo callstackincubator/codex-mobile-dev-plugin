@@ -134,20 +134,20 @@ await writeFile("dist/app.html", configuredTemplate
   .replace("<!-- APP_STYLE -->", () => `<style>${css}</style>`)
   .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}\n//# sourceURL=app:///mobile-dev-ui.js\n</script>`));
 const server = await build({
-  entryPoints: { server: "src/server/index.ts", "agent-device-server": "src/server/agent-device-server.mjs" }, outdir: "dist", outExtension: { ".js": ".mjs" }, bundle: true,
+  entryPoints: { server: "src/server/index.ts", "agent-device-server": "src/server/agent-device-server.mjs", "ios-mirror-service": "src/server/ios-mirror-service.ts" }, outdir: "dist", outExtension: { ".js": ".mjs" }, bundle: true,
   format: "esm", platform: "node", target: "node22", minify: false, legalComments: "eof", metafile: true,
   sourcemap: "external",
   plugins: [sentryEsbuildPlugin({ project: "codex-mobile-dev-server", telemetry: false, sourcemaps: { disable: true }, release: { inject: false, create: false, finalize: false } })],
   banner: { js: "import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);" },
 });
 await mkdir(".sentry/server", { recursive: true });
-for (const name of ["server.mjs", "agent-device-server.mjs"]) {
+for (const name of ["server.mjs", "agent-device-server.mjs", "ios-mirror-service.mjs"]) {
   await copyFile(`dist/${name}`, `.sentry/server/${name}`);
   await copyFile(`dist/${name}.map`, `.sentry/server/${name}.map`);
   await rm(`dist/${name}.map`);
 }
 await cli.execute(["sourcemaps", "inject", ".sentry/server"]);
-for (const name of ["server.mjs", "agent-device-server.mjs"]) {
+for (const name of ["server.mjs", "agent-device-server.mjs", "ios-mirror-service.mjs"]) {
   await copyFile(`.sentry/server/${name}`, `dist/${name}`);
   execFileSync(process.execPath, ["--check", `dist/${name}`]);
 }
