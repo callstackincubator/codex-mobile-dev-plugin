@@ -23,9 +23,22 @@ device tools.
 1. Open the panel beside the chat with `mobile_open_simulator` by default. For an existing app, open it when starting device work; for a new app, open it before the first device launch. Reuse an open Mobile Dev panel. Use `mobile_open_workspace` when the user asks for fullscreen. Use device-list tools without opening the panel when the user requests a tool-only workflow or the host cannot show panels. A request limited to planning, docs, code review, or compilation does not need a panel or a device launch.
 2. Use the task and app project to choose the platform. Follow the user's device choice; otherwise reuse a compatible device shared by the panel, then a suitable running simulator or emulator. If no suitable device runs, choose a compatible installed simulator or AVD. Pick among equivalent devices yourself for routine app development. When the intended target is ambiguous (for example, the app is open on several devices for a performance run), use `mobile_choose_devices` to ask through the native request form. Read device IDs from tool results or panel context; never invent them.
 3. Boot a chosen stopped iOS simulator with `mobile_boot_simulator`, or an Android AVD with `mobile_boot_android_emulator`. A mobile app development request permits choosing and booting a suitable installed simulator without a separate device-choice question. Reuse running devices without rebooting them. Follow the Android section below for device discovery and serials. Opening the panel alone does not boot a device.
-4. Build, install, and launch the app with the app project's own tools and the chosen device ID. Follow the project's framework skills where available. Before starting an app dev server, check for an existing server from that project and reuse it. Keep the same device for the panel, build target, and agent control; read the panel's shared IDs before acting and follow later user selections. Leave the panel and app available while continuing app work. Do not launch the app when the user asks only for compilation.
+4. Build the app with the app project's own tools and the chosen device ID; the project's run command may also install and launch it. To restart an already installed app, use `mobile_launch_app` instead of rebuilding. Follow the project's framework skills where available. Before starting an app dev server, check for an existing server from that project and reuse it. Keep the same device for the panel, build target, and agent control; read the panel's shared IDs before acting and follow later user selections. Leave the panel and app available while continuing app work. Do not launch the app when the user asks only for compilation.
 5. Agent Device is temporarily disabled in this plugin while iterating on inline performance charts. Use the available Mobile Dev tools; do not search for Agent Device tools or start its CLI separately.
 6. For direct Baguette input, read `mobile_describe_ui` or `mobile_screenshot` first. Gesture coordinates use device points. Match `width` and `height` to the selected device's screen, never to screenshot pixels or the panel's CSS size. Use `mobile_send_input`, then read the screen to confirm what changed. An accepted input does not prove the app handled it.
+
+### App control
+
+These tools work on iOS simulators and Android devices with `{ platform, deviceId }`, not on physical iPhones. They never build.
+
+- `mobile_list_apps` lists installed user apps and the foreground app's bundle ID or package.
+- `mobile_launch_app` launches or restarts an installed app; `mobile_stop_app` terminates it. Relaunch after native changes or a crash instead of tapping through the home screen.
+- `mobile_install_app` installs a built simulator `.app` bundle or `.apk` from an absolute path.
+- `mobile_open_url` opens a deep link or web URL. Prefer it to step-by-step navigation when the app declares a route for the changed screen, then read the screen to confirm it opened.
+- `mobile_set_app_permission` allows, denies, or resets (`ask`) a permission so system prompts do not interrupt a flow; `permission: "all"` with `state: "ask"` restores first-launch prompts. iOS simulators cannot change camera or notification access, and changes can restart the app.
+- `mobile_send_push` sends an APNs payload to an app on an iOS simulator. Android push needs Firebase Cloud Messaging and is not supported.
+
+The panel's settings button opens the same controls under its App tab.
 
 ### Choosing a task's devices
 
