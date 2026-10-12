@@ -1,9 +1,10 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useState, useSyncExternalStore } from "react";
 import { ChevronDownIcon, Settings2Icon } from "lucide-react";
 import { contentSizes } from "../../shared/device-settings";
 import { bindDeviceSettings, DeviceSettingsStore } from "../device-settings";
 import { AppToolsStore, bindAppTools } from "../app-tools";
 import { AppTools } from "./app-tools";
+import { AnimatedHeight } from "./animated-height";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select";
@@ -23,6 +24,8 @@ const locationPresets = [
   { value: "tokyo", label: "Tokyo, Japan", latitude: 35.6762, longitude: 139.6503 },
   { value: "sydney", label: "Sydney, Australia", latitude: -33.8688, longitude: 151.2093 },
 ];
+const presetFor = (location: { latitude: number; longitude: number } | null | undefined) =>
+  locationPresets.find(entry => entry.latitude === location?.latitude && entry.longitude === location?.longitude)?.value ?? "custom";
 const rotationOptions = [{ value: "auto", label: "Auto" }, { value: "portrait", label: "Portrait" }, { value: "landscape", label: "Landscape" }];
 
 function SettingsSelect({ id, value, items, disabled, onChange }: { id: string; value: string; items: { value: string; label: string }[]; disabled: boolean; onChange: (value: string) => void }) {
@@ -30,22 +33,6 @@ function SettingsSelect({ id, value, items, disabled, onChange }: { id: string; 
     <SelectTrigger id={id} className="w-48 min-w-0"><SelectValue /></SelectTrigger>
     <SelectContent align="start" alignItemWithTrigger={false} className="w-max min-w-(--anchor-width) max-w-(--available-width)"><SelectGroup>{items.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
   </Select>;
-}
-
-// Animates the popover between tab heights. The clip margin keeps focus rings at the edges visible.
-function AnimatedHeight({ children }: { children: React.ReactNode }) {
-  const inner = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState<number>();
-  useLayoutEffect(() => {
-    const element = inner.current;
-    if (!element || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => setHeight(element.offsetHeight));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  return <div style={{ height }} className="overflow-clip transition-[height] duration-200 ease-out [overflow-clip-margin:6px] motion-reduce:transition-none">
-    <div ref={inner}>{children}</div>
-  </div>;
 }
 
 export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
@@ -68,7 +55,6 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
   }, [state.deviceId, settings?.location?.latitude, settings?.location?.longitude]);
   useEffect(() => { if (state.disabled) setOpen(false); }, [state.disabled]);
   useEffect(() => { setOpen(false); setLocationOpen(false); }, [state.deviceId]);
-  const preset = settings?.location ? locationPresets.find(entry => entry.latitude === settings.location!.latitude && entry.longitude === settings.location!.longitude)?.value ?? "custom" : "custom";
   return <div data-element="settings" className="ml-auto" ref={element => { if (element) { bindDeviceSettings(element, store); bindAppTools(element, appTools); } }}>
     <Popover open={open} onOpenChange={value => {
       if (!value) { setOpen(false); return; }
@@ -94,7 +80,7 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
           {settings.orientation !== undefined && <div className="flex items-center justify-between gap-3"><label htmlFor={`${id}-rotation`}>Rotation</label><SettingsSelect id={`${id}-rotation`} value={settings.orientation} items={rotationOptions} disabled={disabled} onChange={value => void store.change({ setting: "orientation", value: value as "auto" | "portrait" | "landscape" })} /></div>}
           {settings.locationSupported && <Collapsible open={locationOpen} onOpenChange={setLocationOpen} className="border-t pt-3">
             <CollapsibleTrigger className="flex w-full items-center justify-between rounded-sm py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={disabled}>Location<ChevronDownIcon className={`size-4 text-muted-foreground ${locationOpen ? "rotate-180" : ""}`} /></CollapsibleTrigger>
-            <CollapsibleContent className="space-y-3 pt-3"><div className="flex items-center justify-between gap-3"><label htmlFor={`${id}-location-preset`}>Place</label><SettingsSelect id={`${id}-location-preset`} value={preset} disabled={disabled} items={[...locationPresets, { value: "custom", label: "Custom coordinates" }]} onChange={value => { const entry = locationPresets.find(item => item.value === value); if (entry) void store.change({ setting: "location", value: { latitude: entry.latitude, longitude: entry.longitude } }); }} /></div>
+            <CollapsibleContent className="space-y-3 pt-3"><div className="flex items-center justify-between gap-3"><label htmlFor={`${id}-location-preset`}>Place</label><SettingsSelect id={`${id}-location-preset`} value={presetFor(settings.location)} disabled={disabled} items={[...locationPresets, { value: "custom", label: "Custom coordinates" }]} onChange={value => { const entry = locationPresets.find(item => item.value === value); if (entry) void store.change({ setting: "location", value: { latitude: entry.latitude, longitude: entry.longitude } }); }} /></div>
             <form className="space-y-3" onSubmit={event => { event.preventDefault(); if (latitude.trim() && longitude.trim()) void store.change({ setting: "location", value: { latitude: Number(latitude), longitude: Number(longitude) } }); }}>
             <div className="grid grid-cols-2 gap-2"><div className="space-y-1"><label htmlFor={`${id}-latitude`} className="text-xs text-muted-foreground">Latitude</label><Input id={`${id}-latitude`} type="number" step="any" min={-90} max={90} required value={latitude} placeholder="37.3318" onChange={event => setLatitude(event.target.value)} /></div><div className="space-y-1"><label htmlFor={`${id}-longitude`} className="text-xs text-muted-foreground">Longitude</label><Input id={`${id}-longitude`} type="number" step="any" min={-180} max={180} required value={longitude} placeholder="-122.0312" onChange={event => setLongitude(event.target.value)} /></div></div>
             <div className="flex gap-2"><Button type="submit" size="sm" variant="secondary" className="flex-1" disabled={!latitude.trim() || !longitude.trim()}>Set location</Button>{platform === "ios" && <Button type="button" size="sm" variant="outline" onClick={() => void store.change({ setting: "location", value: null })}>Clear</Button>}</div>
