@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ChevronDownIcon, Settings2Icon } from "lucide-react";
 import { contentSizes } from "../../shared/device-settings";
 import { bindDeviceSettings, DeviceSettingsStore } from "../device-settings";
@@ -30,6 +30,22 @@ function SettingsSelect({ id, value, items, disabled, onChange }: { id: string; 
     <SelectTrigger id={id} className="w-48 min-w-0"><SelectValue /></SelectTrigger>
     <SelectContent align="start" alignItemWithTrigger={false} className="w-max min-w-(--anchor-width) max-w-(--available-width)"><SelectGroup>{items.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
   </Select>;
+}
+
+// Animates the popover between tab heights. The clip margin keeps focus rings at the edges visible.
+function AnimatedHeight({ children }: { children: React.ReactNode }) {
+  const inner = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number>();
+  useLayoutEffect(() => {
+    const element = inner.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setHeight(element.offsetHeight));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  return <div style={{ height }} className="overflow-clip transition-[height] duration-200 ease-out [overflow-clip-margin:6px] motion-reduce:transition-none">
+    <div ref={inner}>{children}</div>
+  </div>;
 }
 
 export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
@@ -65,6 +81,7 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
       <PopoverContent side="top" align="end" className="max-h-(--radix-popover-content-available-height) w-[360px] max-w-[calc(100vw-16px)] space-y-4 overflow-y-auto p-4 text-sm" aria-label="Device settings" onInteractOutside={event => { if (event.target instanceof Element && event.target.closest('[data-slot="select-content"]')) event.preventDefault(); }}>
         <Tabs value={activeTab} onValueChange={value => { setTab(value as "app" | "device"); if (value === "app") void appTools.load(); }} className="gap-4">
           <TabsList className="grid w-full grid-cols-2"><TabsTrigger value="app" disabled={appState.disabled}>App</TabsTrigger><TabsTrigger value="device">Device</TabsTrigger></TabsList>
+          <AnimatedHeight>
           <TabsContent value="app"><AppTools store={appTools} /></TabsContent>
           <TabsContent value="device" className="space-y-4">
         {settings && <fieldset disabled={disabled} className="space-y-4">
@@ -86,6 +103,7 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
         <div className="flex items-center justify-between border-t pt-3"><label htmlFor={`${id}-frame`}>Show device frame</label><Switch id={`${id}-frame`} checked={state.frame} onCheckedChange={value => store.toggleFrame(value)} /></div>
         {state.error && <p className="whitespace-pre-wrap text-xs text-destructive" role="alert">{state.error}</p>}
           </TabsContent>
+          </AnimatedHeight>
         </Tabs>
       </PopoverContent>
     </Popover>
