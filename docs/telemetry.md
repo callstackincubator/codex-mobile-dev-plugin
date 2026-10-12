@@ -163,6 +163,17 @@ so their duration is not attributed to the next surface or device. No bundle IDs
 PIDs, device IDs, app lists, or query output are sent. Existing CPU batch-processing
 coverage and native Baguette crash/resource telemetry are preserved.
 
+Since 0.1.147, app control tools (`mobile_list_apps`, `mobile_launch_app`,
+`mobile_stop_app`, `mobile_install_app`, `mobile_open_url`, `mobile_app_icons`,
+`mobile_app_links`, `mobile_app_permissions`, `mobile_set_app_permission`, and
+`mobile_send_push`) use the existing sampled MCP traces. Unexpected `simctl`, `adb`,
+`aapt2`, or `plutil` failures are reported under `app_control.<action>` with a fixed
+message, because command output can contain bundle IDs, URLs, device serials, and
+local paths. Expected outcomes such as a missing app, an unhandled URL, an
+unrequested permission, or a stopped device count only through
+`server.error.outcome`. Extracted app icons and Android labels stay in the server's
+memory cache and are returned only to the panel.
+
 Saved chart cards use the `recording` surface and view. Existing readiness,
 interaction and frame-pacing coverage is preserved. `ui.recording.process` and
 `ui.recording.derive` measure result validation and chart/summary processing;

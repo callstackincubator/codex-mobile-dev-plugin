@@ -18,6 +18,7 @@ import { registerDeviceAppsTool } from "../src/server/device-apps/tools.ts";
 import { directoryBytes } from "../src/server/storage-metrics.ts";
 import { SimulatorUnavailableError } from "../src/server/simulator-unavailable.ts";
 import { registerDeviceChoiceTools } from "../src/server/device-choice-tools.ts";
+import { AppControl, registerAppControlTools } from "../src/server/app-control.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { adapterClient } from "./agent-device-fixtures.ts";
 
@@ -791,4 +792,39 @@ test("cancellation during stream response preparation closes the session and ret
   const encoded = JSON.stringify(events);
   contains(encoded, "stream.cancel_cleanup");
   contains(encoded, "Unexpected stream cleanup failure");
+});
+
+test("app control reports unexpected command failures without command output and skips expected outcomes", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, environment: "release", beforeSend: scrubErrorEvent,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const run = async (_file: string, args: string[]) => {
+    const command = args.join(" ");
+    if (command.includes("openurl")) throw Object.assign(new Error(`Command failed: xcrun simctl ${command}`), { code: 1, stderr: "PRIVATE_FAILURE for myapp://PRIVATE_ROUTE", stdout: "" });
+    throw Object.assign(new Error("Command failed"), { code: 4, stderr: "FBSOpenApplicationServiceErrorDomain PRIVATE_BUNDLE", stdout: "" });
+  };
+  const server = new McpServer({ name: "app-control-telemetry", version: "1" });
+  instrumentMcpServer(server);
+  registerAppControlTools(server, new AppControl({ run, adb: async () => "adb", foreground: async () => null }));
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const target = { platform: "ios", deviceId: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE" };
+  const failed = await client.callTool({ name: "mobile_open_url", arguments: { ...target, url: "myapp://PRIVATE_ROUTE" } });
+  assert.equal(failed.isError, true);
+  assert.match(JSON.stringify(failed.content), /PRIVATE_FAILURE/, "the agent still sees the command error");
+  const missing = await client.callTool({ name: "mobile_launch_app", arguments: { ...target, bundleId: "com.private.app" } });
+  assert.equal(missing.isError, true);
+  await Sentry.flush();
+  const events = envelopes.flatMap(envelope => envelope[1]).filter(item => item[0].type === "event").map(item => item[1]);
+  assert.equal(events.length, 1);
+  const encoded = JSON.stringify(events);
+  contains(encoded, "App open_url command failed.");
+  contains(encoded, '"operation":"app_control.open_url"');
+  contains(encoded, "PRIVATE", false);
+  contains(encoded, "B5C969F6", false);
 });
