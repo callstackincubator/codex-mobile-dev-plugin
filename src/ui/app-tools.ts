@@ -1,4 +1,4 @@
-import { appIconsSchema, appLinksSchema, appPermissionsSchema, installedAppsSchema, platformPermissions } from "../shared/app-control.ts";
+import { appDetailsSchema, appLinksSchema, appPermissionsSchema, installedAppsSchema, platformPermissions } from "../shared/app-control.ts";
 import type { AppPermission, AppPermissionEntry, InstalledApp, PermissionState } from "../shared/app-control.ts";
 import { countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 
@@ -132,7 +132,7 @@ export class AppToolsStore {
     const revision = this.revision;
     const call = this.call;
     try {
-      const data = appIconsSchema.parse(await this.measure("icons", () => call("mobile_app_icons", { ...this.target(), bundleIds })));
+      const data = appDetailsSchema.parse(await this.measure("icons", () => call("mobile_app_icons", { ...this.target(), bundleIds })));
       if (revision !== this.revision) return;
       const icons = { ...this.state.icons };
       for (const [bundleId, entry] of Object.entries(data.apps)) {

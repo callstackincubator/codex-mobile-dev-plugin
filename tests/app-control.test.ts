@@ -3,8 +3,15 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AppControl, androidPermissionStates, parseAndroidAppLinks, parseAndroidBadging, pickAndroidIconFile, parseAndroidRuntimePermissions, parseIosUrlSchemes, parseLauncherActivity, parseSimulatorApps } from "../src/server/app-control.ts";
-import type { CommandRunner } from "../src/server/app-control.ts";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { parseIosUrlSchemes, parseSimulatorApps } from "../src/server/app-control/simulator.ts";
+import { androidPermissionStates, parseAndroidAppLinks, parseAndroidBadging, parseAndroidRuntimePermissions, parseLauncherActivity, pickAndroidIconFile } from "../src/server/app-control/android.ts";
+import { listApps } from "../src/server/app-control/driver.ts";
+import type { AppDriver } from "../src/server/app-control/driver.ts";
+import { createDrivers, registerAppControlTools } from "../src/server/app-control/tools.ts";
+import type { CommandRunner } from "../src/server/app-control/commands.ts";
 import { expectedOutcome } from "../src/shared/error-reporting.ts";
 
 const ios = { platform: "ios", deviceId: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE" } as const;
@@ -33,20 +40,33 @@ function fixture(respond: (file: string, args: string[], input?: string) => stri
     calls.push({ file, args, ...(options.input === undefined ? {} : { input: options.input }) });
     const result = respond(file, args, options.input);
     if (result instanceof Error) throw result;
-    return { stdout: result, stderr: "" };
+    return result;
   };
-  const control = new AppControl({ run, adb: async () => "adb", foreground: async target => target.platform === "ios" ? "com.acme.shop" : "com.acme.android",
-    running: async () => [{ bundleId: "com.other", pid: 300 }, { bundleId: "com.acme.shop", pid: 100 }, { bundleId: "com.acme.android", pid: 200 }] });
-  return { control, calls };
+  const drivers = createDrivers({ run, readBinary: async () => Buffer.alloc(0), adb: async () => "adb", aapt2: async () => null });
+  return { simulator: drivers(ios), emulator: drivers(android), calls };
 }
 
 test("simulator listings keep user apps with display names", () => {
   const apps = parseSimulatorApps(JSON.stringify({
     "com.apple.mobilesafari": { ApplicationType: "System", CFBundleIdentifier: "com.apple.mobilesafari" },
     "com.acme.shop": { ApplicationType: "User", CFBundleIdentifier: "com.acme.shop", CFBundleDisplayName: "Acme Shop", CFBundleName: "Shop" },
-    "dev.zeta": { ApplicationType: "User", CFBundleName: "Zeta" },
+    "dev.zeta": { ApplicationType: "User", CFBundleName: "Zeta", Path: "/apps/Zeta.app" },
   }));
-  assert.deepEqual(apps, [{ bundleId: "com.acme.shop", name: "Acme Shop" }, { bundleId: "dev.zeta", name: "Zeta" }]);
+  assert.deepEqual(apps, [{ bundleId: "com.acme.shop", name: "Acme Shop", path: "" }, { bundleId: "dev.zeta", name: "Zeta", path: "/apps/Zeta.app" }]);
+});
+
+test("app lists lead with the foreground app, then the newest running installed apps", async () => {
+  const driver = {
+    installed: async () => [{ bundleId: "com.acme", name: "Acme" }, { bundleId: "com.other", name: "Other" }, { bundleId: "dev.idle", name: "Idle" }],
+    foreground: async () => "com.acme",
+    running: async () => [{ bundleId: "com.acme", pid: 100 }, { bundleId: "com.apple.system", pid: 400 }, { bundleId: "com.other", pid: 300 }],
+  } as unknown as AppDriver;
+  assert.deepEqual(await listApps(driver), {
+    apps: [{ bundleId: "com.acme", name: "Acme" }, { bundleId: "com.other", name: "Other" }, { bundleId: "dev.idle", name: "Idle" }],
+    foregroundBundleId: "com.acme", runningBundleIds: ["com.acme", "com.other"],
+  });
+  const undetected = { ...driver, foreground: async () => { throw new Error("Baguette could not read the foreground app."); } } as AppDriver;
+  assert.deepEqual((await listApps(undetected)).runningBundleIds, ["com.other", "com.acme"], "without a foreground app the newest running app leads");
 });
 
 test("Android launcher and permission output parse into stable values", () => {
@@ -61,20 +81,22 @@ test("Android launcher and permission output parse into stable values", () => {
   assert.throws(() => parseAndroidRuntimePermissions("Unable to find package: com.nope\n"), (error: unknown) => expectedOutcome(error) === "invalid_input");
 });
 
-test("iOS simulator actions use simctl and report the foreground app", async () => {
-  const { control, calls } = fixture((file, args) => {
+test("iOS simulator actions use simctl", async () => {
+  const { simulator, calls } = fixture((file, args) => {
     if (args[1] === "listapps") return "{ }";
     if (file === "plutil") return JSON.stringify({ "com.acme.shop": { ApplicationType: "User", CFBundleIdentifier: "com.acme.shop", CFBundleName: "Shop" } });
     if (args[1] === "terminate") return failure("Simulator device failed to terminate com.acme.shop.\nfound nothing to terminate", 3);
     return "";
   });
-  assert.deepEqual(await control.apps(ios), { apps: [{ bundleId: "com.acme.shop", name: "Shop" }], foregroundBundleId: "com.acme.shop", runningBundleIds: ["com.acme.shop"] });
+  assert.deepEqual(await simulator.installed(), [{ bundleId: "com.acme.shop", name: "Shop" }]);
   assert.equal(calls[1].input, "{ }", "plutil converts the simctl plist from stdin");
-  await control.launch(ios, "com.acme.shop");
-  await control.stop(ios, "com.acme.shop");
-  await control.openUrl(ios, "myapp://checkout?step=2&x='1'");
-  assert.deepEqual(await control.setPermission(ios, "com.acme.shop", "photos", "deny"), { permissions: [{ permission: "photos", state: "deny" }] });
-  await control.push(ios, "com.acme.shop", { aps: { alert: "Hi" } });
+  await simulator.launch("com.acme.shop");
+  await simulator.stop("com.acme.shop");
+  await simulator.openUrl("myapp://checkout?step=2&x='1'");
+  const permissions = await simulator.setPermission("com.acme.shop", "photos", "deny");
+  assert.deepEqual(permissions.filter(entry => entry.state !== null), [{ permission: "photos", state: "deny" }], "the full list returns with only the changed permission known");
+  assert.equal(permissions.length, 7);
+  await simulator.push("com.acme.shop", { aps: { alert: "Hi" } });
   assert.deepEqual(calls.slice(2).map(call => call.args), [
     ["simctl", "launch", "--terminate-running-process", ios.deviceId, "com.acme.shop"],
     ["simctl", "terminate", ios.deviceId, "com.acme.shop"],
@@ -86,19 +108,18 @@ test("iOS simulator actions use simctl and report the foreground app", async () 
 });
 
 test("Android actions resolve launchers, quote URLs, and only touch requested permissions", async () => {
-  const { control, calls } = fixture((_file, args) => {
+  const { emulator, calls } = fixture((_file, args) => {
     const command = args[3] ?? "";
     if (command.startsWith("pm list packages")) return "package:com.acme.android\npackage:com.other\n";
     if (command.startsWith("cmd package resolve-activity")) return "priority=0\ncom.acme.android/.MainActivity\n";
     if (command.startsWith("dumpsys package")) return dumpsys;
     return "Status: ok\n";
   });
-  assert.equal((await control.apps(android)).foregroundBundleId, "com.acme.android");
-  assert.deepEqual((await control.apps(android)).runningBundleIds, ["com.other", "com.acme.android"], "running apps are newest first and installed");
-  await control.launch(android, "com.acme.android");
-  await control.openUrl(android, "myapp://checkout?step=2&x='1'");
-  await control.setPermission(android, "com.acme.android", "location", "ask");
-  await control.setPermission(android, "com.acme.android", "camera", "allow");
+  assert.deepEqual(await emulator.installed(), [{ bundleId: "com.acme.android", name: "com.acme.android" }, { bundleId: "com.other", name: "com.other" }]);
+  await emulator.launch("com.acme.android");
+  await emulator.openUrl("myapp://checkout?step=2&x='1'");
+  await emulator.setPermission("com.acme.android", "location", "ask");
+  await emulator.setPermission("com.acme.android", "camera", "allow");
   const shell = calls.map(call => call.args[3]);
   assert.ok(shell.includes("am force-stop com.acme.android && am start -W -n com.acme.android/.MainActivity"));
   assert.ok(shell.includes(`am start -W -a android.intent.action.VIEW -d 'myapp://checkout?step=2&x='\\''1'\\'''`));
@@ -107,12 +128,12 @@ test("Android actions resolve launchers, quote URLs, and only touch requested pe
     "pm revoke com.acme.android android.permission.ACCESS_COARSE_LOCATION", "pm clear-permission-flags com.acme.android android.permission.ACCESS_COARSE_LOCATION user-set user-fixed",
   ].join(" && ")));
   assert.ok(shell.includes("pm clear-permission-flags com.acme.android android.permission.CAMERA user-set user-fixed && pm grant com.acme.android android.permission.CAMERA"));
-  await assert.rejects(control.setPermission(android, "com.acme.android", "contacts", "allow"), /does not request the contacts permission/);
-  await assert.rejects(control.push(android, "com.acme.android", { aps: {} }), (error: unknown) => expectedOutcome(error) === "unsupported_platform");
+  await assert.rejects(emulator.setPermission("com.acme.android", "contacts", "allow"), /does not request the contacts permission/);
+  await assert.rejects(emulator.push("com.acme.android", { aps: {} }), (error: unknown) => expectedOutcome(error) === "unsupported_platform");
 });
 
 test("command failures become readable, expected outcomes where the user can fix them", async () => {
-  const { control } = fixture((_file, args) => {
+  const { simulator, emulator } = fixture((_file, args) => {
     if (args[1] === "launch") return failure("An error was encountered processing the command (domain=FBSOpenApplicationServiceErrorDomain, code=4):\nSimulator device failed to launch com.nope.", 4);
     if (args[1] === "openurl") return failure("Unable to lookup in current state: Shutdown", 149);
     if (args[1] === "privacy") return failure("Something unexpected", 1);
@@ -120,27 +141,41 @@ test("command failures become readable, expected outcomes where the user can fix
     if ((args[3] ?? "").startsWith("cmd package resolve-activity")) return "com.acme/.Main\n";
     return "";
   });
-  await assert.rejects(control.launch(ios, "com.nope"), (error: unknown) => expectedOutcome(error) === "invalid_input");
-  await assert.rejects(control.openUrl(ios, "myapp://x"), (error: unknown) => expectedOutcome(error) === "device_unavailable");
-  await assert.rejects(control.setPermission(ios, "com.acme", "photos", "allow"), (error: unknown) => {
+  await assert.rejects(simulator.launch("com.nope"), (error: unknown) => expectedOutcome(error) === "invalid_input");
+  await assert.rejects(simulator.openUrl("myapp://x"), (error: unknown) => expectedOutcome(error) === "device_unavailable");
+  await assert.rejects(simulator.setPermission("com.acme", "photos", "allow"), (error: unknown) => {
     assert.equal(expectedOutcome(error), undefined);
     assert.equal((error as Error).message, "Changing the permission failed: Something unexpected");
     return true;
   });
-  await assert.rejects(control.launch(android, "com.acme"), /Error: Activity class \{com\.acme\/\.Main\} does not exist/);
-  await assert.rejects(control.apps({ platform: "ios", deviceId: "00008110-001A2B3C4D5E801E" }), (error: unknown) => expectedOutcome(error) === "invalid_input");
-  await assert.rejects(control.setPermission(ios, "com.acme", "camera", "allow"), /iOS simulators do not support the camera permission/);
+  await assert.rejects(emulator.launch("com.acme"), /Error: Activity class \{com\.acme\/\.Main\} does not exist/);
+});
+
+test("tools validate the target and the platform's permissions before reaching a driver", async t => {
+  const drivers = createDrivers({ run: async () => "", readBinary: async () => Buffer.alloc(0), adb: async () => "adb", aapt2: async () => null });
+  assert.throws(() => drivers({ platform: "ios", deviceId: "00008110-001A2B3C4D5E801E" }), (error: unknown) => expectedOutcome(error) === "invalid_input");
+  assert.throws(() => drivers({ platform: "android", deviceId: "avd:Pixel_9" }), /running Android device serial/);
+  const server = new McpServer({ name: "app-control-test", version: "1" });
+  registerAppControlTools(server, () => ({ setPermission: async () => { throw new Error("The driver should not be called."); } }) as unknown as AppDriver);
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  t.after(async () => { await client.close(); await server.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const unsupported = await client.callTool({ name: "mobile_set_app_permission", arguments: { ...ios, bundleId: "com.acme", permission: "camera", state: "allow" } });
+  assert.equal(unsupported.isError, true);
+  assert.match(JSON.stringify(unsupported.content), /iOS simulators do not support the camera permission/);
 });
 
 test("installs require a built bundle of the platform's type", async () => {
   const directory = await mkdtemp(join(tmpdir(), "app-control-"));
   const bundle = join(directory, "Acme.app");
   await mkdir(bundle);
-  const { control, calls } = fixture((file, args) => file === "plutil" && args[0] === "-extract" ? "com.acme.shop\n" : "");
-  assert.deepEqual(await control.install(ios, `${bundle}/`), { installed: true, bundleId: "com.acme.shop" });
+  const { simulator, emulator, calls } = fixture((file, args) => file === "plutil" && args[0] === "-extract" ? "com.acme.shop\n" : "");
+  assert.deepEqual(await simulator.install(`${bundle}/`), { bundleId: "com.acme.shop" });
   assert.deepEqual(calls[0].args, ["simctl", "install", ios.deviceId, bundle]);
-  await assert.rejects(control.install(ios, "Acme.app"), (error: unknown) => expectedOutcome(error) === "invalid_input");
-  await assert.rejects(control.install(android, bundle), /absolute path of a built \.apk file/);
+  await assert.rejects(simulator.install("Acme.app"), (error: unknown) => expectedOutcome(error) === "invalid_input");
+  await assert.rejects(emulator.install(bundle), /absolute path of a built \.apk file/);
 });
 
 test("app link suggestions keep the app's own schemes and drop SDK redirects", async () => {
@@ -187,12 +222,12 @@ Receiver Resolver Table:
           Scheme: "receiver"
 `;
   assert.deepEqual(parseAndroidAppLinks(dumpsys, "com.acme"), ["acme://", "https://acme.dev/p"]);
-  const { control, calls } = fixture((file, args) => {
+  const { simulator, calls } = fixture((file, args) => {
     if (args[1] === "get_app_container") return "/tmp/Acme.app\n";
     if (file === "plutil") return JSON.stringify([{ CFBundleURLSchemes: ["acme"] }]);
     return "";
   });
-  assert.deepEqual(await control.links(ios, "com.acme.shop"), { links: ["acme://"] });
+  assert.deepEqual(await simulator.links("com.acme.shop"), ["acme://"]);
   assert.deepEqual(calls.map(call => call.args.at(-1)), ["app", "/tmp/Acme.app/Info.plist"]);
 });
 

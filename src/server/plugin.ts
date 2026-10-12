@@ -15,7 +15,7 @@ import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@model
 import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { z } from "zod";
 import { registerDeviceSettingsTools } from "./device-settings.ts";
-import { registerAppControlTools } from "./app-control.ts";
+import { registerAppControlTools } from "./app-control/tools.ts";
 import { readBezel } from "./bezel.ts";
 import { ServeEmu } from "./serve-emu.ts";
 import { registerAndroidTools } from "./android-tools.ts";

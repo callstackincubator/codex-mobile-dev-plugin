@@ -18,7 +18,8 @@ export const appTargetShape = {
 };
 
 const installedApp = z.object({ bundleId: bundleIdSchema, name: z.string() });
-export const installedAppsSchema = z.object({ apps: z.array(installedApp), foregroundBundleId: bundleIdSchema.nullable(), runningBundleIds: z.array(bundleIdSchema).default([]) });
+// runningBundleIds starts with the foreground app when it is known, then the most recently launched.
+export const installedAppsSchema = z.object({ apps: z.array(installedApp), foregroundBundleId: bundleIdSchema.nullable(), runningBundleIds: z.array(bundleIdSchema) });
 export type InstalledApp = z.infer<typeof installedApp>;
 export type InstalledApps = z.infer<typeof installedAppsSchema>;
 
@@ -28,6 +29,7 @@ export type AppPermissionEntry = z.infer<typeof permissionEntry>;
 
 export const appLinksSchema = z.object({ links: z.array(z.string().max(2048)) });
 
-const appIcon = z.object({ icon: z.string().startsWith("data:image/png;base64,").max(256 * 1024).optional(), name: z.string().max(256).optional() });
-export const appIconsSchema = z.object({ apps: z.record(z.string(), appIcon) });
-export type AppIcon = z.infer<typeof appIcon>;
+// A 64px PNG icon and, on Android, the app label that replaces the package name.
+const appDetails = z.object({ icon: z.string().startsWith("data:image/png;base64,").max(256 * 1024).optional(), name: z.string().max(256).optional() });
+export const appDetailsSchema = z.object({ apps: z.record(z.string(), appDetails) });
+export type AppDetails = z.infer<typeof appDetails>;

@@ -8,7 +8,7 @@ test("the app tools store follows the foreground app and keeps the last app afte
   const calls: string[] = [];
   store.call = async (name, args) => {
     calls.push(name);
-    if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme.shop", name: "Shop" }, { bundleId: "dev.other", name: "Other" }], foregroundBundleId: foreground };
+    if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme.shop", name: "Shop" }, { bundleId: "dev.other", name: "Other" }], foregroundBundleId: foreground, runningBundleIds: foreground ? [foreground] : [] };
     if (name === "mobile_app_permissions") return { permissions: [{ permission: "camera", state: args.bundleId === "dev.other" ? "allow" : "ask" }] };
     if (name === "mobile_stop_app") throw new Error("Stopping the app failed: busy");
     return {};
@@ -42,7 +42,7 @@ test("the app tools store merges icons and Android labels once per device", asyn
   const store = new AppToolsStore();
   const requests: unknown[] = [];
   store.call = async (name, args) => {
-    if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme", name: "com.acme" }, { bundleId: "dev.other", name: "dev.other" }], foregroundBundleId: null };
+    if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme", name: "com.acme" }, { bundleId: "dev.other", name: "dev.other" }], foregroundBundleId: null, runningBundleIds: [] };
     if (name === "mobile_app_icons") { requests.push(args.bundleIds); return { apps: { "com.acme": { name: "Acme Shop", icon: "data:image/png;base64,AAAA" } } }; }
     return {};
   };

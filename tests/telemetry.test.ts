@@ -18,7 +18,7 @@ import { registerDeviceAppsTool } from "../src/server/device-apps/tools.ts";
 import { directoryBytes } from "../src/server/storage-metrics.ts";
 import { SimulatorUnavailableError } from "../src/server/simulator-unavailable.ts";
 import { registerDeviceChoiceTools } from "../src/server/device-choice-tools.ts";
-import { AppControl, registerAppControlTools } from "../src/server/app-control.ts";
+import { createDrivers, registerAppControlTools } from "../src/server/app-control/tools.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { adapterClient } from "./agent-device-fixtures.ts";
 
@@ -807,7 +807,7 @@ test("app control reports unexpected command failures without command output and
   };
   const server = new McpServer({ name: "app-control-telemetry", version: "1" });
   instrumentMcpServer(server);
-  registerAppControlTools(server, new AppControl({ run, adb: async () => "adb", foreground: async () => null }));
+  registerAppControlTools(server, createDrivers({ run, readBinary: async () => Buffer.alloc(0), adb: async () => "adb", aapt2: async () => null }));
   const client = new Client({ name: "test", version: "1" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });

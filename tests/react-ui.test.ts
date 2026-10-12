@@ -197,7 +197,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   const appCalls: { name: string; args: Record<string, unknown> }[] = [];
   appTools.call = async (name: string, args: Record<string, unknown>) => {
     appCalls.push({ name, args });
-    if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme.shop", name: "Acme Shop" }, { bundleId: "dev.other", name: "Other" }], foregroundBundleId: "com.acme.shop" };
+    if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme.shop", name: "Acme Shop" }, { bundleId: "dev.other", name: "Other" }], foregroundBundleId: "com.acme.shop", runningBundleIds: ["com.acme.shop"] };
     if (name === "mobile_app_permissions") return { permissions: [{ permission: "location", state: null }, { permission: "photos", state: null }] };
     if (name === "mobile_set_app_permission") return { permissions: [{ permission: args.permission, state: args.state }] };
     if (name === "mobile_app_links") return { links: ["acme://"] };
