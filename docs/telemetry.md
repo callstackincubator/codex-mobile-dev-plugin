@@ -2,6 +2,25 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Since 0.1.143, `ui.memory.heap_used`, `ui.memory.heap_total` and
+`ui.memory.heap_limit` report Chromium's `performance.memory` JavaScript heap
+values in bytes. They sample at UI telemetry startup and on the existing
+30-second collection timer while the panel is visible, using the active surface,
+view, layout and device context in both development and release environments.
+Recording and comparison cards initialize their surface before startup collection.
+`ui.memory.supported` reports 1 when that API is available and 0 otherwise;
+unavailable APIs emit no heap values, and negative or non-finite values are
+discarded. Hidden panels and telemetry opt-out perform no memory reads. Teardown
+clears the existing collection timer. No new timer, Replay, profiling, DOM
+recording or native instrumentation is added.
+
+These are non-standard JavaScript heap estimates, not total renderer RSS or GPU,
+video or image memory. Chromium can share heaps across frames or omit separate
+worker heaps, so surface attributes identify the sampling context rather than
+exclusive ownership of the measured memory. Samples uploaded before a renderer
+crash can show preceding heap growth; an abrupt crash may lose the final buffered
+samples and is not itself reported by this collection.
+
 Since 0.1.140, `android.emulator.adb_reconnects` counts adb transport reconnects for emulators that stay unauthorized, with a fixed `trigger` (`boot` while waiting for an AVD, `selection` for an already running emulator). It uses the simulator surface and Android emulator context and sends no serials, AVD names or adb output. Existing Android startup diagnostics and MCP tool errors cover the boot outcome.
 
 Since 0.1.139, `ios.accessibility_bridge.restarts` counts restarts of the simulator's CoreSimulatorBridge after a describe-UI read reported no accessibility data, with a fixed `outcome` (`recovered`, `unavailable` or `failed`). Failed restarts also report a handled `simulator.accessibility_bridge` error. The existing `inspection.tool` errors, sampled MCP traces and `ui.annotations.inspection` timings cover the retried read. No device identifiers, accessibility content or command output are sent.
@@ -271,6 +290,7 @@ Agent Device telemetry is inactive while its MCP entry is disabled; the active M
 | Native resources | `native.cpu.utilization`, `native.memory.rss` and `native.process.uptime`, sampled every 30 seconds and at startup/shutdown. CPU is a ratio where 1 is one fully occupied core. The iOS mirroring addon shares the Node process, so its resource measurements overlap Node's rather than representing another process. |
 | Native operations | Bounded timing windows for connection, physical iOS input acknowledgement and video packet processing, iOS log processing, Android CPU sampling, and FPS read/processing. Filter by `component`, `runtime_platform` and `surface` to identify the responsible helper. Baguette currently records resources and crashes. |
 | Node responsiveness | Automatic event-loop delay, utilization and process uptime. |
+| UI JavaScript heap | `ui.memory.heap_used`, `ui.memory.heap_total` and `ui.memory.heap_limit` in bytes at startup and every 30 seconds while visible, when Chromium's `performance.memory` is available. `ui.memory.supported` distinguishes unsupported contexts. These estimates do not measure total renderer or GPU memory. |
 | UI responsiveness | Browser tracing captures available web vitals. Custom metrics record visible animation-frame intervals, intervals over 50 ms, Event Timing interaction durations, long tasks and long animation frames where supported. |
 | Product surfaces | Metrics carry `surface=simulator`, `logs`, `performance`, `recording` or `comparison`, plus view, visible device layout and monitoring state. Log filter time, buffered/filtered rows, performance batch processing, canvas draw time and time to first video frame help explain slow surfaces. |
 | Frame capture | `ui.screenshot.capture` measures synchronous canvas PNG encoding and base64 extraction in milliseconds for Select captures and physical iOS screenshots. Screenshot tools retain sampled MCP traces and report handled capture, attachment, and clipboard failures without image content. |
