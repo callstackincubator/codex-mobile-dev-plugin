@@ -30,14 +30,14 @@ const payloadSchema = z.record(z.string(), z.unknown());
 // A collapsible row; the App tab keeps at most one open so the popover stays short.
 function Disclosure({ section, state, store, icon: Icon, title, summary, children }: { section: AppSection; state: AppToolsState; store: AppToolsStore; icon: LucideIcon; title: string; summary?: React.ReactNode; children: React.ReactNode }) {
   const open = state.section === section;
-  return <Collapsible open={open} onOpenChange={value => store.setSection(value ? section : null)} className="border-t pt-2">
+  return <Collapsible open={open} onOpenChange={value => store.setSection(value ? section : null)} className="border-t py-1">
     <CollapsibleTrigger className="-mx-2 flex h-8 w-[calc(100%+1rem)] items-center gap-2 rounded-md px-2 text-left outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50">
       <Icon className="size-4 text-muted-foreground" />
       <span className="flex-1 font-medium">{title}</span>
       {!open && summary && <span className="truncate text-xs text-muted-foreground">{summary}</span>}
       <ChevronDownIcon className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
     </CollapsibleTrigger>
-    <CollapsibleContent className="pb-1 pt-2">{children}</CollapsibleContent>
+    <CollapsibleContent className="pb-2 pt-1">{children}</CollapsibleContent>
   </Collapsible>;
 }
 
