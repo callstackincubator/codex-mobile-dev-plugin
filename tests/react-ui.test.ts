@@ -213,10 +213,16 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await act(async () => { (toolsPopover.querySelector('[aria-label="Relaunch Acme Shop"]') as HTMLButtonElement).click(); });
   assert.deepEqual(appCalls.find(call => call.name === "mobile_launch_app")?.args, { platform: "ios", deviceId: "iphone", bundleId: "com.acme.shop" });
   assert.ok(toolsPopover.textContent?.includes("Relaunched Acme Shop."));
+  const permissionsToggle = [...toolsPopover.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.startsWith("Permissions"))!;
+  assert.equal(toolsPopover.querySelector('[aria-labelledby$="-photos"]'), null, "permissions start collapsed");
+  await act(async () => { permissionsToggle.click(); });
   const denyPhotos = [...toolsPopover.querySelectorAll<HTMLButtonElement>('[aria-labelledby$="-photos"] button')].find(button => button.textContent === "Deny")!;
   await act(async () => { denyPhotos.click(); });
   assert.deepEqual(appCalls.at(-1), { name: "mobile_set_app_permission", args: { platform: "ios", deviceId: "iphone", bundleId: "com.acme.shop", permission: "photos", state: "deny" } });
   assert.equal(denyPhotos.getAttribute("data-state"), "on", "iOS rows keep the state applied from the panel");
+  assert.equal(appTools.getSnapshot().section, "permissions", "the open section is remembered");
+  await act(async () => { permissionsToggle.click(); });
+  assert.ok(permissionsToggle.textContent?.includes("1 denied"), "the collapsed row summarizes applied choices");
   const urlInput = toolsPopover.querySelector('[aria-label="URL to open"]') as HTMLInputElement;
   await act(async () => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!.call(urlInput, "myapp://checkout"); urlInput.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
   await act(async () => { (urlInput.form as HTMLFormElement).requestSubmit(); });
