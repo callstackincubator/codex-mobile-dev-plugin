@@ -199,7 +199,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     appCalls.push({ name, args });
     if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme.shop", name: "Acme Shop" }, { bundleId: "dev.other", name: "Other" }], foregroundBundleId: "com.acme.shop", runningBundleIds: ["com.acme.shop"] };
     if (name === "mobile_app_permissions") return { permissions: [{ permission: "location", state: null }, { permission: "photos", state: null }] };
-    if (name === "mobile_set_app_permission") return { permissions: [{ permission: args.permission, state: args.state }] };
+    if (name === "mobile_set_app_permission") return { permissions: ["location", "photos"].map(permission => ({ permission, state: permission === args.permission ? args.state : null })) };
     if (name === "mobile_app_links") return { links: ["acme://"] };
     if (name === "mobile_app_icons") return { apps: { "com.acme.shop": { icon: "data:image/png;base64,iVBORw0KGgo=" } } };
     return {};

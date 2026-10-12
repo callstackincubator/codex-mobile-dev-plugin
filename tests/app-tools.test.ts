@@ -24,11 +24,11 @@ test("the app tools store follows the foreground app and keeps the last app afte
   assert.equal(store.getSnapshot().bundleId, "dev.other", "without a foreground app the panel keeps the last selection");
   await store.stop();
   assert.equal(store.getSnapshot().error, "Stopping the app failed: busy");
-  assert.equal(store.getSnapshot().busy, "");
+  assert.equal(store.getSnapshot().busy, null);
   const beforeOpen = calls.length;
   await store.open("com.acme.shop");
   assert.ok(calls.slice(beforeOpen).includes("mobile_launch_app"), "picking an app launches it");
-  assert.equal(store.getSnapshot().foregroundBundleId, "com.acme.shop");
+  assert.equal(store.getSnapshot().runningBundleIds[0], "com.acme.shop", "a launched app is marked running");
   store.configure("android", "emulator-5556", false);
   assert.deepEqual([store.getSnapshot().bundleId, store.getSnapshot().apps], [null, []]);
   store.configure("android", "emulator-5556", true);
@@ -49,7 +49,7 @@ test("the app tools store merges icons and Android labels once per device", asyn
   store.configure("android", "emulator-5554", false);
   await store.load();
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(store.getSnapshot().icons, { "com.acme": "data:image/png;base64,AAAA" });
+  assert.deepEqual(store.getSnapshot().apps.map(app => app.icon), ["data:image/png;base64,AAAA", undefined]);
   assert.deepEqual(store.getSnapshot().apps.map(app => app.name), ["Acme Shop", "dev.other"]);
   await store.load();
   await new Promise(resolve => setImmediate(resolve));

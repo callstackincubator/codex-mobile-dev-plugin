@@ -1,68 +1,81 @@
+import { z } from "zod";
 import { appDetailsSchema, appLinksSchema, appPermissionsSchema, installedAppsSchema, platformPermissions } from "../shared/app-control.ts";
-import type { AppPermission, AppPermissionEntry, InstalledApp, PermissionState } from "../shared/app-control.ts";
+import type { AppDetails, AppPermission, AppPermissionEntry, InstalledApp, PermissionState } from "../shared/app-control.ts";
 import { countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 
 export type AppToolAction = "list" | "icons" | "launch" | "stop" | "open_url" | "permission" | "push";
+export type AppEntry = InstalledApp & { icon?: string };
 export type AppToolsState = {
   platform: "ios" | "android";
   deviceId: string;
   disabled: boolean;
   loading: boolean;
-  apps: InstalledApp[];
-  icons: Record<string, string>;
-  foregroundBundleId: string | null;
+  apps: AppEntry[];
   runningBundleIds: string[];
   bundleId: string | null;
-  permissions: AppPermissionEntry[];
-  permissionsReady: boolean;
+  // Null until the first app's permissions load; later switches keep the previous rows until the new ones arrive.
+  permissions: AppPermissionEntry[] | null;
   links: string[];
-  busy: string;
+  busy: AppToolAction | null;
   error: string;
   status: string;
   recentUrls: string[];
 };
 
-const recentKey = "mobile-dev:recent-urls:v1";
-const lastAppKey = "mobile-dev:last-app:v1";
-function lastApps(): Record<string, string> {
-  try {
-    const value: unknown = JSON.parse(globalThis.localStorage?.getItem(lastAppKey) ?? "{}");
-    return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, string> : {};
-  } catch { return {}; }
-}
-function storedUrls(): string[] {
-  try {
-    const value: unknown = JSON.parse(globalThis.localStorage?.getItem(recentKey) ?? "[]");
-    return Array.isArray(value) ? value.filter((url): url is string => typeof url === "string").slice(0, 5) : [];
-  } catch { return []; }
+// localStorage can be missing or blocked in sandboxed hosts, so stored values are best effort.
+function storedValue<T>(key: string, schema: z.ZodType<T>, fallback: T) {
+  return {
+    read(): T {
+      try { return schema.safeParse(JSON.parse(globalThis.localStorage?.getItem(key) ?? "null")).data ?? fallback; }
+      catch { return fallback; }
+    },
+    write(value: T) {
+      try { globalThis.localStorage?.setItem(key, JSON.stringify(value)); }
+      catch { /* Keep the in-memory value. */ }
+    },
+  };
 }
 
+const recentUrls = storedValue("mobile-dev:recent-urls:v1", z.array(z.string()).max(5), []);
+const lastPicked = storedValue("mobile-dev:last-app:v1", z.record(z.string(), z.string()), {});
+const deviceDefaults = { loading: false, apps: [], runningBundleIds: [], bundleId: null, permissions: null, links: [], busy: null, error: "", status: "" } satisfies Partial<AppToolsState>;
+
 export class AppToolsStore {
-  private state: AppToolsState = { platform: "ios", deviceId: "", disabled: true, loading: false, apps: [], icons: {}, foregroundBundleId: null, runningBundleIds: [], bundleId: null, permissions: [], permissionsReady: false, links: [], busy: "", error: "", status: "", recentUrls: storedUrls() };
+  private state: AppToolsState = { platform: "ios", deviceId: "", disabled: true, ...deviceDefaults, recentUrls: recentUrls.read() };
   private listeners = new Set<() => void>();
   private revision = 0;
-  // simctl cannot read privacy decisions, so iOS rows show what this panel last applied.
+  // simctl cannot read privacy decisions, so iOS rows show what this panel last applied, keyed by app and permission.
   private applied = new Map<string, PermissionState>();
-  // Icons are fetched once per app and device; the server caches extracted icons across panels.
-  private iconRequests = new Set<string>();
-  private labels = new Map<string, string>();
+  // An entry exists once requested; the server caches extracted icons across panels.
+  private details = new Map<string, AppDetails>();
   call?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.state;
   private update(patch: Partial<AppToolsState>) { this.state = { ...this.state, ...patch }; for (const listener of this.listeners) listener(); }
 
   configure(platform: "ios" | "android", deviceId: string, disabled: boolean) {
-    if (deviceId !== this.state.deviceId || platform !== this.state.platform) {
-      this.revision++;
-      this.applied.clear();
-      this.iconRequests.clear();
-      this.labels.clear();
-      this.update({ platform, deviceId, disabled, loading: false, apps: [], icons: {}, foregroundBundleId: null, runningBundleIds: [], bundleId: null, permissions: [], permissionsReady: false, links: [], busy: "", error: "", status: "" });
-    } else if (disabled !== this.state.disabled) this.update({ disabled });
+    if (deviceId === this.state.deviceId && platform === this.state.platform) {
+      if (disabled !== this.state.disabled) this.update({ disabled });
+      return;
+    }
+    this.revision++;
+    this.applied.clear();
+    this.details.clear();
+    this.update({ platform, deviceId, disabled, ...deviceDefaults });
   }
 
-  get app(): InstalledApp | undefined { return this.state.apps.find(app => app.bundleId === this.state.bundleId); }
-  private target() { return { platform: this.state.platform, deviceId: this.state.deviceId }; }
+  get app(): AppEntry | undefined { return this.state.apps.find(app => app.bundleId === this.state.bundleId); }
+
+  // Async results apply only while the device, and the app when given, are still the ones that started the work.
+  private current(bundleId?: string) {
+    const revision = this.revision;
+    return () => revision === this.revision && (bundleId === undefined || bundleId === this.state.bundleId);
+  }
+
+  private tool(name: string, args: Record<string, unknown> = {}) {
+    if (!this.call) return Promise.reject(new Error("This host cannot call the plugin's app tools."));
+    return this.call(name, { platform: this.state.platform, deviceId: this.state.deviceId, ...args });
+  }
 
   // Results that finish after a surface or device change are not attributed to the new context.
   private async measure<T>(action: AppToolAction, work: () => Promise<T>): Promise<T> {
@@ -73,41 +86,31 @@ export class AppToolsStore {
     finally { if (getUiTelemetryAttributes() === context) recordUiTiming(`ui.app_tools.${action}`, performance.now() - startedAt); }
   }
 
-  // Opening the panel follows the foreground app; otherwise keep the last app, which may have crashed.
   async load() {
     if (!this.call || this.state.disabled || this.state.loading) return;
-    const revision = this.revision;
-    const call = this.call;
+    const current = this.current();
     this.update({ loading: true, error: "" });
     try {
-      const data = installedAppsSchema.parse(await this.measure("list", () => call("mobile_list_apps", this.target())));
-      if (revision !== this.revision) return;
-      const installed = (candidate: string | null | undefined) => candidate && data.apps.some(app => app.bundleId === candidate) ? candidate : null;
-      // Foreground detection can fail, so fall back to the newest running app, then the app last picked on this device.
-      const bundleId = data.foregroundBundleId ?? installed(data.runningBundleIds[0]) ?? installed(this.state.bundleId) ?? installed(lastApps()[this.state.deviceId]) ?? data.apps[0]?.bundleId ?? null;
-      this.update({ apps: this.labeled(data.apps), foregroundBundleId: data.foregroundBundleId, runningBundleIds: data.runningBundleIds, ...this.switchTo(bundleId) });
-      void this.loadPermissions();
-      void this.loadLinks();
-      void this.loadIcons();
+      const data = installedAppsSchema.parse(await this.measure("list", () => this.tool("mobile_list_apps")));
+      if (!current()) return;
+      const installed = new Set(data.apps.map(app => app.bundleId));
+      // The foreground or newest running app, then the current selection, then the app last picked on this device.
+      const preferred = [data.runningBundleIds[0], this.state.bundleId, lastPicked.read()[this.state.deviceId]].find(bundleId => bundleId && installed.has(bundleId));
+      this.update({ apps: this.withDetails(data.apps), runningBundleIds: data.runningBundleIds, ...this.switchTo(preferred ?? data.apps[0]?.bundleId ?? null) });
+      void this.loadSelected();
+      void this.loadDetails();
     } catch (error) {
-      if (revision === this.revision) this.update({ error: message(error) });
+      if (current()) this.update({ error: message(error) });
     } finally {
-      if (revision === this.revision) this.update({ loading: false });
+      if (current()) this.update({ loading: false });
     }
   }
 
   select(bundleId: string) {
     if (bundleId === this.state.bundleId) return;
-    try { globalThis.localStorage?.setItem(lastAppKey, JSON.stringify({ ...lastApps(), [this.state.deviceId]: bundleId })); } catch { /* Storage can be unavailable in sandboxed hosts. */ }
+    lastPicked.write({ ...lastPicked.read(), [this.state.deviceId]: bundleId });
     this.update({ ...this.switchTo(bundleId), error: "", status: "" });
-    void this.loadPermissions();
-    void this.loadLinks();
-  }
-
-  // Keep the previous app's rows and suggestions until the new app's arrive, so the popover does not collapse and regrow.
-  private switchTo(bundleId: string | null): Partial<AppToolsState> {
-    if (bundleId === this.state.bundleId) return {};
-    return { bundleId, permissions: this.state.permissions.map(entry => ({ ...entry, state: this.applied.get(`${bundleId}:${entry.permission}`) ?? null })) };
+    void this.loadSelected();
   }
 
   // Picking an app in the panel means "show me this app", so it launches right away.
@@ -116,124 +119,106 @@ export class AppToolsStore {
     return this.launch();
   }
 
-  private states(entries: AppPermissionEntry[]): AppPermissionEntry[] {
-    return entries.map(entry => ({ ...entry, state: entry.state ?? this.applied.get(`${this.state.bundleId}:${entry.permission}`) ?? null }));
+  // Keep the previous rows and suggestions until the new app's arrive, so the popover keeps its height.
+  private switchTo(bundleId: string | null): Partial<AppToolsState> {
+    if (bundleId === this.state.bundleId) return {};
+    return { bundleId, permissions: this.state.permissions && this.withApplied(this.state.permissions.map(entry => ({ ...entry, state: null })), bundleId) };
   }
 
-  // Android lists packages; app labels arrive with the icons.
-  private labeled(apps: InstalledApp[]) {
-    return apps.map(app => ({ ...app, name: app.name === app.bundleId ? this.labels.get(app.bundleId) ?? app.name : app.name }));
+  private withApplied(entries: AppPermissionEntry[], bundleId = this.state.bundleId): AppPermissionEntry[] {
+    return entries.map(entry => ({ ...entry, state: entry.state ?? this.applied.get(`${bundleId}:${entry.permission}`) ?? null }));
   }
 
-  private async loadIcons() {
-    const bundleIds = this.state.apps.map(app => app.bundleId).filter(bundleId => !this.iconRequests.has(bundleId));
-    if (!this.call || bundleIds.length === 0) return;
-    for (const bundleId of bundleIds) this.iconRequests.add(bundleId);
-    const revision = this.revision;
-    const call = this.call;
-    try {
-      const data = appDetailsSchema.parse(await this.measure("icons", () => call("mobile_app_icons", { ...this.target(), bundleIds })));
-      if (revision !== this.revision) return;
-      const icons = { ...this.state.icons };
-      for (const [bundleId, entry] of Object.entries(data.apps)) {
-        if (entry.icon) icons[bundleId] = entry.icon;
-        if (entry.name) this.labels.set(bundleId, entry.name);
-      }
-      this.update({ icons, apps: this.labeled(this.state.apps) });
-    } catch {
-      // Initials remain; allow another attempt the next time the panel opens.
-      if (revision === this.revision) for (const bundleId of bundleIds) this.iconRequests.delete(bundleId);
-    }
-  }
+  private withDetails(apps: InstalledApp[]): AppEntry[] { return apps.map(app => ({ ...app, ...this.details.get(app.bundleId) })); }
 
-  // Suggestions are optional, so a failed read leaves the recent URLs on their own.
-  private async loadLinks() {
+  private async loadSelected() {
     const bundleId = this.state.bundleId;
-    if (!this.call || !bundleId) return;
-    const revision = this.revision;
+    if (!bundleId) return;
+    const current = this.current(bundleId);
+    const [permissions, links] = await Promise.allSettled([
+      this.tool("mobile_app_permissions", { bundleId }).then(data => appPermissionsSchema.parse(data).permissions),
+      this.tool("mobile_app_links", { bundleId }).then(data => appLinksSchema.parse(data).links),
+    ]);
+    if (!current()) return;
+    // Suggestions are optional, so only a permission failure is shown.
+    this.update({
+      links: links.status === "fulfilled" ? links.value : [],
+      ...(permissions.status === "fulfilled" ? { permissions: this.withApplied(permissions.value) } : { error: message(permissions.reason) }),
+    });
+  }
+
+  private async loadDetails() {
+    const bundleIds = this.state.apps.map(app => app.bundleId).filter(bundleId => !this.details.has(bundleId));
+    if (bundleIds.length === 0) return;
+    for (const bundleId of bundleIds) this.details.set(bundleId, {});
+    const current = this.current();
     try {
-      const data = appLinksSchema.parse(await this.call("mobile_app_links", { ...this.target(), bundleId }));
-      if (revision === this.revision && bundleId === this.state.bundleId) this.update({ links: data.links });
+      const data = appDetailsSchema.parse(await this.measure("icons", () => this.tool("mobile_app_icons", { bundleIds })));
+      if (!current()) return;
+      for (const [bundleId, details] of Object.entries(data.apps)) this.details.set(bundleId, details);
+      this.update({ apps: this.withDetails(this.state.apps) });
     } catch {
-      if (revision === this.revision && bundleId === this.state.bundleId) this.update({ links: [] });
+      // Initials remain; the next panel open tries again.
+      if (current()) for (const bundleId of bundleIds) this.details.delete(bundleId);
     }
   }
 
-  private async loadPermissions() {
-    const bundleId = this.state.bundleId;
-    if (!this.call || !bundleId) return;
-    const revision = this.revision;
+  private async run(action: AppToolAction, describe: (app: AppEntry) => string, work: (app: AppEntry, current: () => boolean) => Promise<void>) {
+    const app = this.app;
+    if (!app || !this.call || this.state.disabled || this.state.busy) return;
+    const current = this.current();
+    this.update({ busy: action, error: "", status: "" });
     try {
-      const data = appPermissionsSchema.parse(await this.call("mobile_app_permissions", { ...this.target(), bundleId }));
-      if (revision === this.revision && bundleId === this.state.bundleId) this.update({ permissions: this.states(data.permissions), permissionsReady: true });
+      await this.measure(action, () => work(app, current));
+      if (current()) this.update({ status: describe(app) });
     } catch (error) {
-      if (revision === this.revision && bundleId === this.state.bundleId) this.update({ error: message(error) });
-    }
-  }
-
-  private async run(action: AppToolAction, key: string, status: string, work: (call: NonNullable<AppToolsStore["call"]>, current: () => boolean) => Promise<void>) {
-    if (!this.call || this.state.disabled || this.state.busy) return;
-    const revision = this.revision;
-    const call = this.call;
-    this.update({ busy: key, error: "", status: "" });
-    try {
-      await this.measure(action, () => work(call, () => revision === this.revision));
-      if (revision === this.revision) this.update({ status });
-    } catch (error) {
-      if (revision === this.revision) this.update({ error: message(error) });
+      if (current()) this.update({ error: message(error) });
     } finally {
-      if (revision === this.revision) this.update({ busy: "" });
+      if (current()) this.update({ busy: null });
     }
+  }
+
+  private markRunning(bundleId: string, running: boolean) {
+    const others = this.state.runningBundleIds.filter(id => id !== bundleId);
+    this.update({ runningBundleIds: running ? [bundleId, ...others] : others });
   }
 
   launch() {
-    const app = this.app;
-    if (!app) return Promise.resolve();
-    return this.run("launch", "launch", `Relaunched ${app.name}.`, async (call, current) => {
-      await call("mobile_launch_app", { ...this.target(), bundleId: app.bundleId });
-      if (current()) this.update({ foregroundBundleId: app.bundleId, runningBundleIds: [app.bundleId, ...this.state.runningBundleIds.filter(id => id !== app.bundleId)] });
+    return this.run("launch", app => `Relaunched ${app.name}.`, async (app, current) => {
+      await this.tool("mobile_launch_app", { bundleId: app.bundleId });
+      if (current()) this.markRunning(app.bundleId, true);
     });
   }
 
   stop() {
-    const app = this.app;
-    if (!app) return Promise.resolve();
-    return this.run("stop", "stop", `Stopped ${app.name}.`, async (call, current) => {
-      await call("mobile_stop_app", { ...this.target(), bundleId: app.bundleId });
-      if (current()) this.update({ foregroundBundleId: this.state.foregroundBundleId === app.bundleId ? null : this.state.foregroundBundleId, runningBundleIds: this.state.runningBundleIds.filter(id => id !== app.bundleId) });
+    return this.run("stop", app => `Stopped ${app.name}.`, async (app, current) => {
+      await this.tool("mobile_stop_app", { bundleId: app.bundleId });
+      if (current()) this.markRunning(app.bundleId, false);
     });
   }
 
   openUrl(input: string) {
     const url = input.trim();
     if (!url) return Promise.resolve();
-    return this.run("open_url", "open_url", "Opened URL.", async call => {
-      await call("mobile_open_url", { ...this.target(), url });
-      const recentUrls = [url, ...this.state.recentUrls.filter(entry => entry !== url)].slice(0, 5);
-      try { globalThis.localStorage?.setItem(recentKey, JSON.stringify(recentUrls)); } catch { /* Storage can be unavailable in sandboxed hosts. */ }
-      this.update({ recentUrls });
+    return this.run("open_url", () => "Opened URL.", async () => {
+      await this.tool("mobile_open_url", { url });
+      const urls = [url, ...this.state.recentUrls.filter(entry => entry !== url)].slice(0, 5);
+      recentUrls.write(urls);
+      this.update({ recentUrls: urls });
     });
   }
 
   setPermission(permission: AppPermission | "all", state: PermissionState) {
-    const app = this.app;
-    if (!app) return Promise.resolve();
-    const label = permission === "all" ? "Reset all permissions." : `Updated ${permission} permission.`;
-    return this.run("permission", `permission:${permission}`, label, async (call, current) => {
-      const data = appPermissionsSchema.parse(await call("mobile_set_app_permission", { ...this.target(), bundleId: app.bundleId, permission, state }));
-      const changed = permission === "all" ? platformPermissions[this.state.platform] : [permission];
-      for (const entry of changed) this.applied.set(`${app.bundleId}:${entry}`, state);
-      if (!current() || app.bundleId !== this.state.bundleId) return;
-      const updated = new Map(this.states(data.permissions).map(entry => [entry.permission, entry]));
-      this.update({ permissions: this.state.permissions.map(entry => updated.get(entry.permission) ?? (changed.includes(entry.permission) ? { ...entry, state } : entry)) });
+    return this.run("permission", () => permission === "all" ? "Reset all permissions." : `Updated ${permission} permission.`, async (app, current) => {
+      const { permissions } = appPermissionsSchema.parse(await this.tool("mobile_set_app_permission", { bundleId: app.bundleId, permission, state }));
+      for (const entry of permission === "all" ? platformPermissions[this.state.platform] : [permission]) this.applied.set(`${app.bundleId}:${entry}`, state);
+      if (current() && app.bundleId === this.state.bundleId) this.update({ permissions: this.withApplied(permissions) });
     });
   }
 
   push(payload: Record<string, unknown>) {
-    const app = this.app;
-    if (!app) return Promise.resolve();
-    return this.run("push", "push", `Sent notification to ${app.name}.`, async call => {
-      await call("mobile_send_push", { ...this.target(), bundleId: app.bundleId, payload });
+    return this.run("push", app => `Sent notification to ${app.name}.`, async app => {
+      await this.tool("mobile_send_push", { bundleId: app.bundleId, payload });
     });
   }
 
