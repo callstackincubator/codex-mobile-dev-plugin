@@ -55,9 +55,9 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     await rm(directory, { recursive: true, force: true });
   });
   const output = resolve(directory, "workspace.mjs");
-  await build({ stdin: { contents: 'export { Workspace } from "./src/ui/components/workspace.tsx"; export { getDeviceSettings } from "./src/ui/device-settings.ts"; export { getDevicePicker } from "./src/ui/device-picker.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
+  await build({ stdin: { contents: 'export { Workspace } from "./src/ui/components/workspace.tsx"; export { getDeviceSettings } from "./src/ui/device-settings.ts"; export { getDevicePicker } from "./src/ui/device-picker.ts"; export { getAppTools } from "./src/ui/app-tools.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
     external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels"] });
-  const { Workspace, getDeviceSettings, getDevicePicker } = await import(pathToFileURL(output).href);
+  const { Workspace, getDeviceSettings, getDevicePicker, getAppTools } = await import(pathToFileURL(output).href);
   const { act, createElement, Profiler } = await import("react");
   const { createRoot } = await import("react-dom/client");
   let sentLog: StackedLog | undefined;
@@ -193,6 +193,44 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(iosSettings.getSnapshot().frame, false);
   await act(async () => { settingsButton.click(); });
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
+  const appTools = getAppTools(dom.window.document.querySelector('#ios-panel [data-element="settings"]'));
+  const appCalls: { name: string; args: Record<string, unknown> }[] = [];
+  appTools.call = async (name: string, args: Record<string, unknown>) => {
+    appCalls.push({ name, args });
+    if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme.shop", name: "Acme Shop" }, { bundleId: "dev.other", name: "Other" }], foregroundBundleId: "com.acme.shop" };
+    if (name === "mobile_app_permissions") return { permissions: [{ permission: "location", state: null }, { permission: "photos", state: null }] };
+    if (name === "mobile_set_app_permission") return { permissions: [{ permission: args.permission, state: args.state }] };
+    if (name === "mobile_app_links") return { links: ["acme://"] };
+    if (name === "mobile_app_icons") return { apps: { "com.acme.shop": { icon: "data:image/png;base64,iVBORw0KGgo=" } } };
+    return {};
+  };
+  await act(async () => { appTools.configure("ios", "iphone", false); });
+  await act(async () => { settingsButton.click(); });
+  const toolsPopover = dom.window.document.querySelector('[data-slot="popover-content"][aria-label="Device settings"]')!;
+  assert.ok(toolsPopover.textContent?.includes("Acme Shop"), "the App tab opens on the foreground app");
+  assert.equal(toolsPopover.querySelector('[aria-label="App"] img')?.getAttribute("src"), "data:image/png;base64,iVBORw0KGgo=", "the picker shows the app icon");
+  assert.equal(toolsPopover.textContent?.includes("Increase contrast"), false);
+  await act(async () => { (toolsPopover.querySelector('[aria-label="Relaunch Acme Shop"]') as HTMLButtonElement).click(); });
+  assert.deepEqual(appCalls.find(call => call.name === "mobile_launch_app")?.args, { platform: "ios", deviceId: "iphone", bundleId: "com.acme.shop" });
+  assert.ok(toolsPopover.textContent?.includes("Relaunched Acme Shop."));
+  const denyPhotos = [...toolsPopover.querySelectorAll<HTMLButtonElement>('[aria-labelledby$="-photos"] button')].find(button => button.textContent === "Deny")!;
+  await act(async () => { denyPhotos.click(); });
+  assert.deepEqual(appCalls.at(-1), { name: "mobile_set_app_permission", args: { platform: "ios", deviceId: "iphone", bundleId: "com.acme.shop", permission: "photos", state: "deny" } });
+  assert.equal(denyPhotos.getAttribute("data-state"), "on", "iOS rows keep the state applied from the panel");
+  const urlInput = toolsPopover.querySelector('[aria-label="URL to open"]') as HTMLInputElement;
+  await act(async () => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!.call(urlInput, "myapp://checkout"); urlInput.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
+  await act(async () => { (urlInput.form as HTMLFormElement).requestSubmit(); });
+  assert.deepEqual(appCalls.at(-1), { name: "mobile_open_url", args: { platform: "ios", deviceId: "iphone", url: "myapp://checkout" } });
+  assert.ok(toolsPopover.querySelector('[title="Open myapp://checkout"]'), "opened URLs become recent shortcuts");
+  assert.equal(urlInput.placeholder, "acme://");
+  await act(async () => { (toolsPopover.querySelector('[title="Start a URL with acme://"]') as HTMLButtonElement).click(); });
+  assert.equal(urlInput.value, "acme://", "declared schemes fill the field without opening");
+  assert.equal(appCalls.at(-1)?.name, "mobile_open_url");
+  assert.equal(appCalls.filter(call => call.name === "mobile_open_url").length, 1);
+  const deviceTab = [...toolsPopover.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(tab => tab.textContent === "Device")!;
+  await act(async () => { deviceTab.click(); });
+  assert.ok(toolsPopover.textContent?.includes("Increase contrast"));
+  await act(async () => { settingsButton.click(); });
   await selectTool("logs");
   const errorMessage = '<script>alert("log")</script>\nCannot read property id of undefined';
   const embeddedStack = "    at recordLike (http://localhost:8081/recordLike.bundle:21:38)\n    at anonymous (App.tsx:268:50)";

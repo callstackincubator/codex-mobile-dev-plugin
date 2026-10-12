@@ -2,12 +2,14 @@ import { useEffect, useId, useState, useSyncExternalStore } from "react";
 import { ChevronDownIcon, Settings2Icon } from "lucide-react";
 import { contentSizes } from "../../shared/device-settings";
 import { bindDeviceSettings, DeviceSettingsStore } from "../device-settings";
+import { AppToolsStore, bindAppTools } from "../app-tools";
+import { AppTools } from "./app-tools";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Switch } from "./ui/switch";
-import { Tabs, TabsList, TabsTrigger } from "./ui/base-tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/base-tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
 
 const textSizeLabels = ["Extra small", "Small", "Medium", "Large", "Extra large", "2× large", "3× large", "Accessibility medium", "Accessibility large", "Accessibility extra large", "Accessibility 2× large", "Accessibility 3× large"];
@@ -32,8 +34,12 @@ function SettingsSelect({ id, value, items, disabled, onChange }: { id: string; 
 
 export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
   const [store] = useState(() => new DeviceSettingsStore());
+  const [appTools] = useState(() => new AppToolsStore());
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const appState = useSyncExternalStore(appTools.subscribe, appTools.getSnapshot);
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"app" | "device">("app");
+  const activeTab = appState.disabled ? "device" : tab;
   const [locationOpen, setLocationOpen] = useState(false);
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
@@ -47,15 +53,20 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
   useEffect(() => { if (state.disabled) setOpen(false); }, [state.disabled]);
   useEffect(() => { setOpen(false); setLocationOpen(false); }, [state.deviceId]);
   const preset = settings?.location ? locationPresets.find(entry => entry.latitude === settings.location!.latitude && entry.longitude === settings.location!.longitude)?.value ?? "custom" : "custom";
-  return <div data-element="settings" className="ml-auto" ref={element => { if (element) bindDeviceSettings(element, store); }}>
+  return <div data-element="settings" className="ml-auto" ref={element => { if (element) { bindDeviceSettings(element, store); bindAppTools(element, appTools); } }}>
     <Popover open={open} onOpenChange={value => {
       if (!value) { setOpen(false); return; }
+      void appTools.load();
       const deviceId = store.getSnapshot().deviceId;
       if (store.getSnapshot().settings) { setOpen(true); void store.load(); }
       else void store.load().then(() => { if (store.getSnapshot().deviceId === deviceId && !store.getSnapshot().disabled) setOpen(true); });
     }}>
       <PopoverTrigger asChild><Button variant="ghost" size="icon" disabled={state.disabled} aria-label={`${platform === "ios" ? "iOS" : "Android"} device settings`} title="Device settings"><Settings2Icon /></Button></PopoverTrigger>
       <PopoverContent side="top" align="end" className="max-h-(--radix-popover-content-available-height) w-[360px] max-w-[calc(100vw-16px)] space-y-4 overflow-y-auto p-4 text-sm" aria-label="Device settings" onInteractOutside={event => { if (event.target instanceof Element && event.target.closest('[data-slot="select-content"]')) event.preventDefault(); }}>
+        <Tabs value={activeTab} onValueChange={value => { setTab(value as "app" | "device"); if (value === "app") void appTools.load(); }} className="gap-4">
+          <TabsList className="grid w-full grid-cols-2"><TabsTrigger value="app" disabled={appState.disabled}>App</TabsTrigger><TabsTrigger value="device">Device</TabsTrigger></TabsList>
+          <TabsContent value="app"><AppTools store={appTools} /></TabsContent>
+          <TabsContent value="device" className="space-y-4">
         {settings && <fieldset disabled={disabled} className="space-y-4">
           {settings.appearance !== undefined && <div className="flex items-center justify-between gap-3"><span id={`${id}-appearance`}>Appearance</span><Tabs value={settings.appearance} onValueChange={value => { if (value) void store.change({ setting: "appearance", value: value as "light" | "dark" | "auto" }); }}>
             <TabsList aria-labelledby={`${id}-appearance`}><TabsTrigger value="light" disabled={disabled}>Light</TabsTrigger><TabsTrigger value="dark" disabled={disabled}>Dark</TabsTrigger>{platform === "android" && <TabsTrigger value="auto" disabled={disabled}>Auto</TabsTrigger>}</TabsList>
@@ -74,6 +85,8 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
         </fieldset>}
         <div className="flex items-center justify-between border-t pt-3"><label htmlFor={`${id}-frame`}>Show device frame</label><Switch id={`${id}-frame`} checked={state.frame} onCheckedChange={value => store.toggleFrame(value)} /></div>
         {state.error && <p className="whitespace-pre-wrap text-xs text-destructive" role="alert">{state.error}</p>}
+          </TabsContent>
+        </Tabs>
       </PopoverContent>
     </Popover>
   </div>;

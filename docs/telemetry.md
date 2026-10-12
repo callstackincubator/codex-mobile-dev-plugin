@@ -174,6 +174,12 @@ unrequested permission, or a stopped device count only through
 `server.error.outcome`. Extracted app icons and Android labels stay in the server's
 memory cache and are returned only to the panel.
 
+The device popover's App tab records `ui.app_tools.list`, `.icons`, `.launch`,
+`.stop`, `.open_url`, `.permission`, and `.push` round trips in milliseconds with
+bounded aggregate windows, and counts `ui.app_tools.failure`. Results that finish
+after a surface or device change are not recorded. Recent URLs and the last picked
+app stay in the panel's local storage and are never sent.
+
 Saved chart cards use the `recording` surface and view. Existing readiness,
 interaction and frame-pacing coverage is preserved. `ui.recording.process` and
 `ui.recording.derive` measure result validation and chart/summary processing;

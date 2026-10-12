@@ -2,6 +2,7 @@ import { androidNinePatchSkin } from "./android-nine-patch.ts";
 import { androidFrameGeometry, androidChromeScale } from "./android-frame-geometry.ts";
 import { getDevicePicker } from "./device-picker.ts";
 import { getDeviceSettings } from "./device-settings.ts";
+import { getAppTools } from "./app-tools.ts";
 import type { DeviceSettings } from "../shared/device-settings.ts";
 import { bezelGeometrySchema } from "../shared/bezel.ts";
 import type { Bezel } from "../shared/bezel.ts";
@@ -39,6 +40,7 @@ export function createSimulatorPanel(
   const devicePickerElement = element("devices");
   const devices = getDevicePicker(devicePickerElement);
   const settings = getDeviceSettings(element("settings"));
+  const appTools = getAppTools(element("settings"));
   const canvas = element<HTMLCanvasElement>("screen");
   const context = canvas.getContext("2d")!;
   const frame = element("device-frame");
@@ -91,6 +93,8 @@ export function createSimulatorPanel(
   function controls() {
     settings.configure(selected?.udid ?? "", busy || !toolsAvailable || selected?.state !== "Booted" || disposed);
     settings.prefetch();
+    // App tools use simctl and adb, which do not reach paired iPhones.
+    appTools.configure(platform, selected?.udid ?? "", busy || !toolsAvailable || selected?.state !== "Booted" || disposed || selected?.kind === "physical" && platform === "ios");
     element<HTMLButtonElement>("start-device").disabled = busy || !toolsAvailable || !selected || selected.kind === "physical" || selected.state === "Booted" || disposed;
     const hasDevices = status?.devices.length || physicalDevices.length;
     devices.disabled = busy || !toolsAvailable || !hasDevices || disposed;
@@ -283,6 +287,10 @@ export function createSimulatorPanel(
     return (result.structuredContent as { settings: Partial<DeviceSettings> }).settings;
   };
   settings.setFrame = visible => { showFrame = visible; setBezel(sourceBezel); fitScreen(); };
+  appTools.call = async (name, args) => {
+    if (!selected || disposed) throw new Error("Select a running device first.");
+    return (await call(name, args, { timeout: 60000 })).structuredContent;
+  };
 
   async function action(callback: () => Promise<void>) {
     if (busy || disposed) return;
@@ -947,6 +955,7 @@ export function createSimulatorPanel(
       devices.stop = undefined;
       devices.refresh = undefined;
       settings.dispose();
+      appTools.dispose();
       stopObservingAnnotations();
       annotations.dispose();
       toolsAvailable = false;
