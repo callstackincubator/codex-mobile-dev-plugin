@@ -12,6 +12,15 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collap
 
 const textSizeLabels = ["Extra small", "Small", "Medium", "Large", "Extra large", "2× large", "3× large", "Accessibility medium", "Accessibility large", "Accessibility extra large", "Accessibility 2× large", "Accessibility 3× large"];
 const contentSizeOptions = contentSizes.map((value, index) => ({ value, label: textSizeLabels[index] }));
+const locationPresets = [
+  { value: "cupertino", label: "Cupertino, CA", latitude: 37.3349, longitude: -122.009 },
+  { value: "san-francisco", label: "San Francisco, CA", latitude: 37.7749, longitude: -122.4194 },
+  { value: "new-york", label: "New York, NY", latitude: 40.7128, longitude: -74.006 },
+  { value: "london", label: "London, UK", latitude: 51.5074, longitude: -0.1278 },
+  { value: "berlin", label: "Berlin, Germany", latitude: 52.52, longitude: 13.405 },
+  { value: "tokyo", label: "Tokyo, Japan", latitude: 35.6762, longitude: 139.6503 },
+  { value: "sydney", label: "Sydney, Australia", latitude: -33.8688, longitude: 151.2093 },
+];
 const rotationOptions = [{ value: "auto", label: "Auto" }, { value: "portrait", label: "Portrait" }, { value: "landscape", label: "Landscape" }];
 
 function SettingsSelect({ id, value, items, disabled, onChange }: { id: string; value: string; items: { value: string; label: string }[]; disabled: boolean; onChange: (value: string) => void }) {
@@ -37,6 +46,7 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
   }, [state.deviceId, settings?.location?.latitude, settings?.location?.longitude]);
   useEffect(() => { if (state.disabled) setOpen(false); }, [state.disabled]);
   useEffect(() => { setOpen(false); setLocationOpen(false); }, [state.deviceId]);
+  const preset = settings?.location ? locationPresets.find(entry => entry.latitude === settings.location!.latitude && entry.longitude === settings.location!.longitude)?.value ?? "custom" : "custom";
   return <div data-element="settings" className="ml-auto" ref={element => { if (element) bindDeviceSettings(element, store); }}>
     <Popover open={open} onOpenChange={value => {
       if (!value) { setOpen(false); return; }
@@ -56,7 +66,8 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
           {settings.orientation !== undefined && <div className="flex items-center justify-between gap-3"><label htmlFor={`${id}-rotation`}>Rotation</label><SettingsSelect id={`${id}-rotation`} value={settings.orientation} items={rotationOptions} disabled={disabled} onChange={value => void store.change({ setting: "orientation", value: value as "auto" | "portrait" | "landscape" })} /></div>}
           {settings.locationSupported && <Collapsible open={locationOpen} onOpenChange={setLocationOpen} className="border-t pt-3">
             <CollapsibleTrigger className="flex w-full items-center justify-between rounded-sm py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring" disabled={disabled}>Location<ChevronDownIcon className={`size-4 text-muted-foreground ${locationOpen ? "rotate-180" : ""}`} /></CollapsibleTrigger>
-            <CollapsibleContent className="pt-3"><form className="space-y-3" onSubmit={event => { event.preventDefault(); if (latitude.trim() && longitude.trim()) void store.change({ setting: "location", value: { latitude: Number(latitude), longitude: Number(longitude) } }); }}>
+            <CollapsibleContent className="space-y-3 pt-3"><div className="flex items-center justify-between gap-3"><label htmlFor={`${id}-location-preset`}>Place</label><SettingsSelect id={`${id}-location-preset`} value={preset} disabled={disabled} items={[...locationPresets, { value: "custom", label: "Custom coordinates" }]} onChange={value => { const entry = locationPresets.find(item => item.value === value); if (entry) void store.change({ setting: "location", value: { latitude: entry.latitude, longitude: entry.longitude } }); }} /></div>
+            <form className="space-y-3" onSubmit={event => { event.preventDefault(); if (latitude.trim() && longitude.trim()) void store.change({ setting: "location", value: { latitude: Number(latitude), longitude: Number(longitude) } }); }}>
             <div className="grid grid-cols-2 gap-2"><div className="space-y-1"><label htmlFor={`${id}-latitude`} className="text-xs text-muted-foreground">Latitude</label><Input id={`${id}-latitude`} type="number" step="any" min={-90} max={90} required value={latitude} placeholder="37.3318" onChange={event => setLatitude(event.target.value)} /></div><div className="space-y-1"><label htmlFor={`${id}-longitude`} className="text-xs text-muted-foreground">Longitude</label><Input id={`${id}-longitude`} type="number" step="any" min={-180} max={180} required value={longitude} placeholder="-122.0312" onChange={event => setLongitude(event.target.value)} /></div></div>
             <div className="flex gap-2"><Button type="submit" size="sm" variant="secondary" className="flex-1" disabled={!latitude.trim() || !longitude.trim()}>Set location</Button>{platform === "ios" && <Button type="button" size="sm" variant="outline" onClick={() => void store.change({ setting: "location", value: null })}>Clear</Button>}</div>
           </form></CollapsibleContent></Collapsible>}
