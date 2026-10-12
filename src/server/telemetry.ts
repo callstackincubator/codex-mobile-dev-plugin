@@ -26,6 +26,13 @@ export function recordPluginUpdate(operation: "check" | "install", outcome: "dis
   Sentry.metrics.gauge("plugin.update.duration", duration, { unit: "millisecond", attributes });
 }
 
+export function recordTraceSiftOperation(operation: "ready" | "analyze" | "handoff", outcome: "success" | "failed", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "tracesift", operation, outcome };
+  Sentry.metrics.count("tracesift.operation.samples", 1, { attributes });
+  Sentry.metrics.gauge("tracesift.operation.duration", duration, { unit: "millisecond", attributes });
+}
+
 export function recordAccessibilityBridgeRestart(outcome: "recovered" | "unavailable" | "failed") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", device_platform: "ios", device_kind: "simulator", outcome };

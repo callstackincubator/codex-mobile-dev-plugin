@@ -11,6 +11,7 @@
         "HOME",
         "CODEX_HOME",
         "DEVELOPER_DIR",
+        "TRACE_SIFT_HOME",
         "MOBILE_DEV_TELEMETRY",
         "MOBILE_DEV_ENVIRONMENT"
       ]

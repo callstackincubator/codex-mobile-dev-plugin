@@ -11,6 +11,7 @@ import { OpenAIUiToolMetadataSchema, OpenAIUiResourceMetadataSchema } from "@ope
 import { APP_URI, WORKSPACE_URI } from "../src/server/plugin.ts";
 import { RECORDING_URI } from "../src/shared/recordings.ts";
 import { COMPARISON_URI } from "../src/shared/performance-comparison.ts";
+import { TRACESIFT_URI } from "../src/shared/tracesift.ts";
 import { Baguette } from "../src/server/baguette.ts";
 import { parseBaseUrl } from "../src/shared/protocol.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "./fixtures.ts";
@@ -106,7 +107,7 @@ test("UI surfaces and live reload receive the server's anonymous identity and op
   assert.ok(identity);
   const userMarker = `name="mobile-dev-user-id" content="${identity.userId}"`;
   const sessionMarker = `name="mobile-dev-session-id" content="${identity.sessionId}"`;
-  for (const uri of [APP_URI, WORKSPACE_URI, RECORDING_URI, COMPARISON_URI]) {
+  for (const uri of [APP_URI, WORKSPACE_URI, RECORDING_URI, COMPARISON_URI, TRACESIFT_URI]) {
     const resource = await client.readResource({ uri });
     const content = resource.contents[0].text;
     assert.ok(typeof content === "string");
@@ -192,6 +193,12 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const comparisonResource = await client.readResource({ uri: COMPARISON_URI });
   assert.match(comparisonResource.contents[0].text as string, /data-view="comparison"/);
   assert.deepEqual(comparisonResource.contents[0]._meta, recordingResource.contents[0]._meta);
+  const traceSiftResource = await client.readResource({ uri: TRACESIFT_URI });
+  assert.match(traceSiftResource.contents[0].text as string, /data-view="tracesift"/);
+  assert.deepEqual(traceSiftResource.contents[0]._meta, recordingResource.contents[0]._meta);
+  const analyzeProfile = tools.tools.find(tool => tool.name === "mobile_analyze_profile");
+  assert.deepEqual(analyzeProfile?._meta?.ui, { resourceUri: TRACESIFT_URI, visibility: ["app", "model"] });
+  assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_get_tracesift_handoff")?._meta?.ui, { visibility: ["app"] });
   assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);
   assert.equal(WORKSPACE_URI, `ui://mobile-dev/${manifest.version}/workspace.html`);
   const previousWorkspace = await client.readResource({ uri: "ui://mobile-dev/0.1.52/workspace.html" });

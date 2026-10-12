@@ -32,6 +32,9 @@ import { PerformanceRecordings } from "./performance-recordings.ts";
 import { registerRecordingTools } from "./recording-tools.ts";
 import { RECORDING_URI } from "../shared/recordings.ts";
 import { COMPARISON_URI } from "../shared/performance-comparison.ts";
+import { TRACESIFT_URI } from "../shared/tracesift.ts";
+import { TraceSiftClient } from "./tracesift-client.ts";
+import { registerTraceSiftTools } from "./tracesift-tools.ts";
 import { startStorageMetrics } from "./storage-metrics.ts";
 import { DisplayFpsSessions } from "./fps/sessions.ts";
 import { registerDisplayFpsTools } from "./fps/tools.ts";
@@ -118,7 +121,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   const cpu = selectedCpu;
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
-    instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. See the Mobile Dev skill for device control, logs, and performance workflows.",
+    instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill for device control, logs, profiles, and performance workflows.",
   });
   instrumentMcpServer(server);
   const updates = new PluginUpdates();
@@ -135,6 +138,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   const validateCpuDevice = registerCpuTools(server, cpu, baguette);
   const recordings = new PerformanceRecordings(cpu, fps);
   registerRecordingTools(server, recordings, validateCpuDevice, WORKSPACE_URI);
+  const traceSift = new TraceSiftClient();
+  registerTraceSiftTools(server, traceSift);
   const stopRecordingStorageMetrics = startStorageMetrics({ recordings: recordings.store.directory });
   registerDisplayFpsTools(server, fps);
   const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot, async deviceId => {
@@ -217,6 +222,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   for (const [name, resourceUri, view] of [
     ["mobile-dev-recording", RECORDING_URI, "recording"],
     ["mobile-dev-comparison", COMPARISON_URI, "comparison"],
+    ["mobile-dev-tracesift", TRACESIFT_URI, "tracesift"],
   ]) registerAppResource(server, name, resourceUri, {}, async uri => {
     const resource = typeof html === "string" ? { html } : await html();
     const configured = configureUI(resource.html);
@@ -445,7 +451,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
       stopRecordingStorageMetrics();
       await recordings.close();
       closeInspection(); closeAndroid(); streams.close();
-      try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror()]); }
+      try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror(), traceSift.close()]); }
       finally { baguette.dispose(); await server.close(); }
     },
   };

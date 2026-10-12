@@ -29,9 +29,11 @@ test("the launcher uses Codex's cached Node with spaces, no Node on PATH, and no
   const fixtureHome = await createLaunchHome(directory, process.execPath);
   const homeForwarded = config.env_vars.includes("HOME");
   const telemetryForwarded = config.env_vars.includes("MOBILE_DEV_TELEMETRY");
+  const traceSiftHomeForwarded = config.env_vars.includes("TRACE_SIFT_HOME");
   const profileForwarded = config.env_vars.includes("CODEX_HOME");
   assert.ok(homeForwarded);
   assert.ok(telemetryForwarded);
+  assert.ok(traceSiftHomeForwarded);
   assert.ok(profileForwarded);
   const script = 'const args = process.argv.slice(1); const text = JSON.stringify(args); console.log(text);';
   const result = launch(fixtureHome, ["--eval", script, "a b", "literal$argument"]);

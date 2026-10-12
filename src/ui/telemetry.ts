@@ -206,7 +206,7 @@ export function startUiTelemetry(app: App) {
   running = enabled;
   if (running === false) return;
   const requestedView = document.documentElement.dataset.view;
-  const view = requestedView === "recording" || requestedView === "workspace" || requestedView === "comparison" ? requestedView : "panel";
+  const view = requestedView === "recording" || requestedView === "workspace" || requestedView === "comparison" || requestedView === "tracesift" ? requestedView : "panel";
   attributes = { ...attributes, view };
   Sentry.setTags({ component: "ui", surface, view });
   Sentry.setAttributes(attributes);
