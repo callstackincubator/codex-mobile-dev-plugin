@@ -208,13 +208,13 @@ try {
   assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
   const oldWorkspace = await client.readResource({ uri: "ui://mobile-dev/workspace.html" });
   assert.equal(oldWorkspace.contents[0].text, workspaceResource.contents[0].text);
-  for (const version of [1, 2, 3, 4, 5, 6]) {
-    const uri = `ui://mobile-dev/v${version}/simulator.html`;
+  for (const release of ["v1", "v2", "v3", "v4", "v5", "v6", "0.1.100"]) {
+    const uri = `ui://mobile-dev/${release}/simulator.html`;
     const legacy = await client.readResource({ uri });
     assert.equal(legacy.contents[0].uri, uri);
     assert.equal(legacy.contents[0].text, resource.contents[0].text);
   }
-  console.log("Cached side-tab UI addresses v1 through v6 return the current panel.");
+  console.log("Cached side-tab UI addresses from earlier releases return the current panel.");
   const listed = await client.callTool({ name: "mobile_list_simulators", arguments: {} });
   assert.equal(listed.structuredContent?.baseUrl, baseUrl);
   console.log(`Copied package started its bundled Baguette and returned ${panel.structuredContent.devices.length} simulators.`);

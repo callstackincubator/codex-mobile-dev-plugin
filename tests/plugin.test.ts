@@ -143,7 +143,7 @@ test("cached side tabs load the current UI through old resource addresses", asyn
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
   assert.equal(APP_URI, `ui://mobile-dev/${manifest.version}/simulator.html`);
-  const previousPanel = await client.readResource({ uri: "ui://mobile-dev/0.1.52/simulator.html" });
+  const previousPanel = await client.readResource({ uri: "ui://mobile-dev/0.1.147/simulator.html" });
   assert.equal(previousPanel.contents[0].text, html);
   for (const uri of [APP_URI, "ui://mobile-dev/0.1.44/simulator.html", "ui://mobile-dev/0.1.43/simulator.html", "ui://mobile-dev/0.1.42/simulator.html", "ui://mobile-dev/0.1.41/simulator.html", "ui://mobile-dev/0.1.40/simulator.html", "ui://mobile-dev/0.1.39/simulator.html", "ui://mobile-dev/0.1.38/simulator.html", "ui://mobile-dev/0.1.37/simulator.html", "ui://mobile-dev/0.1.36/simulator.html", "ui://mobile-dev/0.1.35/simulator.html", "ui://mobile-dev/0.1.34/simulator.html", "ui://mobile-dev/0.1.33/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html", "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/simulator.html", ...[1, 2, 3, 4, 5, 6].map(version => `ui://mobile-dev/v${version}/simulator.html`)]) {
     const { contents } = await client.readResource({ uri });
@@ -152,7 +152,18 @@ test("cached side tabs load the current UI through old resource addresses", asyn
     assert.equal(contents[0].text, html);
     OpenAIUiResourceMetadataSchema.parse(contents[0]._meta?.["openai/ui"]);
   }
-  await assert.rejects(client.readResource({ uri: "ui://mobile-dev/v999/simulator.html" }), /not found/);
+  for (const uri of ["ui://mobile-dev/0.1.147/workspace.html", "ui://mobile-dev/0.1.24/mcp-stream/workspace.html", "ui://mobile-dev/workspace.html"]) {
+    const { contents } = await client.readResource({ uri });
+    assert.equal(contents[0].uri, uri);
+    assert.equal(contents[0].mimeType, "text/html;profile=mcp-app");
+  }
+  for (const page of ["recording", "comparison"]) {
+    const { contents } = await client.readResource({ uri: `ui://mobile-dev/0.1.147/${page}.html` });
+    assert.equal((contents[0]._meta?.["openai/ui"] as { preferredDisplayMode: string }).preferredDisplayMode, "inline", `a saved ${page} card from an earlier release still loads`);
+  }
+  for (const uri of ["ui://mobile-dev/v999/simulator.html", "ui://mobile-dev/latest/simulator.html", "ui://mobile-dev/0.1.147/other.html"]) {
+    await assert.rejects(client.readResource({ uri }), /not found/);
+  }
 });
 
 test("MCP tools expose native entrypoints and complete the simulator workflow", async t => {
