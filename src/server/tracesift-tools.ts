@@ -3,7 +3,7 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { errorMessage } from "../shared/protocol.ts";
-import { TRACESIFT_URI, traceSiftHandoffSchema, traceSiftProfileTypeSchema, traceSiftReactCardSchema, traceSiftTaskCardSchema } from "../shared/tracesift.ts";
+import { TRACESIFT_URI, traceSiftHandoffSchema, traceSiftProfileTypeSchema, traceSiftReactCardSchema, traceSiftTaskCardSchema, traceSiftTaskSchema } from "../shared/tracesift.ts";
 import { captureServerError, recordTraceSiftOperation } from "./telemetry.ts";
 import type { TraceSiftClient } from "./tracesift-client.ts";
 
@@ -14,7 +14,7 @@ const analysisOutput = {
   summary: z.record(z.string(), z.unknown()), cards: z.array(z.union([traceSiftTaskCardSchema, traceSiftReactCardSchema])),
 };
 
-function failure(error: unknown, operation: "analyze" | "handoff", startedAt: number, signal: AbortSignal): CallToolResult {
+function failure(error: unknown, operation: "analyze" | "handoff" | "task", startedAt: number, signal: AbortSignal): CallToolResult {
   recordTraceSiftOperation(operation, "failed", performance.now() - startedAt);
   captureServerError(error, `tracesift.${operation}`, { signal });
   return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
@@ -23,7 +23,7 @@ function failure(error: unknown, operation: "analyze" | "handoff", startedAt: nu
 export function registerTraceSiftTools(server: McpServer, client: TraceSiftClient) {
   registerAppTool(server, "mobile_analyze_profile", {
     title: "Analyze a CPU or React profile with TraceSift",
-    description: "Upload a local CPU profile or React DevTools profiling export to the local TraceSift service and render its measured findings as inline cards. Use when the user provides a profile path and asks to investigate performance or find a root cause. Set profileType only when the format is known; auto detects supported JSON formats. After rendering, wait for the user to choose Investigate before changing code.",
+    description: "Upload a local CPU profile or React DevTools profiling export to the local TraceSift service and render its measured findings as inline cards, each dividing its task between the features it entered, with an Explore view for the call tree and timeline. Use when the user provides a profile path and asks to investigate performance or find a root cause. Set profileType only when the format is known; auto detects supported JSON formats. After rendering, wait for the user to choose Investigate before changing code.",
     inputSchema: { path: z.string().min(1).max(16_384), profileType: traceSiftProfileTypeSchema.default("auto") },
     outputSchema: analysisOutput, annotations: read,
     _meta: { ui: { resourceUri: TRACESIFT_URI, visibility } },
@@ -35,6 +35,21 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
       recordTraceSiftOperation("analyze", "success", performance.now() - startedAt);
       return { content: [{ type: "text", text: `TraceSift found ${analysis.cards.length} ${analysis.profileType === "cpu" ? "task" : "React commit"} cards. Show the inline cards and wait for the user to choose Investigate.` }], structuredContent: analysis };
     } catch (error) { return failure(error, "analyze", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_get_tracesift_task", {
+    title: "Get a TraceSift task in full",
+    description: "Return one CPU task's call tree and timeline for the inline card's Explore view. This app-only action is called by the card after the user presses Explore; the analysis response omits these fields because they are megabytes per task and no card draws them.",
+    inputSchema: { analysisId: z.string().min(1).max(256), taskIndex: z.number().int().nonnegative() },
+    outputSchema: traceSiftTaskSchema.shape, annotations: read,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async ({ analysisId, taskIndex }, context) => {
+    const startedAt = performance.now();
+    try {
+      const task = await client.task(analysisId, taskIndex, context.signal);
+      recordTraceSiftOperation("task", "success", performance.now() - startedAt);
+      return { content: [{ type: "text", text: "TraceSift task ready." }], structuredContent: task };
+    } catch (error) { return failure(error, "task", startedAt, context.signal); }
   });
 
   registerAppTool(server, "mobile_get_tracesift_handoff", {

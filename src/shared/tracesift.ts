@@ -11,7 +11,34 @@ const taskCulpritSchema = z.object({
   totalMs: finite, invocations: z.number().int().nonnegative(), longestCallMs: finite,
   shapeText: z.string(), nodeId: z.string(), callers: z.array(z.string()), reachedVia: z.array(z.string()), hotPath: z.array(z.string()),
 });
-const boundaryFrameSchema = z.object({ name: z.string() });
+const frameClass = z.string();
+/**
+ * A function named one band below a boundary frame, or one that burned its
+ * time. Both carry the same figures, so the card draws them with one shape.
+ */
+const measuredFrameSchema = z.object({
+  name: z.string(), location: z.string().optional(), frameClass, nodeId: z.string(),
+  totalMs: finite, selfMs: finite, invocations: z.number().int().nonnegative(),
+  longestCallMs: finite, shapeText: z.string(),
+});
+const boundaryCulpritSchema = measuredFrameSchema.extend({ callers: z.array(z.string()) });
+/**
+ * A feature of the user's own that the task entered, with everything the
+ * contribution chart divides it by. The analyze response carries these whole:
+ * the slices, the legend and the drill-down are all computed from them in the
+ * card, exactly as the web app computes them, so the two cannot drift.
+ */
+const boundaryFrameSchema = z.object({
+  name: z.string(), location: z.string().optional(), nodeId: z.string(),
+  totalMs: finite, selfMs: finite, invocations: z.number().int().nonnegative(),
+  longestCallMs: finite, shapeText: z.string(),
+  culprits: z.array(boundaryCulpritSchema).default([]),
+  inside: z.array(measuredFrameSchema).optional(),
+});
+export type TraceSiftBoundaryFrame = z.infer<typeof boundaryFrameSchema>;
+export type TraceSiftBoundaryCulprit = z.infer<typeof boundaryCulpritSchema>;
+export type TraceSiftMeasuredFrame = z.infer<typeof measuredFrameSchema>;
+
 export const traceSiftTaskCardSchema = z.object({
   id: z.string().min(1), taskIndex: z.number().int().nonnegative(), startMs: finite, durationMs: finite,
   boundaries: z.string(), headline: z.string().min(1), pathline: z.string().optional(), shapeline: z.string().optional(),
@@ -39,6 +66,10 @@ export const traceSiftReactCardSchema = z.object({
 const base = { apiVersion: z.literal(1), analysisId: z.string().min(1), title: z.string() };
 const cpuSummarySchema = z.object({
   totalMs: finite, callCountIsExact: z.boolean(), omittedTaskCount: z.number().int().nonnegative().optional(),
+  // How many tasks the recording held in all, which the header's "3 long tasks
+  // of 870" needs and no card carries. Optional: a TraceSift older than the
+  // field answers without it, and the header drops that clause.
+  taskCount: z.number().int().nonnegative().optional(),
   noLongTasks: z.boolean().optional(), profilerOverheadMs: finite.optional(),
 });
 const reactSummarySchema = z.object({
@@ -53,3 +84,58 @@ export const traceSiftAnalysisSchema = z.discriminatedUnion("profileType", [
 export type TraceSiftAnalysis = z.infer<typeof traceSiftAnalysisSchema>;
 
 export const traceSiftHandoffSchema = z.object({ apiVersion: z.literal(1), handoff: z.string().min(1).max(1_000_000) });
+
+export type TraceSiftTaskCard = z.infer<typeof traceSiftTaskCardSchema>;
+export type TraceSiftReactCard = z.infer<typeof traceSiftReactCardSchema>;
+export type TraceSiftCpuAnalysis = Extract<TraceSiftAnalysis, { profileType: "cpu" }>;
+
+/**
+ * One node of a task's merged call tree.
+ *
+ * Recursive, so the schema is declared by hand rather than inferred: zod cannot
+ * infer a type that refers to itself.
+ */
+export interface TraceSiftTreeNode {
+  id: string;
+  name: string;
+  location?: string;
+  frameClass: string;
+  totalMs: number;
+  selfMs: number;
+  invocations: number;
+  children: TraceSiftTreeNode[];
+}
+const treeNodeSchema: z.ZodType<TraceSiftTreeNode> = z.lazy(() => z.object({
+  id: z.string(), name: z.string(), location: z.string().optional(), frameClass,
+  totalMs: finite, selfMs: finite, invocations: z.number().int().nonnegative(),
+  children: z.array(treeNodeSchema),
+}));
+
+const timelineBoxSchema = z.object({
+  depth: z.number().int().nonnegative(), name: z.string(), location: z.string().optional(),
+  frameClass, startMs: finite, durationMs: finite, selfMs: finite, nodeId: z.string(),
+});
+const timelineSchema = z.object({
+  boxes: z.array(timelineBoxSchema), durationMs: finite, coveredMs: finite,
+  rows: z.number().int().nonnegative(), kept: z.array(frameClass),
+  omittedBoxCount: z.number().int().nonnegative(), omittedBoxMs: finite,
+});
+
+/**
+ * One task in full, which is what Explore reads.
+ *
+ * The call tree and the timeline are megabytes on a long task and nothing on
+ * the card draws them, so the analysis response leaves them out and this is
+ * fetched when the reader actually opens Explore.
+ */
+export const traceSiftTaskSchema = z.object({
+  apiVersion: z.literal(1),
+  analysisId: z.string().min(1),
+  totalMs: finite,
+  title: z.string(),
+  card: traceSiftTaskCardSchema.extend({ tree: treeNodeSchema, timeline: timelineSchema }),
+});
+export type TraceSiftTask = z.infer<typeof traceSiftTaskSchema>;
+export type TraceSiftExploreCard = TraceSiftTask["card"];
+export type TraceSiftTimeline = z.infer<typeof timelineSchema>;
+export type TraceSiftTimelineBox = z.infer<typeof timelineBoxSchema>;

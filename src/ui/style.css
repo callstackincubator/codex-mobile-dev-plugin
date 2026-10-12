@@ -154,3 +154,343 @@ html:not([data-theme="dark"]) :is(.log-row, .log-detail)[data-level="warn"] { --
 :is(.log-row, .log-detail):not([data-level="debug"]) .log-severity > :not(:first-child) {
   stroke: var(--background);
 }
+
+
+/* ===========================================================================
+   TraceSift contribution chart + result card
+   Ported from perf-ai `src/app/globals.css`. Everything is scoped under
+   `.tracesift-results` so it cannot reach the recording or comparison views;
+   the TraceSift view is also `html[data-view="tracesift"]`, but the card can be
+   embedded inline, so the component root is the safer anchor.
+   Source `--font-mono` does not exist here, so each use carries an explicit
+   mono fallback. Source `--danger` does not exist here either; `--destructive`
+   is the nearest plugin token. Display sizes are stepped down for the 13px card.
+   =========================================================================== */
+
+/* Eight fixed series slots: a colour means one function, not one position.
+   `tail` is small code of yours, so it stays near the series; `outside` was
+   never your code, so it recedes and is hatched; `rest` is the remainder. */
+.tracesift-results { --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-5: #e87ba4; --series-6: #008300; --series-7: #4a3aa7; --series-8: #e34948; --series-tail: color-mix(in srgb, var(--muted-foreground) 42%, var(--muted)); --series-outside: color-mix(in srgb, var(--muted-foreground) 16%, var(--muted)); --series-rest: color-mix(in srgb, var(--muted-foreground) 26%, var(--muted)); --series-mono: var(--font-mono, ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace); }
+/* Source selected dark with `[data-slot="plugin-shell"].dark`; here it is `html[data-theme="dark"]`. */
+html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767; --series-tail: color-mix(in srgb, var(--muted-foreground) 34%, var(--muted)); --series-outside: color-mix(in srgb, var(--muted-foreground) 12%, var(--muted)); --series-rest: color-mix(in srgb, var(--muted-foreground) 22%, var(--muted)); }
+
+/* --- Results header ------------------------------------------------------ */
+.tracesift-results .results-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.tracesift-results .results-header .intro { min-width: 0; text-align: left; }
+.tracesift-results .eyebrow { display: inline-block; color: var(--primary); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.tracesift-results .results-title { max-width: none; margin: 6px 0 6px; font-size: 15px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 600; }
+.tracesift-results .results-header .intro p { max-width: none; margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
+.tracesift-results .results-jump { align-self: flex-start; margin-top: 2px; padding: 0; font: inherit; font-size: 11px; color: var(--primary); background: none; border: 0; cursor: pointer; }
+.tracesift-results .results-jump:hover { text-decoration: underline; }
+
+/* Which drawing the cards carry, while both are on offer. */
+.tracesift-results .result-actions { flex: none; display: flex; align-items: center; gap: 8px; }
+.tracesift-results .chart-switch { display: inline-flex; align-items: center; gap: 6px; }
+.tracesift-results .timeline-zoom { padding: 2px 7px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 11px; cursor: pointer; }
+.tracesift-results .timeline-zoom:hover { background: var(--muted); }
+.tracesift-results .timeline-zoom.is-current { border-color: var(--primary); color: var(--primary); }
+.tracesift-results .timeline-zoom:disabled { opacity: 0.4; cursor: default; }
+.tracesift-results .timeline-zoom:disabled:hover { background: transparent; }
+.tracesift-results .timeline-zoom:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+/* --- Result card chrome (base + later override block, flattened) ---------- */
+.tracesift-results .hotspot-list { display: grid; gap: 12px; margin-top: 14px; }
+.tracesift-results .hotspot-card { display: grid; gap: 0; padding: 0; overflow: hidden; text-align: left; color: inherit; background: color-mix(in srgb, var(--card) 97%, var(--background)); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.08); transition: border-color 160ms ease, box-shadow 160ms ease; }
+.tracesift-results .hotspot-card:hover { border-color: color-mix(in srgb, var(--primary) 24%, var(--border)); box-shadow: 0 8px 22px rgba(0,0,0,.13); }
+.tracesift-results .hotspot-card:first-child { border-color: color-mix(in srgb, var(--primary) 34%, var(--border)); }
+.tracesift-results .hotspot-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 12px 14px; background: linear-gradient(100deg, color-mix(in srgb, var(--muted) 70%, transparent), transparent 70%); border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent); }
+/* Not `--primary-foreground`: the chip's fill is `--muted`, near-white in light. */
+.tracesift-results .hotspot-rank { display: grid; place-items: center; width: 28px; height: 28px; color: var(--foreground); background: var(--muted); border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); border-radius: 9px; font-family: var(--series-mono); font-size: 11px; font-weight: 700; }
+.tracesift-results .hotspot-heading-copy { display: grid; min-width: 0; gap: 3px; }
+.tracesift-results .hotspot-head strong { min-width: 0; letter-spacing: -0.01em; line-height: 1.35; overflow-wrap: anywhere; }
+.tracesift-results .hotspot-head .hotspot-heading-copy strong { font-size: 14px; line-height: 1.4; }
+/* The measured shape of the cost: above the subtitle's weight, below the heading's. */
+.tracesift-results .hotspot-shape { color: var(--muted-foreground); font-family: var(--series-mono); font-variant-numeric: tabular-nums; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.tracesift-results .hotspot-subtitle { color: var(--muted-foreground); font-size: 11px; line-height: 1.45; opacity: 0.75; overflow-wrap: anywhere; }
+.tracesift-results .hotspot-time { flex: 0 0 auto; padding: 5px 8px; color: var(--foreground); background: color-mix(in srgb, var(--background) 62%, transparent); border: 1px solid var(--border); border-radius: 8px; font-family: var(--series-mono); font-size: 11px; font-weight: 650; white-space: nowrap; }
+/* Two kinds of action: asking for a reading on the left, taking it away on the right. */
+.tracesift-results .hotspot-footer { display: grid; min-height: 48px; align-items: center; justify-items: stretch; gap: 8px; margin: 0; padding: 10px 14px; background: color-mix(in srgb, var(--muted) 34%, transparent); border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent); }
+.tracesift-results .hotspot-footer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.tracesift-results .hotspot-footer-lead { display: flex; align-items: center; gap: 8px; }
+.tracesift-results .hotspot-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+/* Source used `--danger`, which this plugin's theme does not define. */
+.tracesift-results .hotspot-prompt-error { margin: 0; max-width: 100%; color: var(--destructive); font-size: 11px; line-height: 1.4; text-align: right; }
+
+/* --- Contribution chart --------------------------------------------------- */
+/* The bottom padding is the chart's own breathing room: the legend is the last
+   thing read before the footer, and it needs separating from both. */
+.tracesift-results .contribution { display: grid; gap: 12px; padding: 14px; }
+/* Which whole the chart is dividing; only drawn one level down. */
+.tracesift-results .contribution-crumbs { display: flex; align-items: baseline; gap: 8px; font-family: var(--series-mono); font-size: 10px; }
+.tracesift-results .contribution-crumb { padding: 0; color: var(--primary); background: transparent; border: 0; font: inherit; cursor: pointer; }
+.tracesift-results .contribution-crumb:hover { text-decoration: underline; }
+.tracesift-results .contribution-crumb:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 3px; }
+.tracesift-results .contribution-crumb-current { color: var(--muted-foreground); }
+.tracesift-results .contribution-crumb-current::before { content: "/"; margin-right: 8px; opacity: 0.5; }
+.tracesift-results .contribution-lede { margin: 0; color: var(--muted-foreground); font-size: 11px; line-height: 1.55; }
+
+/* One bar, the task wide. The 2px seams are the surface showing through between
+   fills, not borders: a border would eat into a slice's width. */
+.tracesift-results .contribution-bar { display: flex; gap: 2px; height: 28px; border-radius: 5px; overflow: hidden; background: color-mix(in srgb, var(--muted) 70%, transparent); }
+.tracesift-results .contribution-band { min-width: 3px; padding: 0; border: 0; cursor: pointer; transition: opacity 120ms ease, filter 120ms ease; }
+/* Hatched because this is not one thing that ran, it is the absence of anything big enough to name. */
+.tracesift-results .contribution-band.is-outside, .tracesift-results .contribution-tile.is-outside { background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--background) 45%, transparent) 0 4px, transparent 4px 9px); }
+.tracesift-results .contribution-bar:hover .contribution-band:not(.is-active) { opacity: 0.4; }
+.tracesift-results .contribution-band.is-active { filter: brightness(1.08); }
+.tracesift-results .contribution-band:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+/* The same slices as area; tiles are placed in percentages, so the box can be any width. */
+.tracesift-results .contribution-treemap { position: relative; width: 100%; border-radius: 8px; overflow: hidden; background: color-mix(in srgb, var(--muted) 70%, transparent); }
+/* The 2px seam again, as an inset ring: a tile is placed at an exact area, so
+   the spacer has to come out of its paint, not its box. */
+.tracesift-results .contribution-tile { position: absolute; display: flex; align-items: flex-start; padding: 6px 8px; border: 0; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--card) 85%, transparent); text-align: left; overflow: hidden; cursor: pointer; transition: opacity 120ms ease, filter 120ms ease; }
+.tracesift-results .contribution-treemap:hover .contribution-tile:not(.is-active) { opacity: 0.45; }
+.tracesift-results .contribution-tile.is-active { filter: brightness(1.08); }
+.tracesift-results .contribution-tile:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; z-index: 1; }
+.tracesift-results .contribution-tile-copy { display: grid; gap: 2px; min-width: 0; }
+/* White ink on eight fills, two of them light yellow: the scrim keeps the label
+   legible on all of them. The name is also in the legend and detail strip. */
+.tracesift-results .contribution-tile-name { color: #ffffff; font-size: 11px; font-weight: 650; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+.tracesift-results .contribution-tile-figure { color: color-mix(in srgb, #ffffff 82%, transparent); font-family: var(--series-mono); font-size: 10px; line-height: 1.2; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+.tracesift-results .contribution-tile.is-neutral .contribution-tile-name, .tracesift-results .contribution-tile.is-neutral .contribution-tile-figure { color: var(--muted-foreground); text-shadow: none; }
+
+/* The hovered slice in full. A fixed minimum height, because a card that grows
+   under the cursor moves the slice away from it. */
+.tracesift-results .contribution-detail { display: grid; gap: 7px; min-height: 128px; align-content: start; padding: 11px 13px; color: inherit; text-align: left; background: color-mix(in srgb, var(--muted) 48%, transparent); border: 1px solid color-mix(in srgb, var(--border) 60%, transparent); border-radius: 10px; }
+.tracesift-results .contribution-detail p { margin: 0; }
+.tracesift-results .contribution-detail-head { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.tracesift-results .contribution-swatch { width: 10px; height: 10px; flex: none; border-radius: 3px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 12%, transparent); }
+.tracesift-results .contribution-detail-name { font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
+.tracesift-results .contribution-detail-share { margin-left: auto; flex: none; padding: 3px 7px; background: var(--muted); border-radius: 999px; font-family: var(--series-mono); font-size: 10px; color: var(--muted-foreground); }
+.tracesift-results .contribution-detail-figures { display: flex; align-items: baseline; gap: 10px; }
+.tracesift-results .contribution-detail-ms { color: var(--primary); font-family: var(--series-mono); font-size: 15px; opacity: 0.85; }
+.tracesift-results .contribution-detail-secondary { color: var(--muted-foreground); font-size: 12px; }
+.tracesift-results .contribution-detail-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 11px; color: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground)); }
+.tracesift-results .contribution-detail-line code { font-family: var(--series-mono); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tracesift-results .contribution-detail-label { flex: none; padding: 2px 6px; color: var(--primary); background: var(--accent); border-radius: 5px; font-family: var(--series-mono); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+.tracesift-results .contribution-detail-shape { color: var(--muted-foreground); font-family: var(--series-mono); font-size: 10px; line-height: 1.5; }
+.tracesift-results .contribution-detail-actions { display: flex; align-items: baseline; gap: 14px; margin-top: 2px; }
+.tracesift-results .contribution-detail-open, .tracesift-results .contribution-detail-aside { padding: 0; background: transparent; border: 0; font-size: 11px; font-weight: 650; cursor: pointer; }
+.tracesift-results .contribution-detail-open { color: var(--primary); }
+.tracesift-results .contribution-detail-aside { color: var(--muted-foreground); font-weight: 500; }
+.tracesift-results .contribution-detail-open:hover, .tracesift-results .contribution-detail-aside:hover { text-decoration: underline; }
+.tracesift-results .contribution-detail-aside:hover { color: var(--foreground); }
+.tracesift-results .contribution-detail-open:focus-visible, .tracesift-results .contribution-detail-aside:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 3px; }
+
+/* What the open feature called, one band down: the half a self-time chart cannot draw. */
+.tracesift-results .contribution-nested { display: grid; gap: 3px; }
+.tracesift-results .contribution-nested-label { color: var(--muted-foreground); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+.tracesift-results .contribution-nested-list { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.tracesift-results .contribution-nested-row { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 2px 4px; margin-left: -4px; color: inherit; text-align: left; background: transparent; border: 0; border-radius: 5px; font-size: 11px; cursor: pointer; }
+.tracesift-results .contribution-nested-row:hover { background: var(--muted); }
+.tracesift-results .contribution-nested-row:hover .contribution-nested-name { text-decoration: underline; }
+.tracesift-results .contribution-nested-row:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.tracesift-results .contribution-nested-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tracesift-results .contribution-nested-ms { margin-left: auto; flex: none; color: var(--muted-foreground); font-family: var(--series-mono); font-size: 10px; }
+.tracesift-results .contribution-nested-rest { color: var(--muted-foreground); font-size: 10px; }
+
+/* Names and figures for every slice: the table view of the chart above it. */
+.tracesift-results .contribution-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 2px 14px; margin: 0; padding: 0; list-style: none; }
+.tracesift-results .contribution-legend-row { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 4px 6px; color: inherit; text-align: left; background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
+.tracesift-results .contribution-legend-row:hover, .tracesift-results .contribution-legend-row.is-active { background: color-mix(in srgb, var(--muted) 60%, transparent); }
+.tracesift-results .contribution-legend-row:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.tracesift-results .contribution-legend-row .contribution-swatch { align-self: center; }
+.tracesift-results .contribution-legend-name { flex: 1; min-width: 0; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tracesift-results .contribution-legend-ms { flex: none; font-family: var(--series-mono); font-size: 10px; color: var(--muted-foreground); }
+.tracesift-results .contribution-legend-share { flex: none; min-width: 3.5ch; text-align: right; font-family: var(--series-mono); font-size: 10px; color: color-mix(in srgb, var(--foreground) 70%, var(--muted-foreground)); }
+
+/* The controls do not fit beside the heading here, and crowding them in breaks
+   the title to one word per line: give them their own row. */
+@media (max-width: 520px) {
+  .tracesift-results .results-header { align-items: flex-start; flex-wrap: wrap; }
+  .tracesift-results .hotspot-head { grid-template-columns: auto minmax(0, 1fr); }
+  .tracesift-results .hotspot-time { grid-column: 2; width: fit-content; }
+  .tracesift-results .hotspot-footer { padding-inline: 12px; }
+  .tracesift-results .contribution { padding-inline: 12px; }
+  .tracesift-results .contribution-legend { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tracesift-results .contribution-band, .tracesift-results .contribution-tile { transition: none; }
+}
+
+/* ===========================================================================
+   TraceSift Explore: the CPU task drill-down
+   Ported from perf-ai `src/app/globals.css` (the `.explore-*`, `.timeline-*`,
+   `.flame-*`, `.chart-notes` and `.row-*` rules). Scoped under
+   `.tracesift-results` like everything above it, because Explore is a screen
+   inside the same card rather than a page of its own.
+   Three substitutions the plugin's theme forces: `--font-mono` becomes the
+   `--series-mono` stack already declared above, the timeline's `--chart-2`
+   green becomes `--series-3` (this theme's `--chart-*` are greyscale, which
+   would draw every box the colour of the gaps between them), and the flame
+   graph's `--danger`/`--warning`/`--info`/`--success` buckets become the
+   series slots, which are already theme-aware in both schemes.
+   Display sizes are stepped down throughout: the web app lays this out on a
+   1180px page at 16px, and this panel starts at ~420px and 13px.
+   =========================================================================== */
+
+.tracesift-results .explore { display: flex; flex-direction: column; gap: 14px; padding: 2px; }
+.tracesift-results .explore-header { display: flex; flex-direction: column; gap: 7px; }
+/* The title and the way out share a line: `onBack` is the only chrome this
+   screen has, and a row of its own would push the figures below the fold on a
+   phone-width panel. */
+.tracesift-results .explore-header-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.tracesift-results .explore-header h1 { min-width: 0; margin: 0; font-family: var(--series-mono); font-size: 16px; line-height: 1.35; font-weight: 600; overflow-wrap: anywhere; }
+.tracesift-results .explore-shape { margin: 0; color: var(--muted-foreground); font-family: var(--series-mono); font-variant-numeric: tabular-nums; font-size: 11px; overflow-wrap: anywhere; }
+.tracesift-results .explore-figures { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; margin: 0; color: var(--muted-foreground); font-family: var(--series-mono); font-variant-numeric: tabular-nums; font-size: 11px; }
+.tracesift-results .explore-figures strong { color: var(--primary); font-size: 15px; }
+.tracesift-results .explore-figures span { opacity: 0.5; }
+/* A one-line aside under a chart or a table, capped at a readable measure
+   rather than taking the container's: in fullscreen these sit under charts that
+   run the whole width, and at 11px an uncapped line ran past 150 characters. */
+.tracesift-results .explore-caveat { max-width: 72ch; margin: 0; color: var(--muted-foreground); font-size: 11px; font-style: italic; line-height: 1.55; }
+/* The one way back out of a focused frame, to the whole task. */
+.tracesift-results .explore-breadcrumb { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--muted-foreground); font-size: 11px; }
+.tracesift-results .explore-empty { min-height: 140px; border: 1px dashed var(--border); }
+
+/* --- The notes under a chart --------------------------------------------- */
+/* Three jobs that used to share one paragraph, now stacked in the order they
+   are read: the reading key on arrival, the controls when a reader wants to
+   move, and the caveats folded away until a figure looks wrong. */
+.tracesift-results .chart-notes { display: flex; flex-direction: column; gap: 5px; max-width: 72ch; margin-top: 10px; }
+.tracesift-results .chart-notes-reading { margin: 0; color: var(--foreground); font-size: 11.5px; line-height: 1.55; }
+.tracesift-results .chart-notes-controls { margin: 0; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; opacity: 0.85; }
+.tracesift-results .chart-notes-caveats { color: var(--muted-foreground); font-size: 11px; }
+.tracesift-results .chart-notes-caveats > summary { display: inline-flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; opacity: 0.85; }
+.tracesift-results .chart-notes-caveats > summary::-webkit-details-marker { display: none; }
+.tracesift-results .chart-notes-caveats > summary::before { content: "\25B8"; display: inline-block; font-size: 10px; transition: transform 120ms ease; }
+.tracesift-results .chart-notes-caveats[open] > summary::before { transform: rotate(90deg); }
+.tracesift-results .chart-notes-caveats > summary:hover { color: var(--foreground); opacity: 1; }
+/* Block, not flex: a flex container drops the list markers, and the markers are
+   most of what makes these read as a list rather than as one paragraph. */
+.tracesift-results .chart-notes-caveats ul { margin: 6px 0 0; padding-left: 1.2em; list-style: disc; line-height: 1.55; }
+.tracesift-results .chart-notes-caveats li { margin: 0 0 5px; }
+.tracesift-results .chart-notes-caveats li:last-child { margin-bottom: 0; }
+.tracesift-results .chart-notes-caveats li::marker { opacity: 0.6; }
+.tracesift-results .chart-notes-caveats strong { color: var(--foreground); font-weight: 600; }
+.tracesift-results .chart-notes-caveats code, .tracesift-results .chart-notes-reading code { font-family: var(--series-mono); font-size: 10.5px; }
+
+/* --- Where the view is pointed ------------------------------------------- */
+.tracesift-results .explore-path { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin: 0 0 8px; color: var(--muted-foreground); font-family: var(--series-mono); font-size: 10px; }
+.tracesift-results .explore-path-label { text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.7; }
+.tracesift-results .explore-path-frame + .explore-path-frame::before { content: "→ "; opacity: 0.5; }
+
+/* --- The four views, as a segmented control ------------------------------ */
+.tracesift-results .explore-tabs { width: 100%; }
+/* The strip scrolls rather than wrapping: four labels do not fit across 420px,
+   and a tab that drops to a second row stops reading as one control. */
+.tracesift-results .explore-tabs [data-slot="tabs-list"] { display: flex; width: 100%; max-width: 100%; gap: 2px; height: auto; padding: 3px; background: color-mix(in srgb, var(--muted) 52%, transparent); border: 1px solid color-mix(in srgb, var(--border) 65%, transparent); border-radius: 10px; overflow-x: auto; scrollbar-width: none; }
+.tracesift-results .explore-tabs [data-slot="tabs-list"]::-webkit-scrollbar { display: none; }
+.tracesift-results .explore-tabs [data-slot="tabs-trigger"] { flex: 1 0 auto; height: auto; padding: 5px 11px; color: var(--muted-foreground); background: transparent; border: 1px solid transparent; border-radius: 7px; font-size: 12px; font-weight: 550; line-height: 1.4; white-space: nowrap; cursor: pointer; transition: background .15s ease, color .15s ease, border-color .15s ease; }
+.tracesift-results .explore-tabs [data-slot="tabs-trigger"]:hover:not([data-active]) { color: var(--foreground); background: color-mix(in srgb, var(--foreground) 7%, transparent); }
+/* The selected view is the one you are reading, so it lifts off the track. */
+.tracesift-results .explore-tabs [data-slot="tabs-trigger"][data-active] { color: var(--foreground); background: color-mix(in srgb, var(--primary) 15%, var(--card)); border-color: color-mix(in srgb, var(--primary) 32%, transparent); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.tracesift-results .explore-panel { padding-top: 14px; }
+
+/* --- The call tree ------------------------------------------------------- */
+.tracesift-results .explore-tree { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.tracesift-results .explore-tree .explore-tree { margin-left: 5px; padding-left: 12px; border-left: 1px solid var(--border); }
+.tracesift-results .explore-tree summary { cursor: pointer; list-style-position: outside; }
+.tracesift-results .explore-tree summary::marker { color: var(--muted-foreground); }
+.tracesift-results .explore-tree-leaf { padding-left: 13px; list-style: none; }
+.tracesift-results .explore-tree-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name figures" "bar bar" "location location"; gap: 3px 10px; padding: 5px 8px; border-radius: 7px; }
+.tracesift-results .explore-tree-row:hover { background: color-mix(in srgb, var(--muted) 60%, transparent); }
+.tracesift-results .explore-tree-name { grid-area: name; font-family: var(--series-mono); font-size: 12px; overflow-wrap: anywhere; }
+.tracesift-results .explore-tree-figures { grid-area: figures; display: flex; align-items: baseline; gap: 8px; }
+.tracesift-results .explore-tree-row .row-bar-track { grid-area: bar; }
+.tracesift-results .explore-tree-location { grid-area: location; color: var(--muted-foreground); font-family: var(--series-mono); font-size: 10px; overflow-wrap: anywhere; }
+.tracesift-results .explore-tag { margin-left: 7px; padding: 1px 6px; color: var(--muted-foreground); background: var(--muted); border-radius: 999px; font-size: 9px; letter-spacing: 0.04em; text-transform: uppercase; }
+/* Every frame name in Explore is a way to refocus the view on that frame. */
+.tracesift-results .explore-tree-focus { padding: 0; color: inherit; font: inherit; text-align: left; background: none; border: 0; cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--primary) 40%, transparent); text-underline-offset: 3px; }
+.tracesift-results .explore-tree-focus:hover { color: var(--primary); }
+.tracesift-results .explore-tree-focus:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 3px; }
+.tracesift-results .row-figure { display: flex; align-items: baseline; color: var(--primary); font-family: var(--series-mono); font-size: 13px; opacity: 0.8; }
+.tracesift-results .row-secondary { color: var(--muted-foreground); font-size: 11px; }
+.tracesift-results .row-share { padding: 2px 6px; background: var(--muted); border-radius: 999px; font-size: 9px; }
+.tracesift-results .row-bar-track { height: 5px; background: color-mix(in srgb, var(--muted) 88%, var(--background)); border-radius: 999px; overflow: hidden; }
+.tracesift-results .row-bar-fill { display: block; height: 100%; background: color-mix(in srgb, var(--foreground) 45%, var(--background)); border-radius: inherit; }
+
+/* --- The culprit table --------------------------------------------------- */
+/* Five columns of figures do not fit a narrow panel and must not be squashed
+   into two characters each, so the table keeps its measure and scrolls. */
+.tracesift-results .explore-table-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+.tracesift-results .explore-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tracesift-results .explore-table th, .tracesift-results .explore-table td { padding: 6px 9px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.tracesift-results .explore-table thead th { color: var(--muted-foreground); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
+.tracesift-results .explore-table tbody th { width: 100%; font-weight: 500; white-space: normal; overflow-wrap: anywhere; }
+.tracesift-results .explore-table tbody th code { display: block; color: var(--muted-foreground); font-family: var(--series-mono); font-size: 10px; font-weight: 400; }
+.tracesift-results .explore-table td { font-family: var(--series-mono); font-variant-numeric: tabular-nums; }
+
+/* --- The timeline -------------------------------------------------------- */
+/* The task against the clock. Positions are percentages of the task duration,
+   so the chart fits at zoom 1 and zooming is one width on the canvas. */
+.tracesift-results .timeline { display: flex; flex-direction: column; gap: 9px; }
+.tracesift-results .timeline-controls { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px; margin-bottom: 9px; color: var(--muted-foreground); font-family: var(--series-mono); font-size: 10px; }
+.tracesift-results .timeline-legend { margin-left: auto; }
+/* Where a wheel gesture landed, which falls between the ladder's rungs. */
+.tracesift-results .zoom-readout { min-width: 4ch; margin-left: 4px; font-variant-numeric: tabular-nums; opacity: 0.75; }
+.tracesift-results .timeline-scroll { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; border: 1px solid var(--border); border-radius: 9px; }
+.tracesift-results .timeline-canvas { position: relative; min-width: 100%; padding: 0 0 8px; }
+.tracesift-results .timeline-ruler { position: relative; height: 18px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
+.tracesift-results .timeline-tick { position: absolute; top: 3px; padding-left: 4px; color: var(--muted-foreground); border-left: 1px solid var(--border); font-family: var(--series-mono); font-size: 9px; line-height: 13px; white-space: nowrap; pointer-events: none; }
+/* Gaps are stretches where only React, or engine code naming nothing, was on
+   the stack. They are left empty on a hatched ground so they read as "not our
+   code", never as idle. */
+.tracesift-results .timeline-rows { position: relative; background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--muted) 45%, transparent) 0 4px, transparent 4px 9px); }
+.tracesift-results .timeline-box { position: absolute; height: 20px; min-width: 1px; padding: 0; color: #04210f; background: var(--series-3); border: none; border-radius: 2px; font-family: var(--series-mono); font-size: 10px; line-height: 20px; text-align: left; white-space: nowrap; overflow: hidden; cursor: pointer; box-shadow: inset -1px 0 0 color-mix(in srgb, var(--background) 65%, transparent); }
+/* A built-in the code called by name — `[Native] intlDateTimeFormatFormat` — is
+   kept on the chart because the cost is real and the caller controls it, but it
+   is not the reader's own code: a paler fill inside a hairline ring says
+   `engine` at a glance without taking it off the row it ran on. The name is on
+   the box and the class is in the tooltip, so this never carries it alone. */
+.tracesift-results .timeline-box[data-class="native"] { color: var(--foreground); background: color-mix(in srgb, var(--series-3) 32%, var(--muted)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 22%, transparent); }
+.tracesift-results .timeline-box > span { padding: 0 4px; pointer-events: none; }
+.tracesift-results .timeline-box:hover { filter: brightness(1.12); }
+.tracesift-results .timeline-box.is-selected { outline: 2px solid var(--ring); outline-offset: -2px; z-index: 1; }
+.tracesift-results .timeline-box:focus-visible { outline: 2px solid var(--ring); outline-offset: -1px; z-index: 2; }
+
+/* --- The flame graph ----------------------------------------------------- */
+/* Hand-drawn rather than a library's, so these are the library's rules too: the
+   graph is percentage-based, which is why zooming is nothing but a wider
+   canvas — `.flame-scale` is `zoom * 100%` of the viewport and every frame
+   keeps the same share of it. */
+.tracesift-results .flame-controls { display: flex; flex-wrap: wrap; align-items: baseline; gap: 14px; }
+.tracesift-results .flame-viewport { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; }
+.tracesift-results .flame-scale { min-width: 100%; }
+.tracesift-results .flame-rows { position: relative; }
+/* Frames are packed edge to edge, so a run of same-coloured boxes would read as
+   one box and a row as a band: the border in the surface's own background cuts
+   every box out of its neighbours and out of the row below, and hovering lifts
+   that border so the box under the pointer is the one being read. */
+.tracesift-results .flame-box { position: absolute; height: 19px; min-width: 1px; padding: 0; color: #fff; border: 1px solid var(--background); border-radius: 3px; font-family: var(--series-mono); font-size: 10px; line-height: 17px; text-align: left; white-space: nowrap; overflow: hidden; cursor: pointer; }
+.tracesift-results .flame-box > span { padding: 0 4px; pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.tracesift-results .flame-box:hover { border-color: var(--foreground); z-index: 1; }
+.tracesift-results .flame-box:focus-visible { outline: 2px solid var(--ring); outline-offset: -1px; z-index: 2; }
+.tracesift-results .flame-box[data-bucket="heaviest"] { background: var(--series-8); }
+.tracesift-results .flame-box[data-bucket="heavy"] { background: var(--series-2); }
+.tracesift-results .flame-box[data-bucket="moderate"] { background: var(--series-1); }
+.tracesift-results .flame-box[data-bucket="light"] { background: var(--series-3); }
+/* The "no own time" bucket is muted-on-muted, which at 10px is a box whose name
+   cannot be read at all — and those are most of the boxes in a React commit,
+   where the pass-through wrappers are exactly the frames a reader is trying to
+   name. Same grey, enough of a lift to carry text. */
+.tracesift-results .flame-box[data-bucket="none"] { color: var(--foreground); background: color-mix(in srgb, var(--muted) 55%, var(--border)); }
+.tracesift-results .flame-box[data-bucket="none"] > span { text-shadow: none; opacity: 0.85; }
+/* What the five colours mean, above the graph that uses them. */
+.tracesift-results .flame-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 11px; margin: 0 0 9px; color: var(--muted-foreground); font-size: 11px; }
+.tracesift-results .flame-legend-lead { margin-right: 2px; }
+.tracesift-results .flame-legend-item { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tracesift-results .flame-legend-swatch { width: 10px; height: 10px; border: 1px solid color-mix(in srgb, var(--background) 60%, transparent); border-radius: 3px; }
+.tracesift-results .flame-legend-swatch[data-bucket="heaviest"] { background: var(--series-8); }
+.tracesift-results .flame-legend-swatch[data-bucket="heavy"] { background: var(--series-2); }
+.tracesift-results .flame-legend-swatch[data-bucket="moderate"] { background: var(--series-1); }
+.tracesift-results .flame-legend-swatch[data-bucket="light"] { background: var(--series-3); }
+.tracesift-results .flame-legend-swatch[data-bucket="none"] { background: color-mix(in srgb, var(--muted) 55%, var(--border)); }
+
+/* At panel width the tree's two columns collide: the figures drop under the
+   name rather than squeezing it to one word per line. */
+@media (max-width: 520px) {
+  .tracesift-results .explore-tree-row { grid-template-columns: minmax(0, 1fr); grid-template-areas: "name" "figures" "bar" "location"; }
+  .tracesift-results .explore-header-bar { flex-wrap: wrap; }
+  .tracesift-results .timeline-legend { margin-left: 0; }
+}

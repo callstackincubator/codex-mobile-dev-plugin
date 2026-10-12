@@ -65,3 +65,78 @@ test("TraceSift reports an unavailable composer without retrying", async () => {
   assert.equal(sends, 1);
   assert.match(controller.getSnapshot().error, /Reopen the chat/);
 });
+
+const cpuAnalysis = {
+  apiVersion: 1, analysisId: "private-analysis", profileType: "cpu", title: "Profile",
+  summary: { totalMs: 180, callCountIsExact: true, taskCount: 870 },
+  cards: [{
+    id: "task-0", taskIndex: 4, startMs: 10, durationMs: 75, boundaries: "tasks", headline: "A long task",
+    percentOfProfile: 40, boundaryFrames: [], boundaryTailCount: 0, boundaryTailMs: 0, outsideBoundariesMs: 5,
+    culprits: [], subtreeFunctionCount: 1, confidence: "ok",
+  }],
+};
+const exploreTask = {
+  apiVersion: 1, analysisId: "private-analysis", totalMs: 180, title: "Profile",
+  card: {
+    ...cpuAnalysis.cards[0],
+    tree: { id: "n0", name: "render", frameClass: "app", totalMs: 60, selfMs: 2, invocations: 1, children: [] },
+    timeline: { boxes: [], durationMs: 75, coveredMs: 60, rows: 1, kept: ["app"], omittedBoxCount: 0, omittedBoxMs: 0 },
+  },
+};
+
+test("TraceSift Explore fetches the task by its index and asks the host for the room to draw it", async () => {
+  const calls: unknown[] = []; const modes: string[] = [];
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    async callServerTool(input: unknown) { calls.push(input); return { content: [], structuredContent: exploreTask }; },
+    async requestDisplayMode({ mode }: { mode: string }) { modes.push(mode); return { mode }; },
+    async sendMessage() { return {}; },
+  };
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
+  // The card's id and its index are different numbers; Explore is keyed by the
+  // index, because that is what the task endpoint looks a task up by.
+  await controller.openExplore("task-0", "n0");
+  assert.deepEqual(calls[0], { name: "mobile_get_tracesift_task", arguments: { analysisId: "private-analysis", taskIndex: 4 } });
+  assert.deepEqual(modes, ["fullscreen"]);
+  const open = controller.getSnapshot().explore;
+  assert.equal(open?.state, "ready");
+  assert.equal(open?.focus, "n0");
+  controller.closeExplore();
+  assert.equal(controller.getSnapshot().explore, undefined);
+  assert.deepEqual(modes, ["fullscreen", "inline"]);
+});
+
+test("TraceSift Explore keeps a host that cannot go fullscreen, and surfaces a task it cannot open", async () => {
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    async callServerTool() { return { isError: true, content: [{ type: "text", text: "That task is not part of this analysis." }] }; },
+    async requestDisplayMode() { throw new Error("This view is always inline."); },
+    async sendMessage() { return {}; },
+  };
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
+  await controller.openExplore("task-0");
+  const open = controller.getSnapshot().explore;
+  assert.equal(open?.state, "failed");
+  assert.match(open?.state === "failed" ? open.reason : "", /not part of this analysis/);
+});
+
+test("TraceSift Copy handoff puts the authoritative text on the clipboard and never sends it to the chat", async () => {
+  const copied: string[] = []; const messages: unknown[] = [];
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    async callServerTool() { return { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF" } }; },
+    async sendMessage(message: unknown) { messages.push(message); return {}; },
+  };
+  const clipboard = { async writeText(text: string) { copied.push(text); } };
+  Object.defineProperty(globalThis, "navigator", { value: { clipboard }, configurable: true });
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
+  await controller.copyHandoff("task-0");
+  assert.deepEqual(copied, ["PRIVATE_HANDOFF"]);
+  assert.deepEqual(messages, []);
+  assert.equal(controller.getSnapshot().copiedCard, "task-0");
+  assert.equal(controller.getSnapshot().handoffCard, undefined);
+  controller.dispose();
+});

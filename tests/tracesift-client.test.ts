@@ -11,10 +11,15 @@ const token = "integration-token-long-enough";
 const instance = "service-instance";
 const card = {
   id: "task-0", taskIndex: 0, startMs: 4, durationMs: 80, boundaries: "tasks", headline: "A measured task",
-  percentOfProfile: 40, boundaryFrames: [{ name: "render" }], boundaryTailCount: 0, boundaryTailMs: 0,
+  percentOfProfile: 40, boundaryFrames: [{ name: "render", location: "src/Screen.tsx:20", nodeId: "b1", totalMs: 60, selfMs: 2, invocations: 2,
+    longestCallMs: 40, shapeText: "ran 2 times in this task · 60 ms total · longest single call 40 ms",
+    culprits: [{ name: "formatRow", frameClass: "app", nodeId: "c1", totalMs: 44, selfMs: 44, invocations: 12,
+      longestCallMs: 9, shapeText: "ran 12 times · 44 ms total", callers: ["render"] }],
+    inside: [{ name: "buildRows", frameClass: "app", nodeId: "i1", totalMs: 48, selfMs: 1, invocations: 2,
+      longestCallMs: 30, shapeText: "ran 2 times · 48 ms total" }] }], boundaryTailCount: 0, boundaryTailMs: 0,
   outsideBoundariesMs: 5, culprits: [{ name: "render", frameClass: "app", selfMs: 50, totalMs: 60,
     invocations: 2, longestCallMs: 40, shapeText: "2 calls · 60 ms", nodeId: "1", callers: [], reachedVia: [], hotPath: [] }],
-  tree: {}, timeline: {}, subtreeFunctionCount: 1, confidence: "ok",
+  subtreeFunctionCount: 1, confidence: "ok",
 };
 
 async function fixture(mode = 0o600, healthInstance = instance) {
@@ -28,6 +33,13 @@ async function fixture(mode = 0o600, healthInstance = instance) {
     if (request.headers.authorization !== `Bearer ${token}`) { response.writeHead(401).end('{"error":"Unauthorized"}'); return; }
     if (path.endsWith("/health")) response.end(JSON.stringify({ apiVersion: 1, instance: currentHealthInstance }));
     else if (path.endsWith("/analyze")) response.end(JSON.stringify({ apiVersion: 1, analysisId: "analysis-1", profileType: "cpu", title: "Profile", summary: { totalMs: 200, callCountIsExact: true, profileFunctions: { private: "removed" } }, cards: [card] }));
+    else if (path.endsWith("/task")) {
+      const query = new URL(request.url!, "http://localhost").searchParams;
+      requests.at(-1)!.body = query.toString();
+      response.end(JSON.stringify({ apiVersion: 1, analysisId: "analysis-1", totalMs: 200, title: "Profile",
+        card: { ...card, tree: { id: "n0", name: "render", frameClass: "app", totalMs: 60, selfMs: 2, invocations: 2, children: [] },
+          timeline: { boxes: [], durationMs: 80, coveredMs: 60, rows: 1, kept: ["app"], omittedBoxCount: 0, omittedBoxMs: 0 } } }));
+    }
     else if (path.endsWith("/handoff")) { let body = ""; for await (const chunk of request) body += chunk; requests.at(-1)!.body = body; response.end(JSON.stringify({ apiVersion: 1, handoff: "Investigate render using the measured stack." })); }
     else response.writeHead(404).end('{}');
   });
@@ -50,6 +62,19 @@ test("TraceSift client reuses an authenticated service and preserves measured ca
   assert.equal(await client.handoff("analysis-1", "task-0"), "Investigate render using the measured stack.");
   assert.ok(fake.requests.every(request => request.authorization === `Bearer ${token}`));
   assert.deepEqual(JSON.parse(fake.requests.at(-1)!.body!), { analysisId: "analysis-1", cardId: "task-0" });
+});
+
+test("TraceSift client fetches one task whole, which is the only place the call tree is served", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const client = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => client.close());
+  const task = await client.task("analysis-1", 0);
+  assert.equal(task.card.tree.name, "render");
+  assert.equal(task.card.timeline.coveredMs, 60);
+  assert.equal(task.totalMs, 200);
+  // The index identifies the task, not the card id: that is what the endpoint
+  // looks one up by, and the two are different numbers on a filtered list.
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(fake.requests.at(-1)!.body!)), { analysisId: "analysis-1", taskIndex: "0" });
+  assert.ok(fake.requests.every(request => request.authorization === `Bearer ${token}`));
 });
 
 test("TraceSift client rejects unsafe descriptors without starting a CLI", async t => {

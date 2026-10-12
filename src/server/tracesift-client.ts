@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
-import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "../shared/tracesift.ts";
+import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftTaskSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "../shared/tracesift.ts";
 import { ExpectedOperationError } from "../shared/error-reporting.ts";
 
 const STARTUP_TIMEOUT_MS = 60_000;
@@ -171,6 +171,20 @@ export class TraceSiftClient {
     catch (error) { ready?.("failed", performance.now() - readyAt); throw error; }
     const parsed = traceSiftAnalysisSchema.safeParse(await this.request("/api/integration/v1/analyze", { method: "POST", body: form }, signal));
     if (!parsed.success) throw new Error("TraceSift returned an invalid analysis response.");
+    return parsed.data;
+  }
+
+  /**
+   * One task whole, which is what Explore reads.
+   *
+   * Kept off the analysis response on purpose: a task ships its call tree
+   * untruncated, which is megabytes on a long task and nothing a card draws, so
+   * it is fetched when a reader actually opens one.
+   */
+  async task(analysisId: string, taskIndex: number, signal?: AbortSignal) {
+    const query = `?analysisId=${encodeURIComponent(analysisId)}&taskIndex=${taskIndex}`;
+    const parsed = traceSiftTaskSchema.safeParse(await this.request(`/api/integration/v1/task${query}`, { method: "GET" }, signal));
+    if (!parsed.success) throw new Error("TraceSift returned an invalid task response.");
     return parsed.data;
   }
 
