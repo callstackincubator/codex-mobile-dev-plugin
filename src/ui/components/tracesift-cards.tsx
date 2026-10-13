@@ -8,21 +8,21 @@
  * cards are the same drawing of the same numbers rather than two readings that
  * can drift.
  *
- * What differs is where the actions go. On the web a reader opens Explore in a
- * second tab and asks a model to read the task; here Explore is a screen inside
- * this view, and the model that would read the task is the one already in the
- * chat — so Investigate hands it the card and lets it answer in the transcript.
+ * What differs is where the actions go. Explore opens the owning TraceSift web
+ * app in a separate window, while Investigate hands the card to the model in
+ * this chat.
  */
 
 import { useSyncExternalStore } from "react";
 import { ChartNoAxesCombinedIcon, CheckIcon, CopyIcon, MessageCircleIcon } from "lucide-react";
 import type { TraceSiftController } from "../tracesift-controller.ts";
-import { formatMs } from "../../shared/tracesift-labels.ts";
+import { formatMs, formatReactMs } from "../../shared/tracesift-labels.ts";
 import type { TraceSiftAnalysis, TraceSiftCpuAnalysis, TraceSiftReactCard, TraceSiftTaskCard } from "../../shared/tracesift.ts";
 import { Button } from "./ui/button.tsx";
+import { reactCommitSlices } from "../../shared/tracesift-contribution.ts";
 import type { ContributionChartKind } from "./tracesift/contribution-chart.tsx";
+import { ReactContribution, ReactFallbackRows } from "./tracesift/react-contribution.tsx";
 import { TaskContribution } from "./tracesift/task-contribution.tsx";
-import { TaskExplore } from "./tracesift/explore.tsx";
 
 const percent = (value: number) => `${value.toFixed(1)}%`;
 
@@ -72,7 +72,7 @@ function ChartSwitch({ kind, onChange }: { kind: ContributionChartKind; onChange
  */
 function CardFooter({ cardId, controller, canExplore }: { cardId: string; controller: TraceSiftController; canExplore: boolean }) {
   const state = controller.getSnapshot();
-  const busy = Boolean(state.busyCard) || Boolean(state.handoffCard);
+  const busy = Boolean(state.busyCard) || Boolean(state.handoffCard) || Boolean(state.openingExploreCard);
   const copied = state.copiedCard === cardId;
   return <div className="hotspot-footer">
     <div className="hotspot-footer-bar">
@@ -89,7 +89,7 @@ function CardFooter({ cardId, controller, canExplore }: { cardId: string; contro
       </div>
       <div className="hotspot-actions">
         {canExplore && <Button size="sm" variant="outline" disabled={busy} onClick={() => void controller.openExplore(cardId)}>
-          <ChartNoAxesCombinedIcon />Explore
+          <ChartNoAxesCombinedIcon />{state.openingExploreCard === cardId ? "Opening…" : "Explore"}
         </Button>}
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void controller.copyHandoff(cardId)}>
           {copied ? <CheckIcon /> : <CopyIcon />}
@@ -138,60 +138,22 @@ function CpuCard({ card, rank, controller }: { card: TraceSiftTaskCard; rank: nu
  * the two families really share.
  */
 function ReactCard({ card, rank, controller }: { card: TraceSiftReactCard; rank: number; controller: TraceSiftController }) {
+  const { chartKind } = controller.getSnapshot();
+  const drawable = reactCommitSlices(card).some(slice => slice.kind === "component");
   return <article className="hotspot-card" data-severity={card.severity}>
     <div className="hotspot-head">
       <span className="hotspot-rank">#{rank}</span>
       <div className="hotspot-heading-copy">
-        <strong>{card.pathline ?? card.headline}</strong>
+        <strong>{card.headline}</strong>
         <span className="hotspot-shape">{card.shapeline}</span>
-        <span className="hotspot-subtitle">{card.causeline}</span>
       </div>
-      <span className="hotspot-time">{formatMs(card.durationMs)}</span>
+      <span className="hotspot-time">{formatReactMs(card.durationMs)}</span>
     </div>
-    <div className="contribution">
-      <dl className="tracesift-metrics">
-        <div><dt>Render time</dt><dd>{percent(card.percentOfRender)}</dd></div>
-        <div><dt>Rendered</dt><dd>{card.renderedCount} components</dd></div>
-        <div><dt>Starts at</dt><dd>{formatMs(card.startMs)}</dd></div>
-      </dl>
-      {card.culprits.length > 0 && <div className="contribution-nested">
-        <p className="contribution-nested-label">measured culprits</p>
-        <ul className="contribution-nested-list">
-          {card.culprits.slice(0, 5).map(culprit => <li key={culprit.componentId}>
-            <span className="contribution-nested-row" title={culprit.evidence}>
-              <span className="contribution-nested-name">{culprit.component}</span>
-              <span className="contribution-nested-ms">{formatMs(culprit.selfMs)}</span>
-            </span>
-          </li>)}
-        </ul>
-      </div>}
-    </div>
-    <CardFooter cardId={card.id} controller={controller} canExplore={false} />
+    {drawable
+      ? <ReactContribution card={card} kind={chartKind} onExplore={() => void controller.openExplore(card.id)} />
+      : <ReactFallbackRows card={card} />}
+    <CardFooter cardId={card.id} controller={controller} canExplore />
   </article>;
-}
-
-/**
- * Explore over the cards, or the cards.
- *
- * It replaces the list rather than sitting under it: the drill-down is a whole
- * screen's worth of chart and the card it came from would be scrolled out of
- * sight anyway, so a breadcrumb is a better way back than a scroll.
- */
-function ExploreScreen({ controller }: { controller: TraceSiftController }) {
-  const { explore } = controller.getSnapshot();
-  if (!explore) return null;
-  if (explore.state === "loading") return <p role="status">Opening this task…</p>;
-  if (explore.state === "failed") return <>
-    <p className="tracesift-error" role="alert">{explore.reason}</p>
-    <p><Button size="sm" variant="outline" onClick={controller.closeExplore}>← Back to the findings</Button></p>
-  </>;
-  return <TaskExplore
-    card={explore.task.card}
-    totalMs={explore.task.totalMs}
-    title={explore.task.title}
-    initialFocus={explore.focus}
-    onBack={controller.closeExplore}
-  />;
 }
 
 export function TraceSiftCards({ controller }: { controller: TraceSiftController }) {
@@ -203,8 +165,6 @@ export function TraceSiftCards({ controller }: { controller: TraceSiftController
     {state.error && <p className="tracesift-error" role="alert">{state.error}</p>}
   </main>;
 
-  if (state.explore) return <main className="tracesift-results"><ExploreScreen controller={controller} /></main>;
-
   const cpu = analysis.profileType === "cpu";
   return <main className="tracesift-results">
     <div className="results-header">
@@ -215,8 +175,8 @@ export function TraceSiftCards({ controller }: { controller: TraceSiftController
           ? cpuSummaryLine(analysis)
           : `${analysis.cards.length} of ${analysis.summary.commitCount} commits · ${formatMs(analysis.summary.totalCommitRenderDurationMs)} rendering`}</p>
       </div>
-      {/* Only the task cards divide into slices, so only they have a drawing to switch. */}
-      {cpu && <div className="result-actions"><ChartSwitch kind={state.chartKind} onChange={controller.setChartKind} /></div>}
+      {/* Both card families divide a measured whole into interchangeable drawings. */}
+      <div className="result-actions"><ChartSwitch kind={state.chartKind} onChange={controller.setChartKind} /></div>
     </div>
 
     {!state.canInvestigate && <p className="tracesift-error" role="status">

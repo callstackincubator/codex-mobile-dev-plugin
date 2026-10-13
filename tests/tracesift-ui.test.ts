@@ -75,51 +75,53 @@ const cpuAnalysis = {
     culprits: [], subtreeFunctionCount: 1, confidence: "ok",
   }],
 };
-const exploreTask = {
-  apiVersion: 1, analysisId: "private-analysis", totalMs: 180, title: "Profile",
-  card: {
-    ...cpuAnalysis.cards[0],
-    tree: { id: "n0", name: "render", frameClass: "app", totalMs: 60, selfMs: 2, invocations: 1, children: [] },
-    timeline: { boxes: [], durationMs: 75, coveredMs: 60, rows: 1, kept: ["app"], omittedBoxCount: 0, omittedBoxMs: 0 },
-  },
-};
-
-test("TraceSift Explore fetches the task by its index and asks the host for the room to draw it", async () => {
-  const calls: unknown[] = []; const modes: string[] = [];
+test("TraceSift Explore opens the owning web app with its task index and focus", async () => {
+  const calls: unknown[] = [];
   const app = {
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
-    async callServerTool(input: unknown) { calls.push(input); return { content: [], structuredContent: exploreTask }; },
-    async requestDisplayMode({ mode }: { mode: string }) { modes.push(mode); return { mode }; },
+    async callServerTool(input: unknown) { calls.push(input); return { content: [], structuredContent: { opened: true } }; },
     async sendMessage() { return {}; },
   };
   const controller = new TraceSiftController(app as never);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
-  // The card's id and its index are different numbers; Explore is keyed by the
-  // index, because that is what the task endpoint looks a task up by.
+  // The card's id and index differ; TraceSift's web app looks up a task by its
+  // index. Its data stays in that app rather than travelling through MCP.
   await controller.openExplore("task-0", "n0");
-  assert.deepEqual(calls[0], { name: "mobile_get_tracesift_task", arguments: { analysisId: "private-analysis", taskIndex: 4 } });
-  assert.deepEqual(modes, ["fullscreen"]);
-  const open = controller.getSnapshot().explore;
-  assert.equal(open?.state, "ready");
-  assert.equal(open?.focus, "n0");
-  controller.closeExplore();
-  assert.equal(controller.getSnapshot().explore, undefined);
-  assert.deepEqual(modes, ["fullscreen", "inline"]);
+  assert.deepEqual(calls[0], { name: "mobile_open_tracesift_explore", arguments: { analysisId: "private-analysis", taskIndex: 4, focus: "n0" } });
+  assert.equal(controller.getSnapshot().error, "");
 });
 
-test("TraceSift Explore keeps a host that cannot go fullscreen, and surfaces a task it cannot open", async () => {
+test("TraceSift Explore opens a React commit by root and commit index", async () => {
+  const calls: unknown[] = [];
   const app = {
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
-    async callServerTool() { return { isError: true, content: [{ type: "text", text: "That task is not part of this analysis." }] }; },
-    async requestDisplayMode() { throw new Error("This view is always inline."); },
+    async callServerTool(input: unknown) { calls.push(input); return { content: [], structuredContent: { opened: true } }; },
+    async sendMessage() { return {}; },
+  };
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged();
+  controller.accept({ content: [], structuredContent: {
+    apiVersion: 1, analysisId: "react-analysis", profileType: "react", title: "React",
+    summary: { rootCount: 1, commitCount: 1, totalCommitRenderDurationMs: 40, peakCommitDurationMs: 40, commitsOverBudget: 1, omittedEvidenceCommitCount: 0 },
+    cards: [{ id: "react-7-12", rootId: 7, commitIndex: 12, startMs: 0, durationMs: 40, percentOfRender: 100,
+      severity: "high", shape: "single", headline: "List rendered", shapeline: "75% in one component", causeline: "props changed",
+      renderedCount: 1, summedSelfMs: 40, unattributedMs: 0, effectDurationMs: 0, passiveEffectDurationMs: 0,
+      priority: null, updaters: [], culprits: [], culpritTailCount: 0, culpritTailMs: 0, causes: [], wasted: null, confidence: "ok" }],
+  } });
+  await controller.openExplore("react-7-12");
+  assert.deepEqual(calls[0], { name: "mobile_open_tracesift_explore", arguments: { analysisId: "react-analysis", rootId: 7, commitIndex: 12 } });
+});
+
+test("TraceSift Explore keeps the cards visible and surfaces a CLI-open failure", async () => {
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    async callServerTool() { return { isError: true, content: [{ type: "text", text: "TraceSift CLI could not open Explore." }] }; },
     async sendMessage() { return {}; },
   };
   const controller = new TraceSiftController(app as never);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
-  const open = controller.getSnapshot().explore;
-  assert.equal(open?.state, "failed");
-  assert.match(open?.state === "failed" ? open.reason : "", /not part of this analysis/);
+  assert.match(controller.getSnapshot().error, /CLI could not open Explore/);
 });
 
 test("TraceSift Copy handoff puts the authoritative text on the clipboard and never sends it to the chat", async () => {

@@ -216,6 +216,21 @@ html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d
 /* Source used `--danger`, which this plugin's theme does not define. */
 .tracesift-results .hotspot-prompt-error { margin: 0; max-width: 100%; color: var(--destructive); font-size: 11px; line-height: 1.4; text-align: right; }
 
+/* React commits whose component slices are all too thin keep the web card's
+   measured row fallback instead of drawing a misleading all-residual chart. */
+.tracesift-results .hot-path-rows { padding: 4px 14px 2px; }
+.tracesift-results .hot-path-row { padding: 14px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+.tracesift-results .hot-path-row:last-child { border-bottom: 0; }
+.tracesift-results .row-location, .tracesift-results .row-callers, .tracesift-results .row-shape { margin: 0; color: var(--muted-foreground); }
+.tracesift-results .row-location, .tracesift-results .row-callers { display: flex; align-items: baseline; gap: 8px; margin-bottom: 9px; font-size: 10px; }
+.tracesift-results .row-location code { font-family: var(--series-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tracesift-results .row-location-label, .tracesift-results .row-callers-label { flex: none; padding: 2px 6px; color: var(--primary); background: var(--accent); border-radius: 5px; font-family: var(--series-mono); font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
+.tracesift-results .row-title { display: block; margin-bottom: 9px; font-size: 13px; }
+.tracesift-results .row-figure-line { display: flex; align-items: flex-end; gap: 9px; margin-bottom: 7px; }
+.tracesift-results .row-figure { color: var(--primary); font-family: var(--series-mono); font-size: 15px; opacity: .85; }
+.tracesift-results .row-share { padding: 3px 7px; color: var(--muted-foreground); background: var(--muted); border-radius: 999px; font-family: var(--series-mono); font-size: 10px; }
+.tracesift-results .row-shape { margin-top: 8px; font-family: var(--series-mono); font-size: 10px; line-height: 1.5; }
+
 /* --- Contribution chart --------------------------------------------------- */
 /* The bottom padding is the chart's own breathing room: the legend is the last
    thing read before the footer, and it needs separating from both. */

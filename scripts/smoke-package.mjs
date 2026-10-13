@@ -41,6 +41,7 @@ try {
   assert.equal(serverConfig.cwd, ".");
   assert.ok(serverConfig.env_vars.includes("HOME"));
   assert.ok(serverConfig.env_vars.includes("TRACE_SIFT_HOME"));
+  assert.ok(serverConfig.env_vars.includes("TRACE_SIFT_COMMAND"));
   assert.ok(serverConfig.env_vars.includes("MOBILE_DEV_TELEMETRY"));
   const serverCwd = resolve(plugin, serverConfig.cwd);
   // Supply the Codex runtime cache layout with no Node on MCP PATH.

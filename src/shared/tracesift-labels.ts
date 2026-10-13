@@ -19,6 +19,14 @@ export function formatMs(ms: number): string {
   return `${minutes} m ${Math.round(seconds % 60)} s`;
 }
 
+/** React commit durations keep the sub-millisecond precision the profiler records. */
+export function formatReactMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return "0 ms";
+  if (ms < 1) return `${Number(ms.toFixed(2))} ms`;
+  if (ms < 1000) return `${Number(ms.toFixed(1))} ms`;
+  return formatMs(ms);
+}
+
 /** `location` may be a bare path or a full `path:line:column` label. */
 function isReadableSourcePath(location: string): boolean {
   // V8 and Hermes label built-ins `native array.js` and the like. Those end in

@@ -1,15 +1,17 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import { openAsBlob } from "node:fs";
-import { readFile as readFileAsync, realpath, stat } from "node:fs/promises";
+import { mkdir, readFile as readFileAsync, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
-import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftTaskSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "../shared/tracesift.ts";
+import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "../shared/tracesift.ts";
 import { ExpectedOperationError } from "../shared/error-reporting.ts";
 
 const STARTUP_TIMEOUT_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 10 * 60_000;
+const EXPLORE_TIMEOUT_MS = 15_000;
 type Descriptor = { version: string; apiVersion: 1; pid: number; childPid: number; instance: string; baseUrl: string; token: string; startedAt: number };
 
 export class TraceSiftError extends ExpectedOperationError {
@@ -82,7 +84,7 @@ export class TraceSiftClient {
   private child?: ChildProcess;
   private readonly home: string;
   private readonly command: string;
-  constructor(command = "tracesift", home?: string) {
+  constructor(command = process.env.TRACE_SIFT_COMMAND ?? "tracesift", home?: string) {
     this.command = command;
     this.home = home ?? process.env.TRACE_SIFT_HOME ?? join(homedir(), ".tracesift");
   }
@@ -131,6 +133,21 @@ export class TraceSiftClient {
 
   async readyService(signal?: AbortSignal) { await this.service(signal); }
 
+  private analysisPath(analysisId: string) {
+    return join(this.home, "integrations", "mobile-dev", `${createHash("sha256").update(analysisId).digest("hex")}.json`);
+  }
+
+  private async persistAnalysis(analysis: TraceSiftAnalysis) {
+    const directory = join(this.home, "integrations", "mobile-dev");
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const file = this.analysisPath(analysis.analysisId);
+    const temporary = join(directory, `.analysis-${randomUUID()}`);
+    try {
+      await writeFile(temporary, `${JSON.stringify(analysis)}\n`, { flag: "wx", mode: 0o600 });
+      await rename(temporary, file);
+    } finally { await rm(temporary, { force: true }); }
+  }
+
   private async request(path: string, init: RequestInit, signal?: AbortSignal): Promise<unknown> {
     let descriptor = await this.service(signal);
     const send = () => fetch(new URL(path, descriptor.baseUrl), {
@@ -171,21 +188,54 @@ export class TraceSiftClient {
     catch (error) { ready?.("failed", performance.now() - readyAt); throw error; }
     const parsed = traceSiftAnalysisSchema.safeParse(await this.request("/api/integration/v1/analyze", { method: "POST", body: form }, signal));
     if (!parsed.success) throw new Error("TraceSift returned an invalid analysis response.");
+    await this.persistAnalysis(parsed.data);
     return parsed.data;
   }
 
   /**
-   * One task whole, which is what Explore reads.
-   *
-   * Kept off the analysis response on purpose: a task ships its call tree
-   * untruncated, which is megabytes on a long task and nothing a card draws, so
-   * it is fetched when a reader actually opens one.
+   * Let the TraceSift CLI open its own loopback URL. The persisted compact
+   * analysis carries the measured card and function ids; the full tree and
+   * timeline stay in the already-running TraceSift service.
    */
-  async task(analysisId: string, taskIndex: number, signal?: AbortSignal) {
-    const query = `?analysisId=${encodeURIComponent(analysisId)}&taskIndex=${taskIndex}`;
-    const parsed = traceSiftTaskSchema.safeParse(await this.request(`/api/integration/v1/task${query}`, { method: "GET" }, signal));
-    if (!parsed.success) throw new Error("TraceSift returned an invalid task response.");
-    return parsed.data;
+  async openExplore(analysisId: string, taskIndex: number, focus?: string, signal?: AbortSignal) {
+    await this.service(signal);
+    const analysisPath = this.analysisPath(analysisId);
+    const analysisFile = await stat(analysisPath).catch(() => undefined);
+    if (!analysisFile?.isFile()) throw new TraceSiftError("This analysis is no longer available to Explore. Run it again.", "request");
+    const args = ["explore", analysisPath, "--task", String(taskIndex), ...(focus ? ["--focus", focus] : [])];
+    await this.launchExplore(args, signal);
+  }
+
+  async openReactExplore(analysisId: string, rootId: number, commitIndex: number, signal?: AbortSignal) {
+    await this.service(signal);
+    const analysisPath = this.analysisPath(analysisId);
+    const analysisFile = await stat(analysisPath).catch(() => undefined);
+    if (!analysisFile?.isFile()) throw new TraceSiftError("This analysis is no longer available to Explore. Run it again.", "request");
+    await this.launchExplore(["explore", analysisPath, "--commit", `${rootId}.${commitIndex}`], signal);
+  }
+
+  private async launchExplore(args: string[], signal?: AbortSignal) {
+    await new Promise<void>((resolve, reject) => {
+      let diagnostics = "";
+      let settled = false;
+      const child = spawn(this.command, args, {
+        stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, TRACE_SIFT_HOME: this.home },
+      });
+      child.stderr?.setEncoding("utf8");
+      child.stderr?.on("data", chunk => { if (diagnostics.length < 16_384) diagnostics += String(chunk).slice(0, 16_384 - diagnostics.length); });
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        signal?.removeEventListener("abort", abort);
+        if (error) reject(error); else resolve();
+      };
+      const abort = () => { child.kill("SIGTERM"); finish(signal?.reason instanceof Error ? signal.reason : new Error("TraceSift Explore was cancelled.")); };
+      const timeout = setTimeout(() => { child.kill("SIGTERM"); finish(new Error("TraceSift Explore did not open within 15 seconds.")); }, EXPLORE_TIMEOUT_MS);
+      child.once("error", () => finish(new TraceSiftError("TraceSift is not installed or could not run `tracesift explore`.", "setup")));
+      child.once("exit", code => finish(code === 0 ? undefined : new Error(diagnostics.trim() || `TraceSift Explore exited with code ${code}.`)));
+      if (signal?.aborted) abort(); else signal?.addEventListener("abort", abort, { once: true });
+    });
   }
 
   async handoff(analysisId: string, cardId: string, signal?: AbortSignal) {

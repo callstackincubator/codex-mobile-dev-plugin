@@ -9,7 +9,9 @@
  * frames and their culprits, and both ends derive the drawing from those.
  */
 
-import type { TraceSiftBoundaryCulprit, TraceSiftBoundaryFrame, TraceSiftTaskCard } from "./tracesift.ts";
+import type {
+  TraceSiftBoundaryCulprit, TraceSiftBoundaryFrame, TraceSiftReactCard, TraceSiftTaskCard,
+} from "./tracesift.ts";
 
 /**
  * Slices a level carries before it folds its tail away. The eighth is where a
@@ -56,7 +58,57 @@ export interface ContributionSlice {
   tailCount?: number;
 }
 
+export type ReactSliceKind = "component" | "tail" | "outside";
+
+export interface ReactSlice {
+  key: string;
+  kind: ReactSliceKind;
+  name: string;
+  share: number;
+  ms: number;
+  colorIndex: number;
+  culprit?: TraceSiftReactCard["culprits"][number];
+  tailCount?: number;
+}
+
 const round1 = (value: number) => Math.round(value * 10) / 10;
+
+/** A React commit partitioned by component self time and its two residuals. */
+export function reactCommitSlices(card: TraceSiftReactCard): ReactSlice[] {
+  const duration = card.durationMs;
+  if (duration <= 0) return [];
+
+  const slices: ReactSlice[] = [];
+  let shownMs = 0;
+  for (const [index, culprit] of card.culprits.slice(0, CHART_SLICES).entries()) {
+    const share = culprit.selfMs / duration;
+    if (share < MIN_SLICE_SHARE) continue;
+    shownMs += culprit.selfMs;
+    slices.push({
+      key: culprit.componentId, kind: "component", name: culprit.component,
+      share, ms: culprit.selfMs, colorIndex: index, culprit,
+    });
+  }
+
+  const culpritMs = card.culprits.reduce((sum, culprit) => sum + culprit.selfMs, 0);
+  const tailMs = card.culpritTailMs + Math.max(0, culpritMs - shownMs);
+  const tailCount = card.culpritTailCount + (card.culprits.length - slices.length);
+  if (tailCount > 0 && tailMs / duration >= MIN_SLICE_SHARE) {
+    slices.push({
+      key: "tail", kind: "tail",
+      name: tailCount === 1 ? "1 smaller component" : `${tailCount} smaller components`,
+      share: tailMs / duration, ms: round1(tailMs), colorIndex: -1, tailCount,
+    });
+  }
+
+  if (card.unattributedMs / duration >= MIN_SLICE_SHARE) {
+    slices.push({
+      key: "outside", kind: "outside", name: "React itself, no component",
+      share: card.unattributedMs / duration, ms: card.unattributedMs, colorIndex: -1,
+    });
+  }
+  return slices;
+}
 
 /** A residual, or nothing when it is too thin to draw. */
 function residual(

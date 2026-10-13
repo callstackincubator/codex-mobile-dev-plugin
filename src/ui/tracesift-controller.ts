@@ -1,23 +1,9 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { OpenAIMessageParams } from "@openai/mcp-extensions/app";
-import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftTaskSchema, type TraceSiftAnalysis, type TraceSiftTask } from "../shared/tracesift.ts";
+import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis } from "../shared/tracesift.ts";
 import type { ContributionChartKind } from "./components/tracesift/contribution-chart.tsx";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface } from "./telemetry.ts";
-
-/**
- * Explore, which is a second screen rather than a second app.
- *
- * It opens over the cards in the same resource: a separate `ui://` resource
- * would be a second iframe with its own connection and its own copy of the
- * analysis, and the reader would have lost the list they came from. `focus` is
- * the frame the view opens on — the top of a task is a wall of scheduler frames
- * and rooting the first screen there is useless.
- */
-type Explore =
-  | { state: "loading"; cardId: string; focus: string }
-  | { state: "ready"; cardId: string; focus: string; task: TraceSiftTask }
-  | { state: "failed"; cardId: string; focus: string; reason: string };
 
 type State = {
   analysis?: TraceSiftAnalysis;
@@ -29,7 +15,7 @@ type State = {
   /** The card whose hand-off is being fetched, and the one just copied. */
   handoffCard?: string;
   copiedCard?: string;
-  explore?: Explore;
+  openingExploreCard?: string;
 };
 
 function composerUnavailable(error: unknown) {
@@ -83,7 +69,7 @@ export class TraceSiftController {
     setUiSurface("tracesift");
     setUiGauge("ui.tracesift.cards", analysis.cards.length);
     recordUiTiming("ui.tracesift.process", performance.now() - startedAt);
-    this.update({ analysis, error: "", busyCard: undefined, explore: undefined, copiedCard: undefined, handoffCard: undefined });
+    this.update({ analysis, error: "", busyCard: undefined, copiedCard: undefined, handoffCard: undefined, openingExploreCard: undefined });
     markUiSurfaceReady(this.readyAt);
   }
   investigate = async (cardId: string) => {
@@ -139,46 +125,28 @@ export class TraceSiftController {
     } finally { this.update({ handoffCard: undefined }); }
   };
 
-  /**
-   * Explore, opened on a card and optionally on one frame inside it.
-   *
-   * Fullscreen is requested rather than assumed: a host that cannot grant it
-   * still gets the view, inline, which is worse to read but not broken — so the
-   * request's outcome never gates the screen.
-   */
   openExplore = async (cardId: string, focus = "") => {
     const { analysis } = this.state;
-    if (!analysis || analysis.profileType !== "cpu" || this.disposed) return;
+    if (!analysis || this.disposed || this.state.openingExploreCard) return;
     const card = analysis.cards.find(entry => entry.id === cardId);
     if (!card) return;
-    this.update({ explore: { state: "loading", cardId, focus } });
-    void this.app.requestDisplayMode({ mode: "fullscreen" }).catch(() => { /* inline is a worse screen, not a failure */ });
+    this.update({ openingExploreCard: cardId, error: "" });
     const startedAt = performance.now();
     try {
       const result = await this.app.callServerTool({
-        name: "mobile_get_tracesift_task",
-        arguments: { analysisId: analysis.analysisId, taskIndex: card.taskIndex },
+        name: "mobile_open_tracesift_explore",
+        arguments: analysis.profileType === "cpu"
+          ? { analysisId: analysis.analysisId, taskIndex: card.taskIndex, ...(focus ? { focus } : {}) }
+          : { analysisId: analysis.analysisId, rootId: card.rootId, commitIndex: card.commitIndex },
       });
       if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "TraceSift could not open this task.");
-      const parsed = traceSiftTaskSchema.safeParse(result.structuredContent);
-      if (!parsed.success) throw new Error("TraceSift returned an invalid task result.");
+      if (result.structuredContent?.opened !== true) throw new Error("TraceSift did not confirm that Explore opened.");
       recordUiTiming("ui.tracesift.explore", performance.now() - startedAt);
       countUiEvent("ui.tracesift.explore");
-      // The reader may have backed out, or opened another card, while this was
-      // in flight; the screen they are on now is the one that decides.
-      if (this.state.explore?.cardId === cardId) this.update({ explore: { state: "ready", cardId, focus, task: parsed.data } });
     } catch (error) {
       countUiEvent("ui.tracesift.explore_failed");
-      if (this.state.explore?.cardId === cardId) {
-        this.update({ explore: { state: "failed", cardId, focus, reason: error instanceof Error ? error.message : "That task could not be opened." } });
-      }
-    }
-  };
-
-  closeExplore = () => {
-    if (!this.state.explore) return;
-    this.update({ explore: undefined });
-    void this.app.requestDisplayMode({ mode: "inline" }).catch(() => { /* the host keeps whichever mode it has */ });
+      this.update({ error: error instanceof Error ? error.message : "That task could not be opened." });
+    } finally { this.update({ openingExploreCard: undefined }); }
   };
 
   dispose() {

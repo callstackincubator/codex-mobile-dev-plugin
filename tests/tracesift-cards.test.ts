@@ -51,21 +51,14 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   window.fetch = async (_url, options) => { telemetry.push(String(options?.body ?? "")); return new Response("", { status: 200 }); };
   window.eval(built.outputFiles[0].text);
   const calls: { name: string; arguments: unknown }[] = [];
-  const displayModes: string[] = [];
-  const exploreTask = {
-    apiVersion: 1, analysisId: "cpu", totalMs: 180, title: "CPU",
-    card: { ...baseTask, tree: { id: "b1", name: "render", frameClass: "app", totalMs: 60, selfMs: 2, invocations: 2, children: [] },
-      timeline: { boxes: [], durationMs: 75, coveredMs: 60, rows: 1, kept: ["app"], omittedBoxCount: 0, omittedBoxMs: 0 } },
-  };
   const app = {
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     async callServerTool(input: { name: string; arguments: unknown }) {
       calls.push(input);
-      return input.name === "mobile_get_tracesift_task"
-        ? { content: [], structuredContent: exploreTask }
+      return input.name === "mobile_open_tracesift_explore"
+        ? { content: [], structuredContent: { opened: true } }
         : { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF_TEXT" } };
     },
-    async requestDisplayMode({ mode }: { mode: string }) { displayModes.push(mode); return { mode }; },
     async sendMessage() { return {}; },
   };
   /** A click React has finished re-rendering after. */
@@ -108,37 +101,30 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   assert.equal(window.document.querySelectorAll(".contribution-band").length, 0);
   assert.ok(window.document.querySelectorAll(".contribution-tile").length > 0);
 
-  // Explore asks the server for the task the analysis response left out, and
-  // shows it over the cards rather than in a tab the chat cannot reach.
+  // Explore opens the task in TraceSift's own web UI. The full task never
+  // crosses the MCP app bridge and the card stays visible in the chat.
   const exploreButton = [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent?.includes("Explore"))!;
   await act(() => exploreButton.click());
   // Only the name and the arguments are ours; the bundle adds a telemetry
   // `_meta` to every tool call, and asserting on it would test Sentry.
-  assert.equal(calls.at(-1)!.name, "mobile_get_tracesift_task");
+  assert.equal(calls.at(-1)!.name, "mobile_open_tracesift_explore");
   // The call is built inside the JSDOM realm, so its object does not share
   // a prototype with this one and a strict structural compare cannot pass.
-  assert.deepEqual({ ...calls.at(-1)!.arguments as object }, { analysisId: "cpu", taskIndex: 0 });
-  assert.equal(displayModes.at(-1), "fullscreen");
-  assert.equal(window.document.querySelector(".hotspot-list"), null);
-  // Explore is a screen in this view, not a tab the chat cannot reach: the
-  // task's own heading, and the four readings of it, are on the page.
-  assert.match(window.document.body.textContent!, /App › Screen › render/);
-  for (const tab of ["Timeline", "Flame graph", "Call tree", "Culprits"]) {
-    assert.match(window.document.body.textContent!, new RegExp(tab), `Explore is missing its ${tab} view`);
-  }
-  await act(() => [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent?.includes("Back"))!.click());
+  assert.deepEqual({ ...calls.at(-1)!.arguments as object }, { analysisId: "cpu", taskIndex: 0, focus: "b1" });
   assert.ok(window.document.querySelector(".hotspot-list"));
 
   mounted.controller.accept({ content: [], structuredContent: { apiVersion: 1, analysisId: "react", profileType: "react", title: "React", summary: { rootCount: 1, commitCount: 3, totalCommitRenderDurationMs: 50, peakCommitDurationMs: 40, commitsOverBudget: 1, omittedEvidenceCommitCount: 0 }, cards: [baseReact] } });
   await new Promise(resolve => window.setTimeout(resolve, 0));
-  // A commit takes the same chrome and leads with its pathline too; it has no
-  // boundary frames to divide, so it keeps its measured culprit rows and the
-  // evidence sentence rides along as the row's tooltip.
-  assert.match(window.document.body.textContent!, /App › List/);
-  assert.match(window.document.body.textContent!, /measured culpritsList30 ms/);
-  assert.equal(window.document.querySelector(".contribution-nested-row")!.getAttribute("title"), "List used 30 ms self time.");
-  // A commit has no call tree to open, so it is offered no Explore.
-  assert.equal([...window.document.querySelectorAll("button")].some(button => button.textContent?.includes("Explore")), false);
+  flush(() => [...window.document.querySelectorAll<HTMLElement>(".chart-switch button")].find(button => button.textContent === "bar")!.click());
+  // React commits use the web card's headline and divide the complete commit
+  // into component self time plus the reconciler residual.
+  assert.match(window.document.body.textContent!, /List spent 30 ms rendering/);
+  assert.match(window.document.querySelector(".contribution-lede")!.textContent!, /How the 40 ms divides between the components that rendered/);
+  assert.equal(window.document.querySelectorAll(".contribution-band").length, 2);
+  assert.match(window.document.querySelector(".contribution-detail")!.textContent!, /List75% of commit30 msviaAppfilesrc\/List.tsxprops changed · props items/);
+  assert.match(window.document.body.textContent!, /React itself, no component/);
+  // The commit and every slice can open the same React Explore view.
+  assert.equal([...window.document.querySelectorAll("button")].some(button => button.textContent?.includes("Explore")), true);
   await mounted.controller.investigate("react-1");
   await mounted.close();
   const encoded = telemetry.join("\n");

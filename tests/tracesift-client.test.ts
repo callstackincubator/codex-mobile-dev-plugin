@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,17 +64,31 @@ test("TraceSift client reuses an authenticated service and preserves measured ca
   assert.deepEqual(JSON.parse(fake.requests.at(-1)!.body!), { analysisId: "analysis-1", cardId: "task-0" });
 });
 
-test("TraceSift client fetches one task whole, which is the only place the call tree is served", async t => {
+test("TraceSift client persists compact findings and invokes the Explore CLI without fetching task data", async t => {
   const fake = await fixture(); t.after(fake.close);
-  const client = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => client.close());
-  const task = await client.task("analysis-1", 0);
-  assert.equal(task.card.tree.name, "render");
-  assert.equal(task.card.timeline.coveredMs, 60);
-  assert.equal(task.totalMs, 200);
-  // The index identifies the task, not the card id: that is what the endpoint
-  // looks one up by, and the two are different numbers on a filtered list.
-  assert.deepEqual(Object.fromEntries(new URLSearchParams(fake.requests.at(-1)!.body!)), { analysisId: "analysis-1", taskIndex: "0" });
+  const profile = join(fake.home, "cpu profile.json"); await writeFile(profile, "{}");
+  const argsPath = join(fake.home, "explore-args.txt");
+  const command = join(fake.home, "tracesift-test");
+  await writeFile(command, `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(argsPath)}\n`, { mode: 0o755 });
+  await chmod(command, 0o755);
+  const previousCommand = process.env.TRACE_SIFT_COMMAND;
+  process.env.TRACE_SIFT_COMMAND = command;
+  t.after(() => { if (previousCommand === undefined) delete process.env.TRACE_SIFT_COMMAND; else process.env.TRACE_SIFT_COMMAND = previousCommand; });
+  const client = new TraceSiftClient(undefined, fake.home); t.after(() => client.close());
+  await client.analyze(profile, "auto");
+  await client.openExplore("analysis-1", 0, "b1");
+  const args = (await readFile(argsPath, "utf8")).trim().split("\n");
+  assert.equal(args[0], "explore");
+  assert.equal((await stat(args[1])).mode & 0o777, 0o600);
+  const persisted = JSON.parse(await readFile(args[1], "utf8"));
+  assert.equal(persisted.analysisId, "analysis-1");
+  assert.equal("tree" in persisted.cards[0], false);
+  assert.deepEqual(args.slice(2), ["--task", "0", "--focus", "b1"]);
   assert.ok(fake.requests.every(request => request.authorization === `Bearer ${token}`));
+
+  await client.openReactExplore("analysis-1", 7, 12);
+  const reactArgs = (await readFile(argsPath, "utf8")).trim().split("\n");
+  assert.deepEqual(reactArgs.slice(2), ["--commit", "7.12"]);
 });
 
 test("TraceSift client rejects unsafe descriptors without starting a CLI", async t => {

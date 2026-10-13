@@ -3,7 +3,7 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { errorMessage } from "../shared/protocol.ts";
-import { TRACESIFT_URI, traceSiftHandoffSchema, traceSiftProfileTypeSchema, traceSiftReactCardSchema, traceSiftTaskCardSchema, traceSiftTaskSchema } from "../shared/tracesift.ts";
+import { TRACESIFT_URI, traceSiftHandoffSchema, traceSiftProfileTypeSchema, traceSiftReactCardSchema, traceSiftTaskCardSchema } from "../shared/tracesift.ts";
 import { captureServerError, recordTraceSiftOperation } from "./telemetry.ts";
 import type { TraceSiftClient } from "./tracesift-client.ts";
 
@@ -37,18 +37,28 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     } catch (error) { return failure(error, "analyze", startedAt, context.signal); }
   });
 
-  registerAppTool(server, "mobile_get_tracesift_task", {
-    title: "Get a TraceSift task in full",
-    description: "Return one CPU task's call tree and timeline for the inline card's Explore view. This app-only action is called by the card after the user presses Explore; the analysis response omits these fields because they are megabytes per task and no card draws them.",
-    inputSchema: { analysisId: z.string().min(1).max(256), taskIndex: z.number().int().nonnegative() },
-    outputSchema: traceSiftTaskSchema.shape, annotations: read,
+  registerAppTool(server, "mobile_open_tracesift_explore", {
+    title: "Open a TraceSift finding in its web explorer",
+    description: "Open one CPU task or React commit through `tracesift explore`. This app-only action is called after the user presses Explore; the persisted compact analysis carries the selection while full Explore data stays in TraceSift instead of crossing MCP.",
+    inputSchema: {
+      analysisId: z.string().min(1).max(256), taskIndex: z.number().int().nonnegative().optional(),
+      rootId: z.number().int().nonnegative().optional(), commitIndex: z.number().int().nonnegative().optional(),
+      focus: z.string().max(16_384).optional(),
+    },
+    outputSchema: { opened: z.literal(true) }, annotations: read,
     _meta: { ui: { visibility: ["app"] } },
-  }, async ({ analysisId, taskIndex }, context) => {
+  }, async ({ analysisId, taskIndex, rootId, commitIndex, focus }, context) => {
     const startedAt = performance.now();
     try {
-      const task = await client.task(analysisId, taskIndex, context.signal);
+      if (taskIndex !== undefined && rootId === undefined && commitIndex === undefined) {
+        await client.openExplore(analysisId, taskIndex, focus, context.signal);
+      } else if (taskIndex === undefined && rootId !== undefined && commitIndex !== undefined && focus === undefined) {
+        await client.openReactExplore(analysisId, rootId, commitIndex, context.signal);
+      } else {
+        throw new Error("Explore requires either a CPU task index or a React root and commit index.");
+      }
       recordTraceSiftOperation("task", "success", performance.now() - startedAt);
-      return { content: [{ type: "text", text: "TraceSift task ready." }], structuredContent: task };
+      return { content: [{ type: "text", text: "TraceSift Explore opened." }], structuredContent: { opened: true as const } };
     } catch (error) { return failure(error, "task", startedAt, context.signal); }
   });
 
