@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="eef28f95-7232-5f7a-a073-50472fbce6be")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="47e1e948-f656-570f-9091-86be5fcde63d")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -3502,15 +3502,15 @@ var init_schemas = __esm({
         const syms = normalized2.symbolKeys;
         const doc = new Doc(["payload", "ctx"], { shape, inst, memo: memo2, syms });
         const parseStr = (k2) => `shape[${k2}]._zod.run({ value: input[${k2}], issues: [] }, ctx)`;
-        const prefixStr = (id, k2) => `
-          let ${id}_ab = false;
-          for (let i = 0; i < ${id}.issues.length; i++) {
-            const iss = ${id}.issues[i];
+        const prefixStr = (id2, k2) => `
+          let ${id2}_ab = false;
+          for (let i = 0; i < ${id2}.issues.length; i++) {
+            const iss = ${id2}.issues[i];
             iss.path = iss.path ? [${k2}, ...iss.path] : [${k2}];
             payload.issues.push(iss);
-            if (iss.continue !== true) ${id}_ab = true;
+            if (iss.continue !== true) ${id2}_ab = true;
           }
-          if (${id}_ab && ctx && ctx.abortEarly) {
+          if (${id2}_ab && ctx && ctx.abortEarly) {
             payload.value = newResult;
             return payload;
           }`;
@@ -3524,34 +3524,34 @@ var init_schemas = __esm({
         for (const key of normalized2.allKeys) {
           if (key === "__proto__")
             continue;
-          const id = ids2[key];
+          const id2 = ids2[key];
           const k2 = typeof key === "symbol" ? `syms[${syms.indexOf(key)}]` : esc(key);
           const isPresent = `${k2} in input`;
           const schema2 = shape[key];
           const optin = schema2?._zod?.optin;
           const isOptionalIn = optin !== void 0;
           const isOptionalOut = schema2?._zod?.optout === "optional";
-          doc.write(`const ${id} = ${parseStr(k2)};`);
+          doc.write(`const ${id2} = ${parseStr(k2)};`);
           if (isOptionalIn && isOptionalOut) {
-            const assign = optin === "optional" ? `${id}_present` : `${id}.value !== undefined || ${id}_present`;
+            const assign = optin === "optional" ? `${id2}_present` : `${id2}.value !== undefined || ${id2}_present`;
             doc.write(`
-        const ${id}_present = ${isPresent};
-        if (!${id}.issues.length || ${id}_present) {
-          if (${id}.issues.length) {${prefixStr(id, k2)}
+        const ${id2}_present = ${isPresent};
+        if (!${id2}.issues.length || ${id2}_present) {
+          if (${id2}.issues.length) {${prefixStr(id2, k2)}
           }
 
           if (${assign}) {
-            newResult[${k2}] = ${id}.value;
+            newResult[${k2}] = ${id2}.value;
           }
         }
 
       `);
           } else if (!isOptionalIn) {
             doc.write(`
-        const ${id}_present = ${isPresent};
-        if (${id}.issues.length) {${prefixStr(id, k2)}
+        const ${id2}_present = ${isPresent};
+        if (${id2}.issues.length) {${prefixStr(id2, k2)}
         }
-        if (!${id}_present && !${id}.issues.length) {
+        if (!${id2}_present && !${id2}.issues.length) {
           payload.issues.push({
             code: "invalid_type",
             expected: "nonoptional",
@@ -3564,22 +3564,22 @@ var init_schemas = __esm({
           }
         }
 
-        if (${id}_present) {
-          newResult[${k2}] = ${id}.value;
+        if (${id2}_present) {
+          newResult[${k2}] = ${id2}.value;
         }
 
       `);
           } else {
             doc.write(`
-        if (${id}.issues.length) {${prefixStr(id, k2)}
+        if (${id2}.issues.length) {${prefixStr(id2, k2)}
         }
       `);
             if (optin === "defaulted") {
-              doc.write(`newResult[${k2}] = ${id}.value;`);
+              doc.write(`newResult[${k2}] = ${id2}.value;`);
             } else {
               doc.write(`
-        if (${id}.value !== undefined || ${isPresent}) {
-          newResult[${k2}] = ${id}.value;
+        if (${id2}.value !== undefined || ${isPresent}) {
+          newResult[${k2}] = ${id2}.value;
         }
       `);
             }
@@ -15677,26 +15677,26 @@ function extractDefs(ctx, schema2) {
     return;
   const idToSchema = /* @__PURE__ */ new Map();
   for (const entry of ctx.seen.entries()) {
-    const id = ctx.metadataRegistry.get(entry[0])?.id;
-    if (id) {
-      const existing = idToSchema.get(id);
+    const id2 = ctx.metadataRegistry.get(entry[0])?.id;
+    if (id2) {
+      const existing = idToSchema.get(id2);
       if (existing && existing !== entry[0]) {
-        throw new Error(`Duplicate schema id "${id}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);
+        throw new Error(`Duplicate schema id "${id2}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);
       }
-      idToSchema.set(id, entry[0]);
+      idToSchema.set(id2, entry[0]);
     }
   }
   const makeURI = (entry) => {
     const defsSegment = ctx.target === "draft-2020-12" ? "$defs" : "definitions";
     if (ctx.external) {
       const externalId = ctx.external.registry.get(entry[0])?.id;
-      const uriGenerator = ctx.external.uri ?? ((id2) => id2);
+      const uriGenerator = ctx.external.uri ?? ((id3) => id3);
       if (externalId) {
         return { ref: uriGenerator(externalId) };
       }
-      const id = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
-      entry[1].defId = id;
-      return { defId: id, ref: `${uriGenerator("__shared")}#/${defsSegment}/${encodeJSONPointerSegment(id)}` };
+      const id2 = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
+      entry[1].defId = id2;
+      return { defId: id2, ref: `${uriGenerator("__shared")}#/${defsSegment}/${encodeJSONPointerSegment(id2)}` };
     }
     const uriPrefix = `#`;
     const defUriPrefix = `${uriPrefix}/${defsSegment}/`;
@@ -15744,8 +15744,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         continue;
       }
     }
-    const id = ctx.metadataRegistry.get(entry[0])?.id;
-    if (id) {
+    const id2 = ctx.metadataRegistry.get(entry[0])?.id;
+    if (id2) {
       extractToDef(entry);
       continue;
     }
@@ -15976,10 +15976,10 @@ function finalize(ctx, schema2) {
   } else {
   }
   if (ctx.external?.uri) {
-    const id = ctx.external.registry.get(schema2)?.id;
-    if (!id)
+    const id2 = ctx.external.registry.get(schema2)?.id;
+    if (!id2)
       throw new Error("Schema is missing an `id` property");
-    result4.$id = ctx.external.uri(id);
+    result4.$id = ctx.external.uri(id2);
   }
   assignProps(result4, root.defId ? root.schema : root.def ?? root.schema);
   const rootMetaId = ctx.metadataRegistry.get(schema2)?.id;
@@ -16165,7 +16165,7 @@ function stringifyKeyNames(bySchema, json3, visited) {
   const values = json3.enum ?? (json3.const !== void 0 ? [json3.const] : void 0);
   if (!numericType && !values?.some((v3) => typeof v3 === "number"))
     return json3;
-  const { minimum, maximum, exclusiveMinimum, exclusiveMaximum, multipleOf, format: format2, id, ...rest } = json3;
+  const { minimum, maximum, exclusiveMinimum, exclusiveMaximum, multipleOf, format: format2, id: id2, ...rest } = json3;
   if (rest.enum)
     rest.enum = rest.enum.map((v3) => typeof v3 === "number" ? String(v3) : v3);
   else if (typeof rest.const === "number")
@@ -22617,10 +22617,10 @@ var require_resolve = __commonJS({
       }
       return count4;
     }
-    function getFullPath(resolver, id = "", normalize2) {
+    function getFullPath(resolver, id2 = "", normalize2) {
       if (normalize2 !== false)
-        id = normalizeId(id);
-      const p4 = resolver.parse(id);
+        id2 = normalizeId(id2);
+      const p4 = resolver.parse(id2);
       return _getFullPath(resolver, p4);
     }
     exports.getFullPath = getFullPath;
@@ -22630,13 +22630,13 @@ var require_resolve = __commonJS({
     }
     exports._getFullPath = _getFullPath;
     var TRAILING_SLASH_HASH = /#\/?$/;
-    function normalizeId(id) {
-      return id ? id.replace(TRAILING_SLASH_HASH, "") : "";
+    function normalizeId(id2) {
+      return id2 ? id2.replace(TRAILING_SLASH_HASH, "") : "";
     }
     exports.normalizeId = normalizeId;
-    function resolveUrl(resolver, baseId, id) {
-      id = normalizeId(id);
-      return resolver.resolve(baseId, id);
+    function resolveUrl(resolver, baseId, id2) {
+      id2 = normalizeId(id2);
+      return resolver.resolve(baseId, id2);
     }
     exports.resolveUrl = resolveUrl;
     var ANCHOR = /^[a-z_][-a-z0-9._]*$/i;
@@ -23406,8 +23406,8 @@ var require_compile = __commonJS({
       if (Object.keys(root.schema).length > 0 && refPath === baseId) {
         return getJsonPointer.call(this, p4, root);
       }
-      const id = (0, resolve_1.normalizeId)(refPath);
-      const schOrRef = this.refs[id] || this.schemas[id];
+      const id2 = (0, resolve_1.normalizeId)(refPath);
+      const schOrRef = this.refs[id2] || this.schemas[id2];
       if (typeof schOrRef == "string") {
         const sch = resolveSchema.call(this, root, schOrRef);
         if (typeof (sch === null || sch === void 0 ? void 0 : sch.schema) !== "object")
@@ -23418,7 +23418,7 @@ var require_compile = __commonJS({
         return;
       if (!schOrRef.validate)
         compileSchema.call(this, schOrRef);
-      if (id === (0, resolve_1.normalizeId)(ref)) {
+      if (id2 === (0, resolve_1.normalizeId)(ref)) {
         const { schema: schema2 } = schOrRef;
         const { schemaId } = this.opts;
         const schId = schema2[schemaId];
@@ -24845,15 +24845,15 @@ var require_core = __commonJS({
             this.addSchema(sch, void 0, _meta, _validateSchema);
           return this;
         }
-        let id;
+        let id2;
         if (typeof schema2 === "object") {
           const { schemaId } = this.opts;
-          id = schema2[schemaId];
-          if (id !== void 0 && typeof id != "string") {
+          id2 = schema2[schemaId];
+          if (id2 !== void 0 && typeof id2 != "string") {
             throw new Error(`schema ${schemaId} must be string`);
           }
         }
-        key = (0, resolve_1.normalizeId)(key || id);
+        key = (0, resolve_1.normalizeId)(key || id2);
         this._checkUnique(key);
         this.schemas[key] = this._addSchema(schema2, _meta, key, _validateSchema, true);
         return this;
@@ -24932,11 +24932,11 @@ var require_core = __commonJS({
           case "object": {
             const cacheKey = schemaKeyRef;
             this._cache.delete(cacheKey);
-            let id = schemaKeyRef[this.opts.schemaId];
-            if (id) {
-              id = (0, resolve_1.normalizeId)(id);
-              delete this.schemas[id];
-              delete this.refs[id];
+            let id2 = schemaKeyRef[this.opts.schemaId];
+            if (id2) {
+              id2 = (0, resolve_1.normalizeId)(id2);
+              delete this.schemas[id2];
+              delete this.refs[id2];
             }
             return this;
           }
@@ -25043,10 +25043,10 @@ var require_core = __commonJS({
         }
       }
       _addSchema(schema2, meta5, baseId, validateSchema = this.opts.validateSchema, addSchema = this.opts.addUsedSchema) {
-        let id;
+        let id2;
         const { schemaId } = this.opts;
         if (typeof schema2 == "object") {
-          id = schema2[schemaId];
+          id2 = schema2[schemaId];
         } else {
           if (this.opts.jtd)
             throw new Error("schema must be object");
@@ -25056,7 +25056,7 @@ var require_core = __commonJS({
         let sch = this._cache.get(schema2);
         if (sch !== void 0)
           return sch;
-        baseId = (0, resolve_1.normalizeId)(id || baseId);
+        baseId = (0, resolve_1.normalizeId)(id2 || baseId);
         const localRefs = resolve_1.getSchemaRefs.call(this, schema2, baseId);
         sch = new compile_1.SchemaEnv({ schema: schema2, schemaId, meta: meta5, baseId, localRefs });
         this._cache.set(sch.schema, sch);
@@ -25069,9 +25069,9 @@ var require_core = __commonJS({
           this.validateSchema(schema2, true);
         return sch;
       }
-      _checkUnique(id) {
-        if (this.schemas[id] || this.refs[id]) {
-          throw new Error(`schema with key or id "${id}" already exists`);
+      _checkUnique(id2) {
+        if (this.schemas[id2] || this.refs[id2]) {
+          throw new Error(`schema with key or id "${id2}" already exists`);
         }
       }
       _compileSchemaEnv(sch) {
@@ -36967,17 +36967,17 @@ function updateRateLimits(limits, { statusCode, headers }, now = safeDateNow()) 
     for (const limit of rateLimitHeader.trim().split(",")) {
       const [retryAfter, categories2, , , namespaces] = limit.split(":", 5);
       const headerDelay = parseInt(retryAfter, 10);
-      const delay6 = (!isNaN(headerDelay) ? headerDelay : 60) * 1e3;
+      const delay7 = (!isNaN(headerDelay) ? headerDelay : 60) * 1e3;
       if (!categories2) {
-        updatedRateLimits.all = now + delay6;
+        updatedRateLimits.all = now + delay7;
       } else {
         for (const category of categories2.split(";")) {
           if (category === "metric_bucket") {
             if (!namespaces || namespaces.split(";").includes("custom")) {
-              updatedRateLimits[category] = now + delay6;
+              updatedRateLimits[category] = now + delay7;
             }
           } else {
-            updatedRateLimits[category] = now + delay6;
+            updatedRateLimits[category] = now + delay7;
           }
         }
       }
@@ -39795,15 +39795,15 @@ var ServerRuntimeClient = class extends Client {
    * to create a monitor automatically when sending a check in.
    */
   captureCheckIn(checkIn, monitorConfig, scope) {
-    const id = "checkInId" in checkIn && checkIn.checkInId ? checkIn.checkInId : uuid4();
+    const id2 = "checkInId" in checkIn && checkIn.checkInId ? checkIn.checkInId : uuid4();
     if (!this._isEnabled()) {
       DEBUG_BUILD && debug.warn("SDK not enabled, will not capture check-in.");
-      return id;
+      return id2;
     }
     const options = this.getOptions();
     const { release: release2, environment, tunnel } = options;
     const serializedCheckIn = {
-      check_in_id: id,
+      check_in_id: id2,
       monitor_slug: checkIn.monitorSlug,
       status: checkIn.status,
       release: release2,
@@ -39837,7 +39837,7 @@ var ServerRuntimeClient = class extends Client {
     );
     DEBUG_BUILD && debug.log("Sending checkin:", checkIn.monitorSlug, checkIn.status);
     this.sendEnvelope(envelope);
-    return id;
+    return id2;
   }
   /**
    * @inheritDoc
@@ -42441,12 +42441,12 @@ var isHex = new Uint8Array([
   1,
   1
 ]);
-function isValidHex(id, length) {
-  if (typeof id !== "string" || id.length !== length)
+function isValidHex(id2, length) {
+  if (typeof id2 !== "string" || id2.length !== length)
     return false;
   let r3 = 0;
-  for (let i2 = 0; i2 < id.length; i2 += 4) {
-    r3 += (isHex[id.charCodeAt(i2)] | 0) + (isHex[id.charCodeAt(i2 + 1)] | 0) + (isHex[id.charCodeAt(i2 + 2)] | 0) + (isHex[id.charCodeAt(i2 + 3)] | 0);
+  for (let i2 = 0; i2 < id2.length; i2 += 4) {
+    r3 += (isHex[id2.charCodeAt(i2)] | 0) + (isHex[id2.charCodeAt(i2 + 1)] | 0) + (isHex[id2.charCodeAt(i2 + 2)] | 0) + (isHex[id2.charCodeAt(i2 + 3)] | 0);
   }
   return r3 === length;
 }
@@ -44298,8 +44298,8 @@ function normalizeLangChainMessages(messages2) {
       };
     }
     if (message2.lc === 1 && message2.kwargs) {
-      const id = message2.id;
-      const messageType = Array.isArray(id) && id.length > 0 ? id[id.length - 1] : "";
+      const id2 = message2.id;
+      const messageType = Array.isArray(id2) && id2.length > 0 ? id2[id2.length - 1] : "";
       const role = typeof messageType === "string" ? normalizeRoleNameFromCtor(messageType) : "user";
       return {
         role: normalizeMessageRole(role),
@@ -45259,8 +45259,8 @@ var SentryMastraExporter = class {
   }
   /** End open spans, then flush. Does not close the Sentry client. */
   async shutdown() {
-    for (const id of this._spans.keys()) {
-      unregisterMastraSpan(id);
+    for (const id2 of this._spans.keys()) {
+      unregisterMastraSpan(id2);
     }
     for (const { span } of this._spans.values()) {
       span.end();
@@ -45312,21 +45312,21 @@ var SentryMastraExporter = class {
     this._trackSpan(span.id, { span: sentrySpan, spanType: span.type, usage: {} });
   }
   /** Track a started span, ending any Sentry span that would otherwise be dropped without `end()`. */
-  _trackSpan(id, tracked) {
-    this._removeTracked(id)?.span.end();
+  _trackSpan(id2, tracked) {
+    this._removeTracked(id2)?.span.end();
     if (this._spans.size >= MAX_TRACKED_MASTRA_SPANS) {
       const oldestId = this._spans.keys()[0];
       if (oldestId !== void 0) {
         this._removeTracked(oldestId)?.span.end();
       }
     }
-    this._spans.set(id, tracked);
-    registerMastraSpan(id, tracked.span);
+    this._spans.set(id2, tracked);
+    registerMastraSpan(id2, tracked.span);
   }
   /** Remove a tracked span and keep the id→span registry in lockstep. */
-  _removeTracked(id) {
-    unregisterMastraSpan(id);
-    return this._spans.remove(id);
+  _removeTracked(id2) {
+    unregisterMastraSpan(id2);
+    return this._spans.remove(id2);
   }
   _onSpanUpdated(span) {
     const tracked = this._spans.get(span.id);
@@ -48413,8 +48413,8 @@ var PRISMA_ORIGIN = "auto.db.prisma";
 var MAX_TRACKED_PRISMA_SPANS = 1e3;
 var prismaSpanRegistry = new LRUMap(MAX_TRACKED_PRISMA_SPANS);
 var pendingEngineSpans = [];
-function registerPrismaSpan(id, span) {
-  prismaSpanRegistry.set(id, span);
+function registerPrismaSpan(id2, span) {
+  prismaSpanRegistry.set(id2, span);
 }
 function buildSpanAttributes(name, attributes) {
   const merged = {
@@ -52777,8 +52777,8 @@ function mastraSpanId(span) {
     return void 0;
   }
   const exported = span.getExportedSpanId;
-  const id = typeof exported === "function" ? exported.call(span) : span.id;
-  return typeof id === "string" ? id : void 0;
+  const id2 = typeof exported === "function" ? exported.call(span) : span.id;
+  return typeof id2 === "string" ? id2 : void 0;
 }
 var registered = /* @__PURE__ */ new WeakSet();
 var warnedAboutCommunityExporter = false;
@@ -52832,8 +52832,8 @@ function captureMastraError(error113, params) {
     return;
   }
   chain.forEach((link) => capturedErrors.add(link));
-  const id = isObjectLike(params) ? mastraSpanId(params.span) : void 0;
-  const span = id ? getSentrySpanForMastraId(id) : void 0;
+  const id2 = isObjectLike(params) ? mastraSpanId(params.span) : void 0;
+  const span = id2 ? getSentrySpanForMastraId(id2) : void 0;
   const capture = () => captureException(error113, { mechanism: { type: "auto.ai.mastra", handled: true } });
   if (span) {
     withActiveSpan(span, capture);
@@ -52846,8 +52846,8 @@ function instrumentExecuteWithContext() {
     tracingChannel2(CHANNELS.MASTRA_EXECUTE_WITH_CONTEXT),
     (data) => {
       const params = data.arguments?.[0];
-      const id = isObjectLike(params) ? mastraSpanId(params.span) : void 0;
-      return id ? getSentrySpanForMastraId(id) : void 0;
+      const id2 = isObjectLike(params) ? mastraSpanId(params.span) : void 0;
+      return id2 ? getSentrySpanForMastraId(id2) : void 0;
     }
   );
 }
@@ -54495,7 +54495,7 @@ function accumulateChunk(state2, chunk) {
     type,
     delta,
     textDelta,
-    id,
+    id: id2,
     modelId,
     toolCallId,
     toolName,
@@ -54514,8 +54514,8 @@ function accumulateChunk(state2, chunk) {
       state2.toolCalls.push({ toolCallId, toolName, input: input2 ?? args });
       return void 0;
     case "response-metadata":
-      if (typeof id === "string") {
-        state2.responseId = id;
+      if (typeof id2 === "string") {
+        state2.responseId = id2;
       }
       if (typeof modelId === "string") {
         state2.responseModel = modelId;
@@ -54888,9 +54888,9 @@ function withProviderConfidence(result4) {
     return answers;
   }
   return Object.fromEntries(
-    Object.entries(answers).map(([id, answer]) => [
-      id,
-      isObjectLike(answer) && typeof confidence[id] === "number" && answer.confidence === void 0 ? { ...answer, confidence: confidence[id] } : answer
+    Object.entries(answers).map(([id2, answer]) => [
+      id2,
+      isObjectLike(answer) && typeof confidence[id2] === "number" && answer.confidence === void 0 ? { ...answer, confidence: confidence[id2] } : answer
     ])
   );
 }
@@ -57239,8 +57239,8 @@ async function getLinuxInfo() {
     const contents = (await readFileAsync(distroPath, { encoding: "utf-8" })).toLowerCase();
     const { distros } = distroFile;
     linuxInfo.name = distros.find((d5) => contents.indexOf(getLinuxDistroId(d5)) >= 0) || distros[0];
-    const id = getLinuxDistroId(linuxInfo.name);
-    linuxInfo.version = LINUX_VERSIONS[id]?.(contents);
+    const id2 = getLinuxDistroId(linuxInfo.name);
+    linuxInfo.version = LINUX_VERSIONS[id2]?.(contents);
   } catch {
   }
   return linuxInfo;
@@ -58319,10 +58319,10 @@ var HttpsProxyAgent = class extends Agent2 {
     const proxyResponsePromise = parseProxyResponse(socket);
     socket.write(`${payload}\r
 `);
-    const { connect: connect3, buffered } = await proxyResponsePromise;
-    req.emit("proxyConnect", connect3);
-    this.emit("proxyConnect", connect3, req);
-    if (connect3.statusCode === 200) {
+    const { connect: connect4, buffered } = await proxyResponsePromise;
+    req.emit("proxyConnect", connect4);
+    this.emit("proxyConnect", connect4, req);
+    if (connect4.statusCode === 200) {
       req.once("socket", resume);
       if (opts.secureEndpoint) {
         debugLog2("Upgrading socket connection to TLS");
@@ -60911,13 +60911,13 @@ var InstrumentationMatcher = class {
    */
   getTransformer(moduleName, version5, filePath) {
     filePath = filePath.replace(/\\/g, "/");
-    const id = `${moduleName}/${filePath}@${version5}`;
-    if (__privateGet2(this, _transformers)[id]) return __privateGet2(this, _transformers)[id];
+    const id2 = `${moduleName}/${filePath}@${version5}`;
+    if (__privateGet2(this, _transformers)[id2]) return __privateGet2(this, _transformers)[id2];
     const configs = __privateGet2(this, _configs2).filter(
       ({ module: mod }) => mod.name === moduleName && (typeof mod.filePath === "string" ? mod.filePath === filePath : mod.filePath.test(filePath)) && semifies2(version5, mod.versionRange)
     );
     if (configs.length === 0) return;
-    __privateGet2(this, _transformers)[id] = new Transformer2(
+    __privateGet2(this, _transformers)[id2] = new Transformer2(
       moduleName,
       version5,
       filePath,
@@ -60925,7 +60925,7 @@ var InstrumentationMatcher = class {
       __privateGet2(this, _dcModule2),
       __privateGet2(this, _customTransforms2)
     );
-    return __privateGet2(this, _transformers)[id];
+    return __privateGet2(this, _transformers)[id2];
   }
 };
 _configs2 = /* @__PURE__ */ new WeakMap();
@@ -62470,7 +62470,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // src/shared/version.ts
-var PLUGIN_VERSION = "0.1.132";
+var PLUGIN_VERSION = "0.1.145";
 
 // src/shared/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -62761,8 +62761,8 @@ function generatedId(prefix3) {
 }
 function readUserId(path) {
   const contents = readFileSync6(path, "utf8");
-  const id = contents.trim();
-  if (isAnonymousUserId(id)) return id;
+  const id2 = contents.trim();
+  if (isAnonymousUserId(id2)) return id2;
   throw new Error("The stored Sentry anonymous user ID is invalid.");
 }
 function loadTelemetryIdentity(directory = TELEMETRY_IDENTITY_DIRECTORY) {
@@ -62830,7 +62830,9 @@ var client = init({
   beforeSendMetric: scrubMetric,
   beforeBreadcrumb: (breadcrumb) => breadcrumb.category === "mobile-dev" ? breadcrumb : null
 });
-var component = process.argv[1]?.endsWith("agent-device-server.mjs") ? "agent-device-wrapper" : "server";
+var executable = process.argv[1] ?? "";
+var mirrorService = executable.endsWith("ios-mirror-service.mjs") || executable.endsWith("ios-mirror-service.ts");
+var component = mirrorService ? "ios-mirror-service" : executable.endsWith("agent-device-server.mjs") ? "agent-device-wrapper" : "server";
 setTag("component", component);
 setAttribute("component", component);
 client?.on("spanStart", (span) => {
@@ -64523,11 +64525,11 @@ import { AsyncLocalStorage as AsyncLocalStorage3 } from "node:async_hooks";
 var prefix = "[mobile-dev:sentry-envelope]";
 var maximumLine = 35e4;
 var transport;
-function parseNativeEnvelope(encoded) {
-  if (encoded.length === 0 || encoded.length > maximumLine || /^[A-Za-z0-9+/]*={0,2}$/.test(encoded) === false) {
+function parseNativeEnvelope(encoded2) {
+  if (encoded2.length === 0 || encoded2.length > maximumLine || /^[A-Za-z0-9+/]*={0,2}$/.test(encoded2) === false) {
     throw new Error("Invalid native Sentry envelope encoding.");
   }
-  const bytes = Buffer.from(encoded, "base64");
+  const bytes = Buffer.from(encoded2, "base64");
   if (bytes.length > 256 * 1024) throw new Error("Native Sentry envelope exceeded its size limit.");
   let offset = 0;
   const readHeader = () => {
@@ -64578,9 +64580,9 @@ function parseNativeEnvelope(encoded) {
   }
   return envelopes;
 }
-function sendEnvelope(encoded) {
+function sendEnvelope(encoded2) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const envelopes = parseNativeEnvelope(encoded);
+  const envelopes = parseNativeEnvelope(encoded2);
   if (transport === void 0) {
     const dsn = new URL(SENTRY_NATIVE_DSN);
     const project = dsn.pathname.slice(1);
@@ -64626,9 +64628,9 @@ var NativeTelemetryRelay = class {
   consume(line) {
     if (line.startsWith(prefix)) {
       const payload = line.slice(prefix.length);
-      const encoded = payload.trimEnd();
+      const encoded2 = payload.trimEnd();
       try {
-        this.send(encoded);
+        this.send(encoded2);
       } catch {
         this.diagnostic("Native Sentry report was invalid and discarded.\n");
       }
@@ -65143,6 +65145,16 @@ function recordPluginUpdate(operation, outcome, duration6) {
   public_api_exports.count("plugin.update.operations", 1, { attributes });
   public_api_exports.gauge("plugin.update.duration", duration6, { unit: "millisecond", attributes });
 }
+function recordAccessibilityBridgeRestart(outcome) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", device_platform: "ios", device_kind: "simulator", outcome };
+  public_api_exports.count("ios.accessibility_bridge.restarts", 1, { attributes });
+}
+function recordAndroidEmulatorReconnect(trigger) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "simulator", device_platform: "android", device_kind: "emulator", trigger };
+  public_api_exports.count("android.emulator.adb_reconnects", 1, { attributes });
+}
 function recordAndroidBackendStartup(duration6, outcome) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "simulator", device_platform: "android", outcome };
@@ -65406,10 +65418,10 @@ async function closeServerTelemetry() {
 // src/server/request-session.ts
 async function openRequestSession(signal, open2, close3) {
   signal.throwIfAborted();
-  const id = await open2();
+  const id2 = await open2();
   async function closeCancelledSession() {
     try {
-      await close3(id);
+      await close3(id2);
     } catch (error113) {
       captureServerError(error113, "stream.cancel_cleanup");
     }
@@ -65425,7 +65437,7 @@ async function openRequestSession(signal, open2, close3) {
   registerRequestSessionResponse(() => {
     signal.removeEventListener("abort", cancel);
   }, closeCancelledSession);
-  return id;
+  return id2;
 }
 
 // src/server/tool-icons.ts
@@ -72079,8 +72091,8 @@ var PluginUpdates = class {
   }
   async saveCache(cache) {
     const directory = dirname4(this.cachePath);
-    const id = randomUUID();
-    const temporary = `${this.cachePath}.${id}.tmp`;
+    const id2 = randomUUID();
+    const temporary = `${this.cachePath}.${id2}.tmp`;
     try {
       await mkdir(directory, { recursive: true });
       const text6 = JSON.stringify(cache);
@@ -72395,7 +72407,7 @@ var ExperimentalServerTasks = class {
       if (hasPreviousToolUse) {
         const toolUseIds = new Set(previousContent.filter((c2) => c2.type === "tool_use").map((c2) => c2.id));
         const toolResultIds = new Set(lastContent.filter((c2) => c2.type === "tool_result").map((c2) => c2.toolUseId));
-        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
+        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id2) => toolResultIds.has(id2))) {
           throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
         }
       }
@@ -72820,7 +72832,7 @@ var Server = class extends Protocol {
       if (hasPreviousToolUse) {
         const toolUseIds = new Set(previousContent.filter((c2) => c2.type === "tool_use").map((c2) => c2.id));
         const toolResultIds = new Set(lastContent.filter((c2) => c2.type === "tool_result").map((c2) => c2.toolUseId));
-        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
+        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id2) => toolResultIds.has(id2))) {
           throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
         }
       }
@@ -73029,8 +73041,8 @@ var UriTemplate = class _UriTemplate {
         const value2 = variables[name];
         if (value2 === void 0)
           return "";
-        const encoded2 = Array.isArray(value2) ? value2.map((v3) => this.encodeValue(v3, part.operator)).join(",") : this.encodeValue(value2.toString(), part.operator);
-        return `${name}=${encoded2}`;
+        const encoded3 = Array.isArray(value2) ? value2.map((v3) => this.encodeValue(v3, part.operator)).join(",") : this.encodeValue(value2.toString(), part.operator);
+        return `${name}=${encoded3}`;
       }).filter((pair) => pair.length > 0);
       if (pairs.length === 0)
         return "";
@@ -73047,20 +73059,20 @@ var UriTemplate = class _UriTemplate {
     if (value === void 0)
       return "";
     const values = Array.isArray(value) ? value : [value];
-    const encoded = values.map((v3) => this.encodeValue(v3, part.operator));
+    const encoded2 = values.map((v3) => this.encodeValue(v3, part.operator));
     switch (part.operator) {
       case "":
-        return encoded.join(",");
+        return encoded2.join(",");
       case "+":
-        return encoded.join(",");
+        return encoded2.join(",");
       case "#":
-        return "#" + encoded.join(",");
+        return "#" + encoded2.join(",");
       case ".":
-        return "." + encoded.join(".");
+        return "." + encoded2.join(".");
       case "/":
-        return "/" + encoded.join("/");
+        return "/" + encoded2.join("/");
       default:
-        return encoded.join(",");
+        return encoded2.join(",");
     }
   }
   expand(variables) {
@@ -77104,42 +77116,42 @@ var $ZodObjectJIT2 = /* @__PURE__ */ $constructor2("$ZodObjectJIT", (inst, def) 
     }
     doc.write(`const newResult = {};`);
     for (const key of normalized2.keys) {
-      const id = ids2[key];
+      const id2 = ids2[key];
       const k2 = esc2(key);
       const schema2 = shape[key];
       const isOptionalIn = schema2?._zod?.optin === "optional";
       const isOptionalOut = schema2?._zod?.optout === "optional";
-      doc.write(`const ${id} = ${parseStr(key)};`);
+      doc.write(`const ${id2} = ${parseStr(key)};`);
       if (isOptionalIn && isOptionalOut) {
         doc.write(`
-        if (${id}.issues.length) {
+        if (${id2}.issues.length) {
           if (${k2} in input) {
-            payload.issues = payload.issues.concat(${id}.issues.map(iss => ({
+            payload.issues = payload.issues.concat(${id2}.issues.map(iss => ({
               ...iss,
               path: iss.path ? [${k2}, ...iss.path] : [${k2}]
             })));
           }
         }
         
-        if (${id}.value === undefined) {
+        if (${id2}.value === undefined) {
           if (${k2} in input) {
             newResult[${k2}] = undefined;
           }
         } else {
-          newResult[${k2}] = ${id}.value;
+          newResult[${k2}] = ${id2}.value;
         }
         
       `);
       } else if (!isOptionalIn) {
         doc.write(`
-        const ${id}_present = ${k2} in input;
-        if (${id}.issues.length) {
-          payload.issues = payload.issues.concat(${id}.issues.map(iss => ({
+        const ${id2}_present = ${k2} in input;
+        if (${id2}.issues.length) {
+          payload.issues = payload.issues.concat(${id2}.issues.map(iss => ({
             ...iss,
             path: iss.path ? [${k2}, ...iss.path] : [${k2}]
           })));
         }
-        if (!${id}_present && !${id}.issues.length) {
+        if (!${id2}_present && !${id2}.issues.length) {
           payload.issues.push({
             code: "invalid_type",
             expected: "nonoptional",
@@ -77148,30 +77160,30 @@ var $ZodObjectJIT2 = /* @__PURE__ */ $constructor2("$ZodObjectJIT", (inst, def) 
           });
         }
 
-        if (${id}_present) {
-          if (${id}.value === undefined) {
+        if (${id2}_present) {
+          if (${id2}.value === undefined) {
             newResult[${k2}] = undefined;
           } else {
-            newResult[${k2}] = ${id}.value;
+            newResult[${k2}] = ${id2}.value;
           }
         }
 
       `);
       } else {
         doc.write(`
-        if (${id}.issues.length) {
-          payload.issues = payload.issues.concat(${id}.issues.map(iss => ({
+        if (${id2}.issues.length) {
+          payload.issues = payload.issues.concat(${id2}.issues.map(iss => ({
             ...iss,
             path: iss.path ? [${k2}, ...iss.path] : [${k2}]
           })));
         }
         
-        if (${id}.value === undefined) {
+        if (${id2}.value === undefined) {
           if (${k2} in input) {
             newResult[${k2}] = undefined;
           }
         } else {
-          newResult[${k2}] = ${id}.value;
+          newResult[${k2}] = ${id2}.value;
         }
         
       `);
@@ -85503,26 +85515,26 @@ function extractDefs2(ctx, schema2) {
     throw new Error("Unprocessed schema. This is a bug in Zod.");
   const idToSchema = /* @__PURE__ */ new Map();
   for (const entry of ctx.seen.entries()) {
-    const id = ctx.metadataRegistry.get(entry[0])?.id;
-    if (id) {
-      const existing = idToSchema.get(id);
+    const id2 = ctx.metadataRegistry.get(entry[0])?.id;
+    if (id2) {
+      const existing = idToSchema.get(id2);
       if (existing && existing !== entry[0]) {
-        throw new Error(`Duplicate schema id "${id}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);
+        throw new Error(`Duplicate schema id "${id2}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);
       }
-      idToSchema.set(id, entry[0]);
+      idToSchema.set(id2, entry[0]);
     }
   }
   const makeURI = (entry) => {
     const defsSegment = ctx.target === "draft-2020-12" ? "$defs" : "definitions";
     if (ctx.external) {
       const externalId = ctx.external.registry.get(entry[0])?.id;
-      const uriGenerator = ctx.external.uri ?? ((id2) => id2);
+      const uriGenerator = ctx.external.uri ?? ((id3) => id3);
       if (externalId) {
         return { ref: uriGenerator(externalId) };
       }
-      const id = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
-      entry[1].defId = id;
-      return { defId: id, ref: `${uriGenerator("__shared")}#/${defsSegment}/${id}` };
+      const id2 = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
+      entry[1].defId = id2;
+      return { defId: id2, ref: `${uriGenerator("__shared")}#/${defsSegment}/${id2}` };
     }
     if (entry[1] === root) {
       return { ref: "#" };
@@ -85570,8 +85582,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         continue;
       }
     }
-    const id = ctx.metadataRegistry.get(entry[0])?.id;
-    if (id) {
+    const id2 = ctx.metadataRegistry.get(entry[0])?.id;
+    if (id2) {
       extractToDef(entry);
       continue;
     }
@@ -85667,10 +85679,10 @@ function finalize2(ctx, schema2) {
   } else {
   }
   if (ctx.external?.uri) {
-    const id = ctx.external.registry.get(schema2)?.id;
-    if (!id)
+    const id2 = ctx.external.registry.get(schema2)?.id;
+    if (!id2)
       throw new Error("Schema is missing an `id` property");
-    result4.$id = ctx.external.uri(id);
+    result4.$id = ctx.external.uri(id2);
   }
   Object.assign(result4, root.def ?? root.schema);
   const rootMetaId = ctx.metadataRegistry.get(schema2)?.id;
@@ -88621,9 +88633,9 @@ var ignoredKeyword = {
 var initialBaseURI = typeof self !== "undefined" && self.location && self.location.origin !== "null" ? new URL(self.location.origin + self.location.pathname + location.search) : new URL("https://github.com/cfworker");
 function dereference(schema2, lookup = /* @__PURE__ */ Object.create(null), baseURI = initialBaseURI, basePointer = "") {
   if (schema2 && typeof schema2 === "object" && !Array.isArray(schema2)) {
-    const id = schema2.$id || schema2.id;
-    if (id) {
-      const url3 = new URL(id, baseURI.href);
+    const id2 = schema2.$id || schema2.id;
+    if (id2) {
+      const url3 = new URL(id2, baseURI.href);
       if (url3.hash.length > 1) {
         lookup[url3.href] = schema2;
       } else {
@@ -89589,9 +89601,9 @@ var Validator = class {
   validate(instance) {
     return validate2(instance, this.schema, this.draft, this.lookup, this.shortCircuit);
   }
-  addSchema(schema2, id) {
-    if (id) {
-      schema2 = { ...schema2, $id: id };
+  addSchema(schema2, id2) {
+    if (id2) {
+      schema2 = { ...schema2, $id: id2 };
     }
     dereference(schema2, this.lookup);
   }
@@ -90610,6 +90622,7 @@ function androidDisplaySize(output2, video) {
 }
 var ServeEmu = class {
   avdNames = /* @__PURE__ */ new Map();
+  reconnects = /* @__PURE__ */ new Map();
   backends = /* @__PURE__ */ new Map();
   booting = /* @__PURE__ */ new Map();
   lifetime = new AbortController();
@@ -90655,7 +90668,7 @@ var ServeEmu = class {
           const model = rawModel?.replace(/_/g, " ");
           let name = model ?? match2[1];
           const emulatorDevice = /^emulator-\d+$/.test(match2[1]);
-          if (emulatorDevice && match2[2] === "device") {
+          if (emulatorDevice) {
             const response3 = await execute4(adb, ["-s", match2[1], "emu", "avd", "name"], { timeout: 3e3 }).catch(() => void 0);
             const avdName = parseAvdName(response3?.stdout);
             if (avdName) this.avdNames.set(match2[1], avdName);
@@ -90669,7 +90682,7 @@ var ServeEmu = class {
         })()];
       });
       const running = await Promise.all(runningReads);
-      for (const serial of this.avdNames.keys()) if (!running.some((device2) => device2.udid === serial)) this.avdNames.delete(serial);
+      for (const serials of [this.avdNames, this.reconnects]) for (const serial of serials.keys()) if (!running.some((device2) => device2.udid === serial)) serials.delete(serial);
       const avdOutput = avds.stdout.trim();
       const avdLines = avdOutput.split(/\r?\n/);
       const stoppedNames = avdLines.filter((name) => {
@@ -90684,60 +90697,82 @@ var ServeEmu = class {
       return { connected: false, managed: false, baseUrl: "", devices: [], error: `Cannot list Android devices. Install Android SDK platform-tools and emulator. ${errorMessage(error113)}` };
     }
   }
-  async device(id, booted = false) {
-    androidIdSchema.parse(id);
+  async device(id2, booted = false) {
+    androidIdSchema.parse(id2);
     const status = await this.list();
     if (!status.connected) throw new Error(status.error);
-    const device2 = status.devices.find((device3) => device3.udid === id);
+    const device2 = status.devices.find((device3) => device3.udid === id2);
     if (!device2) throw new SimulatorUnavailableError("This Android device is no longer available. Refresh the device list.");
     if (booted && device2.state !== "Booted") throw new SimulatorUnavailableError("The Android device is stopped or offline. Press Start or reconnect it.");
     return device2;
   }
-  async boot(id) {
+  async boot(id2) {
     if (this.disposed) throw new Error("The plugin server has closed.");
-    androidIdSchema.parse(id);
-    let pending = this.booting.get(id);
+    androidIdSchema.parse(id2);
+    let pending = this.booting.get(id2);
     if (!pending) {
-      pending = this.ensureBooted(id).finally(() => this.booting.delete(id));
-      this.booting.set(id, pending);
+      pending = this.ensureBooted(id2).finally(() => this.booting.delete(id2));
+      this.booting.set(id2, pending);
     }
     return pending;
   }
-  async ensureBooted(id) {
-    const device2 = await this.device(id);
+  async ensureBooted(id2) {
+    const device2 = await this.device(id2);
     if (device2.state === "Booted") return this.list();
-    if (!id.startsWith("avd:")) throw new SimulatorUnavailableError("Reconnect and authorize this Android device through adb.");
-    const adb = await adbPath();
+    if (device2.kind === "emulator" && device2.state === "unauthorized") return this.awaitRunningEmulator(id2);
+    if (!id2.startsWith("avd:")) throw new SimulatorUnavailableError("Reconnect and authorize this Android device through adb.");
     return bootAndroidEmulator({
       name: device2.name,
       executable: await this.emulatorPath(),
       signal: this.lifetime.signal,
-      ready: async () => {
-        const status = await this.list();
-        if (!status.connected) throw new Error(status.error);
-        const running = status.devices.find((item) => item.kind === "emulator" && item.name === device2.name && item.state === "Booted");
-        if (!running) return;
-        const response3 = await execute4(adb, ["-s", running.udid, "shell", "getprop", "sys.boot_completed"], { timeout: 3e3 }).catch(() => void 0);
-        if (response3?.stdout.trim() === "1") return status;
-      }
+      ready: () => this.emulatorReady((item) => item.name === device2.name, "boot")
     });
   }
-  async shutdown(id) {
-    androidIdSchema.parse(id);
-    if (!/^emulator-\d+$/.test(id)) throw new Error("Only Android emulators can be shut down from this panel.");
+  // Ready means adb authorized the emulator and Android finished booting.
+  async emulatorReady(matches, trigger) {
+    const status = await this.list();
+    if (!status.connected) throw new Error(status.error);
+    const running = status.devices.find((item) => item.kind === "emulator" && matches(item));
+    if (running?.state === "unauthorized") await this.reconnectEmulator(running.udid, trigger);
+    if (running?.state !== "Booted") return;
+    const response3 = await execute4(await adbPath(), ["-s", running.udid, "shell", "getprop", "sys.boot_completed"], { timeout: 3e3 }).catch(() => void 0);
+    if (response3?.stdout.trim() === "1") return status;
+  }
+  // A quick-boot snapshot can restore an emulator after adb has marked it unauthorized, and adb
+  // never checks again. Reconnecting the transport repeats the key exchange, at most every 5 s.
+  async reconnectEmulator(serial, trigger) {
+    if (Date.now() - (this.reconnects.get(serial) ?? -Infinity) < 5e3) return;
+    this.reconnects.set(serial, Date.now());
+    recordAndroidEmulatorReconnect(trigger);
+    await execute4(await adbPath(), ["-s", serial, "reconnect"], { timeout: 5e3 }).catch(() => {
+    });
+  }
+  async awaitRunningEmulator(serial) {
+    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(15e3)]);
+    while (!signal.aborted) {
+      const status = await this.emulatorReady((device2) => device2.udid === serial, "selection");
+      if (status) return status;
+      await delay3(500, void 0, { signal }).catch(() => {
+      });
+    }
+    throw new SimulatorUnavailableError("The Android emulator is still unauthorized. Restart it with a cold boot, or run adb kill-server and try again.");
+  }
+  async shutdown(id2) {
+    androidIdSchema.parse(id2);
+    if (!/^emulator-\d+$/.test(id2)) throw new Error("Only Android emulators can be shut down from this panel.");
     const before = await this.list();
     if (!before.connected) throw new Error(before.error);
-    if (!before.devices.some((device2) => device2.udid === id)) return before;
-    await execute4(await adbPath(), ["-s", id, "emu", "kill"], { timeout: 5e3 });
-    const backend = this.backends.get(id);
+    if (!before.devices.some((device2) => device2.udid === id2)) return before;
+    await execute4(await adbPath(), ["-s", id2, "emu", "kill"], { timeout: 5e3 });
+    const backend = this.backends.get(id2);
     if (backend) this.stopBackend(backend);
-    this.backends.delete(id);
+    this.backends.delete(id2);
     const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(15e3)]);
     while (true) {
       signal.throwIfAborted();
       const status = await this.list();
       if (!status.connected) throw new Error(status.error);
-      if (!status.devices.some((device2) => device2.udid === id)) return status;
+      if (!status.devices.some((device2) => device2.udid === id2)) return status;
       await delay3(250, void 0, { signal });
     }
   }
@@ -90753,38 +90788,38 @@ var ServeEmu = class {
     if (!response3.ok) throw new Error(`serve-emu health returned HTTP ${response3.status}.`);
     return healthSchema.parse(await response3.json());
   }
-  async assertDevice(id, url3) {
-    if ((await this.health(url3)).serial !== id) throw new SimulatorUnavailableError("The Android backend switched to another device. Refresh and reconnect the selected device.");
+  async assertDevice(id2, url3) {
+    if ((await this.health(url3)).serial !== id2) throw new SimulatorUnavailableError("The Android backend switched to another device. Refresh and reconnect the selected device.");
   }
-  async start(id) {
+  async start(id2) {
     if (this.disposed) throw new Error("The plugin server has closed.");
-    let pending = this.starting.get(id);
+    let pending = this.starting.get(id2);
     if (!pending) {
-      pending = this.ensureStarted(id).finally(() => this.starting.delete(id));
-      this.starting.set(id, pending);
+      pending = this.ensureStarted(id2).finally(() => this.starting.delete(id2));
+      this.starting.set(id2, pending);
     }
     return pending;
   }
-  async ensureStarted(id) {
-    const device2 = await this.device(id, true);
-    const existing = this.backends.get(id);
+  async ensureStarted(id2) {
+    const device2 = await this.device(id2, true);
+    const existing = this.backends.get(id2);
     if (existing) {
       try {
-        if ((await this.health(existing.url)).serial === id) return existing;
+        if ((await this.health(existing.url)).serial === id2) return existing;
       } catch {
       }
       this.stopBackend(existing);
-      this.backends.delete(id);
+      this.backends.delete(id2);
     }
     const candidate = this.external ?? new URL("http://127.0.0.1:3300");
     try {
       const health = await this.health(candidate);
-      if (health.serial === id) {
+      if (health.serial === id2) {
         const backend2 = { url: candidate };
-        this.backends.set(id, backend2);
+        this.backends.set(id2, backend2);
         return backend2;
       }
-      if (this.external) throw new SimulatorUnavailableError(`SERVE_EMU_URL streams ${health.serial}, not the selected device ${id}.`);
+      if (this.external) throw new SimulatorUnavailableError(`SERVE_EMU_URL streams ${health.serial}, not the selected device ${id2}.`);
     } catch (error113) {
       if (this.external) throw error113;
     }
@@ -90815,7 +90850,7 @@ var ServeEmu = class {
     for (const backend2 of this.backends.values()) if (backend2.child) context3.activeBackends++;
     recordAndroidStartupContext(context3);
     const adb = await adbPath();
-    const child = spawn3(process.execPath, [cli, "--host", "127.0.0.1", "--port", url3.port, "--serial", id, "--max-fps", "30"], {
+    const child = spawn3(process.execPath, [cli, "--host", "127.0.0.1", "--port", url3.port, "--serial", id2, "--max-fps", "30"], {
       stdio: ["ignore", "pipe", "pipe", "ipc"],
       shell: false,
       env: { ...process.env, PATH: `${dirname5(adb)}:${process.env.PATH ?? ""}`, SERVE_EMU_UPDATE_CHECK: "0" }
@@ -90841,14 +90876,14 @@ var ServeEmu = class {
     child.on("message", onDiagnostic);
     child.once("close", () => child.off("message", onDiagnostic));
     const backend = { url: url3, child };
-    this.backends.set(id, backend);
+    this.backends.set(id2, backend);
     let launchError;
     let diagnostics5 = "";
     child.on("error", (error113) => {
       launchError = error113;
     });
     child.on("exit", () => {
-      if (this.backends.get(id) === backend) this.backends.delete(id);
+      if (this.backends.get(id2) === backend) this.backends.delete(id2);
     });
     for (const output2 of [child.stdout, child.stderr]) output2?.on("data", (chunk) => {
       diagnostics5 = (diagnostics5 + chunk).slice(-4e3);
@@ -90867,7 +90902,7 @@ var ServeEmu = class {
         }
         try {
           const health = await this.health(url3);
-          if (health.serial === id) {
+          if (health.serial === id2) {
             const duration6 = performance.now() - startedAt;
             recordAndroidBackendStartup(duration6, "ready");
             return backend;
@@ -90887,11 +90922,11 @@ var ServeEmu = class {
       };
       setAndroidStartupDiagnostic(error113, failure3, context3);
       this.stopBackend(backend);
-      this.backends.delete(id);
+      this.backends.delete(id2);
       if (this.disposed === false && process.env.MOBILE_DEV_TELEMETRY !== "off") {
         const checkedAt = performance.now();
         void execute4(adb, ["devices"], { timeout: 2e3, maxBuffer: 1024 * 1024, signal: this.lifetime.signal }).then((response3) => {
-          const state2 = androidDeviceState(response3.stdout, id);
+          const state2 = androidDeviceState(response3.stdout, id2);
           const elapsed = performance.now() - checkedAt;
           recordAndroidStartupDeviceState(state2, elapsed, context3, failure3);
         }, () => {
@@ -90902,18 +90937,18 @@ var ServeEmu = class {
       throw error113;
     }
   }
-  async definition(id) {
-    const backend = await this.start(id);
+  async definition(id2) {
+    const backend = await this.start(id2);
     const health = await this.health(backend.url);
-    return { identity: { udid: id, name: (await this.device(id)).name, model: "Android" }, screen: { rect: health.size } };
+    return { identity: { udid: id2, name: (await this.device(id2)).name, model: "Android" }, screen: { rect: health.size } };
   }
-  async accessibility(id) {
-    const backend = await this.start(id);
+  async accessibility(id2) {
+    const backend = await this.start(id2);
     const adb = await adbPath();
     const [tree, health, display] = await Promise.all([
       this.json(backend.url, "/api/accessibility"),
       this.health(backend.url),
-      execute4(adb, ["-s", id, "shell", "wm", "size"], { timeout: 3e3, maxBuffer: 4096 })
+      execute4(adb, ["-s", id2, "shell", "wm", "size"], { timeout: 3e3, maxBuffer: 4096 })
     ]);
     return { tree, screen: androidDisplaySize(display.stdout, health.size) };
   }
@@ -91215,7 +91250,7 @@ var AndroidStreams = class {
   constructor(backend) {
     this.backend = backend;
     this.expiry = setInterval(() => {
-      for (const [id, session] of this.sessions) if (session.expires < Date.now()) this.closeSession(id);
+      for (const [id2, session] of this.sessions) if (session.expires < Date.now()) this.closeSession(id2);
     }, 1e4);
     this.expiry.unref();
   }
@@ -91231,11 +91266,11 @@ var AndroidStreams = class {
     const url3 = new URL("/ws?frame-meta=1", backend.url);
     url3.protocol = "ws:";
     const socket = new import_websocket.default(url3, { handshakeTimeout: 5e3, maxPayload: 4 * 1024 * 1024, perMessageDeflate: false });
-    const id = randomBytes2(32).toString("hex");
+    const id2 = randomBytes2(32).toString("hex");
     const session = { deviceId: deviceId3, url: backend.url, socket, packets: [], bytes: 0, sequence: 0, generation: 0, waitingForKey: false, expires: Date.now() + 3e5, waiters: /* @__PURE__ */ new Set() };
-    this.sessions.set(id, session);
+    this.sessions.set(id2, session);
     socket.on("message", (data, binary2) => {
-      if (!this.sessions.has(id)) return;
+      if (!this.sessions.has(id2)) return;
       if (binary2) {
         const packet = Buffer.from(data);
         if (session.waitingForKey) {
@@ -91296,9 +91331,9 @@ var AndroidStreams = class {
         socket.once("close", closed);
       });
       this.requestKey(session);
-      return id;
+      return id2;
     } catch (error113) {
-      this.closeSession(id);
+      this.closeSession(id2);
       throw error113;
     }
   }
@@ -91318,25 +91353,25 @@ var AndroidStreams = class {
     this.requestKey(session);
     this.notify(session);
   }
-  async reset(id) {
-    const session = this.session(id);
+  async reset(id2) {
+    const session = this.session(id2);
     await this.backend.assertDevice(session.deviceId, session.url);
-    if (this.sessions.has(id) === false) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
+    if (this.sessions.has(id2) === false) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
     if (session.socket.readyState !== import_websocket.default.OPEN) throw new Error("The Android stream disconnected.");
     if (session.error) throw new Error(session.error);
     this.resetVideo(session);
   }
-  session(id) {
-    const session = this.sessions.get(id);
+  session(id2) {
+    const session = this.sessions.get(id2);
     if (!session || session.expires < Date.now()) {
-      this.closeSession(id);
+      this.closeSession(id2);
       throw new ExpectedOperationError("session_expired", "The Android stream expired or closed.");
     }
     session.expires = Date.now() + 3e5;
     return session;
   }
-  async batch(id, after) {
-    const session = this.session(id);
+  async batch(id2, after) {
+    const session = this.session(id2);
     await this.backend.assertDevice(session.deviceId, session.url);
     if (!session.error && !session.packets.some((packet) => packet.sequence > after)) {
       await new Promise((resolve5) => {
@@ -91349,7 +91384,7 @@ var AndroidStreams = class {
         session.waiters.add(done);
       });
     }
-    if (!this.sessions.has(id)) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
+    if (!this.sessions.has(id2)) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
     if (session.error) throw new Error(session.error);
     if (session.waitingForKey) this.requestKey(session);
     const packets = session.packets.filter((packet) => packet.sequence > after);
@@ -91357,22 +91392,22 @@ var AndroidStreams = class {
     session.bytes = 0;
     return { generation: session.generation, packets, sequence: packets.at(-1)?.sequence ?? after };
   }
-  async input(id, messages2) {
-    const session = this.session(id);
+  async input(id2, messages2) {
+    const session = this.session(id2);
     await this.backend.assertDevice(session.deviceId, session.url);
-    if (!this.sessions.has(id)) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
+    if (!this.sessions.has(id2)) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
     if (session.error || session.socket.readyState !== import_websocket.default.OPEN) throw new Error(session.error ?? "The Android stream disconnected.");
     const validated = messages2.map(androidInput);
     for (const message2 of validated) session.socket.send(JSON.stringify({ ...message2, ack: false, record: false }));
     return validated.length;
   }
   closeDevice(deviceId3) {
-    for (const [id, session] of this.sessions) if (session.deviceId === deviceId3) this.closeSession(id);
+    for (const [id2, session] of this.sessions) if (session.deviceId === deviceId3) this.closeSession(id2);
   }
-  closeSession(id) {
-    const session = this.sessions.get(id);
+  closeSession(id2) {
+    const session = this.sessions.get(id2);
     if (!session) return;
-    this.sessions.delete(id);
+    this.sessions.delete(id2);
     this.notify(session);
     if (session.socket.readyState === import_websocket.default.CONNECTING) session.socket.terminate();
     else session.socket.close();
@@ -91383,7 +91418,7 @@ var AndroidStreams = class {
   close() {
     this.disposed = true;
     clearInterval(this.expiry);
-    for (const id of this.sessions.keys()) this.closeSession(id);
+    for (const id2 of this.sessions.keys()) this.closeSession(id2);
   }
 };
 
@@ -91491,10 +91526,10 @@ function registerAndroidTools(server, android2, appUri, copyScreenshot, closeCpu
     mimeType: "application/json",
     description: "Read H.264 packets from an authorized Android panel stream."
   }, async (uri2, variables) => {
-    const id = parseResourceInput(sessionIdSchema, variables.sessionId);
+    const id2 = parseResourceInput(sessionIdSchema, variables.sessionId);
     const cursorSchema = external_exports.coerce.number().int().nonnegative();
     const after = parseResourceInput(cursorSchema, variables.sequence);
-    const batch = await streams.batch(id, after);
+    const batch = await streams.batch(id2, after);
     return { contents: [{ uri: uri2.href, mimeType: "application/json", text: JSON.stringify(batch) }] };
   });
   K3(server, "mobile_android_stream_session", {
@@ -91506,7 +91541,7 @@ function registerAndroidTools(server, android2, appUri, copyScreenshot, closeCpu
   }, guarded(async ({ deviceId: deviceId3 }, context3) => {
     context3.signal.throwIfAborted();
     const definition = await android2.definition(deviceId3);
-    const sessionId5 = await openRequestSession(context3.signal, () => streams.open(deviceId3), (id) => streams.closeSession(id));
+    const sessionId5 = await openRequestSession(context3.signal, () => streams.open(deviceId3), (id2) => streams.closeSession(id2));
     return { ...result2({ deviceId: deviceId3, definition }, `Stream ready for ${definition.identity.name}.`), _meta: { sessionId: sessionId5, frameUri: `android-stream://mobile-dev/${sessionId5}/video?after=0` } };
   }));
   K3(server, "mobile_android_stream_input", {
@@ -91559,7 +91594,7 @@ import { basename as basename3, delimiter, dirname as dirname6, isAbsolute as is
 import { promisify as promisify6 } from "node:util";
 var BAGUETTE_RUNTIME_TIMEOUT_MS = 5e3;
 var execute5 = promisify6(execFile6);
-async function baguetteEnvironment(executable2, signal, run = execute5) {
+async function baguetteEnvironment(executable3, signal, run = execute5) {
   const deadline = AbortSignal.timeout(BAGUETTE_RUNTIME_TIMEOUT_MS);
   const discoverySignal = AbortSignal.any([signal, deadline]);
   discoverySignal.throwIfAborted();
@@ -91582,7 +91617,7 @@ async function baguetteEnvironment(executable2, signal, run = execute5) {
   delete environment.DYLD_LIBRARY_PATH;
   try {
     const toolchainRoot = await realpath(developer);
-    const commands = await run("/usr/bin/otool", ["-l", executable2], {
+    const commands = await run("/usr/bin/otool", ["-l", executable3], {
       env: environment,
       signal: discoverySignal,
       encoding: "utf8",
@@ -91601,7 +91636,7 @@ async function baguetteEnvironment(executable2, signal, run = execute5) {
       "swift-stdlib-tool",
       "--print",
       "--scan-executable",
-      executable2,
+      executable3,
       "--platform",
       "macosx"
     ], { env: environment, signal: discoverySignal, encoding: "utf8", maxBuffer: 64 * 1024 });
@@ -91638,6 +91673,16 @@ async function baguetteEnvironment(executable2, signal, run = execute5) {
 }
 
 // src/server/baguette.ts
+var NO_ACCESSIBILITY_DATA = "no accessibility data";
+var BRIDGE_RESTART_INTERVAL = 1e4;
+async function kickstartAccessibilityBridge(udid, signal) {
+  await promisify7(execFile7)("/usr/bin/xcrun", ["simctl", "spawn", udid, "launchctl", "kickstart", "-k", "user/foreground/com.apple.CoreSimulator.bridge"], {
+    timeout: 1e4,
+    maxBuffer: 64 * 1024,
+    encoding: "utf8",
+    signal
+  });
+}
 var definitionSchema = external_exports.object({
   identity: external_exports.object({ udid: udidSchema, name: external_exports.string(), model: external_exports.string() }),
   screen: external_exports.object({
@@ -91658,9 +91703,12 @@ var Baguette = class {
   diagnostics = "";
   disposed = false;
   embedded;
-  constructor(baseUrl) {
+  kickstartBridge;
+  bridgeRestarts = /* @__PURE__ */ new Map();
+  constructor(baseUrl, kickstartBridge = kickstartAccessibilityBridge) {
     this.embedded = baseUrl == null;
     this.baseUrl = parseBaseUrl(baseUrl ?? "http://127.0.0.1:0");
+    this.kickstartBridge = kickstartBridge;
   }
   async json(path, options = {}, timeout = 1e4) {
     const response3 = await fetch(new URL(path, this.baseUrl), {
@@ -91685,6 +91733,36 @@ var Baguette = class {
     const payload = await response3.json();
     if (payload?.ok === false) throw new Error(payload.error ?? "Baguette rejected the request.");
     return payload;
+  }
+  async describeUi(udid) {
+    const path = `/simulators/${udidSchema.parse(udid)}/describe-ui.json`;
+    try {
+      return await this.json(path);
+    } catch (error113) {
+      if (!(error113 instanceof Error) || error113.message !== NO_ACCESSIBILITY_DATA || !await this.restartAccessibilityBridge(udid)) throw error113;
+    }
+    try {
+      const result4 = await this.json(path);
+      recordAccessibilityBridgeRestart("recovered");
+      return result4;
+    } catch (error113) {
+      recordAccessibilityBridgeRestart("unavailable");
+      throw error113;
+    }
+  }
+  // A foreground app with no data usually means a stale bridge. Restart it at most every 10 s per device.
+  async restartAccessibilityBridge(udid) {
+    if (Date.now() - (this.bridgeRestarts.get(udid) ?? -Infinity) < BRIDGE_RESTART_INTERVAL) return false;
+    this.bridgeRestarts.set(udid, Date.now());
+    try {
+      await this.kickstartBridge(udid, this.lifecycle.signal);
+      return true;
+    } catch (error113) {
+      if (this.lifecycle.signal.aborted) throw error113;
+      recordAccessibilityBridgeRestart("failed");
+      captureServerError(error113, "simulator.accessibility_bridge");
+      return false;
+    }
   }
   async status(signal) {
     if (this.embedded && !this.child) {
@@ -91749,10 +91827,10 @@ var Baguette = class {
     }
     if (this.child) throw new Error("Baguette is already starting. Wait and refresh the device list.");
     this.diagnostics = "";
-    const executable2 = await this.executable();
-    const environment = await baguetteEnvironment(executable2, this.lifecycle.signal);
+    const executable3 = await this.executable();
+    const environment = await baguetteEnvironment(executable3, this.lifecycle.signal);
     if (this.disposed) throw new Error("The plugin server has closed.");
-    const child = spawn4(executable2, [
+    const child = spawn4(executable3, [
       "serve",
       "--host",
       this.baseUrl.hostname.replace(/^\[|\]$/g, ""),
@@ -91865,10 +91943,10 @@ var Baguette = class {
   }
   async repairInput(udid) {
     await this.device(udid, true);
-    const executable2 = await this.executable();
-    const environment = await baguetteEnvironment(executable2, this.lifecycle.signal);
+    const executable3 = await this.executable();
+    const environment = await baguetteEnvironment(executable3, this.lifecycle.signal);
     const execute16 = promisify7(execFile7);
-    const { stdout, stderr } = await execute16(executable2, ["heal", "--udid", udid], {
+    const { stdout, stderr } = await execute16(executable3, ["heal", "--udid", udid], {
       timeout: 45e3,
       maxBuffer: 1024 * 1024,
       encoding: "utf8",
@@ -91910,45 +91988,233 @@ async function readDefinitionFailure(response3) {
   }
 }
 
-// src/server/ios-mirror.ts
-import { createRequire as createNativeRequire } from "node:module";
-import { randomBytes as randomBytes3 } from "node:crypto";
-import { existsSync as existsSync2 } from "node:fs";
-import { fileURLToPath as fileURLToPath7 } from "node:url";
-var addon;
-async function openCapture(udid) {
-  if (process.platform !== "darwin" || process.arch !== "arm64") throw new ExpectedOperationError("unsupported_platform", "Physical iOS mirroring requires an Apple Silicon Mac.");
-  if (addon === void 0) {
-    const root = import.meta.url.endsWith("/server.mjs") ? "./ios-mirror/" : "../../vendor/ios-mirror/";
-    const url3 = new URL(`${root}darwin-arm64.node`, import.meta.url);
-    const path = fileURLToPath7(url3);
-    if (existsSync2(path) === false) throw new Error("The physical iOS capture addon is missing. Run npm run rebuild:ios-mirror and rebuild the plugin.");
-    const require2 = createNativeRequire(import.meta.url);
-    const loaded = require2(path);
-    addon = loaded;
+// src/shared/ios-mirror-errors.ts
+var IosMirrorInputBusyError = class extends ExpectedOperationError {
+  constructor() {
+    super("invalid_input", "Another panel is currently touching this iPhone.");
   }
-  return addon.openDevice(udid);
+};
+
+// src/server/ios-mirror.ts
+import { randomBytes as randomBytes3 } from "node:crypto";
+
+// src/server/ios-mirror-client.ts
+import { createConnection } from "node:net";
+import { spawn as spawn5 } from "node:child_process";
+import { fileURLToPath as fileURLToPath7 } from "node:url";
+import { setTimeout as delay5 } from "node:timers/promises";
+
+// src/shared/ios-video.ts
+var encoded = external_exports.string().max(8 * 1024 * 1024);
+var iosVideoBatchSchema = external_exports.object({
+  generation: external_exports.number().int().nonnegative(),
+  sequence: external_exports.number().int().nonnegative(),
+  dropped: external_exports.number().int().nonnegative(),
+  configuration: external_exports.object({
+    revision: external_exports.number().int().positive(),
+    width: external_exports.number().int().min(1).max(8192),
+    height: external_exports.number().int().min(1).max(8192),
+    codec: external_exports.string().regex(/^hvc1\.[ABC]?\d+\.[A-F0-9]+\.[LH]\d+(?:\.[A-F0-9]+)*$/),
+    description: encoded
+  }).optional(),
+  frames: external_exports.array(external_exports.object({ sequence: external_exports.number().int().positive(), data: encoded, timestamp: external_exports.number().finite().nonnegative(), key: external_exports.boolean() })).max(8)
+});
+
+// src/server/ios-mirror-rpc.ts
+var id = external_exports.number().int().positive();
+var mirrorRequestSchema = external_exports.discriminatedUnion("method", [
+  external_exports.object({ id, method: external_exports.literal("open"), udid: external_exports.string().min(1).max(64) }),
+  external_exports.object({ id, method: external_exports.literal("read") }),
+  external_exports.object({ id, method: external_exports.literal("reset") }),
+  external_exports.object({ id, method: external_exports.literal("close") }),
+  external_exports.object({ id, method: external_exports.literal("touch"), generation: external_exports.number().int().nonnegative(), samples: external_exports.array(external_exports.object({
+    phase: external_exports.number().int().min(0).max(2),
+    x: external_exports.number().finite(),
+    y: external_exports.number().finite(),
+    width: external_exports.number().finite().positive(),
+    height: external_exports.number().finite().positive()
+  })).min(1).max(64) })
+]);
+var mirrorReplySchema = external_exports.object({ id, result: external_exports.union([external_exports.null(), iosVideoBatchSchema]).optional(), error: external_exports.string().max(4096).optional(), inputBusy: external_exports.boolean().optional() });
+var mirrorSocketPath = `/tmp/mobile-dev-ios-mirror-${process.getuid?.() ?? "local"}-v1.sock`;
+var maximumReplyBytes = 16 * 1024 * 1024;
+
+// src/server/ios-mirror-client.ts
+async function connect3(path) {
+  return new Promise((resolve5, reject) => {
+    const socket = createConnection(path);
+    const timer = setTimeout(() => {
+      const error113 = new Error("Shared iOS capture connection timed out.");
+      socket.destroy(error113);
+    }, 1e3);
+    socket.once("error", reject);
+    socket.once("connect", () => {
+      clearTimeout(timer);
+      socket.removeListener("error", reject);
+      resolve5(socket);
+    });
+    socket.once("close", () => clearTimeout(timer));
+  });
 }
+var starting;
+async function startService() {
+  if (starting) return starting;
+  starting = (async () => {
+    const bundled = import.meta.url.endsWith("/server.mjs");
+    const entry = bundled ? "./ios-mirror-service.mjs" : "./ios-mirror-service.ts";
+    const url3 = new URL(entry, import.meta.url);
+    const path = fileURLToPath7(url3);
+    const child = spawn5(process.execPath, [path], { detached: true, stdio: "ignore", env: process.env });
+    let failure3;
+    child.on("error", (error113) => {
+      failure3 = error113;
+    });
+    child.unref();
+    const deadline = Date.now() + 15e3;
+    while (Date.now() < deadline) {
+      if (failure3) throw failure3;
+      try {
+        const socket = await connect3(mirrorSocketPath);
+        socket.destroy();
+        return;
+      } catch {
+        await delay5(100);
+      }
+    }
+    throw new Error("The shared iOS capture service did not start.");
+  })();
+  try {
+    await starting;
+  } finally {
+    starting = void 0;
+  }
+}
+async function connectIosCapture(path, udid) {
+  const socket = await connect3(path);
+  socket.setEncoding("utf8");
+  let incoming = "";
+  let sequence4 = 0;
+  let closed = false;
+  const pending = /* @__PURE__ */ new Map();
+  const fail = (error113) => {
+    closed = true;
+    for (const request3 of pending.values()) {
+      clearTimeout(request3.timer);
+      request3.reject(error113);
+    }
+    pending.clear();
+  };
+  socket.on("error", fail);
+  socket.on("close", () => {
+    const error113 = new Error("The shared physical iOS stream disconnected.");
+    fail(error113);
+  });
+  const disconnect = (message2) => {
+    const error113 = new Error(message2);
+    socket.destroy(error113);
+  };
+  socket.on("data", (chunk) => {
+    incoming += chunk;
+    let end = incoming.indexOf("\n");
+    while (end >= 0) {
+      if (end > maximumReplyBytes) {
+        disconnect("Shared iOS video exceeded its size limit.");
+        return;
+      }
+      const line = incoming.slice(0, end);
+      incoming = incoming.slice(end + 1);
+      try {
+        const value = JSON.parse(line);
+        const reply = mirrorReplySchema.parse(value);
+        const request3 = pending.get(reply.id);
+        if (request3) {
+          clearTimeout(request3.timer);
+          pending.delete(reply.id);
+          if (reply.error) {
+            const error113 = reply.inputBusy ? new IosMirrorInputBusyError() : new Error(reply.error);
+            request3.reject(error113);
+          } else request3.resolve(reply);
+        }
+      } catch {
+        disconnect("Invalid shared iOS capture response.");
+        return;
+      }
+      end = incoming.indexOf("\n");
+    }
+    if (incoming.length > maximumReplyBytes) disconnect("Shared iOS video exceeded its size limit.");
+  });
+  const request2 = (command2) => {
+    if (closed) {
+      const error113 = new Error("The shared physical iOS stream closed.");
+      return Promise.reject(error113);
+    }
+    const id2 = ++sequence4;
+    return new Promise((resolve5, reject) => {
+      const timer = setTimeout(() => disconnect("Shared iOS capture request timed out."), 3e4);
+      pending.set(id2, { resolve: resolve5, reject, timer });
+      const encoded2 = JSON.stringify({ ...command2, id: id2 });
+      socket.write(encoded2 + "\n");
+    });
+  };
+  try {
+    await request2({ method: "open", udid });
+  } catch (error113) {
+    socket.destroy();
+    throw error113;
+  }
+  return {
+    async read() {
+      const reply = await request2({ method: "read" });
+      if (reply.result === void 0 || reply.result === null) throw new Error("Shared iOS capture returned no video batch.");
+      return reply.result;
+    },
+    async touch(samples, generation) {
+      await request2({ method: "touch", samples, generation });
+    },
+    async reset() {
+      await request2({ method: "reset" });
+    },
+    async close() {
+      if (closed) return;
+      try {
+        await request2({ method: "close" });
+      } finally {
+        socket.destroy();
+      }
+    }
+  };
+}
+async function openSharedIosCapture(udid) {
+  if (process.platform !== "darwin" || process.arch !== "arm64") throw new ExpectedOperationError("unsupported_platform", "Physical iOS mirroring requires an Apple Silicon Mac.");
+  try {
+    const socket = await connect3(mirrorSocketPath);
+    socket.destroy();
+  } catch {
+    await startService();
+  }
+  return connectIosCapture(mirrorSocketPath, udid);
+}
+
+// src/server/ios-mirror.ts
 var IosMirrorSessions = class {
   sessions = /* @__PURE__ */ new Map();
-  opening = /* @__PURE__ */ new Set();
+  opening = 0;
   openCapture;
   expiry;
   disposed = false;
-  constructor(open2 = openCapture) {
+  constructor(open2 = openSharedIosCapture) {
     this.openCapture = open2;
     this.expiry = setInterval(() => {
-      for (const [id, session] of this.sessions) {
-        if (session.expires < Date.now()) void this.closeSession(id);
+      for (const [id2, session] of this.sessions) {
+        if (session.expires < Date.now()) void this.closeSession(id2);
       }
     }, 1e4);
     this.expiry.unref();
   }
   async open(udid) {
     if (this.disposed) throw new Error("The plugin server has closed.");
-    if (this.opening.has(udid) || [...this.sessions.values()].some((session) => session.udid === udid)) throw new Error("This iPhone already has a mirroring session. Close its other panel first.");
-    if (this.sessions.size + this.opening.size >= 4) throw new Error("Too many physical device streams. Close another panel first.");
-    this.opening.add(udid);
+    if (this.sessions.size + this.opening >= 4) throw new Error("Too many physical device streams. Close another panel first.");
+    this.opening++;
     try {
       const capture = await this.openCapture(udid);
       if (this.disposed) {
@@ -91956,24 +92222,24 @@ var IosMirrorSessions = class {
         throw new Error("The plugin server has closed.");
       }
       const bytes = randomBytes3(32);
-      const id = bytes.toString("hex");
-      this.sessions.set(id, { capture, udid, expires: Date.now() + 3e5, sequence: 0, reading: false, inputting: false, closed: false });
-      return id;
+      const id2 = bytes.toString("hex");
+      this.sessions.set(id2, { capture, udid, expires: Date.now() + 3e5, reading: false, inputting: false, closed: false });
+      return id2;
     } finally {
-      this.opening.delete(udid);
+      this.opening--;
     }
   }
-  session(id) {
-    const session = this.sessions.get(id);
+  session(id2) {
+    const session = this.sessions.get(id2);
     if (session === void 0 || session.expires < Date.now()) {
-      void this.closeSession(id);
+      void this.closeSession(id2);
       throw new ExpectedOperationError("session_expired", "The physical device stream expired or closed.");
     }
     session.expires = Date.now() + 3e5;
     return session;
   }
-  async batch(id) {
-    const session = this.session(id);
+  async batch(id2) {
+    const session = this.session(id2);
     if (session.reading) throw new Error("A physical device video read is already pending.");
     session.reading = true;
     try {
@@ -91981,18 +92247,13 @@ var IosMirrorSessions = class {
       if (session.closed) throw new ExpectedOperationError("session_closed", "The physical device stream closed.");
       if (session.generation !== batch.generation) session.generation = void 0;
       if (batch.frames.some((frame2) => frame2.key)) session.generation = batch.generation;
-      if (batch.configuration) {
-        const { description, ...configuration } = batch.configuration;
-        session.configuration = { ...configuration, description: description.toString("base64") };
-      }
-      const frames = batch.frames.map((frame2) => ({ sequence: ++session.sequence, timestamp: frame2.timestamp, key: frame2.key, data: frame2.data.toString("base64") }));
-      return { generation: batch.generation, sequence: session.sequence, dropped: batch.dropped, configuration: session.configuration, frames };
+      return batch;
     } finally {
       session.reading = false;
     }
   }
-  async input(id, messages2, generation) {
-    const session = this.session(id);
+  async input(id2, messages2, generation) {
+    const session = this.session(id2);
     if (session.generation !== generation) throw new Error("Wait for a fresh physical iOS screen before sending input.");
     if (session.inputting) throw new Error("Physical iOS input is already pending.");
     session.inputting = true;
@@ -92006,18 +92267,18 @@ var IosMirrorSessions = class {
       session.inputting = false;
     }
   }
-  reset(id) {
-    const session = this.session(id);
+  async reset(id2) {
+    const session = this.session(id2);
     session.generation = void 0;
-    session.capture.reset();
+    await session.capture.reset();
   }
-  deviceId(id) {
-    return this.session(id).udid;
+  deviceId(id2) {
+    return this.session(id2).udid;
   }
-  async closeSession(id) {
-    const session = this.sessions.get(id);
+  async closeSession(id2) {
+    const session = this.sessions.get(id2);
     if (session === void 0) return;
-    this.sessions.delete(id);
+    this.sessions.delete(id2);
     session.closed = true;
     await session.capture.close();
   }
@@ -92025,7 +92286,7 @@ var IosMirrorSessions = class {
     this.disposed = true;
     clearInterval(this.expiry);
     const ids2 = [...this.sessions.keys()];
-    await Promise.all(ids2.map((id) => this.closeSession(id)));
+    await Promise.all(ids2.map((id2) => this.closeSession(id2)));
   }
 };
 
@@ -92054,8 +92315,8 @@ var commandOptions = { encoding: "buffer", timeout: 15e3, maxBuffer: 8 * 1024 * 
 function pngDataUri(bytes) {
   const signature = bytes.subarray(0, 8);
   if (bytes.length > commandOptions.maxBuffer || signature.equals(pngSignature) === false) throw new Error("Invalid Apple device frame PNG.");
-  const encoded = bytes.toString("base64");
-  return `data:image/png;base64,${encoded}`;
+  const encoded2 = bytes.toString("base64");
+  return `data:image/png;base64,${encoded2}`;
 }
 async function readMask(identifier3, run) {
   const prefix3 = join14(tmpdir(), "mobile-dev-device-mask-");
@@ -92098,16 +92359,16 @@ async function renderBezel(device2, run, runtime2) {
   const { type, profile } = selected;
   const root = import.meta.url.endsWith("/server.mjs") ? "./baguette/" : "../../vendor/baguette/";
   const url3 = new URL(`${root}Baguette`, import.meta.url);
-  const executable2 = fileURLToPath8(url3);
+  const executable3 = fileURLToPath8(url3);
   const signal = AbortSignal.timeout(commandOptions.timeout);
-  const environment = await runtime2(executable2, signal);
+  const environment = await runtime2(executable3, signal);
   const renderOptions = { ...commandOptions, env: environment };
-  const layoutOutput = await run(executable2, ["chrome", "layout", "--device-name", type.name], renderOptions);
+  const layoutOutput = await run(executable3, ["chrome", "layout", "--device-name", type.name], renderOptions);
   const layoutJson = layoutOutput.stdout.toString("utf8");
   const layoutPayload = JSON.parse(layoutJson);
   const layout = layoutSchema.parse(layoutPayload);
   const geometry = bezelGeometrySchema.parse({ rect: layout.screen, viewport: layout.composite, clipRadius: layout.innerCornerRadius });
-  const imageOutput = await run(executable2, ["chrome", "composite", "--device-name", type.name], renderOptions);
+  const imageOutput = await run(executable3, ["chrome", "composite", "--device-name", type.name], renderOptions);
   const image = pngDataUri(imageOutput.stdout);
   const bezel = { ...geometry, image };
   if (profile.framebufferMask !== void 0) bezel.mask = await readMask(profile.framebufferMask, run);
@@ -92161,8 +92422,8 @@ function registerIosMirrorTools(server, appUri, sessions = new IosMirrorSessions
     title: "Physical iOS device video",
     mimeType: "application/json"
   }, async (uri2, variables) => {
-    const id = parseResourceInput(sessionId, variables.sessionId);
-    const batch = await sessions.batch(id);
+    const id2 = parseResourceInput(sessionId, variables.sessionId);
+    const batch = await sessions.batch(id2);
     const text6 = JSON.stringify(batch);
     return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text6 }] };
   });
@@ -92179,8 +92440,8 @@ function registerIosMirrorTools(server, appUri, sessions = new IosMirrorSessions
       const device2 = devices3.find((device3) => device3.udid === udid);
       if (device2 === void 0 || device2.state !== "connected") throw new ExpectedOperationError("device_unavailable", "The physical iOS device is no longer connected.");
       const bezel = await readBezel2(device2);
-      const id = await openRequestSession(context3.signal, () => sessions.open(udid), (id2) => sessions.closeSession(id2));
-      return { content: [{ type: "text", text: `Mirroring ${device2.name}.` }], structuredContent: { name: device2.name }, _meta: { bezel, sessionId: id, frameUri: `ios-video://mobile-dev/${id}/video` } };
+      const id2 = await openRequestSession(context3.signal, () => sessions.open(udid), (id3) => sessions.closeSession(id3));
+      return { content: [{ type: "text", text: `Mirroring ${device2.name}.` }], structuredContent: { name: device2.name }, _meta: { bezel, sessionId: id2, frameUri: `ios-video://mobile-dev/${id2}/video` } };
     } catch (error113) {
       captureServerError(error113, "mobile_ios_mirror_session", { signal: context3.signal });
       return { isError: true, content: [{ type: "text", text: errorMessage(error113) }] };
@@ -92192,12 +92453,13 @@ function registerIosMirrorTools(server, appUri, sessions = new IosMirrorSessions
     inputSchema: { sessionId, generation: external_exports.number().int().min(0), messages: external_exports.array(touchInputSchema).min(1).max(64) },
     annotations,
     _meta: { ui: { visibility: ["app"] } }
-  }, async ({ sessionId: id, messages: messages2, generation }) => {
+  }, async ({ sessionId: id2, messages: messages2, generation }) => {
     try {
-      await sessions.input(id, messages2, generation);
+      await sessions.input(id2, messages2, generation);
       return { content: [{ type: "text", text: "Touch input delivered." }] };
     } catch (error113) {
-      return { isError: true, content: [{ type: "text", text: errorMessage(error113) }], _meta: { streamDisconnected: true } };
+      const inputBusy = error113 instanceof IosMirrorInputBusyError;
+      return { isError: true, content: [{ type: "text", text: errorMessage(error113) }], _meta: { streamDisconnected: inputBusy === false, inputBusy } };
     }
   });
   K3(server, "mobile_ios_mirror_reset", {
@@ -92206,8 +92468,8 @@ function registerIosMirrorTools(server, appUri, sessions = new IosMirrorSessions
     inputSchema: { sessionId },
     annotations,
     _meta: { ui: { visibility: ["app"] } }
-  }, async ({ sessionId: id }) => {
-    sessions.reset(id);
+  }, async ({ sessionId: id2 }) => {
+    await sessions.reset(id2);
     return { content: [{ type: "text", text: "Requested a keyframe." }] };
   });
   K3(server, "mobile_ios_mirror_capture_screenshot", {
@@ -92216,9 +92478,9 @@ function registerIosMirrorTools(server, appUri, sessions = new IosMirrorSessions
     inputSchema: { sessionId, image: external_exports.string().min(1).max(maxPngBase64Length).regex(/^[A-Za-z0-9+/]+={0,2}$/) },
     annotations,
     _meta: { ui: { resourceUri: appUri, visibility: ["app"] } }
-  }, async ({ sessionId: id, image }) => {
+  }, async ({ sessionId: id2, image }) => {
     try {
-      const udid = sessions.deviceId(id);
+      const udid = sessions.deviceId(id2);
       const bytes = Buffer.from(image, "base64");
       const signature = bytes.subarray(0, 8);
       const valid = signature.equals(pngSignature2);
@@ -92243,12 +92505,12 @@ function registerIosMirrorTools(server, appUri, sessions = new IosMirrorSessions
   });
   K3(server, "mobile_ios_mirror_close", {
     title: "Close physical iOS mirroring",
-    description: "Stop the media streams owned by this mirroring session.",
+    description: "Close this panel\u2019s subscription. Other panels keep mirroring the device.",
     inputSchema: { sessionId },
     annotations,
     _meta: { ui: { visibility: ["app"] } }
-  }, async ({ sessionId: id }) => {
-    await sessions.closeSession(id);
+  }, async ({ sessionId: id2 }) => {
+    await sessions.closeSession(id2);
     return { content: [{ type: "text", text: "Mirroring closed." }] };
   });
   return () => sessions.close();
@@ -92448,9 +92710,9 @@ var StreamSessions = class {
     this.retryDelays = retryDelays;
     this.firstFrameTimeout = firstFrameTimeout;
     this.expiry = setInterval(() => {
-      for (const [id, session] of this.sessions) {
+      for (const [id2, session] of this.sessions) {
         if (session.expires < Date.now()) {
-          this.closeSession(id);
+          this.closeSession(id2);
           continue;
         }
         this.checkFirstFrame(session);
@@ -92471,7 +92733,7 @@ var StreamSessions = class {
   async open(udid, fps) {
     if (this.disposed) throw new Error("The plugin server has closed.");
     if (this.sessions.size >= 8) throw new Error("Too many open simulator streams. Close a panel and retry.");
-    const id = randomBytes4(32).toString("hex");
+    const id2 = randomBytes4(32).toString("hex");
     const session = {
       udid,
       fps,
@@ -92483,12 +92745,12 @@ var StreamSessions = class {
       waiters: /* @__PURE__ */ new Set(),
       input: Promise.resolve(0)
     };
-    this.sessions.set(id, session);
+    this.sessions.set(id2, session);
     try {
       await this.connect(session);
-      return id;
+      return id2;
     } catch (error113) {
-      this.closeSession(id);
+      this.closeSession(id2);
       throw error113;
     }
   }
@@ -92604,8 +92866,8 @@ var StreamSessions = class {
     const wait = this.retryDelays[Math.min(session.failures++, this.retryDelays.length - 1)] ?? 1e4;
     session.retryAt = Date.now() + wait;
   }
-  reset(id) {
-    const session = this.session(id);
+  reset(id2) {
+    const session = this.session(id2);
     if (session.error) throw new Error(session.error);
     if (session.socket && !session.connecting) {
       this.invalidate(session);
@@ -92614,24 +92876,24 @@ var StreamSessions = class {
     }
     this.reconnect(session);
   }
-  session(id) {
-    const session = this.sessions.get(id);
+  session(id2) {
+    const session = this.sessions.get(id2);
     if (!session || session.expires < Date.now()) {
-      if (session) this.closeSession(id);
+      if (session) this.closeSession(id2);
       throw new ExpectedOperationError("session_expired", "The simulator stream expired or closed.");
     }
     session.expires = Date.now() + this.idleTimeout;
     this.checkFirstFrame(session);
     return session;
   }
-  connectionState(id) {
-    const session = this.session(id);
+  connectionState(id2) {
+    const session = this.session(id2);
     return session.socket?.readyState === import_websocket.default.OPEN && !session.connecting && session.frame ? "connected" : "reconnecting";
   }
-  async frame(id, after, signal) {
+  async frame(id2, after, signal) {
     const serverStartedAt = epochNow();
     const started = performance.now();
-    const session = this.session(id);
+    const session = this.session(id2);
     if (session.error) throw new Error(session.error);
     this.reconnect(session);
     if (!session.error && (!session.frame || session.frame.sequence <= after)) {
@@ -92650,7 +92912,7 @@ var StreamSessions = class {
     }
     signal?.throwIfAborted();
     if (session.error) throw new Error(session.error);
-    if (this.sessions.get(id) !== session) throw new Error("The simulator stream closed.");
+    if (this.sessions.get(id2) !== session) throw new Error("The simulator stream closed.");
     const serverWaitMs = performance.now() - started;
     const latest = session.frame;
     if (session.socket?.readyState !== import_websocket.default.OPEN || latest == null || latest.sequence <= after) {
@@ -92666,35 +92928,35 @@ var StreamSessions = class {
       frame: { sequence: latest.sequence, data: latest.data, receivedAt: latest.receivedAt, bytes: latest.bytes.length }
     };
   }
-  input(id, messages2) {
-    const session = this.session(id);
+  input(id2, messages2) {
+    const session = this.session(id2);
     if (session.error) throw new Error(session.error);
     if (session.socket?.readyState !== import_websocket.default.OPEN || session.connecting || !session.frame) throw new Error("The simulator stream is reconnecting.");
     const socket = session.socket;
     const validated = messages2.map((message2) => streamMessageSchema.parse(message2));
     const sent = session.input.then(() => {
-      this.session(id);
+      this.session(id2);
       if (session.socket !== socket || socket.readyState !== import_websocket.default.OPEN || session.connecting || !session.frame) throw new Error("The simulator stream is reconnecting.");
       if (socket.bufferedAmount > 64 * 1024) throw new Error("Simulator input is backed up.");
       for (const message2 of validated) {
-        const encoded = JSON.stringify(message2);
-        socket.send(encoded);
+        const encoded2 = JSON.stringify(message2);
+        socket.send(encoded2);
       }
       return validated.length;
     });
     session.input = sent.catch(() => 0);
     return sent;
   }
-  deviceId(id) {
-    return this.session(id).udid;
+  deviceId(id2) {
+    return this.session(id2).udid;
   }
   closeDevice(udid) {
-    for (const [id, session] of this.sessions) if (session.udid === udid) this.closeSession(id);
+    for (const [id2, session] of this.sessions) if (session.udid === udid) this.closeSession(id2);
   }
-  closeSession(id) {
-    const session = this.sessions.get(id);
+  closeSession(id2) {
+    const session = this.sessions.get(id2);
     if (!session) return;
-    this.sessions.delete(id);
+    this.sessions.delete(id2);
     session.closed = true;
     this.notify(session);
     const socket = session.socket;
@@ -92708,7 +92970,7 @@ var StreamSessions = class {
   close() {
     this.disposed = true;
     clearInterval(this.expiry);
-    for (const id of this.sessions.keys()) this.closeSession(id);
+    for (const id2 of this.sessions.keys()) this.closeSession(id2);
   }
 };
 
@@ -92807,7 +93069,7 @@ var LogBuffer = class {
 };
 
 // src/server/metro-logs.ts
-import { setTimeout as delay5 } from "node:timers/promises";
+import { setTimeout as delay6 } from "node:timers/promises";
 async function metroTargets(origin, signal) {
   const base = parseBaseUrl(origin, "Metro URL");
   const response3 = await fetch(new URL("/json/list", base), { redirect: "error", signal: AbortSignal.any([AbortSignal.timeout(5e3), ...signal ? [signal] : []]) });
@@ -92850,7 +93112,7 @@ function startMetroLogs(target2, sink) {
         sink.status({ source: "metro", state: "reconnecting", message: errorMessage(error113) });
         failures2++;
       }
-      await delay5(Math.min(500 * 2 ** Math.min(failures2, 4), 1e4), void 0, { signal }).catch(() => {
+      await delay6(Math.min(500 * 2 ** Math.min(failures2, 4), 1e4), void 0, { signal }).catch(() => {
       });
     }
   })();
@@ -92929,7 +93191,7 @@ var LogSessions = class {
   constructor(sources = { native: startNativeLogs, metro: startMetroLogs }) {
     this.sources = sources;
     this.expiry = setInterval(() => {
-      for (const [id, session] of this.sessions) if (session.expires < Date.now()) void this.closeSession(id);
+      for (const [id2, session] of this.sessions) if (session.expires < Date.now()) void this.closeSession(id2);
     }, 1e4);
     this.expiry.unref();
   }
@@ -92938,35 +93200,35 @@ var LogSessions = class {
     if (this.disposed) throw new Error("The plugin server has closed.");
     if (this.sessions.size >= 8) throw new Error("Too many log streams. Close a log panel and retry.");
     const session = { buffer: new LogBuffer(), stops: [], expires: Date.now() + 5 * 60 * 1e3 };
-    const id = randomBytes5(32).toString("hex");
-    this.sessions.set(id, session);
+    const id2 = randomBytes5(32).toString("hex");
+    this.sessions.set(id2, session);
     const sink = { log: (entry) => session.buffer.push(entry), status: (status) => session.buffer.status(status) };
     try {
       if (options.native) session.stops.push(this.sources.native(options.native, sink));
       if (options.metro) session.stops.push(this.sources.metro(options.metro, sink));
     } catch (error113) {
-      void this.closeSession(id);
+      void this.closeSession(id2);
       throw error113;
     }
-    return id;
+    return id2;
   }
-  touch(id) {
-    const session = this.sessions.get(id);
+  touch(id2) {
+    const session = this.sessions.get(id2);
     if (!session) throw new ExpectedOperationError("session_expired", "This log session expired or closed. Reopen the log panel.");
     session.expires = Date.now() + 5 * 60 * 1e3;
     return session;
   }
-  keepAlive(id) {
-    this.touch(id);
+  keepAlive(id2) {
+    this.touch(id2);
   }
-  async read(id, after, waitMs = 1e3) {
-    const session = this.touch(id);
+  async read(id2, after, waitMs = 1e3) {
+    const session = this.touch(id2);
     return session.buffer.read(after, waitMs);
   }
-  async closeSession(id) {
-    const session = this.sessions.get(id);
+  async closeSession(id2) {
+    const session = this.sessions.get(id2);
     if (!session) return;
-    this.sessions.delete(id);
+    this.sessions.delete(id2);
     session.buffer.close();
     const closing2 = Promise.allSettled(session.stops.map((stop) => Promise.resolve().then(stop))).then(() => {
     });
@@ -92980,7 +93242,7 @@ var LogSessions = class {
   async close() {
     this.disposed = true;
     clearInterval(this.expiry);
-    await Promise.all([...this.sessions.keys()].map((id) => this.closeSession(id)));
+    await Promise.all([...this.sessions.keys()].map((id2) => this.closeSession(id2)));
     await Promise.all(this.closing);
   }
 };
@@ -93005,9 +93267,9 @@ function registerLogTools(server, logs, baguette, discoverIosDevices = listIosDe
     mimeType: "application/json",
     description: "Read a batch from an authorized Mobile Dev log session. Idle sessions expire after five minutes."
   }, async (uri2, variables) => {
-    const id = parseResourceInput(sessionId2, variables.sessionId);
+    const id2 = parseResourceInput(sessionId2, variables.sessionId);
     const after = parseResourceInput(sequence, variables.sequence);
-    const batch = await logs.read(id, after);
+    const batch = await logs.read(id2, after);
     const text6 = JSON.stringify(batch);
     return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text6 }] };
   });
@@ -93045,8 +93307,8 @@ function registerLogTools(server, logs, baguette, discoverIosDevices = listIosDe
       throw new ExpectedOperationError("device_unavailable", "The selected Android device is absent or unauthorized. Refresh log sources.");
     }
     if (options.metro) parseBaseUrl(options.metro.url, "Metro URL");
-    const id = logs.open(options);
-    return { content: [{ type: "text", text: "Log stream started." }], structuredContent: { options }, _meta: { sessionId: id, logsUri: `logs://mobile-dev/${id}/batch?after=0` } };
+    const id2 = logs.open(options);
+    return { content: [{ type: "text", text: "Log stream started." }], structuredContent: { options }, _meta: { sessionId: id2, logsUri: `logs://mobile-dev/${id2}/batch?after=0` } };
   }));
   K3(server, "mobile_read_logs", {
     title: "Read app logs",
@@ -93054,8 +93316,8 @@ function registerLogTools(server, logs, baguette, discoverIosDevices = listIosDe
     inputSchema: { sessionId: sessionId2, after: external_exports.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0) },
     annotations: annotations2,
     _meta: metadata
-  }, safe(async ({ sessionId: id, after }) => {
-    const batch = await logs.read(id, after, 0);
+  }, safe(async ({ sessionId: id2, after }) => {
+    const batch = await logs.read(id2, after, 0);
     return { content: [{ type: "text", text: JSON.stringify(batch) }], structuredContent: { ...batch } };
   }));
   K3(server, "mobile_logs_keep_alive", {
@@ -93064,8 +93326,8 @@ function registerLogTools(server, logs, baguette, discoverIosDevices = listIosDe
     inputSchema: { sessionId: sessionId2 },
     annotations: annotations2,
     _meta: { ui: { visibility: ["app"] } }
-  }, safe(async ({ sessionId: id }) => {
-    logs.keepAlive(id);
+  }, safe(async ({ sessionId: id2 }) => {
+    logs.keepAlive(id2);
     return { content: [], structuredContent: {} };
   }));
   K3(server, "mobile_logs_close", {
@@ -93074,15 +93336,15 @@ function registerLogTools(server, logs, baguette, discoverIosDevices = listIosDe
     inputSchema: { sessionId: sessionId2 },
     annotations: annotations2,
     _meta: metadata
-  }, safe(async ({ sessionId: id }) => {
-    await logs.closeSession(id);
+  }, safe(async ({ sessionId: id2 }) => {
+    await logs.closeSession(id2);
     return { content: [{ type: "text", text: "Log stream stopped." }], structuredContent: {} };
   }));
 }
 
 // src/server/inspection-tools.ts
-import { execFile as execFile10 } from "node:child_process";
-import { promisify as promisify10 } from "node:util";
+import { execFile as execFile12 } from "node:child_process";
+import { promisify as promisify12 } from "node:util";
 
 // src/server/react-native-inspector.ts
 import { randomUUID as randomUUID2 } from "node:crypto";
@@ -93130,9 +93392,9 @@ function collectReactNativeTree(complete) {
     } catch {
     }
     if (!frames.length) return;
-    const id = sourceStacks.push(frames) - 1;
-    stackIds2.set(error113, id);
-    return id;
+    const id2 = sourceStacks.push(frames) - 1;
+    stackIds2.set(error113, id2);
+    return id2;
   }
   function reactInfo(fiber, name) {
     const owners = [], ids2 = [], ownerIds = [], seen = /* @__PURE__ */ new Set();
@@ -93150,9 +93412,9 @@ function collectReactNativeTree(complete) {
     }
     return { react: { component: fiber.tag === 5 ? owners[0] ?? name : name, owners: owners.reverse(), ...clean(fiber.key) ? { key: clean(fiber.key) } : {} }, creationStackIds: ids2, ownerStackIds: ownerIds };
   }
-  for (const [id, renderer] of hook.renderers) {
+  for (const [id2, renderer] of hook.renderers) {
     if (renderer.rendererPackageName !== "react-native-renderer") continue;
-    for (const root of hook.getFiberRoots(id)) stack.push({ fiber: root.current, parent: void 0, depth: 0 });
+    for (const root of hook.getFiberRoots(id2)) stack.push({ fiber: root.current, parent: void 0, depth: 0 });
   }
   stack.reverse();
   while (stack.length && nodes.length < 3e3 && visited < 1e4) {
@@ -93277,7 +93539,7 @@ async function resolveReactNativeSources(nodes, urls, stacks, origin, signal) {
   }
   for (const node5 of nodes) {
     if (node5.react) {
-      const fromStacks = (ids2) => ids2?.flatMap((id) => indices[id] ?? []).map((index) => location2(mapped[index])).find(Boolean);
+      const fromStacks = (ids2) => ids2?.flatMap((id2) => indices[id2] ?? []).map((index) => location2(mapped[index])).find(Boolean);
       const elementSource = fromStacks(node5.creationStackIds);
       const source = elementSource ?? fromStacks(node5.ownerStackIds);
       if (source) node5.react = { ...node5.react, source, sourceKind: elementSource ? "element" : "owner" };
@@ -93293,15 +93555,19 @@ var node4 = external_exports.lazy(() => external_exports.object({ source: extern
 var creationFrame = external_exports.object({ url: external_exports.number().int().min(0).max(31), line: external_exports.number().int().positive(), column: external_exports.number().int().nonnegative(), methodName: external_exports.string().max(256) });
 var snapshot = external_exports.object({ available: external_exports.boolean(), tree: external_exports.array(node4).max(3e3).optional(), windowWidth: external_exports.number().nonnegative().finite().optional(), truncated: external_exports.boolean().optional(), sourceUrls: external_exports.array(external_exports.string().max(2048)).max(32).default([]), sourceStacks: external_exports.array(external_exports.array(creationFrame).max(3)).max(512).default([]) });
 var normalized = (value) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+async function appTargets(targets, request2) {
+  const names = [request2.deviceName, ...request2.deviceAliases ?? []].map(normalized);
+  const onDevice = targets.filter((target2) => target2.deviceName && names.includes(normalized(target2.deviceName)));
+  if (request2.appId) return onDevice.filter((target2) => target2.appId === request2.appId);
+  const app = normalized(request2.appName ?? "");
+  const named = onDevice.filter((target2) => app && target2.appId && normalized(target2.appId.split(".").at(-1)) === app);
+  if (named.length || !onDevice.length || !request2.resolveForegroundAppId) return named;
+  const appId = await request2.resolveForegroundAppId().catch(() => void 0);
+  return appId ? onDevice.filter((target2) => target2.appId === appId) : [];
+}
 async function inspectReactNative(request2, signal) {
   const targets = await metroTargets(request2.url ?? "http://127.0.0.1:8081", signal);
-  const matches = targets.filter((target3) => {
-    if (request2.targetId) return target3.id === request2.targetId;
-    if (!target3.deviceName || ![request2.deviceName, ...request2.deviceAliases ?? []].some((name) => normalized(target3.deviceName) === normalized(name))) return false;
-    if (request2.appId) return target3.appId === request2.appId;
-    const app = normalized(request2.appName ?? "");
-    return !!app && !!target3.appId && normalized(target3.appId.split(".").at(-1)) === app;
-  });
+  const matches = request2.targetId ? targets.filter((target3) => target3.id === request2.targetId) : await appTargets(targets, request2);
   if (matches.length !== 1) return { available: false, reason: matches.length > 1 ? "ambiguous-target" : "no-matching-target" };
   const target2 = matches[0];
   if (!target2.supportsMultipleDebuggers) return { available: false, reason: "exclusive-debugger" };
@@ -93409,169 +93675,16 @@ function readSnapshot(url3, signal) {
   });
 }
 
-// src/shared/screen-annotations.ts
-function record3(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
-}
-function text4(value) {
-  return typeof value === "string" && value.trim() ? value : void 0;
-}
-function reactContext(value) {
-  const node5 = record3(value), component2 = text4(node5?.component);
-  if (!node5 || !component2) return;
-  const owners = Array.isArray(node5.owners) ? node5.owners.filter((name) => typeof name === "string" && !!name.trim()).slice(0, 12).map((name) => name.slice(0, 256)) : [];
-  const source = record3(node5.source), file3 = text4(source?.file);
-  return {
-    component: component2.slice(0, 256),
-    owners,
-    ...text4(node5.key) ? { key: text4(node5.key).slice(0, 256) } : {},
-    ...node5.sourceKind === "element" || node5.sourceKind === "owner" ? { sourceKind: node5.sourceKind } : {},
-    ...file3 && typeof source?.line === "number" && Number.isInteger(source.line) && source.line > 0 ? { source: {
-      file: file3.slice(0, 2048),
-      line: source.line,
-      ...typeof source.column === "number" && Number.isInteger(source.column) && source.column > 0 ? { column: source.column } : {},
-      ...text4(source.functionName) ? { functionName: text4(source.functionName).slice(0, 256) } : {}
-    } } : {}
-  };
-}
-function bounds(value) {
-  const rect = record3(value);
-  if (!rect) return;
-  const x2 = rect.x ?? rect.left, y3 = rect.y ?? rect.top;
-  const width = rect.width ?? (typeof rect.right === "number" && typeof x2 === "number" ? rect.right - x2 : void 0);
-  const height = rect.height ?? (typeof rect.bottom === "number" && typeof y3 === "number" ? rect.bottom - y3 : void 0);
-  if ([x2, y3, width, height].every((item) => typeof item === "number" && Number.isFinite(item)) && width > 0 && height > 0)
-    return { x: x2, y: y3, width, height };
-}
-function screenComponents(tree, scale = 1) {
-  const components = [];
-  function visit3(value, depth, parentId) {
-    if (depth > 160 || components.length >= 1e4) return;
-    if (Array.isArray(value)) {
-      for (const child of value) visit3(child, depth, parentId);
-      return;
-    }
-    const node5 = record3(value);
-    if (!node5 || node5.hidden === true) return;
-    const frame2 = bounds(node5.frame ?? node5.bounds);
-    if (frame2 && !/^(AX)?(Application|Window)$/i.test(String(node5.role ?? node5.type ?? ""))) {
-      const label = text4(node5.label) ?? text4(node5.text) ?? text4(node5.contentDescription) ?? text4(node5.title);
-      const identifier3 = text4(node5.identifier) ?? text4(node5.resourceId) ?? text4(node5.id);
-      const role = text4(node5.role) ?? text4(node5.className);
-      const nodeId = text4(node5.nodeId) ?? `node-${components.length}`;
-      const nodeDepth = typeof node5.depth === "number" && Number.isInteger(node5.depth) && node5.depth >= 0 && node5.depth <= 1e4 ? node5.depth : depth;
-      const react2 = node5.source === "react-native" ? reactContext(node5.react) : void 0;
-      components.push({ name: text4(node5.name) ?? label ?? identifier3 ?? role ?? "Element", bounds: {
-        x: frame2.x * scale,
-        y: frame2.y * scale,
-        width: frame2.width * scale,
-        height: frame2.height * scale
-      }, label, identifier: identifier3, role, value: text4(node5.value), depth: nodeDepth, source: node5.source === "react-native" ? "react-native" : node5.source === "screen" ? "screen" : "accessibility", nodeId, parentId: text4(node5.parentId) ?? parentId, ...react2 ? { react: react2 } : {} });
-      parentId = nodeId;
-    }
-    for (const key of ["children", "elements", "nodes", "tree", "root"]) if (node5[key]) visit3(node5[key], depth + 1, parentId);
-  }
-  visit3(tree, 0);
-  return components;
-}
-
-// src/server/inspection-tools.ts
-var execute8 = promisify10(execFile10);
-function registerInspectionTools(server, baguette, android2) {
-  const controller = new AbortController();
-  K3(server, "mobile_inspect_ui", {
-    title: "Inspect app elements",
-    description: "Read native accessibility elements and, for a matching React Native development app, measured runtime component bounds through an existing local Metro debugger. Does not start Metro, modify app props or take over an exclusive debugger. iOS bounds use device points; Android bounds use screen pixels. Optional targetId selects a known Metro target explicitly.",
-    inputSchema: {
-      platform: external_exports.enum(["ios", "android"]),
-      deviceId: external_exports.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/),
-      deviceName: external_exports.string().min(1).max(256),
-      screenWidth: external_exports.number().positive().max(16384),
-      metroUrl: external_exports.string().max(2048).optional(),
-      targetId: external_exports.string().max(512).optional()
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    _meta: { ui: { visibility: ["app", "model"] } }
-  }, async ({ platform: platform5, deviceId: deviceId3, deviceName, screenWidth, metroUrl, targetId }) => {
-    try {
-      let deviceAliases = [];
-      let native, appName2, appId;
-      if (platform5 === "ios") {
-        const device2 = await baguette.device(udidSchema.parse(deviceId3), true);
-        deviceName = device2.name;
-        const response3 = await baguette.json(`/simulators/${deviceId3}/describe-ui.json`);
-        native = response3;
-        appName2 = typeof response3.tree?.label === "string" ? response3.tree.label : void 0;
-      } else {
-        const response3 = await android2.accessibility(deviceId3);
-        native = screenComponents(response3.tree, screenWidth / response3.screen.width);
-        const packages2 = new Set((response3.tree.nodes ?? []).map((item) => item.packageName).filter((name) => typeof name === "string" && !name.startsWith("com.android.") && name !== "android"));
-        if (packages2.size === 1) appId = [...packages2][0];
-        try {
-          const adb = await adbPath();
-          const properties2 = await Promise.all(["ro.product.model", "ro.build.version.release", "ro.build.version.sdk"].map((property) => execute8(adb, ["-s", deviceId3, "shell", "getprop", property], { timeout: 3e3, maxBuffer: 4096 }).then((result4) => result4.stdout.trim())));
-          if (properties2.every(Boolean)) deviceAliases = [properties2[0], `${properties2[0]} - ${properties2[1]} - API ${properties2[2]}`];
-        } catch {
-        }
-      }
-      let runtime2;
-      try {
-        runtime2 = await inspectReactNative({ url: metroUrl, targetId, deviceName, deviceAliases, appName: appName2, appId, platform: platform5, screenWidth }, controller.signal);
-      } catch {
-        runtime2 = { available: false, reason: "inspector-unavailable" };
-      }
-      const data = { tree: screenComponents(runtime2.available ? [runtime2.tree, native] : native), runtime: { available: runtime2.available, truncated: runtime2.available ? runtime2.truncated : false } };
-      return { content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data };
-    } catch (error113) {
-      captureServerError(error113, "inspection.tool");
-      return { isError: true, content: [{ type: "text", text: errorMessage(error113) }] };
-    }
-  });
-  return () => controller.abort();
-}
-
-// src/server/cpu/sessions.ts
-import { randomBytes as randomBytes7 } from "node:crypto";
-
-// src/shared/cpu.ts
-var deviceKinds = external_exports.enum(["simulator", "physical"]);
-var deviceKind = deviceKinds.optional();
-var simulatorId2 = external_exports.uuid();
-var deviceFields = {
-  platform: external_exports.enum(["ios", "android"]).default("ios"),
-  deviceId: external_exports.string().min(1).max(256).regex(/^[a-zA-Z0-9_.:-]+$/),
-  kind: deviceKind
-};
-function checkDevice(device2, context3) {
-  if (device2.platform === "ios" && device2.kind !== "physical") {
-    const parsed = simulatorId2.safeParse(device2.deviceId);
-    if (parsed.success === false) context3.addIssue({ code: "custom", path: ["deviceId"], message: "Expected an iOS simulator UUID, or kind: physical with a hardware UDID." });
-  }
-  if (device2.platform === "android" && device2.kind !== void 0) {
-    context3.addIssue({ code: "custom", path: ["kind"], message: "Device kind is only used for iOS performance targets." });
-  }
-  if (device2.platform === "android" && device2.deviceId.startsWith("avd:")) {
-    context3.addIssue({ code: "custom", path: ["deviceId"], message: "Choose a running Android device serial." });
-  }
-}
-var cpuDeviceSchema = external_exports.object(deviceFields).strict().superRefine(checkDevice);
-var cpuTargetSchema = external_exports.object({
-  ...deviceFields,
-  bundleId: external_exports.string().min(1).max(256).regex(/^[a-zA-Z0-9._-]+$/)
-}).strict().superRefine(checkDevice);
-var CPU_HISTORY_SECONDS = 150;
-var CPU_MAX_SAMPLES = 600;
-
 // src/server/device-apps/apps.ts
-import { execFile as execFile12 } from "node:child_process";
-import { promisify as promisify12 } from "node:util";
+import { execFile as execFile11 } from "node:child_process";
+import { promisify as promisify11 } from "node:util";
 import { dirname as dirname7 } from "node:path";
 import { fileURLToPath as fileURLToPath9 } from "node:url";
 
 // src/server/device-apps/command.ts
-import { execFile as execFile11 } from "node:child_process";
-import { promisify as promisify11 } from "node:util";
-var execute9 = promisify11(execFile11);
+import { execFile as execFile10 } from "node:child_process";
+import { promisify as promisify10 } from "node:util";
+var execute8 = promisify10(execFile10);
 var version4 = external_exports.literal(1);
 var cause = external_exports.enum(foregroundCauses);
 var diagnosticObject2 = external_exports.object({ version: version4, cause });
@@ -93648,7 +93761,7 @@ function annotateDiscoveryCommand(error113, command2, elapsed, options) {
   setDiscoveryCommandDiagnostic(error113, diagnostic);
   return error113;
 }
-async function runDiscoveryCommand(command2, file3, args, options, run = execute9) {
+async function runDiscoveryCommand(command2, file3, args, options, run = execute8) {
   const startedAt = performance.now();
   try {
     return await run(file3, args, options);
@@ -93660,16 +93773,16 @@ async function runDiscoveryCommand(command2, file3, args, options, run = execute
 }
 
 // src/server/device-apps/apps.ts
-var execute10 = promisify12(execFile12);
-var text5 = external_exports.string();
+var execute9 = promisify11(execFile11);
+var text4 = external_exports.string();
 var number8 = external_exports.number();
 var integer3 = number8.int();
 var pid = integer3.positive();
-var executable = text5.optional();
-var processEntry = external_exports.object({ executable, processIdentifier: pid });
+var executable2 = text4.optional();
+var processEntry = external_exports.object({ executable: executable2, processIdentifier: pid });
 var processes = external_exports.array(processEntry);
 var developerApp = external_exports.boolean();
-var application = external_exports.object({ bundleIdentifier: text5, url: text5, builtByDeveloper: developerApp });
+var application = external_exports.object({ bundleIdentifier: text4, url: text4, builtByDeveloper: developerApp });
 var applications = external_exports.array(application);
 var success4 = external_exports.literal("success");
 var info2 = external_exports.object({ outcome: success4 });
@@ -93703,7 +93816,7 @@ function parsePhysicalApps(apps, processes2) {
   }
   return result4;
 }
-async function runningPhysicalApps(deviceId3, signal, run = execute10) {
+async function runningPhysicalApps(deviceId3, signal, run = execute9) {
   const prefix3 = ["devicectl", "device", "info"];
   const options = ["--device", deviceId3, "--quiet", "--timeout", "10", "--omit-deprecated-fields-in-json", "--json-output", "-"];
   const settings = { encoding: "utf8", timeout: 15e3, maxBuffer: 4 * 1024 * 1024, signal };
@@ -93756,6 +93869,293 @@ async function runningDeviceApps(deviceId3, signal, platform5 = "ios", kind3) {
   const processes2 = await runDiscoveryCommand("android_processes", adb, ["-s", deviceId3, "shell", "ps", "-A", "-o", "PID,NAME"], { encoding: "utf8", signal, timeout: 5e3, maxBuffer: 1024 * 1024 });
   return parseAndroidApps(packages2.output, processes2.stdout);
 }
+
+// src/server/device-apps/foreground.ts
+import { fileURLToPath as fileURLToPath10 } from "node:url";
+var number9 = external_exports.number();
+var integer4 = number9.int();
+var positive2 = integer4.positive();
+var bounded = positive2.max(2147483647);
+var pid2 = bounded.nullable();
+var response2 = external_exports.object({ pid: pid2 });
+var schema = response2.strict();
+async function foregroundPhysicalPid(deviceId3, signal, helper = new URL("./ios-fps/mobile-dev-ios-fps", import.meta.url)) {
+  const path = fileURLToPath10(helper);
+  const result4 = await runDiscoveryCommand("ios_physical_foreground", path, ["foreground", deviceId3], { encoding: "utf8", timeout: 2e4, maxBuffer: 4096, signal });
+  const decoded = JSON.parse(result4.stdout);
+  const foreground = schema.parse(decoded);
+  return foreground.pid;
+}
+async function foregroundSimulatorPid(deviceId3, signal, helper = new URL("./baguette/Baguette", import.meta.url), runtime2 = baguetteEnvironment) {
+  const path = fileURLToPath10(helper);
+  const cancellation = signal ?? AbortSignal.timeout(1e4);
+  const startedAt = performance.now();
+  let environment;
+  try {
+    environment = await runtime2(path, cancellation);
+  } catch (error113) {
+    const elapsed = performance.now() - startedAt;
+    const annotated = annotateDiscoveryCommand(error113, "ios_simulator_runtime", elapsed, { encoding: "utf8", timeout: BAGUETTE_RUNTIME_TIMEOUT_MS, maxBuffer: 4096, signal: cancellation });
+    throw annotated;
+  }
+  const result4 = await runDiscoveryCommand("ios_simulator_foreground", path, ["foreground", "--udid", deviceId3], {
+    encoding: "utf8",
+    timeout: 1e4,
+    maxBuffer: 4096,
+    signal: cancellation,
+    env: environment
+  });
+  const decoded = JSON.parse(result4.stdout);
+  const foreground = schema.parse(decoded);
+  return foreground.pid;
+}
+function parseAndroidForegroundPackage(output2) {
+  const top = /^\s*topResumedActivity\s*[:=]\s*(.+)$/gm;
+  const resumed = /^\s*mResumedActivity\s*[:=]\s*(.+)$/gm;
+  const topMatches = output2.matchAll(top);
+  const topEntries = Array.from(topMatches);
+  const resumedMatches = output2.matchAll(resumed);
+  const entries = topEntries.length > 0 ? topEntries : Array.from(resumedMatches);
+  if (entries.length === 0) throw new Error("Android did not report its resumed activity.");
+  const packages2 = /* @__PURE__ */ new Set();
+  for (const entry of entries) {
+    if (entry[1].trim() === "null") continue;
+    const component2 = /\b([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)\/[a-zA-Z0-9_.$]+/.exec(entry[1]);
+    if (component2 === null) throw new Error("Android returned an unsupported resumed activity.");
+    packages2.add(component2[1]);
+  }
+  if (packages2.size > 1) throw new Error("Android reported multiple foreground apps across displays.");
+  const packageName = packages2.values().next();
+  return packageName.value ?? null;
+}
+async function foregroundAndroidPackage(deviceId3, signal) {
+  const adb = await adbPath();
+  const result4 = await runDiscoveryCommand("android_foreground_activity", adb, ["-s", deviceId3, "shell", "dumpsys", "activity", "activities"], {
+    encoding: "utf8",
+    timeout: 5e3,
+    maxBuffer: 4 * 1024 * 1024,
+    signal
+  });
+  return parseAndroidForegroundPackage(result4.stdout);
+}
+async function foregroundAndroidApp(deviceId3, signal) {
+  const bundleId = await foregroundAndroidPackage(deviceId3, signal);
+  if (bundleId === null) return null;
+  const adb = await adbPath();
+  const result4 = await runDiscoveryCommand("android_foreground_pid", adb, ["-s", deviceId3, "shell", "pidof", bundleId], {
+    encoding: "utf8",
+    timeout: 5e3,
+    maxBuffer: 4096,
+    signal
+  });
+  const output2 = result4.stdout.trim();
+  const candidates = output2.split(/\s+/);
+  if (candidates.length !== 1) throw new Error("Android did not report one foreground app process.");
+  const numeric = /^\d+$/.test(output2);
+  const value = Number(output2);
+  const valid = Number.isSafeInteger(value);
+  if (numeric === false || valid === false || value < 1 || value > 2147483647) {
+    throw new Error("Android returned an invalid foreground app PID.");
+  }
+  return { bundleId, pid: value };
+}
+
+// src/server/device-apps/sources.ts
+var defaultSources = {
+  apps: runningDeviceApps,
+  physical: foregroundPhysicalPid,
+  simulator: foregroundSimulatorPid,
+  android: foregroundAndroidApp
+};
+async function readDeviceApps(deviceId3, signal, platform5 = "ios", kind3, sources = defaultSources) {
+  const running = withDeviceAppsDiagnostic(() => sources.apps(deviceId3, signal, platform5, kind3), "running_apps", platform5, kind3);
+  if (platform5 === "android") {
+    const detection2 = withDeviceAppsDiagnostic(() => sources.android(deviceId3, signal), "foreground", platform5, kind3);
+    const [apps2, foregroundApp2] = await Promise.all([running, detection2]);
+    const marked2 = apps2.map((candidate) => ({ ...candidate, foreground: candidate.pid === foregroundApp2?.pid }));
+    return { apps: marked2, foregroundApp: foregroundApp2 };
+  }
+  const detect = () => kind3 === "physical" ? sources.physical(deviceId3, signal) : sources.simulator(deviceId3, signal);
+  const detection = withDeviceAppsDiagnostic(detect, "foreground", platform5, kind3);
+  const [apps, pid3] = await Promise.all([running, detection]);
+  const app = apps.find((candidate) => candidate.pid === pid3);
+  const foregroundApp = pid3 === null ? null : { bundleId: app?.bundleId ?? null, pid: pid3 };
+  const marked = apps.map((candidate) => ({ ...candidate, foreground: candidate.pid === pid3 }));
+  return { apps: marked, foregroundApp };
+}
+
+// src/shared/screen-annotations.ts
+function record3(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
+}
+function text5(value) {
+  return typeof value === "string" && value.trim() ? value : void 0;
+}
+function reactContext(value) {
+  const node5 = record3(value), component2 = text5(node5?.component);
+  if (!node5 || !component2) return;
+  const owners = Array.isArray(node5.owners) ? node5.owners.filter((name) => typeof name === "string" && !!name.trim()).slice(0, 12).map((name) => name.slice(0, 256)) : [];
+  const source = record3(node5.source), file3 = text5(source?.file);
+  return {
+    component: component2.slice(0, 256),
+    owners,
+    ...text5(node5.key) ? { key: text5(node5.key).slice(0, 256) } : {},
+    ...node5.sourceKind === "element" || node5.sourceKind === "owner" ? { sourceKind: node5.sourceKind } : {},
+    ...file3 && typeof source?.line === "number" && Number.isInteger(source.line) && source.line > 0 ? { source: {
+      file: file3.slice(0, 2048),
+      line: source.line,
+      ...typeof source.column === "number" && Number.isInteger(source.column) && source.column > 0 ? { column: source.column } : {},
+      ...text5(source.functionName) ? { functionName: text5(source.functionName).slice(0, 256) } : {}
+    } } : {}
+  };
+}
+function bounds(value) {
+  const rect = record3(value);
+  if (!rect) return;
+  const x2 = rect.x ?? rect.left, y3 = rect.y ?? rect.top;
+  const width = rect.width ?? (typeof rect.right === "number" && typeof x2 === "number" ? rect.right - x2 : void 0);
+  const height = rect.height ?? (typeof rect.bottom === "number" && typeof y3 === "number" ? rect.bottom - y3 : void 0);
+  if ([x2, y3, width, height].every((item) => typeof item === "number" && Number.isFinite(item)) && width > 0 && height > 0)
+    return { x: x2, y: y3, width, height };
+}
+function screenSize(value) {
+  const size2 = record3(value), width = size2?.width, height = size2?.height;
+  if (typeof width === "number" && typeof height === "number" && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) return { width, height };
+}
+function accessibilityScreen(tree) {
+  const root = record3(tree), frame2 = bounds(root?.frame);
+  if (frame2?.x === 0 && frame2.y === 0 && /^(AX)?Application$/i.test(String(root?.role ?? ""))) return screenSize(frame2);
+}
+function screenComponents(tree, scale = 1) {
+  const components = [];
+  function visit3(value, depth, parentId) {
+    if (depth > 160 || components.length >= 1e4) return;
+    if (Array.isArray(value)) {
+      for (const child of value) visit3(child, depth, parentId);
+      return;
+    }
+    const node5 = record3(value);
+    if (!node5 || node5.hidden === true) return;
+    const frame2 = bounds(node5.frame ?? node5.bounds);
+    if (frame2 && !/^(AX)?(Application|Window)$/i.test(String(node5.role ?? node5.type ?? ""))) {
+      const label = text5(node5.label) ?? text5(node5.text) ?? text5(node5.contentDescription) ?? text5(node5.title);
+      const identifier3 = text5(node5.identifier) ?? text5(node5.resourceId) ?? text5(node5.id);
+      const role = text5(node5.role) ?? text5(node5.className);
+      const nodeId = text5(node5.nodeId) ?? `node-${components.length}`;
+      const nodeDepth = typeof node5.depth === "number" && Number.isInteger(node5.depth) && node5.depth >= 0 && node5.depth <= 1e4 ? node5.depth : depth;
+      const react2 = node5.source === "react-native" ? reactContext(node5.react) : void 0;
+      components.push({ name: text5(node5.name) ?? label ?? identifier3 ?? role ?? "Element", bounds: {
+        x: frame2.x * scale,
+        y: frame2.y * scale,
+        width: frame2.width * scale,
+        height: frame2.height * scale
+      }, label, identifier: identifier3, role, value: text5(node5.value), depth: nodeDepth, source: node5.source === "react-native" ? "react-native" : node5.source === "screen" ? "screen" : "accessibility", nodeId, parentId: text5(node5.parentId) ?? parentId, ...react2 ? { react: react2 } : {} });
+      parentId = nodeId;
+    }
+    for (const key of ["children", "elements", "nodes", "tree", "root"]) if (node5[key]) visit3(node5[key], depth + 1, parentId);
+  }
+  visit3(tree, 0);
+  return components;
+}
+
+// src/server/inspection-tools.ts
+var execute10 = promisify12(execFile12);
+async function iosSnapshot(baguette, deviceId3, signal) {
+  const udid = udidSchema.parse(deviceId3);
+  const device2 = await baguette.device(udid, true);
+  const response3 = await baguette.describeUi(udid);
+  return {
+    native: response3,
+    screen: accessibilityScreen(response3.tree),
+    app: {
+      deviceName: device2.name,
+      appName: typeof response3.tree?.label === "string" ? response3.tree.label : void 0,
+      resolveForegroundAppId: async () => (await readDeviceApps(udid, signal, "ios", "simulator")).foregroundApp?.bundleId ?? void 0
+    }
+  };
+}
+async function androidSnapshot(android2, deviceId3, deviceName, screenWidth) {
+  const [response3, deviceAliases] = await Promise.all([android2.accessibility(deviceId3), androidAliases(deviceId3)]);
+  const packages2 = new Set((response3.tree.nodes ?? []).map((item) => item.packageName).filter((name) => typeof name === "string" && !name.startsWith("com.android.") && name !== "android"));
+  return {
+    native: screenComponents(response3.tree, screenWidth / response3.screen.width),
+    app: { deviceName, deviceAliases, appId: packages2.size === 1 ? [...packages2][0] : void 0 }
+  };
+}
+async function androidAliases(deviceId3) {
+  try {
+    const adb = await adbPath();
+    const properties2 = await Promise.all(["ro.product.model", "ro.build.version.release", "ro.build.version.sdk"].map((property) => execute10(adb, ["-s", deviceId3, "shell", "getprop", property], { timeout: 3e3, maxBuffer: 4096 }).then((result4) => result4.stdout.trim())));
+    return properties2.every(Boolean) ? [properties2[0], `${properties2[0]} - ${properties2[1]} - API ${properties2[2]}`] : [];
+  } catch {
+    return [];
+  }
+}
+function registerInspectionTools(server, baguette, android2) {
+  const controller = new AbortController();
+  K3(server, "mobile_inspect_ui", {
+    title: "Inspect app elements",
+    description: "Read native accessibility elements and, for a matching React Native development app, measured runtime component bounds through an existing local Metro debugger. Does not start Metro, modify app props or take over an exclusive debugger. iOS bounds use device points; Android bounds use screen pixels. Optional targetId selects a known Metro target explicitly.",
+    inputSchema: {
+      platform: external_exports.enum(["ios", "android"]),
+      deviceId: external_exports.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/),
+      deviceName: external_exports.string().min(1).max(256),
+      screenWidth: external_exports.number().positive().max(16384),
+      metroUrl: external_exports.string().max(2048).optional(),
+      targetId: external_exports.string().max(512).optional()
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    _meta: { ui: { visibility: ["app", "model"] } }
+  }, async ({ platform: platform5, deviceId: deviceId3, deviceName, screenWidth, metroUrl, targetId }) => {
+    try {
+      const { native, app, screen } = platform5 === "ios" ? await iosSnapshot(baguette, deviceId3, controller.signal) : await androidSnapshot(android2, deviceId3, deviceName, screenWidth);
+      let runtime2;
+      try {
+        runtime2 = await inspectReactNative({ ...app, url: metroUrl, targetId, platform: platform5, screenWidth }, controller.signal);
+      } catch {
+        runtime2 = { available: false, reason: "inspector-unavailable" };
+      }
+      const data = { tree: screenComponents(runtime2.available ? [runtime2.tree, native] : native), runtime: { available: runtime2.available, truncated: runtime2.available ? runtime2.truncated : false }, ...screen && { screen } };
+      return { content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data };
+    } catch (error113) {
+      captureServerError(error113, "inspection.tool");
+      return { isError: true, content: [{ type: "text", text: errorMessage(error113) }] };
+    }
+  });
+  return () => controller.abort();
+}
+
+// src/server/cpu/sessions.ts
+import { randomBytes as randomBytes7 } from "node:crypto";
+
+// src/shared/cpu.ts
+var deviceKinds = external_exports.enum(["simulator", "physical"]);
+var deviceKind = deviceKinds.optional();
+var simulatorId2 = external_exports.uuid();
+var deviceFields = {
+  platform: external_exports.enum(["ios", "android"]).default("ios"),
+  deviceId: external_exports.string().min(1).max(256).regex(/^[a-zA-Z0-9_.:-]+$/),
+  kind: deviceKind
+};
+function checkDevice(device2, context3) {
+  if (device2.platform === "ios" && device2.kind !== "physical") {
+    const parsed = simulatorId2.safeParse(device2.deviceId);
+    if (parsed.success === false) context3.addIssue({ code: "custom", path: ["deviceId"], message: "Expected an iOS simulator UUID, or kind: physical with a hardware UDID." });
+  }
+  if (device2.platform === "android" && device2.kind !== void 0) {
+    context3.addIssue({ code: "custom", path: ["kind"], message: "Device kind is only used for iOS performance targets." });
+  }
+  if (device2.platform === "android" && device2.deviceId.startsWith("avd:")) {
+    context3.addIssue({ code: "custom", path: ["deviceId"], message: "Choose a running Android device serial." });
+  }
+}
+var cpuDeviceSchema = external_exports.object(deviceFields).strict().superRefine(checkDevice);
+var cpuTargetSchema = external_exports.object({
+  ...deviceFields,
+  bundleId: external_exports.string().min(1).max(256).regex(/^[a-zA-Z0-9._-]+$/)
+}).strict().superRefine(checkDevice);
+var CPU_HISTORY_SECONDS = 150;
+var CPU_MAX_SAMPLES = 600;
 
 // src/server/cpu/buffer.ts
 var CpuBuffer = class {
@@ -94010,7 +94410,7 @@ var GdbConnection = class {
 };
 
 // src/server/cpu/simulator.ts
-import { execFile as execFile13, spawn as spawn5 } from "node:child_process";
+import { execFile as execFile13, spawn as spawn6 } from "node:child_process";
 import { access as access6 } from "node:fs/promises";
 import { createServer as createServer3 } from "node:net";
 import { resolve as resolve4 } from "node:path";
@@ -94083,7 +94483,7 @@ async function launchLocalDebugserver(binary2, signal) {
       });
     });
     const destination = `127.0.0.1:${address2.port}`;
-    child = spawn5(binary2, ["--native-regs", "--setsid", "--reverse-connect", destination], { stdio: ["ignore", "pipe", "pipe"] });
+    child = spawn6(binary2, ["--native-regs", "--setsid", "--reverse-connect", destination], { stdio: ["ignore", "pipe", "pipe"] });
     const drain = (chunk) => {
       const text6 = chunk.toString();
       diagnostics5 = (diagnostics5 + text6).slice(-4e3);
@@ -94160,8 +94560,8 @@ function parseCpuCounters(profile) {
       case "thread_used_id": {
         finishThread();
         if (!/^[\da-f]+$/i.test(value)) throw new Error("Invalid CPU thread ID.");
-        const id = BigInt(`0x${value}`);
-        thread = { id: id.toString(16) };
+        const id2 = BigInt(`0x${value}`);
+        thread = { id: id2.toString(16) };
         break;
       }
       case "thread_used_usec": {
@@ -94350,23 +94750,23 @@ async function startIosCpuMonitor(options, openTransport = openSimulatorDebugser
 }
 
 // src/server/cpu/physical.ts
-import { spawn as spawn6 } from "node:child_process";
+import { spawn as spawn7 } from "node:child_process";
 import { access as access7 } from "node:fs/promises";
-import { createConnection } from "node:net";
-import { fileURLToPath as fileURLToPath10 } from "node:url";
-var number9 = external_exports.number();
-var integer4 = number9.int();
-var positive2 = integer4.min(1);
-var port = positive2.max(65535);
+import { createConnection as createConnection2 } from "node:net";
+import { fileURLToPath as fileURLToPath11 } from "node:url";
+var number10 = external_exports.number();
+var integer5 = number10.int();
+var positive3 = integer5.min(1);
+var port = positive3.max(65535);
 var address = external_exports.object({ port });
 var readySchema = address.strict();
 async function openPhysicalDebugserver(deviceId3, signal, helper = new URL("./ios-fps/mobile-dev-ios-fps", import.meta.url)) {
   signal.throwIfAborted();
   if (process.platform !== "darwin") throw new Error("Physical iOS CPU monitoring requires macOS.");
-  const path = fileURLToPath10(helper);
+  const path = fileURLToPath11(helper);
   await access7(path);
   signal.throwIfAborted();
-  const child = spawn6(path, ["debugserver", deviceId3], { stdio: "pipe", shell: false });
+  const child = spawn7(path, ["debugserver", deviceId3], { stdio: "pipe", shell: false });
   let socket;
   let closing2;
   let diagnostics5 = "";
@@ -94439,7 +94839,7 @@ async function openPhysicalDebugserver(deviceId3, signal, helper = new URL("./io
     const port2 = await ready;
     signal.throwIfAborted();
     const connected = new Promise((resolve5, reject) => {
-      socket = createConnection({ host: "127.0.0.1", port: port2 });
+      socket = createConnection2({ host: "127.0.0.1", port: port2 });
       socket.once("connect", resolve5);
       socket.once("error", reject);
       socket.once("close", () => {
@@ -94518,12 +94918,12 @@ var AndroidCpuSampler = class {
     }
     const ids2 = /* @__PURE__ */ new Set();
     const threads = profile.threads.map((thread) => {
-      const id = `${thread.tid}-${thread.start}`;
-      if (ids2.has(id)) throw new Error("Duplicate Android CPU thread counter.");
-      ids2.add(id);
-      const earlier = earlierThreads.get(id);
+      const id2 = `${thread.tid}-${thread.start}`;
+      if (ids2.has(id2)) throw new Error("Duplicate Android CPU thread counter.");
+      ids2.add(id2);
+      const earlier = earlierThreads.get(id2);
       const cpuPercent2 = earlier === void 0 ? null : percentage3(thread.ticks, earlier);
-      return { id, name: thread.name, cpuPercent: cpuPercent2 };
+      return { id: id2, name: thread.name, cpuPercent: cpuPercent2 };
     });
     const cpuPercent = previous ? percentage3(profile.processTicks, previous.processTicks) : null;
     this.previous = profile;
@@ -94702,11 +95102,11 @@ async function startAndroidCpuMonitor(options, dependencies) {
 }
 
 // src/server/cpu/source.ts
-import { spawn as spawn8 } from "node:child_process";
+import { spawn as spawn9 } from "node:child_process";
 function startCpuMonitor(options, collector) {
   if (options.target.platform === "android") {
     const deploy = (adb, deviceId3, signal) => deployAndroidCollector(adb, deviceId3, signal, collector);
-    const dependencies = { adbPath, spawn: spawn8, deploy };
+    const dependencies = { adbPath, spawn: spawn9, deploy };
     const androidOptions = { ...options, deviceId: options.target.deviceId };
     return startAndroidCpuMonitor(androidOptions, dependencies);
   }
@@ -94734,8 +95134,8 @@ var CpuSessions = class {
   constructor(sources) {
     this.sources = sources;
     this.expiry = setInterval(() => {
-      for (const [id, session] of this.sessions) {
-        if (session.expires < Date.now()) void this.closeSession(id).catch((error113) => console.error("CPU session cleanup:", error113));
+      for (const [id2, session] of this.sessions) {
+        if (session.expires < Date.now()) void this.closeSession(id2).catch((error113) => console.error("CPU session cleanup:", error113));
       }
     }, 1e4);
     this.expiry.unref();
@@ -94752,11 +95152,11 @@ var CpuSessions = class {
     const memoryMetric = target2.platform === "android" ? "rss" : "physical-footprint";
     const session = { target: target2, buffer: new CpuBuffer(memoryMetric), abort: new AbortController(), expires: Date.now() + 3e5 };
     const bytes = randomBytes7(32);
-    const id = bytes.toString("hex");
-    this.sessions.set(id, session);
+    const id2 = bytes.toString("hex");
+    this.sessions.set(id2, session);
     this.targets.set(key, session);
     session.start = this.initialize(session);
-    return id;
+    return id2;
   }
   async initialize(session) {
     const signal = session.abort.signal;
@@ -94793,14 +95193,14 @@ var CpuSessions = class {
       if (signal.aborted === false) session.buffer.status("failed", errorMessage(error113));
     }
   }
-  async read(id, after, waitMs = 1e3) {
-    const session = this.sessions.get(id);
+  async read(id2, after, waitMs = 1e3) {
+    const session = this.sessions.get(id2);
     if (session === void 0) throw new ExpectedOperationError("session_expired", "This CPU session expired or closed. Reconnect the performance panel.");
     session.expires = Date.now() + 3e5;
     return session.buffer.read(after, waitMs);
   }
-  async closeSession(id) {
-    const session = this.sessions.get(id);
+  async closeSession(id2) {
+    const session = this.sessions.get(id2);
     if (session === void 0) return;
     if (session.stopping) return session.stopping;
     session.buffer.status("stopping");
@@ -94812,7 +95212,7 @@ var CpuSessions = class {
         await session.monitor?.stop();
       } finally {
         session.abort.abort();
-        this.sessions.delete(id);
+        this.sessions.delete(id2);
         const key = this.key(session.target);
         this.targets.delete(key);
       }
@@ -94826,132 +95226,18 @@ var CpuSessions = class {
   }
   async closeDevice(deviceId3) {
     const ids2 = [...this.sessions].filter(([, session]) => session.target.deviceId === deviceId3);
-    await Promise.all(ids2.map(([id]) => this.closeSession(id)));
+    await Promise.all(ids2.map(([id2]) => this.closeSession(id2)));
   }
   async close() {
     this.disposed = true;
     clearInterval(this.expiry);
     const ids2 = [...this.sessions.keys()];
-    const results = await Promise.allSettled(ids2.map((id) => this.closeSession(id)));
+    const results = await Promise.allSettled(ids2.map((id2) => this.closeSession(id2)));
     await Promise.allSettled(this.closing);
     const failed = results.find((result4) => result4.status === "rejected");
     if (failed?.status === "rejected") throw failed.reason;
   }
 };
-
-// src/server/device-apps/foreground.ts
-import { fileURLToPath as fileURLToPath11 } from "node:url";
-var number10 = external_exports.number();
-var integer5 = number10.int();
-var positive3 = integer5.positive();
-var bounded = positive3.max(2147483647);
-var pid2 = bounded.nullable();
-var response2 = external_exports.object({ pid: pid2 });
-var schema = response2.strict();
-async function foregroundPhysicalPid(deviceId3, signal, helper = new URL("./ios-fps/mobile-dev-ios-fps", import.meta.url)) {
-  const path = fileURLToPath11(helper);
-  const result4 = await runDiscoveryCommand("ios_physical_foreground", path, ["foreground", deviceId3], { encoding: "utf8", timeout: 2e4, maxBuffer: 4096, signal });
-  const decoded = JSON.parse(result4.stdout);
-  const foreground = schema.parse(decoded);
-  return foreground.pid;
-}
-async function foregroundSimulatorPid(deviceId3, signal, helper = new URL("./baguette/Baguette", import.meta.url), runtime2 = baguetteEnvironment) {
-  const path = fileURLToPath11(helper);
-  const cancellation = signal ?? AbortSignal.timeout(1e4);
-  const startedAt = performance.now();
-  let environment;
-  try {
-    environment = await runtime2(path, cancellation);
-  } catch (error113) {
-    const elapsed = performance.now() - startedAt;
-    const annotated = annotateDiscoveryCommand(error113, "ios_simulator_runtime", elapsed, { encoding: "utf8", timeout: BAGUETTE_RUNTIME_TIMEOUT_MS, maxBuffer: 4096, signal: cancellation });
-    throw annotated;
-  }
-  const result4 = await runDiscoveryCommand("ios_simulator_foreground", path, ["foreground", "--udid", deviceId3], {
-    encoding: "utf8",
-    timeout: 1e4,
-    maxBuffer: 4096,
-    signal: cancellation,
-    env: environment
-  });
-  const decoded = JSON.parse(result4.stdout);
-  const foreground = schema.parse(decoded);
-  return foreground.pid;
-}
-function parseAndroidForegroundPackage(output2) {
-  const top = /^\s*topResumedActivity\s*[:=]\s*(.+)$/gm;
-  const resumed = /^\s*mResumedActivity\s*[:=]\s*(.+)$/gm;
-  const topMatches = output2.matchAll(top);
-  const topEntries = Array.from(topMatches);
-  const resumedMatches = output2.matchAll(resumed);
-  const entries = topEntries.length > 0 ? topEntries : Array.from(resumedMatches);
-  if (entries.length === 0) throw new Error("Android did not report its resumed activity.");
-  const packages2 = /* @__PURE__ */ new Set();
-  for (const entry of entries) {
-    if (entry[1].trim() === "null") continue;
-    const component2 = /\b([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)\/[a-zA-Z0-9_.$]+/.exec(entry[1]);
-    if (component2 === null) throw new Error("Android returned an unsupported resumed activity.");
-    packages2.add(component2[1]);
-  }
-  if (packages2.size > 1) throw new Error("Android reported multiple foreground apps across displays.");
-  const packageName = packages2.values().next();
-  return packageName.value ?? null;
-}
-async function foregroundAndroidPackage(deviceId3, signal) {
-  const adb = await adbPath();
-  const result4 = await runDiscoveryCommand("android_foreground_activity", adb, ["-s", deviceId3, "shell", "dumpsys", "activity", "activities"], {
-    encoding: "utf8",
-    timeout: 5e3,
-    maxBuffer: 4 * 1024 * 1024,
-    signal
-  });
-  return parseAndroidForegroundPackage(result4.stdout);
-}
-async function foregroundAndroidApp(deviceId3, signal) {
-  const bundleId = await foregroundAndroidPackage(deviceId3, signal);
-  if (bundleId === null) return null;
-  const adb = await adbPath();
-  const result4 = await runDiscoveryCommand("android_foreground_pid", adb, ["-s", deviceId3, "shell", "pidof", bundleId], {
-    encoding: "utf8",
-    timeout: 5e3,
-    maxBuffer: 4096,
-    signal
-  });
-  const output2 = result4.stdout.trim();
-  const candidates = output2.split(/\s+/);
-  if (candidates.length !== 1) throw new Error("Android did not report one foreground app process.");
-  const numeric = /^\d+$/.test(output2);
-  const value = Number(output2);
-  const valid = Number.isSafeInteger(value);
-  if (numeric === false || valid === false || value < 1 || value > 2147483647) {
-    throw new Error("Android returned an invalid foreground app PID.");
-  }
-  return { bundleId, pid: value };
-}
-
-// src/server/device-apps/sources.ts
-var defaultSources = {
-  apps: runningDeviceApps,
-  physical: foregroundPhysicalPid,
-  simulator: foregroundSimulatorPid,
-  android: foregroundAndroidApp
-};
-async function readDeviceApps(deviceId3, signal, platform5 = "ios", kind3, sources = defaultSources) {
-  const running = withDeviceAppsDiagnostic(() => sources.apps(deviceId3, signal, platform5, kind3), "running_apps", platform5, kind3);
-  if (platform5 === "android") {
-    const detection2 = withDeviceAppsDiagnostic(() => sources.android(deviceId3, signal), "foreground", platform5, kind3);
-    const [apps2, foregroundApp2] = await Promise.all([running, detection2]);
-    const marked2 = apps2.map((candidate) => ({ ...candidate, foreground: candidate.pid === foregroundApp2?.pid }));
-    return { apps: marked2, foregroundApp: foregroundApp2 };
-  }
-  const detect = () => kind3 === "physical" ? sources.physical(deviceId3, signal) : sources.simulator(deviceId3, signal);
-  const detection = withDeviceAppsDiagnostic(detect, "foreground", platform5, kind3);
-  const [apps, pid3] = await Promise.all([running, detection]);
-  const app = apps.find((candidate) => candidate.pid === pid3);
-  const foregroundApp = pid3 === null ? null : { bundleId: app?.bundleId ?? null, pid: pid3 };
-  const marked = apps.map((candidate) => ({ ...candidate, foreground: candidate.pid === pid3 }));
-  return { apps: marked, foregroundApp };
-}
 
 // src/server/device-apps/tools.ts
 function registerDeviceAppsTool(server, discover) {
@@ -95027,9 +95313,9 @@ function registerCpuTools(server, cpu, baguette, sources = { apps: readDeviceApp
     mimeType: "application/json",
     description: "Read live process and thread CPU plus main-process memory samples from an authorized Mobile Dev performance session."
   }, async (uri2, variables) => {
-    const id = parseResourceInput(sessionId3, variables.sessionId);
+    const id2 = parseResourceInput(sessionId3, variables.sessionId);
     const after = parseResourceInput(sequence2, variables.sequence);
-    const batch = await cpu.read(id, after);
+    const batch = await cpu.read(id2, after);
     const text6 = JSON.stringify(batch);
     return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text6 }] };
   });
@@ -95045,8 +95331,8 @@ function registerCpuTools(server, cpu, baguette, sources = { apps: readDeviceApp
     _meta: metadata2
   }, safe2(async ({ target: target2 }) => {
     await validateDevice(target2);
-    const id = cpu.open(target2);
-    const data = { target: target2, sessionId: id, cpuUri: `cpu://mobile-dev/${id}/batch?after=0` };
+    const id2 = cpu.open(target2);
+    const data = { target: target2, sessionId: id2, cpuUri: `cpu://mobile-dev/${id2}/batch?after=0` };
     const text6 = JSON.stringify(data);
     return { content: [{ type: "text", text: text6 }], structuredContent: data };
   }));
@@ -95056,8 +95342,8 @@ function registerCpuTools(server, cpu, baguette, sources = { apps: readDeviceApp
     inputSchema: { sessionId: sessionId3, after: external_exports.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0) },
     annotations: read2,
     _meta: metadata2
-  }, safe2(async ({ sessionId: id, after }) => {
-    const batch = await cpu.read(id, after, 0);
+  }, safe2(async ({ sessionId: id2, after }) => {
+    const batch = await cpu.read(id2, after, 0);
     const text6 = JSON.stringify(batch);
     return { content: [{ type: "text", text: text6 }], structuredContent: { ...batch } };
   }));
@@ -95067,8 +95353,8 @@ function registerCpuTools(server, cpu, baguette, sources = { apps: readDeviceApp
     inputSchema: { sessionId: sessionId3 },
     annotations: write2,
     _meta: metadata2
-  }, safe2(async ({ sessionId: id }) => {
-    await cpu.closeSession(id);
+  }, safe2(async ({ sessionId: id2 }) => {
+    await cpu.closeSession(id2);
     return { content: [{ type: "text", text: "CPU and memory monitor stopped." }], structuredContent: {} };
   }));
   return validateDevice;
@@ -95398,8 +95684,8 @@ var RecordingStore = class {
       await rm5(temporary, { force: true });
     }
   }
-  async read(id) {
-    const validated = recordingIdSchema.parse(id);
+  async read(id2) {
+    const validated = recordingIdSchema.parse(id2);
     const filename = join17(this.directory, `${validated}.json`);
     const text6 = await readFile6(filename, "utf8");
     const parsed = JSON.parse(text6);
@@ -95418,12 +95704,12 @@ var RecordingStore = class {
     const candidates = [];
     for (const entry of entries) {
       if (entry.isFile() === false || entry.name.endsWith(".json") === false) continue;
-      const id = entry.name.slice(0, -5);
-      const parsed = recordingIdSchema.safeParse(id);
+      const id2 = entry.name.slice(0, -5);
+      const parsed = recordingIdSchema.safeParse(id2);
       if (parsed.success === false) continue;
       const filename = join17(this.directory, entry.name);
       const metadata4 = await stat2(filename);
-      candidates.push({ id, modified: metadata4.mtimeMs });
+      candidates.push({ id: id2, modified: metadata4.mtimeMs });
     }
     candidates.sort((left, right) => right.modified - left.modified);
     const selected = candidates.slice(0, limit);
@@ -95624,8 +95910,8 @@ var PerformanceRecordings = class {
       }
     }
   }
-  async read(id) {
-    const validated = recordingIdSchema.parse(id);
+  async read(id2) {
+    const validated = recordingIdSchema.parse(id2);
     const active = this.active.get(validated);
     if (active) return {
       ...active.recording,
@@ -95634,13 +95920,13 @@ var PerformanceRecordings = class {
     };
     return this.store.read(validated);
   }
-  async finish(id) {
-    const active = this.active.get(id);
+  async finish(id2) {
+    const active = this.active.get(id2);
     if (active) {
       active.stop = true;
       await active.job;
     }
-    return this.read(id);
+    return this.read(id2);
   }
   async list(limit) {
     const saved = await this.store.list(limit);
@@ -95880,8 +96166,8 @@ function registerRecordingTools(server, recordings, validateDevice, workspaceUri
     annotations: read3,
     _meta: { ui: { resourceUri: COMPARISON_URI, visibility } }
   }, safe3(async ({ recordingIds, title: title2, range }) => {
-    const reads = recordingIds.map((id) => {
-      const recording2 = recordings.read(id);
+    const reads = recordingIds.map((id2) => {
+      const recording2 = recordings.read(id2);
       return recording2;
     });
     const runs = await Promise.all(reads);
@@ -95987,10 +96273,10 @@ import { access as access8 } from "node:fs/promises";
 import { fileURLToPath as fileURLToPath12 } from "node:url";
 
 // src/server/fps/process.ts
-import { spawn as spawn9 } from "node:child_process";
+import { spawn as spawn10 } from "node:child_process";
 async function collectorProcess(command2, args, options) {
   options.signal.throwIfAborted();
-  const child = spawn9(command2, args, { stdio: "pipe", shell: false });
+  const child = spawn10(command2, args, { stdio: "pipe", shell: false });
   let diagnostics5 = "";
   let failure3;
   let stopping;
@@ -96133,8 +96419,8 @@ async function deployFpsHelper(adb, deviceId3, signal, root) {
   const directory = await mkdtemp4(temporaryPrefix);
   const local = join19(directory, "mobile-dev-fps");
   const token = randomBytes8(8);
-  const id = token.toString("hex");
-  const temporary = `${remote}-${id}`;
+  const id2 = token.toString("hex");
+  const temporary = `${remote}-${id2}`;
   try {
     await writeFile5(local, bytes);
     await execute13(adb, [...prefix3, "push", local, temporary], settings);
@@ -96168,14 +96454,14 @@ function* fields(bytes) {
   while (offset < bytes.length) {
     const tag = varint(bytes, offset);
     if (tag === void 0 || tag.value === 0n) throw new Error("Invalid Perfetto field.");
-    const id = Number(tag.value >> 3n);
+    const id2 = Number(tag.value >> 3n);
     const wire = Number(tag.value & 7n);
     offset = tag.next;
     if (wire === 0) {
       const integer7 = varint(bytes, offset);
       if (integer7 === void 0) throw new Error("Truncated Perfetto integer.");
       offset = integer7.next;
-      yield { id, integer: integer7.value };
+      yield { id: id2, integer: integer7.value };
     } else if (wire === 2) {
       const length = varint(bytes, offset);
       if (length === void 0) throw new Error("Truncated Perfetto length.");
@@ -96184,7 +96470,7 @@ function* fields(bytes) {
       if (end > bytes.length) throw new Error("Truncated Perfetto message.");
       const data = bytes.subarray(length.next, end);
       offset = end;
-      yield { id, bytes: data };
+      yield { id: id2, bytes: data };
     } else if (wire === 1 || wire === 5) {
       offset += wire === 1 ? 8 : 4;
       if (offset > bytes.length) throw new Error("Truncated Perfetto field.");
@@ -96300,14 +96586,14 @@ var FrameTimeline = class {
     let boot;
     for (const clock of fields(snapshot2)) {
       if (clock.id !== 1 || clock.bytes === void 0) continue;
-      let id;
+      let id2;
       let time6;
       for (const detail of fields(clock.bytes)) {
-        if (detail.id === 1) id = detail.integer;
+        if (detail.id === 1) id2 = detail.integer;
         else if (detail.id === 2) time6 = detail.integer;
       }
-      if (id === 3n) monotonic = time6;
-      else if (id === 6n) boot = time6;
+      if (id2 === 3n) monotonic = time6;
+      else if (id2 === 6n) boot = time6;
     }
     if (monotonic === void 0 || boot === void 0) return;
     this.clocks.push({ monotonic, offset: boot - monotonic });
@@ -96466,8 +96752,8 @@ var DisplayFpsSessions = class {
   constructor(monitor = startDisplayFpsMonitor) {
     this.monitor = monitor;
     this.expiry = setInterval(() => {
-      for (const [id, session] of this.sessions) {
-        if (session.expires < Date.now()) void this.closeSession(id).catch((error113) => console.error("FPS cleanup:", error113));
+      for (const [id2, session] of this.sessions) {
+        if (session.expires < Date.now()) void this.closeSession(id2).catch((error113) => console.error("FPS cleanup:", error113));
       }
     }, 1e4);
     this.expiry.unref();
@@ -96498,11 +96784,11 @@ var DisplayFpsSessions = class {
       waiters: /* @__PURE__ */ new Set()
     };
     const bytes = randomBytes9(32);
-    const id = bytes.toString("hex");
-    this.sessions.set(id, session);
+    const id2 = bytes.toString("hex");
+    this.sessions.set(id2, session);
     this.devices.add(key);
     session.start = this.initialize(session);
-    return id;
+    return id2;
   }
   async initialize(session) {
     const signal = session.abort.signal;
@@ -96536,8 +96822,8 @@ var DisplayFpsSessions = class {
       }
     }
   }
-  async read(id, after, waitMs = 1e3) {
-    const session = this.sessions.get(id);
+  async read(id2, after, waitMs = 1e3) {
+    const session = this.sessions.get(id2);
     if (session === void 0) throw new ExpectedOperationError("session_expired", "This Display FPS session expired or closed.");
     session.expires = Date.now() + 3e5;
     if (after >= session.revision && waitMs > 0 && session.stopping === void 0) {
@@ -96555,8 +96841,8 @@ var DisplayFpsSessions = class {
     const samples = entries.map((entry) => entry.sample);
     return { cursor: session.revision, phase: session.phase, error: session.error, samples };
   }
-  async closeSession(id) {
-    const session = this.sessions.get(id);
+  async closeSession(id2) {
+    const session = this.sessions.get(id2);
     if (session === void 0) return;
     if (session.stopping) return session.stopping;
     this.status(session, "stopping");
@@ -96566,7 +96852,7 @@ var DisplayFpsSessions = class {
         await session.start;
         await session.monitor?.stop();
       } finally {
-        this.sessions.delete(id);
+        this.sessions.delete(id2);
         const key = this.key(session.target);
         this.devices.delete(key);
       }
@@ -96575,9 +96861,9 @@ var DisplayFpsSessions = class {
   }
   async closeDevice(deviceId3) {
     const pending = [];
-    for (const [id, session] of this.sessions) {
+    for (const [id2, session] of this.sessions) {
       if (session.target.deviceId !== deviceId3) continue;
-      const closing2 = this.closeSession(id);
+      const closing2 = this.closeSession(id2);
       pending.push(closing2);
     }
     await Promise.all(pending);
@@ -96586,8 +96872,8 @@ var DisplayFpsSessions = class {
     this.disposed = true;
     clearInterval(this.expiry);
     const pending = [];
-    for (const id of this.sessions.keys()) {
-      const closing2 = this.closeSession(id);
+    for (const id2 of this.sessions.keys()) {
+      const closing2 = this.closeSession(id2);
       pending.push(closing2);
     }
     await Promise.all(pending);
@@ -96637,17 +96923,17 @@ function registerDisplayFpsTools(server, sessions, sources = { ios: listIosDevic
     mimeType: "application/json",
     description: "Read device-wide Display FPS. Samples use the server's monotonic clock in seconds."
   }, async (uri2, variables) => {
-    const id = parseResourceInput(sessionId4, variables.sessionId);
+    const id2 = parseResourceInput(sessionId4, variables.sessionId);
     const after = parseResourceInput(sequence3, variables.sequence);
-    const batch = await sessions.read(id, after);
+    const batch = await sessions.read(id2, after);
     const text6 = JSON.stringify(batch);
     return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text6 }] };
   });
   const startSession2 = safe4(async ({ target: target2 }) => {
     await validate3(target2);
-    const id = sessions.open(target2);
+    const id2 = sessions.open(target2);
     const timeOrigin = performance.now() / 1e3;
-    const data = { sessionId: id, timeOrigin, fpsUri: `display-fps://mobile-dev/${id}/batch?after=0` };
+    const data = { sessionId: id2, timeOrigin, fpsUri: `display-fps://mobile-dev/${id2}/batch?after=0` };
     const text6 = JSON.stringify(data);
     return { content: [{ type: "text", text: text6 }], structuredContent: data };
   });
@@ -96658,8 +96944,8 @@ function registerDisplayFpsTools(server, sessions, sources = { ios: listIosDevic
     annotations: write3,
     _meta: metadata3
   }, startSession2);
-  const readSession = safe4(async ({ sessionId: id, after }) => {
-    const batch = await sessions.read(id, after, 0);
+  const readSession = safe4(async ({ sessionId: id2, after }) => {
+    const batch = await sessions.read(id2, after, 0);
     const text6 = JSON.stringify(batch);
     return { content: [{ type: "text", text: text6 }], structuredContent: { ...batch } };
   });
@@ -96670,8 +96956,8 @@ function registerDisplayFpsTools(server, sessions, sources = { ios: listIosDevic
     annotations: read4,
     _meta: metadata3
   }, readSession);
-  const closeSession2 = safe4(async ({ sessionId: id }) => {
-    await sessions.closeSession(id);
+  const closeSession2 = safe4(async ({ sessionId: id2 }) => {
+    await sessions.closeSession(id2);
     return { content: [{ type: "text", text: "Display FPS monitor stopped." }], structuredContent: {} };
   });
   K3(server, "mobile_display_fps_close", {
@@ -97085,7 +97371,7 @@ async function createPlugin(html2, baguette = new Baguette(), simulatorInput = n
     annotations: read5
   }, guarded2(async ({ udid }) => {
     await baguette.device(udid, true);
-    const tree = await baguette.json(`/simulators/${udid}/describe-ui.json`);
+    const tree = await baguette.describeUi(udid);
     return result3({ udid, tree }, JSON.stringify(tree));
   }));
   server.registerTool("mobile_send_input", {
@@ -97170,7 +97456,7 @@ async function createPlugin(html2, baguette = new Baguette(), simulatorInput = n
     const definition = await baguette.definition(udid);
     const bezel = await readBezel(baguette, udid, definition.screen);
     const { inputStatus, inputRepairMessage } = await panelInputStatus(udid);
-    const sessionId5 = await openRequestSession(context3.signal, () => streams.open(udid, fps2), (id) => streams.closeSession(id));
+    const sessionId5 = await openRequestSession(context3.signal, () => streams.open(udid, fps2), (id2) => streams.closeSession(id2));
     return {
       ...result3({ udid, definition, fps: fps2, inputStatus, ...inputRepairMessage ? { inputRepairMessage } : {} }, `Stream ready for ${definition.identity.name}.`),
       _meta: { ...bezel ? { bezel } : {}, sessionId: sessionId5, frameUri: `mobile-frame://${sessionId5}/latest?after=0` }
@@ -97277,4 +97563,4 @@ process.on("unhandledRejection", (error113) => {
 });
 await plugin.server.connect(transport2);
 
-//# debugId=eef28f95-7232-5f7a-a073-50472fbce6be
+//# debugId=47e1e948-f656-570f-9091-86be5fcde63d

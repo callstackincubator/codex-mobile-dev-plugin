@@ -2219,7 +2219,7 @@ Public License instead of this License.
 
 ====================
 
-OpenSSL 3.6.4 25 Aug 2026 (Library: OpenSSL 3.6.4 25 Aug 2026)
+OpenSSL 3.6.5 29 Sep 2026 (Library: OpenSSL 3.6.5 29 Sep 2026)
 https://www.openssl.org/
 
 

@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="e27d0e72-8b3a-5685-9f8d-e4d63c541296")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="6270ca4a-75ef-58dc-964a-0e6586e3aea2")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -38897,7 +38897,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // src/shared/version.ts
-var PLUGIN_VERSION = "0.1.132";
+var PLUGIN_VERSION = "0.1.145";
 
 // src/shared/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -39167,7 +39167,9 @@ var client = init({
   beforeSendMetric: scrubMetric,
   beforeBreadcrumb: (breadcrumb) => breadcrumb.category === "mobile-dev" ? breadcrumb : null
 });
-var component = process.argv[1]?.endsWith("agent-device-server.mjs") ? "agent-device-wrapper" : "server";
+var executable = process.argv[1] ?? "";
+var mirrorService = executable.endsWith("ios-mirror-service.mjs") || executable.endsWith("ios-mirror-service.ts");
+var component = mirrorService ? "ios-mirror-service" : executable.endsWith("agent-device-server.mjs") ? "agent-device-wrapper" : "server";
 setTag("component", component);
 setAttribute("component", component);
 client?.on("spanStart", (span) => {
@@ -63685,4 +63687,4 @@ try {
   await close2();
 }
 
-//# debugId=e27d0e72-8b3a-5685-9f8d-e4d63c541296
+//# debugId=6270ca4a-75ef-58dc-964a-0e6586e3aea2
