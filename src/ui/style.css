@@ -269,8 +269,13 @@ html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d
 .tracesift-results .contribution-tile-figure { color: color-mix(in srgb, #ffffff 82%, transparent); font-family: var(--series-mono); font-size: 10px; line-height: 1.2; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
 .tracesift-results .contribution-tile.is-neutral .contribution-tile-name, .tracesift-results .contribution-tile.is-neutral .contribution-tile-figure { color: var(--muted-foreground); text-shadow: none; }
 
-/* The hovered slice in full. A fixed minimum height, because a card that grows
-   under the cursor moves the slice away from it. */
+/* Every slice's detail occupies the same grid cell. The tallest answer holds
+   the row open, so switching the visible layer cannot move the hovered bar or
+   legend row and create a mouseenter/mouseleave feedback loop. */
+.tracesift-results .contribution-detail-stack { display: grid; }
+.tracesift-results .contribution-detail-layer { grid-area: 1 / 1; min-width: 0; visibility: hidden; pointer-events: none; }
+.tracesift-results .contribution-detail-layer.is-active { visibility: visible; pointer-events: auto; }
+
 .tracesift-results .contribution-detail { display: grid; gap: 7px; min-height: 128px; align-content: start; padding: 11px 13px; color: inherit; text-align: left; background: color-mix(in srgb, var(--muted) 48%, transparent); border: 1px solid color-mix(in srgb, var(--border) 60%, transparent); border-radius: 10px; }
 .tracesift-results .contribution-detail p { margin: 0; }
 .tracesift-results .contribution-detail-head { display: flex; align-items: center; gap: 9px; min-width: 0; }

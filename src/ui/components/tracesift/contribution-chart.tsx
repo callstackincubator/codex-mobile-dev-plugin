@@ -7,6 +7,7 @@
  * beside it keeps everything that is about a task.
  */
 
+import type { ReactNode } from "react";
 import { squarify } from "../../../shared/tracesift-contribution.ts";
 
 export interface ChartSlice {
@@ -65,6 +66,38 @@ export interface ChartProps<S extends ChartSlice> {
   onOpen: (slice: S) => void;
 }
 
+/**
+ * Keeps the card's footprint stable while the active slice changes.
+ *
+ * Rendering only the active detail lets differently-sized answers move the
+ * legend below them. A stationary pointer can then leave the row it just
+ * entered, reset the active slice, and move that row back under itself in a
+ * loop. Keeping every answer in the same grid cell makes the tallest one set
+ * the height while only the active answer is visible and interactive.
+ */
+export function ContributionDetailStack<S extends ChartSlice>({
+  slices,
+  active,
+  render,
+}: {
+  slices: S[];
+  active: S;
+  render: (slice: S) => ReactNode;
+}) {
+  return <div className="contribution-detail-stack">
+    {slices.map(slice => {
+      const selected = slice.key === active.key;
+      return <div
+        key={slice.key}
+        className={`contribution-detail-layer${selected ? " is-active" : ""}`}
+        aria-hidden={selected ? undefined : true}
+      >
+        {render(slice)}
+      </div>;
+    })}
+  </div>;
+}
+
 const sliceLabel = (slice: ChartSlice, format: MsFormat) =>
   `${slice.name}, ${format(slice.ms)}, ${Math.round(slice.share * 100)}%`;
 
@@ -76,7 +109,7 @@ const sliceLabel = (slice: ChartSlice, format: MsFormat) =>
  * widths and make the drawing wrong by a few milliseconds per slice.
  */
 export function ContributionBar<S extends ChartSlice>({ slices, active, format, onHover, onOpen }: ChartProps<S>) {
-  return <div className="contribution-bar" onMouseLeave={() => onHover(null)}>
+  return <div className="contribution-bar">
     {slices.map(slice => <button
       type="button"
       key={slice.key}
@@ -98,7 +131,6 @@ export function ContributionTreemap<S extends ChartSlice>({ slices, active, form
   return <div
     className="contribution-treemap"
     style={{ aspectRatio: `${TREEMAP_ASPECT_W} / ${TREEMAP_ASPECT_H}` }}
-    onMouseLeave={() => onHover(null)}
   >
     {slices.map((slice, index) => {
       const rect = rects[index];
@@ -133,7 +165,7 @@ export function ContributionTreemap<S extends ChartSlice>({ slices, active, form
  * reader who wants to compare them rather than look at them.
  */
 export function SliceLegend<S extends ChartSlice>({ slices, active, format, onHover, onOpen }: ChartProps<S>) {
-  return <ul className="contribution-legend" onMouseLeave={() => onHover(null)}>
+  return <ul className="contribution-legend">
     {slices.map(slice => <li key={slice.key}>
       <button
         type="button"

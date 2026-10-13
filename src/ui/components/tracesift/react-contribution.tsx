@@ -4,7 +4,9 @@ import { useState } from "react";
 import { reactCommitSlices, type ReactSlice } from "../../../shared/tracesift-contribution.ts";
 import { formatReactMs, shortLocationLabel } from "../../../shared/tracesift-labels.ts";
 import type { TraceSiftReactCard } from "../../../shared/tracesift.ts";
-import { ContributionChart, SliceLegend, sliceColor, type ContributionChartKind } from "./contribution-chart.tsx";
+import {
+  ContributionChart, ContributionDetailStack, SliceLegend, sliceColor, type ContributionChartKind,
+} from "./contribution-chart.tsx";
 
 const hookLabel = (hook: string) => /^\d+$/.test(hook) ? `#${hook}` : hook;
 
@@ -117,7 +119,9 @@ export function ReactContribution({ card, kind, onExplore }: {
       How the {formatReactMs(card.durationMs)} divides between the components that rendered. Each {kind === "bar" ? "band" : "tile"} is one component&apos;s own render time — these add up, because React charges a component&apos;s time to it alone and never to its children.
     </p>
     <ContributionChart kind={kind} {...chart} />
-    <ReactSliceDetail card={card} slice={active} onExplore={onExplore} />
+    <ContributionDetailStack slices={slices} active={active} render={slice =>
+      <ReactSliceDetail card={card} slice={slice} onExplore={onExplore} />
+    } />
     <SliceLegend {...chart} />
   </div>;
 }

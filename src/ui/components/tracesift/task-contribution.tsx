@@ -15,7 +15,9 @@ import {
 } from "../../../shared/tracesift-contribution.ts";
 import { formatMs, shortLocationLabel, taskCardLocations } from "../../../shared/tracesift-labels.ts";
 import type { TraceSiftBoundaryFrame, TraceSiftTaskCard } from "../../../shared/tracesift.ts";
-import { ContributionChart, SliceLegend, sliceColor, type ContributionChartKind } from "./contribution-chart.tsx";
+import {
+  ContributionChart, ContributionDetailStack, SliceLegend, sliceColor, type ContributionChartKind,
+} from "./contribution-chart.tsx";
 
 export function TaskContribution({ card, kind, onFocus }: {
   card: TraceSiftTaskCard;
@@ -66,7 +68,9 @@ export function TaskContribution({ card, kind, onFocus }: {
     {open?.inside?.length ? <NestedRows boundary={open} onExplore={onFocus} /> : null}
 
     <ContributionChart kind={kind} {...chart} />
-    <SliceDetail card={card} open={open} slice={active} onOpen={() => activate(active)} onExplore={onFocus} />
+    <ContributionDetailStack slices={slices} active={active} render={slice =>
+      <SliceDetail card={card} open={open} slice={slice} onOpen={() => activate(slice)} onExplore={onFocus} />
+    } />
     <SliceLegend {...chart} />
   </div>;
 }

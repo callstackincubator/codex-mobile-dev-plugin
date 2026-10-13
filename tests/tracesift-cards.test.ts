@@ -65,27 +65,48 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   const flush = (click: () => void) => mounted.flushSync(click);
   /** The same, for a click whose work is a server round trip. */
   const act = async (click: () => void) => { click(); await new Promise(resolve => window.setTimeout(resolve, 0)); };
-  const mounted = window.TraceSiftCardTest.mount(app, { content: [], structuredContent: { apiVersion: 1, analysisId: "cpu", profileType: "cpu", title: "CPU", summary: { totalMs: 180, callCountIsExact: true, taskCount: 870 }, cards: [baseTask] } });
+  const mounted = window.TraceSiftCardTest.mount(app, { content: [], structuredContent: { apiVersion: 1, analysisId: "cpu", profileType: "cpu", title: "CPU", summary: { totalMs: 180, callCountIsExact: true, taskCount: 870 }, cards: [baseTask, { ...baseTask, id: "task-1", taskIndex: 1 }] } });
   t.after(() => window.close());
   // The card leads with the pathline, as the web card does: the headline
   // spends its words on a duration and an offset the card already prints.
   assert.match(window.document.body.textContent!, /App › Screen › render/);
-  assert.match(window.document.body.textContent!, /1 long task of 870 · 180 ms total/);
+  assert.match(window.document.body.textContent!, /2 long tasks of 870 · 180 ms total/);
 
   // The contribution chart is the card: one band per boundary frame, plus the
   // two residuals that make the task add up, and a legend row for each.
-  const bands = [...window.document.querySelectorAll(".contribution-band")];
-  assert.equal(bands.length, window.document.querySelectorAll(".contribution-legend-row").length);
+  const contribution = window.document.querySelector(".contribution")!;
+  const bands = [...contribution.querySelectorAll(".contribution-band")];
+  assert.equal(bands.length, contribution.querySelectorAll(".contribution-legend-row").length);
   assert.ok(bands.length >= 2, "the task's own frame and its residuals each take a band");
   assert.equal(bands[0].getAttribute("aria-label"), "render, 60 ms, 80%");
   // The heaviest slice is detailed before anyone has touched the chart.
   assert.match(window.document.querySelector(".contribution-detail")!.textContent!, /render/);
+  const detailLayers = [...contribution.querySelectorAll(".contribution-detail-layer")];
+  assert.equal(detailLayers.length, bands.length, "every slice reserves its detail height");
+  assert.equal(contribution.querySelectorAll(".contribution-detail-layer.is-active").length, 1);
+  assert.equal(detailLayers.filter(layer => layer.getAttribute("aria-hidden") === "true").length, bands.length - 1);
   assert.match(window.document.body.textContent!, /what it called/);
   assert.match(window.document.body.textContent!, /buildRows/);
 
-  // Hovering a band moves the detail panel to it without opening anything.
+  // Hovering changes only which pre-rendered layer is visible. Keeping every
+  // layer mounted lets the tallest one hold the card open, so neither the
+  // legend nor another card can move under a stationary pointer.
   const outside = bands.at(-1)!;
-  flush(() => outside.dispatchEvent(new window.MouseEvent("mouseover", { bubbles: true })));
+  flush(() => outside.dispatchEvent(new window.FocusEvent("focusin", { bubbles: true })));
+  assert.equal(contribution.querySelectorAll(".contribution-detail-layer").length, detailLayers.length);
+  const activeDetail = contribution.querySelector(".contribution-detail-layer.is-active")!;
+  assert.match(activeDetail.textContent!, /No frame of your own was on the stack/);
+  assert.equal(activeDetail.getAttribute("aria-hidden"), null);
+  assert.equal(detailLayers[0].getAttribute("aria-hidden"), "true");
+
+  // Crossing from the chart to its detail or legend used to clear the hover
+  // first, briefly flashing the default detail before the next row activated.
+  // Keep the last slice selected across the gaps between those surfaces.
+  flush(() => contribution.querySelector(".contribution-bar")!.dispatchEvent(new window.MouseEvent("mouseout", {
+    bubbles: true,
+    relatedTarget: activeDetail,
+  })));
+  assert.match(contribution.querySelector(".contribution-detail-layer.is-active")!.textContent!, /No frame of your own was on the stack/);
 
   // Opening a boundary frame redraws the chart as that frame's own time, by
   // self time, and offers a way back to the whole task.
