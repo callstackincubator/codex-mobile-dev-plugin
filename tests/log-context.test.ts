@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { OpenAIExtensions, OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
-import { PanelContext } from "../src/ui/model-context.ts";
+import { PanelContext, type ScreenshotAttachment } from "../src/ui/model-context.ts";
 import { stackLogs } from "../src/shared/logs.ts";
-import { UDID, PNG } from "./fixtures.ts";
+import { UDID } from "./fixtures.ts";
 import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
 import type { PhysicalAndroidDevice } from "../src/shared/android-devices.ts";
 
@@ -93,7 +93,7 @@ test("chat waits for the log attachment and preserves other context pills", asyn
   hold(new Promise<void>(resolve => { release = resolve; }));
   const sending = context.sendLogToChat(log);
   await new Promise(resolve => setTimeout(resolve, 0));
-  const screenshot = context.attachScreenshot({ id: "capture", data: PNG.toString("base64"), simulator });
+  const screenshot = context.attachScreenshot({ id: "capture", data: "/9j/2Q==", mimeType: "image/jpeg", simulator });
   assert.equal(messages.length, 0);
   release();
   await Promise.all([sending, screenshot]);
@@ -176,7 +176,7 @@ test("attaching a log preserves simulator context and contains the full message 
 });
 
 test("clicking an already active device does not republish captures or fill the context queue", async () => {
-  const { context, updates } = fixture(); context.selectSimulator(simulator); await context.attachScreenshot({ id: "capture", data: PNG.toString("base64"), simulator });
+  const { context, updates } = fixture(); context.selectSimulator(simulator); await context.attachScreenshot({ id: "capture", data: "/9j/2Q==", mimeType: "image/jpeg", simulator });
   const writes = updates.length;
   for (let i = 0; i < 30; i++) context.selectSimulator({ ...simulator });
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -260,7 +260,7 @@ test("physical iOS context identifies its interactive mirroring capability", asy
   assert.match(changedContent, /Transport: wired/);
 });
 
-const screenshot = { id: "capture-1", data: PNG.toString("base64"), simulator };
+const screenshot: ScreenshotAttachment = { id: "capture-1", data: "/9j/2Q==", mimeType: "image/jpeg", simulator };
 
 test("screenshots append to chat alongside the log and retain their original simulator", async () => {
   const { context, updates } = fixture();
@@ -273,6 +273,7 @@ test("screenshots append to chat alongside the log and retain their original sim
   const images = last.content!.filter(item => item.type === "image");
   assert.equal(images.length, 2);
   assert.equal(images[0].data, screenshot.data);
+  assert.equal(images[0].mimeType, "image/jpeg");
   assert.match(images[0]._meta?.["openai/title"] as string, /iPhone/);
   assert.equal(last.structuredContent?.selectedLog, null);
   assert.deepEqual(last.structuredContent?.screenshotIds, ["capture-1", "capture-2"]);

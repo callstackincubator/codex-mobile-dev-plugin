@@ -61,6 +61,7 @@ function fixture(t: TestContext) {
   const attachedAnnotations: ScreenAnnotation[] = [];
   let screenshotCopied = true;
   let screenshotAttachmentError = "";
+  let screenshotEncodingError = "";
   let sessionNumber = 0;
   let delayedOpen: Promise<void> | undefined;
   let blockedIos = false;
@@ -105,6 +106,17 @@ function fixture(t: TestContext) {
     VideoDecoder: Decoder, EncodedVideoChunk: class {},
     requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
     cancelAnimationFrame: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
+    OffscreenCanvas: class {
+      width: number;
+      height: number;
+      constructor(width: number, height: number) { this.width = width; this.height = height; }
+      getContext() { return { fillStyle: "", fillRect() {}, drawImage() {} }; }
+      async convertToBlob() {
+        if (screenshotEncodingError) throw new Error(screenshotEncodingError);
+        const bytes = new Uint8Array([255, 216, 255, 217]);
+        return new Blob([bytes], { type: "image/jpeg" });
+      }
+    },
     createImageBitmap: async () => ({ width: 390, height: 844, close() {} }),
   };
   const restore: (() => void)[] = [];
@@ -231,6 +243,7 @@ function fixture(t: TestContext) {
     missTiming() { observeFrames = false; }, invalidFrame() { invalidFrame = true; },
     failPhysicalCapture(message: string) { physicalCaptureError = message; },
     busyPhysicalInput() { physicalInputBusy = true; },
+    failScreenshotEncoding(message: string) { screenshotEncodingError = message; },
     failScreenshotAttachment(message: string) { screenshotAttachmentError = message; },
   };
 }
@@ -549,7 +562,29 @@ test("screenshot attachment failures remain visible until the next action on bot
     dispatch(screenshot, "click");
     await waitFor(() => f.screenshots.length === attached + 1 && screenshot.disabled === false);
     assert.equal(notice.hidden, true);
+    assert.equal(f.screenshots.at(-1)?.mimeType, "image/jpeg");
+    assert.equal(f.screenshots.at(-1)?.data, "/9j/2Q==");
   }
+});
+
+test("JPEG encoding failures keep chat empty, show a notice and allow another screenshot", async t => {
+  const f = fixture(t);
+  await f.ios.panel.load();
+  const screenshot = f.ios.element("screenshot");
+  await waitFor(() => screenshot.disabled === false);
+  f.failScreenshotEncoding("JPEG encoder failed");
+  dispatch(screenshot, "click");
+  const notice = f.ios.element("notice");
+  await waitFor(() => notice.hidden === false && screenshot.disabled === false);
+  assert.equal(f.screenshots.length, 0);
+  assert.match(f.ios.element("notice-message").textContent, /screenshot.*not.*attached.*chat/i);
+  const capture = f.calls.find(call => call.name === "mobile_capture_screenshot");
+  assert.ok(capture, "The original PNG is captured for the clipboard before JPEG encoding.");
+  f.failScreenshotEncoding("");
+  dispatch(screenshot, "click");
+  await waitFor(() => f.screenshots.length === 1 && screenshot.disabled === false);
+  assert.equal(notice.hidden, true);
+  assert.equal(f.screenshots[0].mimeType, "image/jpeg");
 });
 
 test("physical iOS screenshots capture the displayed frame without a simulator backend", async t => {
@@ -565,7 +600,8 @@ test("physical iOS screenshots capture the displayed frame without a simulator b
   const captured = f.calls.find(call => call.name === "mobile_ios_mirror_capture_screenshot");
   assert.match(captured?.arguments.sessionId as string, /^physical-/);
   assert.equal(captured?.arguments.image, "AA==");
-  assert.equal(f.screenshots[0].data, captured?.arguments.image);
+  assert.equal(f.screenshots[0].data, "/9j/2Q==");
+  assert.equal(f.screenshots[0].mimeType, "image/jpeg");
   assert.equal(f.screenshots[0].simulator.udid, physicalPhone.udid);
   await waitFor(() => screenshot.disabled === false);
   f.failClipboard();
