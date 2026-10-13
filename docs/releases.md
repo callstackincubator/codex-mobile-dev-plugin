@@ -107,8 +107,12 @@ public updates. The embedded UI needs no GitHub network permissions.
 The Update button calls an app-only MCP tool. It locates the CLI process that
 launched the plugin, verifies the `mobile-dev` Git marketplace belongs to this
 repository, and runs `codex plugin marketplace upgrade mobile-dev --json`.
-Success requires an error-free refresh and verification of the new manifest in
-Codex's installed plugin cache. The plugin preserves the restart notice across
+CLI discovery and update commands run from the Codex profile directory so they
+remain usable when upgrading removes the running plugin's old directory.
+Success requires an error-free result for the selected marketplace and
+verification of the new manifest in Codex's installed plugin cache, including
+when the marketplace reports no changed roots because the update is already
+installed. The plugin preserves the restart notice across
 chats until the new version runs. It does not restart Codex automatically.
 `CODEX_HOME` is forwarded by the MCP manifest so updates use the same profile.
 

@@ -39,6 +39,13 @@ preserves sampled UI/server tracing and action outcomes on the active workspace
 surface. UI counters record successful updates and dismissed banners without
 release details. All collection honors telemetry opt-out.
 
+Since 0.1.146, update commands run from the stable Codex profile directory and
+verify already-installed updates even when the marketplace reports no changed
+roots. Existing installation duration, outcome, handled-error, and MCP tracing
+coverage remains on this path with the same boundaries and units. Execution and
+invalid-response errors use fixed messages without implying a network failure;
+raw CLI errors and output are not sent to telemetry.
+
 Since 0.1.129, discovery command failures retain bounded `discovery_command`, `discovery_cause`,
 `discovery_termination`, and optional `discovery_signal` tags. Failed exception
 contexts contain only numeric `elapsed_ms`, `deadline_ms`, and an optional exit
