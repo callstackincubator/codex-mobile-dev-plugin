@@ -148,7 +148,7 @@ test("a refused project choice reports the reason and keeps the current project"
 test("screenshot URIs are reduced to the server's authorized encoded path", async t => {
   const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
   const url = await panel.screenshot("project-1", "appflow-image://mobile-dev/project-1/c2NyZWVucy9ob21lLnBuZw");
-  assert.match(url, /^blob:/);
+  assert.equal(url, "data:image/png;base64,iVBORw0KGgo=", "the host sandbox CSP allows data: images but not blob: object URLs");
   assert.deepEqual(host.calls.at(-1), { name: "mobile_appflow_screenshot", arguments: { projectId: "project-1", path: "c2NyZWVucy9ob21lLnBuZw" } });
 });
 

@@ -397,9 +397,9 @@ export class AppFlowPanel {
     const result = await this.call("mobile_appflow_screenshot", { projectId, path: screenshotId });
     const image = result.content.find(item => item.type === "image");
     if (!image || image.type !== "image") throw new Error("App Flow did not return a screenshot.");
-    const binary = atob(image.data); const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
-    const url = URL.createObjectURL(new Blob([bytes], { type: image.mimeType }));
+    // The host sandbox enforces the CSP declared with the UI resource, whose img-src allows `data:`
+    // but not `blob:`, so inline the base64 the tool already returned instead of an object URL.
+    const url = `data:${image.mimeType};base64,${image.data}`;
     this.urls.set(key, url); return url;
   }
 
@@ -408,7 +408,6 @@ export class AppFlowPanel {
     clearTimeout(this.pollTimer); this.pollTimer = undefined;
     this.listeners.clear(); this.recording.dispose();
     this.app.removeNotificationHandler("notifications/message");
-    for (const url of this.urls.values()) URL.revokeObjectURL(url);
     this.urls.clear();
   }
 }
