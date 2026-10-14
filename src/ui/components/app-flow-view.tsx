@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { AppFlowBuildMode, DeepLinkJudgeMode, ExplorationMode, RenderTransportMode } from "../../shared/app-flow.ts";
 import type { AppFlowPanel } from "../app-flow-panel.ts";
 import { AppFlowGraph } from "./app-flow-graph.tsx";
+import { AppFlowProjectPicker } from "./app-flow-project-picker.tsx";
 import { Button } from "./ui/button.tsx";
 import { Input } from "./ui/input.tsx";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select.tsx";
@@ -13,7 +14,6 @@ function duration(milliseconds: number) { if (milliseconds < 1000) return `${Mat
 
 export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
-  const [path, setPath] = useState(state.projectPath);
   const [mode, setMode] = useState<AppFlowBuildMode>("structure-only");
   const [exploration, setExploration] = useState<ExplorationMode>("auto");
   const [transport, setTransport] = useState<RenderTransportMode>("cli");
@@ -44,17 +44,15 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   return <section className="flex h-full min-h-0 flex-col" aria-label="App Flow">
     <header className="flex flex-wrap items-start gap-3 border-b p-3">
       <div className="min-w-52 flex-1"><h2 className="text-base font-medium">App Flow</h2>
-        <form className="mt-1 flex gap-1" onSubmit={event => { event.preventDefault(); void panel.selectProject(path); }}>
-          <Input aria-label="React Native project path" list="app-flow-recent-paths" value={path} onChange={event => setPath(event.target.value)} placeholder="/path/to/react-native-project" />
-          <datalist id="app-flow-recent-paths">{state.recents.map(recent => <option key={recent} value={recent} />)}</datalist>
-          <Button type="submit" variant="outline" size="sm" disabled={!path.trim() || !state.available}>Open</Button>
-        </form>
+        <div className="mt-1 flex items-center gap-2">
+          <AppFlowProjectPicker panel={panel} />
+          {state.result?.manifest.durationMs !== undefined && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock className="size-3" />{duration(state.result.manifest.durationMs)}</span>}
+        </div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <NativeSelect aria-label="App Flow capture mode" size="sm" value={mode} disabled={isRunning} onChange={event => setMode(event.target.value as AppFlowBuildMode)}>
           <NativeSelectOption value="structure-only">Structure only</NativeSelectOption><NativeSelectOption value="screen-ui-and-structure">Screen UI + Structure</NativeSelectOption>
         </NativeSelect>
-        {state.result?.manifest.durationMs !== undefined && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock className="size-3" />{duration(state.result.manifest.durationMs)}</span>}
         {isRunning ? <><Button variant="secondary" size="sm" onClick={() => void panel.pause()} disabled={!state.runId}><Pause />Pause</Button>
           <Button variant="secondary" size="sm" onClick={() => void panel.cancel()} disabled={!state.runId}>Cancel</Button></>
           : <><Button variant="secondary" size="sm" onClick={() => void panel.launchApp()} disabled={!state.projectPath || state.launching}>
@@ -88,7 +86,8 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
       {state.prompt.kind === "review" && <Button variant="secondary" size="sm" onClick={() => void panel.resolvePrompt("override")}>Continue anyway</Button>}
       <Button size="sm" onClick={() => void panel.resolvePrompt("continue")}>Continue</Button></div>}
     {state.error && <div role="alert" className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">{state.error}</div>}
-    <div className="min-h-0 flex-1 overflow-hidden">{!state.projectPath ? <Empty title="Choose a project" detail="Enter the React Native project folder to build or view its flow." />
+    <div className="min-h-0 flex-1 overflow-hidden">{!state.projectPath ? <Empty title="Choose a project" detail="Pick the React Native project folder to build or view its flow."
+      action={<Button onClick={() => void panel.pickProject()} disabled={state.pickingProject}>{state.pickingProject ? <Loader2 className="animate-spin" /> : null}{state.pickingProject ? "Waiting for the folder…" : "Choose project folder"}</Button>} />
       : empty ? <Empty title="No app flow yet" detail="Build a visual map of every screen and navigation edge in this app." action={<Button onClick={start}
           disabled={!state.available || state.agentStartPending || (mode === "screen-ui-and-structure" && !panel.canSendAgentStart)}>Start Building App Flow</Button>} />
       : state.result ? <AppFlowGraph panel={panel} projectId={state.projectId} nodes={state.result.nodes} edges={state.result.edges}

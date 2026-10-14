@@ -41,7 +41,8 @@ import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { copyPNGToClipboard } from "./clipboard.ts";
 import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../shared/protocol.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { createAppFlowHost } from "./app-flow-host.ts";
+import { createAppFlowHost, APP_FLOW_DIRECTORY } from "./app-flow-host.ts";
+import { AppFlowProjectChoices } from "./app-flow-projects.ts";
 import { registerAppFlowTools } from "./app-flow-tools.ts";
 
 export const APP_URI = `ui://mobile-dev/${PLUGIN_VERSION}/simulator.html`;
@@ -146,7 +147,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   });
   registerDeviceSettingsTools(server, baguette, android);
   const appFlow = await createAppFlowHost();
-  const closeAppFlow = registerAppFlowTools(server, appFlow);
+  const appFlowProjects = new AppFlowProjectChoices(APP_FLOW_DIRECTORY);
+  const closeAppFlow = registerAppFlowTools(server, appFlow, appFlowProjects);
 
   const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<{ inputStatus: InputStatus; inputRepairMessage: string }> }>();
   async function panelInputStatus(udid: string) {

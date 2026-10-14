@@ -26,6 +26,17 @@ export function recordPluginUpdate(operation: "check" | "install", outcome: "dis
   Sentry.metrics.gauge("plugin.update.duration", duration, { unit: "millisecond", attributes });
 }
 
+/**
+ * Time the App Flow project dialog stayed open. Like the sweep's decision wait, this is a person
+ * deciding rather than plugin work, so it is reported on its own and never folded into a UI timing.
+ */
+export function recordProjectDialog(outcome: "chosen" | "cancelled" | "failed", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "app-flow", outcome };
+  Sentry.metrics.count("app_flow.project_dialog.samples", 1, { attributes });
+  Sentry.metrics.distribution("app_flow.project_dialog.duration", Math.max(0, duration), { unit: "millisecond", attributes });
+}
+
 export function recordAccessibilityBridgeRestart(outcome: "recovered" | "unavailable" | "failed") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", device_platform: "ios", device_kind: "simulator", outcome };

@@ -7,6 +7,7 @@ import { errorMessage } from "../shared/protocol.ts";
 import { captureServerError } from "./telemetry.ts";
 import type { AppFlowDecisionRequest, DecisionPollResult } from "./app-flow-host.ts";
 import { AppFlowHost } from "./app-flow-host.ts";
+import type { AppFlowProjectChoices } from "./app-flow-projects.ts";
 
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
@@ -94,7 +95,7 @@ const manualAction = z.discriminatedUnion("type", [
 ]);
 
 /** Registers the App Flow engine, manual recorder, decision broker, and screenshot bridge. */
-export function registerAppFlowTools(server: McpServer, host: AppFlowHost): () => Promise<void> {
+export function registerAppFlowTools(server: McpServer, host: AppFlowHost, projects: AppFlowProjectChoices): () => Promise<void> {
   registerAppTool(server, "mobile_appflow_start", {
     title: "Start App Flow",
     description:
@@ -159,6 +160,26 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost): () =
     _meta: appVisibility,
   }, safe(async ({ runId, resolution, promptId }: { runId: string; resolution: "stop" | "override" | "continue"; promptId?: string }) =>
     dataResult(await host.services.resolvePrompt(runId, resolution, promptId))));
+
+  registerAppTool(server, "mobile_appflow_projects", {
+    title: "List App Flow projects",
+    description: "List the React Native project folders App Flow can open, most recent first.",
+    inputSchema: {},
+    annotations: read,
+    _meta: appVisibility,
+  }, safe(async () => dataResult({ projects: await projects.list() })));
+
+  registerAppTool(server, "mobile_appflow_choose_project", {
+    title: "Choose an App Flow project",
+    description:
+      "Choose an App Flow project: pass projectPath to select one the panel already lists, or nothing to open the system folder picker. The choice persists across sessions.",
+    inputSchema: { projectPath: projectPath.optional() },
+    annotations: write,
+    _meta: appVisibility,
+  }, safe(async ({ projectPath: selected }: { projectPath?: string }) => {
+    const project = selected === undefined ? await projects.choose() : await projects.record(selected);
+    return dataResult(project ? { project } : {}, project ? undefined : "No project was chosen.");
+  }));
 
   registerAppTool(server, "mobile_appflow_manual_start", {
     title: "Start recording an App Flow path",
