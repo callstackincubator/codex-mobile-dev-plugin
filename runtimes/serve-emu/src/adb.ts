@@ -1,3 +1,4 @@
+// Modified for Mobile Dev: emulator network throttling and status bar demo mode.
 import { spawn } from "node:child_process";
 import { execBuffer, execText, type ExecResult } from "./exec.ts";
 
@@ -31,7 +32,13 @@ export type NetworkStatus = {
     wifi: string;
     mobileData: string;
   };
+  /** Emulator console throttle; null on physical devices. */
+  throttle?: NetworkThrottle | null;
 };
+/** Latency in ms and symmetric bandwidth in kbps; null bandwidth is unlimited. */
+export type NetworkThrottle = { latencyMs: number; bandwidthKbps: number | null };
+export type StatusBarMode = "clean" | "live";
+export type StatusBarStatus = { mode: StatusBarMode };
 
 function execFailed(result: ExecResult<string | Buffer>): boolean {
   return result.status !== 0 || result.error !== null;
@@ -325,11 +332,144 @@ export async function setNetworkEnabled(
     const r = await runExec("adb", ["-s", serial, "shell", ...args], {
       timeout: ADB_MUTATION_TIMEOUT_MS,
     });
-    if (execFailed(r)) {
+    // Wi-Fi-only devices have no telephony service to toggle mobile data on.
+    const noTelephony = service === "data" && /Can't find service: phone/.test(`${r.stdout}${r.stderr}`);
+    if (execFailed(r) && !noTelephony) {
       throw new Error(
         `adb shell ${args.join(" ")} failed: ${execFailure(r)}`,
       );
     }
   }
   return getNetworkStatus(serial, runExec);
+}
+
+const EMULATOR_SERIAL = /^emulator-\d+$/;
+
+export function isEmulatorSerial(serial: string): boolean {
+  return EMULATOR_SERIAL.test(serial);
+}
+
+// The console answers OK or KO on stdout, and adb can exit 0 after a KO.
+async function emulatorConsole(
+  serial: string,
+  args: string[],
+  runExec: typeof execText = execText,
+): Promise<string> {
+  if (!isEmulatorSerial(serial)) {
+    throw new Error("network throttling is supported for Android Emulator serials only");
+  }
+  const r = await runExec("adb", ["-s", serial, "emu", ...args], {
+    timeout: ADB_MUTATION_TIMEOUT_MS,
+  });
+  const output = `${r.stdout}${r.stderr}`.trim();
+  if (execFailed(r) || /^KO\b/m.test(output)) {
+    throw new Error(`adb emu ${args.join(" ")} failed: ${output || execFailure(r)}`);
+  }
+  return output;
+}
+
+export function parseEmulatorNetworkStatus(output: string): NetworkThrottle {
+  const download = /download speed:\s*(\d+) bits\/s/.exec(output);
+  const latency = /minimum latency:\s*(\d+) ms/.exec(output);
+  if (!download || !latency) {
+    throw new Error("adb emu network status returned an unexpected format");
+  }
+  const bits = Number(download[1]);
+  return { latencyMs: Number(latency[1]), bandwidthKbps: bits === 0 ? null : bits / 1000 };
+}
+
+export async function getEmulatorThrottle(
+  serial: string,
+  runExec: typeof execText = execText,
+): Promise<NetworkThrottle | null> {
+  if (!isEmulatorSerial(serial)) return null;
+  return parseEmulatorNetworkStatus(
+    await emulatorConsole(serial, ["network", "status"], runExec),
+  );
+}
+
+export function parseNetworkThrottle(value: unknown): NetworkThrottle {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("throttle must be an object");
+  }
+  const { latencyMs, bandwidthKbps } = value as Record<string, unknown>;
+  if (!Number.isInteger(latencyMs) || (latencyMs as number) < 0 || (latencyMs as number) > 10_000) {
+    throw new Error("throttle.latencyMs must be an integer between 0 and 10000");
+  }
+  if (
+    bandwidthKbps !== null &&
+    (!Number.isInteger(bandwidthKbps) || (bandwidthKbps as number) < 1 || (bandwidthKbps as number) > 1_000_000)
+  ) {
+    throw new Error("throttle.bandwidthKbps must be null or an integer between 1 and 1000000");
+  }
+  return { latencyMs: latencyMs as number, bandwidthKbps: bandwidthKbps as number | null };
+}
+
+/** Throttles upload and download equally; the emulator applies it to all guest traffic. */
+export async function setEmulatorThrottle(
+  serial: string,
+  throttle: NetworkThrottle,
+  runExec: typeof execText = execText,
+): Promise<NetworkThrottle | null> {
+  const speed = throttle.bandwidthKbps === null
+    ? "full"
+    : `${throttle.bandwidthKbps}:${throttle.bandwidthKbps}`;
+  await emulatorConsole(serial, ["network", "speed", speed], runExec);
+  await emulatorConsole(serial, ["network", "delay", String(throttle.latencyMs)], runExec);
+  return getEmulatorThrottle(serial, runExec);
+}
+
+const DEMO_BROADCAST = "am broadcast -a com.android.systemui.demo -e command";
+// A clean marketing status bar: 9:41, full battery and signal, no notification icons.
+const CLEAN_STATUS_BAR = [
+  "enter",
+  "clock -e hhmm 0941",
+  "battery -e level 100 -e plugged false",
+  "network -e wifi show -e level 4",
+  "network -e mobile show -e datatype none -e level 4",
+  "notifications -e visible false",
+].map((command) => `${DEMO_BROADCAST} ${command}`);
+// Demo mode cannot be queried and ends on reboot, so entering it records the boot it belongs to.
+const STATUS_BAR_MARKER = "mobile_dev_status_bar_boot";
+const BOOT_ID = "cat /proc/sys/kernel/random/boot_id";
+
+export async function getStatusBar(
+  serial: string,
+  runExec: typeof execText = execText,
+): Promise<StatusBarStatus> {
+  const r = await runExec(
+    "adb",
+    ["-s", serial, "shell", `settings get global ${STATUS_BAR_MARKER}; ${BOOT_ID}`],
+    { timeout: ADB_QUERY_TIMEOUT_MS },
+  );
+  if (execFailed(r)) {
+    throw new Error(`reading the status bar mode failed: ${execFailure(r)}`);
+  }
+  const [marker, boot] = r.stdout.trim().split(/\s+/);
+  return { mode: marker && marker === boot ? "clean" : "live" };
+}
+
+export async function setStatusBar(
+  serial: string,
+  mode: StatusBarMode,
+  runExec: typeof execText = execText,
+): Promise<StatusBarStatus> {
+  const command = mode === "clean"
+    ? [
+      "settings put global sysui_demo_allowed 1",
+      ...CLEAN_STATUS_BAR,
+      `settings put global ${STATUS_BAR_MARKER} $(${BOOT_ID})`,
+    ]
+    : [
+      `${DEMO_BROADCAST} exit`,
+      "settings put global sysui_demo_allowed 0",
+      `settings delete global ${STATUS_BAR_MARKER}`,
+    ];
+  const r = await runExec("adb", ["-s", serial, "shell", command.join(" && ")], {
+    timeout: ADB_MUTATION_TIMEOUT_MS,
+  });
+  if (execFailed(r)) {
+    throw new Error(`setting the status bar to ${mode} failed: ${execFailure(r)}`);
+  }
+  return getStatusBar(serial, runExec);
 }

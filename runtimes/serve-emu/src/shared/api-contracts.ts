@@ -1,3 +1,4 @@
+// Modified for Mobile Dev: emulator network throttling and status bar demo mode.
 import { parseGesture, type Gesture } from "./control-contracts";
 
 /** Stable error codes sent by every JSON API failure. */
@@ -95,8 +96,13 @@ export type NetworkStatus = {
   wifi: NetworkRadioStatus;
   mobileData: NetworkRadioStatus;
   raw: { wifi: string; mobileData: string };
+  throttle?: NetworkThrottle | null;
 };
+export type NetworkThrottle = { latencyMs: number; bandwidthKbps: number | null };
 export type NetworkResponse = ApiSuccess<{ network: NetworkStatus }>;
+
+export type StatusBarMode = "clean" | "live";
+export type StatusBarResponse = ApiSuccess<{ statusBar: { mode: StatusBarMode } }>;
 
 export type ForegroundApp = {
   packageName: string | null;
@@ -350,7 +356,11 @@ export type ApiContractMap = {
   };
   "/api/network": {
     GET: EndpointContract<undefined, NetworkResponse>;
-    POST: EndpointContract<{ enabled: boolean }, NetworkResponse>;
+    POST: EndpointContract<{ enabled?: boolean; throttle?: NetworkThrottle }, NetworkResponse>;
+  };
+  "/api/status-bar": {
+    GET: EndpointContract<undefined, StatusBarResponse>;
+    POST: EndpointContract<{ mode: StatusBarMode }, StatusBarResponse>;
   };
   "/api/logcat": { GET: EndpointContract<undefined, never> };
   "/api/screenshot": {
@@ -675,8 +685,25 @@ export function parseNetworkResponse(value: unknown): NetworkResponse {
         wifi: string(raw.wifi, "network.raw.wifi"),
         mobileData: string(raw.mobileData, "network.raw.mobileData"),
       },
+      ...(status.throttle === undefined ? {} : { throttle: parseNetworkThrottle(status.throttle) }),
     },
   };
+}
+
+function parseNetworkThrottle(value: unknown): NetworkThrottle | null {
+  if (value === null) return null;
+  const throttle = record(value, "network.throttle");
+  return {
+    latencyMs: number(throttle.latencyMs, "network.throttle.latencyMs"),
+    bandwidthKbps: throttle.bandwidthKbps === null ? null : number(throttle.bandwidthKbps, "network.throttle.bandwidthKbps"),
+  };
+}
+
+export function parseStatusBarResponse(value: unknown): StatusBarResponse {
+  const root = record(value, "status bar response");
+  if (root.ok !== true) fail("status bar response.ok must be true");
+  const status = record(root.statusBar, "statusBar");
+  return { ok: true, statusBar: { mode: oneOf(status.mode, ["clean", "live"] as const, "statusBar.mode") } };
 }
 
 function parseForegroundApp(value: unknown): ForegroundApp {
@@ -1065,6 +1092,7 @@ export const API_SUCCESS_PARSERS = {
   "/api/night-mode": { GET: parseNightModeResponse, POST: parseNightModeResponse },
   "/api/font-scale": { GET: parseFontScaleResponse, POST: parseFontScaleResponse },
   "/api/network": { GET: parseNetworkResponse, POST: parseNetworkResponse },
+  "/api/status-bar": { GET: parseStatusBarResponse, POST: parseStatusBarResponse },
   "/api/logcat": { GET: unsupportedStreamingResponse },
   "/api/screenshot": { GET: parseScreenshotResponse, POST: parseScreenshotResponse },
   "/api/foreground": { GET: parseForegroundResponse },

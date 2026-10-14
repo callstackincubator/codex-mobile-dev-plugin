@@ -1,3 +1,4 @@
+// Modified for Mobile Dev: emulator network throttling and status bar demo mode.
 export const MAX_JSON_BODY_BYTES = 8 * 1024;
 export const MAX_ROUTE_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -29,6 +30,7 @@ export const API_ROUTE_METHODS = {
   "/api/night-mode": ["GET", "POST"],
   "/api/font-scale": ["GET", "POST"],
   "/api/network": ["GET", "POST"],
+  "/api/status-bar": ["GET", "POST"],
   "/api/logcat": ["GET"],
   "/api/screenshot": ["GET", "POST"],
   "/api/foreground": ["GET"],

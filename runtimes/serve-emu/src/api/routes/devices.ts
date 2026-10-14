@@ -1,15 +1,32 @@
+// Modified for Mobile Dev: emulator network throttling and status bar demo mode.
 import {
+  getEmulatorThrottle,
   getFontScale,
   getNetworkStatus,
   getNightMode,
+  getStatusBar,
   getUserRotation,
+  isEmulatorSerial,
+  parseNetworkThrottle,
+  setEmulatorThrottle,
   setFontScale,
   setNetworkEnabled,
   setNightMode,
+  setStatusBar,
   setUserRotation,
+  type NetworkStatus,
+  type NetworkThrottle,
   type NightMode,
   type OrientationMode,
 } from "../../adb.ts";
+
+async function networkWithThrottle(serial: string, status?: NetworkStatus): Promise<NetworkStatus> {
+  const [radios, throttle] = await Promise.all([
+    status ?? getNetworkStatus(serial),
+    getEmulatorThrottle(serial),
+  ]);
+  return { ...radios, throttle };
+}
 import type { ApiDependencies } from "../dependencies.ts";
 import type { ApiRoute } from "../router.ts";
 
@@ -400,7 +417,7 @@ export function deviceRoutes(): ApiRoute<ApiDependencies>[] {
           return Response.json({
             ok: true,
             network: await runForContext(requestContext, (context) =>
-              getNetworkStatus(context.serial),
+              networkWithThrottle(context.serial),
             ),
           });
         } catch (err) {
@@ -432,14 +449,82 @@ export function deviceRoutes(): ApiRoute<ApiDependencies>[] {
           ) {
             throw new Error("network payload must be an object");
           }
-          const enabled = (payload as Record<string, unknown>).enabled;
-          if (typeof enabled !== "boolean") {
+          const { enabled, throttle: rawThrottle } = payload as Record<string, unknown>;
+          if (enabled !== undefined && typeof enabled !== "boolean") {
             throw new Error("enabled must be a boolean");
+          }
+          if (enabled === undefined && rawThrottle === undefined) {
+            throw new Error("network payload needs enabled or throttle");
+          }
+          const throttle: NetworkThrottle | undefined =
+            rawThrottle === undefined ? undefined : parseNetworkThrottle(rawThrottle);
+          if (throttle && !isEmulatorSerial(requestContext.serial)) {
+            throw new Error("network throttling is supported for Android Emulator serials only");
           }
           return Response.json({
             ok: true,
-            network: await runForContext(requestContext, (context) =>
-              setNetworkEnabled(context.serial, enabled),
+            network: await runForContext(requestContext, async (context) => {
+              if (throttle) await setEmulatorThrottle(context.serial, throttle);
+              const radios = enabled === undefined
+                ? undefined
+                : await setNetworkEnabled(context.serial, enabled);
+              return networkWithThrottle(context.serial, radios);
+            }),
+          });
+        } catch (err) {
+          return errorResponse(err);
+        }
+      },
+    },
+    {
+      method: "GET",
+      path: "/api/status-bar",
+      handler: async ({ deps }) => {
+        const { runForContext, requestContext, errorResponse } = deps;
+        try {
+          return Response.json({
+            ok: true,
+            statusBar: await runForContext(requestContext, (context) =>
+              getStatusBar(context.serial),
+            ),
+          });
+        } catch (err) {
+          return errorResponse(err);
+        }
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/status-bar",
+      handler: async ({ request: req, deps }) => {
+        const {
+          runForContext,
+          requestContext,
+          errorResponse,
+          readJsonBody,
+          MAX_JSON_BODY_BYTES,
+        } = deps;
+        try {
+          const payload = await readJsonBody(
+            req,
+            MAX_JSON_BODY_BYTES,
+            requestContext,
+          );
+          if (
+            typeof payload !== "object" ||
+            payload === null ||
+            Array.isArray(payload)
+          ) {
+            throw new Error("status bar payload must be an object");
+          }
+          const mode = (payload as Record<string, unknown>).mode;
+          if (mode !== "clean" && mode !== "live") {
+            throw new Error("mode must be clean or live");
+          }
+          return Response.json({
+            ok: true,
+            statusBar: await runForContext(requestContext, (context) =>
+              setStatusBar(context.serial, mode),
             ),
           });
         } catch (err) {

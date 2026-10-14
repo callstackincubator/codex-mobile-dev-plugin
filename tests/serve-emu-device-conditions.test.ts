@@ -1,0 +1,105 @@
+import test, { before, after } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { build } from "esbuild";
+
+type Adb = typeof import("../runtimes/serve-emu/src/adb.ts");
+type Exec = NonNullable<Parameters<Adb["getStatusBar"]>[1]>;
+let directory: string;
+let adb: Adb;
+
+// serve-emu uses TypeScript syntax Node cannot strip, so the module is bundled like the packaged runtime.
+before(async () => {
+  directory = await mkdtemp(join(tmpdir(), "mobile-dev-emu-conditions-"));
+  const output = join(directory, "adb.mjs");
+  await build({ entryPoints: [resolve("runtimes/serve-emu/src/adb.ts")], outfile: output, bundle: true, platform: "node", format: "esm", target: "node22.18" });
+  adb = await import(pathToFileURL(output).href);
+});
+
+after(async () => { await rm(directory, { recursive: true, force: true }); });
+
+function device(respond: (args: string[]) => { stdout?: string; stderr?: string; status?: number }) {
+  const calls: string[][] = [];
+  const run = (async (_file: string, args: string[]) => {
+    calls.push(args);
+    const { stdout = "", stderr = "", status = 0 } = respond(args);
+    return { status, signal: null, stdout, stderr, timedOut: false, error: null };
+  }) as Exec;
+  return { run, calls };
+}
+
+const consoleStatus = (bits: number, latency: number) => `Current network status:
+  download speed:     ${bits} bits/s (${bits / 8192} KB/s)
+  upload speed:       ${bits} bits/s (${bits / 8192} KB/s)
+  minimum latency:  ${latency} ms
+  maximum latency:  ${latency} ms
+OK
+`;
+
+test("emulator throttles go through the console and read back from network status", async () => {
+  assert.deepEqual(adb.parseEmulatorNetworkStatus(consoleStatus(0, 0)), { latencyMs: 0, bandwidthKbps: null });
+  assert.deepEqual(adb.parseEmulatorNetworkStatus(consoleStatus(780000, 200)), { latencyMs: 200, bandwidthKbps: 780 });
+  assert.throws(() => adb.parseEmulatorNetworkStatus("KO: unknown command"), /unexpected format/);
+
+  let status = consoleStatus(0, 0);
+  const { run, calls } = device(args => {
+    if (args.slice(3).join(" ") === "network status") return { stdout: status };
+    if (args[4] === "speed") status = consoleStatus(args[5] === "full" ? 0 : Number(args[5].split(":")[1]) * 1000, 0);
+    if (args[4] === "delay") status = status.replace(/latency:\s+\d+ ms/g, `latency:  ${args[5]} ms`);
+    return { stdout: "OK\n" };
+  });
+  assert.deepEqual(await adb.setEmulatorThrottle("emulator-5554", { latencyMs: 200, bandwidthKbps: 780 }, run), { latencyMs: 200, bandwidthKbps: 780 });
+  assert.deepEqual(calls.slice(0, 2), [["-s", "emulator-5554", "emu", "network", "speed", "780:780"], ["-s", "emulator-5554", "emu", "network", "delay", "200"]]);
+  assert.deepEqual(await adb.setEmulatorThrottle("emulator-5554", { latencyMs: 0, bandwidthKbps: null }, run), { latencyMs: 0, bandwidthKbps: null });
+  assert.equal(calls.at(-3)?.[5], "full");
+
+  const rejected = device(() => ({ stdout: "KO: bad speed\n" }));
+  await assert.rejects(adb.setEmulatorThrottle("emulator-5554", { latencyMs: 0, bandwidthKbps: 1 }, rejected.run), /KO: bad speed/, "a KO answer fails even with exit status 0");
+  const phone = device(() => ({ stdout: "OK\n" }));
+  assert.equal(await adb.getEmulatorThrottle("R5CT1234", phone.run), null);
+  await assert.rejects(adb.setEmulatorThrottle("R5CT1234", { latencyMs: 0, bandwidthKbps: null }, phone.run), /Emulator serials only/);
+  assert.equal(phone.calls.length, 0);
+
+  assert.deepEqual(adb.parseNetworkThrottle({ latencyMs: 800, bandwidthKbps: 240 }), { latencyMs: 800, bandwidthKbps: 240 });
+  for (const invalid of [{ latencyMs: -1, bandwidthKbps: null }, { latencyMs: 1.5, bandwidthKbps: null }, { latencyMs: 0, bandwidthKbps: 0 }, { latencyMs: 0 }, "3g"]) {
+    assert.throws(() => adb.parseNetworkThrottle(invalid), /throttle/);
+  }
+});
+
+test("a clean status bar holds only for the boot that entered demo mode", async () => {
+  let marker = "null";
+  let boot = "boot-1";
+  const { run, calls } = device(args => {
+    const command = args[3];
+    if (command.startsWith("settings get global mobile_dev_status_bar_boot")) return { stdout: `${marker}\n${boot}\n` };
+    if (command.includes("settings put global mobile_dev_status_bar_boot")) marker = boot;
+    if (command.includes("settings delete global mobile_dev_status_bar_boot")) marker = "null";
+    return { stdout: "Broadcast completed: result=0\n" };
+  });
+  assert.deepEqual(await adb.getStatusBar("emulator-5554", run), { mode: "live" });
+  assert.deepEqual(await adb.setStatusBar("emulator-5554", "clean", run), { mode: "clean" });
+  const entered = calls.find(args => args[3].includes("command enter"))![3];
+  assert.match(entered, /^settings put global sysui_demo_allowed 1 && am broadcast -a com\.android\.systemui\.demo -e command enter && /);
+  assert.match(entered, /-e command clock -e hhmm 0941/);
+  assert.match(entered, /settings put global mobile_dev_status_bar_boot \$\(cat \/proc\/sys\/kernel\/random\/boot_id\)$/);
+  boot = "boot-2";
+  assert.deepEqual(await adb.getStatusBar("emulator-5554", run), { mode: "live" }, "a reboot leaves demo mode");
+  boot = "boot-1";
+  assert.deepEqual(await adb.setStatusBar("emulator-5554", "live", run), { mode: "live" });
+  assert.match(calls.at(-2)![3], /command exit && settings put global sysui_demo_allowed 0 && settings delete global mobile_dev_status_bar_boot$/);
+});
+
+test("Wi-Fi-only devices still go offline and back without a telephony service", async () => {
+  const { run, calls } = device(args => {
+    if (args[3] === "svc" && args[4] === "data") return { stderr: "cmd: Can't find service: phone\n", status: 20 };
+    if (args[3] === "settings") return { stdout: args[6] === "wifi_on" ? "0\n" : "null\n" };
+    return {};
+  });
+  assert.equal((await adb.setNetworkEnabled("R5CT1234", false, run)).enabled, false);
+  assert.deepEqual(calls.slice(0, 2).map(args => args.slice(3)), [["svc", "wifi", "disable"], ["svc", "data", "disable"]]);
+  const broken = device(args => args[4] === "wifi" ? { stderr: "Failure\n", status: 1 } : {});
+  await assert.rejects(adb.setNetworkEnabled("R5CT1234", true, broken.run), /svc wifi enable failed/);
+});
