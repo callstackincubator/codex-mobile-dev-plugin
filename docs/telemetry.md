@@ -2,6 +2,15 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Since 0.1.147, server processes select the bundled Undici 8.12.1 HTTP dispatcher
+before telemetry initialization and HTTP requests. This avoids the uncaught macOS
+`setTypeOfService EINVAL` exception in Codex's Node 24.19.0 built-in dispatcher.
+Node's existing `fetch` and Web API globals remain in use. Sentry's outgoing HTTP
+instrumentation, sampled MCP traces, error capture, scrubbing, environments and
+opt-out retain their existing boundaries. Process shutdown flushes telemetry
+before destroying the owned dispatcher and cancelling remaining HTTP requests.
+No socket monkey patch or process-level exception suppression is added.
+
 Since 0.1.143, `ui.memory.heap_used`, `ui.memory.heap_total` and
 `ui.memory.heap_limit` report Chromium's `performance.memory` JavaScript heap
 values in bytes. They sample at UI telemetry startup and on the existing
