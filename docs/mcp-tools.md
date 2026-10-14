@@ -44,10 +44,13 @@
 | `mobile_appflow_start` | Start a non-blocking structure build or agent-assisted screen sweep |
 | `mobile_appflow_status` | Read current or persisted App Flow status |
 | `mobile_appflow_result` | Read the current or persisted screen graph |
+| `mobile_appflow_events` | Poll buffered progress and manual-recording events past a sequence cursor (app only) |
 | `mobile_appflow_pause` | Pause a running sweep at a safe boundary (app only) |
 | `mobile_appflow_cancel` | Cancel a run and any parked agent decision |
 | `mobile_appflow_launch_app` | Launch the selected project without starting a sweep (app only) |
 | `mobile_appflow_resolve_prompt` | Resolve a human-action gate after the user acts (app only) |
+| `mobile_appflow_projects` | List the project folders App Flow can open (app only) |
+| `mobile_appflow_choose_project` | Select a listed project or open the system folder picker (app only) |
 | `mobile_appflow_manual_start` | Start recording a path to one screen (app only) |
 | `mobile_appflow_manual_act` | Perform and record one manual path action (app only) |
 | `mobile_appflow_manual_stop` | Save the active manual path recording (app only) |

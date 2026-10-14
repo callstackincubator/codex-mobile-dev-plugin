@@ -23,6 +23,8 @@ function textError(result: Awaited<ReturnType<App["callServerTool"]>>, fallback:
 function object(value: unknown): Record<string, unknown> | null { return value && typeof value === "object" ? value as Record<string, unknown> : null; }
 function projectName(projectPath: string): string { return projectPath.split("/").filter(Boolean).at(-1) ?? projectPath; }
 
+const POLL_INTERVAL_MS = 1_000;
+
 export class AppFlowPanel {
   private readonly app: App;
   private readonly listeners = new Set<() => void>();
@@ -30,6 +32,12 @@ export class AppFlowPanel {
   private progressStartedAt?: number;
   private agentStartTimer?: ReturnType<typeof setTimeout>;
   private loadRevision = 0;
+  private pollTimer?: ReturnType<typeof setTimeout>;
+  private readonly pollIntervalMs: number;
+  private polledRunId?: string | null;
+  private polledRecordingNode: string | null = null;
+  private runSeq = 0;
+  private manualSeq = 0;
   private urls = new Map<string, string>();
   readonly recording: AppFlowRecordingStore;
   private projectRequest?: Promise<void>;
@@ -37,15 +45,38 @@ export class AppFlowPanel {
   private snapshot: Snapshot = { open: false, available: false, projectPath: "", projects: [], runId: null, projectId: "",
     state: "idle", result: null, progress: null, sweepSummary: null, prompt: null, error: null, launching: false, agentStartPending: false, pickingProject: false };
 
-  constructor(app: App) {
+  constructor(app: App, pollIntervalMs = POLL_INTERVAL_MS) {
     this.app = app;
+    this.pollIntervalMs = pollIntervalMs;
     this.recording = new AppFlowRecordingStore(app);
+    // A recording that starts from a graph node (or ends) changes what needs polling without any
+    // sweep state change, so follow the recording store directly. A fresh recording also restarts
+    // the manual cursor: the server clears its buffer when a recording starts, and a server
+    // restart would otherwise leave a high cursor skipping every new event.
+    this.recording.subscribe(() => {
+      const snapshot = this.recording.getSnapshot();
+      if (snapshot.nodeId !== this.polledRecordingNode) {
+        this.polledRecordingNode = snapshot.nodeId;
+        if (snapshot.status === "starting") this.manualSeq = 0;
+      }
+      this.schedulePoll();
+    });
     app.setNotificationHandler(LoggingMessageNotificationSchema, notification => this.acceptNotification(notification.params.data));
   }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.snapshot;
   get canSendAgentStart() { return Boolean(this.app.getHostCapabilities()?.message?.text); }
-  private update(fields: Partial<Snapshot>) { this.snapshot = { ...this.snapshot, ...fields }; for (const listener of this.listeners) listener(); }
+  private update(fields: Partial<Snapshot>) {
+    this.snapshot = { ...this.snapshot, ...fields };
+    // A fresh runId means a fresh server-side buffer key, and after a server restart the seq
+    // counter restarts too, so the sweep cursor must restart with it.
+    if (this.snapshot.runId !== this.polledRunId) {
+      this.polledRunId = this.snapshot.runId;
+      if (this.snapshot.runId) this.runSeq = 0;
+    }
+    for (const listener of this.listeners) listener();
+    this.schedulePoll();
+  }
   private async call(name: string, arguments_: Record<string, unknown>, timeout = 30000) {
     const result = await this.app.callServerTool({ name, arguments: arguments_ }, { timeout });
     if (result.isError) throw textError(result, `${name} failed.`);
@@ -201,7 +232,10 @@ export class AppFlowPanel {
   async launchApp() {
     const projectPath = this.snapshot.projectPath.trim(); if (!projectPath) return;
     this.update({ launching: true, error: null });
-    try { await this.call("mobile_appflow_launch_app", { projectPath }); }
+    // Booting the simulator, building if needed, and waiting for the app to come up is a
+    // multi-minute operation; the routine 30s tool timeout would report failure while the server
+    // keeps working (and the panel restores launching=false when the run's events arrive).
+    try { await this.call("mobile_appflow_launch_app", { projectPath }, 300_000); }
     catch (error) { this.update({ error: error instanceof Error ? error.message : String(error) }); }
     finally { this.update({ launching: false }); }
   }
@@ -220,7 +254,8 @@ export class AppFlowPanel {
   }
   async replay(nodeId: string) {
     const projectPath = this.snapshot.projectPath;
-    await this.call("mobile_appflow_manual_replay", { projectPath, nodeId }, 120000);
+    // A cold device walks the path in minutes; the panel just waits for the outcome.
+    await this.call("mobile_appflow_manual_replay", { projectPath, nodeId }, 300_000);
   }
   async refreshStatus() {
     const target = this.snapshot.runId ? { runId: this.snapshot.runId } : { projectPath: this.snapshot.projectPath };
@@ -233,12 +268,101 @@ export class AppFlowPanel {
     if (["completed", "failed", "cancelled", "suspended"].includes(state)) await this.refreshResult();
   }
 
+  /**
+   * The event channel a sweep or recording depends on. Hosts may drop server logging
+   * notifications, so the panel also polls the server's bounded event buffer while work is live.
+   * The shared seq cursor keeps this and the notification path from double-applying an event.
+   */
+  private schedulePoll() {
+    if (this.disposed || this.pollTimer !== undefined) return;
+    if (!this.pollNeeded()) return;
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = undefined;
+      void this.pollEvents().finally(() => this.schedulePoll());
+    }, this.pollIntervalMs);
+  }
+
+  private pollNeeded() {
+    // A hidden view does not need live events: the server keeps buffering them (capped), and the
+    // cursor replays what the panel missed when it is shown again.
+    if (!this.snapshot.open) return false;
+    const { state, runId, projectPath, agentStartPending } = this.snapshot;
+    if (runId && (state === "running" || state === "needs-user-action")) return true;
+    if (agentStartPending && projectPath !== "") return true;
+    const recording = this.recording.getSnapshot();
+    const recordingLive = recording.nodeId !== null && recording.status !== null
+      && recording.status !== "stopped" && recording.status !== "error";
+    return recordingLive && projectPath !== "";
+  }
+
+  private async pollEvents() {
+    if (this.disposed) return;
+    let { runId, state } = this.snapshot;
+    const projectPath = this.snapshot.projectPath;
+    // A Codex-started sweep has no runId here: the follow-up message only reaches the server a
+    // moment later, so status-by-project is what discovers it. Only a response naming a run is
+    // adopted — the same call without an active run answers with the previous run's persisted
+    // status, which would flicker the panel back to the old map. After that the event buffer
+    // takes over, and its `complete`/`error` events carry the terminal state.
+    if (!runId && (this.snapshot.agentStartPending || state === "running") && projectPath !== "") {
+      try {
+        const response = await this.call("mobile_appflow_status", { projectPath });
+        const data = object(response.structuredContent) ?? {};
+        if (!this.disposed && typeof data.runId === "string" && typeof data.state === "string") {
+          this.update({ runId: data.runId, state: data.state as AppFlowRunState });
+          ({ runId, state } = this.snapshot);
+        }
+      } catch {
+        // Retried on the next tick.
+      }
+    }
+    if (runId && (state === "running" || state === "needs-user-action")) {
+      await this.readEvents({ runId }, this.runSeq);
+    }
+    const recording = this.recording.getSnapshot();
+    const recordingLive = recording.nodeId !== null && recording.status !== null
+      && recording.status !== "stopped" && recording.status !== "error";
+    if (recordingLive) {
+      await this.readEvents({ projectPath }, this.manualSeq);
+    }
+  }
+
+  private async readEvents(target: { runId?: string; projectPath?: string }, since: number) {
+    try {
+      const response = await this.call("mobile_appflow_events", { ...target, since });
+      const content = object(response.structuredContent);
+      const events = Array.isArray(content?.result) ? content.result : Array.isArray(content?.events) ? content.events : [];
+      // `ingest` owns the shared seq cursor, so an event notified first is skipped here.
+      for (const entry of events) {
+        const envelope = object(entry);
+        if (envelope) this.ingest(envelope);
+      }
+    } catch {
+      // A dropped poll is retried on the next tick; a finished run stops needing polls at all.
+    }
+  }
+
   private acceptNotification(data: unknown) {
     const envelope = object(data);
     if (envelope?.source !== "app-flow") return;
+    this.ingest(envelope);
+  }
+
+  /**
+   * Applies one App Flow event, whether it arrived as a logging notification or a poll result.
+   * Both channels carry the server's monotonic seq, so the matching per-stream cursor lets a
+   * duplicate from the other channel be dropped before it can double-append a recording step.
+   */
+  private ingest(envelope: Record<string, unknown>) {
     const event = object(envelope.event);
     if (!event || typeof event.type !== "string") return;
-    if (typeof event.nodeId === "string") {
+    const manual = typeof event.nodeId === "string";
+    const seq = typeof envelope.seq === "number" ? envelope.seq : undefined;
+    if (seq !== undefined) {
+      if (manual) { if (seq <= this.manualSeq) return; this.manualSeq = seq; }
+      else { if (seq <= this.runSeq) return; this.runSeq = seq; }
+    }
+    if (manual) {
       this.recording.accept(event as unknown as ManualRecordingEvent);
       if (event.type === "complete") void this.refreshResult({ projectPath: this.snapshot.projectPath }).catch(error => this.update({ error: error instanceof Error ? error.message : String(error) }));
       return;
@@ -280,7 +404,9 @@ export class AppFlowPanel {
   }
 
   async dispose() {
-    this.disposed = true; this.loadRevision++; clearTimeout(this.agentStartTimer); this.agentStartTimer = undefined; this.listeners.clear(); this.recording.dispose();
+    this.disposed = true; this.loadRevision++; clearTimeout(this.agentStartTimer); this.agentStartTimer = undefined;
+    clearTimeout(this.pollTimer); this.pollTimer = undefined;
+    this.listeners.clear(); this.recording.dispose();
     this.app.removeNotificationHandler("notifications/message");
     for (const url of this.urls.values()) URL.revokeObjectURL(url);
     this.urls.clear();

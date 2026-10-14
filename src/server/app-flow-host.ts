@@ -425,7 +425,9 @@ export interface AppFlowHostServices {
   manualCancel(projectPath: string): Promise<unknown>;
   manualReplay?(projectPath: string, nodeId: string): Promise<unknown>;
   screenshot(projectId: string, path: string): Promise<Buffer>;
-  subscribe?(listener: (message: { runId?: string; event: unknown }) => void): () => void;
+  /** Replays buffered events for one run or manual session whose seq is newer than `since`. */
+  poll(query: { runId?: string; projectPath?: string }, since: number): Promise<Array<{ seq: number; runId?: string; event: unknown }>>;
+  subscribe?(listener: (message: { runId?: string; seq?: number; event: unknown }) => void): () => void;
   close?(): void | Promise<void>;
 }
 
@@ -539,8 +541,23 @@ export async function createAppFlowHost(options: {
     import("../app-flow/index.ts"),
     import("../app-flow/manual/index.ts"),
   ]);
-  const listeners = new Set<(message: { runId?: string; event: AppFlowHostEvent }) => void>();
+  const listeners = new Set<(message: { runId?: string; seq?: number; event: AppFlowHostEvent }) => void>();
   const runs = new Map<string, MutableRun>();
+  // Hosts are not required to forward server logging notifications into an app panel (the logs
+  // panel polls for the same reason), so every event is also buffered here with a monotonic seq
+  // for the panel's `mobile_appflow_events` poll. Manual snapshots arrive every couple of seconds,
+  // so each key keeps only its most recent events; a panel that fell behind re-reads from its seq.
+  const MAX_BUFFERED_EVENTS = 64;
+  const recentEvents = new Map<string, Array<{ seq: number; runId?: string; event: AppFlowHostEvent }>>();
+  let eventSeq = 0;
+  const bufferEvent = (key: string, runId: string | undefined, event: AppFlowHostEvent): number => {
+    const seq = ++eventSeq;
+    const buffered = recentEvents.get(key) ?? [];
+    buffered.push({ seq, ...(runId ? { runId } : {}), event });
+    if (buffered.length > MAX_BUFFERED_EVENTS) buffered.splice(0, buffered.length - MAX_BUFFERED_EVENTS);
+    recentEvents.set(key, buffered);
+    return seq;
+  };
   let activeDecisions: CodexAppFlowDecisionProvider | undefined;
   const agentDeviceRoot = vendoredAgentDeviceRoot();
   const agentDeviceCli = agentDeviceRoot
@@ -566,7 +583,10 @@ export async function createAppFlowHost(options: {
         } else if (event.type === "complete") run.state = "completed";
         else if (run.state === "needs-user-action") run.state = "running";
       }
-      for (const listener of listeners) listener({ ...(run ? { runId: run.runId } : {}), event });
+      const runId = run?.runId;
+      const key = "nodeId" in event ? `manual:${event.projectId}` : runId ?? `project:${eventProjectId ?? "unknown"}`;
+      const seq = bufferEvent(key, runId, event);
+      for (const listener of listeners) listener({ ...(runId ? { runId } : {}), seq, event });
     },
     loadAgentDevice: options.loadAgentDevice ?? loadVendoredAgentDevice,
     agentDeviceCli,
@@ -592,6 +612,8 @@ export async function createAppFlowHost(options: {
       const selectedProjectPath = String(input.projectPath ?? "");
       const run: MutableRun = { runId: context.runId, projectPath: selectedProjectPath, state: "running" };
       runs.set(run.runId, run);
+      recentEvents.delete(`project:${getProjectId(selectedProjectPath)}`);
+      recentEvents.delete(`manual:${getProjectId(selectedProjectPath)}`);
       activeDecisions = context.decisions;
       const started = await flow.start(input as never);
       if (!started.ok) {
@@ -661,11 +683,21 @@ export async function createAppFlowHost(options: {
       if ((result as { resolved?: boolean }).resolved && selectedResolution === "stop") run.state = "completed";
       return result;
     },
-    manualStart: (selectedProjectPath, nodeId) => manual.start(selectedProjectPath, nodeId),
+    manualStart: (selectedProjectPath, nodeId) => {
+      recentEvents.delete(`manual:${getProjectId(selectedProjectPath)}`);
+      return manual.start(selectedProjectPath, nodeId);
+    },
     manualAct: (selectedProjectPath, selectedAction) => manual.act(selectedProjectPath, selectedAction as never),
     manualStop: selectedProjectPath => manual.stop(selectedProjectPath),
     manualCancel: selectedProjectPath => manual.cancel(selectedProjectPath),
     manualReplay: (selectedProjectPath, nodeId) => manual.replay(selectedProjectPath, nodeId),
+    async poll(query, since) {
+      const key = query.runId
+        ? query.runId
+        : `manual:${getProjectId(projectFor(query))}`;
+      const buffered = recentEvents.get(key) ?? [];
+      return buffered.filter(entry => entry.seq > since);
+    },
     async screenshot(selectedProjectId, encodedPath) {
       const decoded = Buffer.from(encodedPath, "base64url").toString("utf8");
       if (!decoded || isAbsolute(decoded)) throw new Error("Invalid App Flow screenshot path.");

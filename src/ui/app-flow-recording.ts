@@ -25,8 +25,8 @@ export class AppFlowRecordingStore {
   getSnapshot = () => this.value;
   private update(fields: Partial<Snapshot>) { this.value = { ...this.value, ...fields }; for (const listener of this.listeners) listener(); }
   private reset(nodeId: string | null) { this.revision = 0; this.update({ ...INITIAL, nodeId }); }
-  private async call(name: string, arguments_: Record<string, unknown>) {
-    const result = await this.app.callServerTool({ name, arguments: arguments_ }, { timeout: 30000 });
+  private async call(name: string, arguments_: Record<string, unknown>, timeout = 30000) {
+    const result = await this.app.callServerTool({ name, arguments: arguments_ }, { timeout });
     if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || `${name} failed.`);
     return result;
   }
@@ -54,12 +54,16 @@ export class AppFlowRecordingStore {
     catch (error) { this.update({ status: "error", error: error instanceof Error ? error.message : String(error) }); }
   }
   async act(projectPath: string, action: ManualRecordingAction) {
-    try { await this.call("mobile_appflow_manual_act", { projectPath, action }); this.update({ error: null }); }
+    // One interaction settles the app, waits for the route, and re-snapshots; that can outlast a
+    // routine tool timeout while the session is still healthy.
+    try { await this.call("mobile_appflow_manual_act", { projectPath, action }, 60000); this.update({ error: null }); }
     catch (error) { this.update({ error: error instanceof Error ? error.message : String(error) }); }
   }
   async stop(projectPath: string) {
     this.update({ status: "saving" });
-    try { await this.call("mobile_appflow_manual_stop", { projectPath }); }
+    // Saving replays the whole recording to verify it, then tears the device down: minutes, not
+    // seconds. The result arrives as events either way; the call just carries the failure.
+    try { await this.call("mobile_appflow_manual_stop", { projectPath }, 300_000); }
     catch (error) { this.update({ status: "error", error: error instanceof Error ? error.message : String(error) }); }
   }
   async cancel(projectPath: string) {

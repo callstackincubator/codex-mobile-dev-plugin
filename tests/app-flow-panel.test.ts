@@ -9,6 +9,7 @@ function fixture(canMessage = true, projectList: unknown[] = []) {
   let notification: ((value: { params: { data: unknown } }) => void) | undefined;
   let projects = projectList;
   let nextProject: unknown;
+  let bufferedEvents: Array<{ seq: number; runId?: string; event: unknown }> = [];
   const app = {
     getHostCapabilities() { return canMessage ? { message: { text: {} } } : {}; },
     setNotificationHandler(_schema: unknown, handler: typeof notification) { notification = handler; },
@@ -21,6 +22,10 @@ function fixture(canMessage = true, projectList: unknown[] = []) {
       if (input.name === "mobile_appflow_screenshot") return { content: [{ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" }] };
       if (input.name === "mobile_appflow_projects") return { content: [], structuredContent: { projects } };
       if (input.name === "mobile_appflow_choose_project") return { content: [], structuredContent: nextProject ? { project: nextProject } : {} };
+      if (input.name === "mobile_appflow_events") {
+        const since = Number(input.arguments?.since ?? 0);
+        return { content: [], structuredContent: { result: bufferedEvents.filter(entry => entry.seq > since) } };
+      }
       return { content: [], structuredContent: {} };
     },
   };
@@ -29,8 +34,10 @@ function fixture(canMessage = true, projectList: unknown[] = []) {
     notify(data: unknown) { notification?.({ params: { data } }); },
     list(value: unknown[]) { projects = value; },
     returnsProject(value: unknown) { nextProject = value; },
+    events(value: Array<{ seq: number; runId?: string; event: unknown }>) { bufferedEvents = value; },
   };
 }
+const settle = (ms = 60) => new Promise(resolve => setTimeout(resolve, ms));
 
 test("structure builds call the server directly while screen sweeps wake the active Codex agent", async t => {
   const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
@@ -143,4 +150,71 @@ test("screenshot URIs are reduced to the server's authorized encoded path", asyn
   const url = await panel.screenshot("project-1", "appflow-image://mobile-dev/project-1/c2NyZWVucy9ob21lLnBuZw");
   assert.match(url, /^blob:/);
   assert.deepEqual(host.calls.at(-1), { name: "mobile_appflow_screenshot", arguments: { projectId: "project-1", path: "c2NyZWVucy9ob21lLnBuZw" } });
+});
+
+test("a running sweep is followed through the event poll when notifications never arrive", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app, 5); t.after(() => panel.dispose());
+  panel.setAvailable(true); panel.show(); await settle();
+  await panel.selectProject("/projects/demo");
+  host.events([
+    { seq: 1, runId: "run-1", event: { type: "step", phase: "capture", message: "Profile", completed: 3, total: 8 } },
+  ]);
+  await panel.start({ mode: "structure-only" });
+  await settle(150);
+  assert.deepEqual(panel.getSnapshot().sweepSummary, { completed: 3, total: 8, message: "Profile" });
+  assert.equal(panel.getSnapshot().state, "running");
+  host.events([
+    { seq: 1, runId: "run-1", event: { type: "step", phase: "capture", message: "Profile", completed: 3, total: 8 } },
+    { seq: 2, runId: "run-1", event: { type: "complete", phase: "render", message: "Structure complete." } },
+  ]);
+  await settle(150);
+  assert.equal(panel.getSnapshot().state, "completed", "the terminal event is applied through the poll");
+  const polls = host.calls.filter(call => call.name === "mobile_appflow_events");
+  assert.ok(polls.length >= 1, "the panel polls while the run is live");
+  assert.ok(polls.some(call => call.arguments?.since === 1), "the poll advances past applied events by its sequence cursor");
+  // The run is terminal now: further polls would be pointless, so they must stop.
+  const pollsAfter = host.calls.filter(call => call.name === "mobile_appflow_events").length;
+  await settle(120);
+  assert.equal(host.calls.filter(call => call.name === "mobile_appflow_events").length, pollsAfter, "polling stops once the run reaches a terminal state");
+});
+
+test("a notification and the poll carrying the same sequence are applied once", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app, 5); t.after(() => panel.dispose());
+  panel.setAvailable(true); panel.show(); await settle();
+  await panel.selectProject("/projects/demo");
+  host.events([
+    { seq: 1, runId: "run-1", event: { type: "step", phase: "capture", message: "Profile", completed: 3, total: 8 } },
+    { seq: 2, runId: "run-1", event: { type: "step", phase: "capture", message: "Settings", completed: 4, total: 8 } },
+  ]);
+  await panel.start({ mode: "structure-only" });
+  host.notify({ source: "app-flow", runId: "run-1", seq: 1, event: { type: "step", phase: "capture", message: "Profile", completed: 3, total: 8 } });
+  await settle(150);
+  assert.deepEqual(panel.getSnapshot().sweepSummary, { completed: 4, total: 8, message: "Settings" });
+  // Dedupe proof: the poll only asks for events after seq 1 because the notification consumed it.
+  const polls = host.calls.filter(call => call.name === "mobile_appflow_events");
+  assert.ok(polls.some(call => call.arguments?.since === 1), "the shared cursor skips the notified event");
+});
+
+test("recording events reach the panel through the poll and stop it when saved", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app, 5); t.after(() => panel.dispose());
+  panel.setAvailable(true); panel.show(); await settle();
+  await panel.selectProject("/projects/demo");
+  host.events([
+    { seq: 1, event: { type: "status", projectId: "p-1", nodeId: "screen-1", status: "recording" } },
+    { seq: 2, event: { type: "snapshot", projectId: "p-1", nodeId: "screen-1", revision: 1, nodes: [], bounds: { x: 0, y: 0, width: 100, height: 100 } } },
+  ]);
+  await panel.recording.start("/projects/demo", "screen-1");
+  await settle(120);
+  assert.equal(panel.recording.getSnapshot().status, "recording");
+  assert.equal(panel.recording.getSnapshot().bounds?.width, 100);
+  host.events([
+    { seq: 1, event: { type: "status", projectId: "p-1", nodeId: "screen-1", status: "recording" } },
+    { seq: 2, event: { type: "snapshot", projectId: "p-1", nodeId: "screen-1", revision: 1, nodes: [], bounds: { x: 0, y: 0, width: 100, height: 100 } } },
+    { seq: 3, event: { type: "complete", projectId: "p-1", nodeId: "screen-1", pathToReach: ["agent-device replay saved.ad"], replayVerified: true } },
+  ]);
+  await settle(120);
+  assert.equal(panel.recording.getSnapshot().outcome?.replayVerified, true);
+  const pollsAfter = host.calls.filter(call => call.name === "mobile_appflow_events").length;
+  await settle(120);
+  assert.equal(host.calls.filter(call => call.name === "mobile_appflow_events").length, pollsAfter, "a finished recording ends its polling");
 });

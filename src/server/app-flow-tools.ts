@@ -77,7 +77,7 @@ function lookup(input: { runId?: string; projectPath?: string }): { runId?: stri
   return input;
 }
 
-const lookupSchema = { runId: runId.optional(), projectPath: projectPath.optional() };
+const lookupSchema = { runId: runId.optional(), projectPath: projectPath.optional(), since: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional() };
 const resolution = z.enum(["stop", "override", "continue"]);
 const locator = z.object({
   ref: z.string(),
@@ -216,6 +216,16 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost, proje
     return dataResult(await host.services.manualReplay(projectPath, nodeId));
   }));
 
+  registerAppTool(server, "mobile_appflow_events", {
+    title: "Poll App Flow events",
+    description:
+      "Read buffered App Flow progress or manual-recording events newer than a sequence cursor. App Flow panels poll this because hosts may not forward server logging notifications.",
+    inputSchema: lookupSchema,
+    annotations: read,
+    _meta: appVisibility,
+  }, safe(async (input: { runId?: string; projectPath?: string; since?: number }) =>
+    dataResult(await host.services.poll(lookup(input), input.since ?? 0))));
+
   registerAppTool(server, "mobile_appflow_next_decision", {
     title: "Get next App Flow decision",
     description:
@@ -267,11 +277,11 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost, proje
     },
   );
 
-  const unsubscribe = host.services.subscribe?.(({ runId, event }) => {
+  const unsubscribe = host.services.subscribe?.(({ runId, seq, event }) => {
     void server.sendLoggingMessage({
       level: "info",
       logger: "app-flow",
-      data: { source: "app-flow", ...(runId ? { runId } : {}), event },
+      data: { source: "app-flow", ...(runId ? { runId } : {}), ...(seq !== undefined ? { seq } : {}), event },
     }).catch(() => undefined);
   });
 

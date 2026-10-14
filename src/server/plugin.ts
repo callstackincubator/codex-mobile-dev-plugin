@@ -122,6 +122,9 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
     instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. See the Mobile Dev skill for device control, logs, and performance workflows.",
+    // App Flow progress arrives as logging notifications. Without this capability the SDK rejects
+    // every sendLoggingMessage, so the app-flow event channel would fail silently.
+    capabilities: { logging: {} },
   });
   instrumentMcpServer(server);
   const updates = new PluginUpdates();
