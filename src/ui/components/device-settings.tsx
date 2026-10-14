@@ -139,8 +139,11 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
             }}>
               {settings.networkConditions.map(condition => <ToggleGroupItem key={condition} value={condition} className="h-6 rounded-full px-2.5 text-xs font-normal data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">{networkLabels[condition]}</ToggleGroupItem>)}
             </ToggleGroup>
-            {settings.network === "custom" && <p className="text-xs text-muted-foreground">A custom throttle is active. Pick a condition to replace it.</p>}
-            {platform === "android" && settings.networkConditions.length === 2 && <p className="text-xs text-muted-foreground">Throttling needs an emulator.</p>}
+            {settings.network === "custom" && <p className="text-xs text-muted-foreground">{platform === "ios" ? "A custom throttle is active. Pick a condition to replace it." : "This device uses its own proxy. Remove it to simulate a slower network."}</p>}
+            {platform === "android" && settings.network !== "normal" && settings.network !== "offline" && settings.network !== "custom" && <div className="flex items-start gap-1.5 pt-1 text-xs text-muted-foreground">
+              <InfoIcon aria-hidden className="mt-0.5 size-3 shrink-0" />
+              <p className="flex-1">Slows standard app networking, such as fetch and OkHttp. Local dev servers aren't slowed.</p>
+            </div>}
             {/* Baguette injects conditioning into apps as they launch. */}
             {platform === "ios" && settings.network !== "normal" && <div className="flex items-start gap-1.5 pt-1 text-xs text-muted-foreground">
               <InfoIcon aria-hidden className="mt-0.5 size-3 shrink-0" />

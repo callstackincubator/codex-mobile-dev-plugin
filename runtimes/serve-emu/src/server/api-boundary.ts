@@ -1,4 +1,4 @@
-// Modified for Mobile Dev: emulator network throttling and status bar demo mode.
+// Modified for Mobile Dev: status bar demo mode.
 export const MAX_JSON_BODY_BYTES = 8 * 1024;
 export const MAX_ROUTE_BODY_BYTES = 2 * 1024 * 1024;
 

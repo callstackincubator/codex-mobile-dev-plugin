@@ -114,7 +114,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     const closeFps = fps.closeDevice(deviceId);
     await Promise.all([closeCpu, closeFps]);
   });
-  registerDeviceSettingsTools(server, baguette, android);
+  const closeDeviceSettings = registerDeviceSettingsTools(server, baguette, android);
   registerAppControlTools(server);
 
   const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<{ inputStatus: InputStatus; inputRepairMessage: string }> }>();
@@ -419,6 +419,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     async close() {
       updates.close();
       stopRecordingStorageMetrics();
+      await closeDeviceSettings();
       await recordings.close();
       closeInspection(); closeAndroid(); streams.close();
       try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror()]); }

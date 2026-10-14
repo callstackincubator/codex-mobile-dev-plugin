@@ -1,32 +1,18 @@
-// Modified for Mobile Dev: emulator network throttling and status bar demo mode.
+// Modified for Mobile Dev: status bar demo mode.
 import {
-  getEmulatorThrottle,
   getFontScale,
   getNetworkStatus,
   getNightMode,
   getStatusBar,
   getUserRotation,
-  isEmulatorSerial,
-  parseNetworkThrottle,
-  setEmulatorThrottle,
   setFontScale,
   setNetworkEnabled,
   setNightMode,
   setStatusBar,
   setUserRotation,
-  type NetworkStatus,
-  type NetworkThrottle,
   type NightMode,
   type OrientationMode,
 } from "../../adb.ts";
-
-async function networkWithThrottle(serial: string, status?: NetworkStatus): Promise<NetworkStatus> {
-  const [radios, throttle] = await Promise.all([
-    status ?? getNetworkStatus(serial),
-    getEmulatorThrottle(serial),
-  ]);
-  return { ...radios, throttle };
-}
 import type { ApiDependencies } from "../dependencies.ts";
 import type { ApiRoute } from "../router.ts";
 
@@ -417,7 +403,7 @@ export function deviceRoutes(): ApiRoute<ApiDependencies>[] {
           return Response.json({
             ok: true,
             network: await runForContext(requestContext, (context) =>
-              networkWithThrottle(context.serial),
+              getNetworkStatus(context.serial),
             ),
           });
         } catch (err) {
@@ -449,27 +435,15 @@ export function deviceRoutes(): ApiRoute<ApiDependencies>[] {
           ) {
             throw new Error("network payload must be an object");
           }
-          const { enabled, throttle: rawThrottle } = payload as Record<string, unknown>;
-          if (enabled !== undefined && typeof enabled !== "boolean") {
+          const enabled = (payload as Record<string, unknown>).enabled;
+          if (typeof enabled !== "boolean") {
             throw new Error("enabled must be a boolean");
-          }
-          if (enabled === undefined && rawThrottle === undefined) {
-            throw new Error("network payload needs enabled or throttle");
-          }
-          const throttle: NetworkThrottle | undefined =
-            rawThrottle === undefined ? undefined : parseNetworkThrottle(rawThrottle);
-          if (throttle && !isEmulatorSerial(requestContext.serial)) {
-            throw new Error("network throttling is supported for Android Emulator serials only");
           }
           return Response.json({
             ok: true,
-            network: await runForContext(requestContext, async (context) => {
-              if (throttle) await setEmulatorThrottle(context.serial, throttle);
-              const radios = enabled === undefined
-                ? undefined
-                : await setNetworkEnabled(context.serial, enabled);
-              return networkWithThrottle(context.serial, radios);
-            }),
+            network: await runForContext(requestContext, (context) =>
+              setNetworkEnabled(context.serial, enabled),
+            ),
           });
         } catch (err) {
           return errorResponse(err);

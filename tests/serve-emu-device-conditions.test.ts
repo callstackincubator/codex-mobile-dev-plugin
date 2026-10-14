@@ -31,44 +31,6 @@ function device(respond: (args: string[]) => { stdout?: string; stderr?: string;
   return { run, calls };
 }
 
-const consoleStatus = (bits: number, latency: number) => `Current network status:
-  download speed:     ${bits} bits/s (${bits / 8192} KB/s)
-  upload speed:       ${bits} bits/s (${bits / 8192} KB/s)
-  minimum latency:  ${latency} ms
-  maximum latency:  ${latency} ms
-OK
-`;
-
-test("emulator throttles go through the console and read back from network status", async () => {
-  assert.deepEqual(adb.parseEmulatorNetworkStatus(consoleStatus(0, 0)), { latencyMs: 0, bandwidthKbps: null });
-  assert.deepEqual(adb.parseEmulatorNetworkStatus(consoleStatus(780000, 200)), { latencyMs: 200, bandwidthKbps: 780 });
-  assert.throws(() => adb.parseEmulatorNetworkStatus("KO: unknown command"), /unexpected format/);
-
-  let status = consoleStatus(0, 0);
-  const { run, calls } = device(args => {
-    if (args.slice(3).join(" ") === "network status") return { stdout: status };
-    if (args[4] === "speed") status = consoleStatus(args[5] === "full" ? 0 : Number(args[5].split(":")[1]) * 1000, 0);
-    if (args[4] === "delay") status = status.replace(/latency:\s+\d+ ms/g, `latency:  ${args[5]} ms`);
-    return { stdout: "OK\n" };
-  });
-  assert.deepEqual(await adb.setEmulatorThrottle("emulator-5554", { latencyMs: 200, bandwidthKbps: 780 }, run), { latencyMs: 200, bandwidthKbps: 780 });
-  assert.deepEqual(calls.slice(0, 2), [["-s", "emulator-5554", "emu", "network", "speed", "780:780"], ["-s", "emulator-5554", "emu", "network", "delay", "200"]]);
-  assert.deepEqual(await adb.setEmulatorThrottle("emulator-5554", { latencyMs: 0, bandwidthKbps: null }, run), { latencyMs: 0, bandwidthKbps: null });
-  assert.equal(calls.at(-3)?.[5], "full");
-
-  const rejected = device(() => ({ stdout: "KO: bad speed\n" }));
-  await assert.rejects(adb.setEmulatorThrottle("emulator-5554", { latencyMs: 0, bandwidthKbps: 1 }, rejected.run), /KO: bad speed/, "a KO answer fails even with exit status 0");
-  const phone = device(() => ({ stdout: "OK\n" }));
-  assert.equal(await adb.getEmulatorThrottle("R5CT1234", phone.run), null);
-  await assert.rejects(adb.setEmulatorThrottle("R5CT1234", { latencyMs: 0, bandwidthKbps: null }, phone.run), /Emulator serials only/);
-  assert.equal(phone.calls.length, 0);
-
-  assert.deepEqual(adb.parseNetworkThrottle({ latencyMs: 800, bandwidthKbps: 240 }), { latencyMs: 800, bandwidthKbps: 240 });
-  for (const invalid of [{ latencyMs: -1, bandwidthKbps: null }, { latencyMs: 1.5, bandwidthKbps: null }, { latencyMs: 0, bandwidthKbps: 0 }, { latencyMs: 0 }, "3g"]) {
-    assert.throws(() => adb.parseNetworkThrottle(invalid), /throttle/);
-  }
-});
-
 test("a clean status bar holds only for the boot that entered demo mode", async () => {
   let marker = "null";
   let boot = "boot-1";

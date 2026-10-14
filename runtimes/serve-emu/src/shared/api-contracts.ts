@@ -1,4 +1,4 @@
-// Modified for Mobile Dev: emulator network throttling and status bar demo mode.
+// Modified for Mobile Dev: status bar demo mode.
 import { parseGesture, type Gesture } from "./control-contracts";
 
 /** Stable error codes sent by every JSON API failure. */
@@ -96,9 +96,7 @@ export type NetworkStatus = {
   wifi: NetworkRadioStatus;
   mobileData: NetworkRadioStatus;
   raw: { wifi: string; mobileData: string };
-  throttle?: NetworkThrottle | null;
 };
-export type NetworkThrottle = { latencyMs: number; bandwidthKbps: number | null };
 export type NetworkResponse = ApiSuccess<{ network: NetworkStatus }>;
 
 export type StatusBarMode = "clean" | "live";
@@ -356,7 +354,7 @@ export type ApiContractMap = {
   };
   "/api/network": {
     GET: EndpointContract<undefined, NetworkResponse>;
-    POST: EndpointContract<{ enabled?: boolean; throttle?: NetworkThrottle }, NetworkResponse>;
+    POST: EndpointContract<{ enabled: boolean }, NetworkResponse>;
   };
   "/api/status-bar": {
     GET: EndpointContract<undefined, StatusBarResponse>;
@@ -685,17 +683,7 @@ export function parseNetworkResponse(value: unknown): NetworkResponse {
         wifi: string(raw.wifi, "network.raw.wifi"),
         mobileData: string(raw.mobileData, "network.raw.mobileData"),
       },
-      ...(status.throttle === undefined ? {} : { throttle: parseNetworkThrottle(status.throttle) }),
     },
-  };
-}
-
-function parseNetworkThrottle(value: unknown): NetworkThrottle | null {
-  if (value === null) return null;
-  const throttle = record(value, "network.throttle");
-  return {
-    latencyMs: number(throttle.latencyMs, "network.throttle.latencyMs"),
-    bandwidthKbps: throttle.bandwidthKbps === null ? null : number(throttle.bandwidthKbps, "network.throttle.bandwidthKbps"),
   };
 }
 

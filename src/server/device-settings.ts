@@ -3,10 +3,11 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Baguette } from "./baguette.ts";
 import { androidIdSchema, type ServeEmu } from "./serve-emu.ts";
+import { AndroidNetworkThrottle } from "./network-throttle.ts";
 import { captureServerError } from "./telemetry.ts";
 import { errorMessage, udidSchema } from "../shared/protocol.ts";
 import { ExpectedOperationError, expectedOutcome } from "../shared/error-reporting.ts";
-import { contentSizes, deviceSettingSchema, locationSchema, networkConditions, networkPresets, type DeviceSetting, type DeviceSettings, type NetworkCondition, type NetworkPreset } from "../shared/device-settings.ts";
+import { contentSizes, deviceSettingSchema, locationSchema, networkConditions, networkPresets, type DeviceSetting, type DeviceSettings, type NetworkPreset } from "../shared/device-settings.ts";
 
 const targetSchema = z.discriminatedUnion("platform", [
   z.object({ platform: z.literal("ios"), id: udidSchema }).strict(),
@@ -28,21 +29,15 @@ function iosNetwork(value: unknown): DeviceSettings["network"] {
 // A clean status bar is the marketing one: 9:41, full battery, full signal.
 const cleanIosStatusBar = { time: "9:41", batteryState: "charged", batteryLevel: 100, wifiMode: "active", wifiBars: 3, cellularMode: "active", cellularBars: 4, operatorName: "" };
 
-const throttleSchema = z.object({ latencyMs: z.number(), bandwidthKbps: z.number().nullable() });
-const androidNetworkSchema = z.object({ network: z.object({ enabled: z.boolean().nullable(), throttle: throttleSchema.nullish() }).loose() });
-function androidNetwork(value: unknown): DeviceSettings["network"] {
-  const { enabled, throttle } = androidNetworkSchema.parse(value).network;
-  if (enabled === false) return "offline";
-  if (!throttle || throttle.latencyMs === 0 && throttle.bandwidthKbps === null) return "normal";
-  const preset = Object.entries(networkPresets).find(([, entry]) => entry.latencyMs === throttle.latencyMs && entry.bandwidthKbps === throttle.bandwidthKbps);
-  return preset ? preset[0] as NetworkPreset : "custom";
-}
+const radiosSchema = z.object({ network: z.object({ enabled: z.boolean().nullable() }).loose() });
+const radiosOff = (value: unknown) => radiosSchema.parse(value).network.enabled === false;
 const isEmulator = (id: string) => /^emulator-\d+$/.test(id);
 
 export class DeviceSettingsService {
   private readonly baguette: Baguette;
   private readonly android: ServeEmu;
-  constructor(baguette: Baguette, android: ServeEmu) { this.baguette = baguette; this.android = android; }
+  readonly throttle: AndroidNetworkThrottle;
+  constructor(baguette: Baguette, android: ServeEmu, throttle = new AndroidNetworkThrottle()) { this.baguette = baguette; this.android = android; this.throttle = throttle; }
 
   private iosReading(value: unknown): DeviceSettings {
     const data = z.object({ appearance: z.string(), contentSize: z.string(), increaseContrast: z.string() }).parse(value);
@@ -75,18 +70,21 @@ export class DeviceSettingsService {
       return settings;
     }
     const backend = await this.android.start(target.id);
-    const emulator = isEmulator(target.id);
-    // The emulator console throttles; a physical device can only turn its radios off.
-    const settings: DeviceSettings = { locationSupported: emulator, networkConditions: emulator ? [...networkConditions] : ["normal", "offline"] };
-    const reads = [
-      ["Appearance", "/api/night-mode", (value: unknown) => { const data = z.object({ nightMode: z.object({ mode: z.string() }) }).parse(value); const parsed = appearance.safeParse(data.nightMode.mode); if (parsed.success) settings.appearance = parsed.data; }],
-      ["Text size", "/api/font-scale", (value: unknown) => { settings.fontScale = z.object({ fontScale: z.object({ scale: z.number().min(0.7).max(2) }) }).parse(value).fontScale.scale; }],
-      ["Rotation", "/api/orientation", (value: unknown) => { const data = z.object({ orientation: z.object({ orientation: z.string() }) }).parse(value); const parsed = orientation.safeParse(data.orientation.orientation); if (parsed.success) settings.orientation = parsed.data; }],
-      ["Location", "/api/location", (value: unknown) => { settings.location = z.object({ location: locationSchema.loose().nullable() }).parse(value).location; }],
-      ["Status bar", "/api/status-bar", (value: unknown) => { settings.statusBar = z.object({ statusBar: z.object({ mode: z.enum(["clean", "live"]) }) }).parse(value).statusBar.mode; }],
-      ["Network", "/api/network", (value: unknown) => { settings.network = androidNetwork(value); }],
-    ] as const;
-    const results = await Promise.allSettled(reads.map(async ([, path, parse]) => parse(await this.android.json(backend.url, path))));
+    const settings: DeviceSettings = { locationSupported: isEmulator(target.id), networkConditions: [...networkConditions] };
+    const get = (path: string) => this.android.json(backend.url, path);
+    const reads: [string, () => Promise<void>][] = [
+      ["Appearance", async () => { const data = z.object({ nightMode: z.object({ mode: z.string() }) }).parse(await get("/api/night-mode")); const parsed = appearance.safeParse(data.nightMode.mode); if (parsed.success) settings.appearance = parsed.data; }],
+      ["Text size", async () => { settings.fontScale = z.object({ fontScale: z.object({ scale: z.number().min(0.7).max(2) }) }).parse(await get("/api/font-scale")).fontScale.scale; }],
+      ["Rotation", async () => { const data = z.object({ orientation: z.object({ orientation: z.string() }) }).parse(await get("/api/orientation")); const parsed = orientation.safeParse(data.orientation.orientation); if (parsed.success) settings.orientation = parsed.data; }],
+      ["Location", async () => { settings.location = z.object({ location: locationSchema.loose().nullable() }).parse(await get("/api/location")).location; }],
+      ["Status bar", async () => { settings.statusBar = z.object({ statusBar: z.object({ mode: z.enum(["clean", "live"]) }) }).parse(await get("/api/status-bar")).statusBar.mode; }],
+      ["Network", async () => {
+        const [radios, throttle] = await Promise.all([get("/api/network"), this.throttle.read(target.id)]);
+        // A proxy the user set up shows as custom; this panel leaves it alone.
+        settings.network = radiosOff(radios) ? "offline" : "foreignProxy" in throttle ? "custom" : throttle.preset ?? "normal";
+      }],
+    ];
+    const results = await Promise.allSettled(reads.map(([, read]) => read()));
     const errors = results.flatMap((result, index) => result.status === "rejected" ? [`${reads[index][0]}: ${errorMessage(result.reason)}`] : []);
     if (errors.length) settings.errors = errors;
     return settings;
@@ -118,9 +116,6 @@ export class DeviceSettingsService {
       return this.iosReading(response);
     }
     if (["contentSize", "increaseContrast"].includes(change.setting) || change.setting === "location" && (change.value === null || !isEmulator(target.id))) throw unsupported("serve-emu");
-    if (change.setting === "network" && !isEmulator(target.id) && change.value !== "normal" && change.value !== "offline") {
-      throw new ExpectedOperationError("invalid_input", "Network throttling needs an Android emulator. Physical devices can only go offline.");
-    }
     const backend = await this.android.start(target.id);
     switch (change.setting) {
       case "appearance": {
@@ -144,21 +139,16 @@ export class DeviceSettingsService {
         return { statusBar: data.statusBar.mode };
       }
       case "network": {
-        const current = await this.android.json(backend.url, "/api/network");
-        const body = this.androidNetworkChange(androidNetwork(current) === "offline", isEmulator(target.id), change.value);
-        // A physical device that is already online has nothing to change.
-        return { network: androidNetwork(body ? await this.android.json(backend.url, "/api/network", this.post(body)) : current) };
+        // Offline turns the radios off; the presets slow traffic through a proxy on the Mac.
+        const preset: NetworkPreset | null = change.value === "normal" || change.value === "offline" ? null : change.value;
+        await this.throttle.set(target.id, preset);
+        // Toggling the radios restarts Wi-Fi, so they change only when going offline or coming back.
+        const goOffline = change.value === "offline";
+        if (radiosOff(await this.android.json(backend.url, "/api/network")) !== goOffline) await this.android.json(backend.url, "/api/network", this.post({ enabled: !goOffline }));
+        return { network: change.value };
       }
       default: throw unsupported("serve-emu");
     }
-  }
-
-  // Toggling the radios restarts Wi-Fi, so they change only when going offline or coming back.
-  private androidNetworkChange(offline: boolean, emulator: boolean, value: NetworkCondition) {
-    if (value === "offline") return { enabled: false };
-    const throttle = value === "normal" ? { latencyMs: 0, bandwidthKbps: null } : networkPresets[value];
-    const body = { ...(offline ? { enabled: true } : {}), ...(emulator ? { throttle } : {}) };
-    return Object.keys(body).length > 0 ? body : undefined;
   }
 
   private post(body: object): RequestInit { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
@@ -183,4 +173,6 @@ export function registerDeviceSettingsTools(server: McpServer, baguette: Baguett
     title: "Change device setting", description: "Change one supported setting on the selected running device without restarting its stream.",
     inputSchema: { target: targetSchema, change: deviceSettingSchema }, annotations: { ...annotations, readOnlyHint: false }, _meta: { ui: { visibility: ["app"] } },
   }, guarded<{ target: Target; change: DeviceSetting }>(({ change }) => change.setting, ({ target, change }) => service.update(target, change)));
+  // Android throttling must be undone before the plugin exits, or the device keeps a dead proxy.
+  return () => service.throttle.close();
 }

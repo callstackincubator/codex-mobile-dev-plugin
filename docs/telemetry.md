@@ -184,8 +184,10 @@ Since 0.1.152, `mobile_app_language` and `mobile_set_app_language` use the same
 app control coverage under `app_control.language` and `app_control.set_language`.
 Language tags are not sent. The device settings tools report unexpected Baguette or
 serve-emu failures under `device_settings.read` or `device_settings.<setting>` with a
-fixed message; settings a device cannot change, such as network throttling on a
-physical Android device, count only through `server.error.outcome`. The Device tab
+fixed message. Android throttling runs through a local proxy on the Mac, so its adb
+failures report under `device_settings.network`; throttling a device that already
+uses its own proxy counts only through `server.error.outcome`. Proxy addresses and
+traffic are not sent. The Device tab
 records `ui.device_settings.change` round trips in milliseconds and counts
 `ui.device_settings.failure`, with the same surface and device-change exclusions as
 the App tab. Setting values, throttle presets, and device IDs are not sent.

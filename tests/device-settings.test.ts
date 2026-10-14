@@ -4,8 +4,8 @@ import { DeviceSettingsService } from "../src/server/device-settings.ts";
 import { DeviceSettingsStore } from "../src/ui/device-settings.ts";
 import type { Baguette } from "../src/server/baguette.ts";
 import type { ServeEmu } from "../src/server/serve-emu.ts";
+import type { AndroidNetworkThrottle, ThrottleReading } from "../src/server/network-throttle.ts";
 import { deviceSettingSchema } from "../src/shared/device-settings.ts";
-import { expectedOutcome } from "../src/shared/error-reporting.ts";
 
 const ios = { platform: "ios", id: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE" } as const;
 const android = { platform: "android", id: "emulator-5554" } as const;
@@ -14,7 +14,8 @@ function fixture() {
   const values = { appearance: "dark", increaseContrast: "disabled", contentSize: "large" };
   let statusBar: object = {};
   let iosNetwork: object = { ok: true, active: false, profiles: ["wifi", "lte", "3g", "edge"] };
-  let android_ = { enabled: true as boolean | null, throttle: { latencyMs: 0, bandwidthKbps: null as number | null }, statusBar: "live" };
+  let android_ = { enabled: true as boolean | null, statusBar: "live" };
+  let throttle: ThrottleReading = { preset: null };
   let failFont = false;
   const baguette = {
     async device(id: string, booted: boolean) { assert.equal(id, ios.id); assert.equal(booted, true); },
@@ -44,14 +45,21 @@ function fixture() {
       if (path === "/api/status-bar") { if (body) android_.statusBar = body.mode; return { ok: true, statusBar: { mode: android_.statusBar } }; }
       if (path === "/api/network") {
         if (body?.enabled !== undefined) android_.enabled = body.enabled;
-        if (body?.throttle) android_.throttle = body.throttle;
-        const emulator = url.pathname.includes("emulator-");
-        return { ok: true, network: { enabled: android_.enabled, wifi: "enabled", mobileData: "enabled", raw: { wifi: "1", mobileData: "1" }, throttle: emulator ? android_.throttle : null } };
+        return { ok: true, network: { enabled: android_.enabled, wifi: "enabled", mobileData: "enabled", raw: { wifi: "1", mobileData: "1" } } };
       }
       throw new Error("Unexpected path");
     },
   } as unknown as ServeEmu;
-  return { service: new DeviceSettingsService(baguette, serveEmu), requests, failFont() { failFont = true; }, setIosNetwork(value: object) { iosNetwork = value; }, setAndroid(value: Partial<typeof android_>) { android_ = { ...android_, ...value }; } };
+  const throttles: { id: string; preset: string | null }[] = [];
+  const androidThrottle = {
+    async read() { return throttle; },
+    async set(id: string, preset: string | null) {
+      if ("foreignProxy" in throttle) throw new Error("This device already uses the proxy");
+      throttles.push({ id, preset });
+      throttle = { preset: preset as never };
+    },
+  } as unknown as AndroidNetworkThrottle;
+  return { service: new DeviceSettingsService(baguette, serveEmu, androidThrottle), requests, throttles, setThrottle(value: ThrottleReading) { throttle = value; }, failFont() { failFont = true; }, setIosNetwork(value: object) { iosNetwork = value; } };
 }
 
 test("settings preserve platform values and apply changes through the selected backend", async () => {
@@ -88,27 +96,23 @@ test("status bar and network conditions use the same presets on both platforms",
   assert.deepEqual(await f.service.update(android, { setting: "statusBar", value: "clean" }), { statusBar: "clean" });
   assert.deepEqual(f.requests.at(-1)?.body, { mode: "clean" });
   assert.deepEqual(await f.service.update(android, { setting: "network", value: "edge" }), { network: "edge" });
-  assert.deepEqual(f.requests.at(-1)?.body, { throttle: { latencyMs: 800, bandwidthKbps: 240 } }, "radios stay untouched while online");
+  assert.deepEqual(f.throttles.at(-1), { id: android.id, preset: "edge" });
+  assert.equal(f.requests.at(-1)?.method, "GET", "radios stay untouched while online");
+  assert.equal((await f.service.read(android)).network, "edge");
   assert.deepEqual(await f.service.update(android, { setting: "network", value: "offline" }), { network: "offline" });
+  assert.deepEqual(f.throttles.at(-1), { id: android.id, preset: null }, "offline drops the throttle");
   assert.deepEqual(f.requests.at(-1)?.body, { enabled: false });
   assert.deepEqual(await f.service.update(android, { setting: "network", value: "normal" }), { network: "normal" });
-  assert.deepEqual(f.requests.at(-1)?.body, { enabled: true, throttle: { latencyMs: 0, bandwidthKbps: null } });
-
-  const phone = { platform: "android", id: "R5CT1234" } as const;
-  f.setAndroid({ enabled: true });
-  const settings = await f.service.read(phone);
-  assert.deepEqual(settings.networkConditions, ["normal", "offline"]);
-  assert.equal(settings.network, "normal");
-  const before = f.requests.length;
-  await assert.rejects(f.service.update(phone, { setting: "network", value: "3g" }), (error: unknown) => expectedOutcome(error) === "invalid_input" && /needs an Android emulator/.test((error as Error).message));
-  assert.equal(f.requests.length, before);
-  await f.service.update(phone, { setting: "network", value: "offline" });
-  assert.deepEqual(f.requests.at(-1)?.body, { enabled: false });
-  await f.service.update(phone, { setting: "network", value: "normal" });
   assert.deepEqual(f.requests.at(-1)?.body, { enabled: true });
   const reads = f.requests.length;
-  assert.deepEqual(await f.service.update(phone, { setting: "network", value: "normal" }), { network: "normal" });
-  assert.equal(f.requests.length, reads + 1, "an online phone is only read, never sent an empty change");
+  assert.deepEqual(await f.service.update(android, { setting: "network", value: "normal" }), { network: "normal" });
+  assert.equal(f.requests.length, reads + 1, "an online device is only read, never sent an empty change");
+
+  const phone = { platform: "android", id: "R5CT1234" } as const;
+  assert.deepEqual((await f.service.read(phone)).networkConditions, ["normal", "lte", "3g", "edge", "offline"], "physical phones throttle too");
+  f.setThrottle({ foreignProxy: "192.168.1.20:8888" });
+  assert.equal((await f.service.read(phone)).network, "custom", "the user's own proxy is shown, not replaced");
+  await assert.rejects(f.service.update(phone, { setting: "network", value: "3g" }), /already uses the proxy/);
 });
 
 test("unsupported settings never reach a backend and partial reads keep working controls", async () => {
