@@ -5,6 +5,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { MeasurementWindow, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY } from "../shared/telemetry.ts";
 import { ExpectedOperationError, expectedOutcome } from "../shared/error-reporting.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
+import { closeHttpRuntime } from "./http-runtime.ts";
 import { definitionDiagnosticTags } from "../shared/simulator-definition-diagnostics.ts";
 import { deviceAppsDiagnosticTags } from "../shared/device-apps-diagnostics.ts";
 import { getDiscoveryCommandDiagnostic } from "../shared/device-apps-command-diagnostics.ts";
@@ -299,6 +300,10 @@ export function installTracePropagation(transport: Transport) {
 }
 
 export async function closeServerTelemetry() {
-  await closeNativeTelemetry();
-  await Sentry.close(2000);
+  try {
+    await closeNativeTelemetry();
+    await Sentry.close(2000);
+  } finally {
+    await closeHttpRuntime();
+  }
 }

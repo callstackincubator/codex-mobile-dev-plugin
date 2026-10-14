@@ -92,7 +92,7 @@ The source suite passes 36 tests, including overlapping read/decode, newest-only
 
 The build and release package complete. The copied-package smoke test checks stable UI resources through separate MCP processes, no certificate tools/direct browser CSP destinations, native backend startup, 78 devices, and shutdown. The native reconnect smoke test terminates only its own copied package's Baguette process and verifies fresh JPEG capture through MCP after restart. No input repair or device boot is involved.
 
-Run the checks with Node.js 22.18 or later:
+Run the checks with Node.js 22.19 or later:
 
 ```sh
 npm test

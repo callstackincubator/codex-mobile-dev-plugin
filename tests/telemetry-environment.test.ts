@@ -54,6 +54,7 @@ test("packaged Node and native telemetry share the explicit build environment", 
     stdin: { contents, resolveDir: process.cwd(), loader: "ts" },
     outfile: probe, bundle: true, format: "esm", platform: "node", target: "node22",
     external: ["@sentry/node"],
+    banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
   });
   for (const environment of ["development", "release"]) {
     const config = JSON.stringify({ environment });

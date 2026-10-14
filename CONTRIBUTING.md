@@ -7,7 +7,7 @@ and native helpers. To use the prebuilt plugin, see the [README](README.md#insta
 
 - An Apple Silicon Mac with Xcode 27 and Swift 6.4 or later selected as the active
   developer tools, plus an installed iOS simulator runtime.
-- Node.js 22.18 or later, npm, Git, and network access to fetch pinned dependencies.
+- Node.js 22.19 or later, npm, Git, and network access to fetch pinned dependencies.
 - Rust and Cargo for the iOS native helpers. The release workflow uses Rust 1.98.1.
 - CMake, Ninja, pkg-config, OpenSSL 3, Autoconf, Automake, and Libtool for native
   builds. With Homebrew, install them using:
