@@ -20,6 +20,9 @@ export interface AppDriver {
   permissions(bundleId: string): Promise<AppPermissionEntry[]>;
   setPermission(bundleId: string, permission: AppPermission | "all", state: PermissionState): Promise<AppPermissionEntry[]>;
   push(bundleId: string, payload: Record<string, unknown>): Promise<void>;
+  // The app's own language, or null when it follows the device. Apps pick it up on their next launch.
+  language(bundleId: string): Promise<string | null>;
+  setLanguage(bundleId: string, language: string | null): Promise<void>;
 }
 
 export async function listApps(driver: AppDriver): Promise<InstalledApps> {

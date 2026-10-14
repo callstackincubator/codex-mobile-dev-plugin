@@ -1,6 +1,6 @@
 import { useId, useRef, useState, useSyncExternalStore } from "react";
 import type { LucideIcon } from "lucide-react";
-import { ActivityIcon, ArrowRightIcon, BellIcon, BracesIcon, CalendarIcon, CameraIcon, ChevronDownIcon, ClockIcon, ContactIcon, ImageIcon, InfoIcon, ListChecksIcon, MapPinIcon, MicIcon, RotateCcwIcon, RotateCwIcon, SendIcon, ShieldIcon, SquareIcon } from "lucide-react";
+import { ActivityIcon, ArrowRightIcon, BellIcon, BracesIcon, CalendarIcon, CameraIcon, ChevronDownIcon, ClockIcon, ContactIcon, ImageIcon, InfoIcon, LanguagesIcon, ListChecksIcon, MapPinIcon, MicIcon, RotateCcwIcon, RotateCwIcon, SendIcon, ShieldIcon, SquareIcon } from "lucide-react";
 import { z } from "zod";
 import type { AppPermission, PermissionState } from "../../shared/app-control";
 import type { AppEntry, AppSection, AppToolsState, AppToolsStore } from "../app-tools";
@@ -8,7 +8,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "./ui/input-group";
 import { Textarea } from "./ui/textarea";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger } from "./ui/base-select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
 
@@ -26,6 +26,11 @@ const permissionOptions = [
   { value: "ask", label: "Ask", on: "data-[state=on]:text-foreground" },
 ] as const satisfies readonly { value: PermissionState; label: string; on: string }[];
 const payloadSchema = z.record(z.string(), z.unknown());
+// Common translation targets, including right-to-left scripts that change the layout.
+const languageTags = ["en", "en-GB", "de", "fr", "es", "es-MX", "it", "pt-BR", "nl", "pl", "sv", "tr", "ru", "ja", "ko", "zh-Hans", "zh-Hant", "hi", "ar", "he"];
+const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
+const languageLabel = (tag: string) => { try { return languageNames.of(tag) ?? tag; } catch { return tag; } };
+const deviceLanguage = "device";
 
 // A collapsible row; the App tab keeps at most one open so the popover stays short.
 function Disclosure({ section, state, store, icon: Icon, title, summary, children }: { section: AppSection; state: AppToolsState; store: AppToolsStore; icon: LucideIcon; title: string; summary?: React.ReactNode; children: React.ReactNode }) {
@@ -143,6 +148,25 @@ function Permissions({ store, state, blocked }: SectionProps) {
   </Disclosure>;
 }
 
+function Language({ store, state, blocked }: SectionProps) {
+  const current = state.language;
+  const tags = current && !languageTags.some(tag => tag.toLowerCase() === current.toLowerCase()) ? [current, ...languageTags] : languageTags;
+  const items = [{ value: deviceLanguage, label: "Device language" }, ...tags.map(tag => ({ value: tag, label: languageLabel(tag) }))];
+  const selected = items.find(item => item.value.toLowerCase() === (current ?? deviceLanguage).toLowerCase())?.value ?? deviceLanguage;
+  return <Disclosure section="language" state={state} store={store} icon={LanguagesIcon} title="Language" summary={current === undefined ? "Loading…" : current ? languageLabel(current) : "Device language"}>
+    <Select items={items} value={selected} disabled={blocked || current === undefined} onValueChange={value => { if (value !== null && value !== selected) void store.setLanguage(value === deviceLanguage ? null : value); }}>
+      <SelectTrigger aria-label="App language" className="w-full min-w-0"><SelectValue /></SelectTrigger>
+      <SelectContent align="start" alignItemWithTrigger={false} className="w-(--anchor-width)"><SelectGroup>
+        {items.map(item => <SelectItem key={item.value} value={item.value}>
+          <span className="flex-1 truncate">{item.label}</span>
+          {item.value !== deviceLanguage && <span className="font-mono text-xs text-muted-foreground">{item.value}</span>}
+        </SelectItem>)}
+      </SelectGroup></SelectContent>
+    </Select>
+    <p className="mt-2 flex gap-1.5 text-xs text-muted-foreground"><InfoIcon aria-hidden className="mt-0.5 size-3 shrink-0" />Changing it relaunches the app. The device keeps its language.</p>
+  </Disclosure>;
+}
+
 function PushNotification({ store, state, app, blocked }: SectionProps) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -193,6 +217,7 @@ export function AppTools({ store }: { store: AppToolsStore }) {
     <OpenUrl {...props} />
     <div>
       <Permissions {...props} />
+      <Language {...props} />
       {state.platform === "ios" && <PushNotification {...props} />}
     </div>
     {error}

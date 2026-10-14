@@ -122,6 +122,15 @@ export function pickAndroidIconFile(resources: string, iconPath: string): string
   return entries.filter(entry => /\.(?:png|webp)$/i.test(entry.path)).sort((a, b) => rank(b.config) - rank(a.config))[0]?.path ?? null;
 }
 
+// "Locales for com.example for user 0 are [de-AT,en]"; an empty list follows the device.
+export function parseAndroidAppLocales(output: string): string | null {
+  if (/Unknown package/.test(output)) throw new ExpectedOperationError("invalid_input", "The app is not installed on this device.");
+  if (/Can't find service: locale|Unknown command/.test(output)) throw new ExpectedOperationError("unsupported_platform", "Per-app languages need Android 13 or later.");
+  const list = /are \[([^\]]*)\]/.exec(output);
+  if (!list) throw new Error("Reading the app language failed: unexpected cmd locale output.");
+  return list[1].split(",").map(entry => entry.trim()).find(Boolean) ?? null;
+}
+
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 
 export class AndroidDriver implements AppDriver {
@@ -218,6 +227,15 @@ export class AndroidDriver implements AppDriver {
       : [`pm revoke ${bundleId} ${name}`, `pm ${state === "deny" ? "set" : "clear"}-permission-flags ${bundleId} ${name} user-set user-fixed`]);
     await this.shell("Changing the permission", commands.join(" && "));
     return this.permissions(bundleId);
+  }
+
+  async language(bundleId: string) { return parseAndroidAppLocales(await this.shell("Reading the app language", `cmd locale get-app-locales ${bundleId}`)); }
+
+  async setLanguage(bundleId: string, language: string | null) {
+    // set-app-locales reports an unknown package or missing service on stdout with exit status 0.
+    const output = await this.shell("Changing the app language", `cmd locale set-app-locales ${bundleId}${language === null ? "" : ` --locales ${language}`}; cmd locale get-app-locales ${bundleId}`);
+    const applied = parseAndroidAppLocales(output);
+    if (applied?.toLowerCase() !== language?.toLowerCase()) throw new Error("Changing the app language failed: Android kept a different language.");
   }
 
   async push(): Promise<void> {

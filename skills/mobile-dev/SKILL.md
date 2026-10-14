@@ -37,8 +37,9 @@ These tools work on iOS simulators and Android devices with `{ platform, deviceI
 - `mobile_open_url` opens a deep link or web URL. Prefer it to step-by-step navigation when the app declares a route for the changed screen, then read the screen to confirm it opened.
 - `mobile_set_app_permission` allows, denies, or resets (`ask`) a permission so system prompts do not interrupt a flow; `permission: "all"` with `state: "ask"` restores first-launch prompts. iOS simulators cannot change camera or notification access, and changes can restart the app.
 - `mobile_send_push` sends an APNs payload to an app on an iOS simulator. Android push needs Firebase Cloud Messaging and is not supported.
+- `mobile_set_app_language` runs one app in another language and region, such as `de`, `pt-BR`, or `ar` for right-to-left layout, then relaunches it. `language: null` returns the app to the device language. The device language does not change. Android needs version 13 or later.
 
-The panel's settings button opens the same controls under its App tab.
+The panel's settings button opens the same controls under its App tab. Its Device tab also switches to a clean status bar (9:41, full battery and signal) for screenshots and simulates LTE, 3G, Edge, or offline networks. Those device settings are panel-only, so ask the user to set them. Android throttling needs an emulator; physical Android devices can only go offline. iOS throttling applies to URLSession and fetch requests in apps launched after it was turned on, so relaunch the app after the user enables it.
 
 ### Choosing a task's devices
 

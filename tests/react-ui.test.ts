@@ -202,7 +202,13 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     if (name === "mobile_set_app_permission") return { permissions: ["location", "photos"].map(permission => ({ permission, state: permission === args.permission ? args.state : null })) };
     if (name === "mobile_app_links") return { links: ["acme://"] };
     if (name === "mobile_app_icons") return { apps: { "com.acme.shop": { icon: "data:image/png;base64,iVBORw0KGgo=" } } };
+    if (name === "mobile_app_language") return { language: null };
+    if (name === "mobile_set_app_language") return { language: args.language, launched: args.bundleId };
     return {};
+  };
+  iosSettings.request = async (change: { setting: string; value: unknown } | undefined) => {
+    if (change) { changes.push(change); return { [change.setting]: change.value }; }
+    return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true, statusBar: "live", network: "normal", networkConditions: ["normal", "lte", "3g", "edge", "offline"] };
   };
   await act(async () => { appTools.configure("ios", "iphone", false); });
   await act(async () => { settingsButton.click(); });
@@ -233,9 +239,23 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(urlInput.value, "acme://", "declared schemes fill the field without opening");
   assert.equal(appCalls.at(-1)?.name, "mobile_open_url");
   assert.equal(appCalls.filter(call => call.name === "mobile_open_url").length, 1);
+  const languageToggle = [...toolsPopover.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.startsWith("Language"))!;
+  assert.ok(languageToggle.textContent?.includes("Device language"), "apps start on the device language");
+  await act(async () => { await appTools.setLanguage("de"); });
+  assert.deepEqual(appCalls.at(-1), { name: "mobile_set_app_language", args: { platform: "ios", deviceId: "iphone", bundleId: "com.acme.shop", language: "de" } });
+  assert.ok(languageToggle.textContent?.includes("German"));
+  assert.ok(toolsPopover.textContent?.includes("Relaunched Acme Shop in de."));
   const deviceTab = [...toolsPopover.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(tab => tab.textContent === "Device")!;
   await act(async () => { deviceTab.click(); });
   assert.ok(toolsPopover.textContent?.includes("Increase contrast"));
+  assert.ok(toolsPopover.textContent?.includes("Clean status bar"));
+  assert.equal(toolsPopover.textContent?.includes("Relaunch app"), false, "no relaunch hint while the network is normal");
+  const slowNetwork = [...toolsPopover.querySelectorAll<HTMLButtonElement>('[aria-label="Network condition"] button')].find(button => button.textContent === "3G")!;
+  await act(async () => { slowNetwork.click(); });
+  assert.deepEqual(changes.at(-1), { setting: "network", value: "3g" });
+  const relaunch = [...toolsPopover.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Relaunch app")!;
+  await act(async () => { relaunch.click(); });
+  assert.equal(appCalls.at(-1)?.name, "mobile_launch_app", "iOS throttling offers a relaunch so the app picks it up");
   await act(async () => { settingsButton.click(); });
   await selectTool("logs");
   const errorMessage = '<script>alert("log")</script>\nCannot read property id of undefined';

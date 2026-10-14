@@ -34,6 +34,15 @@ export function parseIosUrlSchemes(json: string): string[] {
   return rankAppLinks((types.data ?? []).flatMap(type => type.CFBundleURLSchemes ?? []).filter(scheme => urlSchemePattern.test(scheme)).map(scheme => `${scheme}://`));
 }
 
+// defaults prints arrays in the old plist style, quoting only entries with punctuation.
+export function parseDefaultsArray(output: string): string[] {
+  const body = /^\(\s*([\s\S]*?)\s*\)\s*$/.exec(output.trim())?.[1];
+  return body ? body.split(",").map(entry => entry.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean) : [];
+}
+
+// iOS reads the app's own AppleLanguages before the device's, like Settings > Apps > Language.
+export const iosLocale = (language: string) => language.replaceAll("-", "_");
+
 const iconFilesSchema = z.object({ CFBundlePrimaryIcon: z.object({ CFBundleIconFiles: z.array(z.string()).optional() }).loose().optional() }).loose();
 
 export class SimulatorDriver implements AppDriver {
@@ -126,6 +135,35 @@ export class SimulatorDriver implements AppDriver {
     const action = { allow: "grant", deny: "revoke", ask: "reset" }[state];
     await this.simctl("Changing the permission", ["privacy", this.deviceId, action, permission, bundleId]);
     return platformPermissions.ios.map(entry => ({ permission: entry, state: permission === "all" || permission === entry ? state : null }));
+  }
+
+  private async preferences(bundleId: string) {
+    const container = await this.simctl("Finding the app data", ["get_app_container", this.deviceId, bundleId, "data"],
+      { known: [[/No such file or directory/, `${bundleId} is not installed on this simulator.`]] });
+    return join(container.trim(), "Library/Preferences", bundleId);
+  }
+
+  // A missing key or domain means the app follows the device language.
+  private defaults(action: string, args: string[]) {
+    return this.simctl(action, ["spawn", this.deviceId, "defaults", ...args], { tolerate: /Domain '[^']*' not found|Could not find key/ });
+  }
+
+  async language(bundleId: string) {
+    const languages = parseDefaultsArray(await this.defaults("Reading the app language", ["read", await this.preferences(bundleId), "AppleLanguages"]));
+    return languages[0] ?? null;
+  }
+
+  async setLanguage(bundleId: string, language: string | null) {
+    const domain = await this.preferences(bundleId);
+    // A running app writes its cached preferences back on exit, so it stops first.
+    await this.stop(bundleId);
+    if (language === null) {
+      await this.defaults("Resetting the app language", ["delete", domain, "AppleLanguages"]);
+      await this.defaults("Resetting the app language", ["delete", domain, "AppleLocale"]);
+      return;
+    }
+    await this.defaults("Changing the app language", ["write", domain, "AppleLanguages", "-array", language]);
+    await this.defaults("Changing the app language", ["write", domain, "AppleLocale", "-string", iosLocale(language)]);
   }
 
   async push(bundleId: string, payload: Record<string, unknown>) {

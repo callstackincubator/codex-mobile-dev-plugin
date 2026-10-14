@@ -175,10 +175,20 @@ unrequested permission, or a stopped device count only through
 memory cache and are returned only to the panel.
 
 The device popover's App tab records `ui.app_tools.list`, `.icons`, `.launch`,
-`.stop`, `.open_url`, `.permission`, and `.push` round trips in milliseconds with
-bounded aggregate windows, and counts `ui.app_tools.failure`. Results that finish
-after a surface or device change are not recorded. Recent URLs and the last picked
-app stay in the panel's local storage and are never sent.
+`.stop`, `.open_url`, `.permission`, `.push`, and `.language` round trips in
+milliseconds with bounded aggregate windows, and counts `ui.app_tools.failure`.
+Results that finish after a surface or device change are not recorded. Recent URLs
+and the last picked app stay in the panel's local storage and are never sent.
+
+Since 0.1.152, `mobile_app_language` and `mobile_set_app_language` use the same
+app control coverage under `app_control.language` and `app_control.set_language`.
+Language tags are not sent. The device settings tools report unexpected Baguette or
+serve-emu failures under `device_settings.read` or `device_settings.<setting>` with a
+fixed message; settings a device cannot change, such as network throttling on a
+physical Android device, count only through `server.error.outcome`. The Device tab
+records `ui.device_settings.change` round trips in milliseconds and counts
+`ui.device_settings.failure`, with the same surface and device-change exclusions as
+the App tab. Setting values, throttle presets, and device IDs are not sent.
 
 Saved chart cards use the `recording` surface and view. Existing readiness,
 interaction and frame-pacing coverage is preserved. `ui.recording.process` and

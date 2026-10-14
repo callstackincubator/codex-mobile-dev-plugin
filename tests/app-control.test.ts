@@ -6,13 +6,14 @@ import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { parseIosUrlSchemes, parseSimulatorApps } from "../src/server/app-control/simulator.ts";
-import { androidPermissionStates, parseAndroidAppLinks, parseAndroidBadging, parseAndroidRuntimePermissions, parseLauncherActivity, pickAndroidIconFile } from "../src/server/app-control/android.ts";
+import { iosLocale, parseDefaultsArray, parseIosUrlSchemes, parseSimulatorApps } from "../src/server/app-control/simulator.ts";
+import { androidPermissionStates, parseAndroidAppLinks, parseAndroidAppLocales, parseAndroidBadging, parseAndroidRuntimePermissions, parseLauncherActivity, pickAndroidIconFile } from "../src/server/app-control/android.ts";
 import { listApps } from "../src/server/app-control/driver.ts";
 import type { AppDriver } from "../src/server/app-control/driver.ts";
 import { createDrivers, registerAppControlTools } from "../src/server/app-control/tools.ts";
 import type { CommandRunner } from "../src/server/app-control/commands.ts";
-import { expectedOutcome } from "../src/shared/error-reporting.ts";
+import { ExpectedOperationError, expectedOutcome } from "../src/shared/error-reporting.ts";
+import { languageTagSchema } from "../src/shared/app-control.ts";
 
 const ios = { platform: "ios", deviceId: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE" } as const;
 const android = { platform: "android", deviceId: "emulator-5554" } as const;
@@ -249,4 +250,70 @@ test("Android icons resolve adaptive launcher icons to their sharpest raster ver
   assert.equal(pickAndroidIconFile(resources, "res/mipmap-anydpi-v26/ic_launcher.xml"), "res/mipmap-xxxhdpi-v4/ic_launcher.webp");
   assert.equal(pickAndroidIconFile(resources, "res/legacy.png"), "res/legacy.png", "an unlisted raster icon is used directly");
   assert.equal(pickAndroidIconFile(resources, "res/vector.xml"), null);
+});
+
+test("app languages are written to the app's own preferences on iOS and through cmd locale on Android", async () => {
+  assert.deepEqual(parseDefaultsArray('(\n    "de-AT",\n    en\n)\n'), ["de-AT", "en"]);
+  assert.deepEqual(parseDefaultsArray("()"), []);
+  assert.equal(iosLocale("zh-Hans-CN"), "zh_Hans_CN");
+  assert.equal(parseAndroidAppLocales("Locales for com.acme for user 0 are [de-AT,en]\n"), "de-AT");
+  assert.equal(parseAndroidAppLocales("Locales for com.acme for user 0 are []\n"), null);
+  assert.throws(() => parseAndroidAppLocales("Unknown package com.nope for userId 0\n"), (error: unknown) => expectedOutcome(error) === "invalid_input");
+  assert.throws(() => parseAndroidAppLocales("cmd: Can't find service: locale\n"), (error: unknown) => expectedOutcome(error) === "unsupported_platform");
+  for (const tag of ["de", "pt-BR", "zh-Hans", "zh-Hans-CN", "es-419"]) assert.equal(languageTagSchema.safeParse(tag).success, true, tag);
+  for (const tag of ["d", "de_AT", "de AT", "de;rm", "en-GB-oxendict"]) assert.equal(languageTagSchema.safeParse(tag).success, false, tag);
+
+  const container = "/data/Containers/Data/Application/ABC";
+  const domain = `${container}/Library/Preferences/com.acme`;
+  let stored: string | undefined;
+  const { simulator, emulator, calls } = fixture((file, args) => {
+    if (args[1] === "get_app_container") return `${container}\n`;
+    const defaults = args[1] === "spawn" ? args.slice(4) : undefined;
+    if (defaults?.[0] === "read") return stored ? `(\n    "${stored}"\n)\n` : failure("Error: Could not find key 'AppleLanguages' in domain 'com.acme'.");
+    if (defaults?.[0] === "write" && defaults[2] === "AppleLanguages") stored = defaults[4];
+    if (defaults?.[0] === "delete") return stored === undefined ? failure("Error: Domain 'com.acme' not found.") : (stored = undefined, "");
+    if (file === "adb") return (args[3] ?? "").includes("--locales de-AT") ? "Locales for com.acme for user 0 are [de-AT]\n" : "Locales for com.acme for user 0 are []\n";
+    return "";
+  });
+  assert.equal(await simulator.language("com.acme"), null);
+  await simulator.setLanguage("com.acme", "de-AT");
+  assert.equal(await simulator.language("com.acme"), "de-AT");
+  const writes = calls.filter(call => call.args[1] === "terminate" || call.args.includes("write")).map(call => call.args.slice(1));
+  assert.deepEqual(writes, [
+    ["terminate", ios.deviceId, "com.acme"],
+    ["spawn", ios.deviceId, "defaults", "write", domain, "AppleLanguages", "-array", "de-AT"],
+    ["spawn", ios.deviceId, "defaults", "write", domain, "AppleLocale", "-string", "de_AT"],
+  ], "the app stops before its preferences change");
+  await simulator.setLanguage("com.acme", null);
+  await simulator.setLanguage("com.acme", null);
+  assert.equal(await simulator.language("com.acme"), null);
+
+  await emulator.setLanguage("com.acme", "de-AT");
+  assert.equal(calls.at(-1)?.args[3], "cmd locale set-app-locales com.acme --locales de-AT; cmd locale get-app-locales com.acme");
+  await emulator.setLanguage("com.acme", null);
+  assert.equal(calls.at(-1)?.args[3], "cmd locale set-app-locales com.acme; cmd locale get-app-locales com.acme");
+  await assert.rejects(emulator.setLanguage("com.acme", "fr"), /Android kept a different language/);
+});
+
+test("setting an app language relaunches it so the new language is visible", async t => {
+  const steps: string[] = [];
+  const server = new McpServer({ name: "app-control-test", version: "1" });
+  registerAppControlTools(server, () => ({
+    setLanguage: async (bundleId: string, language: string | null) => { steps.push(`language ${bundleId} ${language}`); },
+    launch: async (bundleId: string) => { steps.push(`launch ${bundleId}`); if (bundleId === "com.helper") throw new ExpectedOperationError("invalid_input", "com.helper has no launcher activity."); },
+  }) as unknown as AppDriver);
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  t.after(async () => { await client.close(); await server.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const result = await client.callTool({ name: "mobile_set_app_language", arguments: { ...android, bundleId: "com.acme", language: "ar" } });
+  assert.deepEqual(result.structuredContent, { language: "ar", launched: "com.acme" });
+  assert.deepEqual(steps, ["language com.acme ar", "launch com.acme"]);
+  const invalid = await client.callTool({ name: "mobile_set_app_language", arguments: { ...android, bundleId: "com.acme", language: "de; reboot" } });
+  assert.equal(invalid.isError, true);
+  assert.equal(steps.length, 2, "invalid tags never reach a device shell");
+  const unlaunchable = await client.callTool({ name: "mobile_set_app_language", arguments: { ...android, bundleId: "com.helper", language: "de" } });
+  assert.equal(unlaunchable.isError, true);
+  assert.match(JSON.stringify(unlaunchable.content), /Changed the app language, but relaunching failed: com\.helper has no launcher activity/);
 });

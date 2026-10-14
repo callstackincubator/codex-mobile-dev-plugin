@@ -27,6 +27,11 @@ const permissionEntry = z.object({ permission: z.enum(appPermissions), state: z.
 export const appPermissionsSchema = z.object({ permissions: z.array(permissionEntry) });
 export type AppPermissionEntry = z.infer<typeof permissionEntry>;
 
+// BCP 47 language tags with an optional script and region, such as de, pt-BR, or zh-Hans-CN.
+export const languageTagSchema = z.string().min(2).max(35).regex(/^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|\d{3}))?$/, "Expected a language tag, such as de, pt-BR, or zh-Hans.");
+// Null when the app follows the device language.
+export const appLanguageSchema = z.object({ language: languageTagSchema.nullable() });
+
 export const appLinksSchema = z.object({ links: z.array(z.string().max(2048)) });
 
 // A 64px PNG icon and, on Android, the app label that replaces the package name.

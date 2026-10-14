@@ -1,11 +1,11 @@
 import { z } from "zod";
-import { appDetailsSchema, appLinksSchema, appPermissionsSchema, installedAppsSchema, platformPermissions } from "../shared/app-control.ts";
+import { appDetailsSchema, appLanguageSchema, appLinksSchema, appPermissionsSchema, installedAppsSchema, platformPermissions } from "../shared/app-control.ts";
 import type { AppDetails, AppPermission, AppPermissionEntry, InstalledApp, PermissionState } from "../shared/app-control.ts";
 import { countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 
-export type AppToolAction = "list" | "icons" | "launch" | "stop" | "open_url" | "permission" | "push";
+export type AppToolAction = "list" | "icons" | "launch" | "stop" | "open_url" | "permission" | "push" | "language";
 export type AppEntry = InstalledApp & { icon?: string };
-export type AppSection = "permissions" | "push";
+export type AppSection = "permissions" | "language" | "push";
 export type AppToolsState = {
   platform: "ios" | "android";
   deviceId: string;
@@ -17,6 +17,8 @@ export type AppToolsState = {
   // Null until the first app's permissions load; later switches keep the previous rows until the new ones arrive.
   permissions: AppPermissionEntry[] | null;
   links: string[];
+  // Undefined while loading; null when the app follows the device language.
+  language: string | null | undefined;
   busy: AppToolAction | null;
   error: string;
   status: string;
@@ -40,9 +42,9 @@ function storedValue<T>(key: string, schema: z.ZodType<T>, fallback: T) {
 }
 
 const recentUrls = storedValue("mobile-dev:recent-urls:v1", z.array(z.string()).max(5), []);
-const openSection = storedValue("mobile-dev:app-section:v1", z.enum(["permissions", "push"]).nullable(), null);
+const openSection = storedValue("mobile-dev:app-section:v1", z.enum(["permissions", "language", "push"]).nullable(), null);
 const lastPicked = storedValue("mobile-dev:last-app:v1", z.record(z.string(), z.string()), {});
-const deviceDefaults = { loading: false, apps: [], runningBundleIds: [], bundleId: null, permissions: null, links: [], busy: null, error: "", status: "" } satisfies Partial<AppToolsState>;
+const deviceDefaults = { loading: false, apps: [], runningBundleIds: [], bundleId: null, permissions: null, links: [], language: undefined, busy: null, error: "", status: "" } satisfies Partial<AppToolsState>;
 
 export class AppToolsStore {
   private state: AppToolsState = { platform: "ios", deviceId: "", disabled: true, ...deviceDefaults, recentUrls: recentUrls.read(), section: openSection.read() };
@@ -126,7 +128,7 @@ export class AppToolsStore {
   // Keep the previous rows and suggestions until the new app's arrive, so the popover keeps its height.
   private switchTo(bundleId: string | null): Partial<AppToolsState> {
     if (bundleId === this.state.bundleId) return {};
-    return { bundleId, permissions: this.state.permissions && this.withApplied(this.state.permissions.map(entry => ({ ...entry, state: null })), bundleId) };
+    return { bundleId, language: undefined, permissions: this.state.permissions && this.withApplied(this.state.permissions.map(entry => ({ ...entry, state: null })), bundleId) };
   }
 
   private withApplied(entries: AppPermissionEntry[], bundleId = this.state.bundleId): AppPermissionEntry[] {
@@ -139,14 +141,17 @@ export class AppToolsStore {
     const bundleId = this.state.bundleId;
     if (!bundleId) return;
     const current = this.current(bundleId);
-    const [permissions, links] = await Promise.allSettled([
+    const [permissions, links, language] = await Promise.allSettled([
       this.tool("mobile_app_permissions", { bundleId }).then(data => appPermissionsSchema.parse(data).permissions),
       this.tool("mobile_app_links", { bundleId }).then(data => appLinksSchema.parse(data).links),
+      this.tool("mobile_app_language", { bundleId }).then(data => appLanguageSchema.parse(data).language),
     ]);
     if (!current()) return;
-    // Suggestions are optional, so only a permission failure is shown.
+    // Suggestions and the language are optional, so only a permission failure is shown.
     this.update({
       links: links.status === "fulfilled" ? links.value : [],
+      // Older Android releases have no per-app language; the section then offers only the device language.
+      language: language.status === "fulfilled" ? language.value : null,
       ...(permissions.status === "fulfilled" ? { permissions: this.withApplied(permissions.value) } : { error: message(permissions.reason) }),
     });
   }
@@ -217,6 +222,16 @@ export class AppToolsStore {
       const { permissions } = appPermissionsSchema.parse(await this.tool("mobile_set_app_permission", { bundleId: app.bundleId, permission, state }));
       for (const entry of permission === "all" ? platformPermissions[this.state.platform] : [permission]) this.applied.set(`${app.bundleId}:${entry}`, state);
       if (current() && app.bundleId === this.state.bundleId) this.update({ permissions: this.withApplied(permissions) });
+    });
+  }
+
+  // Apps read their language at launch, so the server relaunches the app after changing it.
+  setLanguage(language: string | null) {
+    return this.run("language", app => `Relaunched ${app.name}${language ? ` in ${language}` : " in the device language"}.`, async (app, current) => {
+      const result = appLanguageSchema.parse(await this.tool("mobile_set_app_language", { bundleId: app.bundleId, language }));
+      if (!current()) return;
+      this.markRunning(app.bundleId, true);
+      if (app.bundleId === this.state.bundleId) this.update({ language: result.language });
     });
   }
 

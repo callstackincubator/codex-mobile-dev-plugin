@@ -5,7 +5,7 @@ import { androidIdSchema } from "../serve-emu.ts";
 import { captureServerError } from "../telemetry.ts";
 import { errorMessage, udidSchema } from "../../shared/protocol.ts";
 import { ExpectedOperationError, expectedOutcome } from "../../shared/error-reporting.ts";
-import { appPermissions, appTargetShape, appUrlSchema, bundleIdSchema, permissionStates, platformPermissions } from "../../shared/app-control.ts";
+import { appPermissions, appTargetShape, appUrlSchema, bundleIdSchema, languageTagSchema, permissionStates, platformPermissions } from "../../shared/app-control.ts";
 import { systemCommands } from "./commands.ts";
 import type { Commands } from "./commands.ts";
 import { AppDetailsCache, listApps } from "./driver.ts";
@@ -90,6 +90,22 @@ export function registerAppControlTools(server: McpServer, driverFor: DriverFact
       throw new ExpectedOperationError("invalid_input", `${input.platform === "ios" ? "iOS simulators do" : "Android does"} not support the ${input.permission} permission here.`);
     }
     return { permissions: await driver.setPermission(input.bundleId, input.permission, input.state) };
+  });
+  tool("mobile_app_language", "language", { title: "Read app language", readOnly: true, panelOnly: true, inputSchema: { bundleId },
+    description: "Read the language an app uses instead of the device language, or null." },
+  async (driver, input) => ({ language: await driver.language(input.bundleId) }));
+  tool("mobile_set_app_language", "set_language", { title: "Set app language",
+    inputSchema: { bundleId, language: languageTagSchema.nullable().describe("Language tag such as de, pt-BR, or zh-Hans; null follows the device language again.") },
+    description: "Run one app in another language and region to check translations, then relaunch it. The device language is unchanged. Android needs version 13 or later." },
+  async (driver, input) => {
+    await driver.setLanguage(input.bundleId, input.language);
+    try { await driver.launch(input.bundleId); }
+    catch (error) {
+      // The language is already saved, so say so instead of reporting the whole change as failed.
+      if (error instanceof Error) error.message = `Changed the app language, but relaunching failed: ${error.message}`;
+      throw error;
+    }
+    return { language: input.language, launched: input.bundleId };
   });
   tool("mobile_send_push", "push", { title: "Send test push",
     inputSchema: { bundleId, payload: payloadSchema.describe("APNs payload with an aps object, such as {\"aps\":{\"alert\":\"Hi\"}}.") },
