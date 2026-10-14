@@ -420,13 +420,16 @@ export async function setEmulatorThrottle(
 }
 
 const DEMO_BROADCAST = "am broadcast -a com.android.systemui.demo -e command";
-// A clean marketing status bar: 9:41, full battery and signal, no notification icons.
+// A clean marketing status bar: 9:41, full battery, full connected Wi-Fi, no notification icons.
+// Android 16's demo mode ignores the mobile data type and level, drawing an empty "3G" icon,
+// so the mobile icon is hidden. Re-entering demo mode makes the mobile command take effect.
 const CLEAN_STATUS_BAR = [
+  "exit",
   "enter",
   "clock -e hhmm 0941",
   "battery -e level 100 -e plugged false",
-  "network -e wifi show -e level 4",
-  "network -e mobile show -e datatype none -e level 4",
+  "network -e wifi show -e level 4 -e fully true",
+  "network -e mobile hide",
   "notifications -e visible false",
 ].map((command) => `${DEMO_BROADCAST} ${command}`);
 // Demo mode cannot be queried and ends on reboot, so entering it records the boot it belongs to.
