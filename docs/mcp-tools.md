@@ -41,5 +41,20 @@
 | `mobile_read_display_fps` | Read FPS intervals and connection status |
 | `mobile_read_performance_frames` | Read Android jank/pacing statistics and page through exact display frames |
 | `mobile_display_fps_close` | Stop FPS collection and release the tracing connection |
+| `mobile_appflow_start` | Start a non-blocking structure build or agent-assisted screen sweep |
+| `mobile_appflow_status` | Read current or persisted App Flow status |
+| `mobile_appflow_result` | Read the current or persisted screen graph |
+| `mobile_appflow_pause` | Pause a running sweep at a safe boundary (app only) |
+| `mobile_appflow_cancel` | Cancel a run and any parked agent decision |
+| `mobile_appflow_launch_app` | Launch the selected project without starting a sweep (app only) |
+| `mobile_appflow_resolve_prompt` | Resolve a human-action gate after the user acts (app only) |
+| `mobile_appflow_manual_start` | Start recording a path to one screen (app only) |
+| `mobile_appflow_manual_act` | Perform and record one manual path action (app only) |
+| `mobile_appflow_manual_stop` | Save the active manual path recording (app only) |
+| `mobile_appflow_manual_cancel` | Discard the active manual path recording (app only) |
+| `mobile_appflow_manual_replay` | Replay a saved path to one screen (app only) |
+| `mobile_appflow_next_decision` | Long-poll for the next active-agent sweep decision (model only) |
+| `mobile_appflow_submit_decision` | Submit one role-valid JSON decision and wait briefly for the next (model only) |
+| `mobile_appflow_screenshot` | Read an authorized App Flow PNG (app only) |
 
 When reactivated, the `agent-device` MCP server exposes the pinned runtime's official operations through compact, validated schemas, including `open`, `snapshot`, `press`, `fill`, `type`, `scroll`, `wait`, `find`, `get`, `is`, `close`, and debugging tools. Their input schemas describe each command. The source [control skill](../skills/agent-device/SKILL.md), currently excluded from the package, explains session ordering and links to the version-matched guide.

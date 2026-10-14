@@ -41,6 +41,8 @@ import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { copyPNGToClipboard } from "./clipboard.ts";
 import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../shared/protocol.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { createAppFlowHost } from "./app-flow-host.ts";
+import { registerAppFlowTools } from "./app-flow-tools.ts";
 
 export const APP_URI = `ui://mobile-dev/${PLUGIN_VERSION}/simulator.html`;
 export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
@@ -143,6 +145,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     await Promise.all([closeCpu, closeFps]);
   });
   registerDeviceSettingsTools(server, baguette, android);
+  const appFlow = await createAppFlowHost();
+  const closeAppFlow = registerAppFlowTools(server, appFlow);
 
   const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<{ inputStatus: InputStatus; inputRepairMessage: string }> }>();
   async function panelInputStatus(udid: string) {
@@ -445,7 +449,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
       stopRecordingStorageMetrics();
       await recordings.close();
       closeInspection(); closeAndroid(); streams.close();
-      try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror()]); }
+      try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror(), closeAppFlow()]); }
       finally { baguette.dispose(); await server.close(); }
     },
   };

@@ -71,6 +71,21 @@ Selecting a log and clicking Attach to chat puts its message, stack, source, lev
 
 The host needs an Apple Silicon Mac and Xcode 26 or later with an iOS simulator runtime. The plugin uses Codex's bundled Node runtime. If the backend fails, read its error before retrying `mobile_start_baguette`. Keep logs on stderr because stdout carries MCP messages.
 
+### App Flow
+
+Use App Flow to map an Expo Router or React Navigation project. `mobile_appflow_start` is non-blocking. Pass the project folder and either `structure-only` for an unattended route graph or `screen-ui-and-structure` for a simulator sweep with captures and runtime navigation evidence.
+
+For `screen-ui-and-structure`, keep servicing the same run until it reaches a terminal or human-action state:
+
+1. Call `mobile_appflow_next_decision` with the returned `runId`. A `waiting` result means local build or device work is still progressing; poll again.
+2. For a `pending` request, follow its role instructions and history, inspect its inline screenshot when present, and return exactly one strict JSON object through `mobile_appflow_submit_decision` with the same `runId` and `requestId`.
+3. A successful submit may contain the next request. Continue directly from it; call `next_decision` again only when the submit reports `waiting`.
+4. Stop when status is completed, failed, cancelled, or suspended, or when the run reports `needs-user-action`.
+
+Decision JSON is role-specific. Auth classification uses `{ "verdict": "auth" | "clear" | "uncertain", "reason": string }`; arrival and navigation requests must follow their supplied schema; runtime-screen classification uses `{ "distinct": boolean, "key"?: string, "info"?: string }`; state-trigger planning returns actions, a state name, destination locator, and nullable note. Do not wrap the object in Markdown.
+
+An auth/review prompt is deliberately separate from the agent's screenshot classification. When the run needs user action, tell the user to log in or review the simulator and stop the decision loop. Never claim that the human action happened and never call `mobile_appflow_resolve_prompt` on the user's behalf. The App Flow panel owns Stop, Continue anyway, and Continue controls. A paused or inactivity-suspended sweep can be resumed by starting the same project again; its checkpoint preserves completed screens.
+
 Build and launch the user's app with that app project's own tools. These tools do not build apps or install Xcode runtimes. Do not run type checks, lint, visual checks, or React Doctor unless the user asks. Before starting an app dev server, check for an existing server from that project.
 
 ## Android

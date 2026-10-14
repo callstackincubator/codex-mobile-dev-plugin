@@ -225,7 +225,7 @@ const resourceKinds: Record<string, string> = {
   "android-stream:": "android_video", "ios-video:": "ios_video", "ui:": "ui",
 };
 const allowedContext: Record<string, readonly string[]> = {
-  surface: ["logs", "performance", "simulator", "recording", "comparison"], view: ["panel", "workspace", "recording", "comparison"], layout: ["ios", "android", "both", "none"],
+  surface: ["app-flow", "logs", "performance", "simulator", "recording", "comparison"], view: ["panel", "workspace", "recording", "comparison"], layout: ["ios", "android", "both", "none"],
   device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"],
 };
 

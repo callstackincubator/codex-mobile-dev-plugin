@@ -56,7 +56,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   });
   const output = resolve(directory, "workspace.mjs");
   await build({ stdin: { contents: 'export { Workspace } from "./src/ui/components/workspace.tsx"; export { getDeviceSettings } from "./src/ui/device-settings.ts"; export { getDevicePicker } from "./src/ui/device-picker.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
-    external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels"] });
+    external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels", "@xyflow/react"] });
   const { Workspace, getDeviceSettings, getDevicePicker } = await import(pathToFileURL(output).href);
   const { act, createElement, Profiler } = await import("react");
   const { createRoot } = await import("react-dom/client");
@@ -96,6 +96,13 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
 
   const performance = new PerformancePanel(performanceApp as unknown as App, deviceApps);
   const recordingController = new RecordingController(performanceApp as unknown as App);
+  const appFlowSnapshot = { open: false };
+  const appFlow = {
+    subscribe: () => () => undefined,
+    getSnapshot: () => appFlowSnapshot,
+    show() {},
+    hide() {},
+  };
   deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
   performance.setAvailable(true);
   deviceApps.setAvailable(true);
@@ -105,7 +112,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   let commits = 0;
   const onLayout = (layout: string) => { layouts.push(layout); };
   const renderWorkspace = (automaticLayout?: DeviceLayout) => {
-    const workspace = createElement(Workspace, { logs: panel, performance, recordingController, automaticLayout, onLayout });
+    const workspace = createElement(Workspace, { logs: panel, performance, appFlow, recordingController, automaticLayout, onLayout });
     const profiled = createElement(Profiler, { id: "workspace", onRender() { commits++; } }, workspace);
     root.render(profiled);
   };
