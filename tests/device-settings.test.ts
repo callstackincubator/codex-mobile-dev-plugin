@@ -5,12 +5,16 @@ import { DeviceSettingsStore } from "../src/ui/device-settings.ts";
 import type { Baguette } from "../src/server/baguette.ts";
 import type { ServeEmu } from "../src/server/serve-emu.ts";
 import { deviceSettingSchema } from "../src/shared/device-settings.ts";
+import { expectedOutcome } from "../src/shared/error-reporting.ts";
 
 const ios = { platform: "ios", id: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE" } as const;
 const android = { platform: "android", id: "emulator-5554" } as const;
 function fixture() {
   const requests: { platform: string; id: string; path: string; method: string; body?: object }[] = [];
   const values = { appearance: "dark", increaseContrast: "disabled", contentSize: "large" };
+  let statusBar: object = {};
+  let iosNetwork: object = { ok: true, active: false, profiles: ["wifi", "lte", "3g", "edge"] };
+  let android_ = { enabled: true as boolean | null, throttle: { latencyMs: 0, bandwidthKbps: null as number | null }, statusBar: "live" };
   let failFont = false;
   const baguette = {
     async device(id: string, booted: boolean) { assert.equal(id, ios.id); assert.equal(booted, true); },
@@ -18,6 +22,12 @@ function fixture() {
       const body = options.body ? JSON.parse(String(options.body)) : undefined;
       requests.push({ platform: "ios", id: ios.id, path, method: options.method ?? "GET", body });
       if (path.endsWith("/location")) return { ok: true };
+      if (path.endsWith("/status-bar")) { if (options.method === "DELETE") statusBar = {}; else if (body) statusBar = body; return options.method ? { ok: true } : statusBar; }
+      if (path.endsWith("/network")) {
+        if (options.method === "DELETE") iosNetwork = { ok: true, active: false };
+        else if (body) iosNetwork = { ok: true, active: true, profile: body.profile ?? null, offline: body.offline ?? false, latencyMs: 200 };
+        return iosNetwork;
+      }
       if (body) Object.assign(values, body);
       return { ...values };
     },
@@ -31,24 +41,74 @@ function fixture() {
       if (path === "/api/font-scale") { if (failFont) throw new Error("Not available"); return { ok: true, fontScale: { scale: body?.scale ?? 1 } }; }
       if (path === "/api/orientation") return { ok: true, orientation: { orientation: body?.orientation ?? "auto" } };
       if (path === "/api/location") return { ...(body ? { ok: true } : {}), location: body ?? null };
+      if (path === "/api/status-bar") { if (body) android_.statusBar = body.mode; return { ok: true, statusBar: { mode: android_.statusBar } }; }
+      if (path === "/api/network") {
+        if (body?.enabled !== undefined) android_.enabled = body.enabled;
+        if (body?.throttle) android_.throttle = body.throttle;
+        const emulator = url.pathname.includes("emulator-");
+        return { ok: true, network: { enabled: android_.enabled, wifi: "enabled", mobileData: "enabled", raw: { wifi: "1", mobileData: "1" }, throttle: emulator ? android_.throttle : null } };
+      }
       throw new Error("Unexpected path");
     },
   } as unknown as ServeEmu;
-  return { service: new DeviceSettingsService(baguette, serveEmu), requests, failFont() { failFont = true; } };
+  return { service: new DeviceSettingsService(baguette, serveEmu), requests, failFont() { failFont = true; }, setIosNetwork(value: object) { iosNetwork = value; }, setAndroid(value: Partial<typeof android_>) { android_ = { ...android_, ...value }; } };
 }
 
 test("settings preserve platform values and apply changes through the selected backend", async () => {
   const f = fixture();
-  assert.deepEqual(await f.service.read(ios), { appearance: "dark", increaseContrast: false, contentSize: "large", locationSupported: true });
+  assert.deepEqual(await f.service.read(ios), { appearance: "dark", increaseContrast: false, contentSize: "large", locationSupported: true, statusBar: "live", network: "normal", networkConditions: ["normal", "lte", "3g", "edge", "offline"] });
   await f.service.update(ios, { setting: "increaseContrast", value: true });
   assert.deepEqual(f.requests.at(-1)?.body, { increaseContrast: "enabled" });
   await f.service.update(ios, { setting: "location", value: null });
   assert.equal(f.requests.at(-1)?.method, "DELETE");
-  assert.deepEqual(await f.service.read(android), { appearance: "light", fontScale: 1, orientation: "auto", location: null, locationSupported: true });
+  assert.deepEqual(await f.service.read(android), { appearance: "light", fontScale: 1, orientation: "auto", location: null, locationSupported: true, statusBar: "live", network: "normal", networkConditions: ["normal", "lte", "3g", "edge", "offline"] });
   assert.deepEqual(await f.service.update(android, { setting: "appearance", value: "dark" }), { appearance: "dark" });
   assert.equal(f.requests.at(-1)?.id, android.id);
   assert.deepEqual(f.requests.at(-1)?.body, { mode: "dark" });
   assert.deepEqual(await f.service.update(android, { setting: "location", value: { latitude: 48.2, longitude: 16.3 } }), { location: { latitude: 48.2, longitude: 16.3 } });
+});
+
+test("status bar and network conditions use the same presets on both platforms", async () => {
+  const f = fixture();
+  assert.deepEqual(await f.service.update(ios, { setting: "statusBar", value: "clean" }), { statusBar: "clean" });
+  assert.equal(f.requests.at(-1)?.method, "POST");
+  assert.equal((f.requests.at(-1)?.body as { time: string }).time, "9:41");
+  assert.equal((await f.service.read(ios)).statusBar, "clean");
+  await f.service.update(ios, { setting: "statusBar", value: "live" });
+  assert.equal(f.requests.at(-1)?.method, "DELETE");
+  assert.deepEqual(await f.service.update(ios, { setting: "network", value: "3g" }), { network: "3g" });
+  assert.deepEqual(f.requests.at(-1)?.body, { profile: "3g" });
+  assert.deepEqual(await f.service.update(ios, { setting: "network", value: "offline" }), { network: "offline" });
+  assert.deepEqual(f.requests.at(-1)?.body, { offline: true });
+  assert.deepEqual(await f.service.update(ios, { setting: "network", value: "normal" }), { network: "normal" });
+  assert.equal(f.requests.at(-1)?.method, "DELETE");
+  f.setIosNetwork({ ok: true, active: true, profile: null, offline: false, latencyMs: 300 });
+  assert.equal((await f.service.read(ios)).network, "custom", "a throttle set elsewhere is shown, not mistaken for normal");
+
+  assert.deepEqual(await f.service.update(android, { setting: "statusBar", value: "clean" }), { statusBar: "clean" });
+  assert.deepEqual(f.requests.at(-1)?.body, { mode: "clean" });
+  assert.deepEqual(await f.service.update(android, { setting: "network", value: "edge" }), { network: "edge" });
+  assert.deepEqual(f.requests.at(-1)?.body, { throttle: { latencyMs: 800, bandwidthKbps: 240 } }, "radios stay untouched while online");
+  assert.deepEqual(await f.service.update(android, { setting: "network", value: "offline" }), { network: "offline" });
+  assert.deepEqual(f.requests.at(-1)?.body, { enabled: false });
+  assert.deepEqual(await f.service.update(android, { setting: "network", value: "normal" }), { network: "normal" });
+  assert.deepEqual(f.requests.at(-1)?.body, { enabled: true, throttle: { latencyMs: 0, bandwidthKbps: null } });
+
+  const phone = { platform: "android", id: "R5CT1234" } as const;
+  f.setAndroid({ enabled: true });
+  const settings = await f.service.read(phone);
+  assert.deepEqual(settings.networkConditions, ["normal", "offline"]);
+  assert.equal(settings.network, "normal");
+  const before = f.requests.length;
+  await assert.rejects(f.service.update(phone, { setting: "network", value: "3g" }), (error: unknown) => expectedOutcome(error) === "invalid_input" && /needs an Android emulator/.test((error as Error).message));
+  assert.equal(f.requests.length, before);
+  await f.service.update(phone, { setting: "network", value: "offline" });
+  assert.deepEqual(f.requests.at(-1)?.body, { enabled: false });
+  await f.service.update(phone, { setting: "network", value: "normal" });
+  assert.deepEqual(f.requests.at(-1)?.body, { enabled: true });
+  const reads = f.requests.length;
+  assert.deepEqual(await f.service.update(phone, { setting: "network", value: "normal" }), { network: "normal" });
+  assert.equal(f.requests.length, reads + 1, "an online phone is only read, never sent an empty change");
 });
 
 test("unsupported settings never reach a backend and partial reads keep working controls", async () => {

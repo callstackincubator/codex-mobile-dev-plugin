@@ -1,4 +1,5 @@
 import type { DeviceSetting, DeviceSettings } from "../shared/device-settings.ts";
+import { countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 
 type PendingChange = { change: DeviceSetting; resolve: () => void };
 
@@ -72,11 +73,16 @@ export class DeviceSettingsStore {
     try {
       while (this.revision === revision && this.pending.length) {
         const current = this.pending[0];
+        // Results that finish after a surface or device change are not attributed to the new context.
+        const startedAt = performance.now();
+        const context = getUiTelemetryAttributes();
         try {
           const patch = await request(current.change);
+          if (getUiTelemetryAttributes() === context) recordUiTiming("ui.device_settings.change", performance.now() - startedAt);
           if (this.revision !== revision) return;
           this.confirmed = { ...this.confirmed!, ...patch };
         } catch (error) {
+          if (getUiTelemetryAttributes() === context) countUiEvent("ui.device_settings.failure");
           if (this.revision !== revision) return;
           this.update({ error: error instanceof Error ? error.message : String(error) });
         } finally { current.resolve(); }

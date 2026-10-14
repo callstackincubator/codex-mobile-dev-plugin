@@ -1,6 +1,6 @@
 import { useEffect, useId, useState, useSyncExternalStore } from "react";
-import { AppWindowIcon, MapPinIcon, MinusIcon, MoonIcon, PlusIcon, Settings2Icon, SmartphoneIcon, SunIcon } from "lucide-react";
-import { contentSizes } from "../../shared/device-settings";
+import { AppWindowIcon, InfoIcon, MapPinIcon, MinusIcon, MoonIcon, PlusIcon, RotateCwIcon, Settings2Icon, SmartphoneIcon, SunIcon } from "lucide-react";
+import { contentSizes, type NetworkCondition } from "../../shared/device-settings";
 import { bindDeviceSettings, DeviceSettingsStore } from "../device-settings";
 import { AppToolsStore, bindAppTools } from "../app-tools";
 import { AppTools } from "./app-tools";
@@ -30,6 +30,7 @@ const locationPresets = [
 ];
 type Location = { latitude: number; longitude: number };
 const presetFor = (location: Location) => locationPresets.find(entry => entry.latitude === location.latitude && entry.longitude === location.longitude);
+const networkLabels: Record<NetworkCondition, string> = { normal: "Normal", lte: "LTE", "3g": "3G", edge: "Edge", offline: "Offline" };
 const rotationOptions = [{ value: "auto", label: "Auto" }, { value: "portrait", label: "Portrait" }, { value: "landscape", label: "Landscape" }];
 // One right-hand column, so every control lines up.
 const control = "w-38";
@@ -129,7 +130,24 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
             {settings.fontScale !== undefined && <Row label="Text size" htmlFor={`${id}-text-size`}><Stepper id={`${id}-text-size`} value={String(settings.fontScale)} items={fontScaleOptions(settings.fontScale)} disabled={disabled} onChange={value => void store.change({ setting: "fontScale", value: Number(value) })} /></Row>}
             {settings.increaseContrast !== undefined && <Row label="Increase contrast" htmlFor={`${id}-contrast`}><Switch id={`${id}-contrast`} checked={settings.increaseContrast} onCheckedChange={value => void store.change({ setting: "increaseContrast", value })} /></Row>}
             {settings.orientation !== undefined && <Row label="Rotation" htmlFor={`${id}-rotation`}><SettingsSelect id={`${id}-rotation`} value={settings.orientation} items={rotationOptions} disabled={disabled} onChange={value => void store.change({ setting: "orientation", value: value as "auto" | "portrait" | "landscape" })} /></Row>}
+            {settings.statusBar !== undefined && <Row label="Clean status bar" htmlFor={`${id}-status-bar`}><Switch id={`${id}-status-bar`} checked={settings.statusBar === "clean"} onCheckedChange={value => void store.change({ setting: "statusBar", value: value ? "clean" : "live" })} /></Row>}
           </Group>
+          {settings.network !== undefined && settings.networkConditions && <Group label="Network">
+            <ToggleGroup type="single" variant="outline" size="sm" spacing={1.5} aria-label="Network condition" className="w-full flex-wrap pt-1" value={settings.network === "custom" ? "" : settings.network} onValueChange={value => {
+              const condition = settings.networkConditions?.find(entry => entry === value);
+              if (condition) void store.change({ setting: "network", value: condition });
+            }}>
+              {settings.networkConditions.map(condition => <ToggleGroupItem key={condition} value={condition} className="h-6 rounded-full px-2.5 text-xs font-normal data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">{networkLabels[condition]}</ToggleGroupItem>)}
+            </ToggleGroup>
+            {settings.network === "custom" && <p className="text-xs text-muted-foreground">A custom throttle is active. Pick a condition to replace it.</p>}
+            {platform === "android" && settings.networkConditions.length === 2 && <p className="text-xs text-muted-foreground">Throttling needs an emulator.</p>}
+            {/* Baguette injects conditioning into apps as they launch. */}
+            {platform === "ios" && settings.network !== "normal" && <div className="flex items-start gap-1.5 pt-1 text-xs text-muted-foreground">
+              <InfoIcon aria-hidden className="mt-0.5 size-3 shrink-0" />
+              <p className="flex-1">Applies to URLSession and fetch requests in apps launched after it was turned on.</p>
+              {appTools.app && <Button type="button" variant="ghost" size="xs" className="-my-1 text-muted-foreground" disabled={appState.busy !== null} onClick={() => void appTools.launch()}><RotateCwIcon />Relaunch app</Button>}
+            </div>}
+          </Group>}
           {settings.locationSupported && <Group label="Location">
             <div className="flex items-center gap-2.5 rounded-lg border px-2.5 py-2">
               <MapPinIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />

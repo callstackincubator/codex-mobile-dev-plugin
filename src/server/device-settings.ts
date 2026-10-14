@@ -3,8 +3,10 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Baguette } from "./baguette.ts";
 import { androidIdSchema, type ServeEmu } from "./serve-emu.ts";
+import { captureServerError } from "./telemetry.ts";
 import { errorMessage, udidSchema } from "../shared/protocol.ts";
-import { contentSizes, deviceSettingSchema, locationSchema, type DeviceSetting, type DeviceSettings } from "../shared/device-settings.ts";
+import { ExpectedOperationError, expectedOutcome } from "../shared/error-reporting.ts";
+import { contentSizes, deviceSettingSchema, locationSchema, networkConditions, networkPresets, type DeviceSetting, type DeviceSettings, type NetworkCondition, type NetworkPreset } from "../shared/device-settings.ts";
 
 const targetSchema = z.discriminatedUnion("platform", [
   z.object({ platform: z.literal("ios"), id: udidSchema }).strict(),
@@ -13,6 +15,29 @@ const targetSchema = z.discriminatedUnion("platform", [
 type Target = z.infer<typeof targetSchema>;
 const appearance = z.enum(["light", "dark", "auto"]);
 const orientation = z.enum(["auto", "portrait", "landscape"]);
+const unsupported = (backend: string) => new ExpectedOperationError("invalid_input", `${backend} does not expose this setting.`);
+
+// Baguette names its presets; the numbers in networkPresets match them.
+const baguetteNetworkSchema = z.object({ active: z.boolean(), profile: z.string().nullish(), offline: z.boolean().optional() }).loose();
+function iosNetwork(value: unknown): DeviceSettings["network"] {
+  const data = baguetteNetworkSchema.parse(value);
+  if (!data.active) return "normal";
+  if (data.offline) return "offline";
+  return data.profile && data.profile in networkPresets ? data.profile as NetworkPreset : "custom";
+}
+// A clean status bar is the marketing one: 9:41, full battery, full signal.
+const cleanIosStatusBar = { time: "9:41", batteryState: "charged", batteryLevel: 100, wifiMode: "active", wifiBars: 3, cellularMode: "active", cellularBars: 4, operatorName: "" };
+
+const throttleSchema = z.object({ latencyMs: z.number(), bandwidthKbps: z.number().nullable() });
+const androidNetworkSchema = z.object({ network: z.object({ enabled: z.boolean().nullable(), throttle: throttleSchema.nullish() }).loose() });
+function androidNetwork(value: unknown): DeviceSettings["network"] {
+  const { enabled, throttle } = androidNetworkSchema.parse(value).network;
+  if (enabled === false) return "offline";
+  if (!throttle || throttle.latencyMs === 0 && throttle.bandwidthKbps === null) return "normal";
+  const preset = Object.entries(networkPresets).find(([, entry]) => entry.latencyMs === throttle.latencyMs && entry.bandwidthKbps === throttle.bandwidthKbps);
+  return preset ? preset[0] as NetworkPreset : "custom";
+}
+const isEmulator = (id: string) => /^emulator-\d+$/.test(id);
 
 export class DeviceSettingsService {
   private readonly baguette: Baguette;
@@ -32,15 +57,34 @@ export class DeviceSettingsService {
   async read(target: Target): Promise<DeviceSettings> {
     if (target.platform === "ios") {
       await this.baguette.device(target.id, true);
-      return this.iosReading(await this.baguette.json(`/simulators/${target.id}/interface.json`));
+      const path = `/simulators/${target.id}`;
+      // The status bar and network are optional extras; a failure there keeps the display controls.
+      const [display, statusBar, network] = await Promise.allSettled([
+        this.baguette.json(`${path}/interface.json`),
+        this.baguette.json(`${path}/status-bar`),
+        this.baguette.json(`${path}/network`),
+      ]);
+      if (display.status === "rejected") throw display.reason;
+      const settings: DeviceSettings = { ...this.iosReading(display.value), networkConditions: [...networkConditions] };
+      const errors: string[] = [];
+      if (statusBar.status === "fulfilled") settings.statusBar = Object.keys(z.record(z.string(), z.unknown()).parse(statusBar.value)).length > 0 ? "clean" : "live";
+      else errors.push(`Status bar: ${errorMessage(statusBar.reason)}`);
+      if (network.status === "fulfilled") settings.network = iosNetwork(network.value);
+      else errors.push(`Network: ${errorMessage(network.reason)}`);
+      if (errors.length) settings.errors = errors;
+      return settings;
     }
     const backend = await this.android.start(target.id);
-    const settings: DeviceSettings = { locationSupported: /^emulator-\d+$/.test(target.id) };
+    const emulator = isEmulator(target.id);
+    // The emulator console throttles; a physical device can only turn its radios off.
+    const settings: DeviceSettings = { locationSupported: emulator, networkConditions: emulator ? [...networkConditions] : ["normal", "offline"] };
     const reads = [
       ["Appearance", "/api/night-mode", (value: unknown) => { const data = z.object({ nightMode: z.object({ mode: z.string() }) }).parse(value); const parsed = appearance.safeParse(data.nightMode.mode); if (parsed.success) settings.appearance = parsed.data; }],
       ["Text size", "/api/font-scale", (value: unknown) => { settings.fontScale = z.object({ fontScale: z.object({ scale: z.number().min(0.7).max(2) }) }).parse(value).fontScale.scale; }],
       ["Rotation", "/api/orientation", (value: unknown) => { const data = z.object({ orientation: z.object({ orientation: z.string() }) }).parse(value); const parsed = orientation.safeParse(data.orientation.orientation); if (parsed.success) settings.orientation = parsed.data; }],
       ["Location", "/api/location", (value: unknown) => { settings.location = z.object({ location: locationSchema.loose().nullable() }).parse(value).location; }],
+      ["Status bar", "/api/status-bar", (value: unknown) => { settings.statusBar = z.object({ statusBar: z.object({ mode: z.enum(["clean", "live"]) }) }).parse(value).statusBar.mode; }],
+      ["Network", "/api/network", (value: unknown) => { settings.network = androidNetwork(value); }],
     ] as const;
     const results = await Promise.allSettled(reads.map(async ([, path, parse]) => parse(await this.android.json(backend.url, path))));
     const errors = results.flatMap((result, index) => result.status === "rejected" ? [`${reads[index][0]}: ${errorMessage(result.reason)}`] : []);
@@ -51,12 +95,21 @@ export class DeviceSettingsService {
   async update(target: Target, change: DeviceSetting): Promise<Partial<DeviceSettings>> {
     // Validate the platform before starting a backend or applying a setting.
     if (target.platform === "ios") {
-      if (["fontScale", "orientation"].includes(change.setting) || change.setting === "appearance" && change.value === "auto") throw new Error("Baguette does not expose this setting.");
+      if (["fontScale", "orientation"].includes(change.setting) || change.setting === "appearance" && change.value === "auto") throw unsupported("Baguette");
       await this.baguette.device(target.id, true);
       const path = `/simulators/${target.id}`;
       if (change.setting === "location") {
         await this.baguette.json(`${path}/location`, change.value === null ? { method: "DELETE" } : this.post(change.value));
         return { location: change.value };
+      }
+      if (change.setting === "statusBar") {
+        await this.baguette.json(`${path}/status-bar`, change.value === "live" ? { method: "DELETE" } : this.post(cleanIosStatusBar));
+        return { statusBar: change.value };
+      }
+      if (change.setting === "network") {
+        // Conditioning is injected into apps at launch, so Baguette keeps it until it is cleared.
+        if (change.value === "normal") { await this.baguette.json(`${path}/network`, { method: "DELETE" }); return { network: "normal" }; }
+        return { network: iosNetwork(await this.baguette.json(`${path}/network`, this.post(change.value === "offline" ? { offline: true } : { profile: change.value }))) };
       }
       const value = change.setting === "increaseContrast" ? (change.value ? "enabled" : "disabled") : change.value;
       const response = await this.baguette.json(`${path}/interface`, this.post({ [change.setting]: value }));
@@ -64,7 +117,10 @@ export class DeviceSettingsService {
       if (z.object({ ok: z.literal(true), applied: z.array(z.string()) }).safeParse(response).success) return this.read(target);
       return this.iosReading(response);
     }
-    if (["contentSize", "increaseContrast"].includes(change.setting) || change.setting === "location" && (change.value === null || !/^emulator-\d+$/.test(target.id))) throw new Error("serve-emu does not expose this setting.");
+    if (["contentSize", "increaseContrast"].includes(change.setting) || change.setting === "location" && (change.value === null || !isEmulator(target.id))) throw unsupported("serve-emu");
+    if (change.setting === "network" && !isEmulator(target.id) && change.value !== "normal" && change.value !== "offline") {
+      throw new ExpectedOperationError("invalid_input", "Network throttling needs an Android emulator. Physical devices can only go offline.");
+    }
     const backend = await this.android.start(target.id);
     switch (change.setting) {
       case "appearance": {
@@ -83,8 +139,26 @@ export class DeviceSettingsService {
         const data = z.object({ location: locationSchema.loose() }).parse(await this.android.json(backend.url, "/api/location", this.post(change.value!)));
         return { location: data.location };
       }
-      default: throw new Error("serve-emu does not expose this setting.");
+      case "statusBar": {
+        const data = z.object({ statusBar: z.object({ mode: z.enum(["clean", "live"]) }) }).parse(await this.android.json(backend.url, "/api/status-bar", this.post({ mode: change.value })));
+        return { statusBar: data.statusBar.mode };
+      }
+      case "network": {
+        const current = await this.android.json(backend.url, "/api/network");
+        const body = this.androidNetworkChange(androidNetwork(current) === "offline", isEmulator(target.id), change.value);
+        // A physical device that is already online has nothing to change.
+        return { network: androidNetwork(body ? await this.android.json(backend.url, "/api/network", this.post(body)) : current) };
+      }
+      default: throw unsupported("serve-emu");
     }
+  }
+
+  // Toggling the radios restarts Wi-Fi, so they change only when going offline or coming back.
+  private androidNetworkChange(offline: boolean, emulator: boolean, value: NetworkCondition) {
+    if (value === "offline") return { enabled: false };
+    const throttle = value === "normal" ? { latencyMs: 0, bandwidthKbps: null } : networkPresets[value];
+    const body = { ...(offline ? { enabled: true } : {}), ...(emulator ? { throttle } : {}) };
+    return Object.keys(body).length > 0 ? body : undefined;
   }
 
   private post(body: object): RequestInit { return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }; }
@@ -93,16 +167,20 @@ export class DeviceSettingsService {
 export function registerDeviceSettingsTools(server: McpServer, baguette: Baguette, android: ServeEmu) {
   const service = new DeviceSettingsService(baguette, android);
   const annotations = { destructiveHint: false, openWorldHint: false };
-  const guarded = <T>(handler: (input: T) => Promise<object>) => async (input: T) => {
+  // Backend messages can contain device IDs, so Sentry receives only the setting name.
+  const guarded = <T>(action: (input: T) => string, handler: (input: T) => Promise<object>) => async (input: T) => {
     try { const settings = await handler(input); return { content: [{ type: "text" as const, text: JSON.stringify(settings) }], structuredContent: { settings } }; }
-    catch (error) { return { isError: true, content: [{ type: "text" as const, text: errorMessage(error) }] }; }
+    catch (error) {
+      if (expectedOutcome(error) === undefined) captureServerError(new Error("Device setting command failed."), `device_settings.${action(input)}`);
+      return { isError: true, content: [{ type: "text" as const, text: errorMessage(error) }] };
+    }
   };
   registerAppTool(server, "mobile_device_settings", {
-    title: "Read device settings", description: "Read the selected running device's display and location settings exposed by Baguette or serve-emu.",
+    title: "Read device settings", description: "Read the selected running device's display, location, status bar, and network settings exposed by Baguette or serve-emu.",
     inputSchema: { target: targetSchema }, annotations: { ...annotations, readOnlyHint: true }, _meta: { ui: { visibility: ["app"] } },
-  }, guarded(({ target }: { target: Target }) => service.read(target)));
+  }, guarded<{ target: Target }>(() => "read", ({ target }) => service.read(target)));
   registerAppTool(server, "mobile_update_device_setting", {
     title: "Change device setting", description: "Change one supported setting on the selected running device without restarting its stream.",
     inputSchema: { target: targetSchema, change: deviceSettingSchema }, annotations: { ...annotations, readOnlyHint: false }, _meta: { ui: { visibility: ["app"] } },
-  }, guarded(({ target, change }: { target: Target; change: DeviceSetting }) => service.update(target, change)));
+  }, guarded<{ target: Target; change: DeviceSetting }>(({ change }) => change.setting, ({ target, change }) => service.update(target, change)));
 }
