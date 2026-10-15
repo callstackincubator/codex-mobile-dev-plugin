@@ -4,7 +4,7 @@ import { DeviceSettingsService } from "../src/server/device-settings.ts";
 import { DeviceSettingsStore } from "../src/ui/device-settings.ts";
 import type { Baguette } from "../src/server/baguette.ts";
 import type { ServeEmu } from "../src/server/serve-emu.ts";
-import type { AndroidNetworkThrottle, ThrottleReading } from "../src/server/network-throttle.ts";
+import type { AndroidNetworkThrottle, ThrottleReading } from "../src/server/network-throttle/android.ts";
 import { deviceSettingSchema } from "../src/shared/device-settings.ts";
 
 const ios = { platform: "ios", id: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE" } as const;
@@ -65,12 +65,12 @@ function fixture() {
 
 test("settings preserve platform values and apply changes through the selected backend", async () => {
   const f = fixture();
-  assert.deepEqual(await f.service.read(ios), { appearance: "dark", increaseContrast: false, contentSize: "large", locationSupported: true, statusBar: "live", network: "normal", networkConditions: ["normal", "lte", "3g", "edge", "offline"] });
+  assert.deepEqual(await f.service.read(ios), { appearance: "dark", increaseContrast: false, contentSize: "large", locationSupported: true, statusBar: "live", network: "normal" });
   await f.service.update(ios, { setting: "increaseContrast", value: true });
   assert.deepEqual(f.requests.at(-1)?.body, { increaseContrast: "enabled" });
   await f.service.update(ios, { setting: "location", value: null });
   assert.equal(f.requests.at(-1)?.method, "DELETE");
-  assert.deepEqual(await f.service.read(android), { appearance: "light", fontScale: 1, orientation: "auto", location: null, locationSupported: true, statusBar: "live", network: "normal", networkConditions: ["normal", "lte", "3g", "edge", "offline"] });
+  assert.deepEqual(await f.service.read(android), { appearance: "light", fontScale: 1, orientation: "auto", location: null, locationSupported: true, statusBar: "live", network: "normal" });
   assert.deepEqual(await f.service.update(android, { setting: "appearance", value: "dark" }), { appearance: "dark" });
   assert.equal(f.requests.at(-1)?.id, android.id);
   assert.deepEqual(f.requests.at(-1)?.body, { mode: "dark" });
@@ -110,7 +110,6 @@ test("status bar and network conditions use the same presets on both platforms",
   assert.equal(f.requests.length, reads + 1, "an online device is only read, never sent an empty change");
 
   const phone = { platform: "android", id: "R5CT1234" } as const;
-  assert.deepEqual((await f.service.read(phone)).networkConditions, ["normal", "lte", "3g", "edge", "offline"], "physical phones throttle too");
   f.setThrottle({ foreignProxy: "192.168.1.20:8888" });
   assert.equal((await f.service.read(phone)).network, "custom", "the user's own proxy is shown, not replaced");
   await assert.rejects(f.service.update(phone, { setting: "network", value: "3g" }), /already uses the proxy/);

@@ -208,7 +208,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   };
   iosSettings.request = async (change: { setting: string; value: unknown } | undefined) => {
     if (change) { changes.push(change); return { [change.setting]: change.value }; }
-    return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true, statusBar: "live", network: "normal", networkConditions: ["normal", "lte", "3g", "edge", "offline"] };
+    return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true, statusBar: "live", network: "normal" };
   };
   await act(async () => { appTools.configure("ios", "iphone", false); });
   await act(async () => { settingsButton.click(); });

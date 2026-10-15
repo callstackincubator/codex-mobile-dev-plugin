@@ -1,6 +1,6 @@
 import { useEffect, useId, useState, useSyncExternalStore } from "react";
 import { AppWindowIcon, MapPinIcon, MinusIcon, MoonIcon, PlusIcon, RotateCwIcon, Settings2Icon, SmartphoneIcon, SunIcon } from "lucide-react";
-import { contentSizes, networkPresets, type NetworkCondition } from "../../shared/device-settings";
+import { contentSizes, networkConditions, networkPresets, type NetworkCondition } from "../../shared/device-settings";
 import { bindDeviceSettings, DeviceSettingsStore } from "../device-settings";
 import { AppToolsStore, bindAppTools } from "../app-tools";
 import { AppTools } from "./app-tools";
@@ -72,21 +72,89 @@ function Row({ label, htmlFor, id, children }: { label: string; htmlFor?: string
   </div>;
 }
 
-function describeLocation(location: Location | null | undefined, platform: "ios" | "android") {
-  if (location === undefined) return { name: "Not set from this panel", detail: platform === "ios" ? "The simulator doesn't report its location." : "Pick a place to simulate." };
-  if (location === null) return { name: "No simulated location", detail: "Pick a place to simulate." };
-  return { name: presetFor(location)?.label ?? "Custom location", detail: `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}` };
+// The current state in two fixed lines, so changing a setting never moves the panel.
+function StatusCard({ icon, name, detail, children }: { icon?: React.ReactNode; name: string; detail: string; children?: React.ReactNode }) {
+  return <div className="flex items-center gap-2.5 rounded-lg border px-2.5 py-2">
+    {icon}
+    <div className="min-w-0 flex-1"><p className="truncate leading-5">{name}</p><p className="truncate text-xs leading-4 text-muted-foreground">{detail}</p></div>
+    {children}
+  </div>;
+}
+
+function Pills({ label, value, options, onSelect }: { label: string; value: string; options: readonly { value: string; label: string }[]; onSelect: (value: string) => void }) {
+  return <ToggleGroup type="single" variant="outline" size="sm" spacing={1.5} aria-label={label} className="w-full flex-wrap" value={value} onValueChange={onSelect}>
+    {options.map(option => <ToggleGroupItem key={option.value} value={option.value} className="h-6 rounded-full px-2.5 text-xs font-normal data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">{option.label}</ToggleGroupItem>)}
+  </ToggleGroup>;
 }
 
 const speed = (kbps: number) => kbps >= 1000 ? `${kbps / 1000} Mbps` : `${kbps} kbps`;
 
-// Every condition fills the same two lines, so switching never moves the panel.
 function describeNetwork(network: NetworkCondition | "custom", platform: "ios" | "android") {
   if (network === "custom") return platform === "ios" ? { name: "Custom throttle", detail: "Pick a condition to replace it." } : { name: "Your own proxy", detail: "Remove it to simulate a slower network." };
   const name = network === "normal" ? "Full speed" : network === "offline" ? "No connection" : `${speed(networkPresets[network].bandwidthKbps)} · ${networkPresets[network].latencyMs} ms`;
   // Baguette injects conditioning into apps as they launch; Android applies it right away.
   if (platform === "ios") return { name, detail: "Applies to new app launches." };
   return { name, detail: network === "normal" ? "Applies right away." : network === "offline" ? "Wi-Fi and mobile data are off." : "Local dev servers stay full speed." };
+}
+
+const networkOptions = networkConditions.map(condition => ({ value: condition, label: networkLabels[condition] }));
+
+function NetworkGroup({ platform, network, store, appTools }: { platform: "ios" | "android"; network: NetworkCondition | "custom"; store: DeviceSettingsStore; appTools: AppToolsStore }) {
+  const appState = useSyncExternalStore(appTools.subscribe, appTools.getSnapshot);
+  const status = describeNetwork(network, platform);
+  return <Group label="Network">
+    <div className="space-y-3 pt-1">
+      <Pills label="Network condition" value={network === "custom" ? "" : network} options={networkOptions} onSelect={value => {
+        const condition = networkConditions.find(entry => entry === value);
+        if (condition) void store.change({ setting: "network", value: condition });
+      }} />
+      <StatusCard name={status.name} detail={status.detail}>
+        {/* iOS apps pick up a condition when they launch. */}
+        {platform === "ios" && appTools.app && <Button type="button" variant="outline" size="xs" disabled={appState.busy !== null} onClick={() => void appTools.launch()}><RotateCwIcon />Relaunch</Button>}
+      </StatusCard>
+    </div>
+  </Group>;
+}
+
+function describeLocation(location: Location | null | undefined, platform: "ios" | "android") {
+  if (location === undefined) return { name: "Not set from this panel", detail: platform === "ios" ? "The simulator doesn't report its location." : "Pick a place to simulate." };
+  if (location === null) return { name: "No simulated location", detail: "Pick a place to simulate." };
+  return { name: presetFor(location)?.label ?? "Custom location", detail: `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}` };
+}
+
+const placeOptions = [...locationPresets.map(entry => ({ value: entry.value, label: entry.city })), { value: "custom", label: "Custom…" }];
+
+// Keyed by device, so the coordinate form starts closed for each one.
+function LocationGroup({ platform, location, store }: { platform: "ios" | "android"; location: Location | null | undefined; store: DeviceSettingsStore }) {
+  const id = useId();
+  const [customOpen, setCustomOpen] = useState(false);
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
+  useEffect(() => {
+    setLatitude(location ? String(location.latitude) : "");
+    setLongitude(location ? String(location.longitude) : "");
+  }, [location?.latitude, location?.longitude]);
+  const place = describeLocation(location, platform);
+  const preset = customOpen ? "custom" : location ? presetFor(location)?.value ?? "custom" : "";
+  return <Group label="Location">
+    <StatusCard icon={<MapPinIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />} name={place.name} detail={place.detail}>
+      {/* Only the iOS simulator can drop a simulated location. */}
+      {platform === "ios" && location !== null && <Button type="button" variant="ghost" size="xs" className="text-muted-foreground" onClick={() => { setCustomOpen(false); void store.change({ setting: "location", value: null }); }}>Clear</Button>}
+    </StatusCard>
+    <div className="pt-1">
+      <Pills label="Simulated place" value={preset} options={placeOptions} onSelect={value => {
+        if (value === "custom" || value === "") { setCustomOpen(value === "custom"); return; }
+        const entry = locationPresets.find(item => item.value === value);
+        setCustomOpen(false);
+        if (entry) void store.change({ setting: "location", value: { latitude: entry.latitude, longitude: entry.longitude } });
+      }} />
+    </div>
+    {customOpen && <form className="flex items-end gap-2 pt-2" onSubmit={event => { event.preventDefault(); if (latitude.trim() && longitude.trim()) void store.change({ setting: "location", value: { latitude: Number(latitude), longitude: Number(longitude) } }); }}>
+      <div className="min-w-0 flex-1 space-y-1"><label htmlFor={`${id}-latitude`} className="text-xs text-muted-foreground">Latitude</label><Input id={`${id}-latitude`} type="number" step="any" min={-90} max={90} required value={latitude} placeholder="37.3318" onChange={event => setLatitude(event.target.value)} /></div>
+      <div className="min-w-0 flex-1 space-y-1"><label htmlFor={`${id}-longitude`} className="text-xs text-muted-foreground">Longitude</label><Input id={`${id}-longitude`} type="number" step="any" min={-180} max={180} required value={longitude} placeholder="-122.0312" onChange={event => setLongitude(event.target.value)} /></div>
+      <Button type="submit" disabled={!latitude.trim() || !longitude.trim()}>Set</Button>
+    </form>}
+  </Group>;
 }
 
 export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
@@ -97,22 +165,11 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"app" | "device">("app");
   const activeTab = appState.disabled ? "device" : tab;
-  const [customOpen, setCustomOpen] = useState(false);
-  const [latitude, setLatitude] = useState("");
-  const [longitude, setLongitude] = useState("");
   const id = useId();
   const settings = state.settings;
   const disabled = state.disabled;
-  useEffect(() => {
-    setLatitude(settings?.location ? String(settings.location.latitude) : "");
-    setLongitude(settings?.location ? String(settings.location.longitude) : "");
-  }, [state.deviceId, settings?.location?.latitude, settings?.location?.longitude]);
   useEffect(() => { if (state.disabled) setOpen(false); }, [state.disabled]);
-  useEffect(() => { setOpen(false); setCustomOpen(false); }, [state.deviceId]);
-  const location = settings?.location;
-  const place = describeLocation(location, platform);
-  const networkStatus = settings?.network === undefined ? null : describeNetwork(settings.network, platform);
-  const preset = customOpen ? "custom" : location ? presetFor(location)?.value ?? "custom" : "";
+  useEffect(() => { setOpen(false); }, [state.deviceId]);
   return <div data-element="settings" className="ml-auto" ref={element => { if (element) { bindDeviceSettings(element, store); bindAppTools(element, appTools); } }}>
     <Popover open={open} onOpenChange={value => {
       if (!value) { setOpen(false); return; }
@@ -144,39 +201,8 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
             {settings.orientation !== undefined && <Row label="Rotation" htmlFor={`${id}-rotation`}><SettingsSelect id={`${id}-rotation`} value={settings.orientation} items={rotationOptions} disabled={disabled} onChange={value => void store.change({ setting: "orientation", value: value as "auto" | "portrait" | "landscape" })} /></Row>}
             {settings.statusBar !== undefined && <Row label="Clean status bar" htmlFor={`${id}-status-bar`}><Switch id={`${id}-status-bar`} checked={settings.statusBar === "clean"} onCheckedChange={value => void store.change({ setting: "statusBar", value: value ? "clean" : "live" })} /></Row>}
           </Group>
-          {networkStatus && settings.networkConditions && <Group label="Network">
-            <ToggleGroup type="single" variant="outline" size="sm" spacing={1.5} aria-label="Network condition" className="w-full flex-wrap pt-1" value={settings.network === "custom" ? "" : settings.network} onValueChange={value => {
-              const condition = settings.networkConditions?.find(entry => entry === value);
-              if (condition) void store.change({ setting: "network", value: condition });
-            }}>
-              {settings.networkConditions.map(condition => <ToggleGroupItem key={condition} value={condition} className="h-6 rounded-full px-2.5 text-xs font-normal data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">{networkLabels[condition]}</ToggleGroupItem>)}
-            </ToggleGroup>
-            <div className="mt-2 flex items-center gap-2.5 rounded-lg border px-2.5 py-2">
-              <div className="min-w-0 flex-1"><p className="truncate leading-5">{networkStatus.name}</p><p className="truncate text-xs leading-4 text-muted-foreground">{networkStatus.detail}</p></div>
-              {platform === "ios" && appTools.app && <Button type="button" variant="outline" size="xs" disabled={appState.busy !== null} onClick={() => void appTools.launch()}><RotateCwIcon />Relaunch</Button>}
-            </div>
-          </Group>}
-          {settings.locationSupported && <Group label="Location">
-            <div className="flex items-center gap-2.5 rounded-lg border px-2.5 py-2">
-              <MapPinIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1"><p className="truncate leading-5">{place.name}</p><p className="truncate text-xs leading-4 text-muted-foreground">{place.detail}</p></div>
-              {/* Only the iOS simulator can drop a simulated location. */}
-              {platform === "ios" && location !== null && <Button type="button" variant="ghost" size="xs" className="text-muted-foreground" onClick={() => { setCustomOpen(false); void store.change({ setting: "location", value: null }); }}>Clear</Button>}
-            </div>
-            <ToggleGroup type="single" variant="outline" size="sm" spacing={1.5} aria-label="Simulated place" className="w-full flex-wrap pt-1" value={preset} onValueChange={value => {
-              if (value === "custom" || value === "") { setCustomOpen(value === "custom"); return; }
-              const entry = locationPresets.find(item => item.value === value);
-              setCustomOpen(false);
-              if (entry) void store.change({ setting: "location", value: { latitude: entry.latitude, longitude: entry.longitude } });
-            }}>
-              {[...locationPresets.map(entry => ({ value: entry.value, label: entry.city })), { value: "custom", label: "Custom…" }].map(entry => <ToggleGroupItem key={entry.value} value={entry.value} className="h-6 rounded-full px-2.5 text-xs font-normal data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">{entry.label}</ToggleGroupItem>)}
-            </ToggleGroup>
-            {customOpen && <form className="flex items-end gap-2 pt-2" onSubmit={event => { event.preventDefault(); if (latitude.trim() && longitude.trim()) void store.change({ setting: "location", value: { latitude: Number(latitude), longitude: Number(longitude) } }); }}>
-              <div className="min-w-0 flex-1 space-y-1"><label htmlFor={`${id}-latitude`} className="text-xs text-muted-foreground">Latitude</label><Input id={`${id}-latitude`} type="number" step="any" min={-90} max={90} required value={latitude} placeholder="37.3318" onChange={event => setLatitude(event.target.value)} /></div>
-              <div className="min-w-0 flex-1 space-y-1"><label htmlFor={`${id}-longitude`} className="text-xs text-muted-foreground">Longitude</label><Input id={`${id}-longitude`} type="number" step="any" min={-180} max={180} required value={longitude} placeholder="-122.0312" onChange={event => setLongitude(event.target.value)} /></div>
-              <Button type="submit" disabled={!latitude.trim() || !longitude.trim()}>Set</Button>
-            </form>}
-          </Group>}
+          {settings.network !== undefined && <NetworkGroup platform={platform} network={settings.network} store={store} appTools={appTools} />}
+          {settings.locationSupported && <LocationGroup key={state.deviceId} platform={platform} location={settings.location} store={store} />}
         </fieldset>}
         <Group label="Panel">
           <Row label="Show device frame" htmlFor={`${id}-frame`}><Switch id={`${id}-frame`} checked={state.frame} onCheckedChange={value => store.toggleFrame(value)} /></Row>

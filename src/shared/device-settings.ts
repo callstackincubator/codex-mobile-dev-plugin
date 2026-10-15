@@ -33,7 +33,5 @@ export type DeviceSettings = {
   statusBar?: "clean" | "live";
   // "custom" is a throttle set outside this panel; it is shown but never sent.
   network?: NetworkCondition | "custom";
-  // The conditions this device can simulate; physical Android devices only go offline.
-  networkConditions?: NetworkCondition[];
   errors?: string[];
 };

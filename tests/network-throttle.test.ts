@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { createServer, request, type Server } from "node:http";
 import { connect, createServer as createNetServer } from "node:net";
 import { PassThrough } from "node:stream";
-import { AndroidNetworkThrottle, LinkPacer, ThrottleProxy, isLocalDestination, pacedPipe, parseThrottleState } from "../src/server/network-throttle.ts";
+import { LinkPacer, ThrottleProxy, isLocalDestination, relay } from "../src/server/network-throttle/proxy.ts";
+import { AndroidNetworkThrottle, parseThrottleState } from "../src/server/network-throttle/android.ts";
 import type { Commands } from "../src/server/app-control/commands.ts";
 import { expectedOutcome } from "../src/shared/error-reporting.ts";
 
@@ -40,7 +41,7 @@ test("a link pacer queues bytes behind each other and adds half the round trip",
   assert.equal(pacer.arrival(1250), 135, "an idle link starts fresh");
 });
 
-test("a paced pipe holds a transfer to the link's bandwidth and keeps the bytes in order", async () => {
+test("a paced relay holds a transfer to the link's bandwidth and keeps the bytes in order", async () => {
   const source = new PassThrough();
   const destination = new PassThrough();
   const received: Buffer[] = [];
@@ -48,7 +49,7 @@ test("a paced pipe holds a transfer to the link's bandwidth and keeps the bytes 
   const ended = new Promise(resolve => destination.once("end", resolve));
   const payload = Buffer.from(Array.from({ length: 40 * 1024 }, (_, index) => index % 251));
   const started = performance.now();
-  pacedPipe(source, destination, new LinkPacer({ latencyMs: 20, bandwidthKbps: 1600 }));
+  relay(source, destination, new LinkPacer({ latencyMs: 20, bandwidthKbps: 1600 }));
   source.end(payload);
   await ended;
   const elapsed = performance.now() - started;
