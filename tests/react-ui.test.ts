@@ -249,11 +249,12 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await act(async () => { deviceTab.click(); });
   assert.ok(toolsPopover.textContent?.includes("Increase contrast"));
   assert.ok(toolsPopover.textContent?.includes("Clean status bar"));
-  assert.equal(toolsPopover.textContent?.includes("Relaunch app"), false, "no relaunch hint while the network is normal");
+  assert.ok(toolsPopover.textContent?.includes("Full speedApplies to new app launches."), "the network card describes the normal connection");
   const slowNetwork = [...toolsPopover.querySelectorAll<HTMLButtonElement>('[aria-label="Network condition"] button')].find(button => button.textContent === "3G")!;
   await act(async () => { slowNetwork.click(); });
   assert.deepEqual(changes.at(-1), { setting: "network", value: "3g" });
-  const relaunch = [...toolsPopover.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Relaunch app")!;
+  assert.ok(toolsPopover.textContent?.includes("780 kbps · 200 ms"), "the card shows the simulated link");
+  const relaunch = [...toolsPopover.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Relaunch")!;
   await act(async () => { relaunch.click(); });
   assert.equal(appCalls.at(-1)?.name, "mobile_launch_app", "iOS throttling offers a relaunch so the app picks it up");
   await act(async () => { settingsButton.click(); });

@@ -1,6 +1,6 @@
 import { useEffect, useId, useState, useSyncExternalStore } from "react";
-import { AppWindowIcon, InfoIcon, MapPinIcon, MinusIcon, MoonIcon, PlusIcon, RotateCwIcon, Settings2Icon, SmartphoneIcon, SunIcon } from "lucide-react";
-import { contentSizes, type NetworkCondition } from "../../shared/device-settings";
+import { AppWindowIcon, MapPinIcon, MinusIcon, MoonIcon, PlusIcon, RotateCwIcon, Settings2Icon, SmartphoneIcon, SunIcon } from "lucide-react";
+import { contentSizes, networkPresets, type NetworkCondition } from "../../shared/device-settings";
 import { bindDeviceSettings, DeviceSettingsStore } from "../device-settings";
 import { AppToolsStore, bindAppTools } from "../app-tools";
 import { AppTools } from "./app-tools";
@@ -78,6 +78,17 @@ function describeLocation(location: Location | null | undefined, platform: "ios"
   return { name: presetFor(location)?.label ?? "Custom location", detail: `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}` };
 }
 
+const speed = (kbps: number) => kbps >= 1000 ? `${kbps / 1000} Mbps` : `${kbps} kbps`;
+
+// Every condition fills the same two lines, so switching never moves the panel.
+function describeNetwork(network: NetworkCondition | "custom", platform: "ios" | "android") {
+  if (network === "custom") return platform === "ios" ? { name: "Custom throttle", detail: "Pick a condition to replace it." } : { name: "Your own proxy", detail: "Remove it to simulate a slower network." };
+  const name = network === "normal" ? "Full speed" : network === "offline" ? "No connection" : `${speed(networkPresets[network].bandwidthKbps)} · ${networkPresets[network].latencyMs} ms`;
+  // Baguette injects conditioning into apps as they launch; Android applies it right away.
+  if (platform === "ios") return { name, detail: "Applies to new app launches." };
+  return { name, detail: network === "normal" ? "Applies right away." : network === "offline" ? "Wi-Fi and mobile data are off." : "Local dev servers stay full speed." };
+}
+
 export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
   const [store] = useState(() => new DeviceSettingsStore());
   const [appTools] = useState(() => new AppToolsStore());
@@ -100,6 +111,7 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
   useEffect(() => { setOpen(false); setCustomOpen(false); }, [state.deviceId]);
   const location = settings?.location;
   const place = describeLocation(location, platform);
+  const networkStatus = settings?.network === undefined ? null : describeNetwork(settings.network, platform);
   const preset = customOpen ? "custom" : location ? presetFor(location)?.value ?? "custom" : "";
   return <div data-element="settings" className="ml-auto" ref={element => { if (element) { bindDeviceSettings(element, store); bindAppTools(element, appTools); } }}>
     <Popover open={open} onOpenChange={value => {
@@ -132,24 +144,17 @@ export function DeviceSettings({ platform }: { platform: "ios" | "android" }) {
             {settings.orientation !== undefined && <Row label="Rotation" htmlFor={`${id}-rotation`}><SettingsSelect id={`${id}-rotation`} value={settings.orientation} items={rotationOptions} disabled={disabled} onChange={value => void store.change({ setting: "orientation", value: value as "auto" | "portrait" | "landscape" })} /></Row>}
             {settings.statusBar !== undefined && <Row label="Clean status bar" htmlFor={`${id}-status-bar`}><Switch id={`${id}-status-bar`} checked={settings.statusBar === "clean"} onCheckedChange={value => void store.change({ setting: "statusBar", value: value ? "clean" : "live" })} /></Row>}
           </Group>
-          {settings.network !== undefined && settings.networkConditions && <Group label="Network">
+          {networkStatus && settings.networkConditions && <Group label="Network">
             <ToggleGroup type="single" variant="outline" size="sm" spacing={1.5} aria-label="Network condition" className="w-full flex-wrap pt-1" value={settings.network === "custom" ? "" : settings.network} onValueChange={value => {
               const condition = settings.networkConditions?.find(entry => entry === value);
               if (condition) void store.change({ setting: "network", value: condition });
             }}>
               {settings.networkConditions.map(condition => <ToggleGroupItem key={condition} value={condition} className="h-6 rounded-full px-2.5 text-xs font-normal data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">{networkLabels[condition]}</ToggleGroupItem>)}
             </ToggleGroup>
-            {settings.network === "custom" && <p className="text-xs text-muted-foreground">{platform === "ios" ? "A custom throttle is active. Pick a condition to replace it." : "This device uses its own proxy. Remove it to simulate a slower network."}</p>}
-            {platform === "android" && settings.network !== "normal" && settings.network !== "offline" && settings.network !== "custom" && <div className="flex items-start gap-1.5 pt-1 text-xs text-muted-foreground">
-              <InfoIcon aria-hidden className="mt-0.5 size-3 shrink-0" />
-              <p className="flex-1">Slows standard app networking, such as fetch and OkHttp. Local dev servers aren't slowed.</p>
-            </div>}
-            {/* Baguette injects conditioning into apps as they launch. */}
-            {platform === "ios" && settings.network !== "normal" && <div className="flex items-start gap-1.5 pt-1 text-xs text-muted-foreground">
-              <InfoIcon aria-hidden className="mt-0.5 size-3 shrink-0" />
-              <p className="flex-1">Applies to URLSession and fetch requests in apps launched after it was turned on.</p>
-              {appTools.app && <Button type="button" variant="ghost" size="xs" className="-my-1 text-muted-foreground" disabled={appState.busy !== null} onClick={() => void appTools.launch()}><RotateCwIcon />Relaunch app</Button>}
-            </div>}
+            <div className="mt-2 flex items-center gap-2.5 rounded-lg border px-2.5 py-2">
+              <div className="min-w-0 flex-1"><p className="truncate leading-5">{networkStatus.name}</p><p className="truncate text-xs leading-4 text-muted-foreground">{networkStatus.detail}</p></div>
+              {platform === "ios" && appTools.app && <Button type="button" variant="outline" size="xs" disabled={appState.busy !== null} onClick={() => void appTools.launch()}><RotateCwIcon />Relaunch</Button>}
+            </div>
           </Group>}
           {settings.locationSupported && <Group label="Location">
             <div className="flex items-center gap-2.5 rounded-lg border px-2.5 py-2">
