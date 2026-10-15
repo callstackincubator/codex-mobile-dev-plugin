@@ -198,6 +198,9 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.deepEqual(traceSiftResource.contents[0]._meta, recordingResource.contents[0]._meta);
   const analyzeProfile = tools.tools.find(tool => tool.name === "mobile_analyze_profile");
   assert.deepEqual(analyzeProfile?._meta?.ui, { resourceUri: TRACESIFT_URI, visibility: ["app", "model"] });
+  assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_remember_tracesift_analysis")?._meta?.ui, { visibility: ["app"] });
+  assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_restore_tracesift_analysis")?._meta?.ui, { visibility: ["app"] });
+  assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_restore_tracesift_analysis_by_input")?._meta?.ui, { visibility: ["app"] });
   assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_get_tracesift_handoff")?._meta?.ui, { visibility: ["app"] });
   assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);
   assert.equal(WORKSPACE_URI, `ui://mobile-dev/${manifest.version}/workspace.html`);

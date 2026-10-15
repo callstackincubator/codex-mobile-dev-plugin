@@ -91,6 +91,33 @@ test("TraceSift client persists compact findings and invokes the Explore CLI wit
   assert.deepEqual(reactArgs.slice(2), ["--commit", "7.12"]);
 });
 
+test("TraceSift client restores the analysis registered for a stable host view after restart", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const profile = join(fake.home, "cpu profile.json"); await writeFile(profile, "{}");
+  const first = new TraceSiftClient("missing-tracesift", fake.home);
+  const result = await first.analyze(profile, "auto");
+  await first.remember("tool-view-17", result.analysisId);
+  await first.close();
+
+  const restarted = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => restarted.close());
+  const restored = await restarted.restore("tool-view-17");
+  assert.equal(restored?.analysisId, "analysis-1");
+  assert.equal(restored?.cards[0].headline, "A measured task");
+  assert.equal(await restarted.restore("another-tool-view"), undefined);
+});
+
+test("TraceSift client restores an analysis from replayed profile input when host view IDs are unavailable", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const profile = join(fake.home, "cpu profile.json"); await writeFile(profile, "{}");
+  const first = new TraceSiftClient("missing-tracesift", fake.home);
+  await first.analyze(profile, "auto");
+  await first.close();
+
+  const restarted = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => restarted.close());
+  assert.equal((await restarted.restoreInput(profile, "auto"))?.analysisId, "analysis-1");
+  assert.equal(await restarted.restoreInput(profile, "cpu"), undefined);
+});
+
 test("TraceSift client rejects unsafe descriptors without starting a CLI", async t => {
   const fake = await fixture(0o644); t.after(fake.close);
   const profile = join(fake.home, "profile.json"); await writeFile(profile, "{}");

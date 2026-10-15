@@ -38,6 +38,96 @@ test("TraceSift disables investigation when host capabilities are absent", async
   assert.equal(calls, 0); assert.equal(controller.getSnapshot().canInvestigate, false);
 });
 
+test("TraceSift restores cards for a recreated inline view", async () => {
+  const calls: unknown[] = [];
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    async callServerTool(input: unknown) {
+      calls.push(input);
+      return { content: [], structuredContent: { apiVersion: 1, restored: true, analysis } };
+    },
+    async sendMessage() { return {}; },
+  };
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged();
+  await controller.restore("tool-view-17");
+  assert.deepEqual(calls, [{ name: "mobile_restore_tracesift_analysis", arguments: { viewId: "tool-view-17" } }]);
+  assert.equal(controller.getSnapshot().analysis?.analysisId, "private-analysis");
+});
+
+test("TraceSift restores cards from replayed tool input when host view IDs are absent", async () => {
+  const calls: unknown[] = [];
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    async callServerTool(input: unknown) {
+      calls.push(input);
+      return { content: [], structuredContent: { apiVersion: 1, restored: true, analysis } };
+    },
+    async sendMessage() { return {}; },
+  };
+  const controller = new TraceSiftController(app as never);
+  controller.setProfileInput("App/sample-profiles/trace.json", "auto");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, [{ name: "mobile_restore_tracesift_analysis_by_input", arguments: { path: "App/sample-profiles/trace.json", profileType: "auto" } }]);
+  assert.equal(controller.getSnapshot().analysis?.analysisId, "private-analysis");
+});
+
+test("TraceSift registers a live result against the stable host view", async () => {
+  const calls: unknown[] = [];
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    async callServerTool(input: unknown) {
+      calls.push(input);
+      return { content: [], structuredContent: { remembered: true } };
+    },
+    async sendMessage() { return {}; },
+  };
+  const controller = new TraceSiftController(app as never);
+  controller.accept({ content: [], structuredContent: analysis });
+  controller.setViewId("exec-stable-view");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, [{ name: "mobile_remember_tracesift_analysis", arguments: { viewId: "exec-stable-view", analysisId: "private-analysis" } }]);
+});
+
+test("TraceSift registers a live result when host context arrives before the result", async () => {
+  const calls: Array<{ name: string; arguments: unknown }> = [];
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    async callServerTool(input: { name: string; arguments: unknown }) {
+      calls.push(input);
+      return input.name === "mobile_restore_tracesift_analysis"
+        ? { content: [], structuredContent: { apiVersion: 1, restored: false } }
+        : { content: [], structuredContent: { remembered: true } };
+    },
+    async sendMessage() { return {}; },
+  };
+  const controller = new TraceSiftController(app as never);
+  controller.setViewId("exec-stable-view");
+  await new Promise(resolve => setImmediate(resolve));
+  controller.accept({ content: [], structuredContent: analysis });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, [
+    { name: "mobile_restore_tracesift_analysis", arguments: { viewId: "exec-stable-view" } },
+    { name: "mobile_remember_tracesift_analysis", arguments: { viewId: "exec-stable-view", analysisId: "private-analysis" } },
+  ]);
+});
+
+test("TraceSift does not replace a result that arrived while restore was pending", async () => {
+  let finish!: (value: unknown) => void;
+  const pending = new Promise(resolve => { finish = resolve; });
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    async callServerTool() { return pending; },
+    async sendMessage() { return {}; },
+  };
+  const controller = new TraceSiftController(app as never);
+  const restoring = controller.restore(23);
+  controller.accept({ content: [], structuredContent: { ...cpuAnalysis, analysisId: "live-analysis" } });
+  finish({ content: [], structuredContent: { apiVersion: 1, restored: true, analysis } });
+  await restoring;
+  assert.equal(controller.getSnapshot().analysis?.analysisId, "live-analysis");
+});
+
 test("TraceSift never retries an unconfirmed send", async () => {
   let sends = 0;
   const app = {

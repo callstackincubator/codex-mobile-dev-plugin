@@ -137,15 +137,72 @@ export class TraceSiftClient {
     return join(this.home, "integrations", "mobile-dev", `${createHash("sha256").update(analysisId).digest("hex")}.json`);
   }
 
+  private viewPath(viewId: string | number) {
+    const key = createHash("sha256").update(JSON.stringify(viewId)).digest("hex");
+    return join(this.home, "integrations", "mobile-dev", `view-${key}.json`);
+  }
+
+  private inputPath(path: string, profileType: TraceSiftProfileType) {
+    const key = createHash("sha256").update(JSON.stringify({ path, profileType })).digest("hex");
+    return join(this.home, "integrations", "mobile-dev", `input-${key}.json`);
+  }
+
+  private async writePrivateJson(file: string, value: unknown) {
+    const directory = join(this.home, "integrations", "mobile-dev");
+    const temporary = join(directory, `.analysis-${randomUUID()}`);
+    try {
+      await writeFile(temporary, `${JSON.stringify(value)}\n`, { flag: "wx", mode: 0o600 });
+      await rename(temporary, file);
+    } finally { await rm(temporary, { force: true }); }
+  }
+
   private async persistAnalysis(analysis: TraceSiftAnalysis) {
     const directory = join(this.home, "integrations", "mobile-dev");
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    const file = this.analysisPath(analysis.analysisId);
-    const temporary = join(directory, `.analysis-${randomUUID()}`);
-    try {
-      await writeFile(temporary, `${JSON.stringify(analysis)}\n`, { flag: "wx", mode: 0o600 });
-      await rename(temporary, file);
-    } finally { await rm(temporary, { force: true }); }
+    await this.writePrivateJson(this.analysisPath(analysis.analysisId), analysis);
+  }
+
+  async remember(viewId: string | number, analysisId: string) {
+    const analysis = await stat(this.analysisPath(analysisId)).catch(() => undefined);
+    if (!analysis?.isFile()) throw new TraceSiftError("This TraceSift analysis is no longer available. Run it again.", "request");
+    const directory = join(this.home, "integrations", "mobile-dev");
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await this.writePrivateJson(this.viewPath(viewId), { apiVersion: 1, analysisId });
+  }
+
+  private async rememberInput(path: string, profileType: TraceSiftProfileType, analysisId: string) {
+    const directory = join(this.home, "integrations", "mobile-dev");
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await this.writePrivateJson(this.inputPath(path, profileType), { apiVersion: 1, analysisId });
+  }
+
+  private async restoreReference(referencePath: string): Promise<TraceSiftAnalysis | undefined> {
+    let reference: unknown;
+    try { reference = JSON.parse(await readFileAsync(referencePath, "utf8")); }
+    catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
+      throw new Error("The saved TraceSift analysis reference could not be read.");
+    }
+    const analysisId = typeof reference === "object" && reference !== null && "analysisId" in reference
+      && typeof reference.analysisId === "string" ? reference.analysisId : undefined;
+    if (!analysisId) throw new Error("The saved TraceSift analysis reference is invalid.");
+    let stored: unknown;
+    try { stored = JSON.parse(await readFileAsync(this.analysisPath(analysisId), "utf8")); }
+    catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
+      throw new Error("The saved TraceSift analysis could not be read.");
+    }
+    const parsed = traceSiftAnalysisSchema.safeParse(stored);
+    if (!parsed.success) throw new Error("The saved TraceSift analysis is invalid.");
+    return parsed.data;
+  }
+
+  async restore(viewId: string | number): Promise<TraceSiftAnalysis | undefined> {
+    return this.restoreReference(this.viewPath(viewId));
+  }
+
+  async restoreInput(path: string, profileType: TraceSiftProfileType): Promise<TraceSiftAnalysis | undefined> {
+    return this.restoreReference(this.inputPath(path, profileType));
   }
 
   private async request(path: string, init: RequestInit, signal?: AbortSignal): Promise<unknown> {
@@ -189,6 +246,7 @@ export class TraceSiftClient {
     const parsed = traceSiftAnalysisSchema.safeParse(await this.request("/api/integration/v1/analyze", { method: "POST", body: form }, signal));
     if (!parsed.success) throw new Error("TraceSift returned an invalid analysis response.");
     await this.persistAnalysis(parsed.data);
+    await this.rememberInput(path, profileType, parsed.data.analysisId);
     return parsed.data;
   }
 

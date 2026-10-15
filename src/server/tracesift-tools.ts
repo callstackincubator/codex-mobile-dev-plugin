@@ -3,7 +3,7 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { errorMessage } from "../shared/protocol.ts";
-import { TRACESIFT_URI, traceSiftHandoffSchema, traceSiftProfileTypeSchema, traceSiftReactCardSchema, traceSiftTaskCardSchema } from "../shared/tracesift.ts";
+import { TRACESIFT_URI, traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftProfileInputSchema, traceSiftReactCardSchema, traceSiftTaskCardSchema } from "../shared/tracesift.ts";
 import { captureServerError, recordTraceSiftOperation } from "./telemetry.ts";
 import type { TraceSiftClient } from "./tracesift-client.ts";
 
@@ -14,7 +14,7 @@ const analysisOutput = {
   summary: z.record(z.string(), z.unknown()), cards: z.array(z.union([traceSiftTaskCardSchema, traceSiftReactCardSchema])),
 };
 
-function failure(error: unknown, operation: "analyze" | "handoff" | "task", startedAt: number, signal: AbortSignal): CallToolResult {
+function failure(error: unknown, operation: "analyze" | "remember" | "restore" | "handoff" | "task", startedAt: number, signal: AbortSignal): CallToolResult {
   recordTraceSiftOperation(operation, "failed", performance.now() - startedAt);
   captureServerError(error, `tracesift.${operation}`, { signal });
   return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
@@ -24,7 +24,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
   registerAppTool(server, "mobile_analyze_profile", {
     title: "Analyze a CPU or React profile with TraceSift",
     description: "Upload a local CPU profile or React DevTools profiling export to the local TraceSift service and render its measured findings as inline cards, each dividing its task between the features it entered, with an Explore view for the call tree and timeline. Use when the user provides a profile path and asks to investigate performance or find a root cause. Set profileType only when the format is known; auto detects supported JSON formats. After rendering, wait for the user to choose Investigate before changing code.",
-    inputSchema: { path: z.string().min(1).max(16_384), profileType: traceSiftProfileTypeSchema.default("auto") },
+    inputSchema: traceSiftProfileInputSchema.shape,
     outputSchema: analysisOutput, annotations: read,
     _meta: { ui: { resourceUri: TRACESIFT_URI, visibility } },
   }, async ({ path, profileType }, context) => {
@@ -35,6 +35,53 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
       recordTraceSiftOperation("analyze", "success", performance.now() - startedAt);
       return { content: [{ type: "text", text: `TraceSift found ${analysis.cards.length} ${analysis.profileType === "cpu" ? "task" : "React commit"} cards. Show the inline cards and wait for the user to choose Investigate.` }], structuredContent: analysis };
     } catch (error) { return failure(error, "analyze", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_remember_tracesift_analysis", {
+    title: "Remember a TraceSift analysis for this card",
+    description: "Associate an inline TraceSift card's stable host view with its persisted compact analysis so the card can be restored after Codex restarts.",
+    inputSchema: { viewId: z.union([z.string(), z.number()]), analysisId: z.string().min(1).max(256) },
+    outputSchema: { remembered: z.literal(true) }, annotations: read,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async ({ viewId, analysisId }, context) => {
+    const startedAt = performance.now();
+    try {
+      await client.remember(viewId, analysisId);
+      recordTraceSiftOperation("remember", "success", performance.now() - startedAt);
+      return { content: [{ type: "text", text: "TraceSift analysis remembered for this card." }], structuredContent: { remembered: true as const } };
+    } catch (error) { return failure(error, "remember", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_restore_tracesift_analysis", {
+    title: "Restore a TraceSift analysis",
+    description: "Reload the compact saved analysis for an existing inline TraceSift card after its host view is recreated.",
+    inputSchema: { viewId: z.union([z.string(), z.number()]) },
+    outputSchema: { apiVersion: z.literal(1), restored: z.boolean(), analysis: traceSiftAnalysisSchema.optional() }, annotations: read,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async ({ viewId }, context) => {
+    const startedAt = performance.now();
+    try {
+      const analysis = await client.restore(viewId);
+      recordTraceSiftOperation("restore", "success", performance.now() - startedAt);
+      const structuredContent = { apiVersion: 1 as const, restored: analysis !== undefined, ...(analysis ? { analysis } : {}) };
+      return { content: [{ type: "text", text: analysis ? "TraceSift analysis restored." : "No saved TraceSift analysis was found." }], structuredContent };
+    } catch (error) { return failure(error, "restore", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_restore_tracesift_analysis_by_input", {
+    title: "Restore a TraceSift analysis from its original profile input",
+    description: "Reload the latest compact saved analysis for the profile input replayed by a recreated inline TraceSift card.",
+    inputSchema: traceSiftProfileInputSchema.shape,
+    outputSchema: { apiVersion: z.literal(1), restored: z.boolean(), analysis: traceSiftAnalysisSchema.optional() }, annotations: read,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async ({ path, profileType }, context) => {
+    const startedAt = performance.now();
+    try {
+      const analysis = await client.restoreInput(path, profileType);
+      recordTraceSiftOperation("restore", "success", performance.now() - startedAt);
+      const structuredContent = { apiVersion: 1 as const, restored: analysis !== undefined, ...(analysis ? { analysis } : {}) };
+      return { content: [{ type: "text", text: analysis ? "TraceSift analysis restored." : "No saved TraceSift analysis was found." }], structuredContent };
+    } catch (error) { return failure(error, "restore", startedAt, context.signal); }
   });
 
   registerAppTool(server, "mobile_open_tracesift_explore", {

@@ -4,6 +4,9 @@ import { PLUGIN_VERSION } from "./version.ts";
 export const TRACESIFT_URI = `ui://mobile-dev/${PLUGIN_VERSION}/tracesift.html`;
 export const traceSiftProfileTypeSchema = z.enum(["auto", "cpu", "react"]);
 export type TraceSiftProfileType = z.infer<typeof traceSiftProfileTypeSchema>;
+export const traceSiftProfileInputSchema = z.object({
+  path: z.string().min(1).max(16_384), profileType: traceSiftProfileTypeSchema.default("auto"),
+});
 
 const finite = z.number().finite().nonnegative();
 const taskCulpritSchema = z.object({
@@ -82,6 +85,11 @@ export const traceSiftAnalysisSchema = z.discriminatedUnion("profileType", [
   z.object({ ...base, profileType: z.literal("react"), summary: reactSummarySchema, cards: z.array(traceSiftReactCardSchema) }),
 ]);
 export type TraceSiftAnalysis = z.infer<typeof traceSiftAnalysisSchema>;
+
+export const traceSiftRestoreSchema = z.discriminatedUnion("restored", [
+  z.object({ apiVersion: z.literal(1), restored: z.literal(false) }),
+  z.object({ apiVersion: z.literal(1), restored: z.literal(true), analysis: traceSiftAnalysisSchema }),
+]);
 
 export const traceSiftHandoffSchema = z.object({ apiVersion: z.literal(1), handoff: z.string().min(1).max(1_000_000) });
 

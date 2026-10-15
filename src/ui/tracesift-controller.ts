@@ -1,7 +1,7 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { OpenAIMessageParams } from "@openai/mcp-extensions/app";
-import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis } from "../shared/tracesift.ts";
+import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "../shared/tracesift.ts";
 import type { ContributionChartKind } from "./components/tracesift/contribution-chart.tsx";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface } from "./telemetry.ts";
 
@@ -29,6 +29,8 @@ export class TraceSiftController {
   private disposed = false;
   private readonly readyAt = performance.now();
   private readonly app: App;
+  private viewId?: string | number;
+  private inputKey?: string;
   private copiedTimer?: ReturnType<typeof setTimeout>;
   constructor(app: App) { this.app = app; }
 
@@ -55,7 +57,7 @@ export class TraceSiftController {
     const capabilities = this.app.getHostCapabilities();
     this.update({ canInvestigate: Boolean(capabilities?.serverTools && capabilities?.message?.text) });
   }
-  accept(result: CallToolResult) {
+  accept(result: CallToolResult, remember = true) {
     if (this.disposed) return;
     if (result.isError) {
       this.update({ error: result.content.filter(item => item.type === "text").map(item => item.text).join("\n") });
@@ -71,7 +73,69 @@ export class TraceSiftController {
     recordUiTiming("ui.tracesift.process", performance.now() - startedAt);
     this.update({ analysis, error: "", busyCard: undefined, copiedCard: undefined, handoffCard: undefined, openingExploreCard: undefined });
     markUiSurfaceReady(this.readyAt);
+    if (remember && this.viewId !== undefined) void this.remember(this.viewId, analysis.analysisId);
   }
+  setViewId = (viewId: string | number) => {
+    if (this.disposed || this.viewId === viewId) return;
+    this.viewId = viewId;
+    const analysisId = this.state.analysis?.analysisId;
+    if (analysisId) void this.remember(viewId, analysisId);
+    else void this.restore(viewId);
+  };
+  setProfileInput = (path: string, profileType: TraceSiftProfileType) => {
+    const inputKey = JSON.stringify({ path, profileType });
+    if (this.disposed || this.inputKey === inputKey) return;
+    this.inputKey = inputKey;
+    if (!this.state.analysis) void this.restoreInput(path, profileType);
+  };
+  private remember = async (viewId: string | number, analysisId: string) => {
+    const startedAt = performance.now();
+    try {
+      const result = await this.app.callServerTool({ name: "mobile_remember_tracesift_analysis", arguments: { viewId, analysisId } });
+      recordUiTiming("ui.tracesift.remember", performance.now() - startedAt);
+      if (result.isError || result.structuredContent?.remembered !== true) throw new Error("TraceSift could not remember this analysis.");
+      countUiEvent("ui.tracesift.remember_success");
+    } catch {
+      countUiEvent("ui.tracesift.remember_failed");
+      captureUiError(new Error("TraceSift analysis registration failed."), "tracesift.remember");
+    }
+  };
+  restore = async (viewId: string | number) => {
+    if (this.disposed || this.state.analysis) return;
+    const startedAt = performance.now();
+    try {
+      const result = await this.app.callServerTool({ name: "mobile_restore_tracesift_analysis", arguments: { viewId } });
+      recordUiTiming("ui.tracesift.restore", performance.now() - startedAt);
+      if (this.disposed || this.state.analysis) return;
+      if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "TraceSift could not restore this analysis.");
+      const parsed = traceSiftRestoreSchema.safeParse(result.structuredContent);
+      if (!parsed.success) throw new Error("TraceSift returned an invalid restore result.");
+      countUiEvent(parsed.data.restored ? "ui.tracesift.restore_hit" : "ui.tracesift.restore_miss");
+      if (parsed.data.analysis) this.accept({ content: [], structuredContent: parsed.data.analysis }, false);
+    } catch (error) {
+      countUiEvent("ui.tracesift.restore_failed");
+      captureUiError(new Error("TraceSift analysis restore failed."), "tracesift.restore");
+      if (!this.state.analysis) this.update({ error: error instanceof Error ? error.message : "TraceSift could not restore this analysis." });
+    }
+  };
+  private restoreInput = async (path: string, profileType: TraceSiftProfileType) => {
+    if (this.disposed || this.state.analysis) return;
+    const startedAt = performance.now();
+    try {
+      const result = await this.app.callServerTool({ name: "mobile_restore_tracesift_analysis_by_input", arguments: { path, profileType } });
+      recordUiTiming("ui.tracesift.restore", performance.now() - startedAt);
+      if (this.disposed || this.state.analysis) return;
+      if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "TraceSift could not restore this analysis.");
+      const parsed = traceSiftRestoreSchema.safeParse(result.structuredContent);
+      if (!parsed.success) throw new Error("TraceSift returned an invalid restore result.");
+      countUiEvent(parsed.data.restored ? "ui.tracesift.restore_hit" : "ui.tracesift.restore_miss");
+      if (parsed.data.analysis) this.accept({ content: [], structuredContent: parsed.data.analysis }, false);
+    } catch (error) {
+      countUiEvent("ui.tracesift.restore_failed");
+      captureUiError(new Error("TraceSift analysis input restore failed."), "tracesift.restore_input");
+      if (!this.state.analysis) this.update({ error: error instanceof Error ? error.message : "TraceSift could not restore this analysis." });
+    }
+  };
   investigate = async (cardId: string) => {
     const { analysis, canInvestigate, busyCard } = this.state;
     if (!analysis || !canInvestigate || busyCard || this.disposed || !analysis.cards.some(card => card.id === cardId)) return;
