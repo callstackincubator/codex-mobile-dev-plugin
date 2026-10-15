@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { appDetailsSchema, appLanguageSchema, appLinksSchema, appPermissionsSchema, installedAppsSchema, platformPermissions } from "../shared/app-control.ts";
 import type { AppDetails, AppPermission, AppPermissionEntry, InstalledApp, PermissionState } from "../shared/app-control.ts";
-import { countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
+import { measureUiOperation } from "./telemetry.ts";
+import { elementStores } from "./element-store.ts";
 
 export type AppToolAction = "list" | "icons" | "launch" | "stop" | "open_url" | "permission" | "push" | "language";
 export type AppEntry = InstalledApp & { icon?: string };
@@ -83,14 +84,7 @@ export class AppToolsStore {
     return this.call(name, { platform: this.state.platform, deviceId: this.state.deviceId, ...args });
   }
 
-  // Results that finish after a surface or device change are not attributed to the new context.
-  private async measure<T>(action: AppToolAction, work: () => Promise<T>): Promise<T> {
-    const startedAt = performance.now();
-    const context = getUiTelemetryAttributes();
-    try { return await work(); }
-    catch (error) { if (getUiTelemetryAttributes() === context) countUiEvent("ui.app_tools.failure"); throw error; }
-    finally { if (getUiTelemetryAttributes() === context) recordUiTiming(`ui.app_tools.${action}`, performance.now() - startedAt); }
-  }
+  private measure<T>(action: AppToolAction, work: () => Promise<T>) { return measureUiOperation(`ui.app_tools.${action}`, "ui.app_tools.failure", work); }
 
   async load() {
     if (!this.call || this.state.disabled || this.state.loading) return;
@@ -251,10 +245,6 @@ export class AppToolsStore {
 
 function message(error: unknown) { return error instanceof Error ? error.message : String(error); }
 
-const stores = new WeakMap<HTMLElement, AppToolsStore>();
-export function bindAppTools(element: HTMLElement, store: AppToolsStore) { stores.set(element, store); }
-export function getAppTools(element: HTMLElement) {
-  let store = stores.get(element);
-  if (!store) { store = new AppToolsStore(); stores.set(element, store); }
-  return store;
-}
+const stores = elementStores(() => new AppToolsStore());
+export const bindAppTools = stores.bind;
+export const getAppTools = stores.get;

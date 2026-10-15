@@ -8,7 +8,7 @@ import { bundleIdSchema, platformPermissions } from "../../shared/app-control.ts
 import type { AppDetails, AppPermission, AppPermissionEntry, InstalledApp, PermissionState } from "../../shared/app-control.ts";
 import { commandError, commandOutput, withTemporaryDirectory } from "./commands.ts";
 import type { Commands } from "./commands.ts";
-import { collectDetails, pngDataUrl, rankAppLinks, requireArtifact, urlSchemePattern } from "./driver.ts";
+import { collectDetails, pngDataUrl, rankAppLinks, requireArtifact, requireSupportedPermission, urlSchemePattern } from "./driver.ts";
 import type { AppDetailsCache, AppDriver } from "./driver.ts";
 
 type SimulatorApp = InstalledApp & { path: string };
@@ -132,6 +132,7 @@ export class SimulatorDriver implements AppDriver {
   async permissions(): Promise<AppPermissionEntry[]> { return platformPermissions.ios.map(permission => ({ permission, state: null })); }
 
   async setPermission(bundleId: string, permission: AppPermission | "all", state: PermissionState) {
+    requireSupportedPermission("ios", permission);
     const action = { allow: "grant", deny: "revoke", ask: "reset" }[state];
     await this.simctl("Changing the permission", ["privacy", this.deviceId, action, permission, bundleId]);
     return platformPermissions.ios.map(entry => ({ permission: entry, state: permission === "all" || permission === entry ? state : null }));

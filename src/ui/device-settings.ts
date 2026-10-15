@@ -1,5 +1,6 @@
 import type { DeviceSetting, DeviceSettings } from "../shared/device-settings.ts";
 import { countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
+import { elementStores } from "./element-store.ts";
 
 type PendingChange = { change: DeviceSetting; resolve: () => void };
 
@@ -95,10 +96,6 @@ export class DeviceSettingsStore {
   dispose() { this.request = undefined; this.setFrame = undefined; this.configure("", true); }
 }
 
-const stores = new WeakMap<HTMLElement, DeviceSettingsStore>();
-export function bindDeviceSettings(element: HTMLElement, store: DeviceSettingsStore) { stores.set(element, store); }
-export function getDeviceSettings(element: HTMLElement) {
-  let store = stores.get(element);
-  if (!store) { store = new DeviceSettingsStore(); stores.set(element, store); }
-  return store;
-}
+const stores = elementStores(() => new DeviceSettingsStore());
+export const bindDeviceSettings = stores.bind;
+export const getDeviceSettings = stores.get;

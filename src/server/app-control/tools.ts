@@ -5,7 +5,7 @@ import { androidIdSchema } from "../serve-emu.ts";
 import { captureServerError } from "../telemetry.ts";
 import { errorMessage, udidSchema } from "../../shared/protocol.ts";
 import { ExpectedOperationError, expectedOutcome } from "../../shared/error-reporting.ts";
-import { appPermissions, appTargetShape, appUrlSchema, bundleIdSchema, languageTagSchema, permissionStates, platformPermissions } from "../../shared/app-control.ts";
+import { appPermissions, appTargetShape, appUrlSchema, bundleIdSchema, languageTagSchema, permissionStates } from "../../shared/app-control.ts";
 import { systemCommands } from "./commands.ts";
 import type { Commands } from "./commands.ts";
 import { AppDetailsCache, listApps } from "./driver.ts";
@@ -86,12 +86,7 @@ export function registerAppControlTools(server: McpServer, driverFor: DriverFact
   tool("mobile_set_app_permission", "permission", { title: "Set app permission",
     inputSchema: { bundleId, permission: z.enum([...appPermissions, "all"]), state: z.enum(permissionStates).describe("allow grants, deny blocks, ask resets so the app prompts again.") },
     description: "Allow, deny, or reset an app permission without the system prompt. iOS simulators lack camera and notifications; Android lacks reminders and motion. Changes may restart the app." },
-  async (driver, input) => {
-    if (input.permission !== "all" && !platformPermissions[input.platform].includes(input.permission)) {
-      throw new ExpectedOperationError("invalid_input", `${input.platform === "ios" ? "iOS simulators do" : "Android does"} not support the ${input.permission} permission here.`);
-    }
-    return { permissions: await driver.setPermission(input.bundleId, input.permission, input.state) };
-  });
+  async (driver, input) => ({ permissions: await driver.setPermission(input.bundleId, input.permission, input.state) }));
   tool("mobile_app_language", "language", { title: "Read app language", readOnly: true, panelOnly: true, inputSchema: { bundleId },
     description: "Read the language an app uses instead of the device language, or null." },
   async (driver, input) => ({ language: await driver.language(input.bundleId) }));
