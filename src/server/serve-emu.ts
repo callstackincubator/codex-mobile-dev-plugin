@@ -3,7 +3,6 @@ import type { ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
@@ -17,6 +16,7 @@ import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { recordAndroidEmulatorReconnect, recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
 import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "../shared/android-startup-diagnostics.ts";
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "../shared/android-startup-diagnostics.ts";
+import { androidSdkRoots } from "./android-sdk.ts";
 
 const execute = promisify(execFile);
 export const androidIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/);
@@ -53,8 +53,7 @@ export class ServeEmu {
   }
 
   private async emulatorPath() {
-    for (const root of [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT, join(homedir(), "Library/Android/sdk")]) {
-      if (!root) continue;
+    for (const root of androidSdkRoots()) {
       const path = join(root, "emulator/emulator");
       try { await access(path, constants.X_OK); return path; } catch { /* Try PATH next. */ }
     }

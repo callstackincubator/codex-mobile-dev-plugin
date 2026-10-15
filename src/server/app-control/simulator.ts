@@ -1,7 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { readDeviceApps } from "../device-apps/sources.ts";
+import { foregroundSimulatorPid } from "../device-apps/foreground.ts";
 import { runningSimulatorApps } from "../device-apps/apps.ts";
 import { ExpectedOperationError, expectedOutcome } from "../../shared/error-reporting.ts";
 import { bundleIdSchema, platformPermissions } from "../../shared/app-control.ts";
@@ -76,8 +76,11 @@ export class SimulatorDriver implements AppDriver {
   }
 
   async installed() { return (await this.listing()).map(({ bundleId, name }) => ({ bundleId, name })); }
-  async foreground() { return (await readDeviceApps(this.deviceId, undefined, "ios")).foregroundApp?.bundleId ?? null; }
-  running() { return runningSimulatorApps(this.deviceId); }
+  // One launchctl listing names both the running apps and the foreground app's process.
+  async activity() {
+    const [running, pid] = await Promise.all([runningSimulatorApps(this.deviceId).catch(() => []), foregroundSimulatorPid(this.deviceId).catch(() => null)]);
+    return { foreground: running.find(app => app.pid === pid)?.bundleId ?? null, running };
+  }
 
   async launch(bundleId: string) {
     await this.simctl("Launching the app", ["launch", "--terminate-running-process", this.deviceId, bundleId],

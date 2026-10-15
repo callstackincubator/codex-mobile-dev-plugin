@@ -34,6 +34,8 @@ export const appLanguageSchema = z.object({ language: languageTagSchema.nullable
 
 export const appLinksSchema = z.object({ links: z.array(z.string().max(2048)) });
 
+// The most apps one icon request may name; the panel asks in batches of this size.
+export const appDetailsBatch = 200;
 // A 64px PNG icon and, on Android, the app label that replaces the package name.
 const appDetails = z.object({ icon: z.string().startsWith("data:image/png;base64,").max(256 * 1024).optional(), name: z.string().max(256).optional() });
 export const appDetailsSchema = z.object({ apps: z.record(z.string(), appDetails) });

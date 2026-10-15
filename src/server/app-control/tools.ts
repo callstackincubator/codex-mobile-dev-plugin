@@ -5,7 +5,7 @@ import { androidIdSchema } from "../serve-emu.ts";
 import { captureServerError } from "../telemetry.ts";
 import { errorMessage, udidSchema } from "../../shared/protocol.ts";
 import { ExpectedOperationError, expectedOutcome } from "../../shared/error-reporting.ts";
-import { appPermissions, appTargetShape, appUrlSchema, bundleIdSchema, languageTagSchema, permissionStates } from "../../shared/app-control.ts";
+import { appDetailsBatch, appPermissions, appTargetShape, appUrlSchema, bundleIdSchema, languageTagSchema, permissionStates } from "../../shared/app-control.ts";
 import { systemCommands } from "./commands.ts";
 import type { Commands } from "./commands.ts";
 import { AppDetailsCache, listApps } from "./driver.ts";
@@ -74,7 +74,7 @@ export function registerAppControlTools(server: McpServer, driverFor: DriverFact
     description: "Open a deep link or URL on the device to jump straight to a screen." },
   async (driver, input) => { await driver.openUrl(input.url); return { opened: input.url }; });
   tool("mobile_app_icons", "icons", { title: "Read app icons", readOnly: true, panelOnly: true,
-    inputSchema: { bundleIds: z.array(bundleIdSchema).max(200).optional() },
+    inputSchema: { bundleIds: z.array(bundleIdSchema).max(appDetailsBatch).optional() },
     description: "Read small PNG icons for installed apps, plus Android app labels." },
   async (driver, input) => ({ apps: await driver.details(input.bundleIds) }));
   tool("mobile_app_links", "links", { title: "Read app URL schemes", readOnly: true, panelOnly: true, inputSchema: { bundleId },

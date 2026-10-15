@@ -6,12 +6,13 @@ import type { AppDetails, AppPermission, AppPermissionEntry, InstalledApp, Insta
 import type { CommandRunner } from "./commands.ts";
 
 export type RunningApp = { bundleId: string; pid: number };
+// Either part is empty when the device cannot report it.
+export type AppActivity = { foreground: string | null; running: RunningApp[] };
 
 // One device's apps, reached through simctl or adb. Tools pick the driver; drivers never branch on platform.
 export interface AppDriver {
   installed(): Promise<InstalledApp[]>;
-  foreground(): Promise<string | null>;
-  running(): Promise<RunningApp[]>;
+  activity(): Promise<AppActivity>;
   launch(bundleId: string): Promise<void>;
   stop(bundleId: string): Promise<void>;
   install(path: string): Promise<{ bundleId?: string }>;
@@ -27,7 +28,7 @@ export interface AppDriver {
 }
 
 export async function listApps(driver: AppDriver): Promise<InstalledApps> {
-  const [apps, foreground, running] = await Promise.all([driver.installed(), driver.foreground().catch(() => null), driver.running().catch(() => [])]);
+  const [apps, { foreground, running }] = await Promise.all([driver.installed(), driver.activity()]);
   const installed = new Set(apps.map(app => app.bundleId));
   const foregroundBundleId = foreground !== null && installed.has(foreground) ? foreground : null;
   // The foreground app leads, then higher PIDs, which started later.

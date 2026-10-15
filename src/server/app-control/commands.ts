@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
 import { access, mkdtemp, readdir, rm } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ExpectedOperationError, expectedOutcome } from "../../shared/error-reporting.ts";
 import { adbPath } from "../native-logs.ts";
+import { androidSdkRoots } from "../android-sdk.ts";
 
 export type CommandOptions = { timeout: number; input?: string; maxBuffer?: number };
 export type CommandRunner = (file: string, args: string[], options: CommandOptions) => Promise<string>;
@@ -25,21 +26,20 @@ const readBinary: BinaryRunner = (file, args, { timeout }) => new Promise((resol
   });
 });
 
-let aapt2: Promise<string | null> | undefined;
-// aapt2 ships with the Android SDK build tools; use the newest installed version.
-function findAapt2(): Promise<string | null> {
-  return aapt2 ??= (async () => {
-    for (const root of [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT, join(homedir(), "Library/Android/sdk")]) {
-      if (!root) continue;
-      const versions = await readdir(join(root, "build-tools")).catch(() => []);
-      versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-      for (const version of versions) {
-        const path = join(root, "build-tools", version, "aapt2");
-        if (await access(path).then(() => true, () => false)) return path;
-      }
+let aapt2: string | undefined;
+// aapt2 ships with the Android SDK build tools; use the newest installed version. Only a found path is
+// remembered, so build tools installed while the plugin runs are picked up.
+async function findAapt2(): Promise<string | null> {
+  if (aapt2) return aapt2;
+  for (const root of androidSdkRoots()) {
+    const versions = await readdir(join(root, "build-tools")).catch(() => []);
+    versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+    for (const version of versions) {
+      const path = join(root, "build-tools", version, "aapt2");
+      if (await access(path).then(() => true, () => false)) return aapt2 = path;
     }
-    return null;
-  })();
+  }
+  return null;
 }
 
 export const systemCommands: Commands = { run, readBinary, adb: adbPath, aapt2: findAapt2 };

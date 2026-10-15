@@ -97,3 +97,41 @@ test("without a foreground app the picker opens on the newest running app, keeps
     else Reflect.deleteProperty(globalThis, "localStorage");
   }
 });
+
+test("a permission change that lands after a device switch leaves the new device's rows alone", async () => {
+  const store = new AppToolsStore();
+  let finish: (value: unknown) => void = () => undefined;
+  store.call = async (name, args) => {
+    if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme", name: "Acme" }], foregroundBundleId: "com.acme", runningBundleIds: ["com.acme"] };
+    if (name === "mobile_app_permissions") return { permissions: [{ permission: "photos", state: null }] };
+    if (name === "mobile_set_app_permission") return new Promise(resolve => { finish = resolve; });
+    return {};
+  };
+  store.configure("ios", "A", false);
+  await store.load();
+  const change = store.setPermission("photos", "deny");
+  store.configure("ios", "B", false);
+  await store.load();
+  await new Promise(resolve => setImmediate(resolve));
+  finish({ permissions: [{ permission: "photos", state: null }] });
+  await change;
+  await store.load();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(store.getSnapshot().permissions, [{ permission: "photos", state: null }]);
+});
+
+test("icons for devices with many apps are requested in batches the server accepts", async () => {
+  const store = new AppToolsStore();
+  const batches: number[] = [];
+  const apps = Array.from({ length: 450 }, (_, index) => ({ bundleId: `com.app${index}`, name: `App ${index}` }));
+  store.call = async (name, args) => {
+    if (name === "mobile_list_apps") return { apps, foregroundBundleId: null, runningBundleIds: [] };
+    if (name === "mobile_app_icons") { batches.push((args.bundleIds as string[]).length); return { apps: {} }; }
+    if (name === "mobile_app_permissions") return { permissions: [] };
+    return {};
+  };
+  store.configure("android", "emulator-5554", false);
+  await store.load();
+  for (let wait = 0; wait < 10 && batches.length < 3; wait++) await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(batches, [200, 200, 50]);
+});
