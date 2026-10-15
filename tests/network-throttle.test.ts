@@ -151,7 +151,7 @@ function listen(server: Server) {
 }
 
 test("the proxy forwards plain requests and tunnels to local servers", async () => {
-  const origin = createServer((incoming, response) => response.end(`hello ${incoming.url}`));
+  const origin = createServer((incoming, response) => response.end(`hello ${encodeURIComponent(incoming.url ?? "")}`));
   const port = await listen(origin);
   const proxy = new ThrottleProxy({ latencyMs: 800, bandwidthKbps: 240 });
   const proxyPort = await proxy.listen();
@@ -162,7 +162,7 @@ test("the proxy forwards plain requests and tunnels to local servers", async () 
         response.on("data", data => { body += data; }).on("end", () => resolve(body));
       }).on("error", reject).end();
     });
-    assert.equal(plain, "hello /status?x=1");
+    assert.equal(plain, "hello %2Fstatus%3Fx%3D1");
 
     const started = performance.now();
     const tunneled = await new Promise<string>((resolve, reject) => {
@@ -173,7 +173,7 @@ test("the proxy forwards plain requests and tunnels to local servers", async () 
         if (reply === "HTTP/1.1 200 Connection Established\r\n\r\n") socket.write("GET /tunnel HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
       }).on("end", () => resolve(reply)).on("error", reject);
     });
-    assert.match(tunneled, /hello \/tunnel$/);
+    assert.match(tunneled, /hello %2Ftunnel$/);
     assert.ok(performance.now() - started < 400, "local destinations skip the 800 ms latency");
   } finally {
     await proxy.close();
