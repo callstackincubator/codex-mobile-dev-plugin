@@ -162,7 +162,7 @@ export class AndroidDriver implements AppDriver {
     const resolved = await this.shell("Finding the launch activity", `cmd package resolve-activity --brief --query-flags 0x000C0000 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER ${bundleId}`);
     const component = parseLauncherActivity(resolved, bundleId);
     if (component === null) throw new ExpectedOperationError("invalid_input", `${bundleId} is not installed or has no launcher activity.`);
-    await this.shell("Launching the app", `am force-stop ${bundleId} && am start -W -n ${component}`, 30000);
+    await this.shell("Launching the app", `am force-stop ${bundleId} && am start -W -n ${shellQuote(component)}`, 30000);
   }
 
   async stop(bundleId: string) { await this.shell("Stopping the app", `am force-stop ${bundleId}`); }

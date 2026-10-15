@@ -111,7 +111,7 @@ test("Android actions resolve launchers, quote URLs, and only touch requested pe
   const { emulator, calls } = fixture((_file, args) => {
     const command = args[3] ?? "";
     if (command.startsWith("pm list packages")) return "package:com.acme.android\npackage:com.other\n";
-    if (command.startsWith("cmd package resolve-activity")) return "priority=0\ncom.acme.android/.MainActivity\n";
+    if (command.startsWith("cmd package resolve-activity")) return "priority=0\ncom.acme.android/.MainActivity$Launcher\n";
     if (command.startsWith("dumpsys package")) return dumpsys;
     return "Status: ok\n";
   });
@@ -121,7 +121,7 @@ test("Android actions resolve launchers, quote URLs, and only touch requested pe
   await emulator.setPermission("com.acme.android", "location", "ask");
   await emulator.setPermission("com.acme.android", "camera", "allow");
   const shell = calls.map(call => call.args[3]);
-  assert.ok(shell.includes("am force-stop com.acme.android && am start -W -n com.acme.android/.MainActivity"));
+  assert.ok(shell.includes("am force-stop com.acme.android && am start -W -n 'com.acme.android/.MainActivity$Launcher'"), "inner-class launchers survive the device shell");
   assert.ok(shell.includes(`am start -W -a android.intent.action.VIEW -d 'myapp://checkout?step=2&x='\\''1'\\'''`));
   assert.ok(shell.includes([
     "pm revoke com.acme.android android.permission.ACCESS_FINE_LOCATION", "pm clear-permission-flags com.acme.android android.permission.ACCESS_FINE_LOCATION user-set user-fixed",
