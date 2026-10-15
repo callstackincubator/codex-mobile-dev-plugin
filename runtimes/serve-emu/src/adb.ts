@@ -379,7 +379,8 @@ export async function setStatusBar(
 ): Promise<StatusBarStatus> {
   const command = mode === "clean"
     ? [
-      "settings put global sysui_demo_allowed 1",
+      // SystemUI ignores demo broadcasts until its settings observer sees demo mode allowed.
+      '[ "$(settings get global sysui_demo_allowed)" = 1 ] || { settings put global sysui_demo_allowed 1 && sleep 1; }',
       ...CLEAN_STATUS_BAR,
       `settings put global ${STATUS_BAR_MARKER} $(${BOOT_ID})`,
     ]

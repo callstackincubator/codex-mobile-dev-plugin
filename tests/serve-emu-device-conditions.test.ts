@@ -44,7 +44,7 @@ test("a clean status bar holds only for the boot that entered demo mode", async 
   assert.deepEqual(await adb.getStatusBar("emulator-5554", run), { mode: "live" });
   assert.deepEqual(await adb.setStatusBar("emulator-5554", "clean", run), { mode: "clean" });
   const entered = calls.find(args => args[3].includes("command enter"))![3];
-  assert.match(entered, /^settings put global sysui_demo_allowed 1 && am broadcast -a com\.android\.systemui\.demo -e command exit && am broadcast -a com\.android\.systemui\.demo -e command enter && /);
+  assert.match(entered, /^\[ "\$\(settings get global sysui_demo_allowed\)" = 1 \] \|\| \{ settings put global sysui_demo_allowed 1 && sleep 1; \} && am broadcast -a com\.android\.systemui\.demo -e command exit && am broadcast -a com\.android\.systemui\.demo -e command enter && /);
   assert.match(entered, /-e command network -e wifi show -e level 4 -e fully true && .*-e command network -e mobile hide/);
   assert.match(entered, /-e command clock -e hhmm 0941/);
   assert.match(entered, /settings put global mobile_dev_status_bar_boot \$\(cat \/proc\/sys\/kernel\/random\/boot_id\)$/);
