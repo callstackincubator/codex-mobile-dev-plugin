@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:http";
 import * as Sentry from "@sentry/node";
 import type { Envelope } from "@sentry/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -26,6 +27,47 @@ function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
   assert.equal(included, expected, `Telemetry fragment: ${fragment}`);
 }
+
+test("the bundled HTTP dispatcher preserves Sentry fetch tracing and privacy", async t => {
+  const envelopes: Envelope[] = [];
+  const receivedTraceHeaders: string[] = [];
+  const server = createServer((request, response) => {
+    const header = request.headers["sentry-trace"];
+    if (typeof header === "string") receivedTraceHeaders.push(header);
+    response.end("ok");
+  });
+  server.listen(0, "127.0.0.1");
+  await new Promise<void>(resolve => { server.once("listening", resolve); });
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const url = `http://127.0.0.1:${address.port}/PRIVATE_PATH?token=PRIVATE_TOKEN`;
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, environment: "release",
+    integrations: [Sentry.nativeNodeFetchIntegration()], tracesSampleRate: 1,
+    beforeSend: scrubErrorEvent, beforeSendSpan: scrubSpan,
+    beforeBreadcrumb: () => null,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  const spanOptions = { name: "http.runtime.test", attributes: { component: "server", surface: "simulator" } };
+  await Sentry.startSpan(spanOptions, async () => {
+    const response = await fetch(url);
+    const text = await response.text();
+    assert.equal(text, "ok");
+  });
+  await Sentry.flush();
+  assert.equal(receivedTraceHeaders.length, 1);
+  assert.match(receivedTraceHeaders[0], /^[a-f0-9]{32}-[a-f0-9]{16}-1$/);
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const spans = items.filter(item => item[0].type === "span");
+  const encoded = JSON.stringify(spans);
+  contains(encoded, "http.runtime.test");
+  contains(encoded, "auto.http.node_fetch");
+  contains(encoded, "PRIVATE", false);
+  contains(encoded, "simulator");
+  contains(encoded, "server");
+});
 
 test("UI timing windows retain exact totals, reset, and ignore invalid measurements", () => {
   const window = new MeasurementWindow();

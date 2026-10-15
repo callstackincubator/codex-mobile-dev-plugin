@@ -13,6 +13,7 @@ import type { DeviceOption } from "./device-picker.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
 import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { PanelContext } from "./model-context.ts";
+import { encodeScreenshotAttachment } from "./screenshot-attachment.ts";
 import { getScreenAnnotations } from "./screen-annotations.ts";
 import type { ScreenAnnotation } from "../shared/screen-annotations.ts";
 import { accessibilityScreen, screenComponents, screenSize } from "../shared/screen-annotations.ts";
@@ -909,7 +910,10 @@ export function createSimulatorPanel(
       const result = await call(tool, parameters, { timeout: 30000 });
       const image = result.content.find(item => item.type === "image" && item.mimeType === "image/png");
       if (!image || image.type !== "image") throw new Error("The plugin did not return a PNG screenshot.");
-      try { await panelContext.attachScreenshot({ id: crypto.randomUUID(), data: image.data, simulator }); }
+      try {
+        const attachment = await encodeScreenshotAttachment(image.data);
+        await panelContext.attachScreenshot({ id: crypto.randomUUID(), ...attachment, simulator });
+      }
       catch (error) {
         captureUiError(error, "screenshot.attach");
         screenshotAttachmentError = "The screenshot could not be attached to chat.";

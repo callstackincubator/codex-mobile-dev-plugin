@@ -45,9 +45,9 @@ type Cache = z.infer<typeof cacheSchema>;
 export type RunCodex = (args: string[]) => Promise<unknown>;
 class PluginUpdateError extends Error {}
 
-export async function resolveCodexCli(parentPid = process.ppid): Promise<string> {
+export async function resolveCodexCli(parentPid = process.ppid, cwd = homedir()): Promise<string> {
   const pid = String(parentPid);
-  const result = await execute("/bin/ps", ["-p", pid, "-o", "comm="], { timeout: 5000, maxBuffer: 4096 });
+  const result = await execute("/bin/ps", ["-p", pid, "-o", "comm="], { cwd, timeout: 5000, maxBuffer: 4096 });
   const path = result.stdout.trim();
   const absolute = isAbsolute(path);
   const name = basename(path);
@@ -55,14 +55,21 @@ export async function resolveCodexCli(parentPid = process.ppid): Promise<string>
   return path;
 }
 
-async function runCodex(args: string[]): Promise<unknown> {
-  const path = await resolveCodexCli();
-  try {
-    const result = await execute(path, args, { timeout: 120000, maxBuffer: 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
-    return JSON.parse(result.stdout);
-  } catch {
-    throw new PluginUpdateError("Codex could not update Mobile Dev. Check your network connection and try again.");
-  }
+export function createCodexRunner(cwd: string, options: { path?: string; env?: NodeJS.ProcessEnv } = {}): RunCodex {
+  const environment = options.env ?? process.env;
+  const env = { ...environment, GIT_TERMINAL_PROMPT: "0" };
+  return async args => {
+    const path = options.path ?? await resolveCodexCli(process.ppid, cwd);
+    let stdout: string;
+    try {
+      const result = await execute(path, args, { cwd, timeout: 120000, maxBuffer: 1024 * 1024, env });
+      stdout = result.stdout;
+    } catch {
+      throw new PluginUpdateError("Codex could not complete the Mobile Dev update command. Try again.");
+    }
+    try { return JSON.parse(stdout); }
+    catch { throw new PluginUpdateError("Codex returned an invalid update response. Try again."); }
+  };
 }
 
 function isReleaseRepository(source: string): boolean {
@@ -90,7 +97,7 @@ export class PluginUpdates {
     this.profile = options.profile ?? process.env.CODEX_HOME ?? defaultProfile;
     this.cachePath = join(this.profile, "mobile-dev", "updates.json");
     this.fetch = options.fetch ?? fetch;
-    this.run = options.run ?? runCodex;
+    this.run = options.run ?? createCodexRunner(this.profile);
     this.now = options.now ?? Date.now;
   }
 
@@ -200,8 +207,7 @@ export class PluginUpdates {
       const result = await this.run(["plugin", "marketplace", "upgrade", "mobile-dev", "--json"]);
       const upgrade = upgradeSchema.parse(result);
       const selected = upgrade.selectedMarketplaces.includes("mobile-dev");
-      const refreshed = upgrade.upgradedRoots.includes(marketplace.root);
-      if (upgrade.errors.length > 0 || selected === false || refreshed === false) {
+      if (upgrade.errors.length > 0 || selected === false) {
         throw new PluginUpdateError("Codex could not refresh the Mobile Dev marketplace. Try again.");
       }
       const listedPlugins = await this.run(["plugin", "list", "--json"]);

@@ -6,8 +6,9 @@ import { formatLogContext, logKey } from "../shared/logs.ts";
 import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationMessage } from "../shared/screen-annotations.ts";
 import type { ScreenAnnotation } from "../shared/screen-annotations.ts";
 import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
+import type { EncodedScreenshotAttachment } from "./screenshot-attachment.ts";
 
-export type ScreenshotAttachment = { id: string; data: string; simulator: SimulatorDevice };
+export type ScreenshotAttachment = EncodedScreenshotAttachment & { id: string; simulator: SimulatorDevice };
 
 function composerUnavailable(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
@@ -234,7 +235,7 @@ export class PanelContext {
         : "Mobile Dev has no selected simulator." },
       ...(log ? [{ type: "text" as const, text: formatLogContext(log), _meta: { "openai/title": `${log.level}: ${log.message.replace(/\s+/g, " ").trim().slice(0, 70)}` } }] : []),
       ...this.screenshots.map(screenshot => ({
-        type: "image" as const, mimeType: "image/png", data: screenshot.data,
+        type: "image" as const, mimeType: screenshot.mimeType, data: screenshot.data,
         _meta: { "openai/title": `Screenshot of ${screenshot.simulator.name} (${screenshot.simulator.udid})`, "mobile-dev/screenshotId": screenshot.id },
       })),
       ...(this.annotations.length ? [{ type: "text" as const, annotations: { audience: ["assistant" as const] }, text: ANNOTATION_EDIT_GUIDANCE }] : []),

@@ -100,7 +100,9 @@ test("server startup sets the same user and session on Node scope and both nativ
     await Sentry.close(0);
   `;
   await build({ stdin: { contents, resolveDir: root, loader: "ts" }, outfile: probe,
-    bundle: true, format: "esm", platform: "node", target: "node22", external: ["@sentry/node"] });
+    bundle: true, format: "esm", platform: "node", target: "node22", external: ["@sentry/node"],
+    banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
+  });
   const env = { ...process.env, MOBILE_DEV_TELEMETRY: "on" };
   const runs: { userId: string; sessionId: string }[] = [];
   for (let index = 0; index < 2; index++) {

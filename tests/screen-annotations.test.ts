@@ -382,7 +382,7 @@ test("annotations work on text-only hosts and preserve explicitly attached scree
   await f.context.sendAnnotationsToChat(simulator.udid);
   assert.equal(f.messages[0].content.some(item => item.type === "image"), false);
   const images = fixture();
-  await images.context.attachScreenshot({ id: "explicit", data: capture.screenshot.data, simulator });
+  await images.context.attachScreenshot({ id: "explicit", data: "/9j/2Q==", mimeType: "image/jpeg", simulator });
   await images.context.attachAnnotation(annotation);
   assert.equal(images.updates.at(-1)?.content?.filter(item => item.type === "image").length, 1);
   assert.equal(images.updates.at(-1)?.content?.find(item => item.type === "image")?._meta?.["mobile-dev/screenshotId"], "explicit");
