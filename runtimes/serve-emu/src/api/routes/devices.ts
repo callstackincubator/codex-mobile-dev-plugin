@@ -1,11 +1,14 @@
+// Modified for Mobile Dev: status bar demo mode.
 import {
   getFontScale,
   getNetworkStatus,
   getNightMode,
+  getStatusBar,
   getUserRotation,
   setFontScale,
   setNetworkEnabled,
   setNightMode,
+  setStatusBar,
   setUserRotation,
   type NightMode,
   type OrientationMode,
@@ -440,6 +443,62 @@ export function deviceRoutes(): ApiRoute<ApiDependencies>[] {
             ok: true,
             network: await runForContext(requestContext, (context) =>
               setNetworkEnabled(context.serial, enabled),
+            ),
+          });
+        } catch (err) {
+          return errorResponse(err);
+        }
+      },
+    },
+    {
+      method: "GET",
+      path: "/api/status-bar",
+      handler: async ({ deps }) => {
+        const { runForContext, requestContext, errorResponse } = deps;
+        try {
+          return Response.json({
+            ok: true,
+            statusBar: await runForContext(requestContext, (context) =>
+              getStatusBar(context.serial),
+            ),
+          });
+        } catch (err) {
+          return errorResponse(err);
+        }
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/status-bar",
+      handler: async ({ request: req, deps }) => {
+        const {
+          runForContext,
+          requestContext,
+          errorResponse,
+          readJsonBody,
+          MAX_JSON_BODY_BYTES,
+        } = deps;
+        try {
+          const payload = await readJsonBody(
+            req,
+            MAX_JSON_BODY_BYTES,
+            requestContext,
+          );
+          if (
+            typeof payload !== "object" ||
+            payload === null ||
+            Array.isArray(payload)
+          ) {
+            throw new Error("status bar payload must be an object");
+          }
+          const mode = (payload as Record<string, unknown>).mode;
+          if (mode !== "clean" && mode !== "live") {
+            throw new Error("mode must be clean or live");
+          }
+          return Response.json({
+            ok: true,
+            statusBar: await runForContext(requestContext, (context) =>
+              setStatusBar(context.serial, mode),
             ),
           });
         } catch (err) {

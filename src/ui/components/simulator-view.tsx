@@ -33,7 +33,7 @@ export const SimulatorView = memo(function SimulatorView({ platform, visible }: 
       <div data-element="device-frame" hidden>
         <img data-element="device-bezel" className="pointer-events-none absolute inset-0 z-1 size-full select-none" alt="" draggable={false} hidden />
         <div data-element="device-nine-patch" className="pointer-events-none absolute inset-0 z-3" hidden />
-        <canvas data-element="screen" className="block size-full touch-none bg-black focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-ring" tabIndex={0} aria-label={`${label} screen. Click or drag to interact. Focus to type.`} />
+        <canvas data-element="screen" className="block size-full touch-none bg-black outline-none" tabIndex={0} aria-label={`${label} screen. Click or drag to interact. Focus to type.`} />
       </div>
       <div data-element="stopped" className="absolute inset-0 z-10 bg-background/70" hidden><Empty><EmptyHeader><EmptyMedia variant="icon"><PowerIcon /></EmptyMedia><EmptyTitle>Device stopped</EmptyTitle></EmptyHeader><EmptyContent><Button data-element="start-device" size="sm">Start device</Button></EmptyContent></Empty></div>
       <ScreenAnnotationOverlay store={annotations} />

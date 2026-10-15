@@ -1,3 +1,4 @@
+// Modified for Mobile Dev: status bar demo mode and Wi-Fi-only network toggling.
 import { spawn } from "node:child_process";
 import { execBuffer, execText, type ExecResult } from "./exec.ts";
 
@@ -32,6 +33,8 @@ export type NetworkStatus = {
     mobileData: string;
   };
 };
+export type StatusBarMode = "clean" | "live";
+export type StatusBarStatus = { mode: StatusBarMode };
 
 function execFailed(result: ExecResult<string | Buffer>): boolean {
   return result.status !== 0 || result.error !== null;
@@ -325,11 +328,72 @@ export async function setNetworkEnabled(
     const r = await runExec("adb", ["-s", serial, "shell", ...args], {
       timeout: ADB_MUTATION_TIMEOUT_MS,
     });
-    if (execFailed(r)) {
+    // Wi-Fi-only devices have no telephony service to toggle mobile data on.
+    const noTelephony = service === "data" && /Can't find service: phone/.test(`${r.stdout}${r.stderr}`);
+    if (execFailed(r) && !noTelephony) {
       throw new Error(
         `adb shell ${args.join(" ")} failed: ${execFailure(r)}`,
       );
     }
   }
   return getNetworkStatus(serial, runExec);
+}
+
+const DEMO_BROADCAST = "am broadcast -a com.android.systemui.demo -e command";
+// A clean marketing status bar: 9:41, full battery, full connected Wi-Fi, no notification icons.
+// Android 16's demo mode ignores the mobile data type and level, drawing an empty "3G" icon,
+// so the mobile icon is hidden. Re-entering demo mode makes the mobile command take effect.
+const CLEAN_STATUS_BAR = [
+  "exit",
+  "enter",
+  "clock -e hhmm 0941",
+  "battery -e level 100 -e plugged false",
+  "network -e wifi show -e level 4 -e fully true",
+  "network -e mobile hide",
+  "notifications -e visible false",
+].map((command) => `${DEMO_BROADCAST} ${command}`);
+// Demo mode cannot be queried and ends on reboot, so entering it records the boot it belongs to.
+const STATUS_BAR_MARKER = "mobile_dev_status_bar_boot";
+const BOOT_ID = "cat /proc/sys/kernel/random/boot_id";
+
+export async function getStatusBar(
+  serial: string,
+  runExec: typeof execText = execText,
+): Promise<StatusBarStatus> {
+  const r = await runExec(
+    "adb",
+    ["-s", serial, "shell", `settings get global ${STATUS_BAR_MARKER}; ${BOOT_ID}`],
+    { timeout: ADB_QUERY_TIMEOUT_MS },
+  );
+  if (execFailed(r)) {
+    throw new Error(`reading the status bar mode failed: ${execFailure(r)}`);
+  }
+  const [marker, boot] = r.stdout.trim().split(/\s+/);
+  return { mode: marker && marker === boot ? "clean" : "live" };
+}
+
+export async function setStatusBar(
+  serial: string,
+  mode: StatusBarMode,
+  runExec: typeof execText = execText,
+): Promise<StatusBarStatus> {
+  const command = mode === "clean"
+    ? [
+      // SystemUI ignores demo broadcasts until its settings observer sees demo mode allowed.
+      '[ "$(settings get global sysui_demo_allowed)" = 1 ] || { settings put global sysui_demo_allowed 1 && sleep 1; }',
+      ...CLEAN_STATUS_BAR,
+      `settings put global ${STATUS_BAR_MARKER} $(${BOOT_ID})`,
+    ]
+    : [
+      `${DEMO_BROADCAST} exit`,
+      "settings put global sysui_demo_allowed 0",
+      `settings delete global ${STATUS_BAR_MARKER}`,
+    ];
+  const r = await runExec("adb", ["-s", serial, "shell", command.join(" && ")], {
+    timeout: ADB_MUTATION_TIMEOUT_MS,
+  });
+  if (execFailed(r)) {
+    throw new Error(`setting the status bar to ${mode} failed: ${execFailure(r)}`);
+  }
+  return getStatusBar(serial, runExec);
 }
