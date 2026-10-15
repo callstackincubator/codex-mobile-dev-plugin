@@ -419,10 +419,11 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     async close() {
       updates.close();
       stopRecordingStorageMetrics();
-      await closeDeviceSettings();
+      // Clearing Android throttles waits on adb, so it runs alongside the other cleanup.
+      const deviceSettingsClosed = closeDeviceSettings();
       await recordings.close();
       closeInspection(); closeAndroid(); streams.close();
-      try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror()]); }
+      try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror(), deviceSettingsClosed]); }
       finally { baguette.dispose(); await server.close(); }
     },
   };

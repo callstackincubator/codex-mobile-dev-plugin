@@ -46,6 +46,7 @@ export class ServeEmu {
   private readonly backendContexts = new WeakMap<ChildProcess, AndroidStartupContext>();
   private disposed = false;
   private readonly external?: URL;
+  private readonly startListeners = new Set<(id: string) => void>();
 
   constructor(baseUrl = process.env.SERVE_EMU_URL) {
     if (baseUrl) this.external = parseBaseUrl(baseUrl, "SERVE_EMU_URL");
@@ -215,11 +216,20 @@ export class ServeEmu {
     if ((await this.health(url)).serial !== id) throw new SimulatorUnavailableError("The Android backend switched to another device. Refresh and reconnect the selected device.");
   }
 
+  // Listeners run after each successful start and must handle their own failures.
+  onStart(listener: (id: string) => void) {
+    this.startListeners.add(listener);
+    return () => { this.startListeners.delete(listener); };
+  }
+
   async start(id: string): Promise<Backend> {
     if (this.disposed) throw new Error("The plugin server has closed.");
     let pending = this.starting.get(id);
     if (!pending) {
-      pending = this.ensureStarted(id).finally(() => this.starting.delete(id));
+      pending = this.ensureStarted(id).then(backend => {
+        for (const listener of this.startListeners) listener(id);
+        return backend;
+      }).finally(() => this.starting.delete(id));
       this.starting.set(id, pending);
     }
     return pending;

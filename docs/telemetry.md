@@ -186,8 +186,12 @@ Language tags are not sent. The device settings tools report unexpected Baguette
 serve-emu failures under `device_settings.read` or `device_settings.<setting>` with a
 fixed message. Android throttling runs through a local proxy on the Mac, so its adb
 failures report under `device_settings.network`; throttling a device that already
-uses its own proxy counts only through `server.error.outcome`. Proxy addresses and
-traffic are not sent. The Device tab
+uses its own proxy counts only through `server.error.outcome`. When the plugin first
+starts an Android backend, it clears a throttle left by a plugin process that exited;
+unexpected adb failures there report under `device_settings.network_recovery`. Proxy
+addresses and traffic are not sent. Since 0.1.155, expected device setting and app
+control outcomes reach `server.error.outcome` as documented; earlier releases skipped
+them. The Device tab
 records `ui.device_settings.change` round trips in milliseconds and counts
 `ui.device_settings.failure`, with the same surface and device-change exclusions as
 the App tab. Setting values, throttle presets, and device IDs are not sent.

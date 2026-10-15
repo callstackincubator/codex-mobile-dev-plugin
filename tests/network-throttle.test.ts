@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer, request, type Server } from "node:http";
-import { connect } from "node:net";
+import { connect, createServer as createNetServer } from "node:net";
 import { PassThrough } from "node:stream";
 import { AndroidNetworkThrottle, LinkPacer, ThrottleProxy, isLocalDestination, pacedPipe, parseThrottleState } from "../src/server/network-throttle.ts";
 import type { Commands } from "../src/server/app-control/commands.ts";
@@ -104,7 +104,7 @@ test("the user's own proxy is reported and never replaced", async () => {
   settings.set("http_proxy", "192.168.1.20:8888");
   assert.deepEqual(await throttle.read("emulator-5554"), { foreignProxy: "192.168.1.20:8888" });
   await assert.rejects(throttle.set("emulator-5554", "3g"), (error: unknown) => expectedOutcome(error) === "invalid_input" && /already uses the proxy 192\.168\.1\.20:8888/.test((error as Error).message));
-  await throttle.set("emulator-5554", null);
+  assert.deepEqual(await throttle.set("emulator-5554", null), { foreignProxy: "192.168.1.20:8888" });
   assert.equal(settings.get("http_proxy"), "192.168.1.20:8888", "going back to normal leaves it alone");
 
   settings.set(marker, "6f9619ff-8b86-4011-b42d-00c04fc964ff:5000:edge");
@@ -120,6 +120,29 @@ test("a throttle left by a plugin process that exited is cleared so the device s
   settings.set(marker, "6f9619ff-8b86-4011-b42d-00c04fc964ff:5000:edge");
   assert.deepEqual(await throttle.read("emulator-5554"), { preset: null });
   assert.deepEqual([...settings], []);
+});
+
+test("concurrent changes to one device share a single proxy", async () => {
+  const { settings, commands } = device();
+  const throttle = new AndroidNetworkThrottle(commands, async () => null);
+  try {
+    await Promise.all([throttle.set("emulator-5554", "edge"), throttle.set("emulator-5554", "3g")]);
+    assert.match(settings.get(marker)!, /:3g$/, "the later change wins");
+    assert.equal((throttle as unknown as { proxies: Map<string, unknown> }).proxies.size, 1);
+  } finally { await throttle.close(); }
+  assert.deepEqual([...settings], []);
+});
+
+test("a device left on a dead proxy is recovered once when the plugin first reaches it", async () => {
+  const { settings, calls, commands } = device();
+  const throttle = new AndroidNetworkThrottle(commands, async () => null);
+  settings.set("http_proxy", "10.0.2.2:5000");
+  settings.set(marker, "6f9619ff-8b86-4011-b42d-00c04fc964ff:5000:edge");
+  await throttle.recover("emulator-5554");
+  assert.deepEqual([...settings], []);
+  const count = calls.length;
+  await throttle.recover("emulator-5554");
+  assert.equal(calls.length, count, "later starts skip the check");
 });
 
 function listen(server: Server) {
@@ -151,6 +174,29 @@ test("the proxy forwards plain requests and tunnels to local servers", async () 
     });
     assert.match(tunneled, /hello \/tunnel$/);
     assert.ok(performance.now() - started < 400, "local destinations skip the 800 ms latency");
+  } finally {
+    await proxy.close();
+    await new Promise(resolve => origin.close(resolve));
+  }
+});
+
+test("a throttled tunnel delivers everything a server sends before it closes, in order", async () => {
+  const payload = Buffer.from(Array.from({ length: 64 * 1024 }, (_, index) => index % 253));
+  const origin = createNetServer(socket => { socket.end(payload); });
+  await new Promise<void>(resolve => origin.listen(0, "127.0.0.1", resolve));
+  const port = (origin.address() as { port: number }).port;
+  // Treat the local server as remote so the tunnel is paced.
+  const proxy = new ThrottleProxy({ latencyMs: 200, bandwidthKbps: 2000 }, () => false);
+  const proxyPort = await proxy.listen();
+  try {
+    const received = await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const socket = connect(proxyPort, "127.0.0.1", () => socket.write(`CONNECT 127.0.0.1:${port} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n\r\n`));
+      socket.on("data", (data: Buffer) => chunks.push(data)).on("close", () => resolve(Buffer.concat(chunks))).on("error", reject);
+    });
+    const header = Buffer.from("HTTP/1.1 200 Connection Established\r\n\r\n");
+    assert.deepEqual(received.subarray(0, header.length), header);
+    assert.deepEqual(received.subarray(header.length), payload, "paced bytes are not dropped when the server closes first");
   } finally {
     await proxy.close();
     await new Promise(resolve => origin.close(resolve));

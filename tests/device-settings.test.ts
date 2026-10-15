@@ -54,9 +54,10 @@ function fixture() {
   const androidThrottle = {
     async read() { return throttle; },
     async set(id: string, preset: string | null) {
-      if ("foreignProxy" in throttle) throw new Error("This device already uses the proxy");
+      if ("foreignProxy" in throttle) { if (preset === null) return throttle; throw new Error("This device already uses the proxy"); }
       throttles.push({ id, preset });
       throttle = { preset: preset as never };
+      return throttle;
     },
   } as unknown as AndroidNetworkThrottle;
   return { service: new DeviceSettingsService(baguette, serveEmu, androidThrottle), requests, throttles, setThrottle(value: ThrottleReading) { throttle = value; }, failFont() { failFont = true; }, setIosNetwork(value: object) { iosNetwork = value; } };
@@ -113,6 +114,11 @@ test("status bar and network conditions use the same presets on both platforms",
   f.setThrottle({ foreignProxy: "192.168.1.20:8888" });
   assert.equal((await f.service.read(phone)).network, "custom", "the user's own proxy is shown, not replaced");
   await assert.rejects(f.service.update(phone, { setting: "network", value: "3g" }), /already uses the proxy/);
+  assert.deepEqual(await f.service.update(phone, { setting: "network", value: "normal" }), { network: "custom" }, "normal keeps the user's proxy and says so");
+  f.setIosNetwork({ ok: true, unexpected: true });
+  const partial = await f.service.read(ios);
+  assert.equal(partial.network, undefined);
+  assert.equal(partial.appearance !== undefined && partial.errors?.some(error => error.startsWith("Network:")), true, "a malformed network reply keeps the display controls");
 });
 
 test("unsupported settings never reach a backend and partial reads keep working controls", async () => {

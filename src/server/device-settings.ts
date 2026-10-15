@@ -56,15 +56,15 @@ export class DeviceSettingsService {
       // The status bar and network are optional extras; a failure there keeps the display controls.
       const [display, statusBar, network] = await Promise.allSettled([
         this.baguette.json(`${path}/interface.json`),
-        this.baguette.json(`${path}/status-bar`),
-        this.baguette.json(`${path}/network`),
+        this.baguette.json(`${path}/status-bar`).then(value => Object.keys(z.record(z.string(), z.unknown()).parse(value)).length > 0 ? "clean" as const : "live" as const),
+        this.baguette.json(`${path}/network`).then(iosNetwork),
       ]);
       if (display.status === "rejected") throw display.reason;
       const settings: DeviceSettings = { ...this.iosReading(display.value), networkConditions: [...networkConditions] };
       const errors: string[] = [];
-      if (statusBar.status === "fulfilled") settings.statusBar = Object.keys(z.record(z.string(), z.unknown()).parse(statusBar.value)).length > 0 ? "clean" : "live";
+      if (statusBar.status === "fulfilled") settings.statusBar = statusBar.value;
       else errors.push(`Status bar: ${errorMessage(statusBar.reason)}`);
-      if (network.status === "fulfilled") settings.network = iosNetwork(network.value);
+      if (network.status === "fulfilled") settings.network = network.value;
       else errors.push(`Network: ${errorMessage(network.reason)}`);
       if (errors.length) settings.errors = errors;
       return settings;
@@ -141,11 +141,12 @@ export class DeviceSettingsService {
       case "network": {
         // Offline turns the radios off; the presets slow traffic through a proxy on the Mac.
         const preset: NetworkPreset | null = change.value === "normal" || change.value === "offline" ? null : change.value;
-        await this.throttle.set(target.id, preset);
+        const throttle = await this.throttle.set(target.id, preset);
         // Toggling the radios restarts Wi-Fi, so they change only when going offline or coming back.
         const goOffline = change.value === "offline";
         if (radiosOff(await this.android.json(backend.url, "/api/network")) !== goOffline) await this.android.json(backend.url, "/api/network", this.post({ enabled: !goOffline }));
-        return { network: change.value };
+        // Going back to normal keeps the user's own proxy, which reads as custom.
+        return { network: !goOffline && "foreignProxy" in throttle ? "custom" : change.value };
       }
       default: throw unsupported("serve-emu");
     }
@@ -161,7 +162,8 @@ export function registerDeviceSettingsTools(server: McpServer, baguette: Baguett
   const guarded = <T>(action: (input: T) => string, handler: (input: T) => Promise<object>) => async (input: T) => {
     try { const settings = await handler(input); return { content: [{ type: "text" as const, text: JSON.stringify(settings) }], structuredContent: { settings } }; }
     catch (error) {
-      if (expectedOutcome(error) === undefined) captureServerError(new Error("Device setting command failed."), `device_settings.${action(input)}`);
+      // Expected outcomes carry fixed reasons and are counted without a report.
+      captureServerError(expectedOutcome(error) === undefined ? new Error("Device setting command failed.") : error, `device_settings.${action(input)}`);
       return { isError: true, content: [{ type: "text" as const, text: errorMessage(error) }] };
     }
   };
@@ -173,6 +175,9 @@ export function registerDeviceSettingsTools(server: McpServer, baguette: Baguett
     title: "Change device setting", description: "Change one supported setting on the selected running device without restarting its stream.",
     inputSchema: { target: targetSchema, change: deviceSettingSchema }, annotations: { ...annotations, readOnlyHint: false }, _meta: { ui: { visibility: ["app"] } },
   }, guarded<{ target: Target; change: DeviceSetting }>(({ change }) => change.setting, ({ target, change }) => service.update(target, change)));
+  const stopRecovery = android.onStart(serial => {
+    service.throttle.recover(serial).catch(() => captureServerError(new Error("Network throttle recovery failed."), "device_settings.network_recovery"));
+  });
   // Android throttling must be undone before the plugin exits, or the device keeps a dead proxy.
-  return () => service.throttle.close();
+  return () => { stopRecovery(); return service.throttle.close(); };
 }

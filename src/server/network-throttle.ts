@@ -25,28 +25,36 @@ export class LinkPacer {
 const chunkBytes = 16 * 1024;
 const queuedLimit = 256 * 1024;
 
-// Delivers source chunks to the destination when the pacer says they arrive, keeping their order and
-// pausing the source while too much is in flight.
-export function pacedPipe(source: Readable, destination: Writable, pacer: LinkPacer, now = () => performance.now()) {
+// Delivers source chunks to the destination when the pacer says they arrive. One timer drains a single
+// queue, so bytes keep their order however Node orders timers, and the source pauses while too much is
+// in flight. Ending calls `end` once everything queued has been written.
+export function pacedPipe(source: Readable, destination: Writable, pacer: LinkPacer, end = () => { destination.end(); }, now = () => performance.now()) {
+  const queue: { piece: Buffer; at: number }[] = [];
   let queued = 0;
-  let last = 0;
   let ended = false;
-  const finish = () => { if (ended && queued === 0) destination.end(); };
+  let timer: NodeJS.Timeout | undefined;
+  const schedule = () => { timer = setTimeout(drain, Math.max(0, Math.ceil(queue[0].at - now()))); };
+  const drain = () => {
+    timer = undefined;
+    while (queue.length && queue[0].at <= now()) {
+      const { piece } = queue.shift()!;
+      queued -= piece.length;
+      if (!destination.destroyed) destination.write(piece);
+    }
+    if (queued < queuedLimit && source.isPaused()) source.resume();
+    if (queue.length) schedule();
+    else if (ended) end();
+  };
   source.on("data", (data: Buffer) => {
     for (let offset = 0; offset < data.length; offset += chunkBytes) {
       const piece = data.subarray(offset, offset + chunkBytes);
-      last = Math.max(last, pacer.arrival(piece.length));
+      queue.push({ piece, at: pacer.arrival(piece.length) });
       queued += piece.length;
-      setTimeout(() => {
-        queued -= piece.length;
-        if (!destination.destroyed) destination.write(piece);
-        if (queued < queuedLimit && source.isPaused()) source.resume();
-        finish();
-      }, Math.max(0, last - now()));
     }
     if (queued >= queuedLimit) source.pause();
+    if (!timer) schedule();
   });
-  source.once("end", () => { ended = true; finish(); });
+  source.once("end", () => { ended = true; if (!timer) end(); });
 }
 
 // Development servers on the Mac or the local network stay at full speed, such as Metro at 10.0.2.2:8081.
@@ -70,7 +78,10 @@ export class ThrottleProxy {
   private readonly down: LinkPacer;
   private readonly up: LinkPacer;
 
-  constructor(profile: LinkProfile) {
+  private readonly isLocal: (host: string) => boolean;
+
+  constructor(profile: LinkProfile, isLocal = isLocalDestination) {
+    this.isLocal = isLocal;
     this.down = new LinkPacer(profile);
     this.up = new LinkPacer(profile);
     this.server = createServer((request, response) => this.forward(request, response));
@@ -90,18 +101,22 @@ export class ThrottleProxy {
   private tunnel(request: IncomingMessage, client: Socket, head: Buffer) {
     const target = /^(\[[^\]]+\]|[^:]+):(\d+)$/.exec(request.url ?? "");
     if (!target) { client.end("HTTP/1.1 400 Bad Request\r\n\r\n"); return; }
-    const local = isLocalDestination(target[1]);
-    const upstream = connect(Number(target[2]), hostAddress(target[1]));
+    const local = this.isLocal(target[1]);
+    // Each side half-closes on its own, so bytes still being paced reach the app after the server
+    // closes. The app's socket is released once both directions are done.
+    const upstream = connect({ port: Number(target[2]), host: hostAddress(target[1]), allowHalfOpen: true });
     this.sockets.add(upstream);
-    upstream.once("close", () => { this.sockets.delete(upstream); client.destroy(); });
+    const release = () => { if (upstream.destroyed && client.writableFinished) client.destroy(); };
+    const deliverEnd = () => { client.end(release); };
+    upstream.once("close", () => { this.sockets.delete(upstream); release(); });
     client.once("close", () => upstream.destroy());
     upstream.on("error", () => client.destroy());
     client.on("error", () => upstream.destroy());
     upstream.once("connect", () => {
       client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
       if (head.length) upstream.write(head);
-      if (local) { upstream.pipe(client); client.pipe(upstream); return; }
-      pacedPipe(upstream, client, this.down);
+      if (local) { upstream.pipe(client, { end: false }); upstream.once("end", deliverEnd); client.pipe(upstream); return; }
+      pacedPipe(upstream, client, this.down, deliverEnd);
       pacedPipe(client, upstream, this.up);
     });
   }
@@ -112,7 +127,7 @@ export class ThrottleProxy {
     let url: URL;
     try { url = new URL(request.url ?? ""); } catch { response.writeHead(400).end(); return; }
     if (url.protocol !== "http:") { response.writeHead(400).end(); return; }
-    const local = isLocalDestination(url.hostname);
+    const local = this.isLocal(url.hostname);
     const headers = { ...request.headers };
     delete headers["proxy-connection"];
     delete headers["proxy-authorization"];
@@ -155,6 +170,9 @@ export function parseThrottleState(output: string): DeviceState {
 // proxy and clear a setup whose process is gone, which would otherwise leave the device offline.
 export class AndroidNetworkThrottle {
   private readonly proxies = new Map<string, { proxy: ThrottleProxy; port: number }>();
+  // Changes to one device run one at a time, so concurrent views cannot start two proxies for it.
+  private readonly queues = new Map<string, Promise<unknown>>();
+  private readonly recovered = new Set<string>();
   private readonly commands: Commands;
   private readonly alive: (port: number) => Promise<string | null>;
 
@@ -186,7 +204,26 @@ export class AndroidNetworkThrottle {
     if (port !== undefined && !emulatorSerial.test(serial)) await this.adb(serial, "Clearing the network throttle", ["reverse", "--remove", `tcp:${port}`]);
   }
 
-  async read(serial: string): Promise<ThrottleReading> {
+  private serialized<T>(serial: string, task: () => Promise<T>): Promise<T> {
+    const run = (this.queues.get(serial) ?? Promise.resolve()).catch(() => undefined).then(task);
+    const settled = run.catch(() => undefined);
+    this.queues.set(serial, settled);
+    void settled.then(() => { if (this.queues.get(serial) === settled) this.queues.delete(serial); });
+    return run;
+  }
+
+  // A plugin process that crashed leaves the device pointing at a dead proxy. Checking once when this
+  // process first reaches a device brings it back online without waiting for the settings panel.
+  async recover(serial: string) {
+    if (this.recovered.has(serial)) return;
+    this.recovered.add(serial);
+    try { await this.read(serial); }
+    catch (error) { this.recovered.delete(serial); throw error; }
+  }
+
+  read(serial: string): Promise<ThrottleReading> { return this.serialized(serial, () => this.readNow(serial)); }
+
+  private async readNow(serial: string): Promise<ThrottleReading> {
     const state = await this.state(serial);
     if (state.owner && !this.ours(serial, state)) {
       // Someone replaced or removed the proxy; drop the marker but leave their setting alone.
@@ -204,15 +241,17 @@ export class AndroidNetworkThrottle {
     return state.proxy ? { foreignProxy: state.proxy } : { preset: null };
   }
 
-  async set(serial: string, preset: NetworkPreset | null): Promise<void> {
+  // Returns what the device uses afterwards: the user's own proxy stays in place.
+  set(serial: string, preset: NetworkPreset | null): Promise<ThrottleReading> { return this.serialized(serial, () => this.setNow(serial, preset)); }
+
+  private async setNow(serial: string, preset: NetworkPreset | null): Promise<ThrottleReading> {
     const state = await this.state(serial);
     const ours = this.ours(serial, state);
     const current = this.proxies.get(serial);
     if (preset === null) {
-      // The user's own proxy stays in place.
       if (ours) await this.clear(serial, state.owner!.port);
       if (current) { this.proxies.delete(serial); await current.proxy.close(); }
-      return;
+      return state.proxy && !ours ? { foreignProxy: state.proxy } : { preset: null };
     }
     if (state.proxy && !ours) {
       throw new ExpectedOperationError("invalid_input", `This device already uses the proxy ${state.proxy}. Remove it to simulate a slower network.`);
@@ -222,6 +261,7 @@ export class AndroidNetworkThrottle {
     link.proxy.profile = profileFor(preset);
     if (!emulatorSerial.test(serial)) await this.adb(serial, "Throttling the network", ["reverse", `tcp:${link.port}`, `tcp:${link.port}`]);
     await this.shell(serial, "Throttling the network", `settings put global http_proxy ${this.proxyAddress(serial, link.port)} && settings put global ${marker} ${link.proxy.token}:${link.port}:${preset}`);
+    return { preset };
   }
 
   private async start() {
@@ -231,6 +271,7 @@ export class AndroidNetworkThrottle {
 
   // Devices still pointing at this process's proxies would lose internet once it exits.
   async close() {
+    await Promise.allSettled(this.queues.values());
     await Promise.allSettled([...this.proxies].map(async ([serial, { proxy, port }]) => {
       try {
         const state = await this.state(serial);
