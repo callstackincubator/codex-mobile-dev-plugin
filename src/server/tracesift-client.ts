@@ -207,19 +207,27 @@ export class TraceSiftClient {
 
   private async request(path: string, init: RequestInit, signal?: AbortSignal): Promise<unknown> {
     let descriptor = await this.service(signal);
-    const send = () => fetch(new URL(path, descriptor.baseUrl), {
+    const send = (requestSignal: AbortSignal) => fetch(new URL(path, descriptor.baseUrl), {
       ...init, headers: { ...init.headers, Authorization: `Bearer ${descriptor.token}` },
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      redirect: "error",
+      signal: requestSignal, redirect: "error",
     });
     let response: Response;
-    try { response = await send(); }
-    catch {
+    try {
+      const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+      response = await send(signal ? AbortSignal.any([signal, timeout]) : timeout);
+    } catch (error) {
       signal?.throwIfAborted();
+      if (error instanceof Error && error.name === "TimeoutError") throw new Error("TraceSift did not respond to the request in time. Restart it and retry.");
       this.ready = undefined;
       descriptor = await this.service(signal);
-      try { response = await send(); }
-      catch { signal?.throwIfAborted(); throw new Error("TraceSift stopped while handling the request. Restart it and retry."); }
+      try {
+        const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+        response = await send(signal ? AbortSignal.any([signal, timeout]) : timeout);
+      } catch (retryError) {
+        signal?.throwIfAborted();
+        if (retryError instanceof Error && retryError.name === "TimeoutError") throw new Error("TraceSift did not respond to the request in time. Restart it and retry.");
+        throw new Error("TraceSift stopped while handling the request. Restart it and retry.");
+      }
     }
     let body: unknown;
     try { body = await response.json(); }

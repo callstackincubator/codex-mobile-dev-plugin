@@ -32,6 +32,10 @@ export class TraceSiftController {
   private viewId?: string | number;
   private inputKey?: string;
   private copiedTimer?: ReturnType<typeof setTimeout>;
+  /** Serializes `mobile_remember_tracesift_analysis` calls so out-of-order completions cannot write a stale analysis over a newer one. */
+  private rememberChain: Promise<void> = Promise.resolve();
+  /** Bumped by every restore attempt; a response only applies while it still matches the latest one requested. */
+  private restoreToken = 0;
   constructor(app: App) { this.app = app; }
 
   /** The authoritative hand-off for one card. Investigate sends it; Copy copies it. */
@@ -88,31 +92,39 @@ export class TraceSiftController {
     this.inputKey = inputKey;
     if (!this.state.analysis) void this.restoreInput(path, profileType);
   };
-  private remember = async (viewId: string | number, analysisId: string) => {
-    const startedAt = performance.now();
-    try {
-      const result = await this.app.callServerTool({ name: "mobile_remember_tracesift_analysis", arguments: { viewId, analysisId } });
-      recordUiTiming("ui.tracesift.remember", performance.now() - startedAt);
-      if (result.isError || result.structuredContent?.remembered !== true) throw new Error("TraceSift could not remember this analysis.");
-      countUiEvent("ui.tracesift.remember_success");
-    } catch {
-      countUiEvent("ui.tracesift.remember_failed");
-      captureUiError(new Error("TraceSift analysis registration failed."), "tracesift.remember");
-    }
+  private remember = (viewId: string | number, analysisId: string): Promise<void> => {
+    const run = async () => {
+      const startedAt = performance.now();
+      try {
+        const result = await this.app.callServerTool({ name: "mobile_remember_tracesift_analysis", arguments: { viewId, analysisId } });
+        recordUiTiming("ui.tracesift.remember", performance.now() - startedAt);
+        if (result.isError || result.structuredContent?.remembered !== true) throw new Error("TraceSift could not remember this analysis.");
+        countUiEvent("ui.tracesift.remember_success");
+      } catch {
+        countUiEvent("ui.tracesift.remember_failed");
+        captureUiError(new Error("TraceSift analysis registration failed."), "tracesift.remember");
+      }
+    };
+    // Chained rather than run in parallel: two registrations racing could let an
+    // earlier call's completion overwrite a later one's write to the view reference.
+    this.rememberChain = this.rememberChain.then(run);
+    return this.rememberChain;
   };
   restore = async (viewId: string | number) => {
     if (this.disposed || this.state.analysis) return;
+    const token = ++this.restoreToken;
     const startedAt = performance.now();
     try {
       const result = await this.app.callServerTool({ name: "mobile_restore_tracesift_analysis", arguments: { viewId } });
       recordUiTiming("ui.tracesift.restore", performance.now() - startedAt);
-      if (this.disposed || this.state.analysis) return;
+      if (this.disposed || this.state.analysis || token !== this.restoreToken) return;
       if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "TraceSift could not restore this analysis.");
       const parsed = traceSiftRestoreSchema.safeParse(result.structuredContent);
       if (!parsed.success) throw new Error("TraceSift returned an invalid restore result.");
       countUiEvent(parsed.data.restored ? "ui.tracesift.restore_hit" : "ui.tracesift.restore_miss");
       if (parsed.data.analysis) this.accept({ content: [], structuredContent: parsed.data.analysis }, false);
     } catch (error) {
+      if (token !== this.restoreToken) return;
       countUiEvent("ui.tracesift.restore_failed");
       captureUiError(new Error("TraceSift analysis restore failed."), "tracesift.restore");
       if (!this.state.analysis) this.update({ error: error instanceof Error ? error.message : "TraceSift could not restore this analysis." });
@@ -120,17 +132,19 @@ export class TraceSiftController {
   };
   private restoreInput = async (path: string, profileType: TraceSiftProfileType) => {
     if (this.disposed || this.state.analysis) return;
+    const token = ++this.restoreToken;
     const startedAt = performance.now();
     try {
       const result = await this.app.callServerTool({ name: "mobile_restore_tracesift_analysis_by_input", arguments: { path, profileType } });
       recordUiTiming("ui.tracesift.restore", performance.now() - startedAt);
-      if (this.disposed || this.state.analysis) return;
+      if (this.disposed || this.state.analysis || token !== this.restoreToken) return;
       if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "TraceSift could not restore this analysis.");
       const parsed = traceSiftRestoreSchema.safeParse(result.structuredContent);
       if (!parsed.success) throw new Error("TraceSift returned an invalid restore result.");
       countUiEvent(parsed.data.restored ? "ui.tracesift.restore_hit" : "ui.tracesift.restore_miss");
       if (parsed.data.analysis) this.accept({ content: [], structuredContent: parsed.data.analysis }, false);
     } catch (error) {
+      if (token !== this.restoreToken) return;
       countUiEvent("ui.tracesift.restore_failed");
       captureUiError(new Error("TraceSift analysis input restore failed."), "tracesift.restore_input");
       if (!this.state.analysis) this.update({ error: error instanceof Error ? error.message : "TraceSift could not restore this analysis." });
