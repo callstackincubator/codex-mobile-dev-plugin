@@ -203,3 +203,36 @@ test("a throttled tunnel delivers everything a server sends before it closes, in
     await new Promise(resolve => origin.close(resolve));
   }
 });
+
+function fetchThrough(proxyPort: number, url: string) {
+  return new Promise<{ status: number; body: string; aborted: boolean }>(resolve => {
+    request({ host: "127.0.0.1", port: proxyPort, path: url }, response => {
+      let body = "";
+      response.on("data", data => { body += data; }).on("end", () => resolve({ status: response.statusCode ?? 0, body, aborted: false }))
+        .on("aborted", () => resolve({ status: response.statusCode ?? 0, body, aborted: true })).on("error", () => resolve({ status: response.statusCode ?? 0, body, aborted: true }));
+    }).on("error", () => resolve({ status: 0, body: "", aborted: true })).end();
+  });
+}
+
+test("a throttled plain request takes one round trip, and a server that breaks off midway only ends that request", async () => {
+  const origin = createServer((incoming, response) => {
+    if (incoming.url === "/broken") { response.writeHead(200, { "Content-Length": "100" }); response.write("partial"); setTimeout(() => response.socket?.destroy(), 20); return; }
+    response.end("hello");
+  });
+  const port = await listen(origin);
+  // Treat the local server as remote so requests are paced.
+  const proxy = new ThrottleProxy({ latencyMs: 400, bandwidthKbps: 1_000_000 }, () => false);
+  const proxyPort = await proxy.listen();
+  try {
+    const started = performance.now();
+    assert.deepEqual(await fetchThrough(proxyPort, `http://127.0.0.1:${port}/`), { status: 200, body: "hello", aborted: false });
+    const elapsed = performance.now() - started;
+    assert.ok(elapsed >= 380 && elapsed < 560, `one 400 ms round trip, took ${elapsed.toFixed(0)} ms`);
+    const broken = await fetchThrough(proxyPort, `http://127.0.0.1:${port}/broken`);
+    assert.equal(broken.aborted, true, "the app sees the connection end instead of the proxy crashing");
+    assert.deepEqual(await fetchThrough(proxyPort, `http://127.0.0.1:${port}/`), { status: 200, body: "hello", aborted: false }, "the proxy keeps serving");
+  } finally {
+    await proxy.close();
+    await new Promise(resolve => origin.close(resolve));
+  }
+});

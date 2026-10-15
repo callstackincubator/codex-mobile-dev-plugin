@@ -122,10 +122,13 @@ export function pickAndroidIconFile(resources: string, iconPath: string): string
   return entries.filter(entry => /\.(?:png|webp)$/i.test(entry.path)).sort((a, b) => rank(b.config) - rank(a.config))[0]?.path ?? null;
 }
 
+// Android 12 and older have no locale service. cmd says so with exit status 20, or 0 when chained.
+const localeUnavailable = /Can't find service: locale|Unknown command/;
+
 // "Locales for com.example for user 0 are [de-AT,en]"; an empty list follows the device.
 export function parseAndroidAppLocales(output: string): string | null {
   if (/Unknown package/.test(output)) throw new ExpectedOperationError("invalid_input", "The app is not installed on this device.");
-  if (/Can't find service: locale|Unknown command/.test(output)) throw new ExpectedOperationError("unsupported_platform", "Per-app languages need Android 13 or later.");
+  if (localeUnavailable.test(output)) throw new ExpectedOperationError("unsupported_platform", "Per-app languages need Android 13 or later.");
   const list = /are \[([^\]]*)\]/.exec(output);
   if (!list) throw new Error("Reading the app language failed: unexpected cmd locale output.");
   return list[1].split(",").map(entry => entry.trim()).find(Boolean) ?? null;
@@ -145,14 +148,19 @@ export class AndroidDriver implements AppDriver {
   }
 
   // am and pm report rejected intents and permissions on stdout, sometimes with exit status 0.
-  private async shell(action: string, command: string, timeout = 15000) {
+  // Output matching `tolerate` is returned even when the command fails, for callers that parse it.
+  private async shell(action: string, command: string, timeout = 15000, tolerate?: RegExp) {
     const rejected = (output: string) => {
       const failure = /^(?:Error: |Exception occurred while executing)[^\n]*/m.exec(output) ?? /^Error[^\n]*/m.exec(output);
       return failure ? new ExpectedOperationError("invalid_input", `${action} failed: ${failure[0]}`) : undefined;
     };
     let output: string;
     try { output = await this.commands.run(await this.commands.adb(), ["-s", this.deviceId, "shell", command], { timeout }); }
-    catch (error) { throw rejected(commandOutput(error)) ?? commandError(error, action); }
+    catch (error) {
+      const failed = commandOutput(error);
+      if (tolerate?.test(failed)) return failed;
+      throw rejected(failed) ?? commandError(error, action);
+    }
     const failure = rejected(output);
     if (failure) throw failure;
     return output;
@@ -231,11 +239,11 @@ export class AndroidDriver implements AppDriver {
     return this.permissions(bundleId);
   }
 
-  async language(bundleId: string) { return parseAndroidAppLocales(await this.shell("Reading the app language", `cmd locale get-app-locales ${bundleId}`)); }
+  async language(bundleId: string) { return parseAndroidAppLocales(await this.shell("Reading the app language", `cmd locale get-app-locales ${bundleId}`, 15000, localeUnavailable)); }
 
   async setLanguage(bundleId: string, language: string | null) {
     // set-app-locales reports an unknown package or missing service on stdout with exit status 0.
-    const output = await this.shell("Changing the app language", `cmd locale set-app-locales ${bundleId}${language === null ? "" : ` --locales ${language}`}; cmd locale get-app-locales ${bundleId}`);
+    const output = await this.shell("Changing the app language", `cmd locale set-app-locales ${bundleId}${language === null ? "" : ` --locales ${language}`}; cmd locale get-app-locales ${bundleId}`, 15000, localeUnavailable);
     const applied = parseAndroidAppLocales(output);
     if (applied?.toLowerCase() !== language?.toLowerCase()) throw new Error("Changing the app language failed: Android kept a different language.");
   }

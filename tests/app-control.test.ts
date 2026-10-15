@@ -286,6 +286,11 @@ test("app languages are written to the app's own preferences on iOS and through 
   await emulator.setLanguage("com.acme", null);
   assert.equal(calls.at(-1)?.args[3], "cmd locale set-app-locales com.acme; cmd locale get-app-locales com.acme");
   await assert.rejects(emulator.setLanguage("com.acme", "fr"), /Android kept a different language/);
+
+  // Android 12 and older exit with status 20 when cmd has no locale service.
+  const old = fixture(() => Object.assign(failure("cmd: Can't find service: locale", 20), { stdout: "" })).emulator;
+  await assert.rejects(old.language("com.acme"), (error: unknown) => expectedOutcome(error) === "unsupported_platform");
+  await assert.rejects(old.setLanguage("com.acme", "de"), /Per-app languages need Android 13 or later/);
 });
 
 test("setting an app language relaunches it so the new language is visible", async t => {

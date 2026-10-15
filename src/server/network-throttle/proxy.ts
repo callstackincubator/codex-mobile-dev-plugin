@@ -23,29 +23,29 @@ const chunkBytes = 16 * 1024;
 const queuedLimit = 256 * 1024;
 
 // Copies source to destination and calls `end` once everything has been written. With a pacer, bytes
-// arrive when the link would deliver them: one timer drains a single queue, so they keep their order
-// however Node orders timers, and the source pauses while too much is in flight.
+// and the end of the stream arrive when the link would deliver them: one timer drains a single queue,
+// so they keep their order however Node orders timers, and the source pauses while too much is in flight.
 export function relay(source: Readable, destination: Writable, pacer?: LinkPacer, end = () => { destination.end(); }) {
   if (!pacer) {
     source.pipe(destination, { end: false });
     source.once("end", end);
     return;
   }
-  const queue: { piece: Buffer; at: number }[] = [];
+  // A null piece marks the end of the stream.
+  const queue: { piece: Buffer | null; at: number }[] = [];
   let queued = 0;
-  let ended = false;
   let timer: NodeJS.Timeout | undefined;
   const schedule = () => { timer = setTimeout(drain, Math.max(0, Math.ceil(queue[0].at - performance.now()))); };
   const drain = () => {
     timer = undefined;
     while (queue.length && queue[0].at <= performance.now()) {
       const { piece } = queue.shift()!;
+      if (piece === null) { end(); return; }
       queued -= piece.length;
-      if (!destination.destroyed) destination.write(piece);
+      if (destination.writable) destination.write(piece);
     }
     if (queued < queuedLimit && source.isPaused()) source.resume();
     if (queue.length) schedule();
-    else if (ended) end();
   };
   source.on("data", (data: Buffer) => {
     for (let offset = 0; offset < data.length; offset += chunkBytes) {
@@ -56,13 +56,10 @@ export function relay(source: Readable, destination: Writable, pacer?: LinkPacer
     if (queued >= queuedLimit) source.pause();
     if (!timer) schedule();
   });
-  source.once("end", () => { ended = true; if (!timer) end(); });
-}
-
-// Runs after the link's one-way latency, or right away without a pacer.
-function afterLatency(pacer: LinkPacer | undefined, run: () => void) {
-  if (pacer) setTimeout(run, Math.max(0, pacer.arrival(0) - performance.now()));
-  else run();
+  source.once("end", () => {
+    queue.push({ piece: null, at: pacer.arrival(0) });
+    if (!timer) schedule();
+  });
 }
 
 // Development servers on the Mac or the local network stay at full speed, such as Metro at 10.0.2.2:8081.
@@ -138,14 +135,21 @@ export class ThrottleProxy {
     const headers = { ...request.headers };
     delete headers["proxy-connection"];
     delete headers["proxy-authorization"];
-    afterLatency(up, () => {
-      const upstream = httpRequest({ host: hostAddress(url.hostname), port: url.port || 80, path: `${url.pathname}${url.search}`, method: request.method, headers }, reply => afterLatency(down, () => {
-        response.writeHead(reply.statusCode ?? 502, reply.headers);
-        relay(reply, response, down);
-      }));
-      upstream.on("error", () => { if (!response.headersSent) response.writeHead(502); response.end(); });
-      relay(request, upstream, up);
+    // Like the response below, the request's headers go out with its first paced bytes or its paced end.
+    let replied = false;
+    const upstream = httpRequest({ host: hostAddress(url.hostname), port: url.port || 80, path: `${url.pathname}${url.search}`, method: request.method, headers }, reply => {
+      replied = true;
+      // Headers go out with the first body bytes, so they share the body's paced arrival.
+      response.writeHead(reply.statusCode ?? 502, reply.headers);
+      reply.on("error", () => response.destroy());
+      relay(reply, response, down);
     });
+    // A reply that breaks off midway closes the app's connection; one that never started is a 502.
+    upstream.on("error", () => { if (replied) response.destroy(); else response.writeHead(502).end(); });
+    // A request the app gave up on stops downloading, so it no longer uses the link.
+    response.once("close", () => { if (!response.writableFinished) upstream.destroy(); });
+    request.on("error", () => upstream.destroy());
+    relay(request, upstream, up);
   }
 
   close() {

@@ -21,7 +21,7 @@ import { androidSdkRoots } from "./android-sdk.ts";
 const execute = promisify(execFile);
 export const androidIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/);
 // Route handlers send { ok: false, error: message }; the API boundary sends { ok: false, error: { code, message } }.
-const serveEmuErrorSchema = z.object({ ok: z.literal(false), error: z.union([z.string().min(1), z.object({ message: z.string().min(1) }).loose()]) });
+const serveEmuErrorSchema = z.object({ ok: z.literal(false), error: z.union([z.string(), z.object({ message: z.string() }).loose()]).optional() }).loose();
 const healthSchema = z.object({ serial: androidIdSchema, codec: z.string(), size: z.object({ width: z.number().positive(), height: z.number().positive() }) });
 type Backend = { url: URL; child?: ChildProcess };
 
@@ -199,10 +199,11 @@ export class ServeEmu {
   async json(url: URL, path: string, options: RequestInit = {}) {
     const response = await fetch(new URL(path, url), { ...options, redirect: "error", signal: AbortSignal.timeout(10000) });
     const payload = response.ok ? await response.json() : await response.json().catch(() => undefined);
-    const rejection = serveEmuErrorSchema.safeParse(payload).data?.error;
-    const message = typeof rejection === "string" ? rejection : rejection?.message;
-    if (!response.ok || rejection) throw new Error(message ?? `serve-emu returned HTTP ${response.status} for ${path}.`);
-    return payload;
+    const rejection = serveEmuErrorSchema.safeParse(payload);
+    if (response.ok && !rejection.success) return payload;
+    const error = rejection.data?.error;
+    const message = (typeof error === "string" ? error : error?.message) || (response.ok ? "serve-emu rejected the request." : `serve-emu returned HTTP ${response.status} for ${path}.`);
+    throw new Error(message);
   }
 
   private async health(url: URL) {

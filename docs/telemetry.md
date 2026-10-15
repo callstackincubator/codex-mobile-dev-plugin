@@ -188,7 +188,8 @@ fixed message. Android throttling runs through a local proxy on the Mac, so its 
 failures report under `device_settings.network`; throttling a device that already
 uses its own proxy counts only through `server.error.outcome`. When the plugin first
 starts an Android backend, it clears a throttle left by a plugin process that exited;
-unexpected adb failures there report under `device_settings.network_recovery`. Proxy
+unexpected adb failures there report under `device_settings.network_recovery`, and a
+device that went away counts only through `server.error.outcome`. Proxy
 addresses and traffic are not sent. Since 0.1.155, expected device setting and app
 control outcomes reach `server.error.outcome` as documented; earlier releases skipped
 them. The Device tab

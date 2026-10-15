@@ -220,7 +220,8 @@ export function registerDeviceSettingsTools(server: McpServer, baguette: Baguett
     inputSchema: { target: targetSchema, change: deviceSettingSchema }, annotations: { ...annotations, readOnlyHint: false }, _meta: { ui: { visibility: ["app"] } },
   }, guarded<{ target: Target; change: DeviceSetting }>(({ change }) => change.setting, ({ target, change }) => service.update(target, change)));
   const stopRecovery = android.onStart(serial => {
-    service.throttle.recover(serial).catch(() => captureServerError(new Error("Network throttle recovery failed."), "device_settings.network_recovery"));
+    // A device that went away is an expected outcome; the next backend start checks it again.
+    service.throttle.recover(serial).catch(error => captureServerError(expectedOutcome(error) === undefined ? new Error("Network throttle recovery failed.") : error, "device_settings.network_recovery"));
   });
   // Android throttling must be undone before the plugin exits, or the device keeps a dead proxy.
   return () => { stopRecovery(); return service.throttle.close(); };
