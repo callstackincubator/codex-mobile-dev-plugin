@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { ExpectedOperationError } from "../../shared/error-reporting.ts";
+import { platformPermissions } from "../../shared/app-control.ts";
 import type { AppDetails, AppPermission, AppPermissionEntry, InstalledApp, InstalledApps, PermissionState } from "../../shared/app-control.ts";
 import type { CommandRunner } from "./commands.ts";
 
@@ -30,6 +31,11 @@ export async function listApps(driver: AppDriver): Promise<InstalledApps> {
   const newest = [...running].sort((a, b) => b.pid - a.pid).map(app => app.bundleId);
   const runningBundleIds = [...new Set([...(foregroundBundleId ? [foregroundBundleId] : []), ...newest])].filter(bundleId => installed.has(bundleId));
   return { apps, foregroundBundleId, runningBundleIds };
+}
+
+export function requireSupportedPermission(platform: "ios" | "android", permission: AppPermission | "all") {
+  if (permission === "all" || platformPermissions[platform].includes(permission)) return;
+  throw new ExpectedOperationError("invalid_input", `${platform === "ios" ? "iOS simulators do" : "Android does"} not support the ${permission} permission here.`);
 }
 
 // Simulator builds are .app bundle directories; Android builds are .apk files.

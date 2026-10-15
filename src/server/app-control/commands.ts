@@ -64,6 +64,12 @@ export function commandError(error: unknown, action: string): Error {
   return new Error(text, { cause: error });
 }
 
+// Runs adb against one device, turning failures into readable errors.
+export async function runAdb(commands: Commands, serial: string, action: string, args: string[], timeout = 15000): Promise<string> {
+  try { return await commands.run(await commands.adb(), ["-s", serial, ...args], { timeout }); }
+  catch (error) { throw commandError(error, action); }
+}
+
 export async function withTemporaryDirectory<T>(work: (directory: string) => Promise<T>): Promise<T> {
   const directory = await mkdtemp(join(tmpdir(), "mobile-dev-app-"));
   try { return await work(directory); }

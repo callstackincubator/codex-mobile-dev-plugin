@@ -3,6 +3,7 @@ import type { ScreenAnnotation, ScreenBounds, ScreenComponent, ScreenPoint, Scre
 import { recordUiTiming, countUiEvent } from "./telemetry.ts";
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import type { PanelContext } from "./model-context.ts";
+import { elementStores } from "./element-store.ts";
 
 type Capture = { screenshot: ScreenAnnotation["screenshot"]; screen: ScreenAnnotation["screen"] };
 export type InspectedTree = { tree: unknown; screen?: ScreenSize };
@@ -227,10 +228,6 @@ export class ScreenAnnotationsStore {
   dispose() { this.revision++; this.cancelSelection(); this.unsubscribe?.(); this.context = undefined; this.capture = undefined; this.readTree = undefined; }
 }
 
-const stores = new WeakMap<HTMLElement, ScreenAnnotationsStore>();
-export function bindScreenAnnotations(element: HTMLElement, store: ScreenAnnotationsStore) { stores.set(element, store); }
-export function getScreenAnnotations(element: HTMLElement) {
-  let store = stores.get(element);
-  if (!store) { store = new ScreenAnnotationsStore(); stores.set(element, store); }
-  return store;
-}
+const stores = elementStores(() => new ScreenAnnotationsStore());
+export const bindScreenAnnotations = stores.bind;
+export const getScreenAnnotations = stores.get;

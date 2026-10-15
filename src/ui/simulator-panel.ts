@@ -91,10 +91,11 @@ export function createSimulatorPanel(
   }
 
   function controls() {
-    settings.configure(selected?.udid ?? "", busy || !toolsAvailable || selected?.state !== "Booted" || disposed);
+    const deviceToolsUnavailable = busy || !toolsAvailable || selected?.state !== "Booted" || disposed;
+    settings.configure(selected?.udid ?? "", deviceToolsUnavailable);
     settings.prefetch();
     // App tools use simctl and adb, which do not reach paired iPhones.
-    appTools.configure(platform, selected?.udid ?? "", busy || !toolsAvailable || selected?.state !== "Booted" || disposed || selected?.kind === "physical" && platform === "ios");
+    appTools.configure(platform, selected?.udid ?? "", deviceToolsUnavailable || selected?.kind === "physical" && platform === "ios");
     element<HTMLButtonElement>("start-device").disabled = busy || !toolsAvailable || !selected || selected.kind === "physical" || selected.state === "Booted" || disposed;
     const hasDevices = status?.devices.length || physicalDevices.length;
     devices.disabled = busy || !toolsAvailable || !hasDevices || disposed;

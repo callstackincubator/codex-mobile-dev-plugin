@@ -5,9 +5,9 @@ import { runningDeviceApps } from "../device-apps/apps.ts";
 import { ExpectedOperationError } from "../../shared/error-reporting.ts";
 import { platformPermissions } from "../../shared/app-control.ts";
 import type { AppDetails, AppPermission, AppPermissionEntry, InstalledApp, PermissionState } from "../../shared/app-control.ts";
-import { commandError, commandOutput, withTemporaryDirectory } from "./commands.ts";
+import { commandError, commandOutput, runAdb, withTemporaryDirectory } from "./commands.ts";
 import type { Commands } from "./commands.ts";
-import { collectDetails, pngDataUrl, rankAppLinks, requireArtifact, urlSchemePattern } from "./driver.ts";
+import { collectDetails, pngDataUrl, rankAppLinks, requireArtifact, requireSupportedPermission, urlSchemePattern } from "./driver.ts";
 import type { AppDetailsCache, AppDriver } from "./driver.ts";
 
 export function parseAndroidPackages(output: string): InstalledApp[] {
@@ -169,8 +169,7 @@ export class AndroidDriver implements AppDriver {
 
   async install(path: string) {
     const apk = await requireArtifact(path, ".apk", "a built .apk file");
-    try { await this.commands.run(await this.commands.adb(), ["-s", this.deviceId, "install", "-r", apk], { timeout: 300000 }); }
-    catch (error) { throw commandError(error, "Installing the app"); }
+    await runAdb(this.commands, this.deviceId, "Installing the app", ["install", "-r", apk], 300000);
     return {};
   }
 
@@ -209,6 +208,7 @@ export class AndroidDriver implements AppDriver {
   async permissions(bundleId: string) { return androidPermissionStates(await this.runtime(bundleId)); }
 
   async setPermission(bundleId: string, permission: AppPermission | "all", state: PermissionState) {
+    requireSupportedPermission("android", permission);
     const runtime = await this.runtime(bundleId);
     const names = (permission === "all" ? platformPermissions.android : [permission]).flatMap(runtimeNames).filter(name => runtime.has(name));
     if (names.length === 0) throw new ExpectedOperationError("invalid_input", permission === "all" ? "The app does not request any supported runtime permissions." : `The app does not request the ${permission} permission.`);

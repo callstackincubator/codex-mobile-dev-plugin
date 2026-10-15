@@ -3,14 +3,11 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { parseIosUrlSchemes, parseSimulatorApps } from "../src/server/app-control/simulator.ts";
 import { androidPermissionStates, parseAndroidAppLinks, parseAndroidBadging, parseAndroidRuntimePermissions, parseLauncherActivity, pickAndroidIconFile } from "../src/server/app-control/android.ts";
 import { listApps } from "../src/server/app-control/driver.ts";
 import type { AppDriver } from "../src/server/app-control/driver.ts";
-import { createDrivers, registerAppControlTools } from "../src/server/app-control/tools.ts";
+import { createDrivers } from "../src/server/app-control/tools.ts";
 import type { CommandRunner } from "../src/server/app-control/commands.ts";
 import { expectedOutcome } from "../src/shared/error-reporting.ts";
 
@@ -151,20 +148,14 @@ test("command failures become readable, expected outcomes where the user can fix
   await assert.rejects(emulator.launch("com.acme"), /Error: Activity class \{com\.acme\/\.Main\} does not exist/);
 });
 
-test("tools validate the target and the platform's permissions before reaching a driver", async t => {
+test("tools validate the target, and drivers reject permissions their platform cannot set", async () => {
   const drivers = createDrivers({ run: async () => "", readBinary: async () => Buffer.alloc(0), adb: async () => "adb", aapt2: async () => null });
   assert.throws(() => drivers({ platform: "ios", deviceId: "00008110-001A2B3C4D5E801E" }), (error: unknown) => expectedOutcome(error) === "invalid_input");
   assert.throws(() => drivers({ platform: "android", deviceId: "avd:Pixel_9" }), /running Android device serial/);
-  const server = new McpServer({ name: "app-control-test", version: "1" });
-  registerAppControlTools(server, () => ({ setPermission: async () => { throw new Error("The driver should not be called."); } }) as unknown as AppDriver);
-  const client = new Client({ name: "test", version: "1" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  t.after(async () => { await client.close(); await server.close(); });
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
-  const unsupported = await client.callTool({ name: "mobile_set_app_permission", arguments: { ...ios, bundleId: "com.acme", permission: "camera", state: "allow" } });
-  assert.equal(unsupported.isError, true);
-  assert.match(JSON.stringify(unsupported.content), /iOS simulators do not support the camera permission/);
+  const { simulator, emulator, calls } = fixture(() => "");
+  await assert.rejects(simulator.setPermission("com.acme", "camera", "allow"), /iOS simulators do not support the camera permission/);
+  await assert.rejects(emulator.setPermission("com.acme", "reminders", "allow"), /Android does not support the reminders permission/);
+  assert.equal(calls.length, 0, "unsupported permissions never reach simctl or adb");
 });
 
 test("installs require a built bundle of the platform's type", async () => {
