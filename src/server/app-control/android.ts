@@ -154,8 +154,10 @@ export class AndroidDriver implements AppDriver {
   }
 
   async installed() { return parseAndroidPackages(await this.shell("Listing apps", "pm list packages -3")); }
-  foreground() { return foregroundAndroidPackage(this.deviceId); }
-  running() { return runningDeviceApps(this.deviceId, undefined, "android"); }
+  async activity() {
+    const [running, foreground] = await Promise.all([runningDeviceApps(this.deviceId, undefined, "android").catch(() => []), foregroundAndroidPackage(this.deviceId).catch(() => null)]);
+    return { foreground, running };
+  }
 
   async launch(bundleId: string) {
     // Some emulators only resolve launcher activities when direct-boot matching is explicit.

@@ -4,9 +4,9 @@ import { StringDecoder } from "node:string_decoder";
 import { setTimeout as delay } from "node:timers/promises";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import type { LogRecord, LogSourceStatus, NativeLogTarget } from "../shared/logs.ts";
 import { errorMessage } from "../shared/protocol.ts";
+import { androidSdkRoots } from "./android-sdk.ts";
 import { parseIOSLog, parseLogcat } from "./log-parsers.ts";
 import { physicalIosLogCommand } from "./physical-ios-logs.ts";
 import { IOSLogProcessingTelemetry } from "./telemetry.ts";
@@ -16,8 +16,7 @@ export type LogSink = { log: (log: LogRecord) => void; status: (status: LogSourc
 export type StopLogSource = () => Promise<void>;
 
 export async function adbPath(): Promise<string> {
-  for (const root of [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT, join(homedir(), "Library/Android/sdk")]) {
-    if (!root) continue;
+  for (const root of androidSdkRoots()) {
     const path = join(root, "platform-tools/adb");
     try { await access(path); return path; } catch { /* Try the next SDK, then PATH. */ }
   }

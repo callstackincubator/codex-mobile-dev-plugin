@@ -55,14 +55,13 @@ test("simulator listings keep user apps with display names", () => {
 test("app lists lead with the foreground app, then the newest running installed apps", async () => {
   const driver = {
     installed: async () => [{ bundleId: "com.acme", name: "Acme" }, { bundleId: "com.other", name: "Other" }, { bundleId: "dev.idle", name: "Idle" }],
-    foreground: async () => "com.acme",
-    running: async () => [{ bundleId: "com.acme", pid: 100 }, { bundleId: "com.apple.system", pid: 400 }, { bundleId: "com.other", pid: 300 }],
+    activity: async () => ({ foreground: "com.acme", running: [{ bundleId: "com.acme", pid: 100 }, { bundleId: "com.apple.system", pid: 400 }, { bundleId: "com.other", pid: 300 }] }),
   } as unknown as AppDriver;
   assert.deepEqual(await listApps(driver), {
     apps: [{ bundleId: "com.acme", name: "Acme" }, { bundleId: "com.other", name: "Other" }, { bundleId: "dev.idle", name: "Idle" }],
     foregroundBundleId: "com.acme", runningBundleIds: ["com.acme", "com.other"],
   });
-  const undetected = { ...driver, foreground: async () => { throw new Error("Baguette could not read the foreground app."); } } as AppDriver;
+  const undetected = { ...driver, activity: async () => ({ ...await driver.activity(), foreground: null }) } as AppDriver;
   assert.deepEqual((await listApps(undetected)).runningBundleIds, ["com.other", "com.acme"], "without a foreground app the newest running app leads");
 });
 

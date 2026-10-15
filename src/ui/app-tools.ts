@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { appDetailsSchema, appLinksSchema, appPermissionsSchema, installedAppsSchema, platformPermissions } from "../shared/app-control.ts";
+import { appDetailsBatch, appDetailsSchema, appLinksSchema, appPermissionsSchema, installedAppsSchema, platformPermissions } from "../shared/app-control.ts";
 import type { AppDetails, AppPermission, AppPermissionEntry, InstalledApp, PermissionState } from "../shared/app-control.ts";
 import { measureUiOperation } from "./telemetry.ts";
 import { elementStores } from "./element-store.ts";
@@ -150,14 +150,18 @@ export class AppToolsStore {
     if (bundleIds.length === 0) return;
     for (const bundleId of bundleIds) this.details.set(bundleId, {});
     const current = this.current();
-    try {
-      const data = appDetailsSchema.parse(await this.measure("icons", () => this.tool("mobile_app_icons", { bundleIds })));
-      if (!current()) return;
-      for (const [bundleId, details] of Object.entries(data.apps)) this.details.set(bundleId, details);
-      this.update({ apps: this.withDetails(this.state.apps) });
-    } catch {
-      // Initials remain; the next panel open tries again.
-      if (current()) for (const bundleId of bundleIds) this.details.delete(bundleId);
+    // Icons arrive batch by batch, so devices with many apps show the first ones sooner.
+    for (let start = 0; start < bundleIds.length; start += appDetailsBatch) {
+      const batch = bundleIds.slice(start, start + appDetailsBatch);
+      try {
+        const data = appDetailsSchema.parse(await this.measure("icons", () => this.tool("mobile_app_icons", { bundleIds: batch })));
+        if (!current()) return;
+        for (const [bundleId, details] of Object.entries(data.apps)) this.details.set(bundleId, details);
+        this.update({ apps: this.withDetails(this.state.apps) });
+      } catch {
+        // Initials remain; the next panel open tries again.
+        if (current()) for (const bundleId of batch) this.details.delete(bundleId);
+      }
     }
   }
 
@@ -209,8 +213,10 @@ export class AppToolsStore {
   setPermission(permission: AppPermission | "all", state: PermissionState) {
     return this.run("permission", () => permission === "all" ? "Reset all permissions." : `Updated ${permission} permission.`, async (app, current) => {
       const { permissions } = appPermissionsSchema.parse(await this.tool("mobile_set_app_permission", { bundleId: app.bundleId, permission, state }));
+      // A result that lands after a device switch belongs to the previous device.
+      if (!current()) return;
       for (const entry of permission === "all" ? platformPermissions[this.state.platform] : [permission]) this.applied.set(`${app.bundleId}:${entry}`, state);
-      if (current() && app.bundleId === this.state.bundleId) this.update({ permissions: this.withApplied(permissions) });
+      if (app.bundleId === this.state.bundleId) this.update({ permissions: this.withApplied(permissions) });
     });
   }
 
