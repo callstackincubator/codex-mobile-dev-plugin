@@ -424,6 +424,19 @@ export interface AppFlowManifest {
    * showing a confident `0s`.
    */
   durationMs?: number
+  /**
+   * Wall-clock time spent producing this flow across the whole resume chain, in milliseconds —
+   * this build's `durationMs` plus the carried total of every earlier run that the sweep resumed
+   * from. A paused or stopped sweep leaves its checkpoint behind, and the next build picks up at
+   * the first unfinished screen; charging each resumed run only its own clock used to hide the
+   * real cost of a flow (a 2m30s sweep resumed for 1m5s read as 1m5s). The carried total is only
+   * taken when the saved checkpoint's structure fingerprint still matches this build's parse —
+   * the same condition the resume itself requires — so a fresh sweep of a changed app, or the
+   * first sweep after one completed (whose checkpoint was cleared), starts a new chain at its own
+   * duration rather than accumulating forever. Absent on documents written before this field
+   * existed; readers fall back to `durationMs`.
+   */
+  cumulativeDurationMs?: number
   buildMode?: AppFlowBuildMode
   structureRevision?: string
   sweepStatus?: AppFlowSweepStatus
@@ -717,6 +730,22 @@ export interface TokenUsage {
 /** A zeroed usage snapshot, for starting points and for records stored before usage was tracked. */
 export function emptyTokenUsage(): TokenUsage {
   return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, total: 0, cost: 0 }
+}
+
+/**
+ * What earlier runs of the resume chain contributed to the next build's `cumulativeDurationMs`.
+ *
+ * Non-zero only when the next build continues the *same* chain of work — a sweep resuming the
+ * checkpoint its structure fingerprint still matches, or a structure-only rebuild that keeps
+ * carrying the previous sweep's captures as "Previous capture". The caller passes that from the
+ * identical structure-key test the captures' own resume uses, so the clock chain can never
+ * outlive the checkpoint it mirrors (see `AppFlowManifest.cumulativeDurationMs`). Falls back to
+ * `durationMs` so a chain begun by a build that predates this field still carries its last
+ * recorded wall clock rather than silently restarting at zero.
+ */
+export function carriedSweepDurationMs(previous: AppFlowManifest | null, chainContinues: boolean): number {
+  if (!chainContinues || !previous) return 0
+  return previous.cumulativeDurationMs ?? previous.durationMs ?? 0
 }
 
 /** Sum of two usage snapshots (used to fold live per-turn usage into session totals). */

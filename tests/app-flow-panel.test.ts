@@ -10,6 +10,7 @@ function fixture(canMessage = true, projectList: unknown[] = []) {
   let projects = projectList;
   let nextProject: unknown;
   let bufferedEvents: Array<{ seq: number; runId?: string; event: unknown }> = [];
+  let currentResult: unknown = null;
   const app = {
     getHostCapabilities() { return canMessage ? { message: { text: {} } } : {}; },
     setNotificationHandler(_schema: unknown, handler: typeof notification) { notification = handler; },
@@ -21,6 +22,7 @@ function fixture(canMessage = true, projectList: unknown[] = []) {
       if (input.name === "mobile_appflow_status") return { content: [], structuredContent: { exists: false, state: "idle" } };
       if (input.name === "mobile_appflow_screenshot") return { content: [{ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" }] };
       if (input.name === "mobile_appflow_projects") return { content: [], structuredContent: { projects } };
+      if (input.name === "mobile_appflow_result") return { content: [], structuredContent: { projectId: "project-1", result: currentResult } };
       if (input.name === "mobile_appflow_choose_project") return { content: [], structuredContent: nextProject ? { project: nextProject } : {} };
       if (input.name === "mobile_appflow_events") {
         const since = Number(input.arguments?.since ?? 0);
@@ -35,6 +37,7 @@ function fixture(canMessage = true, projectList: unknown[] = []) {
     list(value: unknown[]) { projects = value; },
     returnsProject(value: unknown) { nextProject = value; },
     events(value: Array<{ seq: number; runId?: string; event: unknown }>) { bufferedEvents = value; },
+    returnsResult(value: unknown) { currentResult = value; },
   };
 }
 const settle = (ms = 60) => new Promise(resolve => setTimeout(resolve, ms));
@@ -193,6 +196,40 @@ test("a notification and the poll carrying the same sequence are applied once", 
   // Dedupe proof: the poll only asks for events after seq 1 because the notification consumed it.
   const polls = host.calls.filter(call => call.name === "mobile_appflow_events");
   assert.ok(polls.some(call => call.arguments?.since === 1), "the shared cursor skips the notified event");
+});
+
+test("a running sweep re-reads the graph document so captures appear without ending the run", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app, 5, 10); t.after(() => panel.dispose());
+  panel.setAvailable(true); panel.show(); await settle();
+  await panel.selectProject("/projects/demo");
+  host.returnsResult({ manifest: { formatVersion: 4, durationMs: 1000 }, nodes: [], edges: [] });
+  host.events([
+    { seq: 1, runId: "run-1", event: { type: "step", phase: "capture", message: "Profile", completed: 3, total: 8 } },
+  ]);
+  await panel.start({ mode: "screen-ui-and-structure" });
+  await settle(120);
+  assert.equal(panel.getSnapshot().state, "running");
+  const liveReads = host.calls.filter(call => call.name === "mobile_appflow_result");
+  assert.ok(liveReads.length >= 1, "the graph is re-read while the sweep is live");
+  assert.deepEqual(liveReads.at(0)?.arguments, { projectPath: "/projects/demo" });
+  assert.ok(panel.getSnapshot().result, "the live document reaches the snapshot without a terminal event");
+});
+
+test("the live graph refresh is paced, not one document read per poll tick", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app, 5, 10_000); t.after(() => panel.dispose());
+  panel.setAvailable(true); panel.show(); await settle();
+  await panel.selectProject("/projects/demo");
+  host.events([
+    { seq: 1, runId: "run-1", event: { type: "step", phase: "capture", message: "Profile", completed: 3, total: 8 } },
+  ]);
+  await panel.start({ mode: "screen-ui-and-structure" });
+  await settle(150);
+  assert.equal(panel.getSnapshot().state, "running");
+  // The first live read happens; every tick inside the interval must be skipped.
+  const first = host.calls.filter(call => call.name === "mobile_appflow_result").length;
+  assert.equal(first, 1, "one read covers the whole interval");
+  await settle(150);
+  assert.equal(host.calls.filter(call => call.name === "mobile_appflow_result").length, first, "the interval paces the refresh");
 });
 
 test("recording events reach the panel through the poll and stop it when saved", async t => {

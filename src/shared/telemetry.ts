@@ -29,7 +29,7 @@ const frequentTools = new Set([
   "mobile_stream_input", "mobile_android_stream_input", "mobile_android_send_input", "mobile_ios_mirror_input", "mobile_read_logs", "mobile_read_cpu",
   "mobile_read_display_fps", "mobile_logs_keep_alive", "mobile_log_sources", "mobile_performance_sources",
   "mobile_read_performance_recording",
-  "mobile_appflow_status", "mobile_appflow_next_decision",
+  "mobile_appflow_status", "mobile_appflow_next_decision", "mobile_appflow_result",
   "mobile_list_simulators", "mobile_list_ios_devices", "mobile_list_android_devices",
   "devices", "apps", "appstate", "capabilities", "session", "events",
 ]);

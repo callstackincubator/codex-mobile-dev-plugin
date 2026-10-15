@@ -24,6 +24,9 @@ function object(value: unknown): Record<string, unknown> | null { return value &
 function projectName(projectPath: string): string { return projectPath.split("/").filter(Boolean).at(-1) ?? projectPath; }
 
 const POLL_INTERVAL_MS = 1_000;
+/** How often a live sweep may re-read the graph document. The server publishes it on a similar
+ *  cadence; refreshing faster would serialize an unchanged document over the bridge. */
+const LIVE_RESULT_REFRESH_MS = 5_000;
 
 export class AppFlowPanel {
   private readonly app: App;
@@ -34,10 +37,12 @@ export class AppFlowPanel {
   private loadRevision = 0;
   private pollTimer?: ReturnType<typeof setTimeout>;
   private readonly pollIntervalMs: number;
+  private readonly liveResultRefreshMs: number;
   private polledRunId?: string | null;
   private polledRecordingNode: string | null = null;
   private runSeq = 0;
   private manualSeq = 0;
+  private lastLiveResultRefreshAt = Number.NEGATIVE_INFINITY;
   private urls = new Map<string, string>();
   readonly recording: AppFlowRecordingStore;
   private projectRequest?: Promise<void>;
@@ -45,9 +50,10 @@ export class AppFlowPanel {
   private snapshot: Snapshot = { open: false, available: false, projectPath: "", projects: [], runId: null, projectId: "",
     state: "idle", result: null, progress: null, sweepSummary: null, prompt: null, error: null, launching: false, agentStartPending: false, pickingProject: false };
 
-  constructor(app: App, pollIntervalMs = POLL_INTERVAL_MS) {
+  constructor(app: App, pollIntervalMs = POLL_INTERVAL_MS, liveResultRefreshMs = LIVE_RESULT_REFRESH_MS) {
     this.app = app;
     this.pollIntervalMs = pollIntervalMs;
+    this.liveResultRefreshMs = liveResultRefreshMs;
     this.recording = new AppFlowRecordingStore(app);
     // A recording that starts from a graph node (or ends) changes what needs polling without any
     // sweep state change, so follow the recording store directly. A fresh recording also restarts
@@ -174,6 +180,7 @@ export class AppFlowPanel {
     const path = projectPath.trim();
     const revision = ++this.loadRevision;
     clearTimeout(this.agentStartTimer); this.agentStartTimer = undefined; this.progressStartedAt = undefined;
+    this.lastLiveResultRefreshAt = Number.NEGATIVE_INFINITY;
     this.update({ projectPath: path, runId: null, projectId: "", state: "idle", result: null, progress: null, sweepSummary: null, prompt: null, error: null, agentStartPending: false });
     if (!path || !this.snapshot.available) return;
     try {
@@ -190,11 +197,30 @@ export class AppFlowPanel {
   }
 
   private async refreshResult(target?: { runId?: string; projectPath?: string }) {
-    const arguments_ = target?.runId ? { runId: target.runId } : { projectPath: target?.projectPath ?? this.snapshot.projectPath };
+    const revision = this.loadRevision;
+    const projectPath = target?.projectPath ?? this.snapshot.projectPath;
+    const arguments_ = target?.runId ? { runId: target.runId } : { projectPath };
     const response = await this.call("mobile_appflow_result", arguments_);
+    // A refresh that outlived its project (or the panel) must not paint another project's map.
+    if (this.disposed || revision !== this.loadRevision || this.snapshot.projectPath !== projectPath) return;
     const data = object(response.structuredContent);
     const result = data?.result && typeof data.result === "object" ? data.result as AppFlowResult : null;
     if (result) this.update({ result, ...(typeof data?.projectId === "string" ? { projectId: data.projectId } : {}) });
+  }
+
+  /**
+   * Re-reads the graph while a sweep is live so captured screens appear as they finish.
+   *
+   * The server publishes `app-flow.json` mid-sweep on its own interval, so this is paced to match
+   * rather than run once per poll tick: an unchanged document serialized over the bridge measures
+   * nothing and costs the host a parse. A failed read is simply retried on the next tick, and the
+   * terminal refresh stays authoritative.
+   */
+  private maybeRefreshLiveResult() {
+    const now = performance.now();
+    if (now - this.lastLiveResultRefreshAt < this.liveResultRefreshMs) return;
+    this.lastLiveResultRefreshAt = now;
+    void this.refreshResult().catch(() => { /* the terminal refresh, or the next tick, covers it */ });
   }
 
   async start(options: StartOptions) {
@@ -318,6 +344,7 @@ export class AppFlowPanel {
     }
     if (runId && (state === "running" || state === "needs-user-action")) {
       await this.readEvents({ runId }, this.runSeq);
+      this.maybeRefreshLiveResult();
     }
     const recording = this.recording.getSnapshot();
     const recordingLive = recording.nodeId !== null && recording.status !== null

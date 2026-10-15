@@ -699,7 +699,10 @@ export async function createAppFlowHost(options: {
       return buffered.filter(entry => entry.seq > since);
     },
     async screenshot(selectedProjectId, encodedPath) {
-      const decoded = Buffer.from(encodedPath, "base64url").toString("utf8");
+      let decoded = Buffer.from(encodedPath, "base64url").toString("utf8");
+      // Cache-busting `?v=` (auth checkpoints, and per-build capture versions) is a renderer
+      // concern; on disk the slug is just the file.
+      decoded = decoded.split("?")[0] ?? decoded;
       if (!decoded || isAbsolute(decoded)) throw new Error("Invalid App Flow screenshot path.");
       const root = getProjectDir(selectedProjectId);
       const candidate = resolve(root, decoded);

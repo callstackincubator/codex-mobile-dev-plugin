@@ -46,7 +46,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
       <div className="min-w-52 flex-1"><h2 className="text-base font-medium">App Flow</h2>
         <div className="mt-1 flex items-center gap-2">
           <AppFlowProjectPicker panel={panel} />
-          {state.result?.manifest.durationMs !== undefined && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock className="size-3" />{duration(state.result.manifest.durationMs)}</span>}
+          {state.result?.manifest.durationMs !== undefined && <span className="flex items-center gap-1 text-xs text-muted-foreground" title={state.result.manifest.cumulativeDurationMs !== undefined && state.result.manifest.cumulativeDurationMs > state.result.manifest.durationMs ? "Total across resumed runs" : undefined}><Clock className="size-3" />{duration(state.result.manifest.cumulativeDurationMs ?? state.result.manifest.durationMs)}</span>}
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">

@@ -26,7 +26,7 @@ import type {
   RenderTransportMode,
   TokenUsage
 } from '../shared/app-flow.ts'
-import { addTokenUsage } from '../shared/app-flow.ts'
+import { addTokenUsage, carriedSweepDurationMs } from '../shared/app-flow.ts'
 import type { AppFlowDecisionProvider } from './decision-provider.ts'
 import {
   parseSubAgentJson,
@@ -170,6 +170,7 @@ import {
   registerProject,
   readAppFlow,
   readAgentDeviceScreens,
+  readManifest,
   readParamStore,
   readSweepProgress,
   screenshotUrl,
@@ -737,7 +738,16 @@ export async function buildAppFlow(
   const timing = new PhaseLedger(startedAt)
 
   /**
-   * Writes the manifest that ends this build, stamping how long it ran.
+   * The `cumulativeDurationMs` total every earlier run of *this same* resume chain already spent,
+   * in ms. Zero until we know a prior sweep's checkpoint is being reused (see `carriedDurationMs`
+   * below, set once the resume's structure fingerprint matches), so a structure-only build and the
+   * first sweep of a fresh chain each report only their own clock.
+   */
+  let carriedDurationMs = 0
+
+  /**
+   * Writes the manifest that ends this build, stamping how long it ran — both this run alone
+   * (`durationMs`) and the whole resume chain's total (`cumulativeDurationMs`).
    *
    * Only the terminal writes go through here. The manifest is rewritten several times mid-build to
    * move `sweepStatus` between `running` and `awaiting-user`, and stamping those would record the
@@ -746,6 +756,7 @@ export async function buildAppFlow(
    */
   const finishManifest = async (final: AppFlowManifest): Promise<void> => {
     final.durationMs = timing.wallMs
+    final.cumulativeDurationMs = carriedDurationMs + timing.wallMs
     await writeManifest(projectId, final)
   }
 
@@ -872,6 +883,12 @@ export async function buildAppFlow(
 
     const { name } = await registerProject(projectPath)
     console.log(`[app-flow] registered project "${name}" (${projectId}) at ${projectPath}`)
+    /**
+     * The chain total the *previous* build recorded, read before this build's own manifest
+     * overwrites it below. Only folded into `cumulativeDurationMs` when this build turns out to
+     * resume that build's checkpoint; see `carriedDurationMs`.
+     */
+    const previousManifest = await readManifest(projectId)
     const parseStartedAt = Date.now()
     const parsed = await parseProject(projectPath)
     if (!parsed) {
@@ -983,6 +1000,13 @@ export async function buildAppFlow(
     })
 
     if (mode === 'structure-only') {
+      // A structure rebuild is a new chain only when it lost the previous build's work: the
+      // captures it carried forward (rendered as "Previous capture") are what the saved time
+      // paid for, so keeping them keeps the chain — and the header's total keeps describing the
+      // map the user is looking at rather than this parse's few seconds.
+      if (nodesWithSlug.some((node) => node.capture)) {
+        carriedDurationMs = carriedSweepDurationMs(previousManifest, true)
+      }
       await finishManifest(manifest)
       emit(projectId, onEvent, {
         type: 'complete',
@@ -1431,10 +1455,19 @@ export async function buildAppFlow(
       // is only reused when the parsed structure still fingerprints the same, so routes that moved
       // force a full sweep rather than resuming onto screens that no longer exist.
       const resumed = await readSweepProgress(projectId)
+      const resuming = resumed?.structureKey === structureKey
       const checkpoint: AppFlowSweepProgress =
-        resumed?.structureKey === structureKey
+        resuming
           ? resumed
           : { structureKey, updatedAt: '', captures: {}, opened: {}, inferred: {}, statesDone: [] }
+      // The one condition under which this build inherits the previous one's elapsed time: it is
+      // continuing the same sweep the checkpoint describes — the same test, in the same place, the
+      // captures themselves are reused under. A completed sweep deletes that checkpoint, so the
+      // next build is a fresh chain no matter what the manifest still shows; a re-parse of a moved
+      // structure fails this test for the same reason. Both should (and now do) reset the total.
+      if (resuming) {
+        carriedDurationMs = carriedSweepDurationMs(previousManifest, true)
+      }
 
       const captureMap: Record<string, AppFlowCapture> = { ...checkpoint.captures }
       const openedByNode: Record<string, { app: string; url: string }> = { ...checkpoint.opened }
@@ -1682,22 +1715,101 @@ export async function buildAppFlow(
         )
 
       /**
-       * The crash-resume checkpoint a captured (or settled-as-unreached) node leaves behind.
+       * The `app-flow.json` as it stands right now, assembled from the same live maps the finish
+       * and stopped paths use.
+       *
+       * One definition for all three writers because the renderer cannot tell which of them
+       * produced the document it just read, and a mid-sweep document that disagreed with the final
+       * one on anything beyond freshness (node set, replayable stamps, chrome filtering) would make
+       * the graph flicker on completion. `screens` is a parameter rather than a call to
+       * `currentAgentDeviceScreens` so the finish paths can hand in the same map they persist —
+       * `withReplayableCaptures` reads `pathVerified` off that map, and a separately-built copy
+       * could only ever re-derive it.
+       */
+      const currentFlowDocument = (screens: AgentDeviceScreensMap): AppFlowResult => {
+        // Provisional timing so the header's clock keeps ticking while the sweep runs: the terminal
+        // writes stamp both fields again with their final values, and a reader that has to tell the
+        // two apart has `sweepStatus: 'running'` on exactly these documents.
+        manifest.durationMs = timing.wallMs
+        manifest.cumulativeDurationMs = carriedDurationMs + timing.wallMs
+        const screenNodes = withReplayableCaptures(
+          [
+            ...nodesWithSlug.map((node) => ({
+              ...node,
+              capture: captureMap[node.id] ?? node.capture,
+              deepLinkRejection: deepLinkRejections[node.id] ?? null
+            })),
+            ...runtimeNodes
+          ],
+          screens
+        )
+        const navigators = navigatorChrome(chromeInventory, screenNodes)
+        const nodes = [...screenNodes, ...chromeVirtualNodes(navigators)]
+        return {
+          manifest,
+          nodes,
+          edges: parsed.edges,
+          runtimeEdges: rebuildChromeEdges(runtimeEdgesList, navigators, nodes),
+          chrome: chromeInventory,
+          navigation
+        }
+      }
+
+      /**
+       * Publishes the graph document mid-sweep so the panel can draw screens as they finish.
+       *
+       * Throttled, deliberately, rather than one write per screen. The old per-screen document
+       * write was removed for being O(n²) bytes on the critical path between screens, and that
+       * reasoning still holds for a 200-screen app; what it missed is that a *bounded* write —
+       * at most one per interval, whatever the screen rate — gives the user a live graph at a cost
+       * that stops scaling with n. The per-screen checkpoint remains the only thing a resumed
+       * sweep reads; this document is a read model, its staleness window is one interval, and the
+       * terminal writes remain authoritative.
+       *
+       * Failures are swallowed with a log: a read model that could not be refreshed must never
+       * fail the sweep that was writing it.
+       */
+      const LIVE_PUBLISH_INTERVAL_MS = 4_000
+      let lastLivePublishAt = 0
+      let livePublishInFlight: Promise<void> = Promise.resolve()
+      const publishLiveDocument = (): Promise<void> => {
+        const now = activeNow()
+        if (now - lastLivePublishAt < LIVE_PUBLISH_INTERVAL_MS) return livePublishInFlight
+        lastLivePublishAt = now
+        const began = now
+        livePublishInFlight = (async () => {
+          try {
+            await writeAppFlow(projectId, currentFlowDocument(currentAgentDeviceScreens()))
+            console.log(`[app-flow] live graph published in ${activeNow() - began}ms`)
+          } catch (error) {
+            console.warn(
+              `[app-flow] live graph publish failed — ${error instanceof Error ? error.message : String(error)}`
+            )
+          }
+        })()
+        return livePublishInFlight
+      }
+
+      /**
+       * The crash-resume checkpoint a captured (or settled-as-unreached) node leaves behind, plus
+       * the throttled live publication of the graph document.
        *
        * A checkpoint, not a publication: `persistCheckpoint` is what makes a crashed or stopped
        * sweep resume at the right screen, and it is the only thing a resumed sweep reads. The
-       * flat capture-status map, the app-flow document and the screens manifest are all derived
-       * from the same in-memory state and are rebuilt wholesale at finish and on the stopped path,
-       * so rewriting them after every screen was O(n²) bytes for an intermediate nobody reads,
-       * sitting on the critical path between screens.
+       * flat capture-status map and the screens manifest are still rebuilt wholesale at finish
+       * and on the stopped path — rewriting those after every screen was O(n²) bytes for an
+       * intermediate nobody reads. The app-flow document is the one intermediate the renderer
+       * does read, so it now rides this call through `publishLiveDocument`, interval-bounded
+       * rather than per-screen.
        *
-       * `deepLinkRejections` is the reason the finish and stopped node builds now stamp
-       * `deepLinkRejection` themselves: this function's document write used to be its only
-       * durable path, and without that move every rejection learned this sweep would be lost and
-       * the next sweep would pay again for deep links already proven to 404.
+       * `deepLinkRejections` is the reason the finish and stopped node builds stamp
+       * `deepLinkRejection` themselves: the document write used to be its only durable path, and
+       * without that move every rejection learned this sweep would be lost and the next sweep
+       * would pay again for deep links already proven to 404.
        */
       const persistCaptureUpdate = async (): Promise<void> => {
         await persistCheckpoint()
+        await publishLiveDocument()
       }
 
       const recordUnreached = async (
@@ -3898,33 +4010,15 @@ export async function buildAppFlow(
       if (options.pauseRequested?.()) sweepPaused = true
       if (sweepStopped) {
         manifest.sweepStatus = sweepPaused ? 'paused' : 'stopped'
-        // This path used to lean on `persistCaptureUpdate` having already written the capture map
-        // and the screens manifest after the last screen. That write is now only a checkpoint, so
-        // the stopped path publishes both itself, from the same state the document is built from.
+        // The capture map and the screens manifest are still published wholesale here — this path's
+        // `persistCaptureUpdate` writes only the checkpoint and the throttled document, and the
+        // flat maps are what a *later* tool read (not the renderer) consumes. The document itself
+        // is built by `currentFlowDocument`, shared with the live publisher and the finish path so
+        // the graph never changes shape between an intermediate publish and the terminal one.
         await writeCaptureStatus(projectId, captureMap)
         const stoppedScreens = currentAgentDeviceScreens()
         await writeAgentDeviceScreens(projectId, stoppedScreens)
-        const screenNodes = withReplayableCaptures(
-          [
-            ...nodesWithSlug.map((node) => ({
-              ...node,
-              capture: captureMap[node.id] ?? node.capture,
-              deepLinkRejection: deepLinkRejections[node.id] ?? null
-            })),
-            ...runtimeNodes
-          ],
-          stoppedScreens
-        )
-        const stoppedNavigators = navigatorChrome(chromeInventory, screenNodes)
-        const stoppedNodes = [...screenNodes, ...chromeVirtualNodes(stoppedNavigators)]
-        const stoppedResult: AppFlowResult = {
-          manifest,
-          nodes: stoppedNodes,
-          edges: parsed.edges,
-          runtimeEdges: rebuildChromeEdges(runtimeEdgesList, stoppedNavigators, stoppedNodes),
-          chrome: chromeInventory,
-          navigation
-        }
+        const stoppedResult = currentFlowDocument(stoppedScreens)
         await finishManifest(manifest)
         await writeAppFlow(projectId, stoppedResult)
         // Persisted once per sweep rather than per screen: the store only matters to the *next*
@@ -4206,24 +4300,9 @@ export async function buildAppFlow(
       const finalScreens = currentAgentDeviceScreens()
       await writeAgentDeviceScreens(projectId, finalScreens)
 
-      // Stamped here too, not only in `persistCaptureUpdate`: this write is the last one a sweep
-      // makes, so whatever it omits is what the graph ends up rendering.
-      const finalScreenNodes: AppFlowNode[] = withReplayableCaptures(
-        [
-          ...nodesWithSlug.map((node) => ({
-            ...node,
-            capture: captureMap[node.id] ?? node.capture,
-            deepLinkRejection: deepLinkRejections[node.id] ?? null
-          })),
-          ...runtimeNodes
-        ],
-        finalScreens
-      )
-      const finalNavigators = navigatorChrome(chromeInventory, finalScreenNodes)
-      const finalNodes: AppFlowNode[] = [
-        ...finalScreenNodes,
-        ...chromeVirtualNodes(finalNavigators)
-      ]
+      // Stamped from the same `currentFlowDocument` the live publisher used, so the terminal write
+      // differs from the last intermediate only in freshness.
+      const finalResult = currentFlowDocument(finalScreens)
 
       manifest.tokens = snapshotUsage(tokens)
       manifest.sweepStatus = sweepPaused ? 'paused' : sweepStopped ? 'stopped' : 'completed'
@@ -4232,14 +4311,6 @@ export async function buildAppFlow(
       // keeps its checkpoint so the user can pick up where they left off.
       if (!sweepStopped) await clearSweepProgress(projectId)
 
-      const finalResult: AppFlowResult = {
-        manifest,
-        nodes: finalNodes,
-        edges: parsed.edges,
-        runtimeEdges: rebuildChromeEdges(runtimeEdgesList, finalNavigators, finalNodes),
-        chrome: chromeInventory,
-        navigation
-      }
       await writeAppFlow(projectId, finalResult)
       await writeParamStore(projectId, paramStore.toJSON()).catch(() => undefined)
       const harvest = paramStore.summary()

@@ -155,19 +155,27 @@ export async function readAppFlow(projectId: string): Promise<AppFlowResult | nu
   return normalizeAppFlow(result)
 }
 
-export function screenshotUrl(projectId: string, relativePath: string | null): string | null {
+export function screenshotUrl(
+  projectId: string,
+  relativePath: string | null,
+  version?: string
+): string | null {
   if (!relativePath) return null
-  return getAppFlowHost().screenshotUri?.(projectId, relativePath.replace(/^\/+/, ''))
-    ?? `appflow-image://${projectId}/${relativePath.replace(/^\/+/, '')}`
+  // `version` is a cache-busting suffix for the renderer's per-URL image cache; callers that
+  // already carry one (the auth checkpoint) are left alone.
+  const path = relativePath.replace(/^\/+/, '')
+  const cached = version && !path.includes('?') ? `${path}?v=${version}` : path
+  return getAppFlowHost().screenshotUri?.(projectId, cached)
+    ?? `appflow-image://${projectId}/${cached}`
 }
 
-function withScreenshotUrls(projectId: string, capture: AppFlowCapture): AppFlowCapture {
+function withScreenshotUrls(projectId: string, capture: AppFlowCapture, version: string): AppFlowCapture {
   return {
     ...capture,
-    screenshot: screenshotUrl(projectId, capture.screenshot),
+    screenshot: screenshotUrl(projectId, capture.screenshot, version),
     states: capture.states.map((state) => ({
       ...state,
-      screenshot: screenshotUrl(projectId, state.screenshot)
+      screenshot: screenshotUrl(projectId, state.screenshot, version)
     }))
   }
 }
@@ -175,10 +183,17 @@ function withScreenshotUrls(projectId: string, capture: AppFlowCapture): AppFlow
 export async function readAppFlowForRenderer(projectId: string): Promise<AppFlowResult | null> {
   const result = await readAppFlow(projectId)
   if (!result) return null
+  // Screenshot slugs are per-screen files that a later build overwrites in place, and the
+  // renderer caches the bytes it fetched per URL for the life of the panel. Versioning the URL
+  // with this document's build (constant for its whole run, including the live mid-sweep
+  // publishes) is what makes a regenerated capture show up without a reload while the images a
+  // sweep never retook keep their cached fetch. Mirrors the `?v=` the auth checkpoint's own
+  // prompt screenshot already carries.
+  const version = (result.manifest.generatedAt ?? '').replace(/[^0-9a-zA-Z]/g, '')
   return {
     ...result,
     nodes: result.nodes.map((node) =>
-      node.capture ? { ...node, capture: withScreenshotUrls(projectId, node.capture) } : node
+      node.capture ? { ...node, capture: withScreenshotUrls(projectId, node.capture, version) } : node
     )
   }
 }
