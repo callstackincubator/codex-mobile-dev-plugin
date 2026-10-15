@@ -229,7 +229,7 @@ test("browser errors use the served environment regardless of live-reload marker
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts"; export { LogList } from "./src/ui/log-list.ts"; export { LogsPanel } from "./src/ui/logs-panel.ts"; export { DeviceAppsStore } from "./src/ui/device-apps.ts";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts"; export { LogList } from "./src/ui/log-list.ts"; export { LogsPanel } from "./src/ui/logs-panel.ts"; export { DeviceAppsStore } from "./src/ui/device-apps.ts"; export { encodeScreenshotAttachment } from "./src/ui/screenshot-attachment.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -377,6 +377,31 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   assert.equal(calls[1], input, "High frequency input stays on the original MCP path.");
   api.setUiSurface("simulator");
   api.recordUiTiming("ui.screenshot.capture", 12);
+  window.Blob = Blob;
+  let encodingFailure = false;
+  let encodingSurfaceChange = false;
+  let closedBitmaps = 0;
+  window.createImageBitmap = async () => ({ width: 1200, height: 2600, close() { closedBitmaps++; } });
+  window.OffscreenCanvas = class {
+    constructor(width, height) { this.width = width; this.height = height; }
+    getContext() { return { fillRect() {}, drawImage() {} }; }
+    async convertToBlob() {
+      if (encodingSurfaceChange) { api.setUiSurface("logs"); now += 999; }
+      else now += encodingFailure ? 25 : 15;
+      if (encodingFailure) throw new window.Error("JPEG encoding failed");
+      const bytes = new Uint8Array([255, 216, 255, 217]);
+      return new Blob([bytes], { type: "image/jpeg" });
+    }
+  };
+  const attachment = await api.encodeScreenshotAttachment("AQID");
+  assert.equal(attachment.mimeType, "image/jpeg");
+  encodingFailure = true;
+  await assert.rejects(api.encodeScreenshotAttachment("AQID"), /JPEG encoding failed/);
+  encodingFailure = false;
+  encodingSurfaceChange = true;
+  await api.encodeScreenshotAttachment("AQID");
+  assert.equal(closedBitmaps, 3);
+  api.setUiSurface("simulator");
   api.countUiEvent("ui.annotations.inspection_truncated");
   await app.callServerTool({ name: "mobile_ios_mirror_capture_screenshot", arguments: { sessionId: "PRIVATE_DEVICE_SESSION", image: "PRIVATE_SCREENSHOT" } });
   const screenshotContext = calls[2]._meta["mobile-dev/telemetry"];
@@ -462,6 +487,22 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   assert.equal(encoded.includes("p95FrameIntervalMs"), false, "Device frame pacing remains local.");
   contains(encoded, "ui.recording.derive.mean");
   contains(encoded, "ui.screenshot.capture.mean");
+  const screenshotMetrics = [];
+  for (const line of encoded.split("\n")) {
+    if (line.includes('"items"') === false) continue;
+    const payload = JSON.parse(line);
+    for (const metric of payload.items) {
+      if (metric.name.startsWith("ui.screenshot.encode.")) screenshotMetrics.push(metric);
+    }
+  }
+  assert.equal(screenshotMetrics.length, 4);
+  const screenshotMean = screenshotMetrics.find(metric => metric.name === "ui.screenshot.encode.mean");
+  assert.equal(screenshotMean.value, 20);
+  assert.equal(screenshotMean.unit, "millisecond");
+  assert.equal(screenshotMean.attributes.surface.value, "simulator");
+  assert.equal(screenshotMean.attributes.device_platform.value, "ios");
+  assert.equal(screenshotMean.attributes.device_kind.value, "physical");
+  contains(encoded, "/9j/2Q==", false);
   contains(encoded, "ui.annotations.inspection_truncated");
   contains(encoded, '"surface":{"value":"logs"');
   contains(encoded, '"surface":{"value":"performance"');

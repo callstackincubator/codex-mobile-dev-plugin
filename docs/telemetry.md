@@ -2,6 +2,15 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Since 0.1.147, server processes select the bundled Undici 8.12.1 HTTP dispatcher
+before telemetry initialization and HTTP requests. This avoids the uncaught macOS
+`setTypeOfService EINVAL` exception in Codex's Node 24.19.0 built-in dispatcher.
+Node's existing `fetch` and Web API globals remain in use. Sentry's outgoing HTTP
+instrumentation, sampled MCP traces, error capture, scrubbing, environments and
+opt-out retain their existing boundaries. Process shutdown flushes telemetry
+before destroying the owned dispatcher and cancelling remaining HTTP requests.
+No socket monkey patch or process-level exception suppression is added.
+
 Since 0.1.143, `ui.memory.heap_used`, `ui.memory.heap_total` and
 `ui.memory.heap_limit` report Chromium's `performance.memory` JavaScript heap
 values in bytes. They sample at UI telemetry startup and on the existing
@@ -38,6 +47,13 @@ installation failures report a fixed error message. The existing MCP wrapper
 preserves sampled UI/server tracing and action outcomes on the active workspace
 surface. UI counters record successful updates and dismissed banners without
 release details. All collection honors telemetry opt-out.
+
+Since 0.1.146, update commands run from the stable Codex profile directory and
+verify already-installed updates even when the marketplace reports no changed
+roots. Existing installation duration, outcome, handled-error, and MCP tracing
+coverage remains on this path with the same boundaries and units. Execution and
+invalid-response errors use fixed messages without implying a network failure;
+raw CLI errors and output are not sent to telemetry.
 
 Since 0.1.129, discovery command failures retain bounded `discovery_command`, `discovery_cause`,
 `discovery_termination`, and optional `discovery_signal` tags. Failed exception
@@ -310,7 +326,7 @@ Agent Device telemetry is inactive while its MCP entry is disabled; the active M
 | UI JavaScript heap | `ui.memory.heap_used`, `ui.memory.heap_total` and `ui.memory.heap_limit` in bytes at startup and every 30 seconds while visible, when Chromium's `performance.memory` is available. `ui.memory.supported` distinguishes unsupported contexts. These estimates do not measure total renderer or GPU memory. |
 | UI responsiveness | Browser tracing captures available web vitals. Custom metrics record visible animation-frame intervals, intervals over 50 ms, Event Timing interaction durations, long tasks and long animation frames where supported. |
 | Product surfaces | Metrics carry `surface=simulator`, `logs`, `performance`, `recording` or `comparison`, plus view, visible device layout and monitoring state. Log filter time, buffered/filtered rows, performance batch processing, canvas draw time and time to first video frame help explain slow surfaces. |
-| Frame capture | `ui.screenshot.capture` measures synchronous canvas PNG encoding and base64 extraction in milliseconds for Select captures and physical iOS screenshots. Screenshot tools retain sampled MCP traces and report handled capture, attachment, and clipboard failures without image content. |
+| Frame capture | `ui.screenshot.capture` measures synchronous canvas PNG encoding and base64 extraction in milliseconds for Select captures and physical iOS screenshots. `ui.screenshot.encode` measures PNG decoding, bounded JPEG encoding, and base64 extraction for chat attachments in milliseconds. Screenshot tools retain sampled MCP traces and report handled capture, attachment, and clipboard failures without image content. |
 | Storage | Every five minutes, the agent-device launcher measures its own session state directory and the shared Apple runner cache in bytes. It skips symlinks and sends only the storage kind and size. |
 | Usage | Surface views and visible time, tool action outcomes, log searches, attachments and send-to-chat actions are counted without their content. |
 
