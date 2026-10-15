@@ -51,7 +51,8 @@ export function registerAppControlTools(server: McpServer, driverFor: DriverFact
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
       } catch (error) {
         // Command output can contain app IDs, URLs, and device serials, so Sentry receives only the action.
-        if (expectedOutcome(error) === undefined) captureServerError(new Error(`App ${action} command failed.`), `app_control.${action}`);
+        // Expected outcomes carry fixed reasons and are counted without a report.
+        captureServerError(expectedOutcome(error) === undefined ? new Error(`App ${action} command failed.`) : error, `app_control.${action}`);
         return { isError: true, content: [{ type: "text" as const, text: errorMessage(error) }] };
       }
     });
