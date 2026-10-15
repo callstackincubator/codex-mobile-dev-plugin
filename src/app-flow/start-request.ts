@@ -10,26 +10,21 @@ import type {
   AppFlowBuildMode,
   DeepLinkJudgeMode,
   ExplorationMode,
-  RenderTransportMode,
   StartAppFlowInput
 } from '../shared/app-flow.ts'
 
 /**
  * What an absent option means. One table so the service and its test cannot drift apart.
- * `renderTransportMode` defaults to `cli` — the CLI stays the default until the socket transport
- * wins a measured sweep on the same app. `deepLinkJudgeMode` defaults to `on` for the same kind of
- * reason: skipping the judge changes what a sweep can tell about an open, so an existing run must
- * keep behaving exactly as it did until someone asks for the cheaper one.
+ * `deepLinkJudgeMode` defaults to `on`: skipping the judge changes what a sweep can tell about an
+ * open, so an existing run keeps behaving exactly as it did until someone asks for the cheaper one.
  */
 export const APP_FLOW_START_DEFAULTS = {
   mode: 'structure-only',
   explorationMode: 'auto',
-  renderTransportMode: 'cli',
   deepLinkJudgeMode: 'on'
 } as const satisfies {
   mode: AppFlowBuildMode
   explorationMode: ExplorationMode
-  renderTransportMode: RenderTransportMode
   deepLinkJudgeMode: DeepLinkJudgeMode
 }
 
@@ -45,7 +40,6 @@ export function resolveAppFlowStart(input: StartAppFlowInput): ResolvedAppFlowSt
     mode: input.mode ?? APP_FLOW_START_DEFAULTS.mode,
     screenLimit: input.screenLimit,
     explorationMode: input.explorationMode ?? APP_FLOW_START_DEFAULTS.explorationMode,
-    renderTransportMode: input.renderTransportMode ?? APP_FLOW_START_DEFAULTS.renderTransportMode,
     deepLinkJudgeMode: input.deepLinkJudgeMode ?? APP_FLOW_START_DEFAULTS.deepLinkJudgeMode
   }
 }
@@ -65,7 +59,6 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
     mode,
     screenLimit,
     explorationMode,
-    renderTransportMode,
     deepLinkJudgeMode
   } = raw as Record<string, unknown>
   if (typeof projectPath !== 'string' || projectPath.length > 4096)
@@ -81,12 +74,6 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
     explorationMode !== 'thorough'
   )
     return { ok: false, error: 'Invalid exploration mode.' }
-  if (
-    renderTransportMode !== undefined &&
-    renderTransportMode !== 'cli' &&
-    renderTransportMode !== 'socket'
-  )
-    return { ok: false, error: 'Invalid render transport mode.' }
   if (deepLinkJudgeMode !== undefined && deepLinkJudgeMode !== 'on' && deepLinkJudgeMode !== 'off')
     return { ok: false, error: 'Invalid deep-link judge mode.' }
   return {
@@ -96,7 +83,6 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
       mode,
       screenLimit: screenLimit as number | undefined,
       explorationMode,
-      renderTransportMode,
       deepLinkJudgeMode
     }
   }

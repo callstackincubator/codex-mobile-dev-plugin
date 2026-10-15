@@ -24,13 +24,7 @@
  * by `value-imports.test.ts`'s two named paths, so nothing else here may import it either —
  * nothing else does, and the rule it would break is the same one.
  */
-import {
-  navigateExpr,
-  navigatePayload,
-  parseNavigateOutcome,
-  parseReadiness,
-  readinessExpr
-} from '../runtime-render.ts'
+import type { NavigateReply, ReadinessReply } from '../cdp/agent-runtime.ts'
 import type { AppFlowNode, AppFlowPressable } from '../../shared/app-flow.ts'
 import {
   captureScreenshot,
@@ -92,28 +86,24 @@ export interface CreateReachPortsOptions {
 }
 
 /**
- * The orchestrator-supplied half of the render path: a selected CDP target and a way to evaluate
- * one expression against it. Kept to these two operations so that swapping the CLI for a
- * persistent socket later changes this object's implementation and nothing else.
+ * The orchestrator-supplied half of deterministic Fast: one persistent runtime connection for the
+ * sweep. Navigation and readiness are structured commands so replies are not truncated by a CLI.
  */
 export interface RenderTransport {
   /** Resolves once a CDP target is selected, false when the runtime cannot be reached at all. */
   ready(): Promise<boolean>
-  /** Evaluates one expression and returns the CLI's raw output. */
-  evaluate(expression: string, timeoutMs: number): Promise<string>
+  navigate(route: string[], params: Record<string, string> | null): Promise<NavigateReply>
+  readiness(route: string, params: Record<string, string> | null): Promise<ReadinessReply>
+  close(): Promise<void>
 }
 
 /**
  * How long to keep polling for a screen to stop changing, and how the poll decides it has.
  *
- * `SETTLE_STABLE_POLLS` is two because a CLI eval costs roughly half a second, so two identical
- * samples are already over 500ms apart — far longer than the 80ms quiet window the reference
- * implementation waits for, and long enough that frames have certainly been painted. The slow
- * transport is what makes a stateless check sound; see `runtime-render.ts`.
+ * The persistent runtime measures React commits, requests and two painted frames in-app; the host
+ * only bounds how long it will keep asking for that verdict.
  */
 const SETTLE_TIMEOUT_MS = 8_000
-const SETTLE_EVAL_TIMEOUT_MS = 5_000
-const SETTLE_STABLE_POLLS = 2
 
 function createRenderPort(
   transport: RenderTransport,
@@ -125,20 +115,18 @@ function createRenderPort(
     },
     async navigate(node, params) {
       const segments = nodeRouteName(node)
-      const payload = navigatePayload(segments, params)
-      if (!payload) return { ok: false, reason: 'No navigator route name for this node.' }
-      const outcome = parseNavigateOutcome(
-        await transport.evaluate(navigateExpr(payload), SETTLE_EVAL_TIMEOUT_MS)
-      )
-      if (!outcome) return { ok: false, reason: 'Runtime did not answer the navigation dispatch.' }
+      if (!segments.length) return { ok: false, reason: 'No navigator route name for this node.' }
+      const outcome = await transport.navigate(segments, params)
       if (outcome.ok) return { ok: true, reason: `Dispatched ${segments.join(' > ')}.` }
       const why =
         outcome.reason === 'unregistered'
-          ? `Route ${payload.name} is not registered in the running navigator.`
+          ? `Route ${segments[segments.length - 1]} is not registered in the running navigator.`
           : outcome.reason === 'no-navigator'
             ? 'No mounted navigator found.'
             : outcome.reason === 'no-dispatch'
               ? 'The mounted navigator cannot be dispatched to.'
+              : outcome.reason === 'invalid-route'
+                ? 'The route has no runtime navigator path.'
               : `Navigation dispatch threw: ${outcome.detail ?? 'no detail'}`
       return { ok: false, reason: why }
     },
@@ -149,15 +137,11 @@ function createRenderPort(
       // the log line only — the wait is the shorter of the two either way.
       const budgetCapped = budget.remainingMs < SETTLE_TIMEOUT_MS
       const deadline = Date.now() + Math.min(SETTLE_TIMEOUT_MS, Math.max(0, budget.remainingMs))
-      let previous: string | null = null
-      let stable = 0
       let polls = 0
       let last = 'never sampled'
       while (Date.now() < deadline) {
         polls += 1
-        const snapshot = parseReadiness(
-          await transport.evaluate(readinessExpr(target, params), SETTLE_EVAL_TIMEOUT_MS)
-        )
+        const snapshot = await transport.readiness(target, params)
         if (!snapshot) {
           return {
             settled: false,
@@ -173,17 +157,11 @@ function createRenderPort(
             : `target screen not focused (on ${snapshot.active.join('/') || 'unknown'})`
         // A loading affordance resets the count outright: a skeleton holds its shape between
         // polls, so stability alone would call a half-rendered screen settled.
-        if (!snapshot.found || snapshot.loading || !snapshot.content) {
-          stable = 0
-          previous = null
-          continue
-        }
-        stable = snapshot.signature === previous ? stable + 1 : 1
-        previous = snapshot.signature
-        if (stable >= SETTLE_STABLE_POLLS) {
+        if (!snapshot.found || snapshot.loading || !snapshot.content) continue
+        if (snapshot.settled) {
           return {
             settled: true,
-            reason: `Settled with ${snapshot.content} content nodes.`,
+            reason: `Settled with ${snapshot.content} content nodes (${snapshot.confident ? 'full signals' : `missing ${snapshot.missing.join(', ')}`}).`,
             polls,
             stop: 'settled'
           }

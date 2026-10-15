@@ -1,8 +1,7 @@
 /**
  * Reaching a screen by telling the app's own navigator to go there.
  *
- * This sits between the deep-link rung and the exploration rung, and it exists for the screens
- * that fall between them: routes a URL cannot address, or whose parameters have no value, but
+ * This is the deterministic Fast rung, and it exists for screens a URL cannot address but
  * which the running navigator will happily navigate to by name. On the measured reference app
  * those screens cost 22-33s each as an agentic walk; a dispatch plus a settle poll is a few
  * seconds.
@@ -15,20 +14,17 @@
  *
  * - The saving is in the dispatch. Replacing a multi-step model-driven walk with one navigation
  *   call is where the 20-plus seconds go; the judge call at the end costs ~2.5s either way.
- * - A wrong accept here would be silent. The settle check is a partial reimplementation of
- *   someone else's readiness heuristics over a transport that cannot see frames (see
- *   `runtime-render.ts`), and trusting it to confirm identity would buy a couple of seconds in
- *   exchange for captures that are confidently of the wrong screen.
+ * - A wrong accept here would be silent. The persistent in-app runtime measures commits, network
+ *   activity and painted frames, but the arrival judge still owns screen identity.
  *
  * So `awaitSettled` answers "is it worth photographing yet", and the judge answers "is this the
  * screen we asked for".
  *
- * ## Why it runs after the deep link and before exploration
+ * ## Where it runs
  *
- * A deep link exercises the app the way a user arriving from outside does, which is the more
- * faithful journey and the one whose `.ad` replay is reusable. Rendering bypasses that path, so
- * it should not pre-empt it. But it is far cheaper and far more predictable than asking a model
- * to find the screen, so it belongs ahead of exploration.
+ * Fast invokes it directly after the verified shortcuts. Auto first tries the more faithful deep
+ * link and falls back here. Thorough never invokes it; that mode follows a failed deep link with
+ * model-driven exploration instead.
  *
  * It publishes **no replay script**. A dispatched navigation is not a journey a user could
  * repeat, and recording it as one would put a script in front of future sweeps that teaches them

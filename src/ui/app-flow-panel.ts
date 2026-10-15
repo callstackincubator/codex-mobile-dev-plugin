@@ -1,6 +1,6 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
 import { LoggingMessageNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
-import type { AppFlowBuildMode, AppFlowProgressEvent, AppFlowPrompt, AppFlowPromptResolution, AppFlowResult, DeepLinkJudgeMode, ExplorationMode, ManualRecordingEvent, RenderTransportMode, StartAppFlowInput } from "../shared/app-flow.ts";
+import type { AppFlowBuildMode, AppFlowProgressEvent, AppFlowPrompt, AppFlowPromptResolution, AppFlowResult, DeepLinkJudgeMode, ExplorationMode, ManualRecordingEvent, StartAppFlowInput } from "../shared/app-flow.ts";
 import { AppFlowRecordingStore } from "./app-flow-recording.ts";
 import { countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 
@@ -439,4 +439,4 @@ export class AppFlowPanel {
   }
 }
 
-export type { AppFlowBuildMode, DeepLinkJudgeMode, ExplorationMode, RenderTransportMode };
+export type { AppFlowBuildMode, DeepLinkJudgeMode, ExplorationMode };

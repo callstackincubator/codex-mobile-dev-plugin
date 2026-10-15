@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events'
 import { createHash, randomUUID } from 'node:crypto'
-import { copyFile, unlink } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { copyFile, readFile, unlink } from 'node:fs/promises'
+import { basename, isAbsolute, join } from 'node:path'
+import * as Sentry from '@sentry/node'
 import type {
   AgentDeviceScreenEntry,
   AgentDeviceScreensMap,
@@ -23,7 +24,6 @@ import type {
   AppFlowTrigger,
   DeepLinkJudgeMode,
   ExplorationMode,
-  RenderTransportMode,
   TokenUsage
 } from '../shared/app-flow.ts'
 import { addTokenUsage, carriedSweepDurationMs } from '../shared/app-flow.ts'
@@ -62,6 +62,10 @@ import { isPathVerified } from './path-provenance.ts'
 import { runPathToReach } from './path-run.ts'
 import type { RenderTransport } from './reach/adapters.ts'
 import { createReachPorts } from './reach/adapters.ts'
+import { CdpConnection, createTargetResolver } from './cdp/connection.ts'
+import { listMetroTargets, type MetroCdpTarget } from './cdp/discovery.ts'
+import type { NavigateReply, ReadinessReply } from './cdp/agent-runtime.ts'
+import { agentSource } from './cdp/runtime-source.ts'
 import {
   AUTH_GATE_FRAME_WAIT_MS,
   settlesAuthGateForRun,
@@ -124,6 +128,7 @@ import {
   type WalkCursor
 } from './reach/walk-edges.ts'
 import { computeStructureKey } from './reach/structure-key.ts'
+import { reconcileSweepProgress } from './reach/checkpoint.ts'
 import { renderStrategy } from './reach/strategies/render.ts'
 import { deepLinkStrategy } from './reach/strategies/deep-link.ts'
 import { savedReplayStrategy } from './reach/strategies/saved-replay.ts'
@@ -179,8 +184,7 @@ import {
   writeCaptureStatus,
   writeManifest,
   writeParamStore,
-  writeSweepProgress,
-  type AppFlowSweepProgress
+  writeSweepProgress
 } from './storage.ts'
 import { ParamStore } from './param-store.ts'
 import { readNavState, selectNavStateTarget, type NavStateDeps } from './nav-state.ts'
@@ -215,6 +219,26 @@ const ARRIVAL_SIMILARITY = 0.9
  * same screen is the app refusing to navigate at all.
  */
 const BLOCKED_RUN_LIMIT = 3
+
+async function computeFastSourceHash(
+  projectPath: string,
+  nodes: readonly AppFlowNode[]
+): Promise<string> {
+  const hash = createHash('sha256')
+  const files = [...new Set(nodes.map((node) => node.file).filter((file): file is string => !!file))]
+    .sort()
+  for (const file of files) {
+    const absolute = isAbsolute(file) ? file : join(projectPath, file)
+    hash.update(file).update('\0')
+    try {
+      hash.update(await readFile(absolute))
+    } catch {
+      hash.update('unreadable')
+    }
+    hash.update('\0')
+  }
+  return hash.digest('hex').slice(0, 24)
+}
 
 // The deep-link circuit breaker's limit is `reach/deep-link-policy.ts`'s `DEEPLINK_BREAKER_LIMIT` —
 // moved there in landing-order item 4 along with the breaker's state and decisions, so its own
@@ -295,11 +319,6 @@ export interface AppFlowBuildOptions {
    * `auto`. See `ExplorationMode`, and `strategiesFor` for the ladder each one produces.
    */
   explorationMode?: ExplorationMode
-  /**
-   * How the render path reaches the app's JS runtime. Omitted means `cli`. Consumed at exactly one
-   * place, marked `RENDER TRANSPORT SELECTION` below. See `RenderTransportMode`.
-   */
-  renderTransportMode?: RenderTransportMode
   /**
    * Whether a deep link's arrival is confirmed by the vision judge. Omitted means `on` — the
    * behaviour every sweep had before this option existed. Consumed at exactly one place, the
@@ -905,6 +924,8 @@ export async function buildAppFlow(
 
     const structureRevision = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`
     const structureKey = computeStructureKey(parsed.nodes, parsed.edges)
+    const fastSourceHash = await computeFastSourceHash(projectPath, parsed.nodes)
+    const fastFingerprint = createHash('sha256').update(agentSource()).digest('hex').slice(0, 24)
     // Persisted verbatim as `AppFlowResult.navigation` (plan Step 4d) so a reader of `app-flow.json`
     // can say where a journey starts without re-parsing the project. Built once here, alongside
     // `structureKey`, from the exact same parse the sweep runs against.
@@ -1026,6 +1047,7 @@ export async function buildAppFlow(
     const bootCtx = captureContext(projectPath, projectId, parsed, signal)
     const reusedDevice = options.launchedDevice
     let device: CaptureDevice
+    let fastRuntime: CdpConnection | null = null
     if (reusedDevice) {
       emit(projectId, onEvent, {
         type: 'phase',
@@ -1355,17 +1377,6 @@ export async function buildAppFlow(
       // and the plan keeps them outside this seam permanently rather than routing them through a
       // ladder of reach strategies.
       /**
-       * RENDER TRANSPORT SELECTION — the single place `options.renderTransportMode` is consumed.
-       *
-       * TODO(socket transport): the persistent-WebSocket `RenderTransport` is constructed here,
-       * chosen by this value. Today only the `agent-device cdp runtime eval` transport below
-       * exists, so `socket` is recorded and logged but still served by the CLI; nothing else in the
-       * orchestrator may branch on this option. Grep `RENDER TRANSPORT SELECTION` to find it.
-       */
-      const renderTransportMode: RenderTransportMode = options.renderTransportMode ?? 'cli'
-      console.log(`[app-flow] render transport selected: ${renderTransportMode}`)
-
-      /**
        * DEEP-LINK ARRIVAL JUDGE — the single place `options.deepLinkJudgeMode` is consumed.
        *
        * Passed straight through to the deep-link rung's `arrivalJudge` and nowhere else: the
@@ -1388,36 +1399,93 @@ export async function buildAppFlow(
         }`
       )
 
-      /**
-       * The render path's transport, over the same CDP target `nav-state` already selects.
-       *
-       * It shares `paramStore.navState` deliberately: that field is the sweep's one answer to
-       * "can the app's JS context be reached", and a second latch would mean the reader and the
-       * navigator could disagree about it — and would re-pay for a handshake the other already
-       * discovered was hopeless. `ready()` performs the selection at most once and caches the
-       * verdict for the rest of the sweep.
-       */
+      /** One persistent Metro/CDP runtime for deterministic Fast navigation and readiness. */
+      let fastTarget: MetroCdpTarget | null = null
+      let fastUnavailable = false
+      const runtimeMetric = (
+        name: string,
+        started: number,
+        attributes: Record<string, string> = {}
+      ): void => {
+        if (process.env.MOBILE_DEV_TELEMETRY === 'off') return
+        Sentry.metrics.distribution(name, performance.now() - started, {
+          unit: 'millisecond',
+          attributes: { surface: 'app-flow', device_platform: 'ios', ...attributes }
+        })
+      }
       const renderTransport: RenderTransport = {
         async ready(): Promise<boolean> {
-          if (paramStore.navState === 'ready') return true
-          if (paramStore.navState === 'unavailable') return false
-          const selected = await selectNavStateTarget(
-            device.metroPort,
-            parsed.appName,
-            navStateDeps,
-            (output, preferred) =>
-              pickMetroCdpTarget(parseCdpTargetList(output), preferred)?.id ?? null
-          )
-          paramStore.navState = selected ? 'ready' : 'unavailable'
-          return selected
+          if (fastRuntime?.state === 'ready') return true
+          if (fastUnavailable) return false
+          const started = performance.now()
+          try {
+            const targets = await listMetroTargets(device.metroPort, { signal })
+            const normalize = (value: string | null | undefined): string =>
+              (value ?? '').toLowerCase().replace(/[^a-z\d]/g, '')
+            const app = normalize(parsed.appName)
+            const candidates = targets.filter((target) => target.supportsMultipleDebuggers)
+            const deviceCandidates = candidates.filter(
+              (target) =>
+                target.deviceId === device.deviceId ||
+                (!!target.deviceName && normalize(target.deviceName) === normalize(device.deviceName))
+            )
+            fastTarget =
+              deviceCandidates.find(
+                (target) =>
+                  (!app || normalize(target.title) === app || normalize(target.appId) === app)
+              ) ??
+              (deviceCandidates.length === 1 ? deviceCandidates[0]! : null)
+            if (!fastTarget) throw new Error('No unambiguous Metro runtime supports Fast capture.')
+            fastRuntime = new CdpConnection({
+              resolveTarget: createTargetResolver(device.metroPort, fastTarget),
+              sessionId: `fast-${projectId}`,
+              log: (message) => console.log(`[app-flow] fast runtime — ${message}`),
+              onStateChange: (state) => {
+                if (process.env.MOBILE_DEV_TELEMETRY !== 'off')
+                  Sentry.metrics.count('app_flow.runtime.state', 1, {
+                    attributes: { surface: 'app-flow', device_platform: 'ios', state }
+                  })
+              }
+            })
+            await fastRuntime.connect()
+            paramStore.navState = 'ready'
+            return true
+          } catch (error) {
+            fastUnavailable = true
+            paramStore.navState = 'unavailable'
+            console.log(
+              `[app-flow] fast runtime unavailable — ${error instanceof Error ? error.message : String(error)}`
+            )
+            return false
+          } finally {
+            runtimeMetric('app_flow.runtime.connect', started, {
+              outcome: fastRuntime?.state === 'ready' ? 'ready' : 'unavailable'
+            })
+          }
         },
-        evaluate: (expression, timeoutMs) =>
-          runShellCommand(
-            agentDeviceCdp(ctx.sessionName, `runtime eval --expr ${shellQuote(expression)}`),
-            projectPath,
-            timeoutMs,
-            signal
-          )
+        async navigate(route, params): Promise<NavigateReply> {
+          const started = performance.now()
+          try {
+            return await fastRuntime!.invoke<NavigateReply>({ type: 'navigate', route, params }, 5_000)
+          } finally {
+            runtimeMetric('app_flow.runtime.command', started, { operation: 'navigate' })
+          }
+        },
+        async readiness(route, params): Promise<ReadinessReply> {
+          const started = performance.now()
+          try {
+            return await fastRuntime!.invoke<ReadinessReply>(
+              { type: 'readiness', route, expectedParams: params },
+              5_000
+            )
+          } finally {
+            runtimeMetric('app_flow.runtime.command', started, { operation: 'readiness' })
+          }
+        },
+        async close(): Promise<void> {
+          await fastRuntime?.close()
+          fastRuntime = null
+        }
       }
 
       const ports = createReachPorts({
@@ -1455,11 +1523,19 @@ export async function buildAppFlow(
       // is only reused when the parsed structure still fingerprints the same, so routes that moved
       // force a full sweep rather than resuming onto screens that no longer exist.
       const resumed = await readSweepProgress(projectId)
-      const resuming = resumed?.structureKey === structureKey
-      const checkpoint: AppFlowSweepProgress =
-        resuming
-          ? resumed
-          : { structureKey, updatedAt: '', captures: {}, opened: {}, inferred: {}, statesDone: [] }
+      const explorationMode = options.explorationMode ?? 'auto'
+      const reconciled = reconcileSweepProgress(resumed, {
+        structureKey,
+        explorationMode,
+        sourceHash: fastSourceHash,
+        fastFingerprint
+      })
+      const { resuming, checkpoint } = reconciled
+      if (resumed?.structureKey === structureKey && !resuming) {
+        console.log(
+          `[app-flow] checkpoint pipeline changed — kept ${reconciled.retained} successful capture(s), re-queued unfinished screens`
+        )
+      }
       // The one condition under which this build inherits the previous one's elapsed time: it is
       // continuing the same sweep the checkpoint describes — the same test, in the same place, the
       // captures themselves are reused under. A completed sweep deletes that checkpoint, so the
@@ -1683,6 +1759,9 @@ export async function buildAppFlow(
       const persistCheckpoint = async (): Promise<void> => {
         await writeSweepProgress(projectId, {
           structureKey,
+          explorationMode,
+          sourceHash: fastSourceHash,
+          fastFingerprint,
           updatedAt: new Date().toISOString(),
           captures: captureMap,
           opened: openedByNode,
@@ -4334,6 +4413,7 @@ export async function buildAppFlow(
 
       return { ok: true, projectId, result: finalResult }
     } finally {
+      await fastRuntime?.close().catch(() => undefined)
       // A device the user launched stays up so the next sweep can adopt it again.
       if (!reusedDevice) await closeDevice(device)
     }
@@ -4431,7 +4511,6 @@ export class AppFlowBuilder extends EventEmitter {
     decisionProvider?: AppFlowDecisionProvider
     screenLimit?: number
     explorationMode?: ExplorationMode
-    renderTransportMode?: RenderTransportMode
     deepLinkJudgeMode?: DeepLinkJudgeMode
     launchedDevice?: CaptureDevice
   }): Promise<void> {

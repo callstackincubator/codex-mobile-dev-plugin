@@ -1,6 +1,6 @@
 import { AlertTriangle, Clock, Loader2, MapIcon, Pause } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import type { AppFlowBuildMode, DeepLinkJudgeMode, ExplorationMode, RenderTransportMode } from "../../shared/app-flow.ts";
+import type { AppFlowBuildMode, DeepLinkJudgeMode, ExplorationMode } from "../../shared/app-flow.ts";
 import type { AppFlowPanel } from "../app-flow-panel.ts";
 import { AppFlowGraph } from "./app-flow-graph.tsx";
 import { AppFlowProjectPicker } from "./app-flow-project-picker.tsx";
@@ -16,14 +16,12 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const [mode, setMode] = useState<AppFlowBuildMode>("structure-only");
   const [exploration, setExploration] = useState<ExplorationMode>("auto");
-  const [transport, setTransport] = useState<RenderTransportMode>("cli");
   const [deepLinkJudge, setDeepLinkJudge] = useState<DeepLinkJudgeMode>("on");
   const [screenLimit, setScreenLimit] = useState("");
   useEffect(() => {
     const projectPath = state.projectPath; if (!projectPath) return;
     const nextMode = stored(`app-flow-mode:${projectPath}`, "structure-only"); setMode(nextMode === "screen-ui-and-structure" ? nextMode : "structure-only");
     const nextExploration = stored(`app-flow-exploration:${projectPath}`, "auto"); setExploration(nextExploration === "fast" || nextExploration === "thorough" ? nextExploration : "auto");
-    setTransport(stored(`app-flow-render-transport:${projectPath}`, "cli") === "socket" ? "socket" : "cli");
     setDeepLinkJudge(stored(`app-flow-deep-link-judge:${projectPath}`, "on") === "off" ? "off" : "on");
     const limit = stored(`app-flow-screen-limit:${projectPath}`, ""); setScreenLimit(/^\d+$/.test(limit) && Number(limit) >= 1 ? limit : "");
   }, [state.projectPath]);
@@ -37,7 +35,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
     if (!state.projectPath) return;
     write(`app-flow-mode:${state.projectPath}`, mode);
     const options = { mode, ...(mode === "screen-ui-and-structure" ? { screenLimit: screenLimit ? Number(screenLimit) : undefined, explorationMode: exploration,
-      renderTransportMode: transport, deepLinkJudgeMode: deepLinkJudge } : {}) };
+      deepLinkJudgeMode: deepLinkJudge } : {}) };
     if (mode === "screen-ui-and-structure") void panel.requestAgentStart(options); else void panel.start(options);
   };
   const empty = !state.result && !isRunning;
@@ -62,11 +60,10 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
       </div>
       {mode === "screen-ui-and-structure" && <div className="flex w-full flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
         <label className="flex items-center gap-1">Reach by <NativeSelect size="sm" aria-label="App Flow exploration mode" value={exploration} disabled={isRunning} onChange={event => { const value = event.target.value as ExplorationMode; setExploration(value); if (state.projectPath) write(`app-flow-exploration:${state.projectPath}`, value); }}>
-          <NativeSelectOption value="auto">Auto</NativeSelectOption><NativeSelectOption value="fast">Fast</NativeSelectOption><NativeSelectOption value="thorough">Thorough</NativeSelectOption></NativeSelect></label>
-        <label className="flex items-center gap-1">Eval transport <NativeSelect size="sm" aria-label="App Flow render transport" value={transport} disabled={isRunning} onChange={event => { const value = event.target.value as RenderTransportMode; setTransport(value); if (state.projectPath) write(`app-flow-render-transport:${state.projectPath}`, value); }}>
-          <NativeSelectOption value="cli">CLI</NativeSelectOption><NativeSelectOption value="socket">Socket</NativeSelectOption></NativeSelect></label>
-        <label className="flex items-center gap-1">Deep-link check <NativeSelect size="sm" aria-label="App Flow deep-link judge" value={deepLinkJudge} disabled={isRunning} onChange={event => { const value = event.target.value as DeepLinkJudgeMode; setDeepLinkJudge(value); if (state.projectPath) write(`app-flow-deep-link-judge:${state.projectPath}`, value); }}>
+          <NativeSelectOption value="auto">Auto · Deep Link → Fast</NativeSelectOption><NativeSelectOption value="fast">Fast</NativeSelectOption><NativeSelectOption value="thorough">Thorough · Deep Link → Exploration</NativeSelectOption></NativeSelect></label>
+        {exploration !== "fast" && <label className="flex items-center gap-1">Deep-link check <NativeSelect size="sm" aria-label="App Flow deep-link judge" value={deepLinkJudge} disabled={isRunning} onChange={event => { const value = event.target.value as DeepLinkJudgeMode; setDeepLinkJudge(value); if (state.projectPath) write(`app-flow-deep-link-judge:${state.projectPath}`, value); }}>
           <NativeSelectOption value="on">Judge</NativeSelectOption><NativeSelectOption value="off">Screen signal</NativeSelectOption></NativeSelect></label>
+        }
         <label className="flex items-center gap-1">Explore <Input className="w-20" aria-label="Maximum screens to explore" type="number" min={1} value={screenLimit} disabled={isRunning}
           placeholder="No limit" onChange={event => { const value = event.target.value; if (value && Number(value) < 1) return; setScreenLimit(value); if (state.projectPath) write(`app-flow-screen-limit:${state.projectPath}`, value); }} /> screens</label>
       </div>}

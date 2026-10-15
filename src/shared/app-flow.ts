@@ -9,29 +9,14 @@ export type AppFlowBuildMode = 'structure-only' | 'screen-ui-and-structure'
  * replay script — a dispatched navigation is not a journey a user could repeat. Asking a model to
  * walk the UI costs 22-33s and produces one.
  *
- * - `auto` — both, rendering first, the walk as the fallback. The default, and what a sweep did
- *   before this setting existed.
- * - `fast` — rendering only. A screen the navigator cannot reach is left unreached rather than
- *   paying for a walk.
- * - `thorough` — the walk only. Slower, but every screen it reaches is replayable, and it does
- *   not need the app's JS runtime to be reachable at all.
+ * - `auto` — try a deep link, then use the deterministic runtime navigator.
+ * - `fast` — use the deterministic runtime navigator directly.
+ * - `thorough` — try a deep link, then ask the model to explore the UI.
+ *
+ * A verified probe and a saved manual replay are always reused before the named pipeline. They
+ * are already-paid evidence, not an exploration mechanism selected by this option.
  */
 export type ExplorationMode = 'auto' | 'fast' | 'thorough'
-
-/**
- * How the render path talks to the app under test's JS runtime — a developer-facing A/B switch,
- * deliberately separate from `ExplorationMode` (which chooses *what* to attempt, not *how the
- * bytes travel*).
- *
- * - `cli` — one `agent-device cdp runtime eval` process per call. Slower (a process spawn per
- *   eval) and returned strings are truncated, but it is the long-proven path, so it is the default.
- * - `socket` — one persistent CDP WebSocket for the whole sweep. Far lower per-call latency and
- *   no truncation. Opt-in until a measured sweep shows it winning on the same app.
- *
- * Named for the layer it selects (the render transport) rather than the mechanism, so a future
- * third option does not make the name a lie.
- */
-export type RenderTransportMode = 'cli' | 'socket'
 
 /**
  * Whether a *deep link*'s arrival is confirmed by the vision judge.
@@ -66,7 +51,6 @@ export interface StartAppFlowInput {
   mode?: AppFlowBuildMode
   screenLimit?: number
   explorationMode?: ExplorationMode
-  renderTransportMode?: RenderTransportMode
   deepLinkJudgeMode?: DeepLinkJudgeMode
 }
 export type AppFlowSweepStatus =

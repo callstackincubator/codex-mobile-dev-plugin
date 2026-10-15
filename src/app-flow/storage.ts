@@ -10,7 +10,8 @@ import type {
   AppFlowManifest,
   AppFlowNode,
   AppFlowProjectEntry,
-  AppFlowResult
+  AppFlowResult,
+  ExplorationMode
 } from '../shared/app-flow.ts'
 import { normalizeAppFlow } from './app-flow-normalize.ts'
 import type { ParamStoreJson } from './param-store.ts'
@@ -279,6 +280,12 @@ export async function readAgentDeviceScreens(projectId: string): Promise<AgentDe
 export interface AppFlowSweepProgress {
   /** Fingerprint of the parsed structure. A different structure invalidates the checkpoint. */
   structureKey: string
+  /** Exploration pipeline that produced unfinished verdicts in this checkpoint. */
+  explorationMode?: ExplorationMode
+  /** Hash of route source text used by deterministic Fast. */
+  sourceHash?: string
+  /** Hash of the injected Fast runtime. */
+  fastFingerprint?: string
   updatedAt: string
   /** Finished screens, successful and unreached alike, keyed by node id. */
   captures: Record<string, AppFlowCapture>

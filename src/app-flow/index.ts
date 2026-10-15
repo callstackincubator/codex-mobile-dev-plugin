@@ -100,7 +100,6 @@ export function createAppFlowService(host: AppFlowHostPorts): {
         mode,
         screenLimit,
         explorationMode,
-        renderTransportMode,
         deepLinkJudgeMode
       } = resolveAppFlowStart(input)
       if (mode === 'screen-ui-and-structure' && !host.decisions) {
@@ -150,7 +149,6 @@ export function createAppFlowService(host: AppFlowHostPorts): {
           decisionProvider: host.decisions,
           screenLimit,
           explorationMode,
-          renderTransportMode,
           deepLinkJudgeMode,
           launchedDevice
         })

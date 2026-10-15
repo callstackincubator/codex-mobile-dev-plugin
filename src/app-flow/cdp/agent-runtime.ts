@@ -170,6 +170,7 @@ export type AgentCommand =
   | { type: 'heartbeat' }
   | { type: 'restore' }
   | { type: 'nav-state' }
+  | { type: 'navigate'; route: string[]; params: Record<string, string> | null }
   | {
       type: 'readiness'
       route: string
@@ -190,6 +191,13 @@ export interface RestoreReply {
 export interface NavStateReply {
   routes: NavRoute[] | null
 }
+export type NavigateReply =
+  | { ok: true }
+  | {
+      ok: false
+      reason: 'no-navigator' | 'no-dispatch' | 'unregistered' | 'invalid-route' | 'threw'
+      detail?: string
+    }
 /**
  * `ReadinessSnapshot` as the app computes it, plus the in-app verdict. Unlike the pipe-delimited
  * string it replaces, nothing here has to fit in 200 characters, so `active` is the whole focused
@@ -397,6 +405,51 @@ export function agentNavState(limits: AgentLimits): NavStateReply {
   var found = agentFindNavigator(limits)
   if (!found || !found.state) return { routes: null }
   return { routes: agentFlattenRoutes(found.state) }
+}
+
+/** Dispatches a nested React Navigation route after proving its leaf is registered live. */
+export function agentNavigate(
+  route: string[],
+  params: Record<string, string> | null,
+  limits: AgentLimits
+): NavigateReply {
+  if (!Array.isArray(route) || !route.length) return { ok: false, reason: 'invalid-route' }
+  var found = agentFindNavigator(limits)
+  if (!found) return { ok: false, reason: 'no-navigator' }
+  var nav = found.nav
+  if (!nav || typeof nav.dispatch !== 'function') return { ok: false, reason: 'no-dispatch' }
+  var names: string[] = []
+  var pending: any[] = [{ state: found.state, depth: 0 }]
+  for (var seen = 0; pending.length && seen < 500; seen++) {
+    var item = pending.pop()
+    var state = item && item.state
+    if (!state || item.depth >= 16) continue
+    if (Array.isArray(state.routeNames)) names = names.concat(state.routeNames)
+    if (!Array.isArray(state.routes)) continue
+    for (var index = 0; index < state.routes.length; index++) {
+      var child = state.routes[index]
+      if (child && child.state) pending.push({ state: child.state, depth: item.depth + 1 })
+    }
+  }
+  if (names.indexOf(String(route[route.length - 1])) < 0) {
+    return { ok: false, reason: 'unregistered' }
+  }
+  var nested: any = params && Object.keys(params).length ? params : undefined
+  for (var offset = route.length - 1; offset > 0; offset--) {
+    nested = { screen: String(route[offset]), params: nested, initial: false }
+  }
+  var payload: any = { name: String(route[0]) }
+  if (nested !== undefined) payload.params = nested
+  try {
+    nav.dispatch({ type: 'NAVIGATE', payload: payload })
+    return { ok: true }
+  } catch (error) {
+    return {
+      ok: false,
+      reason: 'threw',
+      detail: String(error && (error as any).message).slice(0, 80)
+    }
+  }
 }
 
 /**
@@ -1115,6 +1168,8 @@ export function agentInstall(key: string, leaseMs: number, limits: AgentLimits):
       done({ alive: true })
     } else if (type === 'nav-state') {
       done(agentNavState(limits))
+    } else if (type === 'navigate') {
+      done(agentNavigate(command.route, command.params || null, limits))
     } else if (type === 'readiness') {
       var quiet =
         typeof command.quietMs === 'number' && isFinite(command.quietMs) && command.quietMs >= 0
@@ -1204,6 +1259,7 @@ export const AGENT_FUNCTIONS = {
   agentFindNavigator,
   agentFlattenRoutes,
   agentNavState,
+  agentNavigate,
   agentStyleFlags,
   agentHidden,
   agentComponentName,
