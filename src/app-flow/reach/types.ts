@@ -144,6 +144,19 @@ export interface ReachAttempt {
   /** Whether this attempt actually made a device call, as opposed to short-circuiting on a
    *  disabled breaker, an unresolved param, or a cached rejection. */
   touchedDevice: boolean
+  /**
+   * The attempt ran, but whatever it asked of the app was *declined without being carried out* —
+   * a navigation dispatch the running navigator refused because it does not register the route.
+   *
+   * Deliberately not the inverse of `touchedDevice`: a refusal is reported *by the runtime*, so an
+   * eval did go out and come back (see `renderStrategy`'s note on why it stays `touchedDevice:
+   * true`). What makes it worth its own field is that the screen is left exactly as it was found.
+   * The sweep's blocked-run detector reads "the app did not change" as evidence that the app is
+   * stuck; three refusals in a row are not a stuck app, they are three routes this navigator does
+   * not have, and counting them tripped the breaker and halted a run. See `orchestrator.ts`'s
+   * `captureMethod === 'unreached'` branch, which skips the fingerprint comparison entirely here.
+   */
+  refused?: boolean
   arrival?: ArrivalVerdict | null
   /** Set on `ok: true` — what `decideDelivery` (or a later ladder consumer) needs to know this
    *  attempt proved. */
@@ -162,7 +175,14 @@ export interface ReachAttempt {
  */
 export type ReachOutcome =
   | { status: 'reached'; strategy: ReachStrategyName; attempts: ReachAttempt[] }
-  | { status: 'unreached'; reason: string; attempts: ReachAttempt[] }
+  | {
+      status: 'unreached'
+      reason: string
+      /** Every attempt that ran was `refused` — see `ReachAttempt.refused`. The node was not
+       *  reached, but nothing the ladder did changed what is on screen. */
+      refused?: boolean
+      attempts: ReachAttempt[]
+    }
   | { status: 'unavailable'; reason: string; attempts: ReachAttempt[] }
   | { status: 'stopped'; reason: 'auth' | 'cancelled'; attempts: ReachAttempt[] }
 

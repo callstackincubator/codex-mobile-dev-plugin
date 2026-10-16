@@ -25,6 +25,7 @@
  * nothing else does, and the rule it would break is the same one.
  */
 import type { NavigateReply, ReadinessReply } from '../cdp/agent-runtime.ts'
+import type { NavRoute } from '../nav-state.ts'
 import type { AppFlowNode, AppFlowPressable } from '../../shared/app-flow.ts'
 import {
   captureScreenshot,
@@ -56,10 +57,14 @@ import type {
   DeviceReplayOptions,
   DeviceReplayResult,
   JudgePort,
+  ReachMetricsPort,
   ReachPorts,
   RecorderPort,
+  RenderAvailability,
   RenderPort,
-  RouteSettleResult
+  RenderSettleResult,
+  RouteSettleResult,
+  SweepLogPort
 } from './ports.ts'
 
 export interface CreateReachPortsOptions {
@@ -85,6 +90,17 @@ export interface CreateReachPortsOptions {
   renderTransport?: RenderTransport | null
   /** The parser identified this project as Expo Router, whose runtime opens pathnames. */
   expoRouter?: boolean
+  /**
+   * How long the settle poll may wait, as an escalating list — see `SETTLE_DEADLINES_MS`. Fast
+   * passes `[3_000, 8_000]`; every other mode omits it and keeps the single 8s bound it had, so
+   * this change is invisible outside Fast.
+   */
+  settleDeadlinesMs?: readonly number[]
+  /** Where each node's run through the ladder is written down — see `SweepLogPort`. Omitted
+   *  outside Fast, and omitted when the log file could not be opened. */
+  sweepLog?: SweepLogPort | null
+  /** Where the reach path's three bounded aggregates go — see `ReachMetricsPort`. */
+  metrics?: ReachMetricsPort | null
 }
 
 /**
@@ -92,14 +108,34 @@ export interface CreateReachPortsOptions {
  * sweep. Navigation and readiness are structured commands so replies are not truncated by a CLI.
  */
 export interface RenderTransport {
-  /** Resolves once a CDP target is selected, false when the runtime cannot be reached at all. */
-  ready(): Promise<boolean>
+  /**
+   * Resolves once a CDP target is selected; `{ ok: false, reason }` when the runtime cannot be
+   * reached at all. The reason is the transport's own words (see `RenderAvailability`) — this
+   * layer only passes it on, to the rung's skip note and the per-run log.
+   */
+  ready(): Promise<RenderAvailability>
   navigate(
     route: string[],
     params: Record<string, string> | null,
-    expoPath: string | null
+    expoPath: string | null,
+    /**
+     * Ancestor navigator names this node may live under, for the in-app resolver to fall back on
+     * when the navigator that registers the route is not mounted yet (an unvisited tab).
+     */
+    candidates: string[] | null
   ): Promise<NavigateReply>
   readiness(route: string, params: Record<string, string> | null): Promise<ReadinessReply>
+  /**
+   * The flattened navigator state, read over the live connection instead of the CLI subprocess
+   * `nav-state.ts` shells out to.
+   *
+   * Same answer, same shape (`NavRoute[]`, null when no navigator is mounted) — the difference is
+   * that the subprocess path has to select a CDP target first (`selectNavStateTarget`, a 30s
+   * handshake) and then chunk the reply through a 200-character eval, both on the critical path of
+   * the first screen that wants param values. This connection is already open and already holds
+   * the target.
+   */
+  navState(): Promise<NavRoute[] | null>
   close(): Promise<void>
 }
 
@@ -108,16 +144,52 @@ export interface RenderTransport {
  *
  * The persistent runtime measures React commits, requests and two painted frames in-app; the host
  * only bounds how long it will keep asking for that verdict.
+ *
+ * The bound is a *list* of deadlines, not one number, because the two cases it has to separate look
+ * identical from the host: a screen still painting itself, and a screen that has arrived and will
+ * simply never go quiet (a live feed, an animated placeholder, a polling timer). Waiting the full
+ * 8s on the second is pure loss — it is as arrived at 3s as it will ever be. So the first deadline
+ * is the normal bound, and only a poll that saw an actual loading affordance may extend to the
+ * second. Non-fast modes are handed `[8_000]`, which is exactly the single deadline they had.
  */
-const SETTLE_TIMEOUT_MS = 8_000
+const SETTLE_DEADLINES_MS: readonly number[] = [8_000]
+
+/** How long the screen must have had to arrive before "unchanged" is allowed to mean "settled".
+ *  Below this a stable signature is just as likely to be a frame that has not started rendering. */
+const IDLE_AFTER_MS = 1_500
+
+/** Consecutive polls with an identical signature before the idle short-circuit fires. */
+const IDLE_STABLE_POLLS = 3
+
+/**
+ * The gap between two readiness polls, matching the in-app capture driver's own poll interval.
+ *
+ * The loop used to have none. Each poll walks the fiber tree twice (once for the screen, once for
+ * its content count) on the app's own JS thread, and on a large tree that is tens of thousands of
+ * fibers of work issued back-to-back against the very thread the screen needs in order to finish
+ * rendering. The gap costs no latency — a poll already blocks on two painted frames, ~35ms — and
+ * gives the app room to settle, so the screen is typically ready in *fewer* polls, not more.
+ */
+const POLL_INTERVAL_MS = 40
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 function createRenderPort(
   transport: RenderTransport,
   nodeRouteName: (node: AppFlowNode) => string[],
-  expoRouter: boolean
+  expoRouter: boolean,
+  deadlinesMs: readonly number[],
+  /** Times one readiness poll against the sweep's ledger — the `settle-poll` phase. Supplied by
+   *  the factory so this function keeps taking no `CaptureContext` of its own. */
+  measurePoll: <T>(work: () => Promise<T>) => Promise<T>,
+  metrics: ReachMetricsPort | null
 ): RenderPort {
+  const firstDeadline = deadlinesMs[0] ?? 8_000
+  const lastDeadline = deadlinesMs[deadlinesMs.length - 1] ?? firstDeadline
   return {
-    async available(): Promise<boolean> {
+    async available(): Promise<RenderAvailability> {
       return await transport.ready()
     },
     async navigate(node, params) {
@@ -126,22 +198,37 @@ function createRenderPort(
       const outcome = await transport.navigate(
         segments,
         params,
-        expoRouter ? node.urlPath : null
+        expoRouter ? node.urlPath : null,
+        navigatorCandidates(node, segments)
       )
       if (outcome.ok) {
-        const action =
+        const resolved = outcome.path?.length ? outcome.path : segments
+        const description =
           outcome.action === 'expo-replace'
             ? `Replaced Expo pathname ${node.urlPath}.`
             : outcome.action === 'replace'
-              ? `Replaced focused stack leaf with ${segments[segments.length - 1]}.`
+              ? `Replaced focused stack leaf with ${resolved[resolved.length - 1]}.`
               : outcome.action === 'noop'
-                ? `${segments.join(' > ')} was already focused.`
-                : `Dispatched ${segments.join(' > ')}.`
-        return { ok: true, reason: action }
+                ? `${resolved.join(' > ')} was already focused.`
+                : `Dispatched ${resolved.join(' > ')}.`
+        // `outcome.path` rather than `resolved`: the fallback to the requested segments is for the
+        // *message*, while a caller checking arrival against the live focused path must only ever
+        // compare what the app said it dispatched. See `RenderPort.navigate`.
+        metrics?.navigate(outcome.via ?? 'exact')
+        return {
+          ok: true,
+          reason: description,
+          action: outcome.action,
+          ...(outcome.path?.length ? { path: outcome.path } : {})
+        }
       }
+      metrics?.navigate('refused')
       let why: string
       if (outcome.reason === 'unregistered') {
-        why = `Route ${segments[segments.length - 1]} is not registered in the running navigator.`
+        // The guard tests the whole path against the live tree, so naming only its leaf (which is
+        // what this said before) sent readers looking for a screen that may well be registered.
+        const searched = outcome.detail ? ` (${outcome.detail})` : ''
+        why = `Route ${segments.join(' > ')} is not registered in the running navigator${searched}.`
       } else if (outcome.reason === 'no-navigator') {
         why = 'No mounted navigator found.'
       } else if (outcome.reason === 'no-dispatch') {
@@ -153,28 +240,56 @@ function createRenderPort(
       } else {
         why = `Navigation dispatch threw: ${outcome.detail ?? 'no detail'}`
       }
-      return { ok: false, reason: why }
+      return { ok: false, reason: why, refusal: outcome.reason }
     },
     async awaitSettled(node, params, budget) {
       const segments = nodeRouteName(node)
       const target = segments[segments.length - 1] ?? node.id
       // Whether the deadline below is the settle's own cap or the caller's remaining budget, for
       // the log line only — the wait is the shorter of the two either way.
-      const budgetCapped = budget.remainingMs < SETTLE_TIMEOUT_MS
-      const deadline = Date.now() + Math.min(SETTLE_TIMEOUT_MS, Math.max(0, budget.remainingMs))
+      const remainingMs = Math.max(0, budget.remainingMs)
+      const budgetCapped = budget.remainingMs < lastDeadline
+      const startedAt = Date.now()
+      // Sticky: once any poll has seen a loading affordance, this screen has shown it is still
+      // painting and has earned the longer wait for the rest of the settle. Letting the window
+      // shrink back the moment the skeleton disappears would cut off the screen that just finished
+      // loading at 2.9s, which is the one case the extension exists for.
+      let sawLoading = false
       let polls = 0
       let last = 'never sampled'
-      while (Date.now() < deadline) {
+      let lastSnapshot: ReadinessReply | null = null
+      let stableSignature: string | null = null
+      let stablePolls = 0
+      /** Every exit carries the last snapshot's own fields — see `RenderSettleResult`. */
+      const finish = (
+        result: Omit<RenderSettleResult, 'active' | 'found' | 'content' | 'paramMismatch' | 'signature'>
+      ): RenderSettleResult => {
+        // One measurement per settle, taken on every exit — not one per poll, which at a 40ms
+        // interval is exactly the frequent-sample case telemetry excludes. The `stop` attribute is
+        // a closed set, so this stays low cardinality.
+        metrics?.settle(Date.now() - startedAt, result.stop ?? 'unknown')
+        return {
+          ...result,
+          active: lastSnapshot?.active ?? [],
+          found: lastSnapshot?.found ?? false,
+          content: lastSnapshot?.content ?? 0,
+          paramMismatch: lastSnapshot?.paramMismatch ?? [],
+          signature: lastSnapshot?.signature ?? ''
+        }
+      }
+      while (Date.now() - startedAt < Math.min(sawLoading ? lastDeadline : firstDeadline, remainingMs)) {
         polls += 1
-        const snapshot = await transport.readiness(target, params)
+        const snapshot = await measurePoll(() => transport.readiness(target, params))
         if (!snapshot) {
-          return {
+          return finish({
             settled: false,
             reason: 'Runtime stopped answering readiness polls.',
             polls,
             stop: 'no-answer'
-          }
+          })
         }
+        lastSnapshot = snapshot
+        if (snapshot.loading) sawLoading = true
         last = snapshot.found
           ? `loading=${snapshot.loading ?? 'no'} content=${snapshot.content}`
           : snapshot.paramMismatch.length
@@ -182,22 +297,46 @@ function createRenderPort(
             : `target screen not focused (on ${snapshot.active.join('/') || 'unknown'})`
         // A loading affordance resets the count outright: a skeleton holds its shape between
         // polls, so stability alone would call a half-rendered screen settled.
-        if (!snapshot.found || snapshot.loading || !snapshot.content) continue
+        if (!snapshot.found || snapshot.loading || !snapshot.content) {
+          stableSignature = null
+          stablePolls = 0
+          await delay(POLL_INTERVAL_MS)
+          continue
+        }
         if (snapshot.settled) {
-          return {
+          return finish({
             settled: true,
             reason: `Settled with ${snapshot.content} content nodes (${snapshot.confident ? 'full signals' : `missing ${snapshot.missing.join(', ')}`}).`,
             polls,
             stop: 'settled'
-          }
+          })
         }
+        if (snapshot.signature && snapshot.signature === stableSignature) stablePolls += 1
+        else {
+          stableSignature = snapshot.signature
+          stablePolls = 1
+        }
+        // The idle short-circuit. The runtime's `settled` is the stronger statement — it also wants
+        // commits and network to have gone quiet — and a screen whose feed never stops polling can
+        // never make it. Found, substantial, not loading and structurally identical across three
+        // polls past `IDLE_AFTER_MS` is as arrived as that screen is going to get, and waiting out
+        // the deadline only delays a photograph of the same pixels.
+        if (Date.now() - startedAt >= IDLE_AFTER_MS && stablePolls >= IDLE_STABLE_POLLS) {
+          return finish({
+            settled: true,
+            reason: `Stable but never quiet — ${snapshot.content} content nodes unchanged across ${stablePolls} polls.`,
+            polls,
+            stop: 'stable-not-quiet'
+          })
+        }
+        await delay(POLL_INTERVAL_MS)
       }
-      return {
+      return finish({
         settled: false,
         reason: `Did not settle in time — ${last}.`,
         polls,
         stop: budgetCapped ? 'budget' : 'timeout'
-      }
+      })
     }
   }
 }
@@ -398,10 +537,25 @@ export function createReachPorts(options: CreateReachPortsOptions): ReachPorts {
     recorder: createRecorderPort(device, ctx),
     judge: createJudgePort(runAgent, projectPath),
     auth: createAuthPort(checkAuthGate),
+    // Both are pure sinks the orchestrator owns (a JSONL file and the Sentry helper), passed
+    // straight through: nothing under `reach/` may open either for itself.
+    ...(options.sweepLog ? { sweepLog: options.sweepLog } : {}),
+    ...(options.metrics ? { metrics: options.metrics } : {}),
     // Omitted rather than stubbed when there is no transport, so `renderStrategy` skips on the
     // port's absence instead of on a port that always answers no.
     ...(renderTransport
-      ? { render: createRenderPort(renderTransport, navigatorSegments, options.expoRouter === true) }
+      ? {
+          render: createRenderPort(
+            renderTransport,
+            navigatorSegments,
+            options.expoRouter === true,
+            options.settleDeadlinesMs?.length ? options.settleDeadlinesMs : SETTLE_DEADLINES_MS,
+            // `ctx` is always present in the sweep; guarded so the port stays constructible from a
+            // test that supplies only a transport.
+            (work) => (ctx ? measurePhase(ctx, 'settle-poll', work) : work()),
+            options.metrics ?? null
+          )
+        }
       : {})
   }
 }
@@ -415,4 +569,23 @@ export function createReachPorts(options: CreateReachPortsOptions): ReachPorts {
  */
 function navigatorSegments(node: AppFlowNode): string[] {
   return node.id.split('/').filter(Boolean)
+}
+
+/**
+ * Ancestor navigator names to try when the running tree has no match for a node's route.
+ *
+ * The parser records every navigator that registers a screen (`groups`, of which `group` is one)
+ * plus the navigator it was declared in. A tab the run has never visited has no mounted state, so
+ * the in-app breadth-first walk cannot see it; these parsed names are the only way to reach it.
+ * Names already in the requested path are dropped, and the list is small and de-duplicated.
+ */
+function navigatorCandidates(node: AppFlowNode, segments: string[]): string[] {
+  const out: string[] = []
+  const seen = new Set(segments)
+  for (const name of [...(node.groups ?? []), node.group, node.navigator]) {
+    if (!name || typeof name !== 'string' || seen.has(name)) continue
+    seen.add(name)
+    out.push(name)
+  }
+  return out
 }

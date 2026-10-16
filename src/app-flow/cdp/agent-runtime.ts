@@ -176,6 +176,12 @@ export type AgentCommand =
       params: Record<string, string> | null
       /** Expo Router routes by pathname rather than React Navigation's nested route names. */
       expoPath: string | null
+      /**
+       * Ancestor navigator names the host believes may register `route[0]`, from the parser's own
+       * grouping. Tried against the root's `routeNames` only when the live tree has no match,
+       * which is what an unvisited tab looks like: it has no mounted state to search.
+       */
+      candidates?: string[] | null
     }
   | {
       type: 'readiness'
@@ -198,7 +204,14 @@ export interface NavStateReply {
   routes: NavRoute[] | null
 }
 export type NavigateReply =
-  | { ok: true; action: 'expo-replace' | 'replace' | 'navigate' | 'noop' }
+  | {
+      ok: true
+      action: 'expo-replace' | 'replace' | 'navigate' | 'noop'
+      /** The full root-to-leaf navigator path actually dispatched, once resolved. */
+      path?: string[]
+      /** Whether `route[0]` was a root route, or had to be located inside a nested navigator. */
+      via?: 'exact' | 'nested'
+    }
   | {
       ok: false
       reason:
@@ -419,12 +432,94 @@ export function agentNavState(limits: AgentLimits): NavStateReply {
   return { routes: agentFlattenRoutes(found.state) }
 }
 
+/** Where `agentResolveRoutePath` found the requested route, and the path to dispatch for it. */
+export interface ResolvedRoutePath {
+  /** The root-to-leaf path. Equal to the requested route unless a nested navigator supplied it. */
+  path: string[]
+  via: 'exact' | 'nested' | 'none'
+  /** How many navigators were inspected, for the host's diagnostics only. */
+  searched: number
+}
+
+/**
+ * Resolves a requested route to a path the root navigator can actually dispatch.
+ *
+ * The parser spells most react-navigation ids as bare leaf names, so `route[0]` is usually a screen
+ * registered inside some nested navigator rather than a root route. Checking only the root's
+ * `routeNames` (which is all the dispatch guard used to do) refuses those outright. So when the root
+ * does not register it, the mounted navigator tree is searched breadth first - bounded at 500
+ * navigators and 16 levels - carrying each child navigator's ancestor route-name chain, and the
+ * match becomes the chain concatenated with the requested route.
+ *
+ * A screen registered in several tabs matches several times. The candidate sharing the longest
+ * prefix with the live focused path wins, which keeps the app in the tab it is already on instead
+ * of yanking it to whichever navigator the walk happened to reach first.
+ */
+export function agentResolveRoutePath(state: any, route: string[]): ResolvedRoutePath {
+  var head = String(route[0])
+  if (state && Array.isArray(state.routeNames) && state.routeNames.indexOf(head) >= 0) {
+    return { path: route.slice(), via: 'exact', searched: 0 }
+  }
+  // The focused route names from the root down, innermost last, bounded like every other walk here.
+  var focused: string[] = []
+  var cursor = state
+  for (var level = 0; cursor && Array.isArray(cursor.routes) && cursor.routes.length && level < 16; level++) {
+    var active = cursor.routes[cursor.index == null ? 0 : cursor.index]
+    if (!active || typeof active.name !== 'string') break
+    focused.push(active.name)
+    cursor = active.state
+  }
+  var matches: string[][] = []
+  var pending: any[] = [{ state: state, depth: 0, chain: [] as string[] }]
+  var searched = 0
+  while (pending.length && searched < 500) {
+    var item = pending.shift()
+    var node = item && item.state
+    if (!node || item.depth >= 16) continue
+    searched++
+    if (
+      item.chain.length &&
+      Array.isArray(node.routeNames) &&
+      node.routeNames.indexOf(head) >= 0
+    ) {
+      matches.push(item.chain.concat(route))
+    }
+    if (!Array.isArray(node.routes)) continue
+    for (var index = 0; index < node.routes.length; index++) {
+      var child = node.routes[index]
+      if (!child || !child.state || typeof child.name !== 'string') continue
+      pending.push({
+        state: child.state,
+        depth: item.depth + 1,
+        chain: item.chain.concat([child.name])
+      })
+    }
+  }
+  if (!matches.length) return { path: route.slice(), via: 'none', searched: searched }
+  var best = matches[0]
+  var bestScore = -1
+  for (var candidate = 0; candidate < matches.length; candidate++) {
+    var shared = 0
+    while (
+      shared < matches[candidate].length &&
+      shared < focused.length &&
+      matches[candidate][shared] === focused[shared]
+    ) shared++
+    if (shared > bestScore) {
+      bestScore = shared
+      best = matches[candidate]
+    }
+  }
+  return { path: best, via: 'nested', searched: searched }
+}
+
 /** Dispatches a nested React Navigation route after proving its leaf is registered live. */
 export function agentNavigate(
   route: string[],
   params: Record<string, string> | null,
   limits: AgentLimits,
-  expoPath: string | null
+  expoPath: string | null,
+  candidates: string[] | null
 ): NavigateReply {
   if (!Array.isArray(route) || !route.length) return { ok: false, reason: 'invalid-route' }
   if (expoPath) {
@@ -470,23 +565,44 @@ export function agentNavigate(
   var nav = found.nav
   if (!nav || typeof nav.dispatch !== 'function') return { ok: false, reason: 'no-dispatch' }
   var current = found.state
-  if (!Array.isArray(current.routeNames) || current.routeNames.indexOf(String(route[0])) < 0) {
-    return { ok: false, reason: 'unregistered' }
+  var resolved = agentResolveRoutePath(current, route)
+  // An unvisited tab has no mounted state for the walk above to see, so the host's parsed ancestor
+  // names get one last try against the root before the route is called unregistered.
+  if (resolved.via === 'none' && Array.isArray(candidates) && Array.isArray(current.routeNames)) {
+    for (var guess = 0; guess < candidates.length; guess++) {
+      var ancestor = String(candidates[guess])
+      if (!ancestor || current.routeNames.indexOf(ancestor) < 0) continue
+      resolved = {
+        path: [ancestor].concat(route),
+        via: 'nested',
+        searched: resolved.searched
+      }
+      break
+    }
   }
+  if (resolved.via === 'none') {
+    return {
+      ok: false,
+      reason: 'unregistered',
+      detail: 'searched ' + resolved.searched + ' mounted navigator(s)'
+    }
+  }
+  var path = resolved.path
+  var via: 'exact' | 'nested' = resolved.via
 
   // Preserve the original runtime's bounded-stack behavior: replace the focused leaf when the
   // requested path is already inside that stack, otherwise navigate through the nested payload.
   // This avoids accumulating one mounted screen per Fast capture.
   var leaf = current
-  for (var depth = 0; depth < route.length - 1; depth++) {
-    var active = leaf && leaf.routes && leaf.routes[leaf.index == null ? 0 : leaf.index]
-    if (!active || active.name !== route[depth]) {
+  for (var depth = 0; depth < path.length - 1; depth++) {
+    var step = leaf && leaf.routes && leaf.routes[leaf.index == null ? 0 : leaf.index]
+    if (!step || step.name !== path[depth]) {
       leaf = null
       break
     }
-    leaf = active.state
+    leaf = step.state
   }
-  var expected = String(route[route.length - 1])
+  var expected = String(path[path.length - 1])
   var selected = leaf && leaf.routes && leaf.routes[leaf.index == null ? 0 : leaf.index]
   var same = function (before: any, after: any, depth: number, budget: any): boolean {
     if (Object.is(before, after)) return true
@@ -522,10 +638,10 @@ export function agentNavigate(
     return true
   }
   var nested: any = params && Object.keys(params).length ? params : undefined
-  for (var offset = route.length - 1; offset > 0; offset--) {
-    nested = { screen: String(route[offset]), params: nested, initial: false }
+  for (var offset = path.length - 1; offset > 0; offset--) {
+    nested = { screen: String(path[offset]), params: nested, initial: false }
   }
-  var payload: any = { name: String(route[0]) }
+  var payload: any = { name: String(path[0]) }
   if (nested !== undefined) payload.params = nested
   try {
     if (
@@ -539,16 +655,16 @@ export function agentNavigate(
         selected &&
         selected.name === expected &&
         (!params || same(selected.params || {}, params, 0, { left: 200 }))
-      ) return { ok: true, action: 'noop' }
+      ) return { ok: true, action: 'noop', path: path, via: via }
       nav.dispatch({
         type: 'REPLACE',
         target: leaf.key,
         payload: { name: expected, params: params || undefined }
       })
-      return { ok: true, action: 'replace' }
+      return { ok: true, action: 'replace', path: path, via: via }
     }
     nav.dispatch({ type: 'NAVIGATE', payload: payload })
-    return { ok: true, action: 'navigate' }
+    return { ok: true, action: 'navigate', path: path, via: via }
   } catch (error) {
     return {
       ok: false,
@@ -1275,7 +1391,15 @@ export function agentInstall(key: string, leaseMs: number, limits: AgentLimits):
     } else if (type === 'nav-state') {
       done(agentNavState(limits))
     } else if (type === 'navigate') {
-      done(agentNavigate(command.route, command.params || null, limits, command.expoPath || null))
+      done(
+        agentNavigate(
+          command.route,
+          command.params || null,
+          limits,
+          command.expoPath || null,
+          command.candidates || null
+        )
+      )
     } else if (type === 'readiness') {
       var quiet =
         typeof command.quietMs === 'number' && isFinite(command.quietMs) && command.quietMs >= 0
@@ -1365,6 +1489,7 @@ export const AGENT_FUNCTIONS = {
   agentFindNavigator,
   agentFlattenRoutes,
   agentNavState,
+  agentResolveRoutePath,
   agentNavigate,
   agentStyleFlags,
   agentHidden,

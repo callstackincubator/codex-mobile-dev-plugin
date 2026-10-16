@@ -43,6 +43,7 @@ import {
   capturePressables,
   captureScreenshot,
   closeDevice,
+  ensureAdoptedMetro,
   executeNavigationActions,
   goHome,
   isOnDevClientLauncher,
@@ -61,10 +62,11 @@ import { contentMatchedSelectors, minimizeWalkCommands } from './path-minimize.t
 import { isPathVerified } from './path-provenance.ts'
 import { runPathToReach } from './path-run.ts'
 import type { RenderTransport } from './reach/adapters.ts'
+import type { ReachMetricsPort, RenderAvailability } from './reach/ports.ts'
 import { createReachPorts } from './reach/adapters.ts'
 import { CdpConnection, createTargetResolver } from './cdp/connection.ts'
 import { listMetroTargets, type MetroCdpTarget } from './cdp/discovery.ts'
-import type { NavigateReply, ReadinessReply } from './cdp/agent-runtime.ts'
+import type { NavigateReply, NavStateReply, ReadinessReply } from './cdp/agent-runtime.ts'
 import { agentSource } from './cdp/runtime-source.ts'
 import {
   AUTH_GATE_FRAME_WAIT_MS,
@@ -72,6 +74,9 @@ import {
   type AuthGateResolution
 } from './reach/auth-gate-policy.ts'
 import { formatPhaseSummary, PhaseLedger } from './timing.ts'
+import { recordRuntimeCount, recordRuntimeTiming } from './runtime-telemetry.ts'
+import { createSweepLog, type SweepLog } from './sweep-log.ts'
+import { createCoalescedWriter } from './coalesced-write.ts'
 import { hedge } from './hedge.ts'
 import {
   chromeEdges,
@@ -187,7 +192,12 @@ import {
   writeSweepProgress
 } from './storage.ts'
 import { ParamStore } from './param-store.ts'
-import { readNavState, selectNavStateTarget, type NavStateDeps } from './nav-state.ts'
+import {
+  readNavState,
+  selectNavStateTarget,
+  type NavRoute,
+  type NavStateDeps
+} from './nav-state.ts'
 import { NAV_STATE_SPECULATIVE_READS, selectNavStateWaiters } from './nav-state-gate.ts'
 import { resolveNavRouteTarget } from './nav-route-target.ts'
 import { runShellCommand } from './shell.ts'
@@ -714,6 +724,25 @@ function pickSampleParams(
   return Object.fromEntries(node.params.map((key) => [key, resolved[key] ?? '1']))
 }
 
+/**
+ * Turns whatever the Fast handshake threw into one sentence a person can act on.
+ *
+ * It is carried on `RenderAvailability` into the rung's skip note and the local run log, so it is
+ * scrubbed the way every other product string here is: absolute paths are replaced (an error from
+ * a spawned tool can carry the project's location), and the message is bounded so a stack-shaped
+ * `Error.message` cannot turn one skip note into a page. Nothing here reaches telemetry — the
+ * `app_flow.runtime.connect` timing already carries the `outcome` attribute and nothing more.
+ */
+function describeTransportFailure(error: unknown): string {
+  const raw = (error instanceof Error ? error.message : String(error)).trim()
+  const scrubbed = raw
+    .replace(/(?:\/[\w.@~-]+){2,}/g, '<path>')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!scrubbed) return 'The runtime handshake failed without a message.'
+  return scrubbed.length > 200 ? `${scrubbed.slice(0, 197)}...` : scrubbed
+}
+
 function captureContext(
   projectPath: string,
   projectId: string,
@@ -1048,6 +1077,14 @@ export async function buildAppFlow(
     const reusedDevice = options.launchedDevice
     let device: CaptureDevice
     let fastRuntime: CdpConnection | null = null
+    /**
+     * The sweep's forced checkpoint flush, published out of the `try` below so the `finally` can
+     * reach it — `try` and `finally` are separate blocks, and the sweep's state all lives in the
+     * former. Null until the sweep gets far enough to own a checkpoint. See `persistCheckpoint`.
+     */
+    let flushCheckpointOnExit: (() => Promise<void>) | null = null
+    /** The per-run Fast log, published out of the `try` for the same reason — see `sweep-log.ts`. */
+    let sweepLogOnExit: SweepLog | null = null
     if (reusedDevice) {
       emit(projectId, onEvent, {
         type: 'phase',
@@ -1070,6 +1107,43 @@ export async function buildAppFlow(
       const ctx = captureContext(projectPath, projectId, parsed, signal, timing)
       checkSignal(signal)
       if (reusedDevice) {
+        // Before anything else on this path: the transport. An adopted device carries the
+        // `metroPort` its Launch recorded, and nothing has re-checked it since — the user's dev
+        // server may have been stopped or restarted on another port in between. One probe answers
+        // that once, where the alternative is every node of the sweep answering it separately: the
+        // 2026-10 Fast run that skipped all nine of its screens with "Runtime transport
+        // unavailable" spent 25s doing exactly that. Run first, so the readiness probe below (and
+        // its soft re-root) deals with the aftermath of a restarted bundler.
+        const metroCheckStartedAt = performance.now()
+        const adoptedMetro = await ensureAdoptedMetro(bootCtx, device, {
+          explorationMode: options.explorationMode ?? 'auto'
+        })
+        // Deliberately an attribute value on the existing `app_flow.runtime.connect` series rather
+        // than a new one: this is the same question that series already answers — did this run get
+        // a runtime — asked once up front instead of at the first node.
+        recordRuntimeTiming('app_flow.runtime.connect', performance.now() - metroCheckStartedAt, {
+          outcome:
+            adoptedMetro.status === 'degraded'
+              ? 'unavailable'
+              : adoptedMetro.status === 'recovered'
+                ? 'recovered'
+                : 'ready'
+        })
+        if (adoptedMetro.status === 'recovered') {
+          emit(projectId, onEvent, {
+            type: 'phase',
+            phase: 'boot',
+            message: `Metro was not running; restarted it on port ${adoptedMetro.metroPort}.`
+          })
+        }
+        if (adoptedMetro.warning) {
+          console.warn(`[app-flow] ${adoptedMetro.warning}`)
+          emit(projectId, onEvent, {
+            type: 'phase',
+            phase: 'boot',
+            message: adoptedMetro.warning
+          })
+        }
         // The adopt path's whole purpose is that the app is *already* up: the user pressed Launch,
         // `index.ts` ran `waitForAppReady` to completion, and the app has been sitting on a
         // settled screen ever since. This branch used to throw that away with
@@ -1402,21 +1476,45 @@ export async function buildAppFlow(
       /** One persistent Metro/CDP runtime for deterministic Fast navigation and readiness. */
       let fastTarget: MetroCdpTarget | null = null
       let fastUnavailable = false
+      /**
+       * Why the handshake failed, kept beside the latch so every later node is told the same
+       * thing the first one was. Two failures used to be indistinguishable here — no Metro
+       * runtime to attach to, and a runtime that refused the agent — and a sweep that skipped all
+       * nine of its nodes never said which. See `RenderAvailability`.
+       */
+      let fastUnavailableReason = ''
       const runtimeMetric = (
         name: string,
         started: number,
         attributes: Record<string, string> = {}
       ): void => {
-        if (process.env.MOBILE_DEV_TELEMETRY === 'off') return
-        Sentry.metrics.distribution(name, performance.now() - started, {
-          unit: 'millisecond',
-          attributes: { surface: 'app-flow', device_platform: 'ios', ...attributes }
-        })
+        recordRuntimeTiming(name, performance.now() - started, attributes)
+      }
+      /**
+       * The reach path's own meters, handed to the ports as a sink so `reach/` keeps its distance
+       * from the Sentry SDK (`ReachMetricsPort`). Same helper as the three `app_flow.runtime.*`
+       * series above, so `MOBILE_DEV_TELEMETRY=off` is honoured for these too, and the
+       * `surface: 'app-flow'` attribution is the one the rest of the sweep already carries.
+       *
+       * One measurement per operation. The settle loop's 40ms polls and the sweep log's per-node
+       * records are deliberately *not* here: the first is a frequent sample, and the second is
+       * local product detail that never leaves the machine.
+       */
+      const reachMetrics: ReachMetricsPort = {
+        navigate(outcome) {
+          recordRuntimeCount('app_flow.runtime.navigate', { outcome })
+        },
+        settle(durationMs, stop) {
+          recordRuntimeTiming('app_flow.runtime.settle', durationMs, { stop })
+        },
+        verify(durationMs, path, verdict) {
+          recordRuntimeTiming('app_flow.runtime.verify', durationMs, { path, verdict })
+        }
       }
       const renderTransport: RenderTransport = {
-        async ready(): Promise<boolean> {
-          if (fastRuntime?.state === 'ready') return true
-          if (fastUnavailable) return false
+        async ready(): Promise<RenderAvailability> {
+          if (fastRuntime?.state === 'ready') return { ok: true }
+          if (fastUnavailable) return { ok: false, reason: fastUnavailableReason }
           const started = performance.now()
           try {
             const targets = await listMetroTargets(device.metroPort, { signal })
@@ -1441,33 +1539,29 @@ export async function buildAppFlow(
               sessionId: `fast-${projectId}`,
               log: (message) => console.log(`[app-flow] fast runtime — ${message}`),
               onStateChange: (state) => {
-                if (process.env.MOBILE_DEV_TELEMETRY !== 'off')
-                  Sentry.metrics.count('app_flow.runtime.state', 1, {
-                    attributes: { surface: 'app-flow', device_platform: 'ios', state }
-                  })
+                recordRuntimeCount('app_flow.runtime.state', { state })
               }
             })
             await fastRuntime.connect()
             paramStore.navState = 'ready'
-            return true
+            return { ok: true }
           } catch (error) {
             fastUnavailable = true
+            fastUnavailableReason = describeTransportFailure(error)
             paramStore.navState = 'unavailable'
-            console.log(
-              `[app-flow] fast runtime unavailable — ${error instanceof Error ? error.message : String(error)}`
-            )
-            return false
+            console.log(`[app-flow] fast runtime unavailable — ${fastUnavailableReason}`)
+            return { ok: false, reason: fastUnavailableReason }
           } finally {
             runtimeMetric('app_flow.runtime.connect', started, {
               outcome: fastRuntime?.state === 'ready' ? 'ready' : 'unavailable'
             })
           }
         },
-        async navigate(route, params, expoPath): Promise<NavigateReply> {
+        async navigate(route, params, expoPath, candidates): Promise<NavigateReply> {
           const started = performance.now()
           try {
             const result = await fastRuntime!.invoke<NavigateReply>(
-              { type: 'navigate', route, params, expoPath },
+              { type: 'navigate', route, params, expoPath, candidates },
               5_000
             )
             return result
@@ -1486,11 +1580,51 @@ export async function buildAppFlow(
             runtimeMetric('app_flow.runtime.command', started, { operation: 'readiness' })
           }
         },
+        // Same `runtimeMetric('app_flow.runtime.command', …)` wrapper, name, unit and attribute
+        // shape as its two siblings above, deliberately: the whole point of reading nav-state here
+        // is that it replaces a CLI subprocess, and the only way that saving stays legible across
+        // releases is if the fast read is billed to the same meter under a new `operation`.
+        async navState(): Promise<NavRoute[] | null> {
+          const started = performance.now()
+          try {
+            const reply = await fastRuntime!.invoke<NavStateReply>({ type: 'nav-state' }, 5_000)
+            return reply?.routes ?? null
+          } finally {
+            runtimeMetric('app_flow.runtime.command', started, { operation: 'nav-state' })
+          }
+        },
         async close(): Promise<void> {
           await fastRuntime?.close()
           fastRuntime = null
         }
       }
+
+      /**
+       * The per-run log file — Fast only, and best-effort.
+       *
+       * Fast only because it is the mode whose per-node cost this log exists to explain: a
+       * dispatch, a bounded settle and one verification, each of which already produces the
+       * numbers written here. The other modes spend their time inside model-driven walks, which
+       * this record has nothing to say about.
+       *
+       * Null whenever the file could not be opened, and every consumer treats the port as
+       * optional, so a sweep with no writable data directory is a sweep with no log — never a
+       * sweep that fails. `createSweepLog` also prunes older run files, at sweep start, in the
+       * style of `pruneTransientScreens`.
+       */
+      const sweepLog =
+        options.explorationMode === 'fast'
+          ? await createSweepLog({
+              projectId,
+              // The sweep has no run id of its own (the run store's lives in the server layer), so
+              // this names the file after a fresh one; the timestamp is what actually identifies
+              // the run, and the suffix only keeps two sweeps started in the same second apart.
+              runId: randomUUID(),
+              startedAt
+            }).catch(() => null)
+          : null
+      sweepLogOnExit = sweepLog
+      if (sweepLog) console.log(`[app-flow] run log — ${sweepLog.path}`)
 
       const ports = createReachPorts({
         ctx,
@@ -1501,7 +1635,13 @@ export async function buildAppFlow(
         checkAuthGate,
         signal,
         renderTransport,
-        expoRouter: parsed.mode === 'expo-router'
+        sweepLog,
+        metrics: reachMetrics,
+        expoRouter: parsed.mode === 'expo-router',
+        // Fast fails the settle poll over at 3s unless the screen is visibly still loading, in
+        // which case it may run to 8s. Every other mode keeps the single 8s bound it has always
+        // had, so the poll's behaviour outside Fast is unchanged.
+        settleDeadlinesMs: options.explorationMode === 'fast' ? [3_000, 8_000] : [8_000]
       })
 
       if ((await checkAuthGate(nodesWithSlug.length)) === 'stop') {
@@ -1701,7 +1841,14 @@ export async function buildAppFlow(
           if (!waiting.length) return
           if (speculative) speculativeNavReads += 1
 
-          if (paramStore.navState === 'unknown') {
+          // The live Fast connection already holds a selected CDP target and answers structured
+          // commands, so when it is up this read is one round trip. The subprocess path below is
+          // the fallback for the modes that have no fast runtime (auto, thorough) and for a Fast
+          // run that latched `fastUnavailable`: it costs a `selectNavStateTarget` handshake
+          // (`SETUP_TIMEOUT_MS`, 30s) plus a chunked eval, and that handshake used to sit on the
+          // critical path of the very first screen that wanted a param value.
+          const live = fastRuntime?.state === 'ready'
+          if (!live && paramStore.navState === 'unknown') {
             const ready = await selectNavStateTarget(
               device.metroPort,
               parsed.appName,
@@ -1713,7 +1860,9 @@ export async function buildAppFlow(
             if (!ready) return
           }
 
-          const routes = await readNavState(navStateDeps)
+          const routes = live
+            ? await renderTransport.navState()
+            : await readNavState(navStateDeps)
           if (!routes) {
             paramStore.navState = 'unavailable'
             return
@@ -1761,7 +1910,43 @@ export async function buildAppFlow(
         }
       }
 
-      const persistCheckpoint = async (): Promise<void> => {
+      /**
+       * The crash-resume checkpoint, coalesced.
+       *
+       * This write is ~38KB of JSON and it used to go out unthrottled on every screen *and* on
+       * every opportunistic sighting, chrome detection and runtime-node mint — several times a
+       * screen on a busy walk, each one re-serialising the whole capture map. The live document
+       * publisher next door was throttled for exactly this reason; the checkpoint never was.
+       *
+       * Two bounds, in `coalesced-write.ts` so the discipline is testable without a device: a
+       * revision counter, so a flush with nothing new since the last one writes nothing at all,
+       * and a 1.5s coalescing window, so a burst of mutations costs one write rather than five. A
+       * deferred write is never dropped — the window schedules a trailing write that carries it
+       * and everything that joined it.
+       *
+       * The flush discipline matters more than the throttle, because crash-resume is the entire
+       * point of this file: every durable path (stopped, finished, cancelled, failed, and the
+       * `finally`) calls this with `force`, so the window can only ever delay a write that a
+       * still-running sweep was going to supersede anyway. The worst case a kill can hit is 1.5s
+       * of work, and the resume logic re-explores that node rather than losing it — see the
+       * `checkpoint.captures[node.id]` skip at the top of the sweep loop.
+       */
+      const CHECKPOINT_COALESCE_MS = 1_500
+      const checkpointWriter = createCoalescedWriter({
+        write: () => writeSweepProgressNow(),
+        windowMs: CHECKPOINT_COALESCE_MS,
+        now: activeNow,
+        onError: (error: unknown) =>
+          console.warn(
+            `[app-flow] checkpoint write failed — ${error instanceof Error ? error.message : String(error)}`
+          )
+      })
+      const persistCheckpoint = async (options?: { force?: boolean }): Promise<void> => {
+        await checkpointWriter.mark()
+        if (options?.force) await checkpointWriter.flush()
+      }
+      flushCheckpointOnExit = () => checkpointWriter.flush()
+      const writeSweepProgressNow = async (): Promise<void> => {
         await writeSweepProgress(projectId, {
           structureKey,
           explorationMode,
@@ -1896,12 +2081,18 @@ export async function buildAppFlow(
         await publishLiveDocument()
       }
 
+      /** When the sweep loop started on the node it is working through, for the run log's
+       *  `totalMs` — read by both terminal paths a node has, this one and delivery. */
+      let nodeStartedAt = 0
       const recordUnreached = async (
         node: AppFlowNode,
         status: AppFlowCaptureStatus,
         note: string | null
       ): Promise<void> => {
         console.log(`[app-flow] ${node.id} recorded ${status} — ${note ?? 'no reason given'}`)
+        sweepLog
+          ?.node(node.id)
+          .finish({ status, totalMs: nodeStartedAt ? Date.now() - nodeStartedAt : 0 })
         captureMap[node.id] = {
           status,
           // `unavailable` is a settled answer about this build, not a screen still to be reached,
@@ -2815,7 +3006,18 @@ export async function buildAppFlow(
           })
           continue
         }
-        const budget = new ActiveTimeBudget(5 * 60_000, activeNow(), activeNow)
+        // Fast gets a tighter per-node ceiling than the shared five minutes. Nothing in the Fast
+        // ladder is open-ended — a dispatch, a bounded settle poll and one verification — so a node
+        // that has not landed in 45s is not making slow progress, it is waiting on something that
+        // will not arrive, and the remaining budget is better spent on the next screen. It also
+        // tightens the arrival judge's own `timeoutMs` clamp on the one path that still reaches it.
+        // The modes that can spend minutes legitimately (a model-driven walk) keep the old number.
+        nodeStartedAt = Date.now()
+        const budget = new ActiveTimeBudget(
+          options.explorationMode === 'fast' ? 45_000 : 5 * 60_000,
+          activeNow(),
+          activeNow
+        )
         const label = node.urlPath ?? node.title
         emit(projectId, onEvent, {
           type: 'step',
@@ -3761,7 +3963,11 @@ export async function buildAppFlow(
               unresolvedParams,
               budget,
               scratchPath,
-              guardGateClosed: (condition) => closedGuardGates.wasClosed(condition)
+              guardGateClosed: (condition) => closedGuardGates.wasClosed(condition),
+              // Only Fast may settle for the runtime's own readiness evidence in place of the
+              // vision judge; auto and thorough ask the judge on every arrival exactly as before.
+              // See `RenderInput.arrivalJudge`.
+              arrivalJudge: options.explorationMode === 'fast' ? 'fallback' : 'always'
             },
             p
           )
@@ -3893,6 +4099,13 @@ export async function buildAppFlow(
           }
           await recordUnreached(node, 'missing', reachError)
           if (finishExploredScreen(false)) break
+          // Every rung that ran was refused outright — the navigator does not register the route,
+          // so nothing was dispatched and the screen is exactly as it was found. Ahead of both the
+          // fingerprint read and the counter: the fingerprint would of course match the previous
+          // one (the app never moved), and three such refusals in a row tripped the blocked-run
+          // breaker and halted a measured run to ask the user to clear a blocker that did not
+          // exist. See `ReachAttempt.refused`.
+          if (outcome.status === 'unreached' && outcome.refused) continue
           // A planner that ran out of time left the app wherever the last action put it, which says
           // nothing about the app being stuck — and sibling screens look so alike that counting
           // these would stop the sweep to ask the user to clear a blocker that is not there.
@@ -3959,6 +4172,7 @@ export async function buildAppFlow(
         // every capture still ahead of it. See `decideDelivery` (reach/delivery.ts): a verified
         // arrival or a published replay must survive a screenshot failure here, not be discarded.
         const screenshotPath = getScreenshotPath(projectId, node.slug)
+        const deliveryStartedAt = Date.now()
         console.log(
           `[app-flow] capture ${sweepQueue.completed + 1}/${total} screenshot ${node.urlPath}`
         )
@@ -4064,6 +4278,12 @@ export async function buildAppFlow(
         }
 
         const finalArrival = acceptedArrival as ArrivalResult | null
+        // Intentionally empty for a screen Fast accepted on runtime evidence: a verdict reached
+        // without the vision judge carries no `key`/`info`, because those are the judge's own name
+        // and description of the frame and nothing else produces them. `inferredScreens` is the
+        // judge's naming of screens, so it is thin on a Fast run by construction — not a bug, and
+        // not something to fill in with the route name, which would make a parsed id look like an
+        // observation. See `RenderInput.arrivalJudge`.
         if (finalArrival) {
           inferredScreens[node.id] = {
             key: finalArrival.key,
@@ -4090,6 +4310,17 @@ export async function buildAppFlow(
           structureRevision
         })
         captureMap[node.id] = delivery.capture
+        // Closes this node's run-log record. Counts and timings only — see `SweepLogPort` for
+        // what deliberately never goes in it.
+        const nodeLog = sweepLog?.node(node.id)
+        nodeLog?.delivery({
+          screenshotMs: Date.now() - deliveryStartedAt,
+          pressables: sources.pressables.pressables.length
+        })
+        nodeLog?.finish({
+          status: delivery.capture.status,
+          totalMs: Date.now() - nodeStartedAt
+        })
         // A chrome edge is minted the moment the drawer or tab bar is *seen*, so it starts life
         // unverified and scriptless — `chromeEdges` has nothing better to record at that point.
         // Once this same destination is actually reached and a replay script published for it, the
@@ -4121,6 +4352,9 @@ export async function buildAppFlow(
       if (options.pauseRequested?.()) sweepPaused = true
       if (sweepStopped) {
         manifest.sweepStatus = sweepPaused ? 'paused' : 'stopped'
+        // A stopped sweep's checkpoint is the thing the user picks up from, so it goes out now
+        // rather than waiting out a coalescing window nobody is left to close.
+        await persistCheckpoint({ force: true })
         // The capture map and the screens manifest are still published wholesale here — this path's
         // `persistCaptureUpdate` writes only the checkpoint and the throttled document, and the
         // flat maps are what a *later* tool read (not the renderer) consumes. The document itself
@@ -4407,6 +4641,10 @@ export async function buildAppFlow(
         sweepStopped = true
       }
 
+      // Forced before the terminal writes: `clearSweepProgress` below removes the checkpoint on a
+      // completed sweep, and this is what guarantees no deferred write is still in flight to
+      // recreate it. On a stopped-but-not-cleared sweep it is the last durable checkpoint.
+      await persistCheckpoint({ force: true })
       await writeCaptureStatus(projectId, captureMap)
       const finalScreens = currentAgentDeviceScreens()
       await writeAgentDeviceScreens(projectId, finalScreens)
@@ -4445,6 +4683,14 @@ export async function buildAppFlow(
 
       return { ok: true, projectId, result: finalResult }
     } finally {
+      // The catch-all durable path: a cancel, a thrown device fault or a stop all leave through
+      // here, and whatever the last screen wrote must be on disk before the sweep lets go. The
+      // revision throttle makes this a no-op when a terminal path already flushed — including
+      // after `clearSweepProgress`, which must not be undone.
+      await flushCheckpointOnExit?.().catch(() => undefined)
+      // The one place the run log is closed, so every exit — finished, stopped, cancelled,
+      // thrown — gets the same closing phase summary and the same final flush.
+      await sweepLogOnExit?.close(formatPhaseSummary(timing))
       await fastRuntime?.close().catch(() => undefined)
       // A device the user launched stays up so the next sweep can adopt it again.
       if (!reusedDevice) await closeDevice(device)

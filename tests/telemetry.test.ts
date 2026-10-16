@@ -20,6 +20,7 @@ import { SimulatorUnavailableError } from "../src/server/simulator-unavailable.t
 import { registerDeviceChoiceTools } from "../src/server/device-choice-tools.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { adapterClient } from "./agent-device-fixtures.ts";
+import { recordRuntimeCount, recordRuntimeTiming } from "../src/app-flow/runtime-telemetry.ts";
 
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
@@ -797,4 +798,43 @@ test("cancellation during stream response preparation closes the session and ret
   const encoded = JSON.stringify(events);
   contains(encoded, "stream.cancel_cleanup");
   contains(encoded, "Unexpected stream cleanup failure");
+});
+
+test("app flow runtime metrics report settle, verify and navigate with bounded attributes and honor opt-out", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  t.after(() => { delete process.env.MOBILE_DEV_TELEMETRY; });
+
+  // The three measurements the Fast reach path adds, plus the command series Step 6 extends with a
+  // new operation rather than a new name — the legacy and fast nav-state reads stay comparable.
+  recordRuntimeTiming("app_flow.runtime.settle", 340, { stop: "stable-not-quiet" });
+  recordRuntimeTiming("app_flow.runtime.verify", 21, { path: "runtime", verdict: "match" });
+  recordRuntimeCount("app_flow.runtime.navigate", { outcome: "nested" });
+  recordRuntimeTiming("app_flow.runtime.command", 118, { operation: "nav-state" });
+  await Sentry.flush();
+  const emitted = JSON.stringify(envelopes);
+  for (const name of ["app_flow.runtime.settle", "app_flow.runtime.verify", "app_flow.runtime.navigate", "app_flow.runtime.command"]) contains(emitted, name);
+  contains(emitted, "millisecond");
+  contains(emitted, '"surface":{"value":"app-flow"');
+  contains(emitted, '"device_platform":{"value":"ios"');
+  contains(emitted, '"stop":{"value":"stable-not-quiet"');
+  contains(emitted, '"path":{"value":"runtime"');
+  contains(emitted, '"verdict":{"value":"match"');
+  contains(emitted, '"outcome":{"value":"nested"');
+  contains(emitted, '"operation":{"value":"nav-state"');
+  // Product data a reader might expect to find alongside a route measurement, and which these
+  // series must never carry: unbounded route names and node ids.
+  contains(emitted, "HomeTab/Profile", false);
+
+  const before = JSON.stringify(envelopes);
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  recordRuntimeTiming("app_flow.runtime.settle", 900, { stop: "timeout" });
+  recordRuntimeTiming("app_flow.runtime.verify", 2500, { path: "judge", verdict: "mismatch" });
+  recordRuntimeCount("app_flow.runtime.navigate", { outcome: "refused" });
+  await Sentry.flush();
+  assert.equal(JSON.stringify(envelopes), before, "Opt-out silences every app-flow runtime metric.");
 });

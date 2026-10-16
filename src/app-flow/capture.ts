@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, join } from 'node:path'
-import type { AppFlowNode, AppFlowPressable, AppFlowStep } from '../shared/app-flow.ts'
+import type { AppFlowNode, AppFlowPressable, AppFlowStep, ExplorationMode } from '../shared/app-flow.ts'
 import {
   acceptOpenInAppPrompt,
   isUrlSchemePreapproved,
@@ -851,6 +851,114 @@ async function ensureMetro(
   } catch (error) {
     if (child.pid) child.kill('SIGTERM')
     throw error
+  }
+}
+
+/**
+ * Thrown when the adopted device has no reachable Metro dev server and one could not be restarted.
+ *
+ * A distinct type so the orchestrator's top-level handler (and tests) can tell this apart from the
+ * device failures that surround it; the message it carries is the one the user reads.
+ */
+export class MetroUnavailableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'MetroUnavailableError'
+  }
+}
+
+export interface AdoptedMetroOutcome {
+  /**
+   * `live` — the adopted port answered. `recovered` — it did not, and a fresh dev server took its
+   * place (`metroPort` is the new one). `degraded` — there is no runtime at all, and the run's mode
+   * can finish without one.
+   */
+  status: 'live' | 'recovered' | 'degraded'
+  metroPort: number
+  /** Set on `degraded` only: what to tell the user before the sweep carries on regardless. */
+  warning?: string
+}
+
+/**
+ * Validate — and if need be restore — the Metro dev server behind a device the sweep *adopted*
+ * rather than booted.
+ *
+ * `bootDevice` owns Metro on the fresh-boot path: `ensureMetro` spawns it, parses its port and
+ * polls `isMetroReady` before anything else runs. The adopt path has no such guarantee. It reuses
+ * the `CaptureDevice` the user's Launch produced, `metroPort` and all, and that port is only as
+ * fresh as the launch was — the user may have stopped their dev server, or restarted it on another
+ * port, in the minutes between pressing Launch and pressing Build. Nothing re-checked it.
+ *
+ * The cost of not checking is the whole run. Fast's only rung is `render`, which reaches every
+ * screen through the Metro runtime, so a dead port means `listMetroTargets` finds nothing and every
+ * node is skipped with "Runtime transport unavailable" — a 2026-10 sweep burned 25s discovering
+ * that nine separate times and captured nothing. One probe here answers it once.
+ *
+ * `probe`/`recover` are injected so this is testable without a device or a spawned dev server; they
+ * default to the same `isMetroReady` and `ensureMetro` the boot path uses, with the same timeouts.
+ */
+export async function ensureAdoptedMetro(
+  ctx: CaptureContext,
+  device: CaptureDevice,
+  options: {
+    explorationMode: ExplorationMode
+    probe?: (port: number) => Promise<boolean>
+    recover?: (
+      ctx: CaptureContext
+    ) => Promise<{ child: ChildProcess; metroPort: number; metroLogPath: string }>
+  }
+): Promise<AdoptedMetroOutcome> {
+  const probe = options.probe ?? isMetroReady
+  const recover = options.recover ?? ensureMetro
+  const adoptedPort = device.metroPort
+  if (adoptedPort && (await probe(adoptedPort))) {
+    log('adopted metro', `port ${adoptedPort} still answering`)
+    return { status: 'live', metroPort: adoptedPort }
+  }
+  log(
+    'adopted metro',
+    `port ${adoptedPort || 'none'} did not answer — restarting the dev server for this project`
+  )
+  try {
+    const metro = await recover(ctx)
+    // The port we adopted is gone, so whatever process we were holding for it is too. Release it
+    // and its log before taking ownership of the replacement, or the run leaks both.
+    stopLaunchProcess(device.launchProcess)
+    await endMetroLogFile(device.metroLogPath)
+    device.launchProcess = metro.child
+    device.metroPort = metro.metroPort
+    device.metroLogPath = metro.metroLogPath
+    // Both URLs name the port, so a server on a different one invalidates them. Left stale, the
+    // dev-client reconnect would re-point the app at the dead server the probe above just rejected.
+    device.devClientUrl = device.devClientUrl
+      ? devClientReconnectUrl(ctx.scheme, true, metro.metroPort)
+      : null
+    if (device.launchUrl && adoptedPort) {
+      device.launchUrl = device.launchUrl.split(`:${adoptedPort}`).join(`:${metro.metroPort}`)
+    }
+    log('adopted metro', `recovered on ${metro.metroPort} pid=${metro.child.pid}`)
+    return { status: 'recovered', metroPort: metro.metroPort }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    const problem = `The Metro dev server for this project is not reachable${
+      adoptedPort ? ` on port ${adoptedPort}` : ''
+    }, and restarting it failed: ${detail}`
+    // The mode decides whether this is fatal, and it genuinely differs. Fast runs a single rung —
+    // `render` — which can only reach a screen through the Metro runtime, so without a transport it
+    // captures exactly nothing; failing now is strictly better than sweeping to the same end
+    // slowly. Auto and thorough still have the deep-link and exploration rungs, which drive the
+    // device itself and need no bundler connection, so for them this is a warning and the run goes
+    // on.
+    if (options.explorationMode === 'fast') {
+      throw new MetroUnavailableError(
+        `${problem}\nFast capture reaches every screen through Metro, so it cannot run without it. Start the dev server for this project and build again.`
+      )
+    }
+    return {
+      status: 'degraded',
+      metroPort: adoptedPort,
+      warning: `${problem} Continuing without the Fast runtime — deep links and on-device exploration do not need it.`
+    }
   }
 }
 

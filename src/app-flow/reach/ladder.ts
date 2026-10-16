@@ -70,6 +70,11 @@ export async function runReachLadder<TInput>(
   return {
     status: 'unreached',
     reason: last?.reason ?? 'No reach strategy was configured.',
+    // Only when every rung that ran was refused. One rung that actually drove the app leaves the
+    // screen somewhere unknown, and the caller's stuck-app detection has to run as it always did.
+    // The budget-exhausted exit above never sets this: an empty `attempts` would vacuously satisfy
+    // `every`, and "we never tried" is not "nothing moved".
+    refused: attempts.length > 0 && attempts.every((attempt) => attempt.refused === true),
     attempts
   }
 }

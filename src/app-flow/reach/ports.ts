@@ -215,23 +215,91 @@ export interface RenderSettleResult {
    */
   polls?: number
   /**
-   * Why the poll stopped: `settled`, `no-answer` (the runtime stopped replying), `budget` (the
-   * deadline was the caller's remaining budget rather than the settle's own cap) or `timeout`.
+   * Why the poll stopped: `settled`, `stable-not-quiet` (found, substantial and structurally
+   * unchanged across several polls, but the runtime never declared quiet — a live feed, say),
+   * `no-answer` (the runtime stopped replying), `budget` (the deadline was the caller's remaining
+   * budget rather than the settle's own cap) or `timeout`.
    */
-  stop?: 'settled' | 'no-answer' | 'budget' | 'timeout'
+  stop?: 'settled' | 'stable-not-quiet' | 'no-answer' | 'budget' | 'timeout'
+  /**
+   * The last readiness snapshot's own fields, rather than only the prose `reason` they used to be
+   * folded into.
+   *
+   * These are the decisive ones: together they say *which* screen the runtime believes is focused,
+   * whether it is the one that was asked for, whether its parameters match, and how much it is
+   * showing. That is enough for a caller to decide arrival without a model call — see
+   * `RenderInput.arrivalJudge` in `strategies/render.ts`. Formatting them into a sentence and
+   * throwing the values away is what forced every Fast screen through the vision judge.
+   *
+   * On a poll that never got an answer these carry their empty defaults (`found: false`,
+   * `content: 0`, empty arrays and signature), which no caller may read as evidence of anything.
+   */
+  /** The focused route path the runtime last reported, outermost first. */
+  active: string[]
+  /** Whether the target screen's fiber was found and focused on the last poll. */
+  found: boolean
+  /** Host nodes under the screen carrying text, an image source or a label. */
+  content: number
+  /** Expected parameter keys whose live value differs — non-empty means the right route with the
+   *  wrong record, which is precisely the confidently-wrong capture Fast must not take. */
+  paramMismatch: string[]
+  /** 32-bit structural hash of the screen, as of the last poll. */
+  signature: string
 }
+
+/** Why the running navigator declined a dispatch — `NavigateReply`'s own `reason` codes, restated
+ *  here so `reach/` keeps its distance from `cdp/agent-runtime.ts`. */
+export type NavigateRefusal =
+  | 'no-navigator'
+  | 'no-dispatch'
+  | 'no-expo-router'
+  | 'unregistered'
+  | 'invalid-route'
+  | 'threw'
+
+/**
+ * Whether the render transport can be used at all right now, and when it cannot, why.
+ *
+ * The reason is a plain sentence, not a code: `reach/` must not know that the transport is a CDP
+ * connection to a Metro inspector target, so the implementation (`orchestrator.ts`) phrases its own
+ * failure and this layer only carries it. Two very different failures used to arrive here as the
+ * same silent `false` — no Metro runtime to attach to, and an agent that would not install — and a
+ * sweep that skipped every node said "Runtime transport unavailable." nine times without ever
+ * saying which one it was.
+ *
+ * It is a product sentence, destined for a skip note and the local run log: no local paths, no
+ * device identifiers, no credentials, and nothing here feeds telemetry — the existing
+ * `app_flow.runtime.connect` series already carries the outcome.
+ */
+export type RenderAvailability = { ok: true } | { ok: false; reason: string }
 
 export interface RenderPort {
   /**
-   * Whether this transport can be used at all right now. Latched by the implementation after its
-   * first answer, so a sweep never re-pays for a handshake that already failed.
+   * Whether this transport can be used at all right now, with the reason when it cannot. Latched
+   * by the implementation after its first answer, so a sweep never re-pays for a handshake that
+   * already failed — and so every later node is told the same reason as the first.
    */
-  available(): Promise<boolean>
-  /** Dispatches navigation to `node`, using `params` for its route parameters. */
+  available(): Promise<RenderAvailability>
+  /**
+   * Dispatches navigation to `node`, using `params` for its route parameters.
+   *
+   * `path` is the full root-to-leaf navigator path the app actually dispatched, once the in-app
+   * resolver has located the route — the node's own id segments are only a request. Absent when
+   * the runtime reported none (an Expo Router `replace`, which addresses a pathname rather than a
+   * navigator path). `refusal` is the runtime's own reason code, so a caller can tell a navigator
+   * that declined the route from a dispatch that threw mid-flight.
+   */
   navigate(
     node: AppFlowNode,
     params: Record<string, string> | null
-  ): Promise<{ ok: boolean; reason: string }>
+  ): Promise<{
+    ok: boolean
+    reason: string
+    path?: string[]
+    /** What the runtime actually did, for the per-run log. Absent on a refusal. */
+    action?: 'expo-replace' | 'replace' | 'navigate' | 'noop'
+    refusal?: NavigateRefusal
+  }>
   /**
    * Polls until the screen stops changing, or the deadline passes. Resolves to whether the target
    * screen was found and settled; a false answer is a reason to stop waiting, never a verdict
@@ -248,6 +316,72 @@ export interface RenderPort {
   ): Promise<RenderSettleResult>
 }
 
+/**
+ * Where one node's run through the ladder is written down, for the per-run Fast log file.
+ *
+ * A pure sink, like every other interface here: `reach/` may not open a file, know a project
+ * directory or import anything that loads the Electron runtime, so the strategies hand facts to
+ * this and `orchestrator.ts` decides what becomes of them (`sweep-log.ts`). Absent is ordinary —
+ * every call site must treat the whole port as optional and must never let it change what the
+ * sweep does.
+ *
+ * The facts are the ones the rung already computed for its own `[app-flow]` console lines; nothing
+ * here is measured twice. Deliberately absent: parameter *values* (the param store refuses to log
+ * those for the same reason), screenshots, device identifiers and anything that feeds telemetry.
+ * This file is local, and stays local.
+ */
+export interface SweepNodeLog {
+  /** The route asked for (the node's own id, which is the parser's spelling of it) and what the
+   *  in-app resolver turned it into — null when the navigator refused or reported no path. */
+  route(requested: string, resolved: readonly string[] | null): void
+  dispatch(entry: {
+    ok: boolean
+    action: 'expo-replace' | 'replace' | 'navigate' | 'noop' | null
+    reason: string
+    ms: number
+  }): void
+  settle(entry: { polls: number; stop: string | null; ms: number; content: number }): void
+  verify(entry: { path: 'runtime' | 'judge'; verdict: string; ms: number }): void
+  delivery(entry: { screenshotMs: number | null; pressables: number }): void
+  /** Closes the record and appends it. Calling it twice appends once. */
+  finish(entry: { status: string; totalMs: number }): void
+}
+
+export interface SweepLogPort {
+  node(id: string): SweepNodeLog
+  /**
+   * The render transport could not be reached, and why — written once for the whole run, however
+   * many nodes go on to skip for it. Per-node would be nine identical lines in a nine-node sweep,
+   * which is how the failure stayed invisible in the first place; the implementation keeps the
+   * first reason and ignores the rest (`sweep-log.ts`).
+   *
+   * Same privacy rules as every other record here: a reason phrased for a person, local only.
+   */
+  transportUnavailable(reason: string): void
+}
+
+/**
+ * The three bounded aggregates the reach path contributes to Sentry, as a sink rather than as a
+ * Sentry call — `reach/` stays free of the SDK, and `orchestrator.ts` supplies an implementation
+ * built on its own `runtimeMetric` helper, so `MOBILE_DEV_TELEMETRY=off` is honoured in exactly
+ * one place and the attribution (`surface: 'app-flow'`) is the one every other app-flow metric
+ * already carries.
+ *
+ * Deliberately *not* a per-poll meter: the settle loop polls every 40ms, and a metric per poll is
+ * precisely the frequent-sample case the telemetry guidance excludes. One measurement per settle,
+ * per verification and per dispatch. Attributes are closed sets — no route names, no node ids.
+ */
+export interface ReachMetricsPort {
+  /** One dispatch: whether the route was a root route, had to be located in a nested navigator,
+   *  or was declined outright. */
+  navigate(outcome: 'exact' | 'nested' | 'refused'): void
+  /** One settle poll loop: how long it ran, and which exit it took. */
+  settle(durationMs: number, stop: NonNullable<RenderSettleResult['stop']> | 'unknown'): void
+  /** One arrival verification: how long it took, whether the runtime answered it or the vision
+   *  judge had to, and the verdict that came back. */
+  verify(durationMs: number, path: 'runtime' | 'judge', verdict: string): void
+}
+
 /** The full set of ports one `createReachPorts(...)` call produces — see `adapters.ts`. */
 export interface ReachPorts {
   device: DevicePort
@@ -256,4 +390,8 @@ export interface ReachPorts {
   auth: AuthPort
   /** Absent whenever the app's JS runtime cannot be reached; see `RenderPort`. */
   render?: RenderPort
+  /** Absent outside Fast, and absent whenever the log could not be opened; see `SweepLogPort`. */
+  sweepLog?: SweepLogPort
+  /** Absent when nothing is collecting; see `ReachMetricsPort`. */
+  metrics?: ReachMetricsPort
 }
