@@ -1,3 +1,4 @@
+import { elementStores } from "./element-store.ts";
 export type DeviceOption = { value: string; label: string; group?: string; kind?: "phone" | "tablet"; running?: boolean; statusLabel?: string; canStop?: boolean };
 export class DevicePickerStore {
   private state = { items: [] as DeviceOption[], value: "", disabled: true, placeholder: "Loading devices...", stoppingId: "", stopError: "" };
@@ -21,10 +22,6 @@ export class DevicePickerStore {
     finally { this.update({ stoppingId: "" }); }
   }
 }
-const stores = new WeakMap<HTMLElement, DevicePickerStore>();
-export function bindDevicePicker(element: HTMLElement, store: DevicePickerStore) { stores.set(element, store); }
-export function getDevicePicker(element: HTMLElement) {
-  let store = stores.get(element);
-  if (!store) { store = new DevicePickerStore(); stores.set(element, store); }
-  return store;
-}
+const stores = elementStores(() => new DevicePickerStore());
+export const bindDevicePicker = stores.bind;
+export const getDevicePicker = stores.get;

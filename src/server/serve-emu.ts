@@ -3,7 +3,6 @@ import type { ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
@@ -17,9 +16,12 @@ import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { recordAndroidEmulatorReconnect, recordAndroidBackendStartup, recordAndroidStartupStages, recordAndroidStartupContext, recordAndroidStartupDeviceState, recordAndroidBackendStop } from "./telemetry.ts";
 import { androidStartupMessageSchema, androidDeviceState, setAndroidStartupDiagnostic } from "../shared/android-startup-diagnostics.ts";
 import type { AndroidStartupContext, AndroidStartupFailure, AndroidStartupSummary } from "../shared/android-startup-diagnostics.ts";
+import { androidSdkRoots } from "./android-sdk.ts";
 
 const execute = promisify(execFile);
 export const androidIdSchema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_.:\[\]%-]+$/);
+// Route handlers send { ok: false, error: message }; the API boundary sends { ok: false, error: { code, message } }.
+const serveEmuErrorSchema = z.object({ ok: z.literal(false), error: z.union([z.string(), z.object({ message: z.string() }).loose()]).optional() }).loose();
 const healthSchema = z.object({ serial: androidIdSchema, codec: z.string(), size: z.object({ width: z.number().positive(), height: z.number().positive() }) });
 type Backend = { url: URL; child?: ChildProcess };
 
@@ -44,14 +46,14 @@ export class ServeEmu {
   private readonly backendContexts = new WeakMap<ChildProcess, AndroidStartupContext>();
   private disposed = false;
   private readonly external?: URL;
+  private readonly startListeners = new Set<(id: string) => void>();
 
   constructor(baseUrl = process.env.SERVE_EMU_URL) {
     if (baseUrl) this.external = parseBaseUrl(baseUrl, "SERVE_EMU_URL");
   }
 
   private async emulatorPath() {
-    for (const root of [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT, join(homedir(), "Library/Android/sdk")]) {
-      if (!root) continue;
+    for (const root of androidSdkRoots()) {
       const path = join(root, "emulator/emulator");
       try { await access(path, constants.X_OK); return path; } catch { /* Try PATH next. */ }
     }
@@ -196,10 +198,12 @@ export class ServeEmu {
 
   async json(url: URL, path: string, options: RequestInit = {}) {
     const response = await fetch(new URL(path, url), { ...options, redirect: "error", signal: AbortSignal.timeout(10000) });
-    if (!response.ok) throw new Error(`serve-emu returned HTTP ${response.status} for ${path}.`);
-    const payload = await response.json();
-    if (payload.ok === false) throw new Error(payload.error ?? "serve-emu rejected the request.");
-    return payload;
+    const payload = response.ok ? await response.json() : await response.json().catch(() => undefined);
+    const rejection = serveEmuErrorSchema.safeParse(payload);
+    if (response.ok && !rejection.success) return payload;
+    const error = rejection.data?.error;
+    const message = (typeof error === "string" ? error : error?.message) || (response.ok ? "serve-emu rejected the request." : `serve-emu returned HTTP ${response.status} for ${path}.`);
+    throw new Error(message);
   }
 
   private async health(url: URL) {
@@ -212,11 +216,20 @@ export class ServeEmu {
     if ((await this.health(url)).serial !== id) throw new SimulatorUnavailableError("The Android backend switched to another device. Refresh and reconnect the selected device.");
   }
 
+  // Listeners run after each successful start and must handle their own failures.
+  onStart(listener: (id: string) => void) {
+    this.startListeners.add(listener);
+    return () => { this.startListeners.delete(listener); };
+  }
+
   async start(id: string): Promise<Backend> {
     if (this.disposed) throw new Error("The plugin server has closed.");
     let pending = this.starting.get(id);
     if (!pending) {
-      pending = this.ensureStarted(id).finally(() => this.starting.delete(id));
+      pending = this.ensureStarted(id).then(backend => {
+        for (const listener of this.startListeners) listener(id);
+        return backend;
+      }).finally(() => this.starting.delete(id));
       this.starting.set(id, pending);
     }
     return pending;

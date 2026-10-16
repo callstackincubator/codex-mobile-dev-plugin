@@ -179,6 +179,40 @@ so their duration is not attributed to the next surface or device. No bundle IDs
 PIDs, device IDs, app lists, or query output are sent. Existing CPU batch-processing
 coverage and native Baguette crash/resource telemetry are preserved.
 
+Since 0.1.147, app control tools (`mobile_list_apps`, `mobile_launch_app`,
+`mobile_stop_app`, `mobile_install_app`, `mobile_open_url`, `mobile_app_icons`,
+`mobile_app_links`, `mobile_app_permissions`, `mobile_set_app_permission`, and
+`mobile_send_push`) use the existing sampled MCP traces. Unexpected `simctl`, `adb`,
+`aapt2`, or `plutil` failures are reported under `app_control.<action>` with a fixed
+message, because command output can contain bundle IDs, URLs, device serials, and
+local paths. Expected outcomes such as a missing app, an unhandled URL, an
+unrequested permission, or a stopped device count only through
+`server.error.outcome`. Extracted app icons and Android labels stay in the server's
+memory cache and are returned only to the panel.
+
+The device popover's App tab records `ui.app_tools.list`, `.icons`, `.launch`,
+`.stop`, `.open_url`, `.permission`, `.push`, and `.language` round trips in
+milliseconds with bounded aggregate windows, and counts `ui.app_tools.failure`.
+Results that finish after a surface or device change are not recorded. Recent URLs
+and the last picked app stay in the panel's local storage and are never sent.
+
+Since 0.1.152, `mobile_app_language` and `mobile_set_app_language` use the same
+app control coverage under `app_control.language` and `app_control.set_language`.
+Language tags are not sent. The device settings tools report unexpected Baguette or
+serve-emu failures under `device_settings.read` or `device_settings.<setting>` with a
+fixed message. Android throttling runs through a local proxy on the Mac, so its adb
+failures report under `device_settings.network`; throttling a device that already
+uses its own proxy counts only through `server.error.outcome`. When the plugin first
+starts an Android backend, it clears a throttle left by a plugin process that exited;
+unexpected adb failures there report under `device_settings.network_recovery`, and a
+device that went away counts only through `server.error.outcome`. Proxy
+addresses and traffic are not sent. Since 0.1.155, expected device setting and app
+control outcomes reach `server.error.outcome` as documented; earlier releases skipped
+them. The Device tab
+records `ui.device_settings.change` round trips in milliseconds and counts
+`ui.device_settings.failure`, with the same surface and device-change exclusions as
+the App tab. Setting values, throttle presets, and device IDs are not sent.
+
 Saved chart cards use the `recording` surface and view. Existing readiness,
 interaction and frame-pacing coverage is preserved. `ui.recording.process` and
 `ui.recording.derive` measure result validation and chart/summary processing;

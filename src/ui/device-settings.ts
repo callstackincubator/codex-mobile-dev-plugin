@@ -1,4 +1,6 @@
 import type { DeviceSetting, DeviceSettings } from "../shared/device-settings.ts";
+import { measureUiOperation } from "./telemetry.ts";
+import { elementStores } from "./element-store.ts";
 
 type PendingChange = { change: DeviceSetting; resolve: () => void };
 
@@ -73,7 +75,7 @@ export class DeviceSettingsStore {
       while (this.revision === revision && this.pending.length) {
         const current = this.pending[0];
         try {
-          const patch = await request(current.change);
+          const patch = await measureUiOperation("ui.device_settings.change", "ui.device_settings.failure", () => request(current.change));
           if (this.revision !== revision) return;
           this.confirmed = { ...this.confirmed!, ...patch };
         } catch (error) {
@@ -89,10 +91,6 @@ export class DeviceSettingsStore {
   dispose() { this.request = undefined; this.setFrame = undefined; this.configure("", true); }
 }
 
-const stores = new WeakMap<HTMLElement, DeviceSettingsStore>();
-export function bindDeviceSettings(element: HTMLElement, store: DeviceSettingsStore) { stores.set(element, store); }
-export function getDeviceSettings(element: HTMLElement) {
-  let store = stores.get(element);
-  if (!store) { store = new DeviceSettingsStore(); stores.set(element, store); }
-  return store;
-}
+const stores = elementStores(() => new DeviceSettingsStore());
+export const bindDeviceSettings = stores.bind;
+export const getDeviceSettings = stores.get;

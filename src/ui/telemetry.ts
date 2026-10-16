@@ -40,6 +40,16 @@ export function recordUiTiming(name: string, duration: number) {
   window.record(duration);
 }
 
+// Times a panel operation's round trip and counts its failures. Work that finishes after a surface or
+// device change is not attributed to the new context.
+export async function measureUiOperation<T>(timing: string, failure: string, work: () => Promise<T>): Promise<T> {
+  const startedAt = performance.now();
+  const context = attributes;
+  try { return await work(); }
+  catch (error) { if (attributes === context) countUiEvent(failure); throw error; }
+  finally { if (attributes === context) recordUiTiming(timing, performance.now() - startedAt); }
+}
+
 export function setUiGauge(name: string, value: number) {
   if (running && Number.isFinite(value)) gauges.set(name, value);
 }
