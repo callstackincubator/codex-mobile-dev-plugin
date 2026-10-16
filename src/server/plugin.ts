@@ -46,6 +46,8 @@ import { copyPNGToClipboard } from "./clipboard.ts";
 import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../shared/protocol.ts";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
+import { panelTargetSchema } from "../shared/panel-target.ts";
+import type { PanelTarget } from "../shared/panel-target.ts";
 
 export const APP_URI = `ui://mobile-dev/${PLUGIN_VERSION}/simulator.html`;
 export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
@@ -236,17 +238,17 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     }
   });
 
-  const openPanel = guarded(async () => {
+  const openPanel = guarded(async (panelTarget: PanelTarget) => {
     let status;
     try { status = await baguette.start(); }
     catch (error) { status = { ...await baguette.status(), error: errorMessage(error) }; }
-    return result(status, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
+    return result({ ...status, panelTarget }, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
   });
 
   registerAppTool(server, "mobile_open_workspace", {
     title: "Mobile Dev",
-    description: "Open the fullscreen Mobile Dev workspace when the user asks for fullscreen, with logs and performance tools on the left and iOS and Android devices side by side on the right. For app development beside a chat, prefer mobile_open_simulator. Starts the bundled backend without booting a device.",
-    inputSchema: {}, outputSchema: statusOutput, annotations: write,
+    description: "Open the fullscreen Mobile Dev workspace when the user asks for fullscreen, with logs and performance tools beside the devices. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. For app development beside a chat, prefer mobile_open_simulator. Starts the bundled backend without booting a device.",
+    inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema }, annotations: write,
     _meta: {
       ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
       "openai/ui": { entrypoints: [{ type: "global" }] },
@@ -255,8 +257,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   registerAppTool(server, "mobile_open_simulator", {
     title: "Mobile Dev",
-    description: "Open the Mobile Dev simulator beside the chat when building, running, changing, or debugging a local iOS, Android, Expo, React Native, or SwiftUI app. Call before the first device launch unless a panel is already open or the user requests a tool-only workflow. Starts the bundled Baguette backend without booting devices.",
-    inputSchema: {}, outputSchema: statusOutput, annotations: write,
+    description: "Open Mobile Dev beside the chat for local mobile app development, before the first device launch unless a panel is open or the workflow is tool-only. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. Starts the bundled backend without booting devices.",
+    inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema }, annotations: write,
     _meta: {
       ui: { resourceUri: APP_URI, visibility: ["app", "model"] },
       "openai/ui": { entrypoints: [{ type: "thread" }] },

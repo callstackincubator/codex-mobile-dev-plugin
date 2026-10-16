@@ -18,6 +18,27 @@ import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, S
 import { getTelemetryIdentity } from "../src/server/telemetry-identity.ts";
 import manifest from "../.codex-plugin/plugin.json" with { type: "json" };
 
+test("both opening tools accept optional device intent and preserve it in their results", async t => {
+  const fake = await fakeBaguette();
+  const plugin = await createTestPlugin("<html></html>", new Baguette(fake.url), fakeSimulatorInput());
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "opening-target-test", version: "1" });
+  t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
+  await plugin.server.connect(serverTransport);
+  await client.connect(clientTransport);
+  for (const name of ["mobile_open_simulator", "mobile_open_workspace"]) {
+    for (const target of [{}, { platform: "android", kind: "emulator" }, { platform: "ios", kind: "physical", deviceId: "00008110-000A0B1C2D3E4000" }]) {
+      const result = await client.callTool({ name, arguments: target });
+      assert.equal(result.isError, undefined);
+      assert.deepEqual(result.structuredContent?.panelTarget, target);
+    }
+    const invalid = await client.callTool({ name, arguments: { platform: "android", kind: "simulator" } });
+    assert.equal(invalid.isError, true);
+  }
+  const boots = fake.requests.filter(request => request.path.endsWith("/boot"));
+  assert.equal(boots.length, 0);
+});
+
 test("live UI reads use MCP and allow only Sentry browser connections", async t => {
   let revision = "a".repeat(64);
   const plugin = await createTestPlugin(async () => ({ html: '<html data-view="panel">jonas</html>', liveRevision: revision }));

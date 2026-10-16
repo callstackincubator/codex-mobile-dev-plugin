@@ -29,6 +29,8 @@ import type { StreamMessage } from "./stream-input.ts";
 import { IosVideo } from "./ios-video.ts";
 import type { AndroidVideoBatch } from "./android-video.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
+import type { PanelTarget } from "../shared/panel-target.ts";
+import { initialPanelDevice } from "./device-layout.ts";
 
 export function createSimulatorPanel(
   app: App,
@@ -59,6 +61,7 @@ export function createSimulatorPanel(
   let status: Status | undefined;
   let statusRevision = 0;
   let selected: SimulatorDevice | undefined;
+  let openingTarget: PanelTarget | undefined;
   let physicalDevices: PhysicalIosDevice[] = [];
   let discoveryError = "";
   let listing: Promise<void> | undefined;
@@ -433,6 +436,8 @@ export function createSimulatorPanel(
         ? "Unlock the device and allow USB debugging, or pair it for wireless debugging."
         : "Reconnect the device and check that ADB debugging is enabled.";
       empty(`${selected.name} · ${selected.state}`, description);
+    } else if (selected === undefined && (openingTarget?.platform !== undefined || openingTarget?.kind !== undefined || openingTarget?.deviceId !== undefined)) {
+      empty("Requested device unavailable.", "The requested device could not be found. Connect it or choose another device from the picker.");
     } else if (!reconnect.active && !stoppedDisplay) empty(selected ? "Select a device to open its screen." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No iOS devices. Connect an iPhone or add a simulator in Xcode."));
     controls();
   }
@@ -441,11 +446,20 @@ export function createSimulatorPanel(
     statusRevision++;
     status = next;
     const available = [...physicalDevices, ...next.devices];
+    if (platform === "android" && openingTarget?.deviceId?.startsWith("avd:")) {
+      const avdName = openingTarget.deviceId.slice(4);
+      const booted = next.devices.find(device => device.kind !== "physical" && device.name === avdName && device.state === "Booted");
+      if (booted !== undefined) openingTarget = { ...openingTarget, deviceId: booted.udid };
+    } else if (platform === "android" && selected && openingTarget?.deviceId === selected.udid && selected.kind !== "physical") {
+      const stoppedId = `avd:${selected.name}`;
+      const stopped = next.devices.find(device => device.udid === stoppedId && device.state === "Shutdown");
+      if (stopped !== undefined) openingTarget = { ...openingTarget, deviceId: stopped.udid };
+    }
     const oldDevice = available.find(device => device.udid === previous);
+    const nextDevice = initialPanelDevice(available, platform, previous, openingTarget);
     const physicalIos = oldDevice?.kind === "physical" && oldDevice.platform === "ios";
     const availableForMirroring = physicalIos ? oldDevice.state === "connected" : next.connected && oldDevice?.state === "Booted";
     if (reconnect.active && availableForMirroring === false) void disconnect();
-    const running = next.devices.find(device => device.state === "Booted");
     const physicalOptions: DeviceOption[] = physicalDevices.map(device => {
       const connection = physicalConnectionLabel(device.transportType);
       const kind = /ipad/i.test(device.model) ? "tablet" : "phone";
@@ -474,7 +488,7 @@ export function createSimulatorPanel(
     });
     devices.update({
       items: [...physicalOptions, ...androidPhysicalOptions, ...simulatorOptions],
-      value: previous && oldDevice ? previous : running?.udid ?? physicalDevices[0]?.udid ?? "",
+      value: nextDevice?.udid ?? "",
       placeholder: available.length ? "Select a device" : next.connected ? "No devices" : "Devices unavailable",
     });
     selectDevice();
@@ -753,6 +767,7 @@ export function createSimulatorPanel(
     discoveryError = errors.join(" · ");
     renderStatus(next);
     notice();
+    if (!busy && !reconnect.active) await connect();
   }
 
   function scheduleDiscovery() {
@@ -886,7 +901,10 @@ export function createSimulatorPanel(
       event.preventDefault(); send({ type: "key", code: event.code, modifiers: event.shiftKey ? ["shift"] : [] });
     }
   });
-  devicePickerElement.addEventListener("change", () => { void action(async () => { await disconnect(); selectDevice(); await start(); }); });
+  devicePickerElement.addEventListener("change", () => {
+    openingTarget = undefined;
+    void action(async () => { await disconnect(); selectDevice(); await start(); });
+  });
   element("start-device").addEventListener("click", () => { void action(start); });
   root.querySelectorAll<HTMLButtonElement>("[data-button]").forEach(button => {
     button.addEventListener("click", () => { send({ type: "button", button: button.dataset.button === "home" ? "home" : "app-switcher" }); });
@@ -950,6 +968,10 @@ export function createSimulatorPanel(
     notice,
     empty,
     resume,
+    setOpeningTarget(target: PanelTarget | undefined) {
+      openingTarget = target;
+      if (status !== undefined) renderStatus(status);
+    },
     load: () => action(async () => { await listDevices(); scheduleDiscovery(); await connect(); }),
     acceptStatus(next: Status) { renderStatus(next); if (toolsAvailable && !reconnect.active) void resume(); },
     setAvailable(value: boolean) { toolsAvailable = value; controls(); },

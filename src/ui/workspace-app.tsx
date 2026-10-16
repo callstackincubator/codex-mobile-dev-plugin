@@ -7,9 +7,9 @@ import "./style.css";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { Workspace } from "./components/workspace";
-import { activeDeviceLayout } from "./device-layout.ts";
 import type { DeviceLayout } from "./device-layout.ts";
-import type { Status } from "../shared/protocol.ts";
+import { panelTargetSchema } from "../shared/panel-target.ts";
+import { WorkspaceDevices } from "./workspace-devices.ts";
 import { PanelContext } from "./model-context.ts";
 import { LogsPanel } from "./logs-panel.ts";
 import { DeviceAppsStore } from "./device-apps.ts";
@@ -48,21 +48,28 @@ const panels = (["ios", "android"] as const).map(platform => {
   });
 });
 const [ios, android] = panels;
+const workspaceDevices = new WorkspaceDevices([ios, android], layout => {
+  changeLayout(layout);
+  renderWorkspace(layout);
+});
 logsPanel.setLayout(document.documentElement.dataset.view === "workspace");
-changeLayout("ios");
+changeLayout("none");
 
 function updateSelection() {
   const visible = panels.filter(panel => !panel.root.hidden);
   const active = visible.find(panel => panel.platform === activePlatform) ?? visible[0];
   const selected = active?.selected;
-  const deviceKind = selected?.kind ?? (selected ? "simulator" : undefined);
-  setUiTelemetryContext({ device_platform: selected?.platform, device_kind: deviceKind });
+  const devicePlatform = selected ? active?.platform : undefined;
+  const virtualKind = devicePlatform === "android" ? "emulator" : "simulator";
+  const deviceKind = selected?.kind ?? (selected ? virtualKind : undefined);
+  setUiTelemetryContext({ device_platform: devicePlatform, device_kind: deviceKind });
   panelContext.selectSimulators(visible.flatMap(panel => panel.selected ? [panel.selected] : []), selected);
   deviceApps.selectDevice(selected);
   for (const panel of panels) panel.root.dataset.active = String(panel === active);
 }
 
-function changeLayout(layout: DeviceLayout) {
+function changeLayout(layout: DeviceLayout, manual = false) {
+  if (manual) workspaceDevices.selectLayout();
   setUiTelemetryContext({ layout });
   if (layout === "ios" || layout === "android") activePlatform = layout;
   for (const panel of panels) {
@@ -70,6 +77,11 @@ function changeLayout(layout: DeviceLayout) {
   }
   requestAnimationFrame(() => { for (const panel of panels) if (!panel.root.hidden) panel.fitScreen(); });
   updateSelection();
+  if (manual) {
+    for (const panel of panels) {
+      if (panel.root.hidden === false) void panel.resume().catch(connectionFailed);
+    }
+  }
 }
 
 let stopLiveReload = () => {};
@@ -80,6 +92,7 @@ function disposeUI() {
     window.removeEventListener("focus", resumeContext);
     window.removeEventListener("pageshow", resumeContext);
     document.removeEventListener("visibilitychange", resumeContext);
+    workspaceDevices.dispose();
     deviceApps.dispose();
     recordingController.dispose();
     updates.dispose();
@@ -111,15 +124,36 @@ function resumeContext() {
 window.addEventListener("focus", resumeContext);
 window.addEventListener("pageshow", resumeContext);
 document.addEventListener("visibilitychange", resumeContext);
-app.ontoolinput = () => { if (!ios.selected) ios.empty("Loading devices…", "Finding connected iOS devices and simulators."); };
+function connectionFailed(error: unknown) {
+  captureUiError(error, "host.connect");
+  const message = error instanceof Error ? error.message : "Could not connect to Codex.";
+  for (const panel of panels) panel.notice(message);
+}
+function openDevices(input: unknown) {
+  const target = panelTargetSchema.safeParse(input);
+  if (target.success === false) {
+    const error = new Error("Mobile Dev received an invalid opening target.");
+    connectionFailed(error);
+    return;
+  }
+  void workspaceDevices.open(target.data).catch(connectionFailed);
+}
+app.ontoolinput = input => {
+  if (input.arguments && "recordingId" in input.arguments) return;
+  openDevices(input.arguments ?? {});
+};
 app.ontoolresult = result => {
   if (result.structuredContent?.recording !== undefined) {
     try { recordingController.accept(result); }
     catch (error) { captureUiError(error, "recording.workspace_result"); }
     return;
   }
-  if (result.isError) { ios.notice(result.content.filter(item => item.type === "text").map(item => item.text).join("\n")); return; }
-  if (result.structuredContent && "devices" in result.structuredContent) ios.acceptStatus(result.structuredContent as Status);
+  if (result.isError) {
+    const message = result.content.filter(item => item.type === "text").map(item => item.text).join("\n");
+    for (const panel of panels) panel.notice(message);
+    return;
+  }
+  if (result.structuredContent && "panelTarget" in result.structuredContent) openDevices(result.structuredContent.panelTarget);
 };
 app.addEventListener("hostcontextchanged", hostContext);
 void (async () => {
@@ -132,20 +166,12 @@ void (async () => {
     performancePanel.setAvailable(available);
     deviceApps.setAvailable(available);
     updates.setAvailable(available);
-    for (const panel of panels) {
-      panel.setAvailable(available);
-      if (!available) panel.notice("This host cannot call the plugin's simulator tools.");
-    }
+    for (const panel of panels) if (!available) panel.notice("This host cannot call the plugin's simulator tools.");
     if (available) {
       stopLiveReload = startLiveReload(app, disposeUI);
-      await Promise.all([ios.load(), android.load()]);
-      if (disposingUI === undefined) {
-        const layout = activeDeviceLayout(ios.selected, android.selected);
-        renderWorkspace(layout);
-      }
     }
+    await workspaceDevices.setAvailable(available);
   } catch (error) {
-    captureUiError(error, "host.connect");
-    for (const panel of panels) panel.notice(error instanceof Error ? error.message : "Could not connect to Codex.");
+    connectionFailed(error);
   }
 })();

@@ -20,10 +20,10 @@ import type { PluginUpdateController } from "../plugin-updates.ts";
 import type { DeviceLayout } from "../device-layout.ts";
 export type { DeviceLayout } from "../device-layout.ts";
 
-export function Workspace({ logs, performance, recordingController, updates, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; recordingController: RecordingController; updates?: PluginUpdateController; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout) => void }) {
+export function Workspace({ logs, performance, recordingController, updates, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; recordingController: RecordingController; updates?: PluginUpdateController; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
   const [tool, setTool] = useState<"logs" | "performance">("logs");
   const [savedVisible, setSavedVisible] = useState(false);
-  const [layout, setLayout] = useState<DeviceLayout>(automaticLayout ?? "ios");
+  const [layout, setLayout] = useState<DeviceLayout>(automaticLayout ?? "none");
   const manualLayout = useRef(false);
   const recordingState = useSyncExternalStore(recordingController.subscribe, recordingController.getSnapshot);
   useEffect(() => {
@@ -102,7 +102,7 @@ export function Workspace({ logs, performance, recordingController, updates, aut
     <Select multiple items={[{ value: "ios", label: "iOS" }, { value: "android", label: "Android" }]} value={layout === "both" ? ["ios", "android"] : layout === "none" ? [] : [layout]} onValueChange={values => {
       const next: DeviceLayout = values.length === 0 ? "none" : values.length === 2 ? "both" : values[0] === "ios" ? "ios" : "android";
       manualLayout.current = true;
-      setLayout(next); onLayout(next);
+      setLayout(next); onLayout(next, true);
     }}>
       <SelectTrigger id="platform-select" size="sm" className="shrink-0" aria-label="Visible platforms"><SelectValue>{layout === "both" ? "Both" : layout === "none" ? "Platforms" : layout === "ios" ? "iOS" : "Android"}</SelectValue></SelectTrigger>
       <SelectContent side={menuSide} align="end" alignItemWithTrigger={false}><SelectGroup>

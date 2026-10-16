@@ -2,6 +2,13 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Since 0.1.158, opening device intent is applied before screen connections start.
+Existing MCP operation traces, `ui.video.first_frame`, rendering/input timings,
+and discovery/error measurements remain on the active path with their existing
+boundaries and units. Layout and device context follow the selected target; target
+arguments and device IDs are not added to telemetry. Startup waits for the host's
+opening input or result, and teardown prevents deferred device startup.
+
 Since 0.1.147, server processes select the bundled Undici 8.12.1 HTTP dispatcher
 before telemetry initialization and HTTP requests. This avoids the uncaught macOS
 `setTypeOfService EINVAL` exception in Codex's Node 24.19.0 built-in dispatcher.
