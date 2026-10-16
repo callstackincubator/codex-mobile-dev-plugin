@@ -31,6 +31,7 @@ export type TraceSiftExploreKind = TraceSiftExploreEnvelope["kind"];
 
 /** Above this, the JSON always travels compressed. Below it, plain. */
 export const TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES = 64 * 1024;
+
 /**
  * Past this, the explorer gives up before decoding. The service caps its own
  * trees (60k nodes, 5k commits), so exceeding this is a runaway recording, and
@@ -56,3 +57,18 @@ async function decodePayloadText(text: string, encoding: TraceSiftExploreEnvelop
     throw new Error("TraceSift returned Explore data the card could not read.");
   }
 }
+
+/**
+ * The class on the element that holds the embedded explorer, which is also the
+ * scope the Explore stylesheet's theme tokens are folded under.
+ *
+ * `scripts/explore-css.mjs` rewrites the package's `:root` and `.dark` token
+ * blocks onto this class so they reach the explorer's descendants without
+ * repainting the plugin's own cards. That makes the class a contract across the
+ * build boundary: rename it on one side and every TraceSift rule reading
+ * `var(--primary)`, `var(--success)` or `var(--muted)` falls back to the plugin's
+ * grey card theme, drawing an unreadable Explore while the build stays green.
+ * Both sides name it here, and `tests/tracesift-explore-css.test.ts` fails if the
+ * folded sheet ever stops scoping to what is actually rendered.
+ */
+export const TRACE_SIFT_EXPLORE_CLASS = "tracesift-explorer";

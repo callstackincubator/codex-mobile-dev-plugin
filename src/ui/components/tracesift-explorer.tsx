@@ -10,7 +10,8 @@
 
 import { ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
 import { useSyncExternalStore } from "react";
-import { ReactExplorer, TaskExplorer, type ReactExploreHandoff, type TaskHandoff } from "@callstack/tracesift-explore";
+import { ExploreView, type ExploreLoad, type ReactExploreHandoff, type TaskHandoff } from "@callstack/tracesift-explore";
+import { TRACE_SIFT_EXPLORE_CLASS } from "../../shared/tracesift-explore.ts";
 import type { TraceSiftController } from "../tracesift-controller.ts";
 import { Button } from "./ui/button.tsx";
 
@@ -22,7 +23,11 @@ export function TraceSiftExplorer({ controller }: { controller: TraceSiftControl
   // A payload whose card is gone is a stale view rather than a reader error, and
   // drawing half a tree would be worse than saying so.
   if (card === undefined) return <p className="tracesift-error" role="alert">This TraceSift finding is no longer available.</p>;
-  return <div className={state.dark ? "tracesift-explorer dark" : "tracesift-explorer"} data-kind={explorer.kind}>
+  // The payload is already in hand before this renders, so the load the web app
+  // waits for is always the ready one; the kind decides which of the two is fed.
+  const task: ExploreLoad<TaskHandoff> | null = explorer.kind === "task" ? { state: "ready", handoff: explorer.payload as TaskHandoff } : null;
+  const react: ExploreLoad<ReactExploreHandoff> | null = explorer.kind === "react" ? { state: "ready", handoff: explorer.payload as ReactExploreHandoff } : null;
+  return <div className={state.dark ? `${TRACE_SIFT_EXPLORE_CLASS} dark` : TRACE_SIFT_EXPLORE_CLASS} data-kind={explorer.kind}>
     <div className="tracesift-explorer-bar">
       <Button size="sm" variant="outline" onClick={controller.closeExplore}>
         <ArrowLeftIcon />Findings
@@ -34,18 +39,17 @@ export function TraceSiftExplorer({ controller }: { controller: TraceSiftControl
       </Button>
     </div>
     {state.error && <p className="tracesift-error" role="alert">{state.error}</p>}
-    {/* The kind decides which renderer sees the payload, so a service newer than
-        this bundle still reaches a renderer that ignores fields it does not
-        know rather than one that fails on them. */}
-    {explorer.kind === "task" && <TaskExplorer
-      handoff={explorer.payload as TaskHandoff}
+    {/* `ExploreView` is the page the web app's `/explore` route mounts, so the
+        reader gets the same padding, the same width, and the same copy explaining
+        a view that failed to load rather than a plugin-side guess at them. No
+        `onClose`: this frame's way back is the bar above, not a Close button. */}
+    <ExploreView
+      task={task}
+      react={react}
       {...(explorer.focus ? { focusNodeId: explorer.focus } : {})}
       onFocusChange={nodeId => controller.setExploreFocus(nodeId)}
-    />}
-    {explorer.kind === "react" && <ReactExplorer
-      handoff={explorer.payload as ReactExploreHandoff}
       {...(explorer.commitKey ? { commitKey: explorer.commitKey } : {})}
       onCommitChange={key => controller.setExploreCommit(key)}
-    />}
+    />
   </div>;
 }

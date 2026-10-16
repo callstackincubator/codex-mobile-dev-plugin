@@ -156,6 +156,10 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   assert.deepEqual({ ...calls.at(-1)!.arguments as object }, { analysisId: "cpu", taskIndex: 0 });
   assert.equal(window.document.querySelector(".hotspot-list"), null);
   assert.match(window.document.querySelector(".tracesift-explorer")!.textContent!, /Render blocked the main thread/);
+  // The web app's own page wrapper is what insets the view, and its theme tokens
+  // are scoped to the class above it; a renderer that mounts the views bare, or
+  // renames that class, draws an unpadded grey Explore, so both are checked here.
+  assert.ok(window.document.querySelector(".tracesift-explorer > .explore-page"), "the explorer renders the Explore page");
   // The browser window stays one click away for readers who want the web app.
   assert.ok([...window.document.querySelectorAll<HTMLElement>("button")].some(button => button.textContent?.includes("Open in browser")));
   await act(() => [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent === "Findings")!.click());

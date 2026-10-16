@@ -1,9 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { TRACE_SIFT_EXPLORE_CLASS } from "../src/shared/tracesift-explore.ts";
 
-/** The class the plugin's explorer container carries — see `src/ui/style.css`. */
-const SCOPE = ".tracesift-explore";
+/**
+ * The class the explorer renders, from the same constant the component uses.
+ * Spelling it out here is what let this fold and the renderer drift apart once.
+ */
+const SCOPE = `.${TRACE_SIFT_EXPLORE_CLASS}`;
 
 /**
  * The Explore stylesheet, as the TraceSift package ships it.
