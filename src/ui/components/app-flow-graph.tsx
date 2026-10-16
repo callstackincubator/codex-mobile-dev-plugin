@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Background, Controls, Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import type { AppFlowEdge, AppFlowNode } from "../../shared/app-flow.ts";
+import { featureGateNotice } from "../../shared/app-flow.ts";
 import type { AppFlowPanel } from "../app-flow-panel.ts";
 import { recordUiTiming } from "../telemetry.ts";
 import { BAND_COLUMNS, COL_GAP, NODE_HEIGHT, NODE_WIDTH, STRUCTURE_NODE_HEIGHT, layoutTopology, type NodePlacement, type ResolvedEdge } from "./app-flow-layout.ts";
@@ -50,6 +51,8 @@ function ScreenNode({ data }: NodeProps) {
   const node = data.node as AppFlowNode;
   const graph = useContext(GraphContext)!;
   const title = nodeTitle(node); const status = captureStatus(node); const screenshot = node.capture?.screenshot;
+  // Read off the source, never off what this run rendered: see `featureGateNotice`.
+  const gate = featureGateNotice(node.guard);
   return <><Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-0 !bg-slate-400" />
     <div className="flex h-full flex-col overflow-hidden">
       {screenshot ? <Screenshot projectId={graph.projectId} path={screenshot} title={title} panel={graph.panel} />
@@ -60,6 +63,8 @@ function ScreenNode({ data }: NodeProps) {
           {node.origin === "chrome" ? "Not a screen — nothing to capture" : node.urlPath ?? "In-app navigation only"}</div></div>
         {status && <div className={`flex items-center gap-1.5 text-[10px] ${TONE_TEXT[status.tone]}`} title={node.capture?.note ?? undefined}>
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[status.tone]}`} /><span className="truncate">{status.label}</span></div>}
+        {gate && <div className="flex items-center gap-1.5 text-[10px] text-violet-600 dark:text-violet-300/90" title={gate.detail}>
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" /><span className="truncate">{gate.label}</span></div>}
         <NodeActions node={node} />
       </div>
     </div><Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !border-0 !bg-slate-400" /></>;

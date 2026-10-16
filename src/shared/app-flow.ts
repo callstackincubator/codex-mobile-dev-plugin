@@ -81,6 +81,32 @@ export interface AppFlowGuard {
   fallback: string
 }
 
+/**
+ * What the panel says before a Fast run, where nothing checks whether the app is signed in.
+ *
+ * Auto and Thorough still reach a model-backed auth gate that parks the sweep and asks for a
+ * human; Fast has none, so a signed-out app simply sweeps a login wall and captures it as every
+ * screen. The sign-in has to happen before the run, and this is the only place that says so.
+ */
+export const FAST_MODE_AUTH_NOTICE =
+  'Fast mode does not check for a sign-in screen. Launch the app and finish signing in if you have not, then start the sweep.'
+
+/**
+ * The badge a route carries purely because its component declares a guard — see `AppFlowGuard`.
+ *
+ * Deliberately static: whether the flag behind the condition is on in this build is not knowable
+ * from the source, and the sweep's own outcome does not settle it either (a guarded route that
+ * rendered fine was flagged on for that run, which says nothing about the next one). So every
+ * guarded route is labelled, the one that rendered a 404 and the one that did not, and the
+ * condition is shown so a reader can decide what it means for their build.
+ */
+export function featureGateNotice(
+  guard: AppFlowGuard | null | undefined
+): { label: string; detail: string } | null {
+  if (!guard) return null
+  return { label: 'Feature Gated', detail: `Renders <${guard.fallback}/> unless ${guard.condition}` }
+}
+
 export interface AppFlowStateHint {
   type: 'bottom-sheet' | 'modal' | 'drawer'
   lib: string

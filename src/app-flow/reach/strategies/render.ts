@@ -6,19 +6,26 @@
  * those screens cost 22-33s each as an agentic walk; a dispatch plus a settle poll is a few
  * seconds.
  *
- * ## It is a navigation shortcut, not an arrival verdict
+ * ## Two ways to reach a verdict, and what each one is for
  *
- * The strategy dispatches, waits for the screen to stop changing, and then asks **the same
- * arrival judge every other rung asks**. It never decides for itself that it arrived. That split
- * is the whole safety argument:
+ * The strategy dispatches, waits for the screen to stop changing, and then either asks the same
+ * arrival judge every other rung asks, or — under `arrivalJudge: 'fallback'`, which only Fast sets
+ * — accepts the runtime's own readiness snapshot when that snapshot answers the judge's question
+ * outright. The division of labour behind that:
  *
- * - The saving is in the dispatch. Replacing a multi-step model-driven walk with one navigation
- *   call is where the 20-plus seconds go; the judge call at the end costs ~2.5s either way.
- * - A wrong accept here would be silent. The persistent in-app runtime measures commits, network
- *   activity and painted frames, but the arrival judge still owns screen identity.
+ * - The dispatch reply is the authority on *which* screen. The app's own resolver located the
+ *   route, named the navigator path it dispatched, and the readiness poll reports the path that is
+ *   now focused and whether its parameters match. Nothing a screenshot shows adds to that.
+ * - `awaitSettled` is the authority on *timing only* — "is it worth photographing yet". It is a
+ *   hint, not a verdict, and `stop: 'timeout'` is one of the ways a perfectly correct screen
+ *   answers it (see below).
+ * - A wrong accept would still be silent, which is why the evidence test is the strict one
+ *   documented on `arrivalJudge` rather than "the dispatch was accepted".
  *
- * So `awaitSettled` answers "is it worth photographing yet", and the judge answers "is this the
- * screen we asked for".
+ * Most of the saving is in the dispatch — replacing a multi-step model-driven walk with one
+ * navigation call is where the 20-plus seconds go — but the judge call is not free either: it cost
+ * ~2.5s on a clean node and ~3.2s on each of the two live-feed nodes it was asked about in the
+ * 2026-10 reference run, in a mode whose whole premise is that it makes no model calls.
  *
  * ## Where it runs
  *
@@ -54,15 +61,33 @@ export interface RenderInput {
    *
    * `'fallback'` is not "trust the dispatch". The judge is skipped only when the runtime answers
    * every part of the question the judge is being asked: the screen is *found* (its fiber exists
-   * and is focused), its parameters match the ones that were requested, it is showing content, it
-   * settled, and the navigator path the app reported dispatching is a suffix of the path it now
-   * reports as focused. Anything short of that — an unsettled screen, a target that was never
-   * found, a param mismatch, an empty screen, a focused path that is not the one dispatched —
-   * falls through to the judge exactly as before.
+   * and is focused), its parameters match the ones that were requested, it is showing content, and
+   * the navigator path the app reported dispatching is a suffix of the path it now reports as
+   * focused. Anything short of that — a target that was never found, a param mismatch, an empty
+   * screen, a focused path that is not the one dispatched, or a poll that never got an answer at
+   * all (which carries `found: false` by construction) — falls through to the judge exactly as
+   * before.
    *
    * That is a stricter test than it first looks, and notably stricter than route identity alone:
    * the param check is what separates "the right route" from "the right record", which is the
    * confidently-wrong capture this whole rung is built to avoid.
+   *
+   * ## Why `settled` is deliberately not part of that test
+   *
+   * It was, and it was the wrong line to draw. A screen that never goes quiet is not a screen that
+   * never arrived: HomeTab/Home and NotificationsTab/Notifications in the 2026-10 reference run are
+   * live feeds whose poll ended on `stop: 'timeout'` while reporting `found`, no param mismatch,
+   * 337 and 19 content nodes, and the dispatched path focused. Both were then sent to the judge,
+   * which took ~3.2s each to answer `match` — the same answer the snapshot already contained, paid
+   * for twice, in the mode that exists to make no model calls at all.
+   *
+   * The cost of dropping it is real and is not hidden here: the settle poll is the only thing that
+   * was keeping this rung from photographing a screen mid-animation, so a `timeout` accept can now
+   * deliver a frame with a transition still in flight — a half-slid header, a placeholder where an
+   * image is still decoding. That is a worse screenshot of the right screen, which is the trade
+   * Fast is for; it is not a screenshot of the wrong screen, which is what the evidence test above
+   * is still there to prevent. `settled` keeps its other jobs: it bounds the wait, it is reported
+   * in the log and the metric, and it still qualifies the failure note on a mismatch below.
    */
   arrivalJudge?: 'always' | 'fallback'
 }
@@ -188,20 +213,28 @@ export async function renderStrategy(input: RenderInput, ports: ReachPorts): Pro
   // dispatched path is taken from the *reply*, never from the node's id segments: the id is what
   // was asked for, and only the reply says what the app resolved it to.
   const dispatchedPath = dispatched.path ?? null
-  const runtimeArrival =
+  const runtimeEvidenceComplete =
     input.arrivalJudge === 'fallback' &&
-    settled.settled &&
     settled.found &&
     !settled.paramMismatch?.length &&
     settled.content > 0 &&
     dispatchedPath !== null &&
     isFocusedPath(dispatchedPath, settled.active ?? [])
-      ? `${dispatchedPath.join(' > ')} is focused and settled with ${settled.content} content nodes.`
-      : null
+  // The note says whether the screen had gone quiet when it was photographed, because that is the
+  // one thing this verdict does not stand behind — a `timeout` accept is a real accept and a
+  // possibly mid-animation frame, and a reader of the stored capture should not have to infer that
+  // from a log file that is pruned after a few runs. See `arrivalJudge`.
+  const runtimeArrival = runtimeEvidenceComplete
+    ? `${dispatchedPath!.join(' > ')} is focused with ${settled.content} content nodes${
+        settled.settled
+          ? ' and settled'
+          : `, though the readiness poll stopped on ${settled.stop ?? 'an unknown condition'}`
+      }.`
+    : null
 
-  // A screen that never settled is still shown to the judge. The settle poll is a timing hint,
-  // and a slow screen that did arrive should not be thrown away over it — the judge is looking at
-  // the frame either way, and it is the thing qualified to say what is on it.
+  // A screen that never settled is still verified — by the judge when the runtime's evidence was
+  // incomplete, and by that evidence itself when it was not. The settle poll is a timing hint, and
+  // a slow screen that did arrive should not be thrown away over it.
   const verifyStartedAt = Date.now()
   const { arrival, pressables } = await verifyWithDiagnostic(
     ports,
@@ -228,6 +261,11 @@ export async function renderStrategy(input: RenderInput, ports: ReachPorts): Pro
   // Step 4 exists for: the share of nodes on the `runtime` path is the saving, and the share that
   // still falls through to `judge` is the fallback rate. The duration is the verification as the
   // rung pays for it — the diagnostic frame included, since that is taken either way.
+  //
+  // `path: 'runtime'` is now a slightly wider bucket than it was: it covers screens whose
+  // readiness poll gave up on a timeout but whose evidence was otherwise complete (live feeds,
+  // mostly), which previously landed in `judge`. A release-over-release comparison of the two
+  // shares crosses that change in meaning — see `docs/telemetry.md`.
   const verifyPath = runtimeArrival ? ('runtime' as const) : ('judge' as const)
   const verifyMs = Date.now() - verifyStartedAt
   ports.metrics?.verify(verifyMs, verifyPath, arrival.verdict)

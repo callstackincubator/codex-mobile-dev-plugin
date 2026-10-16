@@ -44,6 +44,28 @@ export function resolveAppFlowStart(input: StartAppFlowInput): ResolvedAppFlowSt
   }
 }
 
+/**
+ * Whether this start request needs a decision provider to be worth starting at all.
+ *
+ * A structure-only build never asks a model anything. Neither does Fast any more: its ladder is
+ * the render rung alone, it skips the auth-gate classifier, and it runs no state-variant pass, so
+ * the only role still reachable is the arrival judge on a node whose runtime evidence came back
+ * incomplete — which the orchestrator degrades to an `uncertain` verdict rather than a failed
+ * sweep. Auto and thorough are model-driven end to end and a provider is not optional for them.
+ *
+ * Here rather than inline at the two call sites (`buildAppFlow`'s throw and the service's start
+ * refusal) because those two must agree — a sweep the service accepts and the orchestrator then
+ * throws out is a spinner that never resolves — and because this file is the one place in the
+ * start path that unit-tests without Electron.
+ */
+export function requiresDecisionProvider(
+  mode: AppFlowBuildMode | undefined,
+  explorationMode: ExplorationMode | undefined
+): boolean {
+  if ((mode ?? APP_FLOW_START_DEFAULTS.mode) !== 'screen-ui-and-structure') return false
+  return (explorationMode ?? APP_FLOW_START_DEFAULTS.explorationMode) !== 'fast'
+}
+
 export type ParsedAppFlowStart =
   { ok: true; input: StartAppFlowInput } | { ok: false; error: string }
 

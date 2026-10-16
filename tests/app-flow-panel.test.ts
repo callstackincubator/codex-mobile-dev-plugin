@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { App } from "@modelcontextprotocol/ext-apps";
+import { FAST_MODE_AUTH_NOTICE, featureGateNotice } from "../src/shared/app-flow.ts";
 import { AppFlowPanel } from "../src/ui/app-flow-panel.ts";
 
 function fixture(canMessage = true, projectList: unknown[] = []) {
@@ -319,4 +320,22 @@ test("recording events reach the panel through the poll and stop it when saved",
   const pollsAfter = host.calls.filter(call => call.name === "mobile_appflow_events").length;
   await settle(120);
   assert.equal(host.calls.filter(call => call.name === "mobile_appflow_events").length, pollsAfter, "a finished recording ends its polling");
+});
+
+test("the Fast-mode banner tells the user to sign in before the sweep, since nothing else will ask", () => {
+  // Fast has no model-backed auth gate behind it, so this copy is the whole warning.
+  assert.match(FAST_MODE_AUTH_NOTICE, /Fast mode does not check/i);
+  assert.match(FAST_MODE_AUTH_NOTICE, /signing in/i);
+  assert.match(FAST_MODE_AUTH_NOTICE, /start the sweep/i);
+});
+
+test("every guarded route is labelled Feature Gated, whatever that run happened to render", () => {
+  const guard = { condition: "features.enabled('moderation')", fallback: "NotFoundScreen" };
+  // A rendered the fallback, B rendered fine: the flag is not knowable statically, so both say so.
+  const a = featureGateNotice(guard), b = featureGateNotice({ ...guard, condition: "features.enabled('inbox')" });
+  assert.equal(a?.label, "Feature Gated");
+  assert.equal(b?.label, "Feature Gated");
+  assert.equal(a?.detail, "Renders <NotFoundScreen/> unless features.enabled('moderation')");
+  assert.equal(featureGateNotice(null), null, "an unguarded route carries no label");
+  assert.equal(featureGateNotice(undefined), null, "nor does a document written before guards existed");
 });

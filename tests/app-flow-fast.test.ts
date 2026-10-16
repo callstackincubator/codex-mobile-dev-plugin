@@ -4,7 +4,11 @@ import { runReachLadder, strategiesFor, type ReachStrategy } from '../src/app-fl
 import { isToolingFailure } from '../src/app-flow/exploration.ts'
 import { agentSource } from '../src/app-flow/cdp/runtime-source.ts'
 import { agentNavigate, DEFAULT_AGENT_LIMITS } from '../src/app-flow/cdp/agent-runtime.ts'
-import { parseAppFlowStartRequest, resolveAppFlowStart } from '../src/app-flow/start-request.ts'
+import {
+  parseAppFlowStartRequest,
+  requiresDecisionProvider,
+  resolveAppFlowStart
+} from '../src/app-flow/start-request.ts'
 import { reconcileSweepProgress } from '../src/app-flow/reach/checkpoint.ts'
 import { ActiveTimeBudget } from '../src/app-flow/exploration.ts'
 import { renderStrategy } from '../src/app-flow/reach/strategies/render.ts'
@@ -510,12 +514,55 @@ test('Fast falls through to the judge on anything the runtime cannot settle outr
   // Nothing on screen yet.
   const empty = await runRender({ content: 0 }, 'fallback')
   assert.deepEqual(empty.judged, ['HomeTab/Profile'])
-  // Never settled.
-  const unsettled = await runRender({ settled: false, stop: 'timeout' }, 'fallback')
-  assert.deepEqual(unsettled.judged, ['HomeTab/Profile'])
+  // A poll that never got an answer carries its empty defaults, `found: false` among them.
+  const noAnswer = await runRender(
+    { settled: false, stop: 'no-answer', found: false, content: 0, active: [] },
+    'fallback'
+  )
+  assert.deepEqual(noAnswer.judged, ['HomeTab/Profile'])
   // Focused on a sibling: the dispatched path is not a suffix of the live path.
   const elsewhere = await runRender({ active: ['SearchTab', 'Search'] }, 'fallback')
   assert.deepEqual(elsewhere.judged, ['HomeTab/Profile'])
+})
+
+test('a Fast sweep starts without a decision provider; every other mode still demands one', () => {
+  // The guard both the orchestrator's throw and the service's start refusal are made of. A Fast
+  // sweep asks no model anything it cannot do without, so requiring a provider for it would be a
+  // requirement the sweep no longer has.
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast'), false)
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'auto'), true)
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'thorough'), true)
+  // The default exploration mode is `auto`, so an unstated one is not Fast.
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', undefined), true)
+  // A structure build never asked for one in the first place.
+  assert.equal(requiresDecisionProvider('structure-only', 'auto'), false)
+  assert.equal(requiresDecisionProvider(undefined, 'auto'), false)
+})
+
+test('a live feed that never goes quiet is verified from its own evidence, not by the judge', async () => {
+  // HomeTab/Home and NotificationsTab/Notifications in the 2026-10 reference run: the poll gave up
+  // on a timeout because the feed never stops moving, while the snapshot said the dispatched path
+  // was focused, with content and no param mismatch. That is the whole question the judge was
+  // being asked, and it cost ~3.2s per node to have it answered a second time.
+  const { attempt, judged } = await runRender(
+    { settled: false, stop: 'timeout', content: 337 },
+    'fallback'
+  )
+  assert.equal(attempt.ok, true)
+  assert.deepEqual(judged, [])
+  assert.equal(attempt.arrival?.verdict, 'match')
+  // The note is honest about what it does not stand behind: the frame may be mid-animation.
+  assert.match(String(attempt.arrival?.reason), /readiness poll stopped on timeout/)
+})
+
+test('a timed-out settle is still not enough on its own', async () => {
+  // The relaxation is only about `settled`. Every other part of the evidence test stands, so a
+  // timed-out poll that also reports the wrong record still goes to the judge.
+  const { judged } = await runRender(
+    { settled: false, stop: 'timeout', paramMismatch: ['handle'] },
+    'fallback'
+  )
+  assert.deepEqual(judged, ['HomeTab/Profile'])
 })
 
 test('auto keeps asking the judge on every render arrival', async () => {
@@ -535,6 +582,10 @@ test('auto keeps asking the judge on every render arrival', async () => {
   assert.equal(attempt.ok, true)
   assert.deepEqual(judged, ['HomeTab/Profile'])
   assert.equal(attempt.arrival?.reason, 'the judge looked')
+  // Including on the evidence Fast now accepts outright: `'always'` means always.
+  const liveFeed = await runRender({ settled: false, stop: 'timeout', content: 337 })
+  assert.deepEqual(liveFeed.judged, ['HomeTab/Profile'])
+  assert.equal(liveFeed.attempt.arrival?.reason, 'the judge looked')
 })
 
 /** A render port over a scripted readiness sequence, with the settle deadlines under test. */

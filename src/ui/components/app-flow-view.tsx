@@ -1,6 +1,7 @@
 import { AlertTriangle, Clock, Loader2, MapIcon, Pause } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { AppFlowBuildMode, DeepLinkJudgeMode, ExplorationMode } from "../../shared/app-flow.ts";
+import { FAST_MODE_AUTH_NOTICE } from "../../shared/app-flow.ts";
 import type { AppFlowPanel } from "../app-flow-panel.ts";
 import { AppFlowGraph } from "./app-flow-graph.tsx";
 import { AppFlowProjectPicker } from "./app-flow-project-picker.tsx";
@@ -67,6 +68,8 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
         <label className="flex items-center gap-1">Explore <Input className="w-20" aria-label="Maximum screens to explore" type="number" min={1} value={screenLimit} disabled={isRunning}
           placeholder="No limit" onChange={event => { const value = event.target.value; if (value && Number(value) < 1) return; setScreenLimit(value); if (state.projectPath) write(`app-flow-screen-limit:${state.projectPath}`, value); }} /> screens</label>
       </div>}
+      {/* Fast runs have no auth gate to park on, so the sign-in has to happen before Start/Resume. */}
+      {mode === "screen-ui-and-structure" && exploration === "fast" && !isRunning && <p className="w-full text-xs text-amber-600">{FAST_MODE_AUTH_NOTICE}</p>}
       {mode === "screen-ui-and-structure" && !panel.canSendAgentStart && <p className="w-full text-xs text-amber-600">This host cannot send a follow-up message. Ask Codex in chat to start and service the App Flow decision loop.</p>}
     </header>
     {isRunning && state.progress && <div className="flex items-center gap-3 border-b bg-muted/40 px-4 py-2"><Loader2 className="size-4 animate-spin" />

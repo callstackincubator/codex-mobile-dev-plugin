@@ -56,6 +56,7 @@ import {
   type CaptureContext,
   type CaptureDevice
 } from './capture.ts'
+import { requiresDecisionProvider } from './start-request.ts'
 import { parseProject } from './parser.ts'
 import { baselineLaunchCommands, walkCommands, walkStepCommand } from './walk-commands.ts'
 import { contentMatchedSelectors, minimizeWalkCommands } from './path-minimize.ts'
@@ -1065,7 +1066,17 @@ export async function buildAppFlow(
       })
       return { ok: true, projectId, result: partialResult }
     }
-    if (!options.decisionProvider) {
+    // Every mode but Fast is built around model roles — the navigator, the arrival judge, the
+    // auth-gate classifier, the state-trigger planner — so starting one without a provider could
+    // only ever fail at the first node, and failing here says so before a simulator is booted.
+    //
+    // Fast is the exception now rather than a mode that happened to need the same thing: its
+    // ladder is `render` alone, its auth gate is skipped (see `checkAuthGate`), and the state
+    // pass is gated off below. The one model role still reachable in Fast is the arrival judge,
+    // and only on a node whose runtime evidence was incomplete — which is why the judge port is
+    // replaced with a non-asking one just below rather than left to throw mid-sweep. A Fast sweep
+    // with no provider is therefore a complete, if slightly weaker, sweep.
+    if (!options.decisionProvider && requiresDecisionProvider(mode, options.explorationMode)) {
       throw new Error('A decision provider is required for a screen sweep.')
     }
 
@@ -1426,6 +1437,20 @@ export async function buildAppFlow(
         remaining: number,
         budget?: ActiveTimeBudget
       ): Promise<'clear' | 'stop' | 'exhausted'> => {
+        // Fast does not run the gate at all. The gate is a screenshot plus a classifier call — one
+        // model call per sweep, made before anything is captured — and Fast's premise is that it
+        // makes none. Nothing local is substituted for it: a heuristic that guessed at a sign-in
+        // wall would be a second thing to be wrong about, and the honest division of labour is
+        // that in Fast the user launches the app and finishes any sign-in *before* the sweep, which
+        // the pre-run banner tells them to do.
+        //
+        // `clear` is the degradation, and it is the right one: it is what the gate returns when it
+        // sees a usable screen, so every downstream caller (the pre-sweep check, `AuthPort.checkGate`
+        // inside the rungs) proceeds exactly as it does on a cleared gate. The loss is that a Fast
+        // sweep run against a signed-out app no longer stops to say so — it captures the sign-in
+        // wall under every route instead, which is a bad run the user can see, rather than a
+        // stopped one they cannot.
+        if (options.explorationMode === 'fast') return 'clear'
         if (authSettledBy) return 'clear'
         const resolution = await runAuthGate(remaining, budget)
         authSettledBy = settlesAuthGateForRun(resolution)
@@ -1644,6 +1669,34 @@ export async function buildAppFlow(
         settleDeadlinesMs: options.explorationMode === 'fast' ? [3_000, 8_000] : [8_000]
       })
 
+      // A sweep with no decision provider is only reachable in Fast (see the throw above), and the
+      // one role that can still be asked for there is the arrival judge, on a node whose runtime
+      // evidence came back incomplete. `runAgent` would throw on that call, and nothing between
+      // the rung and the node loop catches it, so one ambiguous screen would take the whole sweep
+      // down. An `uncertain` verdict is the honest answer instead: it is what the judge port
+      // already returns when it cannot produce one, the ladder reads it as a miss, and the node is
+      // recorded unreached with a reason that says why rather than a screenshot nothing verified.
+      if (!options.decisionProvider) {
+        ports.judge = {
+          verifyArrival: async () => ({
+            verdict: 'uncertain',
+            status: null,
+            reason: 'No decision provider, so arrival could not be judged from the screenshot.'
+          })
+        }
+      }
+
+      // Said once, in the progress stream the UI is already reading, so a Fast run that walks
+      // straight into a sign-in wall is not a mystery afterwards: the check the other modes make
+      // here was not skipped by accident. `checkAuthGate` below is a no-op in this mode.
+      if (options.explorationMode === 'fast') {
+        emit(projectId, onEvent, {
+          type: 'phase',
+          phase: 'boot',
+          message:
+            'Fast mode skips the sign-in check — make sure the app is launched and signed in before the sweep.'
+        })
+      }
       if ((await checkAuthGate(nodesWithSlug.length)) === 'stop') {
         const paused = options.pauseRequested?.() ?? false
         manifest.sweepStatus = paused ? 'paused' : 'stopped'
@@ -4406,14 +4459,44 @@ export async function buildAppFlow(
       )
 
       checkSignal(signal)
-      emit(projectId, onEvent, {
-        type: 'phase',
-        phase: 'states',
-        message: 'Exploring state variants...'
-      })
+      // Announced only where it happens. Fast runs no state pass (see below), and a phase line
+      // claiming otherwise is how a mode ends up looking like it silently failed at something it
+      // never attempted.
+      if (options.explorationMode !== 'fast') {
+        emit(projectId, onEvent, {
+          type: 'phase',
+          phase: 'states',
+          message: 'Exploring state variants...'
+        })
+      }
 
-      const hintedNodes = nodesWithSlug.filter((n) => n.stateHints.length > 0)
-      console.log(`[app-flow] states start — ${hintedNodes.length} hinted routes`)
+      /**
+       * State variants are not a Fast phase.
+       *
+       * Two reasons, and the first alone settles it: this pass is built out of the things Fast
+       * does not do. It re-reaches each hinted node by replaying the base capture's stored
+       * `pathCommands` or by re-opening its deep link — Fast's render rung publishes neither, so
+       * `establishBase` can only ever return false here — and it then spends a `state-trigger`
+       * planner call and an arrival judge call per node. Left running in Fast it was a pure cost:
+       * two failed base attempts per hinted route, a relaunch between them, and a dev-client
+       * launcher probe after them, all to reach the same `continue`.
+       *
+       * The second is the point of the mode: `state-trigger` is a model call, and it is not gated
+       * by anything else, so a Fast sweep could not honestly claim to make none while this pass
+       * ran. Gating it here rather than refusing to start a Fast sweep that has hinted routes
+       * keeps the mode's promise simple — Fast captures the screens the navigator can reach, and
+       * nothing in it asks a model anything — instead of making the mode's availability depend on
+       * a property of the parsed structure that the user never chose.
+       */
+      const hintedNodes =
+        options.explorationMode === 'fast'
+          ? []
+          : nodesWithSlug.filter((n) => n.stateHints.length > 0)
+      console.log(
+        options.explorationMode === 'fast'
+          ? '[app-flow] states skipped — fast mode captures no state variants'
+          : `[app-flow] states start — ${hintedNodes.length} hinted routes`
+      )
       for (let i = 0; i < hintedNodes.length; i++) {
         checkSignal(signal)
         if (options.pauseRequested?.()) {
