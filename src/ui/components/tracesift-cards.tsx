@@ -8,9 +8,9 @@
  * cards are the same drawing of the same numbers rather than two readings that
  * can drift.
  *
- * What differs is where the actions go. Explore opens the owning TraceSift web
- * app in a separate window, while Investigate hands the card to the model in
- * this chat.
+ * What differs is where the actions go. Explore opens the full TraceSift
+ * explorer in this frame (TraceSift's own components, fed through MCP), while
+ * Investigate hands the card to the model in this chat.
  */
 
 import { useSyncExternalStore } from "react";
@@ -23,6 +23,7 @@ import { reactCommitSlices } from "../../shared/tracesift-contribution.ts";
 import type { ContributionChartKind } from "./tracesift/contribution-chart.tsx";
 import { ReactContribution, ReactFallbackRows } from "./tracesift/react-contribution.tsx";
 import { TaskContribution } from "./tracesift/task-contribution.tsx";
+import { TraceSiftExplorer } from "./tracesift-explorer.tsx";
 
 const percent = (value: number) => `${value.toFixed(1)}%`;
 
@@ -159,6 +160,10 @@ function ReactCard({ card, rank, controller }: { card: TraceSiftReactCard; rank:
 export function TraceSiftCards({ controller }: { controller: TraceSiftController }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const analysis: TraceSiftAnalysis | undefined = state.analysis;
+
+  // One surface shows one thing: the full explorer takes the frame the cards had,
+  // which also unmounts every contribution chart while megabytes are on screen.
+  if (state.explorer) return <TraceSiftExplorer controller={controller} />;
 
   if (!analysis) return <main className="tracesift-results">
     <p role="status">Analyzing profile with TraceSift…</p>

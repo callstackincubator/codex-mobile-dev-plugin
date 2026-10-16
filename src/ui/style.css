@@ -332,3 +332,22 @@ html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d
 @media (prefers-reduced-motion: reduce) {
   .tracesift-results .contribution-band, .tracesift-results .contribution-tile { transition: none; }
 }
+
+/* ===========================================================================
+   Embedded Explore
+   Only the plugin's own strip is styled here: the call tree, timeline and
+   commit chart are TraceSift's components and arrive with their own compiled
+   stylesheet. The strip is what the card frame adds — the way back and the
+   browser fallback — so it keeps the card's tokens rather than the web page's.
+   =========================================================================== */
+.tracesift-explorer { display: flex; flex-direction: column; gap: 10px; min-height: 0; text-align: left; }
+.tracesift-explorer-bar { display: flex; align-items: center; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.tracesift-explorer-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
+
+/* `@rozenite/ui` reads its theme off a `.dark` ancestor rather than the
+   document, and its tokens define the surfaces the explorer paints with, so the
+   plugin's `html[data-theme="dark"]` has to hand both over. Its background is
+   the explorer's own, not the plugin page's, so a light-mode host never shows a
+   dark card with white text. */
+.tracesift-explorer { color-scheme: light; }
+html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }

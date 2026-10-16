@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolve } from "node:path";
 import { build } from "esbuild";
+import { sharedNodeModules } from "../scripts/shared-node-modules.mjs";
 import { JSDOM } from "jsdom";
 
 const baseTask = {
@@ -26,6 +28,15 @@ const baseReact = {
   culpritTailCount: 0, culpritTailMs: 0, causes: [], wasted: null, confidence: "ok",
 };
 
+const tree = {
+  id: "0", name: "(root)", frameClass: "root", totalMs: 75, selfMs: 0, invocations: 1,
+  children: [{ id: "1", name: "render", location: "src/Screen.tsx:20", frameClass: "app", totalMs: 60, selfMs: 2, invocations: 2, children: [
+    { id: "2", name: "formatRow", location: "src/rows.ts:8", frameClass: "app", totalMs: 44, selfMs: 44, invocations: 12, children: [] }] }],
+};
+const timeline = { boxes: [{ startMs: 120, durationMs: 60, kind: "app", name: "render", nodeId: "1" }], durationMs: 75, coveredMs: 60, rows: 1, kept: ["app"], omittedBoxCount: 0, omittedBoxMs: 0 };
+/** The full task card `mobile_tracesift_explore_payload` answers with. */
+const taskHandoff = { apiVersion: 1, analysisId: "cpu", totalMs: 180, profileTitle: "CPU", card: { ...baseTask, tree, timeline } };
+
 test("compact TraceSift cards preserve CPU and React evidence", async t => {
   const built = await build({
     stdin: { contents: `
@@ -41,6 +52,11 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
         return { controller, root, flushSync, async close() { controller.dispose(); root.unmount(); await stopUiTelemetry(); } };
       }`, resolveDir: process.cwd(), loader: "tsx" },
     bundle: true, write: false, format: "iife", globalName: "TraceSiftCardTest", platform: "browser", jsx: "automatic",
+    // Same React pin and shared-module plugin as scripts/build.mjs: the linked
+    // Explore package resolves to the TraceSift checkout, which keeps its own
+    // copies of the libraries a single page must not bundle twice.
+    alias: { react: resolve(process.cwd(), "node_modules/react"), "react-dom": resolve(process.cwd(), "node_modules/react-dom") },
+    plugins: [sharedNodeModules(process.cwd())],
     define: { "process.env.NODE_ENV": '"production"' },
   });
   const dom = new JSDOM('<html data-view="tracesift"><head><meta name="mobile-dev-environment" content="development"><meta name="mobile-dev-user-id" content="anon_0123456789abcdef0123456789abcdef"><meta name="mobile-dev-session-id" content="run_1234567890abcdef1234567890abcdef"></head><body><div id="root"></div></body></html>', { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
@@ -53,8 +69,14 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   const calls: { name: string; arguments: unknown }[] = [];
   const app = {
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    getHostContext: () => ({ availableDisplayModes: ["inline", "fullscreen"] }),
+    async requestDisplayMode({ mode }: { mode: string }) { return { mode }; },
     async callServerTool(input: { name: string; arguments: unknown }) {
       calls.push(input);
+      if (input.name === "mobile_tracesift_explore_payload") {
+        const text = JSON.stringify(taskHandoff);
+        return { content: [{ type: "text", text }], structuredContent: { apiVersion: 1, kind: "task", encoding: "json", payloadBytes: text.length } };
+      }
       return input.name === "mobile_open_tracesift_explore"
         ? { content: [], structuredContent: { opened: true } }
         : { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF_TEXT" } };
@@ -122,16 +144,21 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   assert.equal(window.document.querySelectorAll(".contribution-band").length, 0);
   assert.ok(window.document.querySelectorAll(".contribution-tile").length > 0);
 
-  // Explore opens the task in TraceSift's own web UI. The full task never
-  // crosses the MCP app bridge and the card stays visible in the chat.
+  // Explore loads the task's full tree and renders TraceSift's explorer in this
+  // frame: the card list is replaced, and the way back is the explorer's own.
   const exploreButton = [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent?.includes("Explore"))!;
   await act(() => exploreButton.click());
   // Only the name and the arguments are ours; the bundle adds a telemetry
   // `_meta` to every tool call, and asserting on it would test Sentry.
-  assert.equal(calls.at(-1)!.name, "mobile_open_tracesift_explore");
+  assert.equal(calls.at(-1)!.name, "mobile_tracesift_explore_payload");
   // The call is built inside the JSDOM realm, so its object does not share
   // a prototype with this one and a strict structural compare cannot pass.
-  assert.deepEqual({ ...calls.at(-1)!.arguments as object }, { analysisId: "cpu", taskIndex: 0, focus: "b1" });
+  assert.deepEqual({ ...calls.at(-1)!.arguments as object }, { analysisId: "cpu", taskIndex: 0 });
+  assert.equal(window.document.querySelector(".hotspot-list"), null);
+  assert.match(window.document.querySelector(".tracesift-explorer")!.textContent!, /Render blocked the main thread/);
+  // The browser window stays one click away for readers who want the web app.
+  assert.ok([...window.document.querySelectorAll<HTMLElement>("button")].some(button => button.textContent?.includes("Open in browser")));
+  await act(() => [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent === "Findings")!.click());
   assert.ok(window.document.querySelector(".hotspot-list"));
 
   mounted.controller.accept({ content: [], structuredContent: { apiVersion: 1, analysisId: "react", profileType: "react", title: "React", summary: { rootCount: 1, commitCount: 3, totalCommitRenderDurationMs: 50, peakCommitDurationMs: 40, commitsOverBudget: 1, omittedEvidenceCommitCount: 0 }, cards: [baseReact] } });
@@ -149,6 +176,6 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   await mounted.controller.investigate("react-1");
   await mounted.close();
   const encoded = telemetry.join("\n");
-  for (const fragment of ["ui.tracesift.process.mean", "ui.tracesift.handoff.mean", "ui.tracesift.message_ack.mean", "ui.tracesift.investigate", "ui.tracesift.cards", '"surface":{"value":"tracesift"', '"view":{"value":"tracesift"']) assert.ok(encoded.includes(fragment), `Missing telemetry: ${fragment}`);
+  for (const fragment of ["ui.tracesift.process.mean", "ui.tracesift.handoff.mean", "ui.tracesift.message_ack.mean", "ui.tracesift.investigate", "ui.tracesift.cards", "ui.tracesift.payload.mean", "ui.tracesift.explore", '"tracesift_view":{"value":"explorer"', '"surface":{"value":"tracesift"', '"view":{"value":"tracesift"']) assert.ok(encoded.includes(fragment), `Missing telemetry: ${fragment}`);
   for (const fragment of ["src/Screen.tsx", "List used 30 ms", "private-analysis", "react-1", "PRIVATE_HANDOFF_TEXT"]) assert.equal(encoded.includes(fragment), false, `Private TraceSift data reached telemetry: ${fragment}`);
 });

@@ -5,6 +5,8 @@ import { androidCpuSourceHash } from "./build-android-cpu.mjs";
 import { baguetteTelemetrySourceHash } from "./rebuild-baguette.mjs";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { buildServeEmu } from "./build-serve-emu.mjs";
+import { exploreUILayerCSS } from "./explore-css.mjs";
+import { sharedNodeModules } from "./shared-node-modules.mjs";
 import { build } from "esbuild";
 import { sentryEsbuildPlugin } from "@sentry/node/esbuild";
 import SentryCli from "@sentry/cli";
@@ -110,8 +112,12 @@ await writeFile("skills/agent-device/references/workflow.md", workflow);
 await buildServeEmu("dist/serve-emu");
 const app = await build({
   entryPoints: ["src/ui/app.tsx"], jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
+  // The Explore package arrives as a `file:` link during development, and esbuild
+  // resolves a link to its real path, where the TraceSift checkout has its own
+  // React. One page may own exactly one React, so both are pinned to this one.
+  alias: { react: resolve("node_modules/react"), "react-dom": resolve("node_modules/react-dom") },
   loader: { ".woff2": "dataurl", ".woff": "dataurl" },
-  plugins: [{ name: "shadcn-theme", setup(build) {
+  plugins: [sharedNodeModules("."), { name: "shadcn-theme", setup(build) {
     build.onLoad({ filter: /theme\.css$/ }, async ({ path }) => {
       const compiler = await compile(await readFile(path, "utf8"), { base: dirname(path), onDependency() {} });
       const scanner = new Scanner({ sources: [{ base: resolve("src/ui"), pattern: "**/*.{ts,tsx}", negated: false }] });
@@ -127,9 +133,14 @@ for (const file of app.outputFiles) await writeFile(file.path, file.contents);
 const cli = new SentryCli();
 await cli.execute(["sourcemaps", "inject", ".sentry/ui"]);
 const js = await readFile(".sentry/ui/app.js", "utf8");
-const css = app.outputFiles.find(file => file.path.endsWith(".css"))?.text ?? "";
+// The Explore view's own sheet is already compiled by its package, so it joins
+// the inlined styles after the plugin's foundation rather than through it.
+const css = `${app.outputFiles.find(file => file.path.endsWith(".css"))?.text ?? ""}\n${await exploreUILayerCSS()}`;
 const template = await readFile("src/ui/index.html", "utf8");
 const configuredTemplate = template.replace('name="mobile-dev-environment" content="development"', `name="mobile-dev-environment" content="${telemetryEnvironment}"`);
+// The inlined sheets must not be able to close their own tag: esbuild escapes
+// the script side, and the explore package's compiled CSS needs the same check.
+if (css.includes("</style")) throw new Error("An inlined stylesheet contains a </style sequence and cannot be folded into app.html.");
 await writeFile("dist/app.html", configuredTemplate
   .replace("<!-- APP_STYLE -->", () => `<style>${css}</style>`)
   .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}\n//# sourceURL=app:///mobile-dev-ui.js\n</script>`));

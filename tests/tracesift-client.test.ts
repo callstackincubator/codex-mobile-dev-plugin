@@ -40,6 +40,7 @@ async function fixture(mode = 0o600, healthInstance = instance) {
         card: { ...card, tree: { id: "n0", name: "render", frameClass: "app", totalMs: 60, selfMs: 2, invocations: 2, children: [] },
           timeline: { boxes: [], durationMs: 80, coveredMs: 60, rows: 1, kept: ["app"], omittedBoxCount: 0, omittedBoxMs: 0 } } }));
     }
+    else if (path.endsWith("/react-explore")) response.end(JSON.stringify({ apiVersion: 1, analysisId: "analysis-1", title: "Profile", explore: { commits: [{ index: 0 }] }, cards: [{ id: "react-commit-1-0" }] }));
     else if (path.endsWith("/handoff")) { let body = ""; for await (const chunk of request) body += chunk; requests.at(-1)!.body = body; response.end(JSON.stringify({ apiVersion: 1, handoff: "Investigate render using the measured stack." })); }
     else response.writeHead(404).end('{}');
   });
@@ -89,6 +90,55 @@ test("TraceSift client persists compact findings and invokes the Explore CLI wit
   await client.openReactExplore("analysis-1", 7, 12);
   const reactArgs = (await readFile(argsPath, "utf8")).trim().split("\n");
   assert.deepEqual(reactArgs.slice(2), ["--commit", "7.12"]);
+});
+
+test("TraceSift client fetches one task's full tree through the integration API", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const client = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => client.close());
+  const handoff = await client.exploreTask("analysis-1", 0);
+  assert.equal(handoff.analysisId, "analysis-1");
+  assert.equal(handoff.profileTitle, "Profile");
+  assert.equal((handoff.card as { tree: { id: string } }).tree.id, "n0");
+  const request = fake.requests.find(entry => entry.path.endsWith("/task"));
+  assert.equal(request?.body, "analysisId=analysis-1&taskIndex=0");
+  assert.equal(request?.authorization, `Bearer ${token}`);
+});
+
+test("TraceSift client fetches a React commit timeline and keeps its shape only at the seams", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const client = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => client.close());
+  const handoff = await client.exploreReact("analysis-1");
+  assert.equal(handoff.profileTitle, "Profile");
+  assert.deepEqual(handoff.explore, { commits: [{ index: 0 }] });
+  assert.deepEqual(handoff.cards, [{ id: "react-commit-1-0" }]);
+  assert.ok(fake.requests.some(entry => entry.path.endsWith("/react-explore")));
+});
+
+test("TraceSift client refuses a task response with no tree to explore", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const client = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => client.close());
+  const original = fake.server.listeners("request")[0] as (...args: unknown[]) => void;
+  fake.server.removeAllListeners("request");
+  fake.server.on("request", (request, response) => {
+    const path = new URL(request.url!, "http://localhost").pathname;
+    if (path.endsWith("/task")) { response.setHeader("Content-Type", "application/json").end(JSON.stringify({ apiVersion: 1, analysisId: "analysis-1", totalMs: 1, title: "P", card: { id: "task-0" } })); return; }
+    if (path.endsWith("/health")) { response.setHeader("Content-Type", "application/json").end(JSON.stringify({ apiVersion: 1, instance })); return; }
+    void original(request, response);
+  });
+  await assert.rejects(client.exploreTask("analysis-1", 0), /invalid task response/);
+});
+
+test("TraceSift client keeps the expired-analysis error the card can act on", async t => {
+  const fake = await fixture(); t.after(fake.close);
+  const client = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => client.close());
+  const original = fake.server.listeners("request")[0] as (...args: unknown[]) => void;
+  fake.server.removeAllListeners("request");
+  fake.server.on("request", (request, response) => {
+    const path = new URL(request.url!, "http://localhost").pathname;
+    if (path.endsWith("/task")) { response.writeHead(404, { "Content-Type": "application/json" }).end('{"error":"This analysis is no longer available (it may have expired)."}'); return; }
+    void original(request, response);
+  });
+  await assert.rejects(client.exploreTask("gone", 0), (error: unknown) => error instanceof TraceSiftError && /no longer available/.test(error.message));
 });
 
 test("TraceSift client restores the analysis registered for a stable host view after restart", async t => {
