@@ -4615,9 +4615,9 @@ export async function buildAppFlow(
         emit(projectId, onEvent, {
           type: 'step',
           phase: 'states',
-          message: `Exploring states for ${node.urlPath}`,
-          completed: i + 1,
-          total: hintedNodes.length
+          message: `Exploring states for ${node.urlPath} (${i + 1} of ${hintedNodes.length})`
+          // No completed/total: the panel's sweep summary is the capture phase's screen count, and
+          // the hinted-route tally would overwrite that denominator for the rest of the run.
         })
 
         if (statesDone.has(node.id)) continue

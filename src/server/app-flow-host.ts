@@ -8,6 +8,7 @@ import * as Sentry from "@sentry/node";
 import type { AppFlowHostEvent, AppFlowHostPorts } from "../app-flow/host.ts";
 import { AppFlowRunStore, type SharedAppFlowRun } from "./app-flow-run-store.ts";
 import { captureServerError } from "./telemetry.ts";
+import { ExpectedOperationError } from "../shared/error-reporting.ts";
 
 const DEFAULT_INACTIVITY_MS = 15 * 60_000;
 const MAX_HISTORY_ITEMS = 6;
@@ -757,7 +758,19 @@ export async function createAppFlowHost(options: {
       activeDecisions = undefined;
       return result;
     },
-    launchApp: selectedProjectPath => flow.launchApp(selectedProjectPath),
+    // Raise a failed launch the same way `start` does, and for the same reason: the panel decides
+    // whether a call failed from the tool result's `isError`, which only a throw through `safe()`
+    // sets. Returned as a value, every failure after the device boots — the scheme prompt, a Metro
+    // cold start, an install race — reached the user as a successful launch of an app that never
+    // came up, which is indistinguishable from "it only booted the simulator".
+    async launchApp(selectedProjectPath) {
+      const launched = await flow.launchApp(selectedProjectPath);
+      if (launched.ok) return launched;
+      // Benign states of the surface (a second click, a project with no routes) are raised so the
+      // panel shows them, but tagged so the reporter counts them instead of filing an exception.
+      if (launched.expected) throw new ExpectedOperationError("invalid_input", launched.error);
+      throw new Error(launched.error);
+    },
     async resolvePrompt(selectedRunId, selectedResolution, promptId, selectedProjectPath) {
       const run = runs.get(selectedRunId);
       if (!run) {

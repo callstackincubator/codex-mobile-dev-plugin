@@ -25,7 +25,14 @@ export function createAppFlowService(host: AppFlowHostPorts): {
   ) => Promise<{ exists: boolean; projectId: string; manifest?: unknown; error?: string }>
   getResult: (projectPath: string) => Promise<unknown | null>
   start: (options: StartAppFlowInput) => Promise<{ ok: true } | { ok: false; error: string }>
-  launchApp: (projectPath: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  /**
+   * `expected: true` marks a refusal that is a normal state of the surface rather than a fault —
+   * a second click while the first is still launching, or a project with no routes to open. The
+   * host still raises it so the panel shows it, but it is not worth an exception report.
+   */
+  launchApp: (
+    projectPath: string
+  ) => Promise<{ ok: true } | { ok: false; error: string; expected?: boolean }>
   isAppLaunched: (projectPath: string) => Promise<boolean>
   pause: (projectPath: string) => Promise<{ paused: boolean }>
   cancel: (projectPath: string) => Promise<{ cancelled: boolean }>
@@ -49,16 +56,22 @@ export function createAppFlowService(host: AppFlowHostPorts): {
     launchApp: async (projectPath: string) => {
       const projectId = getProjectId(projectPath)
       if (builders.get(projectId)?.isRunning()) {
-        return { ok: false, error: 'App flow build already in progress.' }
+        return { ok: false, error: 'App flow build already in progress.', expected: true }
       }
-      if (launching.has(projectId)) return { ok: false, error: 'App is already launching.' }
+      if (launching.has(projectId)) {
+        return { ok: false, error: 'App is already launching.', expected: true }
+      }
       launching.add(projectId)
       try {
         const parsed = await parseProject(projectPath)
         if (!parsed) {
+          // No project path in the message: this reaches the panel and, through the tool's error
+          // channel, the error reporter. The user already knows which project they picked.
           return {
             ok: false,
-            error: `No supported Expo Router or React Navigation routes found in ${projectPath}.`
+            error:
+              'No supported Expo Router or React Navigation routes were found in the selected project.',
+            expected: true
           }
         }
         const previous = launchedApps.get(projectId)

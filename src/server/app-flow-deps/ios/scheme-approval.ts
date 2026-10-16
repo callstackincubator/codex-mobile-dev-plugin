@@ -20,27 +20,51 @@ const OPEN_IN_PROMPT_RE = /\bopen in\b/i
 const OPEN_IN_PROMPT_TIMEOUT_MS = 15_000
 
 /**
- * Simulators on which a scheme's launch-services approval has been written. The approval is a
- * device-level fact (one `defaults write` per scheme per simulator), so it belongs here rather than
- * on any one capture or profiling session: a later session opening the same scheme on the same
- * simulator is equally covered, and equally has no prompt to look for.
+ * Simulators on which a scheme's launch-services approval has been written, and whether an open has
+ * since confirmed that the approval took effect. The approval is a device-level fact (one `defaults
+ * write` per scheme per simulator), so it belongs here rather than on any one capture or profiling
+ * session: a later session opening the same scheme on the same simulator is equally covered, and
+ * equally has no prompt to look for.
+ *
+ * `pending` exists because writing the approval and opening the URL happen in the same breath. On a
+ * simulator that booted seconds ago, `launchservicesd` has not read the write back by the time the
+ * open lands, so the *first* open after a write still gets the "Open in …?" sheet. Treating the
+ * write as proof would skip the one probe that can clear it, and the user sees the simulator boot
+ * with the app never coming up — the second click then works, because the OS has caught up.
  */
-const preapprovedSchemes = new Set<string>()
+const schemeApprovals = new Map<string, 'pending' | 'approved'>()
 
 function preapprovalKey(udid: string, scheme: string): string {
   return `${udid}\u0000${scheme.toLowerCase()}`
 }
 
 /**
- * Whether this simulator has already been taught to open `url`'s scheme without asking.
+ * Whether this simulator has already been taught to open `url`'s scheme without asking *and* an
+ * open has confirmed it.
  *
  * Callers use it to skip the "Open in …?" probe entirely. That probe is the single most expensive
- * thing a sweep can do when it is not needed — see `OPEN_IN_PROMPT_TIMEOUT_MS`.
+ * thing a sweep can do when it is not needed — see `OPEN_IN_PROMPT_TIMEOUT_MS` — so it stays worth
+ * skipping, just not before the approval has been shown to work once.
  */
 export function isUrlSchemePreapproved(udid: string | null | undefined, url: string): boolean {
   const scheme = urlSchemeFromUrl(url)
   if (!scheme || !udid?.trim()) return false
-  return preapprovedSchemes.has(preapprovalKey(udid, scheme))
+  return schemeApprovals.get(preapprovalKey(udid, scheme)) === 'approved'
+}
+
+/**
+ * Records that an open of `url` on this simulator found no "Open in …?" sheet left to clear, so the
+ * written approval is now in force and later opens can skip the probe.
+ */
+export function markUrlSchemeApproved(udid: string | null | undefined, url: string): void {
+  const scheme = urlSchemeFromUrl(url)
+  if (!scheme || !udid?.trim()) return
+  schemeApprovals.set(preapprovalKey(udid, scheme), 'approved')
+}
+
+/** Test seam: drops every remembered approval so cases do not leak state into one another. */
+export function resetUrlSchemeApprovals(): void {
+  schemeApprovals.clear()
 }
 
 export interface IosSchemeApprovalClient {
@@ -97,24 +121,34 @@ export async function preapproveIosUrlScheme(options: {
   udid: string
   url: string
   bundleId: string
+  /** Test seam for the `defaults write`; defaults to `xcrun simctl spawn …`. */
+  writeApproval?: (write: { udid: string; scheme: string; bundleId: string }) => Promise<void>
 }): Promise<boolean> {
   if (!shouldPreapproveUrlScheme(options.url)) return false
   const scheme = urlSchemeFromUrl(options.url)
   if (!scheme || !options.udid.trim() || !options.bundleId.trim()) return false
 
   try {
-    await execFileAsync('xcrun', [
-      'simctl',
-      'spawn',
-      options.udid,
-      'defaults',
-      'write',
-      APPROVAL_DOMAIN,
-      schemeApprovalKey(scheme),
-      '-string',
-      options.bundleId
-    ])
-    preapprovedSchemes.add(preapprovalKey(options.udid, scheme))
+    if (options.writeApproval) {
+      await options.writeApproval({ udid: options.udid, scheme, bundleId: options.bundleId })
+    } else {
+      await execFileAsync('xcrun', [
+        'simctl',
+        'spawn',
+        options.udid,
+        'defaults',
+        'write',
+        APPROVAL_DOMAIN,
+        schemeApprovalKey(scheme),
+        '-string',
+        options.bundleId
+      ])
+    }
+    // Pending, not approved: `launchservicesd` has not necessarily read this back yet, and the very
+    // open this write is for may still land on the sheet. One probe decides it — see
+    // `schemeApprovals` and `markUrlSchemeApproved`.
+    const key = preapprovalKey(options.udid, scheme)
+    if (schemeApprovals.get(key) !== 'approved') schemeApprovals.set(key, 'pending')
     return true
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

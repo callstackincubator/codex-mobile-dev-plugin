@@ -27,6 +27,15 @@ const POLL_INTERVAL_MS = 1_000;
 /** How often a live sweep may re-read the graph document. The server publishes it on a similar
  *  cadence; refreshing faster would serialize an unchanged document over the bridge. */
 const LIVE_RESULT_REFRESH_MS = 5_000;
+/**
+ * The run event channel carries two incompatible seq spaces: in-process events are numbered by a
+ * counter that starts at 1, while the durable cross-process replay stamps `Date.parse(updatedAt)`
+ * — epoch milliseconds. A single cursor over both is poisoned by the first durable event (it jumps
+ * to ~1.7e12 and discards every in-process event for that run forever), so each space keeps its own
+ * cursor and this floor is what tells them apart. No plausible in-process counter reaches it, and no
+ * timestamp falls below it.
+ */
+const DURABLE_SEQ_FLOOR = 1e12;
 
 export class AppFlowPanel {
   private readonly app: App;
@@ -41,7 +50,18 @@ export class AppFlowPanel {
   private polledRunId?: string | null;
   private polledRecordingNode: string | null = null;
   private runSeq = 0;
+  private durableSeq = 0;
   private manualSeq = 0;
+  /**
+   * Monotonic token for "the panel asked for a new sweep". A status response that was already in
+   * flight when the request happened describes the run being replaced, so it is dropped rather
+   * than adopted.
+   */
+  private startEpoch = 0;
+  /** The runId the pending sweep replaces. Status keeps answering with it (a paused run is still
+   *  "active", an orphaned Codex-owned run is reconciled to "failed" with its id attached), and
+   *  adopting it pins the panel to a dead run whose successor's events are then all dropped. */
+  private abandonedRunId: string | null = null;
   private lastLiveResultRefreshAt = Number.NEGATIVE_INFINITY;
   private urls = new Map<string, string>();
   readonly recording: AppFlowRecordingStore;
@@ -78,7 +98,11 @@ export class AppFlowPanel {
     // counter restarts too, so the sweep cursor must restart with it.
     if (this.snapshot.runId !== this.polledRunId) {
       this.polledRunId = this.snapshot.runId;
-      if (this.snapshot.runId) this.runSeq = 0;
+      // Clearing the id must restart the cursors too: the next run starts a fresh server-side
+      // buffer whose counter also starts at 1, so a cursor left at the finished run's height
+      // swallowed the new run's opening events.
+      this.runSeq = 0; this.durableSeq = 0;
+      if (this.snapshot.runId) this.abandonedRunId = null;
     }
     for (const listener of this.listeners) listener();
     this.schedulePoll();
@@ -181,6 +205,8 @@ export class AppFlowPanel {
     const revision = ++this.loadRevision;
     clearTimeout(this.agentStartTimer); this.agentStartTimer = undefined; this.progressStartedAt = undefined;
     this.lastLiveResultRefreshAt = Number.NEGATIVE_INFINITY;
+    // Another project's run is not the one being replaced, and its status is not stale for this one.
+    this.startEpoch++; this.abandonedRunId = null;
     this.update({ projectPath: path, runId: null, projectId: "", state: "idle", result: null, progress: null, sweepSummary: null, prompt: null, error: null, agentStartPending: false });
     if (!path || !this.snapshot.available) return;
     try {
@@ -236,7 +262,12 @@ export class AppFlowPanel {
     const projectPath = this.snapshot.projectPath.trim();
     if (!projectPath) return;
     this.progressStartedAt = performance.now();
-    this.update({ state: "running", error: null, progress: null, sweepSummary: null, prompt: null });
+    // Retire the previous run the same way `requestAgentStart` does. Keeping its id here meant the
+    // new run's events were dropped by the ingest guard (while still advancing the seq cursor past
+    // them) until the id finally changed, so the panel only recovered if the server's bounded
+    // buffer had not rolled in the meantime.
+    this.startEpoch++; this.abandonedRunId = this.snapshot.runId ?? this.abandonedRunId;
+    this.update({ runId: null, state: "running", error: null, progress: null, sweepSummary: null, prompt: null });
     const startedAt = performance.now();
     try {
       const response = await this.call("mobile_appflow_start", { projectPath, ...options });
@@ -267,6 +298,15 @@ export class AppFlowPanel {
     // a live run that may never begin (and the agent may decline). `agentStartPending` is what
     // drives the pending affordance and keeps `pollNeeded` polling, and the first real event — or
     // the status discovery it unblocks — sets the honest state a moment later.
+    //
+    // Clearing the id is necessary but not sufficient: `pollEvents` fires about a second later,
+    // usually before Codex has called `mobile_appflow_start`, and the project-scoped status it uses
+    // for discovery still answers with the PREVIOUS run — a paused run is still returned by the
+    // active-run finder, and an orphaned Codex-owned run is returned reconciled to "failed", both
+    // carrying their runId. Adopting it pinned the panel back onto the dead run, which is why the
+    // display only unfroze when the user switched projects. The epoch and the abandoned id below
+    // are what make the adoption site reject those answers.
+    this.startEpoch++; this.abandonedRunId = this.snapshot.runId ?? this.abandonedRunId;
     this.update({ runId: null, progress: null, sweepSummary: null, prompt: null });
     const input = { projectPath, ...options, mode: "screen-ui-and-structure" satisfies AppFlowBuildMode };
     const prompt = `Start an App Flow screen sweep with mobile_appflow_start using these exact arguments, then service its mobile_appflow_next_decision and mobile_appflow_submit_decision loop until the run completes, fails, is cancelled, is suspended, or needs user action. Do not resolve a human auth/review prompt yourself.\n\n${JSON.stringify(input)}`;
@@ -365,19 +405,32 @@ export class AppFlowPanel {
     let { runId, state } = this.snapshot;
     const projectPath = this.snapshot.projectPath;
     // A Codex-started sweep has no runId here: the follow-up message only reaches the server a
-    // moment later, so status-by-project is what discovers it. Only a response naming a run is
-    // adopted — the same call without an active run answers with the previous run's persisted
-    // status, which would flicker the panel back to the old map. After that the event buffer
-    // takes over, and its `complete`/`error` events carry the terminal state.
+    // moment later, so status-by-project is what discovers it. The same call is not a reliable
+    // "is anything running" question, though — it also answers with the run this start replaces,
+    // and it does so with a runId attached whenever that run is suspended/paused or was an
+    // orphaned Codex-owned run reconciled to "failed". Adopting one of those pins the panel to a
+    // dead run and the ingest guard then drops every event the real new run produces.
+    //
+    // So a runId the panel is not already following is adopted only when the run it names is
+    // actually live, and never when it is the run this start is replacing. Updates about the run
+    // already being followed stay unconditional, so a pause or a late terminal state still lands.
+    // After adoption the event buffer takes over and its `complete`/`error` events carry the
+    // terminal state.
+    const epoch = this.startEpoch;
     if (((!runId && this.snapshot.agentStartPending) || state === "running" || state === "needs-user-action") && projectPath !== "") {
       try {
         const response = await this.call("mobile_appflow_status", { projectPath });
         const data = object(response.structuredContent) ?? {};
-        if (!this.disposed && typeof data.runId === "string" && typeof data.state === "string") {
-          this.update({ runId: data.runId, state: data.state as AppFlowRunState });
-          const event = object(data.event);
-          if (event && (event.type !== "prompt" || data.state === "needs-user-action")) this.ingest({ runId: data.runId, event });
-          ({ runId, state } = this.snapshot);
+        // A status read that was in flight when a new sweep was requested describes the old run.
+        if (!this.disposed && epoch === this.startEpoch && typeof data.runId === "string" && typeof data.state === "string") {
+          const statusRunId = data.runId, statusState = data.state as AppFlowRunState;
+          const live = statusState === "running" || statusState === "needs-user-action";
+          if (statusRunId === this.snapshot.runId || (live && statusRunId !== this.abandonedRunId)) {
+            this.update({ runId: statusRunId, state: statusState });
+            const event = object(data.event);
+            if (event && (event.type !== "prompt" || statusState === "needs-user-action")) this.ingest({ runId: statusRunId, event });
+            ({ runId, state } = this.snapshot);
+          }
         }
       } catch {
         // Retried on the next tick.
@@ -425,9 +478,21 @@ export class AppFlowPanel {
     const event = object(envelope.event);
     if (!event || typeof event.type !== "string") return;
     const manual = typeof event.nodeId === "string";
+    const envelopeRunId = typeof envelope.runId === "string" ? envelope.runId : undefined;
+    // Decide whether this event belongs to the run being followed BEFORE the cursor moves, so an
+    // event that is about to be dropped cannot carry the cursor past events that do belong. While
+    // no run is followed (between a start request and the new run's first event) anything from the
+    // run that start replaces is refused, otherwise a late straggler re-adopts the dead run.
+    if (!manual && envelopeRunId !== undefined
+      && (this.snapshot.runId ? envelopeRunId !== this.snapshot.runId : envelopeRunId === this.abandonedRunId)) return;
     const seq = typeof envelope.seq === "number" ? envelope.seq : undefined;
     if (seq !== undefined) {
       if (manual) { if (seq <= this.manualSeq) return; this.manualSeq = seq; }
+      // Durable cross-process replay numbers its event by timestamp, so it shares no ordering with
+      // the in-process counter the poll cursor is sent as. Folding it into `runSeq` pushed the
+      // cursor past every in-process seq this run could ever produce, and the server's own
+      // `seq > since` filter then withheld them too — a second, permanent way to freeze.
+      else if (seq >= DURABLE_SEQ_FLOOR) { if (seq <= this.durableSeq) return; this.durableSeq = seq; }
       else { if (seq <= this.runSeq) return; this.runSeq = seq; }
     }
     if (manual) {
@@ -435,7 +500,6 @@ export class AppFlowPanel {
       if (event.type === "complete") void this.refreshResult({ projectPath: this.snapshot.projectPath }).catch(error => this.update({ error: error instanceof Error ? error.message : String(error) }));
       return;
     }
-    if (this.snapshot.runId && typeof envelope.runId === "string" && envelope.runId !== this.snapshot.runId) return;
     const progress = event as unknown as AppFlowProgressEvent;
     clearTimeout(this.agentStartTimer); this.agentStartTimer = undefined;
     const summary = progress.completed !== undefined && progress.total !== undefined

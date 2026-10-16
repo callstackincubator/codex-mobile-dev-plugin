@@ -7,6 +7,7 @@ import type { AppFlowNode, AppFlowPressable, AppFlowStep, ExplorationMode } from
 import {
   acceptOpenInAppPrompt,
   isUrlSchemePreapproved,
+  markUrlSchemeApproved,
   preapproveIosUrlScheme,
   shouldPreapproveUrlScheme
 } from '../server/app-flow-deps/ios/scheme-approval.ts'
@@ -1110,8 +1111,11 @@ async function openAppSession(
 /**
  * Clears the simulator's first-open "Open in <app>?" confirmation, when there is one to clear.
  *
- * Skipped outright once `preapproveIosUrlScheme` has written the scheme's launch-services approval
- * for this simulator: there is then no prompt to find, and looking for one is not free. The probe
+ * Skipped outright once an open on this simulator has confirmed the scheme's launch-services
+ * approval is in force: there is then no prompt to find, and looking for one is not free. Writing
+ * the approval is deliberately *not* enough — `launchservicesd` can still be serving the old answer
+ * for the very open the write was for, which is exactly the first launch after a cold boot, so the
+ * first open after a write still probes and `markUrlSchemeApproved` promotes it. The probe
  * runs an `alert` command, whose main-thread block enumerates SpringBoard while the app it just
  * launched is still cold — the runner abandons that block when the enumeration outlives its budget,
  * and then refuses every snapshot behind it with RUNNER_BUSY until it drains. On this sweep that
@@ -1130,6 +1134,9 @@ async function dismissOpenInAppPrompt(device: CaptureDevice, url?: string | null
   const result = await acceptOpenInAppPrompt(device.client)
   if (result === 'accepted' || result === 'absent') {
     device.schemePromptChecked = true
+    // Either there was no sheet or it is gone, so the written approval is in force from here on and
+    // every later open on this simulator can skip the probe.
+    markUrlSchemeApproved(device.deviceId, url)
   }
   log('ios open-in prompt', result)
 }
@@ -1530,82 +1537,92 @@ export async function bootDevice(ctx: CaptureContext): Promise<CaptureDevice> {
   let metroPort: number
   let metroLogPath: string | null = null
   let reusedNativeBuild = false
-  if (mode === 'native-run') {
-    const reusable = await resolveReusableNativeBuild(client, ctx, bootResult.id)
-    if (reusable) {
-      log('installNativeApp', `skipped — ${reusable} already installed and unchanged`)
-      reusedNativeBuild = true
+  try {
+    if (mode === 'native-run') {
+      const reusable = await resolveReusableNativeBuild(client, ctx, bootResult.id)
+      if (reusable) {
+        log('installNativeApp', `skipped — ${reusable} already installed and unchanged`)
+        reusedNativeBuild = true
+        const metro = await ensureMetro(ctx)
+        launchProcess = metro.child
+        metroPort = metro.metroPort
+        metroLogPath = metro.metroLogPath
+      } else {
+        const installed = await installNativeApp(ctx, script, bootResult.id)
+        launchProcess = installed.child
+        metroPort = installed.metroPort ?? 0
+        metroLogPath = installed.metroLogPath
+        if (!metroPort) {
+          throw new Error('Native install finished but Metro did not report a port.')
+        }
+      }
+    } else {
+      const expoGo = await ensureExpoGoInstalled(client, ctx)
+      expoGoTarget = expoGo.launchTarget
+      if (expoGo.installPath) {
+        setupCommands.push(agentDeviceInstallCommand(expoGo.launchTarget, expoGo.installPath))
+      }
       const metro = await ensureMetro(ctx)
       launchProcess = metro.child
       metroPort = metro.metroPort
       metroLogPath = metro.metroLogPath
-    } else {
-      const installed = await installNativeApp(ctx, script, bootResult.id)
-      launchProcess = installed.child
-      metroPort = installed.metroPort ?? 0
-      metroLogPath = installed.metroLogPath
-      if (!metroPort) {
-        throw new Error('Native install finished but Metro did not report a port.')
-      }
+      log('ensureMetro', `started pid=${metro.child.pid} port=${metroPort}`)
     }
-  } else {
-    const expoGo = await ensureExpoGoInstalled(client, ctx)
-    expoGoTarget = expoGo.launchTarget
-    if (expoGo.installPath) {
-      setupCommands.push(agentDeviceInstallCommand(expoGo.launchTarget, expoGo.installPath))
+    const devClientUrl = devClientReconnectUrl(ctx.scheme, mode === 'native-run', metroPort)
+    const { launchTarget, launchUrl, useCustomScheme } = await openInstalledApp(client, ctx, mode, {
+      expoGoTarget,
+      udid: bootResult.id,
+      metroPort,
+      devClientUrl: reusedNativeBuild ? devClientUrl : null
+    })
+    if (mode === 'native-run' && !reusedNativeBuild) {
+      // Hash the sources *after* the build, not before it. `expo run:ios` runs `pod install` and can
+      // rewrite `Podfile.lock` and the Xcode project as part of the build, so a fingerprint taken up
+      // front never matches again and no later session would ever skip.
+      //
+      // `openInstalledApp` has just proved the app is installed — it throws otherwise — so this
+      // records a launch target that is known to be on the device.
+      await nativeBuildStore().record(
+        ctx.projectPath,
+        ctx.platform,
+        bootResult.id,
+        await computeNativeBuildFingerprint(ctx.projectPath, ctx.platform),
+        launchTarget
+      )
     }
-    const metro = await ensureMetro(ctx)
-    launchProcess = metro.child
-    metroPort = metro.metroPort
-    metroLogPath = metro.metroLogPath
-    log('ensureMetro', `started pid=${metro.child.pid} port=${metroPort}`)
-  }
-  const devClientUrl = devClientReconnectUrl(ctx.scheme, mode === 'native-run', metroPort)
-  const { launchTarget, launchUrl, useCustomScheme } = await openInstalledApp(client, ctx, mode, {
-    expoGoTarget,
-    udid: bootResult.id,
-    metroPort,
-    devClientUrl: reusedNativeBuild ? devClientUrl : null
-  })
-  if (mode === 'native-run' && !reusedNativeBuild) {
-    // Hash the sources *after* the build, not before it. `expo run:ios` runs `pod install` and can
-    // rewrite `Podfile.lock` and the Xcode project as part of the build, so a fingerprint taken up
-    // front never matches again and no later session would ever skip.
-    //
-    // `openInstalledApp` has just proved the app is installed — it throws otherwise — so this
-    // records a launch target that is known to be on the device.
-    await nativeBuildStore().record(
-      ctx.projectPath,
-      ctx.platform,
-      bootResult.id,
-      await computeNativeBuildFingerprint(ctx.projectPath, ctx.platform),
-      launchTarget
+    log(
+      'bootDevice done',
+      `launchTarget=${launchTarget} launchUrl=${launchUrl ?? 'none'} devClientUrl=${devClientUrl ?? 'none'} metroPort=${metroPort} metroLog=${metroLogPath ?? 'none'} useCustomScheme=${useCustomScheme} nativeBuild=${mode === 'native-run' ? (reusedNativeBuild ? 'reused' : 'built') : 'n/a'}`
     )
-  }
-  log(
-    'bootDevice done',
-    `launchTarget=${launchTarget} launchUrl=${launchUrl ?? 'none'} devClientUrl=${devClientUrl ?? 'none'} metroPort=${metroPort} metroLog=${metroLogPath ?? 'none'} useCustomScheme=${useCustomScheme} nativeBuild=${mode === 'native-run' ? (reusedNativeBuild ? 'reused' : 'built') : 'n/a'}`
-  )
 
-  const device: CaptureDevice = {
-    client,
-    deviceId: bootResult.id,
-    deviceName: bootResult.device,
-    launchProcess,
-    metroPort,
-    metroLogPath,
-    launchTarget,
-    launchUrl,
-    devClientUrl,
-    useCustomScheme,
-    setupCommands,
-    schemePromptChecked: false,
-    lastRead: null,
-    lastRouteOpenAt: null,
-    pendingEntryGate: false
+    const device: CaptureDevice = {
+      client,
+      deviceId: bootResult.id,
+      deviceName: bootResult.device,
+      launchProcess,
+      metroPort,
+      metroLogPath,
+      launchTarget,
+      launchUrl,
+      devClientUrl,
+      useCustomScheme,
+      setupCommands,
+      schemePromptChecked: false,
+      lastRead: null,
+      lastRouteOpenAt: null,
+      pendingEntryGate: false
+    }
+    await dismissOpenInAppPrompt(device, launchUrl)
+    return device
+  } catch (error) {
+    // Everything after Metro starts can throw — the install race, the cold-start wait, the first
+    // open — and when it does there is no `CaptureDevice` for anyone to hand to `closeDevice`, so
+    // the packager we spawned would outlive the failed launch and hold its port against the retry
+    // the user is about to make. Own it here, where it is still reachable.
+    stopLaunchProcess(launchProcess)
+    await endMetroLogFile(metroLogPath)
+    throw error
   }
-  await dismissOpenInAppPrompt(device, launchUrl)
-  return device
 }
 
 function buildUrlPath(node: AppFlowNode, params: Record<string, string>): string {

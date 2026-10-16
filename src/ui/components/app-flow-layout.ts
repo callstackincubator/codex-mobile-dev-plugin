@@ -41,6 +41,38 @@ function placementOf(node: AppFlowNode): Exclude<NodePlacement, "connected"> {
   return status === "ok" || status === "empty-state" ? "deep-link-only" : "uncaptured";
 }
 
+export interface CaptureTally {
+  /** Screens the sweep actually has a screenshot for. */
+  captured: number;
+  /** Screens the sweep attempted and gave up on — `recordUnreached` leaves a capture whose
+   *  `screenshot` is null and whose `note` says why, so a bare capture is not evidence of one. */
+  unableToCapture: number;
+  /** Product screens, chrome excluded: chrome nodes are navigators, never a screen to capture. */
+  total: number;
+  /** Distinct `capture.note` reasons behind `unableToCapture`, in first-seen order. */
+  reasons: string[];
+}
+
+/**
+ * Counts what a finished sweep holds. The sweep summary's `completed` is the queue index — every
+ * route the sweep *tried* — so it reports a full house even when routes failed with "Unresolved
+ * route parameters" and no screenshot.
+ */
+export function captureTally(nodes: AppFlowNode[]): CaptureTally {
+  const tally: CaptureTally = { captured: 0, unableToCapture: 0, total: 0, reasons: [] };
+  for (const node of nodes) {
+    if (node.origin === "chrome") continue;
+    tally.total += 1;
+    const capture = node.capture;
+    if (capture?.screenshot != null) { tally.captured += 1; continue; }
+    if (!capture) continue;
+    tally.unableToCapture += 1;
+    const note = capture.note?.trim();
+    if (note && !tally.reasons.includes(note)) tally.reasons.push(note);
+  }
+  return tally;
+}
+
 export interface Topology {
   positions: Map<string, { x: number; y: number }>;
   placement: Map<string, NodePlacement>;

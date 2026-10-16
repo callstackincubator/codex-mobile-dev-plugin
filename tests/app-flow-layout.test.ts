@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { AppFlowEdge, AppFlowNode, ManualSnapshotNode, ManualSnapshotRect } from "../src/shared/app-flow.ts";
-import { layoutTopology, type ResolvedEdge } from "../src/ui/components/app-flow-layout.ts";
+import { captureTally, layoutTopology, type ResolvedEdge } from "../src/ui/components/app-flow-layout.ts";
 import { isTextInput, layoutWireframe, STATUS_BAR_POINTS } from "../src/ui/components/manual-wireframe.ts";
 
 function screen(id: string, status?: string): AppFlowNode {
@@ -34,6 +34,41 @@ describe("App Flow topology", () => {
     const topology = layoutTopology([screen("A"), screen("B")], [edge("A", "B")], []);
     assert.deepEqual(topology.bandHeadings, []);
     assert.equal(topology.placement.get("B"), "connected");
+  });
+});
+
+describe("App Flow capture tally", () => {
+  function node(id: string, capture: Record<string, unknown> | null, origin?: string): AppFlowNode {
+    return { ...screen(id), capture, ...(origin ? { origin } : {}) } as unknown as AppFlowNode;
+  }
+
+  test("counts a screen as captured only when it has a screenshot", () => {
+    const tally = captureTally([
+      node("Home", { status: "ok", screenshot: "home.png" }),
+      node("Empty", { status: "empty-state", screenshot: "empty.png" }),
+      node("Params", { status: "missing", screenshot: null, captureMethod: "unreached", note: "Unresolved route parameters: id" }),
+      node("Gone", { status: "unavailable", screenshot: null, captureMethod: "unreached", note: "No mounted navigator found" }),
+      node("chrome:tabs", { status: "ok", screenshot: "tabs.png" }, "chrome"),
+      node("Untouched", null)
+    ]);
+    assert.deepEqual({ captured: tally.captured, unableToCapture: tally.unableToCapture, total: tally.total },
+      { captured: 2, unableToCapture: 2, total: 5 });
+    assert.deepEqual(tally.reasons, ["Unresolved route parameters: id", "No mounted navigator found"]);
+  });
+
+  test("de-duplicates reasons and ignores notes on captured screens", () => {
+    const tally = captureTally([
+      node("A", { status: "missing", screenshot: null, note: "No mounted navigator found" }),
+      node("B", { status: "missing", screenshot: null, note: "No mounted navigator found" }),
+      node("C", { status: "ok", screenshot: "c.png", note: "Deep-link fallback" })
+    ]);
+    assert.equal(tally.unableToCapture, 2);
+    assert.deepEqual(tally.reasons, ["No mounted navigator found"]);
+  });
+
+  test("an empty or chrome-only node list has no screens to report", () => {
+    assert.deepEqual(captureTally([]), { captured: 0, unableToCapture: 0, total: 0, reasons: [] });
+    assert.equal(captureTally([node("chrome:tabs", { status: "ok", screenshot: "tabs.png" }, "chrome")]).total, 0);
   });
 });
 

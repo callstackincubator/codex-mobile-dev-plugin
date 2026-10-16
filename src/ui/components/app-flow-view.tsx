@@ -4,6 +4,7 @@ import type { AppFlowBuildMode, DeepLinkJudgeMode, ExplorationMode, StateCapture
 import { FAST_MODE_AUTH_NOTICE } from "../../shared/app-flow.ts";
 import type { AppFlowPanel } from "../app-flow-panel.ts";
 import { AppFlowGraph } from "./app-flow-graph.tsx";
+import { captureTally } from "./app-flow-layout.ts";
 import { AppFlowProjectPicker } from "./app-flow-project-picker.tsx";
 import { Button } from "./ui/button.tsx";
 import { Input } from "./ui/input.tsx";
@@ -31,9 +32,11 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   const isRunning = state.state === "running" || state.state === "needs-user-action";
   const sweepStatus = state.result?.manifest.sweepStatus;
   const isPaused = state.state === "suspended" || sweepStatus === "paused";
-  const captured = useMemo(() => { const nodes = state.result?.nodes.filter(node => node.origin !== "chrome") ?? [];
-    return nodes.length ? { completed: nodes.filter(node => node.capture).length, total: nodes.length } : null; }, [state.result]);
-  const tally = state.sweepSummary ?? captured;
+  /* The headline counts screenshots, not sweep attempts: the sweep summary's `completed` is the
+     queue index, so a route that ended as "Unresolved route parameters" with no screenshot still
+     advanced it. The summary keeps driving the live chip and the "Last step:" line below. */
+  const tally = useMemo(() => { const nodes = state.result?.nodes ?? []; const counts = captureTally(nodes);
+    return counts.total ? counts : null; }, [state.result]);
   const start = () => {
     if (!state.projectPath) return;
     write(`app-flow-mode:${state.projectPath}`, mode);
@@ -90,7 +93,8 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
           : `${state.sweepSummary.completed} / ${state.sweepSummary.total} screens`}
       </span>}</div>}
     {!isRunning && tally && <div className="flex items-center gap-3 border-b bg-muted/20 px-4 py-2"><MapIcon className="size-4" />
-      <div className="min-w-0 flex-1"><div className="text-sm">{isPaused ? "Paused after" : sweepStatus === "stopped" || sweepStatus === "failed" ? "Stopped after" : "Captured"} {tally.completed} of {tally.total} screens</div>
+      <div className="min-w-0 flex-1"><div className="text-sm">{isPaused ? "Paused after" : sweepStatus === "stopped" || sweepStatus === "failed" ? "Stopped after" : "Captured"} {tally.captured} of {tally.total} screens
+        {tally.unableToCapture > 0 && <span className="text-muted-foreground" title={tally.reasons.length ? tally.reasons.join(" · ") : undefined}> · Unable to capture {tally.unableToCapture} screen{tally.unableToCapture === 1 ? "" : "s"}</span>}</div>
         {state.sweepSummary && <div className="truncate text-xs text-muted-foreground">Last step: {state.sweepSummary.message}</div>}</div></div>}
     {state.prompt && <div className="flex flex-wrap items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-4 py-3"><AlertTriangle className="size-4 text-amber-600" />
       <div className="min-w-48 flex-1"><div className="text-sm font-medium">{state.prompt.kind === "auth" ? "Complete auth in the simulator" : "The app needs your help"}</div>

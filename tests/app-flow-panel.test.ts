@@ -370,3 +370,96 @@ test("state capture rides along with the sweep start options", async t => {
   await panel.requestAgentStart({ mode: "screen-ui-and-structure", explorationMode: "fast", stateCaptureMode: "on" });
   assert.match(host.messages[0].content[0].text, /"stateCaptureMode":"on"/);
 });
+
+// The freeze the user reported: the screen-sweep status stopped updating until they switched
+// projects. `requestAgentStart` clears the runId, then the discovery poll fires about a second
+// later — before Codex has called `mobile_appflow_start` — and the project-scoped status still
+// answers with the run being replaced. A paused run is still returned by the server's active-run
+// finder with its id, so adopting it pinned the panel to a dead run and the ingest guard then
+// dropped the real new run's events forever. Switching projects was the only escape.
+test("a paused previous run is not adopted while a new sweep is being started", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app, 5); t.after(() => panel.dispose());
+  panel.setAvailable(true); panel.show(); await settle();
+  await panel.selectProject("/projects/demo");
+  await panel.start({ mode: "structure-only" });
+  host.notify({ source: "app-flow", runId: "run-1", seq: 1, event: { type: "step", phase: "capture", message: "Settings", completed: 14, total: 79 } });
+  host.notify({ source: "app-flow", runId: "run-1", seq: 2, event: { type: "complete", phase: "render", message: "Done", completed: 14, total: 79 } });
+  assert.equal(panel.getSnapshot().runId, "run-1");
+  host.returnsStatus({
+    exists: true, runId: "run-1", projectId: "project-1", state: "suspended",
+    event: { type: "step", phase: "capture", message: "Settings", completed: 14, total: 79 },
+  });
+  await panel.requestAgentStart({ mode: "screen-ui-and-structure", explorationMode: "fast" });
+  await settle(120);
+  assert.equal(panel.getSnapshot().runId, null, "the paused run this start replaces is refused");
+  assert.equal(panel.getSnapshot().sweepSummary, null, "the finished run's tally does not come back");
+  assert.equal(panel.getSnapshot().agentStartPending, true, "the panel is still waiting for the real run");
+  host.notify({ source: "app-flow", runId: "run-2", seq: 1, event: { type: "step", phase: "capture", message: "Home", completed: 1, total: 79 } });
+  assert.equal(panel.getSnapshot().runId, "run-2");
+  assert.equal(panel.getSnapshot().state, "running");
+  assert.equal(panel.getSnapshot().agentStartPending, false);
+  assert.deepEqual(panel.getSnapshot().sweepSummary, { completed: 1, total: 79, message: "Home" });
+});
+
+// The same trap with the server's other runId-bearing answer: a Codex-owned run whose worker
+// exited is reconciled to "failed" and returned WITH its runId.
+test("an orphaned previous run reconciled to failed is not adopted while a new sweep is being started", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app, 5); t.after(() => panel.dispose());
+  panel.setAvailable(true); panel.show(); await settle();
+  await panel.selectProject("/projects/demo");
+  await panel.start({ mode: "structure-only" });
+  host.notify({ source: "app-flow", runId: "run-1", seq: 1, event: { type: "step", phase: "capture", message: "Settings", completed: 14, total: 79 } });
+  host.returnsStatus({
+    exists: true, runId: "run-1", projectId: "project-1", state: "failed",
+    error: "App Flow stopped because its Codex worker exited.",
+    event: { type: "error", phase: "capture", message: "App Flow stopped because its Codex worker exited." },
+  });
+  await panel.requestAgentStart({ mode: "screen-ui-and-structure", explorationMode: "fast" });
+  await settle(120);
+  assert.equal(panel.getSnapshot().runId, null, "a run reconciled to failed is not a run to follow");
+  assert.equal(panel.getSnapshot().agentStartPending, true);
+  host.events([{ seq: 1, runId: "run-2", event: { type: "step", phase: "capture", message: "Home", completed: 1, total: 79 } }]);
+  host.returnsStatus({ exists: true, runId: "run-2", projectId: "project-1", state: "running" });
+  await settle(120);
+  assert.equal(panel.getSnapshot().runId, "run-2", "the live run that follows is adopted normally");
+  assert.equal(panel.getSnapshot().state, "running");
+  assert.deepEqual(panel.getSnapshot().sweepSummary, { completed: 1, total: 79, message: "Home" });
+});
+
+// Durable cross-process replay numbers its event with `Date.parse(updatedAt)`; in-process events
+// use a counter from 1. Sharing one cursor between them pushed it past every in-process seq the
+// run could produce, so the sweep went silent for good.
+test("a durable cross-process event does not push the in-process cursor out of reach", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app, 5); t.after(() => panel.dispose());
+  panel.setAvailable(true); panel.show(); await settle();
+  await panel.selectProject("/projects/demo");
+  await panel.start({ mode: "structure-only" });
+  const durableSeq = Date.parse("2026-10-16T10:00:00.000Z");
+  host.notify({ source: "app-flow", runId: "run-1", seq: durableSeq, event: { type: "step", phase: "capture", message: "Replayed", completed: 2, total: 8 } });
+  assert.deepEqual(panel.getSnapshot().sweepSummary, { completed: 2, total: 8, message: "Replayed" });
+  host.notify({ source: "app-flow", runId: "run-1", seq: 3, event: { type: "step", phase: "capture", message: "Profile", completed: 3, total: 8 } });
+  assert.deepEqual(panel.getSnapshot().sweepSummary, { completed: 3, total: 8, message: "Profile" }, "in-process events keep arriving after a durable replay");
+  // The poll cursor stays in the in-process space, so the server's own `seq > since` filter cannot
+  // withhold those events either.
+  await settle(60);
+  const polls = host.calls.filter(call => call.name === "mobile_appflow_events");
+  assert.ok(polls.every(call => Number(call.arguments?.since ?? 0) < durableSeq), "the poll cursor is never stamped with a timestamp");
+  // A durable event already applied is still deduped on its own cursor.
+  host.notify({ source: "app-flow", runId: "run-1", seq: durableSeq, event: { type: "step", phase: "capture", message: "Replayed", completed: 2, total: 8 } });
+  assert.deepEqual(panel.getSnapshot().sweepSummary, { completed: 3, total: 8, message: "Profile" });
+});
+
+// `start` kept the finished run's id across a second structure build, so the ingest guard dropped
+// the new run's events (while still advancing the cursor past them) until the id happened to change.
+test("a second direct start retires the previous run before the new one begins", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/demo");
+  await panel.start({ mode: "structure-only" });
+  host.notify({ source: "app-flow", runId: "run-1", seq: 1, event: { type: "step", phase: "capture", message: "Settings", completed: 14, total: 79 } });
+  host.notify({ source: "app-flow", runId: "run-1", seq: 2, event: { type: "complete", phase: "render", message: "Done", completed: 14, total: 79 } });
+  await panel.start({ mode: "structure-only" });
+  assert.equal(panel.getSnapshot().sweepSummary, null, "the previous run's tally is cleared, not carried over");
+  // The new run's buffer restarts at seq 1; the old run's cursor must not swallow it.
+  host.notify({ source: "app-flow", runId: "run-1", seq: 1, event: { type: "step", phase: "capture", message: "Home", completed: 1, total: 79 } });
+  assert.deepEqual(panel.getSnapshot().sweepSummary, { completed: 1, total: 79, message: "Home" });
+});

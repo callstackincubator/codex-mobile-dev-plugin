@@ -136,3 +136,35 @@ describe("CodexAppFlowDecisionProvider", () => {
     }
   });
 });
+
+describe("launchApp", () => {
+  it("raises a failed launch instead of answering a success-shaped result", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "mobile-dev-app-flow-"));
+    const projectDir = await mkdtemp(join(tmpdir(), "mobile-dev-app-flow-project-"));
+    temporary.push(dataDir, projectDir);
+    const { createAppFlowHost } = await import("../src/server/app-flow-host.ts");
+    const host = await createAppFlowHost({ dataDir });
+    // A folder with no routes is the cheapest launch failure to reach without a simulator; what is
+    // under test is the channel, not this particular cause. Returned as `{ ok: false }` it reached
+    // the panel through `dataResult`, which never sets `isError`, so the panel took its success
+    // path and the user saw a booted simulator with no app.
+    await assert.rejects(
+      host.services.launchApp(projectDir),
+      /no supported expo router or react navigation routes/i,
+    );
+    await host.services.close?.();
+  });
+
+  it("keeps a local path out of the raised message", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "mobile-dev-app-flow-"));
+    const projectDir = await mkdtemp(join(tmpdir(), "mobile-dev-app-flow-project-"));
+    temporary.push(dataDir, projectDir);
+    const { createAppFlowHost } = await import("../src/server/app-flow-host.ts");
+    const host = await createAppFlowHost({ dataDir });
+    // The raised error now reaches the error reporter through the tool wrapper's `safe()`.
+    const error = await host.services.launchApp(projectDir).then(() => undefined, (cause: unknown) => cause);
+    assert.ok(error instanceof Error);
+    assert.ok(!error.message.includes(projectDir), `message leaked a local path: ${error.message}`);
+    await host.services.close?.();
+  });
+});
