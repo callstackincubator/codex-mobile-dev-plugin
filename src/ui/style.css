@@ -332,3 +332,34 @@ html[data-theme="dark"] .tracesift-results { --series-1: #3987e5; --series-2: #d
 @media (prefers-reduced-motion: reduce) {
   .tracesift-results .contribution-band, .tracesift-results .contribution-tile { transition: none; }
 }
+
+/* ===========================================================================
+   Embedded Explore
+   Only the plugin's own strip is styled here: the call tree, timeline and
+   commit chart are TraceSift's components and arrive with their own compiled
+   stylesheet. The strip is what the card frame adds — the way back and the
+   browser fallback — so it keeps the card's tokens rather than the web page's.
+   =========================================================================== */
+.tracesift-explorer { display: flex; flex-direction: column; gap: 10px; min-height: 0; text-align: left; }
+/* The inset matches the Explore page's own 16px below, so the strip reads as the
+   header of that page rather than a bar welded to the edge of the frame. */
+.tracesift-explorer-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px 10px; border-bottom: 1px solid var(--border); }
+.tracesift-explorer-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
+
+/* `@rozenite/ui` reads its theme off a `.dark` ancestor rather than the
+   document, and its tokens define the surfaces the explorer paints with, so the
+   plugin's `html[data-theme="dark"]` has to hand both over. Its background is
+   the explorer's own, not the plugin page's, so a light-mode host never shows a
+   dark card with white text — and because the flame graph cuts each cell out of
+   its neighbours with `var(--background)`, the surface behind those hairlines
+   has to be the same colour that cuts them. */
+.tracesift-explorer { color-scheme: light; background: var(--background); }
+html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
+
+/* The two figures the package deliberately leaves to its host: `--chart-1` and
+   `--chart-2` are read as `var(--chart-2, #4ade80)` and friends, because on the
+   web page nothing defines them and the fallback stands. This document does
+   define them — as the greys of its own monitoring charts — and a timeline
+   painted in those reads as an empty one, so inside the explorer the fallbacks
+   are written out instead and the recording keeps the web page's colours. */
+.tracesift-explorer { --chart-1: #f87171; --chart-2: #4ade80; }

@@ -304,6 +304,40 @@ export class TraceSiftClient {
     });
   }
 
+  /**
+   * One task with its call tree and timeline, which `/analyze` never ships.
+   *
+   * The full card runs to megabytes, so it is checked only at its seams here and
+   * parsed by the explorer that draws it; re-validating every node on the way
+   * through would cost the reader a second wait for nothing.
+   */
+  async exploreTask(analysisId: string, taskIndex: number, signal?: AbortSignal): Promise<TraceSiftTaskHandoff> {
+    const body = await this.request(`/api/integration/v1/task?analysisId=${encodeURIComponent(analysisId)}&taskIndex=${taskIndex}`, { method: "GET" }, signal);
+    if (typeof body !== "object" || body === null) throw new Error("TraceSift returned an invalid task response.");
+    const value = body as Record<string, unknown>;
+    if (value.apiVersion !== 1 || typeof value.analysisId !== "string"
+      || typeof value.title !== "string" || typeof value.totalMs !== "number" || !Number.isFinite(value.totalMs)
+      || typeof value.card !== "object" || value.card === null || typeof (value.card as Record<string, unknown>).tree !== "object"
+      || (value.card as Record<string, unknown>).tree === null || typeof (value.card as Record<string, unknown>).timeline !== "object"
+      || (value.card as Record<string, unknown>).timeline === null) throw new Error("TraceSift returned an invalid task response.");
+    // The service names the profile `title`; the explorer's hand-off names it
+    // `profileTitle`, so the seam is crossed here and the payload that reaches
+    // the frame is exactly the shape the components are drawn from.
+    return { analysisId: value.analysisId, profileTitle: value.title, totalMs: value.totalMs, card: value.card };
+  }
+
+  /** Every commit timeline of one React analysis, which the explorer switches between itself. */
+  async exploreReact(analysisId: string, signal?: AbortSignal): Promise<TraceSiftReactHandoff> {
+    const body = await this.request(`/api/integration/v1/react-explore?analysisId=${encodeURIComponent(analysisId)}`, { method: "GET" }, signal);
+    if (typeof body !== "object" || body === null) throw new Error("TraceSift returned an invalid commit timeline response.");
+    const value = body as Record<string, unknown>;
+    if (value.apiVersion !== 1 || typeof value.analysisId !== "string" || typeof value.title !== "string"
+      || typeof value.explore !== "object" || value.explore === null || !Array.isArray(value.cards)) {
+      throw new Error("TraceSift returned an invalid commit timeline response.");
+    }
+    return { analysisId: value.analysisId, profileTitle: value.title, explore: value.explore, cards: value.cards };
+  }
+
   async handoff(analysisId: string, cardId: string, signal?: AbortSignal) {
     const parsed = traceSiftHandoffSchema.safeParse(await this.request("/api/integration/v1/handoff", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId, cardId }),

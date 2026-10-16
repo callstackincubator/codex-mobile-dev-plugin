@@ -97,6 +97,50 @@ return an explicit error. Codex owns layout and button labels, so the native for
 does not reproduce custom footer buttons from a design mockup. Thumbnails are
 illustrations, not captured app screens.
 
+## Embedded TraceSift explorer
+
+Pressing **Explore** on a card opens TraceSift's full explorer in the card's own
+frame rather than a browser window. The renderer is not a copy: both TraceSift's
+web page and this plugin import the same components from
+`@callstack/tracesift-explore`, so a drill-down cannot drift from the app that
+produced the numbers.
+
+The card's frame cannot reach the TraceSift service — Codex strips plain HTTP
+origins from widget CSP — so its data rides MCP like everything else here.
+`mobile_tracesift_explore_payload` fetches `/api/integration/v1/task` or
+`/api/integration/v1/react-explore` with the service bearer token and returns the
+payload as one text item plus a small `structuredContent` envelope
+(`apiVersion`, `kind`, `encoding`, `payloadBytes`). A full task card carries its
+whole call tree and timeline, which runs to megabytes, so past 64 KiB the text is
+gzip-compressed base64; a measured 25 MB tree crosses in about 8 ms at a fifth
+of its JSON size. Below that threshold it stays plain JSON. Keeping the tree out
+of structured content avoids the deep-structured-payload failure documented
+above: the SDK and host validate only the envelope, and the iframe inflates and
+parses the payload once into the shapes the explorer draws. Payloads above
+24 MiB are refused before decoding and point at the browser window; the service
+already caps its trees at 60k nodes and 5k commits. Payload size is reported as
+`tracesift.explore.payload_bytes`, which is where an oversized tree shows up
+before a reader reports a spinner.
+
+The same rule applies to the payload's age: it is fetched from the live service,
+so an expired analysis answers with the existing "run it again" error instead of
+a half-drawn tree. **Open in browser** keeps the previous path, which hands the
+selection to `tracesift explore`.
+
+Version skew favours the reader's installed service: payloads are additive-only
+within integration API v1, the explorers ignore fields they do not know, and an
+older service that cannot answer the endpoint fails with an update message. The
+plugin folds the package's one compiled stylesheet into its single HTML bundle,
+after the plugin's own Tailwind layer, so neither build compiles the other's
+sources. That sheet opens by writing its theme tokens to `:root` and `.dark`,
+which would recolor the plugin's cards behind the explorer, so the fold scopes
+both token blocks to `.tracesift-explore` — descendants inherit the custom
+properties, and a block that no longer has the shape the fold expects fails the
+build rather than leaking globally. During development the package is wired in
+with a local `file:` link; the build then resolves its imports from this
+project's install whenever the versions agree, so the bundle never carries a
+second React or a duplicated copy of a shared library.
+
 ## Sources
 
 The implementation follows [Baguette's HTTP and WebSocket routes](https://github.com/tddworks/baguette/blob/v0.2.1/docs/serve.md) and [gesture protocol](https://github.com/tddworks/baguette/blob/v0.2.1/docs/wire.md). The bundled automation server follows [agent-device's official MCP setup](https://github.com/callstack/agent-device#add-mcp-tools-to-your-agent). Native panel metadata follows [OpenAI's plugin extensions](https://developers.openai.com/plugins/build/extensions). The package uses the [portable plugin format](https://developers.openai.com/plugins/build/plugins).
