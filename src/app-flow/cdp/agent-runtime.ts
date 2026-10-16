@@ -184,6 +184,11 @@ export type AgentCommand =
       candidates?: string[] | null
     }
   | {
+      type: 'links'
+      /** Candidate cap for this call; defaults to `LINK_CANDIDATE_CAP`. */
+      max?: number
+    }
+  | {
       type: 'readiness'
       route: string
       expectedParams: Record<string, string> | null
@@ -430,6 +435,156 @@ export function agentNavState(limits: AgentLimits): NavStateReply {
   var found = agentFindNavigator(limits)
   if (!found || !found.state) return { routes: null }
   return { routes: agentFlattenRoutes(found.state) }
+}
+
+/* --------------------------------------------------------------- link harvest */
+
+/** Most link candidates one `links` command may return. Matches the reference runtime's cap. */
+export const LINK_CANDIDATE_CAP = 200
+
+/**
+ * One destination a link element in the tree names.
+ *
+ * `name` and `params` together are the thing the a11y learners structurally cannot assemble: both
+ * halves of a two-param route arrive in a single record, so no precedence rule has to decide which
+ * identifier on screen owned which key.
+ */
+export interface LinkCandidate {
+  /** The route name an object destination named (`screen`). */
+  name?: string
+  /** A routable path, from a string destination or an object's `pathname`. */
+  path?: string
+  /** URL-able values only — strings and finite numbers, as `agentFlattenRoutes` filters them. */
+  params?: Record<string, string>
+}
+
+/** The `links` command's reply. `scanned` and `capped` are host diagnostics, never param values. */
+export interface LinksReply {
+  links: LinkCandidate[]
+  /** Fibers visited by the walk. */
+  scanned: number
+  /** True when the walk stopped on the node budget, the deadline, or the candidate cap. */
+  capped: boolean
+}
+
+/**
+ * The path part of a string destination, or null when there is nothing routable in it.
+ *
+ * Deliberately permissive about the scheme and strict about nothing else: `normalizePath` in
+ * `param-store.ts` owns the real parsing, and this only has to keep obvious non-routes (a label, a
+ * callback stringified by accident, an absolute asset URL) out of the 200-candidate budget.
+ */
+export function agentRoutablePath(value: any): string | null {
+  if (typeof value !== 'string') return null
+  if (!value || value.length > 500) return null
+  if (value.charAt(0) === '/') return value
+  if (/^[a-zA-Z][\w+.-]*:\/\//.test(value)) return value
+  return null
+}
+
+/**
+ * Reads one `href`/`to` prop into a candidate, or null when it names no destination.
+ *
+ * Accepts the two shapes React Navigation and Expo Router apps actually use: a path string, and an
+ * object carrying `screen`/`pathname` alongside `params`. A bare route name with no params is
+ * dropped -- it resolves nothing the navigator state did not already say -- so every candidate
+ * returned is either a path or a name with values attached.
+ */
+export function agentLinkCandidate(href: any): LinkCandidate | null {
+  var candidate: LinkCandidate = {}
+  var asPath = agentRoutablePath(href)
+  if (asPath) {
+    candidate.path = asPath
+    return candidate
+  }
+  if (!href || typeof href !== 'object' || Array.isArray(href)) return null
+  if (typeof href.screen === 'string' && href.screen) candidate.name = href.screen
+  var fromPathname = agentRoutablePath(href.pathname)
+  if (fromPathname) candidate.path = fromPathname
+  var raw = href.params
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    var kept: Record<string, string> = {}
+    var any = false
+    for (var key in raw) {
+      var value = raw[key]
+      if (typeof value === 'string') {
+        kept[key] = value
+        any = true
+      } else if (typeof value === 'number' && isFinite(value)) {
+        kept[key] = String(value)
+        any = true
+      }
+    }
+    if (any) candidate.params = kept
+  }
+  if (candidate.path) return candidate
+  if (candidate.name && candidate.params) return candidate
+  return null
+}
+
+/**
+ * Every destination the mounted tree's link elements name, deduplicated.
+ *
+ * This is the one read that can see a destination the app has **not navigated to yet**. The
+ * navigator state (`agentNavState`) only knows routes the app has actually entered, and the
+ * accessibility harvest can only learn a value that reached a testID; a feed row's `href` carries
+ * `name` and `rkey` together, before anybody presses it, which is exactly what neither of the
+ * other two sources can produce.
+ *
+ * Unlike the readiness walk this one does **not** prune hidden subtrees. An unfocused tab and an
+ * off-screen row still hold their destinations, and those are the ones worth having.
+ *
+ * Bounded exactly like `agentFindNavigator` -- `limits.walkBudget` nodes, `limits.walkDeadlineMs`
+ * of wall clock, a `seen` set for cycles -- because it runs on the app's JS thread. It stops at
+ * `max` candidates rather than walking a whole feed for destinations that will not fit in the
+ * reply, and says so through `capped`.
+ */
+export function agentCollectLinks(limits: AgentLimits, max: number): LinksReply {
+  var stack = agentCollectFiberRoots()
+  var links: LinkCandidate[] = []
+  var keys = new Set()
+  var seen = new Set()
+  var scanned = 0
+  var capped = false
+  var deadline = Date.now() + limits.walkDeadlineMs
+  var budget = limits.walkBudget
+  while (stack.length) {
+    if (budget-- <= 0) {
+      capped = true
+      break
+    }
+    if ((budget & 255) === 0 && Date.now() > deadline) {
+      capped = true
+      break
+    }
+    var fiber = stack.pop()
+    if (!fiber || seen.has(fiber)) continue
+    seen.add(fiber)
+    scanned += 1
+    if (fiber.child) stack.push(fiber.child)
+    if (fiber.sibling) stack.push(fiber.sibling)
+    var props = fiber.memoizedProps
+    if (!props || typeof props !== 'object') continue
+    var href = props.href
+    if (href === undefined || href === null) href = props.to
+    if (href === undefined || href === null) continue
+    var candidate = agentLinkCandidate(href)
+    if (!candidate) continue
+    var key: string
+    try {
+      key = JSON.stringify([candidate.name, candidate.path, candidate.params])
+    } catch (error) {
+      continue
+    }
+    if (keys.has(key)) continue
+    if (links.length >= max) {
+      capped = true
+      break
+    }
+    keys.add(key)
+    links.push(candidate)
+  }
+  return { links: links, scanned: scanned, capped: capped }
 }
 
 /** Where `agentResolveRoutePath` found the requested route, and the path to dispatch for it. */
@@ -1400,6 +1555,12 @@ export function agentInstall(key: string, leaseMs: number, limits: AgentLimits):
           command.candidates || null
         )
       )
+    } else if (type === 'links') {
+      var max =
+        typeof command.max === 'number' && isFinite(command.max) && command.max > 0
+          ? command.max
+          : 200
+      done(agentCollectLinks(limits, max))
     } else if (type === 'readiness') {
       var quiet =
         typeof command.quietMs === 'number' && isFinite(command.quietMs) && command.quietMs >= 0
@@ -1489,6 +1650,9 @@ export const AGENT_FUNCTIONS = {
   agentFindNavigator,
   agentFlattenRoutes,
   agentNavState,
+  agentRoutablePath,
+  agentLinkCandidate,
+  agentCollectLinks,
   agentResolveRoutePath,
   agentNavigate,
   agentStyleFlags,

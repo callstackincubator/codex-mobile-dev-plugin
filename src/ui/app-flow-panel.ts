@@ -253,6 +253,21 @@ export class AppFlowPanel {
     const projectPath = this.snapshot.projectPath.trim();
     if (!projectPath) return;
     this.progressStartedAt = performance.now();
+    // Clear the previous run the same way `start` does. Without this, a second sweep on the same
+    // project (a fresh start or a Resume — the label is cosmetic, both land here) kept the finished
+    // run's id, and that stale id is self-sustaining: `ingest` drops every envelope whose runId
+    // differs from it, the status-by-project discovery in `pollEvents` only runs while the panel
+    // has no runId, and `mobile_appflow_status` answers with no runId once a run is done, so
+    // nothing could ever overwrite it. The panel sat on the old summary and a frozen clock until
+    // the user switched projects. The progress/summary/prompt reset is what unfreezes the display;
+    // the runId reset is what lets the new run's events in at all.
+    //
+    // `state` is deliberately left alone — unlike `start`, nothing has been started here yet. The
+    // prompt only asks the agent to call `mobile_appflow_start`, so claiming "running" would show
+    // a live run that may never begin (and the agent may decline). `agentStartPending` is what
+    // drives the pending affordance and keeps `pollNeeded` polling, and the first real event — or
+    // the status discovery it unblocks — sets the honest state a moment later.
+    this.update({ runId: null, progress: null, sweepSummary: null, prompt: null });
     const input = { projectPath, ...options, mode: "screen-ui-and-structure" satisfies AppFlowBuildMode };
     const prompt = `Start an App Flow screen sweep with mobile_appflow_start using these exact arguments, then service its mobile_appflow_next_decision and mobile_appflow_submit_decision loop until the run completes, fails, is cancelled, is suspended, or needs user action. Do not resolve a human auth/review prompt yourself.\n\n${JSON.stringify(input)}`;
     this.update({ agentStartPending: true, error: null });

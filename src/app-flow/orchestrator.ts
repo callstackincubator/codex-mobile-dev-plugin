@@ -24,6 +24,7 @@ import type {
   AppFlowTrigger,
   DeepLinkJudgeMode,
   ExplorationMode,
+  StateCaptureMode,
   TokenUsage
 } from '../shared/app-flow.ts'
 import { addTokenUsage, carriedSweepDurationMs } from '../shared/app-flow.ts'
@@ -67,7 +68,8 @@ import type { ReachMetricsPort, RenderAvailability } from './reach/ports.ts'
 import { createReachPorts } from './reach/adapters.ts'
 import { CdpConnection, createTargetResolver } from './cdp/connection.ts'
 import { listMetroTargets, type MetroCdpTarget } from './cdp/discovery.ts'
-import type { NavigateReply, NavStateReply, ReadinessReply } from './cdp/agent-runtime.ts'
+import type { LinksReply, NavigateReply, NavStateReply, ReadinessReply } from './cdp/agent-runtime.ts'
+import { LINK_CANDIDATE_CAP } from './cdp/agent-runtime.ts'
 import { agentSource } from './cdp/runtime-source.ts'
 import {
   AUTH_GATE_FRAME_WAIT_MS,
@@ -104,7 +106,7 @@ import {
   decideDelivery,
   type DeliveryScreenshotOutcome
 } from './reach/delivery.ts'
-import { runReachLadder, strategiesFor, type ReachStrategy } from './reach/ladder.ts'
+import { runReachLadder, strategiesFor, touchedDevice, type ReachStrategy } from './reach/ladder.ts'
 import {
   NAVIGATION_SYSTEM_PROMPT,
   RUNTIME_SCREEN_SYSTEM_PROMPT,
@@ -201,6 +203,7 @@ import {
 } from './nav-state.ts'
 import { NAV_STATE_SPECULATIVE_READS, selectNavStateWaiters } from './nav-state-gate.ts'
 import { resolveNavRouteTarget } from './nav-route-target.ts'
+import { ingestLinkCandidates } from './link-harvest.ts'
 import { runShellCommand } from './shell.ts'
 import {
   agentDeviceCdp,
@@ -337,6 +340,13 @@ export interface AppFlowBuildOptions {
    * what stands in for the judge's `status: 'not-found'` when it is `off`.
    */
   deepLinkJudgeMode?: DeepLinkJudgeMode
+  /**
+   * Whether the sweep runs its runtime state-variant pass. Omitted means `off`, in every
+   * exploration mode — including auto and thorough, which used to run the pass unconditionally.
+   * Consumed at exactly one place, the states pass below (`stateCaptureOn`), which selects the
+   * hinted nodes and decides whether the phase is announced at all. See `StateCaptureMode`.
+   */
+  stateCaptureMode?: StateCaptureMode
   /** An app the user already launched. The sweep adopts it instead of building and booting again. */
   launchedDevice?: CaptureDevice
   onEvent(event: AppFlowProgressEvent): void
@@ -1072,11 +1082,17 @@ export async function buildAppFlow(
     //
     // Fast is the exception now rather than a mode that happened to need the same thing: its
     // ladder is `render` alone, its auth gate is skipped (see `checkAuthGate`), and the state
-    // pass is gated off below. The one model role still reachable in Fast is the arrival judge,
-    // and only on a node whose runtime evidence was incomplete — which is why the judge port is
-    // replaced with a non-asking one just below rather than left to throw mid-sweep. A Fast sweep
-    // with no provider is therefore a complete, if slightly weaker, sweep.
-    if (!options.decisionProvider && requiresDecisionProvider(mode, options.explorationMode)) {
+    // pass is off unless this run asked for it. The one model role still reachable in a default
+    // Fast sweep is the arrival judge, and only on a node whose runtime evidence was incomplete —
+    // which is why the judge port is replaced with a non-asking one just below rather than left
+    // to throw mid-sweep. A Fast sweep with no provider is therefore a complete, if slightly
+    // weaker, sweep — unless `stateCaptureMode` is `on`, which puts a `state-trigger` call and a
+    // real arrival judgement back on every hinted route and so is refused here like any other
+    // model-driven run.
+    if (
+      !options.decisionProvider &&
+      requiresDecisionProvider(mode, options.explorationMode, options.stateCaptureMode)
+    ) {
       throw new Error('A decision provider is required for a screen sweep.')
     }
 
@@ -1960,6 +1976,72 @@ export async function buildAppFlow(
           console.log(
             `[app-flow] nav-state — read failed, not retrying — ${error instanceof Error ? error.message : String(error)}`
           )
+        }
+      }
+
+      /**
+       * Ask the app for the destinations its link elements name, and feed them to the param store.
+       *
+       * This is the only source that can hand the store a *multi-param* record. `ingestPressables`
+       * and the affinity bootstrap are single-identifier by design (see `link-harvest.ts` for why
+       * that cannot be relaxed), and navigator state only knows routes the app has already
+       * entered. A feed row's `href` carries `name` and `rkey` together, composed by the app, for
+       * a post nobody has opened — which on a measured sweep is nine of the sixteen screens that
+       * were unreached purely for want of params.
+       *
+       * **Fast only.** It rides the live CDP connection that mode already holds, so it is one
+       * round trip with no target handshake. The modes without that connection (auto, thorough)
+       * reach these screens through model-driven exploration instead, and giving this path a
+       * chunked CLI fallback would buy them a slower route to an answer they already have.
+       *
+       * Skipped once nothing is left to resolve: if no uncaptured node still has an unresolved
+       * param, the read can only confirm what the store knows. That is what stops this being a
+       * flat tax on every screen late in a sweep.
+       *
+       * Strictly additive and strictly read-only, like `harvestNavState`: every failure latches
+       * `linksUnavailable` for the rest of the sweep and the sweep carries on unchanged.
+       */
+      let linksUnavailable = false
+      const harvestLinks = async (from: AppFlowNode): Promise<void> => {
+        if (linksUnavailable || fastRuntime?.state !== 'ready') return
+        const blocked = nodesWithSlug.some(
+          (other) =>
+            !captureMap[other.id] &&
+            other.params.length > 0 &&
+            resolveNodeParams(other, parsed.edges, paramStore).unresolved.length > 0
+        )
+        if (!blocked) return
+        const started = performance.now()
+        try {
+          const reply = await fastRuntime.invoke<LinksReply>(
+            { type: 'links', max: LINK_CANDIDATE_CAP },
+            5_000
+          )
+          const links = reply?.links ?? []
+          if (!links.length) {
+            recordRuntimeCount('app_flow.runtime.links', { outcome: 'empty' })
+            return
+          }
+          const { usable, unmatched } = ingestLinkCandidates(
+            links,
+            from.id,
+            nodesWithSlug,
+            paramStore
+          )
+          recordRuntimeCount('app_flow.runtime.links', {
+            outcome: usable ? 'usable' : 'unmatched'
+          })
+          console.log(
+            `[app-flow] links — ${links.length} destination(s) on ${from.urlPath ?? from.id}, ${usable} usable, ${unmatched} unmatched${reply.capped ? ', capped' : ''}`
+          )
+        } catch (error) {
+          linksUnavailable = true
+          recordRuntimeCount('app_flow.runtime.links', { outcome: 'failed' })
+          console.log(
+            `[app-flow] links — read failed, not retrying — ${error instanceof Error ? error.message : String(error)}`
+          )
+        } finally {
+          runtimeMetric('app_flow.runtime.command', started, { operation: 'links' })
         }
       }
 
@@ -4159,6 +4241,23 @@ export async function buildAppFlow(
           // breaker and halted a measured run to ask the user to clear a blocker that did not
           // exist. See `ReachAttempt.refused`.
           if (outcome.status === 'unreached' && outcome.refused) continue
+          // The same reasoning, one step wider: no rung ever touched the device, so the app was
+          // never asked to go anywhere and could not possibly have moved. The fingerprint read
+          // below would match the previous failure's trivially, which is not evidence of a stuck
+          // app — it is evidence that nothing happened. Fast's ladder is render-only, so a run of
+          // nodes with unresolved route parameters (`renderStrategy`'s `skip`, 0ms, no dispatch)
+          // is three guaranteed matches in a row, and a 78-screen sweep interrupted the user with
+          // "the app keeps rendering this one screen" three times over screens it had just
+          // captured fine. Same for `budget.expired`, "No runtime transport" and a closed guard
+          // gate, which are equally device-free.
+          //
+          // What this gives up: if the app really is wedged *and* every node in the run happens to
+          // skip before dispatch, the breaker no longer notices. That is an acceptable trade —
+          // device-free skips carry no observation of the app at all, so the breaker was never
+          // reading the app's state in that case, only agreeing with itself. A genuinely stuck app
+          // is still caught the moment one node actually dispatches and the screen does not move,
+          // which is the case this counter is for and which stays fully intact.
+          if (!touchedDevice(outcome)) continue
           // A planner that ran out of time left the app wherever the last action put it, which says
           // nothing about the app being stuck — and sibling screens look so alike that counting
           // these would stop the sweep to ask the user to clear a blocker that is not there.
@@ -4304,6 +4403,7 @@ export async function buildAppFlow(
         // from source text.
         paramStore.ingestPressables(node.id, sources.pressables.pressables, nodesWithSlug)
         await harvestNavState(node)
+        await harvestLinks(node)
         let screenshotOutcome: DeliveryScreenshotOutcome
         if (sources.screenshot.source === 'none') {
           screenshotOutcome = { ok: false, reason: sources.screenshot.reason }
@@ -4459,10 +4559,36 @@ export async function buildAppFlow(
       )
 
       checkSignal(signal)
-      // Announced only where it happens. Fast runs no state pass (see below), and a phase line
-      // claiming otherwise is how a mode ends up looking like it silently failed at something it
-      // never attempted.
-      if (options.explorationMode !== 'fast') {
+      /**
+       * State variants are opt-in, in every mode, and off unless this run asked for them.
+       *
+       * This used to be gated on the exploration mode: off in Fast, unconditional everywhere
+       * else. Both halves of that were wrong, in opposite directions.
+       *
+       * The Fast half rested on two reasons. The first was that the pass was built out of things
+       * Fast does not do — it re-reached each hinted node by replaying the base capture's stored
+       * `pathCommands` or by re-opening its deep link, and Fast's render rung publishes neither,
+       * so `establishBase` could only ever return false. That one is no longer true: the third
+       * route in `establishBase` below puts a node back on screen through the same runtime
+       * navigator Fast's render rung already uses, so a Fast-captured base is reachable now. The
+       * second reason still holds exactly as stated — `state-trigger` is a model call, and so is
+       * the arrival judgement that guards it — which is why this is an option and not a default:
+       * a Fast sweep with state capture `on` makes roughly two model calls per hinted route and
+       * can no longer claim to make none. It is also why `requiresDecisionProvider` takes this
+       * option (see `start-request.ts`): without a provider the phase would silently do nothing.
+       *
+       * The other half is the deliberate behaviour change here. Auto and thorough ran this pass
+       * on every hinted route whether or not anyone wanted the variants, and it is the most
+       * expensive per-screen work the sweep does for the least certain return: a re-reach, an
+       * auth-gate check, a screenshot, an arrival judgement, a planner call, and then a blind
+       * action sequence that frequently reveals nothing. Those runs now skip it unless
+       * `stateCaptureMode` says otherwise. A run that wants the old auto/thorough behaviour asks
+       * for it explicitly.
+       */
+      const stateCaptureOn = (options.stateCaptureMode ?? 'off') === 'on'
+      // Announced only where it happens. A phase line for a pass this run will not perform is how
+      // a sweep ends up looking like it silently failed at something it never attempted.
+      if (stateCaptureOn) {
         emit(projectId, onEvent, {
           type: 'phase',
           phase: 'states',
@@ -4470,32 +4596,13 @@ export async function buildAppFlow(
         })
       }
 
-      /**
-       * State variants are not a Fast phase.
-       *
-       * Two reasons, and the first alone settles it: this pass is built out of the things Fast
-       * does not do. It re-reaches each hinted node by replaying the base capture's stored
-       * `pathCommands` or by re-opening its deep link — Fast's render rung publishes neither, so
-       * `establishBase` can only ever return false here — and it then spends a `state-trigger`
-       * planner call and an arrival judge call per node. Left running in Fast it was a pure cost:
-       * two failed base attempts per hinted route, a relaunch between them, and a dev-client
-       * launcher probe after them, all to reach the same `continue`.
-       *
-       * The second is the point of the mode: `state-trigger` is a model call, and it is not gated
-       * by anything else, so a Fast sweep could not honestly claim to make none while this pass
-       * ran. Gating it here rather than refusing to start a Fast sweep that has hinted routes
-       * keeps the mode's promise simple — Fast captures the screens the navigator can reach, and
-       * nothing in it asks a model anything — instead of making the mode's availability depend on
-       * a property of the parsed structure that the user never chose.
-       */
-      const hintedNodes =
-        options.explorationMode === 'fast'
-          ? []
-          : nodesWithSlug.filter((n) => n.stateHints.length > 0)
+      const hintedNodes = stateCaptureOn
+        ? nodesWithSlug.filter((n) => n.stateHints.length > 0)
+        : []
       console.log(
-        options.explorationMode === 'fast'
-          ? '[app-flow] states skipped — fast mode captures no state variants'
-          : `[app-flow] states start — ${hintedNodes.length} hinted routes`
+        stateCaptureOn
+          ? `[app-flow] states start — ${hintedNodes.length} hinted routes`
+          : '[app-flow] states skipped — state capture is off for this run'
       )
       for (let i = 0; i < hintedNodes.length; i++) {
         checkSignal(signal)
@@ -4520,6 +4627,32 @@ export async function buildAppFlow(
         const verifiedDeepLink = openedByNode[node.id]
 
         /**
+         * One aggregate per hinted route, never one per action.
+         *
+         * The pass is now opt-in, which makes "was it worth turning on" a question someone will
+         * actually ask, and it is unanswerable from the console lines alone — they are local, and
+         * a run that reached no base looks identical from the outside to one that found no
+         * variant to trigger. The outcome set is closed and small so the series stays cheap to
+         * aggregate; `base-failed` and `no-trigger` are kept apart because they point at
+         * different fixes (a reach problem versus the planner having nothing to say).
+         *
+         * Counted from here rather than from the top of the loop body: a route already finished
+         * in a resumed checkpoint, or one with no base capture to work from, did no state work
+         * this run and recording a zero for it would only dilute the distribution.
+         *
+         * Attributes are the outcome and nothing else. Route names, node ids, slugs, URL paths,
+         * parameter values and screenshots stay out of here, as everywhere else in this module's
+         * telemetry (`runtime-telemetry.ts`).
+         */
+        const nodeStartedAt = Date.now()
+        const recordStateOutcome = (
+          outcome: 'captured' | 'base-failed' | 'no-trigger' | 'failed'
+        ): void => {
+          recordRuntimeCount('app_flow.runtime.state_capture', { outcome })
+          recordRuntimeTiming('app_flow.states.node', Date.now() - nodeStartedAt, { outcome })
+        }
+
+        /**
          * Put the device back on `node` so a state variant can be triggered from it. Returns
          * whether the frame that follows is worth judging at all.
          */
@@ -4540,7 +4673,35 @@ export async function buildAppFlow(
               return false
             }
           }
-          if (!verifiedDeepLink) return false
+          if (!verifiedDeepLink) {
+            // Third route, and last: dispatch the route through the app's own navigator, the same
+            // mechanism Fast's render rung used to capture the base in the first place. Without
+            // it a Fast-captured node has nothing to re-reach with — it has no stored
+            // `pathCommands` and no verified deep link — and the whole pass could never do any
+            // work in that mode, which is what the old exploration-mode gate was built around.
+            //
+            // Last on purpose. A dispatched navigation is not a journey a user could repeat (see
+            // `ExplorationMode`), so the two routes above are the more faithful ways back to the
+            // screen and keep priority wherever they exist; this one only answers the case where
+            // neither does.
+            //
+            // An absent `render` port is ordinary, not a failure — every call site is required to
+            // treat the port as optional and never let its absence change what the sweep does
+            // (`reach/ports.ts`) — so it degrades to the same "no base" answer as a failed reach.
+            if (!ports.render) return false
+            // Same rule as the deep-link route below: the parameters have to be real ones. A
+            // dispatch with a stand-in value lands on a screen that is not the one being
+            // described, and nothing downstream would notice.
+            const renderParams = resolveNodeParams(node, parsed.edges, paramStore)
+            if (renderParams.unresolved.length) return false
+            const dispatched = await ports.render.navigate(node, renderParams.values)
+            if (!dispatched.ok) return false
+            // The node's own remaining budget, not a fresh one: this is the same wall-clock the
+            // rest of the route's state work is drawing down, and a settle that outlives it would
+            // be spending time the pass has already decided it does not have.
+            const settled = await ports.render.awaitSettled(node, renderParams.values, stateBudget)
+            return settled.settled
+          }
           // `pickSampleParams`' `1` stand-in is for the descriptive path in the agent-device
           // manifest and has no business building a URL that will be opened and photographed. The
           // node reached its base capture by deep link, so a value exists; bailing rather than
@@ -4648,7 +4809,10 @@ export async function buildAppFlow(
           sweepStopped = true
           break
         }
-        if (!baseReady) continue
+        if (!baseReady) {
+          recordStateOutcome('base-failed')
+          continue
+        }
         const fileContent = node.file ? `\nSource file:\n${node.file}` : ''
         const { text } = await runAgent(
           {
@@ -4707,6 +4871,7 @@ export async function buildAppFlow(
             await captureScreenshot(ctx, device, stateScreenshot)
           } catch (error) {
             console.warn(`[app-flow] state ${stateSlug} failed:`, error)
+            recordStateOutcome('failed')
             if (sweepStopped) break
             continue
           }
@@ -4715,6 +4880,13 @@ export async function buildAppFlow(
             screenshot: `screens/${stateSlug}.png`,
             ...(statePath ? { pathCommands: statePath } : {})
           })
+          recordStateOutcome('captured')
+        } else {
+          // The base was reached and judged, and the planner still produced no executable action
+          // — an unparseable reply, or hints that described a state this screen does not actually
+          // expose. The route is marked done either way (below): re-asking the same model the
+          // same question on a resume would spend the call again for the same answer.
+          recordStateOutcome('no-trigger')
         }
         statesDone.add(node.id)
         await persistCheckpoint()
@@ -4873,6 +5045,7 @@ export class AppFlowBuilder extends EventEmitter {
     screenLimit?: number
     explorationMode?: ExplorationMode
     deepLinkJudgeMode?: DeepLinkJudgeMode
+    stateCaptureMode?: StateCaptureMode
     launchedDevice?: CaptureDevice
   }): Promise<void> {
     if (this.running) throw new Error('Build already in progress')

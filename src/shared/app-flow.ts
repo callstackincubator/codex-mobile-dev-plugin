@@ -41,6 +41,27 @@ export type ExplorationMode = 'auto' | 'fast' | 'thorough'
 export type DeepLinkJudgeMode = 'on' | 'off'
 
 /**
+ * Whether the sweep spends a pass trying to reveal *runtime* state variants — a bottom sheet, a
+ * modal, a drawer — on the screens whose source carried a state hint.
+ *
+ * Opt-in, and off by default in every exploration mode. That is a deliberate change: auto and
+ * thorough used to run this pass unconditionally on every hinted route. It is the most expensive
+ * thing a sweep does per screen for the least certain return — the node has to be put back on
+ * screen, judged, planned for by a model and then driven blind through an action sequence that
+ * may reveal nothing — so it is now something a run asks for rather than something it inherits.
+ *
+ * - `off` — the default. No hinted route is re-reached and no `state-trigger` call is made.
+ * - `on` — every hinted route is re-reached and one state variant is attempted per route.
+ *
+ * Independent of `ExplorationMode` on purpose. The pass is no longer built out of things Fast
+ * cannot do: its base can now be re-established through the runtime navigator, which is exactly
+ * the mechanism Fast's render rung already uses. What turning it on in Fast *does* cost is model
+ * calls — a `state-trigger` plan and an arrival judge per hinted route — so a Fast sweep with
+ * state capture on is no longer a sweep that asks a model nothing.
+ */
+export type StateCaptureMode = 'off' | 'on'
+
+/**
  * One App Flow start request, as it crosses the renderer -> preload -> main boundary and as the
  * main-process service receives it. An object rather than positional arguments: the positional
  * form had reached `(projectPath, mode, screenLimit, explorationMode)` with every trailing slot
@@ -52,6 +73,7 @@ export interface StartAppFlowInput {
   screenLimit?: number
   explorationMode?: ExplorationMode
   deepLinkJudgeMode?: DeepLinkJudgeMode
+  stateCaptureMode?: StateCaptureMode
 }
 export type AppFlowSweepStatus =
   'not-requested' | 'running' | 'awaiting-user' | 'completed' | 'paused' | 'stopped' | 'failed'

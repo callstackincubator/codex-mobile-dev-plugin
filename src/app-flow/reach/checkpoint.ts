@@ -4,6 +4,9 @@ import type { AppFlowSweepProgress } from '../storage.ts'
 export interface SweepFingerprint {
   structureKey: string
   explorationMode: ExplorationMode
+  // `stateCaptureMode` is deliberately not here, for the same reason `deepLinkJudgeMode` is not:
+  // it does not change what a stored base capture means, only whether a second pass runs over it
+  // afterwards, and `statesDone` already records which routes that pass finished.
   sourceHash: string
   fastFingerprint: string
 }

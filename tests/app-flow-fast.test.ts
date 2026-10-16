@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { runReachLadder, strategiesFor, type ReachStrategy } from '../src/app-flow/reach/ladder.ts'
+import { runReachLadder, strategiesFor, touchedDevice, type ReachRungs, type ReachStrategy } from '../src/app-flow/reach/ladder.ts'
 import { isToolingFailure } from '../src/app-flow/exploration.ts'
 import { agentSource } from '../src/app-flow/cdp/runtime-source.ts'
-import { agentNavigate, DEFAULT_AGENT_LIMITS } from '../src/app-flow/cdp/agent-runtime.ts'
+import {
+  agentCollectLinks,
+  agentLinkCandidate,
+  agentNavigate,
+  AGENT_FUNCTIONS,
+  DEFAULT_AGENT_LIMITS,
+  LINK_CANDIDATE_CAP
+} from '../src/app-flow/cdp/agent-runtime.ts'
+import { EXPECTED_AGENT_FUNCTION_COUNT } from '../src/app-flow/cdp/runtime-source.ts'
+import { ingestLinkCandidates, type LinkHarvestNode } from '../src/app-flow/link-harvest.ts'
+import { ParamStore } from '../src/app-flow/param-store.ts'
 import {
   parseAppFlowStartRequest,
   requiresDecisionProvider,
@@ -349,8 +359,25 @@ test('App Flow start no longer exposes a render transport switch', () => {
     mode: 'screen-ui-and-structure',
     screenLimit: undefined,
     explorationMode: 'fast',
-    deepLinkJudgeMode: 'on'
+    deepLinkJudgeMode: 'on',
+    stateCaptureMode: 'off'
   })
+})
+
+test('state capture is opt-in and off by default, and a bad literal is rejected', () => {
+  // Off by default in *every* mode, auto included — the state pass used to run unconditionally
+  // outside Fast, and this is the line that records the change.
+  for (const explorationMode of ['auto', 'fast', 'thorough'] as const) {
+    const resolved = resolveAppFlowStart({ projectPath: '/project', explorationMode })
+    assert.equal(resolved.stateCaptureMode, 'off')
+  }
+  const on = parseAppFlowStartRequest({ projectPath: '/project', stateCaptureMode: 'on' })
+  assert.equal(on.ok, true)
+  if (on.ok) assert.equal(resolveAppFlowStart(on.input).stateCaptureMode, 'on')
+  // Rejected rather than coerced to the default, like every other literal crossing the boundary:
+  // a caller that asked for state capture and silently did not get it is the worse outcome.
+  const bad = parseAppFlowStartRequest({ projectPath: '/project', stateCaptureMode: 'yes' })
+  assert.equal(bad.ok, false)
 })
 
 test('Fast remembers a guarded render 404 and skips siblings behind the same gate', async () => {
@@ -537,6 +564,14 @@ test('a Fast sweep starts without a decision provider; every other mode still de
   // A structure build never asked for one in the first place.
   assert.equal(requiresDecisionProvider('structure-only', 'auto'), false)
   assert.equal(requiresDecisionProvider(undefined, 'auto'), false)
+  // Opting Fast into the state pass puts `state-trigger` and a real arrival judgement back on
+  // every hinted route, so that run does need a provider — and an explicit `off`, or an absent
+  // option, leaves Fast exactly where it was.
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast', 'on'), true)
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast', 'off'), false)
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast', undefined), false)
+  // A structure-only build runs no sweep at all, so the option cannot make it need one.
+  assert.equal(requiresDecisionProvider('structure-only', 'fast', 'on'), false)
 })
 
 test('a live feed that never goes quiet is verified from its own evidence, not by the judge', async () => {
@@ -869,3 +904,171 @@ for (const mode of ['auto', 'thorough'] as const) {
     assert.match(outcome.warning ?? '', /deep links and on-device exploration/)
   })
 }
+
+test('a run of device-free skips never trips the blocked-run breaker, a stuck app still does', async () => {
+  // The breaker counts consecutive `unreached` nodes whose post-failure screen matches the
+  // previous failure's, and asks the user to clear a blocker at three. `touchedDevice` is the
+  // guard the orchestrator applies before that counter, so this reproduces the counter around it
+  // with the same screen for every node — the pathological input, where the app never moves.
+  const runLadder = async (node: AppFlowNode, unresolvedParams: string[], ports: ReachPorts) =>
+    runReachLadder({
+      input: { node, params: null, unresolvedParams, budget: new ActiveTimeBudget(10_000),
+        scratchPath: (key: string) => `/tmp/${key}`, guardGateClosed: () => false },
+      ports,
+      strategies: strategiesFor('fast', {
+        probeCredit: rung('probe'), savedReplay: rung('saved'), deepLink: rung('deep-link'),
+        render: renderStrategy as unknown as ReachStrategy<unknown>, explore: rung('explore')
+      } as unknown as ReachRungs<unknown>),
+      budget: new ActiveTimeBudget(10_000)
+    })
+  const node = (id: string) =>
+    ({ id, title: id, slug: id.toLowerCase(), urlPath: `/${id}`, params: [] }) as unknown as AppFlowNode
+
+  // Fast's ladder is render-only, so an unresolved route parameter costs 0ms and never dispatches.
+  const idlePorts = {
+    render: {
+      async available() { throw new Error('must not reach the transport') },
+      async navigate() { throw new Error('must not dispatch') },
+      async awaitSettled() { throw new Error('must not settle') }
+    }
+  } as unknown as ReachPorts
+  let blockedRun = 0
+  for (const id of ['Terms', 'Privacy', 'CopyrightPolicy', 'Licenses']) {
+    const outcome = await runLadder(node(id), ['documentId'], idlePorts)
+    assert.equal(outcome.status, 'unreached')
+    assert.match(outcome.reason ?? '', /Unresolved route parameters/)
+    // Not `refused`: the runtime was never asked, so the narrower exclusion would have missed it.
+    assert.equal(outcome.refused, false)
+    if (touchedDevice(outcome)) blockedRun += 1
+  }
+  assert.equal(blockedRun, 0, 'device-free skips must not ask the user to clear a blocker')
+
+  // The case the breaker exists for: every node dispatches, and the screen does not move.
+  const stuckPorts = {
+    render: {
+      async available() { return { ok: true as const } },
+      async navigate() { return { ok: true, reason: 'dispatched', path: ['Home'] } },
+      async awaitSettled() { return { settled: true, reason: 'settled', polls: 1, stop: 'settled', active: ['Home'], found: false, content: 3, paramMismatch: [] } },
+      async captureScreenshot() { return { relaunched: false } }
+    },
+    device: {
+      async captureScreenshot() { return { relaunched: false } },
+      async capturePressables() { return [{ label: 'Retry' }] }
+    },
+    judge: {
+      async verifyArrival() { return { verdict: 'mismatch', status: 'other', reason: 'Still the error screen' } }
+    }
+  } as unknown as ReachPorts
+  blockedRun = 0
+  for (const id of ['Profile', 'Settings', 'About']) {
+    const outcome = await runLadder(node(id), [], stuckPorts)
+    assert.equal(outcome.status, 'unreached')
+    if (touchedDevice(outcome)) blockedRun += 1
+  }
+  assert.equal(blockedRun, 3, 'a dispatched node that did not move the app still feeds the breaker')
+})
+
+/* ------------------------------------------------- link harvest (route params) */
+
+/** Installs a DevTools hook over a hand-built tree for the duration of `body`. */
+const withFiberTree = <T>(roots: unknown[], body: () => T): T => {
+  const slot = globalThis as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }
+  const previous = slot.__REACT_DEVTOOLS_GLOBAL_HOOK__
+  slot.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+    renderers: new Map([[1, { rendererPackageName: 'react-native-renderer' }]]),
+    getFiberRoots: () => new Set(roots.map((current) => ({ current })))
+  }
+  try {
+    return body()
+  } finally {
+    slot.__REACT_DEVTOOLS_GLOBAL_HOOK__ = previous
+  }
+}
+
+const postThread: LinkHarvestNode = {
+  id: 'PostThread',
+  urlPath: '/profile/:name/post/:rkey',
+  params: ['name', 'rkey'],
+  file: 'src/screens/PostThread.tsx'
+}
+
+test('a harvested link assembles a two-param record the a11y learners cannot', () => {
+  // One row, off-screen under a tab the user has not opened. The walk must not prune it: an
+  // unfocused subtree still holds the destination, and that is the whole point of reading props.
+  const row = { memoizedProps: { to: '/profile/alice.test/post/3kabc' }, child: null, sibling: null }
+  const hiddenTab = { memoizedProps: { activityState: 0 }, child: row, sibling: null }
+  const reply = withFiberTree([{ child: hiddenTab, sibling: null, memoizedProps: {} }], () =>
+    agentCollectLinks(DEFAULT_AGENT_LIMITS, LINK_CANDIDATE_CAP)
+  )
+  assert.deepEqual(reply.links, [{ path: '/profile/alice.test/post/3kabc' }])
+  assert.equal(reply.capped, false)
+
+  const store = new ParamStore()
+  assert.equal(store.best(postThread), null)
+  const { usable, unmatched } = ingestLinkCandidates(reply.links, 'Home', [postThread], store)
+  assert.equal(usable, 1)
+  assert.equal(unmatched, 0)
+  // Both params, from one record, with no merge across sightings and no new precedence rule.
+  assert.deepEqual(store.best(postThread)?.values, { name: 'alice.test', rkey: '3kabc' })
+})
+
+test('an object destination carries route name and params in a single record', () => {
+  const row = {
+    memoizedProps: { href: { screen: 'PostThread', params: { name: 'bob.test', rkey: '3kxyz', onPress: () => {} } } },
+    child: null,
+    sibling: null
+  }
+  const reply = withFiberTree([{ child: row, sibling: null, memoizedProps: {} }], () =>
+    agentCollectLinks(DEFAULT_AGENT_LIMITS, LINK_CANDIDATE_CAP)
+  )
+  // The callback is dropped in the app, so nothing arrives as `[object Object]` pretending to be an id.
+  assert.deepEqual(reply.links, [
+    { name: 'PostThread', params: { name: 'bob.test', rkey: '3kxyz' } }
+  ])
+  const store = new ParamStore()
+  assert.equal(ingestLinkCandidates(reply.links, 'Home', [postThread], store).usable, 1)
+  assert.deepEqual(store.best(postThread)?.values, { name: 'bob.test', rkey: '3kxyz' })
+})
+
+test('a harvested link is still subject to the learned shape baseline', () => {
+  const receipt: LinkHarvestNode = {
+    id: 'Receipt',
+    urlPath: '/receipt/:id/:rev',
+    params: ['id', 'rev'],
+    file: null
+  }
+  const store = new ParamStore()
+  // An incomplete literal in source text: it teaches what an `id` looks like for this route
+  // without itself becoming a record, so `best()` below reports only what the harvest produced.
+  store.noteStatic(receipt, { id: '41' })
+  const refused = ingestLinkCandidates(
+    [
+      { name: 'Receipt', params: { id: 'abcdef', rev: '2' } },
+      { path: '/receipt/abcdef/2' }
+    ],
+    'Home',
+    [receipt],
+    store
+  )
+  assert.equal(refused.usable, 0, 'a token where digits were learned must not become a record')
+  assert.equal(store.best(receipt), null)
+  // The same route still accepts a value of the learned shape, from the same harvest path.
+  assert.equal(ingestLinkCandidates([{ path: '/receipt/99/2' }], 'Home', [receipt], store).usable, 1)
+  assert.deepEqual(store.best(receipt)?.values, { id: '99', rev: '2' })
+})
+
+test('a link candidate that names nothing routable is dropped before it costs a lookup', () => {
+  assert.equal(agentLinkCandidate('Open profile'), null)
+  assert.equal(agentLinkCandidate({ screen: 'PostThread' }), null, 'a bare name resolves nothing navigator state did not')
+  assert.equal(agentLinkCandidate(undefined), null)
+  assert.deepEqual(agentLinkCandidate('bluesky://profile/alice.test'), {
+    path: 'bluesky://profile/alice.test'
+  })
+})
+
+test('the packaged Fast agent carries the link harvest and its integrity guard counts it', () => {
+  const source = agentSource()
+  assert.match(source, /function agentCollectLinks/)
+  assert.match(source, /type === 'links'/)
+  assert.equal(Object.keys(AGENT_FUNCTIONS).length, EXPECTED_AGENT_FUNCTION_COUNT)
+})

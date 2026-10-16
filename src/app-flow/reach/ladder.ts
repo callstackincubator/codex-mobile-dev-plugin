@@ -108,3 +108,22 @@ export function strategiesFor<TInput>(
   if (mode === 'thorough') return [...shortcuts, rungs.deepLink, rungs.explore]
   return [...shortcuts, rungs.deepLink, rungs.render]
 }
+
+/**
+ * Whether a reach ever asked the app to go anywhere.
+ *
+ * A caller that reads the screen *after* a failure — to decide whether the app moved — only learns
+ * something when at least one rung actually dispatched. Every rung can decline before it touches
+ * the device: `renderStrategy` skips on unresolved route parameters, on an exhausted budget, on a
+ * missing runtime transport and on a guard gate a sibling already measured as closed, and the
+ * ladder's own budget exit returns with no attempts at all. In each of those cases the app is
+ * exactly where the previous node left it, so a post-failure screen read is guaranteed to match
+ * the previous one and says nothing whatsoever about the app being stuck.
+ *
+ * Deliberately broader than `ReachOutcome.refused`, which is specifically "the runtime answered,
+ * and the answer was no". An empty `attempts` reads as device-free here, which is the honest
+ * reading: nothing ran, so nothing moved.
+ */
+export function touchedDevice(outcome: ReachOutcome): boolean {
+  return outcome.attempts.some((attempt) => attempt.touchedDevice)
+}

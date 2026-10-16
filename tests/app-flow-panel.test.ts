@@ -339,3 +339,34 @@ test("every guarded route is labelled Feature Gated, whatever that run happened 
   assert.equal(featureGateNotice(null), null, "an unguarded route carries no label");
   assert.equal(featureGateNotice(undefined), null, "nor does a document written before guards existed");
 });
+
+test("a second agent-started sweep on the same project adopts the new run", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/demo");
+  await panel.requestAgentStart({ mode: "screen-ui-and-structure", explorationMode: "fast" });
+  host.notify({ source: "app-flow", runId: "run-1", event: { type: "step", phase: "capture", message: "Settings", completed: 14, total: 79 } });
+  host.notify({ source: "app-flow", runId: "run-1", event: { type: "complete", phase: "capture", message: "Done", completed: 14, total: 79 } });
+  assert.equal(panel.getSnapshot().runId, "run-1");
+  // Re-running without switching projects previously left `run-1` in place, and the ingest guard
+  // then dropped every event of the new run — the panel froze on the finished run's tally.
+  await panel.requestAgentStart({ mode: "screen-ui-and-structure", explorationMode: "fast" });
+  assert.equal(panel.getSnapshot().runId, null);
+  assert.equal(panel.getSnapshot().sweepSummary, null);
+  assert.equal(panel.getSnapshot().progress, null);
+  host.notify({ source: "app-flow", runId: "run-2", event: { type: "step", phase: "capture", message: "Home", completed: 1, total: 79 } });
+  assert.equal(panel.getSnapshot().runId, "run-2");
+  assert.equal(panel.getSnapshot().state, "running");
+  assert.deepEqual(panel.getSnapshot().sweepSummary, { completed: 1, total: 79, message: "Home" });
+});
+
+// The dropdown that selects this is opt-in and defaults to off, so the only way the sweep ever
+// captures state variants is this value surviving the trip through the agent prompt. The panel
+// spreads start options verbatim, which is exactly the kind of pass-through that breaks silently:
+// nothing downstream complains about an option that never arrived, the run just quietly skips the
+// states pass again.
+test("state capture rides along with the sweep start options", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/demo");
+  await panel.requestAgentStart({ mode: "screen-ui-and-structure", explorationMode: "fast", stateCaptureMode: "on" });
+  assert.match(host.messages[0].content[0].text, /"stateCaptureMode":"on"/);
+});
