@@ -11,6 +11,7 @@ function fixture(canMessage = true, projectList: unknown[] = []) {
   let nextProject: unknown;
   let bufferedEvents: Array<{ seq: number; runId?: string; event: unknown }> = [];
   let currentResult: unknown = null;
+  let currentStatus: Record<string, unknown> = { exists: false, state: "idle" };
   const app = {
     getHostCapabilities() { return canMessage ? { message: { text: {} } } : {}; },
     setNotificationHandler(_schema: unknown, handler: typeof notification) { notification = handler; },
@@ -19,7 +20,7 @@ function fixture(canMessage = true, projectList: unknown[] = []) {
     async callServerTool(input: { name: string; arguments?: Record<string, unknown> }) {
       calls.push(input);
       if (input.name === "mobile_appflow_start") return { content: [], structuredContent: { runId: "run-1", state: "running" } };
-      if (input.name === "mobile_appflow_status") return { content: [], structuredContent: { exists: false, state: "idle" } };
+      if (input.name === "mobile_appflow_status") return { content: [], structuredContent: currentStatus };
       if (input.name === "mobile_appflow_screenshot") return { content: [{ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" }] };
       if (input.name === "mobile_appflow_projects") return { content: [], structuredContent: { projects } };
       if (input.name === "mobile_appflow_result") return { content: [], structuredContent: { projectId: "project-1", result: currentResult } };
@@ -38,6 +39,7 @@ function fixture(canMessage = true, projectList: unknown[] = []) {
     returnsProject(value: unknown) { nextProject = value; },
     events(value: Array<{ seq: number; runId?: string; event: unknown }>) { bufferedEvents = value; },
     returnsResult(value: unknown) { currentResult = value; },
+    returnsStatus(value: Record<string, unknown>) { currentStatus = value; },
   };
 }
 const settle = (ms = 60) => new Promise(resolve => setTimeout(resolve, ms));
@@ -65,6 +67,69 @@ test("progress notifications preserve the last tally and keep auth prompts human
   assert.equal(panel.getSnapshot().state, "needs-user-action");
   assert.equal(panel.getSnapshot().prompt?.id, "prompt-1");
   assert.equal(host.calls.filter(call => call.name === "mobile_appflow_resolve_prompt").length, 0);
+});
+
+test("prompt controls include the project path needed to reach a Codex-owned run", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/demo"); await panel.start({ mode: "structure-only" });
+  host.notify({ source: "app-flow", runId: "run-1", event: { type: "prompt", phase: "capture", message: "Review", prompt: { id: "prompt-1", kind: "review", detail: "Review", screenshot: null, remaining: 1 } } });
+  host.returnsStatus({ exists: true, runId: "run-1", state: "running" });
+  await panel.resolvePrompt("continue");
+  const call = host.calls.find(entry => entry.name === "mobile_appflow_resolve_prompt");
+  assert.deepEqual(call?.arguments, { runId: "run-1", resolution: "continue", projectPath: "/projects/demo", promptId: "prompt-1" });
+  assert.equal(host.messages.length, 1);
+  assert.match(host.messages[0].content[0].text, /Resume the existing App Flow run run-1/);
+  assert.match(host.messages[0].content[0].text, /Do not start a new run/);
+});
+
+test("stopping a human prompt does not wake another Codex turn", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/demo"); await panel.start({ mode: "structure-only" });
+  host.notify({ source: "app-flow", runId: "run-1", event: { type: "prompt", phase: "capture", message: "Review", prompt: { id: "prompt-1", kind: "review", detail: "Review", screenshot: null, remaining: 1 } } });
+  host.returnsStatus({ exists: true, runId: "run-1", state: "completed" });
+  await panel.resolvePrompt("stop");
+  assert.equal(host.messages.length, 0);
+});
+
+test("capture progress distinguishes successful captures from route attempts", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/demo"); await panel.start({ mode: "structure-only" });
+  host.notify({ source: "app-flow", runId: "run-1", event: { type: "step", phase: "capture", message: "Reaching route", completed: 9, total: 79, captured: 3, captureLimit: 6 } });
+  assert.deepEqual(panel.getSnapshot().sweepSummary, { completed: 9, total: 79, captured: 3, captureLimit: 6, message: "Reaching route" });
+});
+
+test("status restores prompt controls when the live event channels were missed", async t => {
+  const host = fixture();
+  host.returnsStatus({
+    exists: true,
+    runId: "run-1",
+    projectId: "project-1",
+    state: "needs-user-action",
+    event: { type: "prompt", phase: "capture", message: "Sign in", prompt: { id: "prompt-1", kind: "auth", detail: "Log in on device", screenshot: null, remaining: 5 } },
+  });
+  const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true);
+  await panel.selectProject("/projects/demo");
+  assert.equal(panel.getSnapshot().state, "needs-user-action");
+  assert.equal(panel.getSnapshot().prompt?.id, "prompt-1");
+  assert.equal(panel.getSnapshot().projectId, "project-1");
+});
+
+test("agent-start status discovery hydrates a prompt and clears the pending latch", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app, 5); t.after(() => panel.dispose());
+  panel.setAvailable(true); panel.show(); await settle(); await panel.selectProject("/projects/demo");
+  host.returnsStatus({
+    exists: true,
+    runId: "run-1",
+    projectId: "project-1",
+    state: "needs-user-action",
+    event: { type: "prompt", phase: "capture", message: "Review", prompt: { id: "prompt-2", kind: "review", detail: "Review the current screen", screenshot: null, remaining: 2 } },
+  });
+  await panel.requestAgentStart({ mode: "screen-ui-and-structure", explorationMode: "fast" });
+  await settle(100);
+  assert.equal(panel.getSnapshot().state, "needs-user-action");
+  assert.equal(panel.getSnapshot().prompt?.id, "prompt-2");
+  assert.equal(panel.getSnapshot().agentStartPending, false);
 });
 
 test("LLM start is unavailable when the host cannot send a follow-up", async t => {

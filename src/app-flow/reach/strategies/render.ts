@@ -32,7 +32,7 @@
  * as the exploration rung's does.
  */
 import type { AppFlowNode } from '../../../shared/app-flow.ts'
-import type { ActiveTimeBudget } from '../../exploration.ts'
+import { explainGuardGate, type ActiveTimeBudget } from '../../exploration.ts'
 import type { ReachPorts } from '../ports.ts'
 import type { ReachAttempt } from '../types.ts'
 import { diagnosticFramePath, verifyWithDiagnostic } from './verify-with-diagnostic.ts'
@@ -45,13 +45,15 @@ export interface RenderInput {
   unresolvedParams: readonly string[]
   budget: ActiveTimeBudget
   scratchPath: (key: string) => string
+  /** Whether another route behind this exact source guard already proved the gate closed. */
+  guardGateClosed: (condition: string) => boolean
 }
 
 /** The scratch suffix this strategy's diagnostic frame is written under. */
 const SUFFIX = 'render-check'
 
 export async function renderStrategy(input: RenderInput, ports: ReachPorts): Promise<ReachAttempt> {
-  const { node, params, unresolvedParams, budget, scratchPath } = input
+  const { node, params, unresolvedParams, budget, scratchPath, guardGateClosed } = input
   const started = Date.now()
   const skip = (reason: string): ReachAttempt => ({
     strategy: 'render',
@@ -62,6 +64,15 @@ export async function renderStrategy(input: RenderInput, ports: ReachPorts): Pro
     effects: []
   })
 
+  // Fast reaches screens through the runtime rather than a deep link, but a guarded route renders
+  // the same build-owned not-found screen either way. Once one sibling measured that gate closed,
+  // do not dispatch every other sibling only to rediscover the identical fallback.
+  if (node.guard && guardGateClosed(node.guard.condition)) {
+    return {
+      ...skip(explainGuardGate(node.guard)),
+      failure: 'unavailable'
+    }
+  }
   if (!ports.render) return skip('No runtime transport — the app’s JS context is not reachable.')
   // A route whose parameters have no value cannot be navigated to honestly. Dispatching with a
   // missing param lands on whatever the navigator makes of `undefined`, which is exactly the
@@ -117,16 +128,22 @@ export async function renderStrategy(input: RenderInput, ports: ReachPorts): Pro
     { withPressables: true }
   )
   if (arrival.verdict !== 'match') {
+    const guardedNotFound = arrival.status === 'not-found' && node.guard
     return {
       strategy: 'render',
       ok: false,
-      reason: settled.settled
-        ? arrival.reason
-        : `${arrival.reason} (screen had not settled: ${settled.reason})`,
+      ...(guardedNotFound ? { failure: 'unavailable' as const } : {}),
+      reason: guardedNotFound
+        ? explainGuardGate(node.guard!)
+        : settled.settled
+          ? arrival.reason
+          : `${arrival.reason} (screen had not settled: ${settled.reason})`,
       touchedDevice: true,
       arrival,
       elapsedMs: Date.now() - started,
-      effects: []
+      effects: guardedNotFound
+        ? [{ kind: 'guard-gate-closed' as const, condition: node.guard!.condition }]
+        : []
     }
   }
   return {

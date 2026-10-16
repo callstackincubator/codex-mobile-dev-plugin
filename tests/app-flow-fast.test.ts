@@ -5,7 +5,10 @@ import { agentSource } from '../src/app-flow/cdp/runtime-source.ts'
 import { agentNavigate, DEFAULT_AGENT_LIMITS } from '../src/app-flow/cdp/agent-runtime.ts'
 import { parseAppFlowStartRequest, resolveAppFlowStart } from '../src/app-flow/start-request.ts'
 import { reconcileSweepProgress } from '../src/app-flow/reach/checkpoint.ts'
-import type { AppFlowCapture } from '../src/shared/app-flow.ts'
+import { ActiveTimeBudget } from '../src/app-flow/exploration.ts'
+import { renderStrategy } from '../src/app-flow/reach/strategies/render.ts'
+import type { ReachPorts } from '../src/app-flow/reach/ports.ts'
+import type { AppFlowCapture, AppFlowNode } from '../src/shared/app-flow.ts'
 
 const rung = (name: string): ReachStrategy<null> => {
   const strategy = async () => ({
@@ -30,7 +33,7 @@ test('exploration modes select the exact approved pipelines', () => {
   }
   const names = (mode: 'auto' | 'fast' | 'thorough') =>
     strategiesFor(mode, rungs).map((strategy) => strategy.name)
-  assert.deepEqual(names('fast'), ['probe', 'saved', 'fast'])
+  assert.deepEqual(names('fast'), ['fast'])
   assert.deepEqual(names('auto'), ['probe', 'saved', 'deep-link', 'fast'])
   assert.deepEqual(names('thorough'), ['probe', 'saved', 'deep-link', 'explore'])
 })
@@ -55,8 +58,9 @@ test('Fast dispatches a nested route through the mounted navigator', () => {
     getFiberRoots: () => new Set([{ current: { stateNode: nav } }])
   }
   try {
-    assert.deepEqual(agentNavigate(['HomeTab', 'Profile'], { id: '42' }, DEFAULT_AGENT_LIMITS), {
-      ok: true
+    assert.deepEqual(agentNavigate(['HomeTab', 'Profile'], { id: '42' }, DEFAULT_AGENT_LIMITS, null), {
+      ok: true,
+      action: 'navigate'
     })
     assert.deepEqual(action, {
       type: 'NAVIGATE',
@@ -67,6 +71,66 @@ test('Fast dispatches a nested route through the mounted navigator', () => {
     })
   } finally {
     ;(globalThis as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }).__REACT_DEVTOOLS_GLOBAL_HOOK__ = previous
+  }
+})
+
+test('Fast replaces the focused stack leaf instead of accumulating screens', () => {
+  const leaf = {
+    key: 'stack-1',
+    type: 'stack',
+    routeNames: ['Home', 'Profile'],
+    index: 0,
+    routes: [{ name: 'Home', params: {} }]
+  }
+  const state = {
+    routeNames: ['HomeTab'],
+    index: 0,
+    routes: [{ name: 'HomeTab', state: leaf }]
+  }
+  let action: unknown
+  const nav = { getRootState: () => state, dispatch: (value: unknown) => { action = value } }
+  const previous = (globalThis as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown })
+    .__REACT_DEVTOOLS_GLOBAL_HOOK__
+  ;(globalThis as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }).__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+    renderers: new Map([[1, { rendererPackageName: 'react-native-renderer' }]]),
+    getFiberRoots: () => new Set([{ current: { stateNode: nav } }])
+  }
+  try {
+    assert.deepEqual(agentNavigate(['HomeTab', 'Profile'], null, DEFAULT_AGENT_LIMITS, null), {
+      ok: true,
+      action: 'replace'
+    })
+    assert.deepEqual(action, {
+      type: 'REPLACE',
+      target: 'stack-1',
+      payload: { name: 'Profile', params: undefined }
+    })
+  } finally {
+    ;(globalThis as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }).__REACT_DEVTOOLS_GLOBAL_HOOK__ = previous
+  }
+})
+
+test('Fast uses Expo Router replace for file-based routes', () => {
+  let replaced: unknown
+  const previous = (globalThis as { __r?: unknown }).__r
+  ;(globalThis as { __r?: unknown }).__r = {
+    getModules: () => new Map([[1, {
+      isInitialized: true,
+      publicModule: { exports: { router: {
+        push() {},
+        replace(value: unknown) { replaced = value },
+        canGoBack() { return false }
+      } } }
+    }]])
+  }
+  try {
+    assert.deepEqual(agentNavigate(['(tabs)', 'settings'], { id: '42' }, DEFAULT_AGENT_LIMITS, '/settings'), {
+      ok: true,
+      action: 'expo-replace'
+    })
+    assert.deepEqual(replaced, { pathname: '/settings', params: { id: '42' } })
+  } finally {
+    ;(globalThis as { __r?: unknown }).__r = previous
   }
 })
 
@@ -125,4 +189,41 @@ test('App Flow start no longer exposes a render transport switch', () => {
     explorationMode: 'fast',
     deepLinkJudgeMode: 'on'
   })
+})
+
+test('Fast remembers a guarded render 404 and skips siblings behind the same gate', async () => {
+  const condition = '!features.enabled(Inbox)'
+  const node = {
+    id: 'Inbox', title: 'Inbox', slug: 'inbox', urlPath: '/inbox', params: [],
+    guard: { condition, fallback: 'NotFoundScreen' }
+  } as unknown as AppFlowNode
+  let availableCalls = 0
+  let navigateCalls = 0
+  const ports = {
+    render: {
+      async available() { availableCalls += 1; return true },
+      async navigate() { navigateCalls += 1; return { ok: true, reason: 'dispatched' } },
+      async awaitSettled() { return { settled: true, reason: 'settled' } }
+    },
+    device: {
+      async captureScreenshot() { return { relaunched: false } },
+      async capturePressables() { return [] }
+    },
+    judge: {
+      async verifyArrival() { return { verdict: 'mismatch', status: 'not-found', reason: 'Page not found' } }
+    }
+  } as unknown as ReachPorts
+  const budget = new ActiveTimeBudget(10_000)
+  const first = await renderStrategy({ node, params: null, unresolvedParams: [], budget,
+    scratchPath: key => `/tmp/${key}`, guardGateClosed: () => false }, ports)
+  assert.equal(first.failure, 'unavailable')
+  assert.deepEqual(first.effects, [{ kind: 'guard-gate-closed', condition }])
+
+  const sibling = await renderStrategy({ node: { ...node, id: 'InboxSettings' }, params: null,
+    unresolvedParams: [], budget, scratchPath: key => `/tmp/${key}`,
+    guardGateClosed: candidate => candidate === condition }, ports)
+  assert.equal(sibling.failure, 'unavailable')
+  assert.equal(sibling.touchedDevice, false)
+  assert.equal(availableCalls, 1)
+  assert.equal(navigateCalls, 1)
 })

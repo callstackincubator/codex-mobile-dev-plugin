@@ -83,6 +83,8 @@ export interface CreateReachPortsOptions {
    * disagreeing about whether the runtime is reachable.
    */
   renderTransport?: RenderTransport | null
+  /** The parser identified this project as Expo Router, whose runtime opens pathnames. */
+  expoRouter?: boolean
 }
 
 /**
@@ -92,7 +94,11 @@ export interface CreateReachPortsOptions {
 export interface RenderTransport {
   /** Resolves once a CDP target is selected, false when the runtime cannot be reached at all. */
   ready(): Promise<boolean>
-  navigate(route: string[], params: Record<string, string> | null): Promise<NavigateReply>
+  navigate(
+    route: string[],
+    params: Record<string, string> | null,
+    expoPath: string | null
+  ): Promise<NavigateReply>
   readiness(route: string, params: Record<string, string> | null): Promise<ReadinessReply>
   close(): Promise<void>
 }
@@ -107,7 +113,8 @@ const SETTLE_TIMEOUT_MS = 8_000
 
 function createRenderPort(
   transport: RenderTransport,
-  nodeRouteName: (node: AppFlowNode) => string[]
+  nodeRouteName: (node: AppFlowNode) => string[],
+  expoRouter: boolean
 ): RenderPort {
   return {
     async available(): Promise<boolean> {
@@ -116,18 +123,36 @@ function createRenderPort(
     async navigate(node, params) {
       const segments = nodeRouteName(node)
       if (!segments.length) return { ok: false, reason: 'No navigator route name for this node.' }
-      const outcome = await transport.navigate(segments, params)
-      if (outcome.ok) return { ok: true, reason: `Dispatched ${segments.join(' > ')}.` }
-      const why =
-        outcome.reason === 'unregistered'
-          ? `Route ${segments[segments.length - 1]} is not registered in the running navigator.`
-          : outcome.reason === 'no-navigator'
-            ? 'No mounted navigator found.'
-            : outcome.reason === 'no-dispatch'
-              ? 'The mounted navigator cannot be dispatched to.'
-              : outcome.reason === 'invalid-route'
-                ? 'The route has no runtime navigator path.'
-              : `Navigation dispatch threw: ${outcome.detail ?? 'no detail'}`
+      const outcome = await transport.navigate(
+        segments,
+        params,
+        expoRouter ? node.urlPath : null
+      )
+      if (outcome.ok) {
+        const action =
+          outcome.action === 'expo-replace'
+            ? `Replaced Expo pathname ${node.urlPath}.`
+            : outcome.action === 'replace'
+              ? `Replaced focused stack leaf with ${segments[segments.length - 1]}.`
+              : outcome.action === 'noop'
+                ? `${segments.join(' > ')} was already focused.`
+                : `Dispatched ${segments.join(' > ')}.`
+        return { ok: true, reason: action }
+      }
+      let why: string
+      if (outcome.reason === 'unregistered') {
+        why = `Route ${segments[segments.length - 1]} is not registered in the running navigator.`
+      } else if (outcome.reason === 'no-navigator') {
+        why = 'No mounted navigator found.'
+      } else if (outcome.reason === 'no-dispatch') {
+        why = 'The mounted navigator cannot be dispatched to.'
+      } else if (outcome.reason === 'no-expo-router') {
+        why = 'Expo Router is not exposed by the running development runtime.'
+      } else if (outcome.reason === 'invalid-route') {
+        why = 'The route has no runtime navigator path.'
+      } else {
+        why = `Navigation dispatch threw: ${outcome.detail ?? 'no detail'}`
+      }
       return { ok: false, reason: why }
     },
     async awaitSettled(node, params, budget) {
@@ -375,7 +400,9 @@ export function createReachPorts(options: CreateReachPortsOptions): ReachPorts {
     auth: createAuthPort(checkAuthGate),
     // Omitted rather than stubbed when there is no transport, so `renderStrategy` skips on the
     // port's absence instead of on a port that always answers no.
-    ...(renderTransport ? { render: createRenderPort(renderTransport, navigatorSegments) } : {})
+    ...(renderTransport
+      ? { render: createRenderPort(renderTransport, navigatorSegments, options.expoRouter === true) }
+      : {})
   }
 }
 

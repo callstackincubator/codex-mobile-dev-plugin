@@ -6,6 +6,8 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as Sentry from "@sentry/node";
 import type { AppFlowHostEvent, AppFlowHostPorts } from "../app-flow/host.ts";
+import { AppFlowRunStore, type SharedAppFlowRun } from "./app-flow-run-store.ts";
+import { captureServerError } from "./telemetry.ts";
 
 const DEFAULT_INACTIVITY_MS = 15 * 60_000;
 const MAX_HISTORY_ITEMS = 6;
@@ -418,7 +420,7 @@ export interface AppFlowHostServices {
   pause(runId: string): Promise<unknown>;
   cancel(runId: string): Promise<unknown>;
   launchApp(projectPath: string): Promise<unknown>;
-  resolvePrompt(runId: string, resolution: "stop" | "override" | "continue", promptId?: string): Promise<unknown>;
+  resolvePrompt(runId: string, resolution: "stop" | "override" | "continue", promptId?: string, projectPath?: string): Promise<unknown>;
   manualStart(projectPath: string, nodeId: string): Promise<unknown>;
   manualAct(projectPath: string, action: unknown): Promise<unknown>;
   manualStop(projectPath: string): Promise<unknown>;
@@ -549,6 +551,14 @@ export async function createAppFlowHost(options: {
   // so each key keeps only its most recent events; a panel that fell behind re-reads from its seq.
   const MAX_BUFFERED_EVENTS = 64;
   const recentEvents = new Map<string, Array<{ seq: number; runId?: string; event: AppFlowHostEvent }>>();
+  const dataDir = options.dataDir ?? APP_FLOW_DIRECTORY;
+  const runStore = new AppFlowRunStore(dataDir);
+  // A panel-side MCP process has no in-memory run object for a Codex-owned sweep. Remember the
+  // project learned during status lookup so its subsequent legacy runId event polls can replay
+  // the durable event (notably the human prompt) from the shared store.
+  const remoteRunProjects = new Map<string, string>();
+  const promptRelays = new Map<string, ReturnType<typeof setInterval>>();
+  const runWrites = new Map<string, Promise<void>>();
   let eventSeq = 0;
   const bufferEvent = (key: string, runId: string | undefined, event: AppFlowHostEvent): number => {
     const seq = ++eventSeq;
@@ -559,13 +569,46 @@ export async function createAppFlowHost(options: {
     return seq;
   };
   let activeDecisions: CodexAppFlowDecisionProvider | undefined;
+  let flow: Awaited<ReturnType<typeof createAppFlowService>>;
+  const sharedRun = (run: MutableRun): Omit<SharedAppFlowRun, "updatedAt"> => ({ ...run, ownerPid: process.pid });
+  const persistRun = (run: MutableRun) => {
+    const snapshot = sharedRun(run);
+    const previous = runWrites.get(run.runId) ?? Promise.resolve();
+    const pending = previous.then(() => runStore.writeRun(snapshot)).catch(error => {
+      captureServerError(error, "app_flow.run_store");
+    });
+    runWrites.set(run.runId, pending);
+    void pending.finally(() => { if (runWrites.get(run.runId) === pending) runWrites.delete(run.runId); });
+  };
+  const stopPromptRelay = (runId: string) => {
+    const timer = promptRelays.get(runId);
+    if (timer) clearInterval(timer);
+    promptRelays.delete(runId);
+  };
+  const startPromptRelay = (run: MutableRun, promptId: string) => {
+    stopPromptRelay(run.runId);
+    let checking = false;
+    const timer = setInterval(() => {
+      if (checking || run.state !== "needs-user-action") return;
+      checking = true;
+      void runStore.takeResolution(run.projectPath, run.runId, promptId).then(async resolution => {
+        if (!resolution) return;
+        const result = await flow.resolvePrompt(run.projectPath, resolution, promptId);
+        if (!result.resolved) return;
+        run.state = resolution === "stop" ? "completed" : "running";
+        persistRun(run);
+        stopPromptRelay(run.runId);
+      }).catch(error => captureServerError(error, "app_flow.prompt_relay")).finally(() => { checking = false; });
+    }, 100);
+    timer.unref?.();
+    promptRelays.set(run.runId, timer);
+  };
   const agentDeviceRoot = vendoredAgentDeviceRoot();
   const agentDeviceCli = agentDeviceRoot
     ? `${JSON.stringify(process.execPath)} ${JSON.stringify(join(agentDeviceRoot, "bin/agent-device.mjs"))}`
     : undefined;
   const getProjectId = (selectedProjectPath: string): string =>
     createHash("sha256").update(selectedProjectPath).digest("hex").slice(0, 16);
-  const dataDir = options.dataDir ?? APP_FLOW_DIRECTORY;
   const getProjectDir = (selectedProjectId: string): string => join(dataDir, "app-flows", selectedProjectId);
   const ports: AppFlowHostPorts = {
     dataDir,
@@ -576,12 +619,17 @@ export async function createAppFlowHost(options: {
         candidate.state === "running" && (!eventProjectId || getProjectId(candidate.projectPath) === eventProjectId));
       if (run) {
         run.event = event;
-        if (event.type === "prompt") run.state = "needs-user-action";
+        if (event.type === "prompt") {
+          run.state = "needs-user-action";
+          if (event.prompt?.id) startPromptRelay(run, event.prompt.id);
+        }
         else if (event.type === "error") {
           run.state = "failed";
           run.error = event.message;
+          stopPromptRelay(run.runId);
         } else if (event.type === "complete") run.state = "completed";
         else if (run.state === "needs-user-action") run.state = "running";
+        persistRun(run);
       }
       const runId = run?.runId;
       const key = "nodeId" in event ? `manual:${event.projectId}` : runId ?? `project:${eventProjectId ?? "unknown"}`;
@@ -594,7 +642,7 @@ export async function createAppFlowHost(options: {
       return `appflow-image://mobile-dev/${project}/${Buffer.from(slug).toString("base64url")}`;
     },
   };
-  const flow = createAppFlowService(ports);
+  flow = createAppFlowService(ports);
   const manual = createManualRecordingService(ports);
 
   const projectFor = (query: { runId?: string; projectPath?: string }): string => {
@@ -612,11 +660,15 @@ export async function createAppFlowHost(options: {
       const selectedProjectPath = String(input.projectPath ?? "");
       const run: MutableRun = { runId: context.runId, projectPath: selectedProjectPath, state: "running" };
       runs.set(run.runId, run);
+      persistRun(run);
       recentEvents.delete(`project:${getProjectId(selectedProjectPath)}`);
       recentEvents.delete(`manual:${getProjectId(selectedProjectPath)}`);
       activeDecisions = context.decisions;
       const started = await flow.start(input as never);
       if (!started.ok) {
+        run.state = "failed";
+        run.error = started.error;
+        persistRun(run);
         runs.delete(run.runId);
         activeDecisions = undefined;
         throw new Error(started.error);
@@ -636,6 +688,34 @@ export async function createAppFlowHost(options: {
       if (active) {
         return {
           ...active,
+          exists: saved.exists,
+          projectId: saved.projectId,
+          ...(saved.manifest === undefined ? {} : { manifest: saved.manifest }),
+        };
+      }
+      const shared = await runStore.readRun(selectedProjectPath);
+      if (shared && (shared.state === "running" || shared.state === "needs-user-action" || shared.state === "suspended")) {
+        remoteRunProjects.set(shared.runId, selectedProjectPath);
+        const { ownerPid: _ownerPid, updatedAt: _updatedAt, ...snapshot } = shared;
+        if (shared.state === "suspended" || ownerAlive(shared.ownerPid)) {
+          return {
+            ...snapshot,
+            exists: saved.exists,
+            projectId: saved.projectId,
+            ...(saved.manifest === undefined ? {} : { manifest: saved.manifest }),
+          };
+        }
+        // A Codex-owned sweep can disappear after its turn or process exits. Do not leave the
+        // panel replaying its last "running" step forever: reconcile the orphan once and publish a
+        // terminal event through the same durable channel used for prompts.
+        const error = "App Flow stopped because its Codex worker exited. Start the project again to resume from the saved checkpoint.";
+        const event: AppFlowHostEvent = { type: "error", phase: "capture", message: error };
+        const failed = { ...snapshot, state: "failed" as const, error, event };
+        await runStore.writeRun({ ...failed, ownerPid: shared.ownerPid }).catch(cause => {
+          captureServerError(cause, "app_flow.run_store");
+        });
+        return {
+          ...failed,
           exists: saved.exists,
           projectId: saved.projectId,
           ...(saved.manifest === undefined ? {} : { manifest: saved.manifest }),
@@ -663,6 +743,7 @@ export async function createAppFlowHost(options: {
       if (!run) throw new Error("That App Flow run does not exist.");
       const result = await flow.pause(run.projectPath);
       if ((result as { paused?: boolean }).paused) run.state = "suspended";
+      if ((result as { paused?: boolean }).paused) persistRun(run);
       activeDecisions?.suspend("App Flow was paused and can be resumed.");
       return result;
     },
@@ -671,16 +752,34 @@ export async function createAppFlowHost(options: {
       if (!run) throw new Error("That App Flow run does not exist.");
       const result = await flow.cancel(run.projectPath);
       run.state = "cancelled";
+      stopPromptRelay(run.runId);
+      persistRun(run);
       activeDecisions = undefined;
       return result;
     },
     launchApp: selectedProjectPath => flow.launchApp(selectedProjectPath),
-    async resolvePrompt(selectedRunId, selectedResolution, promptId) {
+    async resolvePrompt(selectedRunId, selectedResolution, promptId, selectedProjectPath) {
       const run = runs.get(selectedRunId);
-      if (!run) throw new Error("That App Flow run does not exist.");
+      if (!run) {
+        if (!selectedProjectPath || !promptId) throw new Error("That App Flow run does not exist.");
+        const shared = await runStore.readRun(selectedProjectPath);
+        const sharedPrompt = shared?.event && typeof shared.event === "object" && "prompt" in shared.event
+          ? (shared.event as { prompt?: { id?: string } }).prompt : undefined;
+        if (!shared || shared.runId !== selectedRunId || shared.state !== "needs-user-action" || sharedPrompt?.id !== promptId || !ownerAlive(shared.ownerPid)) {
+          throw new Error("That App Flow prompt is no longer active.");
+        }
+        await runStore.requestResolution(selectedProjectPath, { runId: selectedRunId, promptId, resolution: selectedResolution });
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+          const updated = await runStore.readRun(selectedProjectPath);
+          if (!updated || updated.runId !== selectedRunId || updated.state !== "needs-user-action") return { resolved: true, relayed: true };
+        }
+        return { resolved: true, relayed: true };
+      }
       const result = await flow.resolvePrompt(run.projectPath, selectedResolution, promptId);
       if ((result as { resolved?: boolean }).resolved && selectedResolution !== "stop") run.state = "running";
       if ((result as { resolved?: boolean }).resolved && selectedResolution === "stop") run.state = "completed";
+      if ((result as { resolved?: boolean }).resolved) { stopPromptRelay(run.runId); persistRun(run); }
       return result;
     },
     manualStart: (selectedProjectPath, nodeId) => {
@@ -696,7 +795,12 @@ export async function createAppFlowHost(options: {
         ? query.runId
         : `manual:${getProjectId(projectFor(query))}`;
       const buffered = recentEvents.get(key) ?? [];
-      return buffered.filter(entry => entry.seq > since);
+      const pending = buffered.filter(entry => entry.seq > since);
+      if (pending.length || !query.runId) return pending;
+      const remoteProjectPath = remoteRunProjects.get(query.runId);
+      if (!remoteProjectPath) return pending;
+      const durable = await runStore.readEvent(remoteProjectPath, query.runId, since);
+      return durable ? [durable] : pending;
     },
     async screenshot(selectedProjectId, encodedPath) {
       let decoded = Buffer.from(encodedPath, "base64url").toString("utf8");
@@ -716,4 +820,9 @@ export async function createAppFlowHost(options: {
     },
   };
   return new AppFlowHost(services);
+}
+
+function ownerAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
 }

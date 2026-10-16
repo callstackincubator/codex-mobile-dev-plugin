@@ -5,7 +5,7 @@ import { AppFlowRecordingStore } from "./app-flow-recording.ts";
 import { countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 
 export type AppFlowRunState = "idle" | "running" | "needs-user-action" | "suspended" | "completed" | "failed" | "cancelled";
-export interface AppFlowSweepSummary { completed: number; total: number; message: string; }
+export interface AppFlowSweepSummary { completed: number; total: number; message: string; captured?: number; captureLimit?: number; }
 /** One entry of the project selector. The server owns the list so a pick survives the panel document. */
 export interface AppFlowProjectOption { path: string; name: string; }
 type Snapshot = {
@@ -190,6 +190,13 @@ export class AppFlowPanel {
       const runId = typeof data.runId === "string" ? data.runId : null;
       const state = typeof data.state === "string" ? data.state as AppFlowRunState : "idle";
       this.update({ runId, state, projectId: typeof data.projectId === "string" ? data.projectId : "", error: typeof data.error === "string" ? data.error : null });
+      // Status retains the active run's latest event. Apply it as a recovery channel so reopening
+      // the panel (or missing both a host notification and the bounded event poll) cannot leave a
+      // human-action state without the prompt controls needed to resolve it.
+      const event = object(data.event);
+      if (event && (event.type !== "prompt" || state === "needs-user-action")) this.ingest({ ...(runId ? { runId } : {}), event });
+      // The status state is authoritative when its latest event predates a pause/cancel transition.
+      this.update({ state, ...(state === "needs-user-action" ? {} : { prompt: null }) });
       if (data.exists === true) await this.refreshResult({ projectPath: path, ...(runId ? { runId } : {}) });
     } catch (error) {
       if (revision === this.loadRevision) this.update({ error: error instanceof Error ? error.message : String(error) });
@@ -199,7 +206,9 @@ export class AppFlowPanel {
   private async refreshResult(target?: { runId?: string; projectPath?: string }) {
     const revision = this.loadRevision;
     const projectPath = target?.projectPath ?? this.snapshot.projectPath;
-    const arguments_ = target?.runId ? { runId: target.runId } : { projectPath };
+    // Graphs are durable and project-scoped. Looking them up by project also works when the run is
+    // owned by the Codex MCP process rather than the panel's MCP process.
+    const arguments_ = { projectPath };
     const response = await this.call("mobile_appflow_result", arguments_);
     // A refresh that outlived its project (or the panel) must not paint another project's map.
     if (this.disposed || revision !== this.loadRevision || this.snapshot.projectPath !== projectPath) return;
@@ -273,9 +282,19 @@ export class AppFlowPanel {
     catch (error) { this.update({ error: error instanceof Error ? error.message : String(error) }); }
   }
   async resolvePrompt(resolution: AppFlowPromptResolution) {
-    const { runId, prompt } = this.snapshot; if (!runId) return;
+    const { runId, prompt, projectPath } = this.snapshot; if (!runId) return;
     this.update({ prompt: null });
-    try { await this.call("mobile_appflow_resolve_prompt", { runId, resolution, ...(prompt?.id ? { promptId: prompt.id } : {}) }); await this.refreshStatus(); }
+    try {
+      await this.call("mobile_appflow_resolve_prompt", { runId, resolution, projectPath, ...(prompt?.id ? { promptId: prompt.id } : {}) });
+      await this.refreshStatus();
+      // A Codex turn deliberately ends when a human prompt appears. Continuing only the engine
+      // leaves its next model decision without a caller, so wake a new turn for this same run.
+      if (resolution !== "stop" && this.snapshot.state === "running" && this.canSendAgentStart) {
+        const resume = `Resume the existing App Flow run ${runId}. Service its mobile_appflow_next_decision and mobile_appflow_submit_decision loop until it completes, fails, is cancelled, is suspended, or needs user action. Do not start a new run and do not resolve a human auth/review prompt yourself.`;
+        const response = await this.app.sendMessage({ role: "user", content: [{ type: "text", text: resume }] }, { timeout: 5000, maxTotalTimeout: 5000 });
+        if (response.isError) throw new Error("Codex could not resume the App Flow decision loop.");
+      }
+    }
     catch (error) { this.update({ error: error instanceof Error ? error.message : String(error) }); }
   }
   async replay(nodeId: string) {
@@ -284,13 +303,18 @@ export class AppFlowPanel {
     await this.call("mobile_appflow_manual_replay", { projectPath, nodeId }, 300_000);
   }
   async refreshStatus() {
-    const target = this.snapshot.runId ? { runId: this.snapshot.runId } : { projectPath: this.snapshot.projectPath };
+    // The active sweep may be owned by the MCP process serving Codex's tool calls, so always use
+    // the project-scoped durable lookup instead of assuming this panel owns the runId.
+    const target = { projectPath: this.snapshot.projectPath };
     const response = await this.call("mobile_appflow_status", target);
     const data = object(response.structuredContent) ?? {};
     const state = typeof data.state === "string" ? data.state as AppFlowRunState : this.snapshot.state;
-    const event = object(data.event) as AppFlowProgressEvent | null;
-    this.update({ state, ...(typeof data.runId === "string" ? { runId: data.runId } : {}),
-      ...(typeof data.error === "string" ? { error: data.error } : {}), ...(event ? { progress: event } : {}) });
+    const statusRunId = typeof data.runId === "string" ? data.runId : undefined;
+    const event = object(data.event);
+    if (event && (event.type !== "prompt" || state === "needs-user-action")) this.ingest({ ...(statusRunId ? { runId: statusRunId } : {}), event });
+    this.update({ state, ...(statusRunId ? { runId: statusRunId } : {}),
+      ...(typeof data.error === "string" ? { error: data.error } : {}),
+      ...(state === "needs-user-action" ? {} : { prompt: null }) });
     if (["completed", "failed", "cancelled", "suspended"].includes(state)) await this.refreshResult();
   }
 
@@ -330,12 +354,14 @@ export class AppFlowPanel {
     // adopted — the same call without an active run answers with the previous run's persisted
     // status, which would flicker the panel back to the old map. After that the event buffer
     // takes over, and its `complete`/`error` events carry the terminal state.
-    if (!runId && (this.snapshot.agentStartPending || state === "running") && projectPath !== "") {
+    if (((!runId && this.snapshot.agentStartPending) || state === "running" || state === "needs-user-action") && projectPath !== "") {
       try {
         const response = await this.call("mobile_appflow_status", { projectPath });
         const data = object(response.structuredContent) ?? {};
         if (!this.disposed && typeof data.runId === "string" && typeof data.state === "string") {
           this.update({ runId: data.runId, state: data.state as AppFlowRunState });
+          const event = object(data.event);
+          if (event && (event.type !== "prompt" || data.state === "needs-user-action")) this.ingest({ runId: data.runId, event });
           ({ runId, state } = this.snapshot);
         }
       } catch {
@@ -398,9 +424,12 @@ export class AppFlowPanel {
     const progress = event as unknown as AppFlowProgressEvent;
     clearTimeout(this.agentStartTimer); this.agentStartTimer = undefined;
     const summary = progress.completed !== undefined && progress.total !== undefined
-      ? { completed: progress.completed, total: progress.total, message: progress.message } : this.snapshot.sweepSummary;
+      ? { completed: progress.completed, total: progress.total, message: progress.message,
+          ...(progress.captured !== undefined ? { captured: progress.captured } : {}),
+          ...(progress.captureLimit !== undefined ? { captureLimit: progress.captureLimit } : {}) }
+      : this.snapshot.sweepSummary;
     if (this.progressStartedAt !== undefined) { recordUiTiming("ui.app_flow.start_to_progress", performance.now() - this.progressStartedAt); this.progressStartedAt = undefined; }
-    const fields: Partial<Snapshot> = { progress, sweepSummary: summary, prompt: progress.type === "prompt" ? progress.prompt ?? null : null,
+    const fields: Partial<Snapshot> = { progress, sweepSummary: summary, prompt: progress.type === "prompt" ? progress.prompt ?? null : null, agentStartPending: false,
       ...(typeof envelope.runId === "string" ? { runId: envelope.runId } : {}), ...(typeof progress.projectId === "string" ? { projectId: progress.projectId } : {}) };
     if (progress.type === "error") { fields.state = "failed"; fields.error = progress.message; }
     else if (progress.type === "prompt") fields.state = "needs-user-action";

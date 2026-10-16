@@ -154,11 +154,11 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost, proje
     title: "Resolve App Flow prompt",
     description:
       "Resolve a human-action gate after the user has reviewed or logged into the app. The agent must not claim a human action happened or resolve an authentication gate autonomously.",
-    inputSchema: { runId, resolution, promptId: z.string().optional() },
+    inputSchema: { runId, resolution, promptId: z.string().optional(), projectPath: projectPath.optional() },
     annotations: write,
     _meta: appVisibility,
-  }, safe(async ({ runId, resolution, promptId }: { runId: string; resolution: "stop" | "override" | "continue"; promptId?: string }) =>
-    dataResult(await host.services.resolvePrompt(runId, resolution, promptId))));
+  }, safe(async ({ runId, resolution, promptId, projectPath }: { runId: string; resolution: "stop" | "override" | "continue"; promptId?: string; projectPath?: string }) =>
+    dataResult(await host.services.resolvePrompt(runId, resolution, promptId, projectPath))));
 
   registerAppTool(server, "mobile_appflow_projects", {
     title: "List App Flow projects",

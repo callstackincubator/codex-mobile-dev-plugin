@@ -13,8 +13,8 @@ export type AppFlowBuildMode = 'structure-only' | 'screen-ui-and-structure'
  * - `fast` — use the deterministic runtime navigator directly.
  * - `thorough` — try a deep link, then ask the model to explore the UI.
  *
- * A verified probe and a saved manual replay are always reused before the named pipeline. They
- * are already-paid evidence, not an exploration mechanism selected by this option.
+ * Auto and Thorough reuse a verified probe or saved manual replay before the named pipeline. Fast
+ * remains runtime-only: it does not open a probe URL or execute a stored agent-device journey.
  */
 export type ExplorationMode = 'auto' | 'fast' | 'thorough'
 
@@ -684,6 +684,10 @@ export interface AppFlowProgressEvent {
   projectId?: string
   completed?: number
   total?: number
+  /** Successful screen captures so far. Unlike `completed`, this excludes unreachable routes. */
+  captured?: number
+  /** Requested successful-capture goal, when the run has one. */
+  captureLimit?: number
   /** Live sum of sub-agent LLM usage so far in this build. */
   tokens?: TokenUsage
   /** Set on `prompt` events: what the build is waiting for the user to do. */

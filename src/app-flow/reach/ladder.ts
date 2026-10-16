@@ -86,10 +86,9 @@ export interface ReachRungs<TInput> {
 /**
  * The ladder an `ExplorationMode` asks for.
  *
- * A probe credit and saved replay are always first because they reuse verified work. After those
- * shortcuts, the named pipelines are exact: Fast is deterministic runtime navigation, Auto is a
- * deep link followed by deterministic runtime navigation, and Thorough is a deep link followed by
- * model-driven exploration.
+ * Auto and Thorough reuse a verified probe or saved replay before their named pipelines. Fast is
+ * deliberately stricter: it is deterministic runtime navigation only, so selecting it never opens
+ * a deep link, replays an agent-device journey, or falls back to a model-driven walk.
  *
  * `fast` leaves a screen the navigator cannot reach *unreached* rather than falling back to the
  * walk. That is the point of asking for it: the fallback is the expensive thing, and a mode that
@@ -100,7 +99,7 @@ export function strategiesFor<TInput>(
   rungs: ReachRungs<TInput>
 ): readonly ReachStrategy<TInput>[] {
   const shortcuts = [rungs.probeCredit, rungs.savedReplay]
-  if (mode === 'fast') return [...shortcuts, rungs.render]
+  if (mode === 'fast') return [rungs.render]
   if (mode === 'thorough') return [...shortcuts, rungs.deepLink, rungs.explore]
   return [...shortcuts, rungs.deepLink, rungs.render]
 }

@@ -1463,10 +1463,14 @@ export async function buildAppFlow(
             })
           }
         },
-        async navigate(route, params): Promise<NavigateReply> {
+        async navigate(route, params, expoPath): Promise<NavigateReply> {
           const started = performance.now()
           try {
-            return await fastRuntime!.invoke<NavigateReply>({ type: 'navigate', route, params }, 5_000)
+            const result = await fastRuntime!.invoke<NavigateReply>(
+              { type: 'navigate', route, params, expoPath },
+              5_000
+            )
+            return result
           } finally {
             runtimeMetric('app_flow.runtime.command', started, { operation: 'navigate' })
           }
@@ -1496,7 +1500,8 @@ export async function buildAppFlow(
         runAgent,
         checkAuthGate,
         signal,
-        renderTransport
+        renderTransport,
+        expoRouter: parsed.mode === 'expo-router'
       })
 
       if ((await checkAuthGate(nodesWithSlug.length)) === 'stop') {
@@ -2245,8 +2250,9 @@ export async function buildAppFlow(
       // the drawer and one best-effort tap to close it again, and wrapped in a `try/catch` a total
       // failure never escapes: no drawer control found, a device hiccup, anything at all still leaves
       // the sweep exactly where it would have started if this pass did not exist.
-      try {
-        const launchEntryNodeId = entryNodeIds[0] ?? 'app-launch'
+      if (options.explorationMode !== 'fast') {
+        try {
+          const launchEntryNodeId = entryNodeIds[0] ?? 'app-launch'
         const tabBarPressables = await ports.device.capturePressables(15_000)
         const tabBarChrome = detectChromeInventory(tabBarPressables, chromeCandidates())
         if (tabBarChrome) {
@@ -2363,10 +2369,11 @@ export async function buildAppFlow(
             `[app-flow] entry-chrome pass — no drawer opener among ${tabBarPressables.length} entry controls`
           )
         }
-      } catch (error) {
-        console.log(
-          `[app-flow] entry-chrome pass failed, continuing without it — ${error instanceof Error ? error.message : String(error)}`
-        )
+        } catch (error) {
+          console.log(
+            `[app-flow] entry-chrome pass failed, continuing without it — ${error instanceof Error ? error.message : String(error)}`
+          )
+        }
       }
 
       let deepLinkBreaker: DeepLinkBreakerState = initialDeepLinkBreakerState()
@@ -2382,7 +2389,11 @@ export async function buildAppFlow(
       // stops the immediate, self-contained waste.
       const rejectedDeepLinkUrls = new DeepLinkRejectionMemo()
       const closedGuardGates = new GuardGateMemo()
-      const probeRoute = pickProbeRoute(nodesWithSlug)
+      // Fast is runtime-only. A deep-link probe used to add an open, settle, screenshot and vision
+      // verdict before the first runtime dispatch — often most of a short six-screen run — and
+      // could then be claimed as a deep-link capture despite the user selecting Fast.
+      const probeRoute =
+        options.explorationMode === 'fast' ? null : pickProbeRoute(nodesWithSlug)
 
       /**
        * The reach the one-time deep-link probe below already performed and verified, held for the
@@ -2798,7 +2809,9 @@ export async function buildAppFlow(
               ? `Captured ${node.urlPath ?? node.title} opportunistically`
               : `Already captured ${node.urlPath ?? node.title}`,
             completed: sweepQueue.completed + 1,
-            total
+            total,
+            captured: explorationControl.screensExplored,
+            captureLimit: options.screenLimit
           })
           continue
         }
@@ -2809,7 +2822,9 @@ export async function buildAppFlow(
           phase: 'capture',
           message: `Reaching ${label}`,
           completed: sweepQueue.completed,
-          total
+          total,
+          captured: explorationControl.screensExplored,
+          captureLimit: options.screenLimit
         })
 
         // One resolution feeds both the values and the unresolved list, so the two cannot drift: the
@@ -3410,7 +3425,7 @@ export async function buildAppFlow(
           }
         }
 
-        // Effect folding — plan landing-order item 4. `savedReplayStrategy`/`deepLinkStrategy`
+        // Effect folding — plan landing-order item 4. Reach strategies
         // (`reach/strategies/`) are pure: they read `ports` and return a `ReachAttempt`, never
         // reaching into this closure's state themselves. This is the one place their `effects`
         // turn into the sweep-level state `trySavedReplay`/`tryDeepLink` used to mutate directly —
@@ -3738,8 +3753,21 @@ export async function buildAppFlow(
          * whose values the store could not fill is skipped here too rather than dispatched with a
          * hole in it. Arrival stays the judge's call; see `reach/strategies/render.ts`.
          */
-        const renderRung: ReachStrategy<null> = (_input, p) =>
-          renderStrategy({ node, params, unresolvedParams, budget, scratchPath }, p)
+        const renderRung: ReachStrategy<null> = async (_input, p) => {
+          const attempt = await renderStrategy(
+            {
+              node,
+              params,
+              unresolvedParams,
+              budget,
+              scratchPath,
+              guardGateClosed: (condition) => closedGuardGates.wasClosed(condition)
+            },
+            p
+          )
+          applyReachEffects(attempt.effects)
+          return attempt
+        }
 
         const outcome = await runReachLadder({
           input: null,
@@ -3854,7 +3882,9 @@ export async function buildAppFlow(
               phase: 'capture',
               message: `${label} is not available in this build`,
               completed: sweepQueue.completed + 1,
-              total
+              total,
+              captured: explorationControl.screensExplored,
+              captureLimit: options.screenLimit
             })
             if (finishExploredScreen(false)) break
             // A screen this build withholds is a verdict, not a stuck app, so it must not feed the
@@ -3918,7 +3948,9 @@ export async function buildAppFlow(
           phase: 'capture',
           message: `Capturing ${label}`,
           completed: sweepQueue.completed + 1,
-          total
+          total,
+          captured: explorationControl.screensExplored,
+          captureLimit: options.screenLimit
         })
 
         // The screen is reached and verified by this point, so a failing device command here costs

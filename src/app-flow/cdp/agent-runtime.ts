@@ -170,7 +170,13 @@ export type AgentCommand =
   | { type: 'heartbeat' }
   | { type: 'restore' }
   | { type: 'nav-state' }
-  | { type: 'navigate'; route: string[]; params: Record<string, string> | null }
+  | {
+      type: 'navigate'
+      route: string[]
+      params: Record<string, string> | null
+      /** Expo Router routes by pathname rather than React Navigation's nested route names. */
+      expoPath: string | null
+    }
   | {
       type: 'readiness'
       route: string
@@ -192,10 +198,16 @@ export interface NavStateReply {
   routes: NavRoute[] | null
 }
 export type NavigateReply =
-  | { ok: true }
+  | { ok: true; action: 'expo-replace' | 'replace' | 'navigate' | 'noop' }
   | {
       ok: false
-      reason: 'no-navigator' | 'no-dispatch' | 'unregistered' | 'invalid-route' | 'threw'
+      reason:
+        | 'no-navigator'
+        | 'no-dispatch'
+        | 'no-expo-router'
+        | 'unregistered'
+        | 'invalid-route'
+        | 'threw'
       detail?: string
     }
 /**
@@ -411,28 +423,103 @@ export function agentNavState(limits: AgentLimits): NavStateReply {
 export function agentNavigate(
   route: string[],
   params: Record<string, string> | null,
-  limits: AgentLimits
+  limits: AgentLimits,
+  expoPath: string | null
 ): NavigateReply {
   if (!Array.isArray(route) || !route.length) return { ok: false, reason: 'invalid-route' }
+  if (expoPath) {
+    // Match the original App Flow runtime: inspect only Metro modules the app already initialized,
+    // never execute a cold module just to obtain Expo Router's imperative singleton.
+    var modules = (globalThis as any).__r && (globalThis as any).__r.getModules
+      ? (globalThis as any).__r.getModules()
+      : null
+    if (modules && typeof modules.values === 'function') {
+      var values = modules.values()
+      var next = values.next()
+      while (!next.done) {
+        var module = next.value
+        if (module && module.isInitialized) {
+          var exports = module.publicModule && module.publicModule.exports
+          var descriptor = exports && Object.getOwnPropertyDescriptor(exports, 'router')
+          var router = descriptor && 'value' in descriptor ? descriptor.value : null
+          if (
+            router &&
+            typeof router.push === 'function' &&
+            typeof router.replace === 'function' &&
+            typeof router.canGoBack === 'function'
+          ) {
+            try {
+              router.replace({ pathname: expoPath, params: params || {} })
+              return { ok: true, action: 'expo-replace' }
+            } catch (error) {
+              return {
+                ok: false,
+                reason: 'threw',
+                detail: String(error && (error as any).message).slice(0, 80)
+              }
+            }
+          }
+        }
+        next = values.next()
+      }
+    }
+    return { ok: false, reason: 'no-expo-router' }
+  }
   var found = agentFindNavigator(limits)
   if (!found) return { ok: false, reason: 'no-navigator' }
   var nav = found.nav
   if (!nav || typeof nav.dispatch !== 'function') return { ok: false, reason: 'no-dispatch' }
-  var names: string[] = []
-  var pending: any[] = [{ state: found.state, depth: 0 }]
-  for (var seen = 0; pending.length && seen < 500; seen++) {
-    var item = pending.pop()
-    var state = item && item.state
-    if (!state || item.depth >= 16) continue
-    if (Array.isArray(state.routeNames)) names = names.concat(state.routeNames)
-    if (!Array.isArray(state.routes)) continue
-    for (var index = 0; index < state.routes.length; index++) {
-      var child = state.routes[index]
-      if (child && child.state) pending.push({ state: child.state, depth: item.depth + 1 })
-    }
-  }
-  if (names.indexOf(String(route[route.length - 1])) < 0) {
+  var current = found.state
+  if (!Array.isArray(current.routeNames) || current.routeNames.indexOf(String(route[0])) < 0) {
     return { ok: false, reason: 'unregistered' }
+  }
+
+  // Preserve the original runtime's bounded-stack behavior: replace the focused leaf when the
+  // requested path is already inside that stack, otherwise navigate through the nested payload.
+  // This avoids accumulating one mounted screen per Fast capture.
+  var leaf = current
+  for (var depth = 0; depth < route.length - 1; depth++) {
+    var active = leaf && leaf.routes && leaf.routes[leaf.index == null ? 0 : leaf.index]
+    if (!active || active.name !== route[depth]) {
+      leaf = null
+      break
+    }
+    leaf = active.state
+  }
+  var expected = String(route[route.length - 1])
+  var selected = leaf && leaf.routes && leaf.routes[leaf.index == null ? 0 : leaf.index]
+  var same = function (before: any, after: any, depth: number, budget: any): boolean {
+    if (Object.is(before, after)) return true
+    if (
+      !before ||
+      !after ||
+      typeof before !== 'object' ||
+      typeof after !== 'object' ||
+      depth > 6 ||
+      --budget.left < 0
+    ) return false
+    var array = Array.isArray(before)
+    if (
+      array !== Array.isArray(after) ||
+      (!array &&
+        (Object.getPrototypeOf(before) !== Object.prototype ||
+          Object.getPrototypeOf(after) !== Object.prototype))
+    ) return false
+    var a = Object.getOwnPropertyDescriptors(before)
+    var b = Object.getOwnPropertyDescriptors(after)
+    var keys = Object.keys(a)
+    if (keys.length > 200 || keys.length !== Object.keys(b).length) return false
+    for (var keyIndex = 0; keyIndex < keys.length; keyIndex++) {
+      var key = keys[keyIndex]
+      if (
+        !a[key] ||
+        !b[key] ||
+        !('value' in a[key]) ||
+        !('value' in b[key]) ||
+        !same(a[key].value, b[key].value, depth + 1, budget)
+      ) return false
+    }
+    return true
   }
   var nested: any = params && Object.keys(params).length ? params : undefined
   for (var offset = route.length - 1; offset > 0; offset--) {
@@ -441,8 +528,27 @@ export function agentNavigate(
   var payload: any = { name: String(route[0]) }
   if (nested !== undefined) payload.params = nested
   try {
+    if (
+      leaf &&
+      leaf.type === 'stack' &&
+      leaf.key &&
+      Array.isArray(leaf.routeNames) &&
+      leaf.routeNames.indexOf(expected) >= 0
+    ) {
+      if (
+        selected &&
+        selected.name === expected &&
+        (!params || same(selected.params || {}, params, 0, { left: 200 }))
+      ) return { ok: true, action: 'noop' }
+      nav.dispatch({
+        type: 'REPLACE',
+        target: leaf.key,
+        payload: { name: expected, params: params || undefined }
+      })
+      return { ok: true, action: 'replace' }
+    }
     nav.dispatch({ type: 'NAVIGATE', payload: payload })
-    return { ok: true }
+    return { ok: true, action: 'navigate' }
   } catch (error) {
     return {
       ok: false,
@@ -1169,7 +1275,7 @@ export function agentInstall(key: string, leaseMs: number, limits: AgentLimits):
     } else if (type === 'nav-state') {
       done(agentNavState(limits))
     } else if (type === 'navigate') {
-      done(agentNavigate(command.route, command.params || null, limits))
+      done(agentNavigate(command.route, command.params || null, limits, command.expoPath || null))
     } else if (type === 'readiness') {
       var quiet =
         typeof command.quietMs === 'number' && isFinite(command.quietMs) && command.quietMs >= 0

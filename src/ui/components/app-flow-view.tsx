@@ -71,7 +71,11 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
     </header>
     {isRunning && state.progress && <div className="flex items-center gap-3 border-b bg-muted/40 px-4 py-2"><Loader2 className="size-4 animate-spin" />
       <div className="min-w-0 flex-1"><div className="text-sm capitalize">{state.progress.phase}</div><div className="truncate text-xs text-muted-foreground">{state.progress.message}</div></div>
-      {state.sweepSummary && <span className="text-xs tabular-nums text-muted-foreground">{state.sweepSummary.completed} / {state.sweepSummary.total} screens</span>}</div>}
+      {state.sweepSummary && <span className="text-xs tabular-nums text-muted-foreground">
+        {state.sweepSummary.captureLimit !== undefined && state.sweepSummary.captured !== undefined
+          ? `${state.sweepSummary.captured} / ${state.sweepSummary.captureLimit} captured · route ${state.sweepSummary.completed} / ${state.sweepSummary.total}`
+          : `${state.sweepSummary.completed} / ${state.sweepSummary.total} screens`}
+      </span>}</div>}
     {!isRunning && tally && <div className="flex items-center gap-3 border-b bg-muted/20 px-4 py-2"><MapIcon className="size-4" />
       <div className="min-w-0 flex-1"><div className="text-sm">{isPaused ? "Paused after" : sweepStatus === "stopped" || sweepStatus === "failed" ? "Stopped after" : "Captured"} {tally.completed} of {tally.total} screens</div>
         {state.sweepSummary && <div className="truncate text-xs text-muted-foreground">Last step: {state.sweepSummary.message}</div>}</div></div>}
