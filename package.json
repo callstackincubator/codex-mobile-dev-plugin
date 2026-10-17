@@ -1,10 +1,10 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.159",
+  "version": "0.1.160",
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.18"
+    "node": ">=22.19.0"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -65,6 +65,7 @@
     "react-resizable-panels": "^4.14.1",
     "recharts": "^3.10.1",
     "tailwind-merge": "^3.7.0",
+    "undici": "8.12.1",
     "ws": "8.22.0",
     "zod": "^4.3.6"
   },
