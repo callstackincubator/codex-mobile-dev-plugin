@@ -8,6 +8,8 @@ The plugin uses Codex's bundled Node runtime. iOS needs an Apple Silicon Mac wit
 
 Physical iOS discovery requires Xcode 27 or later. It uses the selected Xcode installation's `xcrun devicectl` JSON output and needs no additional native library. Pair the phone with Xcode and enable wireless connectivity there to discover it over Wi-Fi.
 
+Discovery preserves remembered disconnected and unavailable devices. Their `transportType` is omitted when Xcode reports no transport; this does not prevent listing other devices. Malformed responses identify the failing JSON field. The Xcode version requirement is shown only when the JSON version is too old.
+
 The native panel targets Codex desktop, iOS simulators, and Android emulators or attached devices. The active Mobile Dev MCP server also works through stdio in a local MCP client. Use the selected UDID for iOS tools and the selected running serial for Android tools. This plugin does not build the user's app. Codex's permission and confirmation rules still apply to tool calls.
 
 Android logs need `adb` from an installed Android SDK. The reader checks `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `~/Library/Android/sdk`, then PATH. Metro logs need an existing local Metro server and an app with an inspector target. The log tools connect to that server without starting it.

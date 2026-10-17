@@ -614,7 +614,9 @@ test("physical iOS devices mirror above simulators and route touches to their ow
   assert.equal(resumedMirrors.length, 2);
   assert.equal(buttonsStillDisabled, true);
   assert.equal(screenshot.disabled, false);
-  f.setPhysicalDevices([{ ...physicalPhone, state: "disconnected", transportType: "none" }]);
+  const unavailablePhone = { ...physicalPhone, state: "unavailable" };
+  Reflect.deleteProperty(unavailablePhone, "transportType");
+  f.setPhysicalDevices([unavailablePhone]);
   await picker.refresh?.();
   const disconnectedState = picker.getSnapshot();
   const phonePresent = disconnectedState.items.some(item => item.value === physicalPhone.udid);

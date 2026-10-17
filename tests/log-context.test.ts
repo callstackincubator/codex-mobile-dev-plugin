@@ -258,6 +258,15 @@ test("physical iOS context identifies its interactive mirroring capability", asy
   const changedContent = JSON.stringify(changed?.content);
   assert.equal(changed?.structuredContent?.selectedSimulator, wired);
   assert.match(changedContent, /Transport: wired/);
+  const unavailable: PhysicalIosDevice = { ...phone, state: "unavailable" };
+  Reflect.deleteProperty(unavailable, "transportType");
+  context.selectSimulator(unavailable);
+  await context.attach(undefined);
+  const unavailableUpdate = updates.at(-1);
+  const unavailableContent = JSON.stringify(unavailableUpdate?.content);
+  assert.match(unavailableContent, /State: unavailable/);
+  assert.match(unavailableContent, /Transport not reported/);
+  assert.doesNotMatch(unavailableContent, /Transport: undefined/);
 });
 
 const screenshot: ScreenshotAttachment = { id: "capture-1", data: "/9j/2Q==", mimeType: "image/jpeg", simulator };

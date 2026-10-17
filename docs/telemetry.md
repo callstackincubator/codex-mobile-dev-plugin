@@ -2,6 +2,14 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Since 0.1.159, remembered physical iOS devices without a reported transport are
+successful discovery results. Discovery failures use `ios.devices.discovery`
+handled-error reporting with the existing scrubbing and outcome metrics. Repeated
+failures report once per continuous category episode; a successful discovery resets
+the episode. Diagnostics identify schema fields without including device values.
+Discovery sampling exclusions, UI timings and surface attribution retain their
+existing boundaries. No new collector or native telemetry is added.
+
 Since 0.1.158, opening device intent is applied before screen connections start.
 Existing MCP operation traces, `ui.video.first_frame`, rendering/input timings,
 and discovery/error measurements remain on the active path with their existing
