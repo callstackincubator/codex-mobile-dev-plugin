@@ -620,13 +620,57 @@ async function setNetworkEnabled(serial, enabled, runExec = execText) {
     const r = await runExec("adb", ["-s", serial, "shell", ...args], {
       timeout: ADB_MUTATION_TIMEOUT_MS
     });
-    if (execFailed(r)) {
+    const noTelephony = service === "data" && /Can't find service: phone/.test(`${r.stdout}${r.stderr}`);
+    if (execFailed(r) && !noTelephony) {
       throw new Error(
         `adb shell ${args.join(" ")} failed: ${execFailure(r)}`
       );
     }
   }
   return getNetworkStatus(serial, runExec);
+}
+var DEMO_BROADCAST = "am broadcast -a com.android.systemui.demo -e command";
+var CLEAN_STATUS_BAR = [
+  "exit",
+  "enter",
+  "clock -e hhmm 0941",
+  "battery -e level 100 -e plugged false",
+  "network -e wifi show -e level 4 -e fully true",
+  "network -e mobile hide",
+  "notifications -e visible false"
+].map((command) => `${DEMO_BROADCAST} ${command}`);
+var STATUS_BAR_MARKER = "mobile_dev_status_bar_boot";
+var BOOT_ID = "cat /proc/sys/kernel/random/boot_id";
+async function getStatusBar(serial, runExec = execText) {
+  const r = await runExec(
+    "adb",
+    ["-s", serial, "shell", `settings get global ${STATUS_BAR_MARKER}; ${BOOT_ID}`],
+    { timeout: ADB_QUERY_TIMEOUT_MS }
+  );
+  if (execFailed(r)) {
+    throw new Error(`reading the status bar mode failed: ${execFailure(r)}`);
+  }
+  const [marker, boot] = r.stdout.trim().split(/\s+/);
+  return { mode: marker && marker === boot ? "clean" : "live" };
+}
+async function setStatusBar(serial, mode, runExec = execText) {
+  const command = mode === "clean" ? [
+    // SystemUI ignores demo broadcasts until its settings observer sees demo mode allowed.
+    '[ "$(settings get global sysui_demo_allowed)" = 1 ] || { settings put global sysui_demo_allowed 1 && sleep 1; }',
+    ...CLEAN_STATUS_BAR,
+    `settings put global ${STATUS_BAR_MARKER} $(${BOOT_ID})`
+  ] : [
+    `${DEMO_BROADCAST} exit`,
+    "settings put global sysui_demo_allowed 0",
+    `settings delete global ${STATUS_BAR_MARKER}`
+  ];
+  const r = await runExec("adb", ["-s", serial, "shell", command.join(" && ")], {
+    timeout: ADB_MUTATION_TIMEOUT_MS
+  });
+  if (execFailed(r)) {
+    throw new Error(`setting the status bar to ${mode} failed: ${execFailure(r)}`);
+  }
+  return getStatusBar(serial, runExec);
 }
 
 // runtimes/serve-emu/src/emulator.ts
@@ -3201,6 +3245,60 @@ function deviceRoutes() {
             network: await runForContext(
               requestContext,
               (context) => setNetworkEnabled(context.serial, enabled)
+            )
+          });
+        } catch (err) {
+          return errorResponse(err);
+        }
+      }
+    },
+    {
+      method: "GET",
+      path: "/api/status-bar",
+      handler: async ({ deps }) => {
+        const { runForContext, requestContext, errorResponse } = deps;
+        try {
+          return Response.json({
+            ok: true,
+            statusBar: await runForContext(
+              requestContext,
+              (context) => getStatusBar(context.serial)
+            )
+          });
+        } catch (err) {
+          return errorResponse(err);
+        }
+      }
+    },
+    {
+      method: "POST",
+      path: "/api/status-bar",
+      handler: async ({ request: req, deps }) => {
+        const {
+          runForContext,
+          requestContext,
+          errorResponse,
+          readJsonBody,
+          MAX_JSON_BODY_BYTES: MAX_JSON_BODY_BYTES2
+        } = deps;
+        try {
+          const payload = await readJsonBody(
+            req,
+            MAX_JSON_BODY_BYTES2,
+            requestContext
+          );
+          if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+            throw new Error("status bar payload must be an object");
+          }
+          const mode = payload.mode;
+          if (mode !== "clean" && mode !== "live") {
+            throw new Error("mode must be clean or live");
+          }
+          return Response.json({
+            ok: true,
+            statusBar: await runForContext(
+              requestContext,
+              (context) => setStatusBar(context.serial, mode)
             )
           });
         } catch (err) {
