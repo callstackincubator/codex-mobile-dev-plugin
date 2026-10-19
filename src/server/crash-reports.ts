@@ -60,8 +60,7 @@ function watchIosSimulatorCrashes(deviceId: string, emit: Emit, signal: AbortSig
   const exited = async (exit: IosAppExit) => {
     const process = await executable(exit.appId);
     if (signal.aborted) return;
-    const crash: LogRecord = { timestamp: exit.timestamp, level: "error", source: "native", origin: "ios", kind: "crash", appId: exit.appId, pid: exit.pid,
-      process, reason: exit.signal, message: `${process ?? exit.appId} crashed: ${exit.signal}` };
+    const crash = exitCrash(exit, process);
     recordCrash("ios_exit");
     emit(crash);
     const { stdout } = await execute("xcrun", ["simctl", "spawn", deviceId, "log", "show", "--style", "ndjson", "--last", "20s", "--predicate", iosCrashLogPredicate(exit.pid)],
@@ -79,6 +78,12 @@ function watchIosSimulatorCrashes(deviceId: string, emit: Emit, signal: AbortSig
 export const iosAppExitPredicate = 'process == "SpringBoard" AND category == "Workspace" AND eventMessage BEGINSWITH "Process exited"';
 const crashSignals = new Set(["SIGABRT", "SIGSEGV", "SIGBUS", "SIGILL", "SIGTRAP", "SIGFPE", "SIGSYS", "SIGQUIT"]);
 export type IosAppExit = { appId: string; pid: number; signal: string; timestamp: string };
+
+/** The immediate crash record for an exit, before any reason or stack is known. */
+function exitCrash(exit: IosAppExit, process?: string): LogRecord {
+  return { timestamp: exit.timestamp, level: "error", source: "native", origin: "ios", kind: "crash", appId: exit.appId, pid: exit.pid,
+    process, reason: exit.signal, message: `${process ?? exit.appId} crashed: ${exit.signal}` };
+}
 
 /** Parse a SpringBoard app exit from `log stream --style ndjson`, keeping only crash signals. */
 export function parseIosAppExit(line: string): IosAppExit | undefined {
@@ -244,8 +249,7 @@ function reportTimestamp(value: unknown): string {
 const reportPollMs = 3000;
 const reportDeadlineMs = 120000;
 
-export type PhysicalCrashSources = { exits: typeof physicalIosLogCommand; reports: typeof physicalIosCrashReports; executables: typeof listIosAppExecutables };
-const physicalSources: PhysicalCrashSources = { exits: physicalIosLogCommand, reports: physicalIosCrashReports, executables: listIosAppExecutables };
+const physicalSources = { exits: physicalIosLogCommand, reports: physicalIosCrashReports, executables: listIosAppExecutables };
 
 export function watchPhysicalIosCrashes(deviceId: string, emit: Emit, signal: AbortSignal, sources = physicalSources, pollMs = reportPollMs): Promise<void> {
   // devicectl takes seconds, so app names load once up front and reload after an unknown app crashes.
@@ -253,12 +257,9 @@ export function watchPhysicalIosCrashes(deviceId: string, emit: Emit, signal: Ab
   let executables = loadExecutables();
   const exited = async (exit: IosAppExit) => {
     const known = await Promise.race([executables, delay(300, undefined, { signal }).then(() => undefined)]);
-    const process = known?.get(exit.appId);
-    if (!process) executables = loadExecutables();
-    const crash: LogRecord = { timestamp: exit.timestamp, level: "error", source: "native", origin: "ios", kind: "crash", appId: exit.appId, pid: exit.pid,
-      process, reason: exit.signal, message: `${process ?? exit.appId} crashed: ${exit.signal}` };
+    if (known && !known.has(exit.appId)) executables = loadExecutables();
     recordCrash("ios_exit", { deviceKind: "physical" });
-    emit(crash);
+    emit(exitCrash(exit, known?.get(exit.appId)));
     const report = await waitForPhysicalReport(deviceId, exit, signal, sources.reports, pollMs);
     if (report && !signal.aborted) emit(report);
   };
@@ -269,7 +270,8 @@ export function watchPhysicalIosCrashes(deviceId: string, emit: Emit, signal: Ab
   }, signal);
 }
 
-// Report times use the phone's clock, like the exit timestamp, so a small margin covers rounding only.
+// Report modification times and the exit timestamp both come from the phone's clock, so host clock
+// skew does not apply; the margin only absorbs timestamp rounding.
 async function waitForPhysicalReport(deviceId: string, exit: IosAppExit, signal: AbortSignal, reports: typeof physicalIosCrashReports, pollMs: number) {
   const since = Date.parse(exit.timestamp) - 5000;
   const started = performance.now();

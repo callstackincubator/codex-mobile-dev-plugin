@@ -42,8 +42,8 @@ export async function physicalIosLogCommand(target: PhysicalIosLogTarget, signal
   return reader;
 }
 
-export type PhysicalIosCrashReport = { name: string; modified: number; text: string };
 const crashReportLine = z.object({ name: z.string(), modified: z.number(), text: z.string() });
+export type PhysicalIosCrashReport = z.infer<typeof crashReportLine>;
 
 /** Copy the phone's .ips crash reports modified at or after sinceMs, in the phone's clock. */
 export async function physicalIosCrashReports(udid: string, sinceMs: number, signal?: AbortSignal, discover = listIosDevices, helper = bundledReader): Promise<PhysicalIosCrashReport[]> {

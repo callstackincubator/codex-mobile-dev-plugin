@@ -108,7 +108,6 @@ export function recordAndroidBackendStop(duration: number, context: AndroidStart
   Sentry.metrics.gauge("android.backend.process_shutdown.duration", duration, { unit: "millisecond", attributes });
 }
 
-/** Count a detected crash. Only the .ips report has a parse cost worth measuring. */
 /** Count one detected crash. iOS sources carry the device kind; reportWait is exit-to-report time on a physical iPhone. */
 export function recordCrash(source: "ios_exit" | "ios_log" | "ios_report" | "android_logcat", details: { parse?: number; deviceKind?: "simulator" | "physical"; reportWait?: number } = {}) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;

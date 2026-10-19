@@ -14,8 +14,11 @@ type Snapshot = {
 };
 
 function crashTarget(device?: SimulatorDevice): CrashWatchTarget | undefined {
-  if (device?.platform === "ios" && device.kind === "physical") return device.state === "connected" ? { platform: "ios", kind: "physical", deviceId: device.udid } : undefined;
-  if (!device || device.state !== "Booted") return;
+  if (!device) return;
+  if (device.platform === "ios" && device.kind === "physical") {
+    return device.state === "connected" ? { platform: "ios", kind: "physical", deviceId: device.udid } : undefined;
+  }
+  if (device.state !== "Booted") return;
   if (device.platform === "android") return { platform: "android", deviceId: device.udid };
   return { platform: "ios", deviceId: device.udid };
 }
