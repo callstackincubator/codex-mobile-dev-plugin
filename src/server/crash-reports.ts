@@ -4,11 +4,14 @@ import type { FSWatcher } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import type { CrashWatchTarget, LogRecord, NativeLogTarget } from "../shared/logs.ts";
 import { parseLogcat } from "./log-parsers.ts";
+import { listIosAppExecutables } from "./ios-devices.ts";
 import { adbPath, keepReading, runLogProcess } from "./native-logs.ts";
 import type { StopLogSource } from "./native-logs.ts";
+import { physicalIosCrashReports, physicalIosLogCommand } from "./physical-ios-logs.ts";
 import { recordCrash } from "./telemetry.ts";
 
 const execute = promisify(execFile);
@@ -23,6 +26,7 @@ export function startCrashWatch(target: CrashWatchTarget, emit: Emit): StopLogSo
   const scoped: Emit = crash => emit({ ...crash, deviceId: target.deviceId });
   let running: Promise<void> | undefined;
   if (target.platform === "android") running = watchAndroidCrashes(target.deviceId, scoped, signal);
+  else if (target.kind === "physical") running = watchPhysicalIosCrashes(target.deviceId, scoped, signal);
   else if (process.platform === "darwin") running = watchIosSimulatorCrashes(target.deviceId, scoped, signal);
   return async () => { controller.abort(); await running; };
 }
@@ -32,9 +36,8 @@ export function crashWatchFor(native: NativeLogTarget): { target: CrashWatchTarg
   if (native.platform === "android") {
     return { target: { platform: "android", deviceId: native.deviceId }, includes: crash => native.packageName === undefined || crash.appId === native.packageName };
   }
-  // Physical iPhones keep their crash reports until the device syncs.
-  if (native.kind === "physical") return;
-  return { target: { platform: "ios", deviceId: native.deviceId }, includes: crash => (native.pid === undefined || crash.pid === native.pid)
+  const target: CrashWatchTarget = native.kind === "physical" ? { platform: "ios", kind: "physical", deviceId: native.deviceId } : { platform: "ios", deviceId: native.deviceId };
+  return { target, includes: crash => (native.pid === undefined || crash.pid === native.pid)
     && (native.process === undefined || crash.process === native.process) };
 }
 
@@ -57,8 +60,7 @@ function watchIosSimulatorCrashes(deviceId: string, emit: Emit, signal: AbortSig
   const exited = async (exit: IosAppExit) => {
     const process = await executable(exit.appId);
     if (signal.aborted) return;
-    const crash: LogRecord = { timestamp: exit.timestamp, level: "error", source: "native", origin: "ios", kind: "crash", appId: exit.appId, pid: exit.pid,
-      process, reason: exit.signal, message: `${process ?? exit.appId} crashed: ${exit.signal}` };
+    const crash = exitCrash(exit, process);
     recordCrash("ios_exit");
     emit(crash);
     const { stdout } = await execute("xcrun", ["simctl", "spawn", deviceId, "log", "show", "--style", "ndjson", "--last", "20s", "--predicate", iosCrashLogPredicate(exit.pid)],
@@ -76,6 +78,12 @@ function watchIosSimulatorCrashes(deviceId: string, emit: Emit, signal: AbortSig
 export const iosAppExitPredicate = 'process == "SpringBoard" AND category == "Workspace" AND eventMessage BEGINSWITH "Process exited"';
 const crashSignals = new Set(["SIGABRT", "SIGSEGV", "SIGBUS", "SIGILL", "SIGTRAP", "SIGFPE", "SIGSYS", "SIGQUIT"]);
 export type IosAppExit = { appId: string; pid: number; signal: string; timestamp: string };
+
+/** The immediate crash record for an exit, before any reason or stack is known. */
+function exitCrash(exit: IosAppExit, process?: string): LogRecord {
+  return { timestamp: exit.timestamp, level: "error", source: "native", origin: "ios", kind: "crash", appId: exit.appId, pid: exit.pid,
+    process, reason: exit.signal, message: `${process ?? exit.appId} crashed: ${exit.signal}` };
+}
 
 /** Parse a SpringBoard app exit from `log stream --style ndjson`, keeping only crash signals. */
 export function parseIosAppExit(line: string): IosAppExit | undefined {
@@ -147,12 +155,12 @@ function applicationReason(asi: unknown): string | undefined {
   }
 }
 
-/** Parse an .ips crash report, keeping only crashes from the given simulator. */
-export function parseIosCrashReport(text: string, deviceId: string): LogRecord | undefined {
+/** Parse an .ips crash report. With a simulator ID, reports from anywhere else are ignored. */
+export function parseIosCrashReport(text: string, simulatorId?: string): LogRecord | undefined {
   const parts = splitReport(text);
   if (!parts) return;
   const { header, report } = parts;
-  if (typeof report.procPath !== "string" || !report.procPath.includes(`/CoreSimulator/Devices/${deviceId}/`)) return;
+  if (typeof report.procPath !== "string" || (simulatorId !== undefined && !report.procPath.includes(`/CoreSimulator/Devices/${simulatorId}/`))) return;
   const process = typeof report.procName === "string" ? report.procName : report.procPath.split("/").at(-1);
   const bundleId = report.bundleInfo?.CFBundleIdentifier ?? header.bundleID;
   const exception = report.exception ?? {};
@@ -198,7 +206,7 @@ export function watchIosCrashReports(deviceId: string, emit: Emit, signal: Abort
       const crash = parseIosCrashReport(text, deviceId);
       seen.add(name);
       if (!crash || signal.aborted) return;
-      recordCrash("ios_report", performance.now() - started);
+      recordCrash("ios_report", { parse: performance.now() - started });
       emit(crash);
     } catch { if (attempt < 5) schedule(name, attempt + 1); }
   };
@@ -225,11 +233,60 @@ export function watchIosCrashReports(deviceId: string, emit: Emit, signal: Abort
   start();
 }
 
-// Crash reports and unified logs write timestamps like "2026-10-13 16:27:23.00 +0200".
+// Crash reports and unified logs write timestamps like "2026-10-13 16:27:23.00 +0200"; the phone's
+// log relay writes ISO UTC times like "2026-10-13T14:27:23.000000Z".
 function reportTimestamp(value: unknown): string {
-  const match = typeof value === "string" ? /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d+)? ?([+-]\d{2}):?(\d{2})$/.exec(value) : null;
-  const date = match ? new Date(`${match[1]}T${match[2]}${(match[3] ?? "").slice(0, 4)}${match[4]}:${match[5]}`) : new Date(NaN);
+  const match = typeof value === "string" ? /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d+)? ?(?:([+-]\d{2}):?(\d{2})|Z)$/.exec(value) : null;
+  const zone = match?.[4] === undefined ? "Z" : `${match[4]}:${match[5]}`;
+  const date = match ? new Date(`${match[1]}T${match[2]}${(match[3] ?? "").slice(0, 4)}${zone}`) : new Date(NaN);
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
+// ---- Physical iPhone ---------------------------------------------------------------------------
+// SpringBoard logs the exit through the phone's unified-log relay at once. The .ips report stays on
+// the phone, so it is copied through the crash report service once ReportCrash has written it.
+
+const reportPollMs = 3000;
+const reportDeadlineMs = 120000;
+
+const physicalSources = { exits: physicalIosLogCommand, reports: physicalIosCrashReports, executables: listIosAppExecutables };
+
+export function watchPhysicalIosCrashes(deviceId: string, emit: Emit, signal: AbortSignal, sources = physicalSources, pollMs = reportPollMs): Promise<void> {
+  // devicectl takes seconds, so app names load once up front and reload after an unknown app crashes.
+  const loadExecutables = () => sources.executables(deviceId, signal).catch(() => new Map<string, string>());
+  let executables = loadExecutables();
+  const exited = async (exit: IosAppExit) => {
+    const known = await Promise.race([executables, delay(300, undefined, { signal }).then(() => undefined)]);
+    if (known && !known.has(exit.appId)) executables = loadExecutables();
+    recordCrash("ios_exit", { deviceKind: "physical" });
+    emit(exitCrash(exit, known?.get(exit.appId)));
+    const report = await waitForPhysicalReport(deviceId, exit, signal, sources.reports, pollMs);
+    if (report && !signal.aborted) emit(report);
+  };
+  const exits = { status() {}, log: (exit: IosAppExit) => void exited(exit).catch(() => {}) };
+  return keepReading(async () => {
+    const reader = await sources.exits({ platform: "ios", kind: "physical", deviceId, process: "SpringBoard" }, signal);
+    await runLogProcess(reader.command, reader.args, parseIosAppExit, exits, signal, '{"ready":true}');
+  }, signal);
+}
+
+// Report modification times and the exit timestamp both come from the phone's clock, so host clock
+// skew does not apply; the margin only absorbs timestamp rounding.
+async function waitForPhysicalReport(deviceId: string, exit: IosAppExit, signal: AbortSignal, reports: typeof physicalIosCrashReports, pollMs: number) {
+  const since = Date.parse(exit.timestamp) - 5000;
+  const started = performance.now();
+  while (!signal.aborted && performance.now() - started < reportDeadlineMs) {
+    await delay(pollMs, undefined, { signal }).catch(() => {});
+    if (signal.aborted) return;
+    const copied = await reports(deviceId, since, signal).catch(() => []);
+    for (const { text } of copied) {
+      const parsing = performance.now();
+      const crash = parseIosCrashReport(text);
+      if (crash?.pid !== exit.pid || crash.appId !== exit.appId) continue;
+      recordCrash("ios_report", { parse: performance.now() - parsing, deviceKind: "physical", reportWait: performance.now() - started });
+      return crash;
+    }
+  }
 }
 
 // ---- Android ----------------------------------------------------------------------------------

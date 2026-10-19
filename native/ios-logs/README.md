@@ -13,6 +13,13 @@ are capped at 16 KiB, sender paths at 4 KiB, and subsystem/category values at 1 
 UTC date and microseconds. An optional exact executable-name filter operates
 before JSON serialization and survives PID changes across app restarts.
 
+`--crash-reports <since-unix-ms>` replaces the executable name for a one-shot
+report copy. It asks `com.apple.crashreportmover` to move pending reports, then
+lists the `com.apple.crashreportcopymobile` directory over AFC and prints one
+`{"name","modified","text"}` line per top-level `.ips` report modified at or after
+that time in the phone's clock. Reports over 8 MiB are skipped, and nothing is
+removed from the phone.
+
 The reader needs an existing trusted USB or Wi-Fi connection. It does not launch
 an app, attach a debugger, install an SDK, or change signing requirements. It
 cannot capture ordinary stdout/stderr print statements or recover values that

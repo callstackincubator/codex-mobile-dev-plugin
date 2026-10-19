@@ -70,10 +70,11 @@ export function registerLogTools(server: McpServer, logs: LogSessions, baguette:
   }));
 
   registerAppTool(server, "mobile_crashes_session", {
-    title: "Watch app crashes", description: "Watch one iOS simulator's crash reports or one Android device's fatal exceptions for the panel's crash notices. Read batches like a log session.",
+    title: "Watch app crashes", description: "Watch one iOS simulator's or connected iPhone's crash reports, or one Android device's fatal exceptions, for the panel's crash notices. Read batches like a log session.",
     inputSchema: { target: crashWatchTargetSchema }, annotations, _meta: { ui: { visibility: ["app"] } },
   }, safe(async ({ target }: { target: CrashWatchTarget }) => {
-    if (target.platform === "ios") await baguette.device(target.deviceId, true);
+    if (target.platform === "ios" && target.kind === "physical") await physicalIosLogDevice(target.deviceId, discoverIosDevices);
+    else if (target.platform === "ios") await baguette.device(target.deviceId, true);
     else if (!(await listAndroidLogDevices()).some(device => device.id === target.deviceId)) {
       throw new ExpectedOperationError("device_unavailable", "The selected Android device is absent or unauthorized.");
     }

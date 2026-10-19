@@ -11,7 +11,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, TELEMETRY_META_KEY } from "../src/shared/telemetry.ts";
-import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordPluginUpdate, recordIosMirrorSharing } from "../src/server/telemetry.ts";
+import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordCrash, recordPluginUpdate, recordIosMirrorSharing } from "../src/server/telemetry.ts";
 import { ExpectedOperationError, FailureEpisodes } from "../src/shared/error-reporting.ts";
 import { parseResourceInput } from "../src/server/resource-input.ts";
 import { openRequestSession } from "../src/server/request-session.ts";
@@ -183,6 +183,31 @@ test("plugin update metrics measure plugin work without device context and honor
   await Sentry.flush();
   const afterOptOut = JSON.stringify(envelopes);
   assert.equal(afterOptOut, sent);
+});
+
+test("crash metrics separate simulators from physical iPhones and honor opt-out", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  t.after(async () => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+    await Sentry.close();
+  });
+  recordCrash("ios_exit");
+  recordCrash("ios_report", { parse: 4, deviceKind: "physical", reportWait: 31000 });
+  recordCrash("android_logcat");
+  await Sentry.flush();
+  const sent = JSON.stringify(envelopes);
+  for (const fragment of ["logs.crash.detected", "logs.crash.parse", "logs.crash.report_wait", '"device_kind":{"value":"simulator"', '"device_kind":{"value":"physical"', '"crash_source":{"value":"android_logcat"']) contains(sent, fragment);
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  recordCrash("ios_exit", { deviceKind: "physical" });
+  await Sentry.flush();
+  assert.equal(JSON.stringify(envelopes), sent);
 });
 
 test("shared iOS capture metrics retain surface attribution and honor opt-out", async t => {

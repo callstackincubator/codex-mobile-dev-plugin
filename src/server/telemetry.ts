@@ -108,12 +108,15 @@ export function recordAndroidBackendStop(duration: number, context: AndroidStart
   Sentry.metrics.gauge("android.backend.process_shutdown.duration", duration, { unit: "millisecond", attributes });
 }
 
-/** Count a detected crash. Only the .ips report has a parse cost worth measuring. */
-export function recordCrash(source: "ios_exit" | "ios_log" | "ios_report" | "android_logcat", parseDuration?: number) {
+/** Count one detected crash. iOS sources carry the device kind; reportWait is exit-to-report time on a physical iPhone. */
+export function recordCrash(source: "ios_exit" | "ios_log" | "ios_report" | "android_logcat", details: { parse?: number; deviceKind?: "simulator" | "physical"; reportWait?: number } = {}) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", surface: "logs", device_platform: source === "android_logcat" ? "android" : "ios", crash_source: source };
+  const ios = source !== "android_logcat";
+  const attributes = { component: "server", surface: "logs", device_platform: ios ? "ios" : "android", crash_source: source,
+    ...(ios ? { device_kind: details.deviceKind ?? "simulator" } : {}) };
   Sentry.metrics.count("logs.crash.detected", 1, { attributes });
-  if (parseDuration !== undefined) Sentry.metrics.gauge("logs.crash.parse", parseDuration, { unit: "millisecond", attributes });
+  if (details.parse !== undefined) Sentry.metrics.gauge("logs.crash.parse", details.parse, { unit: "millisecond", attributes });
+  if (details.reportWait !== undefined) Sentry.metrics.gauge("logs.crash.report_wait", details.reportWait, { unit: "millisecond", attributes });
 }
 
 export class IOSLogProcessingTelemetry {
