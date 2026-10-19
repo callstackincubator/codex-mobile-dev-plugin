@@ -5,8 +5,8 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import type { Baguette } from "./baguette.ts";
 import type { LogSessions } from "./log-sessions.ts";
-import { logOptionsSchema } from "../shared/logs.ts";
-import type { LogOptions } from "../shared/logs.ts";
+import { crashWatchTargetSchema, logOptionsSchema } from "../shared/logs.ts";
+import type { CrashWatchTarget, LogOptions } from "../shared/logs.ts";
 import { errorMessage, parseBaseUrl } from "../shared/protocol.ts";
 import { listAndroidLogDevices } from "./native-logs.ts";
 import { metroTargets } from "./metro-logs.ts";
@@ -54,7 +54,7 @@ export function registerLogTools(server: McpServer, logs: LogSessions, baguette:
   }));
 
   registerAppTool(server, "mobile_logs_session", {
-    title: "Start app logs", description: "Stream iOS simulator or physical-device unified logs, Android logcat, and/or a selected Metro inspector's JS console and exceptions. For a physical iPhone, use kind physical and the hardware UDID from mobile_list_ios_devices, not its CoreDevice ID. The phone must be connected and paired. Use an iOS executable name for process, or pid for one process lifetime; choose only one. Use an Android packageName to follow the app across restarts. Leaving the app filter empty includes all device processes. iOS unified logs exclude ordinary print/printf output and may redact private values. Metro URL must be local HTTP and targetId must come from mobile_log_sources. Does not launch or rebuild the app.",
+    title: "Start app logs", description: "Stream iOS simulator or physical-device unified logs, Android logcat, and/or a selected Metro inspector's JS console and exceptions. For a physical iPhone, use kind physical and the hardware UDID from mobile_list_ios_devices, not its CoreDevice ID. The phone must be connected and paired. Use an iOS executable name for process, or pid for one process lifetime; choose only one. Use an Android packageName to follow the app across restarts. Leaving the app filter empty includes all device processes. iOS unified logs exclude ordinary print/printf output and may redact private values. Metro URL must be local HTTP and targetId must come from mobile_log_sources. App crashes from iOS simulator crash reports and Android fatal exceptions appear as error records with kind crash and a stack. Does not launch or rebuild the app.",
     inputSchema: { options: logOptionsSchema }, annotations, _meta: metadata,
   }, safe(async ({ options }: { options: LogOptions }) => {
     if (options.native?.platform === "ios") {
@@ -67,6 +67,18 @@ export function registerLogTools(server: McpServer, logs: LogSessions, baguette:
     if (options.metro) parseBaseUrl(options.metro.url, "Metro URL");
     const id = logs.open(options);
     return { content: [{ type: "text", text: "Log stream started." }], structuredContent: { options }, _meta: { sessionId: id, logsUri: `logs://mobile-dev/${id}/batch?after=0` } };
+  }));
+
+  registerAppTool(server, "mobile_crashes_session", {
+    title: "Watch app crashes", description: "Watch one iOS simulator's crash reports or one Android device's fatal exceptions for the panel's crash notices. Read batches like a log session.",
+    inputSchema: { target: crashWatchTargetSchema }, annotations, _meta: { ui: { visibility: ["app"] } },
+  }, safe(async ({ target }: { target: CrashWatchTarget }) => {
+    if (target.platform === "ios") await baguette.device(target.deviceId, true);
+    else if (!(await listAndroidLogDevices()).some(device => device.id === target.deviceId)) {
+      throw new ExpectedOperationError("device_unavailable", "The selected Android device is absent or unauthorized.");
+    }
+    const id = logs.openCrashes(target);
+    return { content: [], structuredContent: {}, _meta: { sessionId: id, logsUri: `logs://mobile-dev/${id}/batch?after=0` } };
   }));
 
   registerAppTool(server, "mobile_read_logs", {

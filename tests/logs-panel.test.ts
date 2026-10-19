@@ -102,7 +102,7 @@ test("hiding logs leaves collection in the server and resumes the same cursor wi
   const logs = new LogSessions({ native: (_target, next) => {
     sink = next;
     return async () => { closes++; };
-  }, metro: () => async () => {} });
+  }, metro: () => async () => {}, crashes: () => async () => {} });
   const app = {
     async callServerTool(input: { name: string; arguments: { options?: LogOptions; sessionId?: string } }) {
       if (input.name === "mobile_logs_session") {

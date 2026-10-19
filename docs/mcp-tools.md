@@ -26,6 +26,7 @@
 | `mobile_read_logs` | Read a log batch and source status |
 | `mobile_logs_keep_alive` | Keep background collection alive without sending logs (app only) |
 | `mobile_logs_close` | Stop a session's log readers |
+| `mobile_crashes_session` | Watch one device's crash reports for the panel's crash toast; read and close it like a log session (app only) |
 | `mobile_performance_sources` | Read running apps and foreground identity on the selected iOS or Android device |
 | `mobile_cpu_session` | Connect a native process and thread CPU plus memory monitor |
 | `mobile_read_cpu` | Read live CPU and memory samples and connection status |

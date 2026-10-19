@@ -5,7 +5,7 @@ type Term = { type: "term"; value: string; field?: string; regex: boolean; negat
 type Token = Term | { type: "and" | "or" | "open" | "close" | "not" };
 export type LogQuery = { match: Match; error: string; usesAge: boolean };
 
-const textFields = ["message", "stack", "process", "appId", "tag", "subsystem", "category", "origin", "source", "level", "timestamp"] as const;
+const textFields = ["message", "stack", "process", "appId", "tag", "subsystem", "category", "origin", "source", "level", "timestamp", "kind"] as const;
 const levelAliases: Record<string, string> = { warning: "warn", err: "error", verbose: "debug" };
 const ageUnits: Record<string, number> = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
 
@@ -118,7 +118,7 @@ function createTerm(term: Term): Match {
     }
     const expected = field === "level" ? levelAliases[value] ?? value : value;
     const fields = field ? [field] : textFields;
-    const exact = field === "level" || field === "source" || field === "origin" || field === "appId";
+    const exact = field === "level" || field === "source" || field === "origin" || field === "appId" || field === "kind";
     match = log => {
       for (const key of fields) {
         const text = log[key];

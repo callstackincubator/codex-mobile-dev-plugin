@@ -76,6 +76,7 @@ function changeLayout(layout: DeviceLayout, manual = false) {
     panel.root.hidden = layout !== "both" && layout !== panel.platform;
   }
   requestAnimationFrame(() => { for (const panel of panels) if (!panel.root.hidden) panel.fitScreen(); });
+  for (const panel of panels) panel.controls();
   updateSelection();
   if (manual) {
     for (const panel of panels) {

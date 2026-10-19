@@ -146,7 +146,7 @@ try {
   assert.deepEqual(workspace._meta["openai/ui"].entrypoints, [{ type: "global" }]);
   const workspaceResource = await client.readResource({ uri: workspace._meta.ui.resourceUri });
   assert.ok(workspaceResource.contents[0].text.includes('data-view="workspace" data-layout="split"'));
-  for (const name of ["mobile_log_sources", "mobile_logs_session", "mobile_read_logs", "mobile_logs_keep_alive", "mobile_logs_close", "mobile_performance_sources", "mobile_cpu_session", "mobile_read_cpu", "mobile_cpu_close"]) {
+  for (const name of ["mobile_log_sources", "mobile_logs_session", "mobile_read_logs", "mobile_logs_keep_alive", "mobile_logs_close", "mobile_crashes_session", "mobile_performance_sources", "mobile_cpu_session", "mobile_read_cpu", "mobile_cpu_close"]) {
     assert.ok(tools.tools.some(tool => tool.name === name), `Missing developer tool: ${name}`);
   }
   const panel = await client.callTool({ name: "mobile_open_simulator", arguments: {} }, undefined, { timeout: 30000 });

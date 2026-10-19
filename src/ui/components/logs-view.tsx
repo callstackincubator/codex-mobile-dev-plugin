@@ -1,11 +1,11 @@
-import { CopyIcon, MessageCircleIcon, ArrowDownToLineIcon, CircleAlertIcon, InfoIcon, TriangleAlertIcon, CheckIcon, LayersIcon, ListXIcon, PauseIcon, PlayIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, TerminalIcon, UnlinkIcon, XIcon, CircleHelpIcon } from "lucide-react";
+import { CopyIcon, MessageCircleIcon, ArrowDownToLineIcon, CheckIcon, LayersIcon, ListXIcon, PauseIcon, PlayIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, TerminalIcon, UnlinkIcon, XIcon, CircleHelpIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { LegendList, type LegendListRef, type LegendListRenderItemProps } from "@legendapp/list/react";
 import type { StackedLog } from "../../shared/logs.ts";
 import type { LogsPanel } from "../logs-panel.ts";
 import { logText } from "../log-text.ts";
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem } from "./ui/context-menu";
-import { LogDetails } from "./log-details";
+import { LogDetails, logIcon } from "./log-details";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -61,7 +61,7 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
     catch { setCopyStatus("Could not copy log"); }
   }, []);
   const renderItem = useCallback(({ item }: LegendListRenderItemProps<StackedLog>) => {
-    const Icon = item.level === "error" ? CircleAlertIcon : item.level === "warn" ? TriangleAlertIcon : InfoIcon;
+    const Icon = logIcon(item);
     const prefix = item.tag || item.process;
     const { message } = logText(item);
     return <ContextMenu><ContextMenuTrigger asChild><Toggle type="button" data-log-row data-level={item.level} pressed={item.sequence === selectedSequence}
@@ -133,7 +133,7 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
                 <code>network &amp; (timeout | failed)</code><span>AND, OR, grouping</span>
                 <code>message~:"error.*timeout"</code><span>Regex, case insensitive</span>
               </div>
-              <p className="mt-3 text-muted-foreground">Fields: app, pid, level, message, age, source, origin, process, tag, subsystem, category, stack, timestamp. Age units: s, m, h, d. Spaces mean AND.</p>
+              <p className="mt-3 text-muted-foreground">Fields: app, pid, level, message, age, source, origin, process, tag, subsystem, category, stack, timestamp, kind (crash). Age units: s, m, h, d. Spaces mean AND.</p>
             </PopoverContent>
           </Popover>
 
