@@ -3,8 +3,8 @@ import { Background, Controls, Handle, Position, ReactFlow, type Edge, type Node
 import type { AppFlowEdge, AppFlowNode } from "../../shared/app-flow.ts";
 import { featureGateNotice } from "../../shared/app-flow.ts";
 import type { AppFlowPanel } from "../app-flow-panel.ts";
-import { recordUiTiming } from "../telemetry.ts";
-import { BAND_COLUMNS, COL_GAP, NODE_HEIGHT, NODE_WIDTH, STRUCTURE_NODE_HEIGHT, layoutTopology, type NodePlacement, type ResolvedEdge } from "./app-flow-layout.ts";
+import { countUiEvent, recordUiTiming, setUiGauge } from "../telemetry.ts";
+import { BAND_COLUMNS, COL_GAP, NODE_HEIGHT, NODE_WIDTH, STRUCTURE_NODE_HEIGHT, capturedStateCount, capturedStates, layoutTopology, type NodePlacement, type ResolvedEdge } from "./app-flow-layout.ts";
 import { ManualRecorderPanel } from "./manual-recorder-panel.tsx";
 
 type Props = { nodes: AppFlowNode[]; edges: AppFlowEdge[]; runtimeEdges?: AppFlowEdge[]; entryScreenIds?: string[]; projectPath?: string; projectId: string; panel: AppFlowPanel };
@@ -41,21 +41,64 @@ export function captureStatus(node: AppFlowNode): { label: string; tone: Capture
 const TONE_DOT: Record<CaptureTone, string> = { good: "bg-emerald-400", warn: "bg-amber-400", muted: "bg-slate-500" };
 const TONE_TEXT: Record<CaptureTone, string> = { good: "text-emerald-600 dark:text-emerald-300/90", warn: "text-amber-600 dark:text-amber-300/90", muted: "text-muted-foreground" };
 
-function Screenshot({ projectId, path, title, panel }: { projectId: string; path: string; title: string; panel: AppFlowPanel }) {
+function Screenshot({ projectId, path, title, panel, className = "min-h-0 flex-1 bg-black/10 object-contain", fallback }: { projectId: string; path: string; title: string; panel: AppFlowPanel; className?: string; fallback?: string }) {
   const [src, setSrc] = useState("");
-  useEffect(() => { let active = true; void panel.screenshot(projectId, path).then(url => { if (active) setSrc(url); }, () => {}); return () => { active = false; }; }, [panel, projectId, path]);
-  return src ? <img src={src} alt={title} className="min-h-0 flex-1 bg-black/10 object-contain" />
-    : <div className="flex flex-1 items-center justify-center bg-muted/40 text-[10px] text-muted-foreground">Loading capture…</div>;
+  useEffect(() => { setSrc(""); let active = true; void panel.screenshot(projectId, path).then(url => { if (active) setSrc(url); }, () => {}); return () => { active = false; }; }, [panel, projectId, path]);
+  return src ? <img src={src} alt={title} className={className} />
+    : fallback !== undefined ? <div className={`${className} flex items-center justify-center bg-muted/40 text-[8px] text-muted-foreground`}>{fallback}</div>
+      : <div className="flex flex-1 items-center justify-center bg-muted/40 text-[10px] text-muted-foreground">Loading capture…</div>;
 }
+
+const STATE_THUMB = "h-14 w-9 shrink-0 rounded-sm border border-border object-cover";
+/**
+ * The variants of one screen, shown on that screen's own node. A modal or sheet is the same screen
+ * in another state, so it belongs to the node rather than next to it: extra nodes would inflate the
+ * topology (19 hinted routes on a 79-node graph) and make the capture headline ambiguous. Collapsed
+ * by default so a node with states is no busier than one without, and a node with none renders
+ * nothing here at all.
+ */
+function StateStrip({ node, title, baseScreenshot, activeName, onSelect }: { node: AppFlowNode; title: string; baseScreenshot: string | null | undefined; activeName: string | null; onSelect: (name: string | null) => void }) {
+  const graph = useContext(GraphContext)!;
+  const states = useMemo(() => capturedStates(node), [node]);
+  const [expanded, setExpanded] = useState(false);
+  if (states.length === 0) return null;
+  const plural = states.length === 1 ? "state" : "states";
+  const select = (name: string | null) => { onSelect(name); if (name !== null) countUiEvent("ui.app_flow.state_viewed"); };
+  return <div className="space-y-1" data-element="app-flow-states">
+    <button type="button" className="nodrag nopan flex w-full items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-[10px] font-medium text-foreground hover:bg-muted/70"
+      aria-expanded={expanded} aria-label={`${expanded ? "Hide" : "Show"} ${states.length} captured UI ${plural} of ${title}`}
+      onClick={event => { event.stopPropagation(); setExpanded(value => !value); }}>
+      <span className="rounded-full bg-sky-500/15 px-1.5 tabular-nums text-sky-600 dark:text-sky-300/90">{states.length}</span>
+      <span className="truncate">UI {plural}</span>
+      <span aria-hidden className="ml-auto opacity-70">{expanded ? "▴" : "▾"}</span>
+    </button>
+    {expanded && <div className="nodrag nopan flex gap-1.5 overflow-x-auto pb-0.5" role="group" aria-label={`Captured UI ${plural} of ${title}`}>
+      {baseScreenshot && <button type="button" className="shrink-0 space-y-0.5 text-left" aria-pressed={activeName === null} aria-label={`Show the base screen of ${title}`}
+        onClick={event => { event.stopPropagation(); select(null); }}>
+        <Screenshot projectId={graph.projectId} path={baseScreenshot} title={`${title} base screen`} panel={graph.panel} fallback="…"
+          className={`${STATE_THUMB} ${activeName === null ? "ring-2 ring-sky-500" : ""}`} />
+        <div className="w-9 truncate text-[8px] text-muted-foreground">Base</div></button>}
+      {states.map(state => <button key={state.name} type="button" className="shrink-0 space-y-0.5 text-left" aria-pressed={activeName === state.name}
+        aria-label={`Show the ${state.name} state of ${title}`} onClick={event => { event.stopPropagation(); select(activeName === state.name ? null : state.name); }}>
+        <Screenshot projectId={graph.projectId} path={state.screenshot} title={`${title} — ${state.name}`} panel={graph.panel} fallback="…"
+          className={`${STATE_THUMB} ${activeName === state.name ? "ring-2 ring-sky-500" : ""}`} />
+        <div className="w-9 truncate text-[8px] text-muted-foreground" title={state.name}>{state.name}</div></button>)}
+    </div>}
+  </div>;
+}
+
 function ScreenNode({ data }: NodeProps) {
   const node = data.node as AppFlowNode;
   const graph = useContext(GraphContext)!;
   const title = nodeTitle(node); const status = captureStatus(node); const screenshot = node.capture?.screenshot;
+  const [activeState, setActiveState] = useState<string | null>(null);
+  const shown = capturedStates(node).find(state => state.name === activeState) ?? null;
+  const shownPath = shown?.screenshot ?? screenshot;
   // Read off the source, never off what this run rendered: see `featureGateNotice`.
   const gate = featureGateNotice(node.guard);
   return <><Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-0 !bg-slate-400" />
     <div className="flex h-full flex-col overflow-hidden">
-      {screenshot ? <Screenshot projectId={graph.projectId} path={screenshot} title={title} panel={graph.panel} />
+      {shownPath ? <Screenshot projectId={graph.projectId} path={shownPath} title={shown ? `${title} — ${shown.name}` : title} panel={graph.panel} />
         : <div className="flex flex-1 items-center bg-muted/40 px-3 py-2 text-[10px] leading-snug text-muted-foreground">
           {node.origin === "chrome" ? "Navigator surface — reachable from anywhere it is revealed" : node.origin === "runtime" ? "Discovered on device" : node.file ?? "Source component unresolved"}</div>}
       <div className="shrink-0 space-y-1 px-3 py-2.5"><div className="flex items-center gap-1.5 overflow-hidden">
@@ -65,6 +108,8 @@ function ScreenNode({ data }: NodeProps) {
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[status.tone]}`} /><span className="truncate">{status.label}</span></div>}
         {gate && <div className="flex items-center gap-1.5 text-[10px] text-violet-600 dark:text-violet-300/90" title={gate.detail}>
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" /><span className="truncate">{gate.label}</span></div>}
+        {shown && <div className="truncate text-[10px] text-sky-600 dark:text-sky-300/90" data-element="app-flow-state-shown">Showing {shown.name}</div>}
+        <StateStrip node={node} title={title} baseScreenshot={screenshot} activeName={activeState} onSelect={setActiveState} />
         <NodeActions node={node} />
       </div>
     </div><Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !border-0 !bg-slate-400" /></>;
@@ -103,6 +148,9 @@ export function AppFlowGraph({ nodes, edges, runtimeEdges, entryScreenIds, proje
   const navigations = useMemo(() => resolvedEdges([...edges, ...(runtimeEdges ?? [])]), [edges, runtimeEdges]);
   const topology = useMemo(() => { const startedAt = performance.now(); const value = layoutTopology(nodes, navigations, entryScreenIds ?? []);
     recordUiTiming("ui.app_flow.graph_process", performance.now() - startedAt); return value; }, [nodes, navigations, entryScreenIds]);
+  // One bounded number for the whole graph, not one per node: how much the opt-in state pass left
+  // on screen for a reader. No node ids, route names or screenshot data are involved.
+  useEffect(() => { setUiGauge("ui.app_flow.states_rendered", capturedStateCount(nodes)); }, [nodes]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => setSelectedId(current => current === node.id ? null : node.id), []);
   const recording = useSyncExternalStore(panel.recording.subscribe, panel.recording.getSnapshot);

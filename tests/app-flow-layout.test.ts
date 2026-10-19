@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { AppFlowEdge, AppFlowNode, ManualSnapshotNode, ManualSnapshotRect } from "../src/shared/app-flow.ts";
-import { captureTally, layoutTopology, type ResolvedEdge } from "../src/ui/components/app-flow-layout.ts";
+import { captureTally, capturedStateCount, capturedStates, layoutTopology, type ResolvedEdge } from "../src/ui/components/app-flow-layout.ts";
 import { isTextInput, layoutWireframe, STATUS_BAR_POINTS } from "../src/ui/components/manual-wireframe.ts";
 
 function screen(id: string, status?: string): AppFlowNode {
@@ -69,6 +69,46 @@ describe("App Flow capture tally", () => {
   test("an empty or chrome-only node list has no screens to report", () => {
     assert.deepEqual(captureTally([]), { captured: 0, unableToCapture: 0, total: 0, reasons: [] });
     assert.equal(captureTally([node("chrome:tabs", { status: "ok", screenshot: "tabs.png" }, "chrome")]).total, 0);
+  });
+
+  test("state variants are variants of a screen, never extra screens in the tally", () => {
+    const tally = captureTally([
+      node("Home", { status: "ok", screenshot: "home.png", states: [
+        { name: "filter-sheet", screenshot: "screens/home-filter-sheet.png" },
+        { name: "sort-modal", screenshot: "screens/home-sort-modal.png" },
+      ] }),
+      node("Plain", { status: "ok", screenshot: "plain.png" }),
+    ]);
+    assert.deepEqual({ captured: tally.captured, total: tally.total }, { captured: 2, total: 2 });
+  });
+});
+
+describe("App Flow captured states", () => {
+  function withStates(states: unknown): AppFlowNode {
+    return { ...screen("Home"), capture: { status: "ok", screenshot: "home.png", states } } as unknown as AppFlowNode;
+  }
+
+  test("keeps only variants that have something to show", () => {
+    const states = capturedStates(withStates([
+      { name: "sheet", screenshot: "screens/home-sheet.png" },
+      { name: "failed", screenshot: null },
+    ]));
+    assert.deepEqual(states.map(state => state.name), ["sheet"]);
+  });
+
+  test("a screen with no state pass reports nothing", () => {
+    assert.deepEqual(capturedStates(screen("Home")), []);
+    assert.deepEqual(capturedStates(withStates([])), []);
+    assert.deepEqual(capturedStates(withStates(undefined)), []);
+  });
+
+  test("the graph-wide count sums displayable variants only", () => {
+    assert.equal(capturedStateCount([
+      withStates([{ name: "a", screenshot: "a.png" }, { name: "b", screenshot: null }]),
+      withStates([{ name: "c", screenshot: "c.png" }]),
+      screen("Bare"),
+    ]), 2);
+    assert.equal(capturedStateCount([]), 0);
   });
 });
 

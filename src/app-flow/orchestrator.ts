@@ -78,6 +78,13 @@ import {
 } from './reach/auth-gate-policy.ts'
 import { formatPhaseSummary, PhaseLedger } from './timing.ts'
 import { recordRuntimeCount, recordRuntimeTiming } from './runtime-telemetry.ts'
+import {
+  recordStatesPhase,
+  runHintedNodes,
+  statesPhaseRunsAfterStop,
+  type StateNodeResult,
+  type SweepStopReason
+} from './states-phase.ts'
 import { createSweepLog, type SweepLog } from './sweep-log.ts'
 import { createCoalescedWriter } from './coalesced-write.ts'
 import { hedge } from './hedge.ts'
@@ -2416,6 +2423,20 @@ export async function buildAppFlow(
       let failedReference: Set<string> | null = null
       let blockedRun = 0
       let sweepStopped = false
+      /**
+       * Why the sweep stopped, for the one decision that must not treat every stop alike: whether
+       * the state-variant phase still runs over what was captured (`statesPhaseRunsAfterStop`).
+       * Hitting a bounded sweep's ceiling is that sweep succeeding; a user pressing pause, or
+       * answering "stop" to an auth or blocked prompt, is not an invitation to spend another phase
+       * of model calls. First writer wins — the reason the sweep actually stopped for.
+       */
+      let sweepStopReason: SweepStopReason | null = null
+      /**
+       * The parsed edge graph, read once here. The state-variant phase below is a hoisted function
+       * declaration — so that both exits can reach it — and TypeScript will not carry `parsed`'s
+       * non-null narrowing into a function it cannot prove is called after that narrowing.
+       */
+      const parsedEdges = parsed.edges
 
       /**
        * The escalate-to-the-user half of getting the app unblocked: take a `BLOCKED_SLUG`
@@ -3093,6 +3114,7 @@ export async function buildAppFlow(
         if (!reason) return false
         sweepPaused = true
         sweepStopped = true
+        sweepStopReason ??= reason
         console.log(pauseMessage(reason))
         return true
       }
@@ -3101,6 +3123,7 @@ export async function buildAppFlow(
         if (!reason) return false
         sweepPaused = true
         sweepStopped = true
+        sweepStopReason ??= reason
         console.log(pauseMessage(reason))
         return true
       }
@@ -4203,7 +4226,10 @@ export async function buildAppFlow(
           (attempt) => attempt.strategy === 'deep-link' && attempt.touchedDevice
         )
 
-        if (authStopped) sweepStopped = true
+        if (authStopped) {
+          sweepStopped = true
+          sweepStopReason ??= 'auth'
+        }
 
         if (sweepStopped) break
 
@@ -4289,6 +4315,7 @@ export async function buildAppFlow(
               continue
             }
             sweepStopped = true
+            sweepStopReason ??= 'blocked'
             break
           }
           continue
@@ -4502,11 +4529,32 @@ export async function buildAppFlow(
           break
       }
 
-      if (options.pauseRequested?.()) sweepPaused = true
+      if (options.pauseRequested?.()) {
+        sweepPaused = true
+        sweepStopReason ??= 'requested'
+      }
       if (sweepStopped) {
+        // The checkpoint goes out before the state phase, not only after it: it is the thing the
+        // user picks up from, and a cancel arriving during the phase must not cost them the sweep
+        // they already paid for.
+        await persistCheckpoint({ force: true })
+        /**
+         * A sweep that stopped on one of its own ceilings still runs the state-variant phase.
+         *
+         * This exit used to return ~45 lines above the phase, so `stateCaptureMode: 'on'` plus a
+         * `screenLimit` the sweep actually reached — the ordinary outcome of a bounded sweep —
+         * silently produced no state variants at all, for screens that were already captured and
+         * carrying hints. Running it here rather than duplicating it means the variants land in
+         * `captureMap` *before* the writes below publish it, so this exit's artifacts carry them
+         * exactly as the finished exit's do. A user-requested pause, a declined auth gate and a
+         * "stop" answer to a blocked prompt take this exit without the phase: they asked it to
+         * stop. See `statesPhaseRunsAfterStop`.
+         */
+        if (statesPhaseRunsAfterStop(sweepStopReason)) await runStatesPhase()
+        else recordStatesPhase(stateCaptureRequested() ? 'skipped-stopped' : 'skipped-disabled')
         manifest.sweepStatus = sweepPaused ? 'paused' : 'stopped'
-        // A stopped sweep's checkpoint is the thing the user picks up from, so it goes out now
-        // rather than waiting out a coalescing window nobody is left to close.
+        // The phase above writes its own per-route checkpoints; this forces whatever the last one
+        // left pending, so `statesDone` is durable before the resume point is published.
         await persistCheckpoint({ force: true })
         // The capture map and the screens manifest are still published wholesale here — this path's
         // `persistCaptureUpdate` writes only the checkpoint and the throttled document, and the
@@ -4585,315 +4633,321 @@ export async function buildAppFlow(
        * `stateCaptureMode` says otherwise. A run that wants the old auto/thorough behaviour asks
        * for it explicitly.
        */
-      const stateCaptureOn = (options.stateCaptureMode ?? 'off') === 'on'
-      // Announced only where it happens. A phase line for a pass this run will not perform is how
-      // a sweep ends up looking like it silently failed at something it never attempted.
-      if (stateCaptureOn) {
+      /** Whether this run asked for the state-variant phase at all. */
+      function stateCaptureRequested(): boolean {
+        return (options.stateCaptureMode ?? 'off') === 'on'
+      }
+
+      /**
+       * The state-variant phase, as a function so both exits reach it exactly once — this one, and
+       * the stopped exit above, which returns before this point and would otherwise skip the phase
+       * entirely for a sweep that merely ran out of screens. Declared here, beside the rest of the
+       * phase, and called above: a function declaration is initialized when this block is entered,
+       * so the earlier call site sees it without hoisting 300 lines of device work out of order.
+       *
+       * The per-route loop, its pause/cancel sampling, its `statesDone` checkpointing and its
+       * bounded meters live in `states-phase.ts`; everything below is the device work for one
+       * route.
+       */
+      async function runStatesPhase(): Promise<void> {
+        if (!stateCaptureRequested()) {
+          console.log('[app-flow] states skipped — state capture is off for this run')
+          recordStatesPhase('skipped-disabled')
+          return
+        }
+        // Announced only where it happens. A phase line for a pass this run will not perform is
+        // how a sweep ends up looking like it silently failed at something it never attempted.
         emit(projectId, onEvent, {
           type: 'phase',
           phase: 'states',
           message: 'Exploring state variants...'
         })
-      }
-
-      const hintedNodes = stateCaptureOn
-        ? nodesWithSlug.filter((n) => n.stateHints.length > 0)
-        : []
-      console.log(
-        stateCaptureOn
-          ? `[app-flow] states start — ${hintedNodes.length} hinted routes`
-          : '[app-flow] states skipped — state capture is off for this run'
-      )
-      for (let i = 0; i < hintedNodes.length; i++) {
-        checkSignal(signal)
-        if (options.pauseRequested?.()) {
-          sweepPaused = true
-          sweepStopped = true
-          break
-        }
-        const node = hintedNodes[i]
-        emit(projectId, onEvent, {
-          type: 'step',
-          phase: 'states',
-          message: `Exploring states for ${node.urlPath} (${i + 1} of ${hintedNodes.length})`
-          // No completed/total: the panel's sweep summary is the capture phase's screen count, and
-          // the hinted-route tally would overwrite that denominator for the rest of the run.
-        })
-
-        if (statesDone.has(node.id)) continue
-        const baseCapture = captureMap[node.id]
-        if (!baseCapture?.screenshot) continue
-        const stateBudget = new ActiveTimeBudget(5 * 60_000, activeNow(), activeNow)
-        const verifiedDeepLink = openedByNode[node.id]
+        const hintedNodes = nodesWithSlug.filter((n) => n.stateHints.length > 0)
+        console.log(`[app-flow] states start — ${hintedNodes.length} hinted routes`)
+        recordStatesPhase('entered')
 
         /**
-         * One aggregate per hinted route, never one per action.
-         *
-         * The pass is now opt-in, which makes "was it worth turning on" a question someone will
-         * actually ask, and it is unanswerable from the console lines alone — they are local, and
-         * a run that reached no base looks identical from the outside to one that found no
-         * variant to trigger. The outcome set is closed and small so the series stays cheap to
-         * aggregate; `base-failed` and `no-trigger` are kept apart because they point at
-         * different fixes (a reach problem versus the planner having nothing to say).
-         *
-         * Counted from here rather than from the top of the loop body: a route already finished
-         * in a resumed checkpoint, or one with no base capture to work from, did no state work
-         * this run and recording a zero for it would only dilute the distribution.
+         * One hinted route's state work. Its outcome is what the caller meters — one aggregate
+         * per route, never one per planned action — and `skip` is a route that did no work this
+         * run (already finished in a resumed checkpoint, or no base capture to work from), which
+         * is counted nowhere rather than diluting the distribution with a zero.
          *
          * Attributes are the outcome and nothing else. Route names, node ids, slugs, URL paths,
-         * parameter values and screenshots stay out of here, as everywhere else in this module's
+         * parameter values and screenshots stay out of there, as everywhere else in this module's
          * telemetry (`runtime-telemetry.ts`).
          */
-        const nodeStartedAt = Date.now()
-        const recordStateOutcome = (
-          outcome: 'captured' | 'base-failed' | 'no-trigger' | 'failed'
-        ): void => {
-          recordRuntimeCount('app_flow.runtime.state_capture', { outcome })
-          recordRuntimeTiming('app_flow.states.node', Date.now() - nodeStartedAt, { outcome })
-        }
+        async function runHintedNode(node: AppFlowNode, i: number): Promise<StateNodeResult> {
+          const baseCapture = captureMap[node.id]
+          if (!baseCapture?.screenshot) return { outcome: 'skip' }
+          const stateBudget = new ActiveTimeBudget(5 * 60_000, activeNow(), activeNow)
+          const verifiedDeepLink = openedByNode[node.id]
 
-        /**
-         * Put the device back on `node` so a state variant can be triggered from it. Returns
-         * whether the frame that follows is worth judging at all.
-         */
-        const establishBase = async (): Promise<boolean> => {
-          // The base screen's own stored journey, run line by line, in place of the
-          // `replay.run(baseCapture.replayScript)` this used to do. `runPathToReach` carries the
-          // readiness wait that call site had to add by hand — a session stays "active" while
-          // sitting on the dev-client launcher just as readily as while sitting on `node`, which
-          // is exactly how this pass once ended up screenshotting the launcher and calling it
-          // every hinted route — and it works for a screen reached by exploration, which a
-          // `.ad`-only base never did.
-          if (baseCapture.pathCommands?.length) {
-            try {
-              await runPathToReach(ctx, device, baseCapture.pathCommands)
-              return true
-            } catch (error) {
-              console.warn(`[app-flow] state base path for ${node.id} failed:`, error)
-              return false
+          /**
+           * Put the device back on `node` so a state variant can be triggered from it. Returns
+           * whether the frame that follows is worth judging at all.
+           */
+          const establishBase = async (): Promise<boolean> => {
+            // The base screen's own stored journey, run line by line, in place of the
+            // `replay.run(baseCapture.replayScript)` this used to do. `runPathToReach` carries the
+            // readiness wait that call site had to add by hand — a session stays "active" while
+            // sitting on the dev-client launcher just as readily as while sitting on `node`, which
+            // is exactly how this pass once ended up screenshotting the launcher and calling it
+            // every hinted route — and it works for a screen reached by exploration, which a
+            // `.ad`-only base never did.
+            if (baseCapture.pathCommands?.length) {
+              try {
+                await runPathToReach(ctx, device, baseCapture.pathCommands)
+                return true
+              } catch (error) {
+                console.warn(`[app-flow] state base path for ${node.id} failed:`, error)
+                return false
+              }
+            }
+            if (!verifiedDeepLink) {
+              // Third route, and last: dispatch the route through the app's own navigator, the same
+              // mechanism Fast's render rung used to capture the base in the first place. Without
+              // it a Fast-captured node has nothing to re-reach with — it has no stored
+              // `pathCommands` and no verified deep link — and the whole pass could never do any
+              // work in that mode, which is what the old exploration-mode gate was built around.
+              //
+              // Last on purpose. A dispatched navigation is not a journey a user could repeat (see
+              // `ExplorationMode`), so the two routes above are the more faithful ways back to the
+              // screen and keep priority wherever they exist; this one only answers the case where
+              // neither does.
+              //
+              // An absent `render` port is ordinary, not a failure — every call site is required to
+              // treat the port as optional and never let its absence change what the sweep does
+              // (`reach/ports.ts`) — so it degrades to the same "no base" answer as a failed reach.
+              if (!ports.render) return false
+              // Same rule as the deep-link route below: the parameters have to be real ones. A
+              // dispatch with a stand-in value lands on a screen that is not the one being
+              // described, and nothing downstream would notice.
+              const renderParams = resolveNodeParams(node, parsedEdges, paramStore)
+              if (renderParams.unresolved.length) return false
+              const dispatched = await ports.render.navigate(node, renderParams.values)
+              if (!dispatched.ok) return false
+              // The node's own remaining budget, not a fresh one: this is the same wall-clock the
+              // rest of the route's state work is drawing down, and a settle that outlives it would
+              // be spending time the pass has already decided it does not have.
+              const settled = await ports.render.awaitSettled(node, renderParams.values, stateBudget)
+              return settled.settled
+            }
+            // `pickSampleParams`' `1` stand-in is for the descriptive path in the agent-device
+            // manifest and has no business building a URL that will be opened and photographed. The
+            // node reached its base capture by deep link, so a value exists; bailing rather than
+            // inventing one is what keeps that true if it ever stops being.
+            const stateParams = resolveNodeParams(node, parsedEdges, paramStore)
+            if (stateParams.unresolved.length) return false
+            const reopened = await openDeepLink(ctx, device, node, stateParams.values)
+            // `settleAfterRoute`, not the bare `waitForRoute` that used to be here. That was a flat
+            // 2.5s sleep, which is only ever right when the app is already on screen and settled —
+            // and by the time this phase starts, nothing guarantees it is. The main capture loop
+            // switched to `settleAfterRoute` for exactly this reason; this pass was left behind, so
+            // it fired every deep link into whatever the sweep happened to leave behind and judged
+            // the frame 2.5 seconds later regardless.
+            // `settleAfterRoute` returns `waitForAppReady`'s own verdict, not just a delay — false
+            // when launcher recoveries are exhausted or the app never settled at all. The deep-link
+            // probe above (`probeDeepLinkRoute`) already treats a mismatch on an unsettled frame as
+            // "inconclusive, not evidence about the scheme" rather than a real mismatch; discarding
+            // the verdict here made the same mistake in the opposite direction, calling the URL
+            // delivered and the base established just because `reopened.url` matched, with nothing
+            // checking that the app was actually there to receive it and land on that URL.
+            const settled = await settleAfterRoute(ctx, device, signal)
+            return settled && reopened.url === verifiedDeepLink.url
+          }
+
+          // Read by the arrival verifier and the trigger planner, then discarded: the delivered
+          // artefact of this phase is the state variant capture written further down.
+          const screenshotPath = getScratchPath(projectId, 'state-start')
+
+          /**
+           * Two attempts, with a relaunch between them, because "the deep link opened the wrong
+           * screen" and "the app is not running" are indistinguishable from here and only the first
+           * is a reason to give up on this route.
+           *
+           * A dev client that is not running shows its launcher — a settled, fully interactive
+           * screen — so neither `settleAfterRoute` nor `isLoadingScreen` can tell it apart from a
+           * real one, and a deep link into it does nothing. The old code read that as a plain
+           * mismatch and skipped, which meant one stalled app silently cost *every* remaining
+           * hinted route its deep link, its auth-gate call, its screenshot and its arrival call,
+           * all to reach the same `continue`. Relaunching is the same recovery the capture loop
+           * already performs on a lost session, and it is what a human does by hand when they open
+           * the app from that launcher screen and watch the rest of the pass start working.
+           */
+          let baseReady = false
+          let baseAuth: 'clear' | 'stop' | 'exhausted' = 'clear'
+
+          // Pulled out of the retry loop below so the launcher-escalation branch that follows it can
+          // ask for exactly one more attempt after the user clears a stuck launcher, instead of
+          // re-running the whole two-attempt relaunch cycle (which would relaunch an app the user
+          // just finished opening by hand).
+          const attemptEstablishAndVerify = async (): Promise<boolean> => {
+            if (!(await establishBase())) return false
+            baseAuth = await checkAuthGate(hintedNodes.length - i, stateBudget)
+            if (baseAuth !== 'clear') return false
+            await captureScreenshot(ctx, device, screenshotPath)
+            const baseArrival = await verifyCurrentTarget(node, screenshotPath, stateBudget)
+            if (baseArrival.verdict === 'match') return true
+            console.log(`[app-flow] states ${node.id} base mismatch — ${baseArrival.reason}`)
+            return false
+          }
+
+          for (let attempt = 0; attempt < 2 && !stateBudget.expired; attempt++) {
+            if (attempt > 0) {
+              console.log(`[app-flow] states ${node.id} — base not reached, relaunching and retrying`)
+              await reopenBoundApp(ctx, device)
+            }
+            if (await attemptEstablishAndVerify()) {
+              baseReady = true
+              break
+            }
+            if (baseAuth !== 'clear') break
+          }
+
+          // The two attempts above cover a lost session and a wrong-screen deep link, but neither
+          // recovers a dev-client launcher: relaunching the bound app *while it is showing the
+          // launcher* just puts the launcher back, and `establishBase`/`waitForAppReady` already
+          // tried the reconnect-then-relaunch sequence internally before giving up. The main capture
+          // loop survives exactly this condition because it has `explore()`'s LLM rung and
+          // `resolveBlocked`'s user prompt; this pass had neither, which is why it silently walked
+          // the launcher and reported `base mismatch` for every hinted route behind it instead of
+          // telling anyone. `promptToUnblock` (the capture loop's own escalation, factored out above)
+          // is reused rather than duplicated, since `kind: 'blocked'` is documented as being named for
+          // what was observed rather than for what the screen is.
+          if (
+            !baseReady &&
+            baseAuth === 'clear' &&
+            !stateBudget.expired &&
+            (await isOnDevClientLauncher(ctx, device))
+          ) {
+            const resolution = await promptToUnblock(
+              "The app is showing the dev client's launcher instead of running, so nothing behind " +
+                'it can be captured. Open the app from the launcher in the simulator, then continue.',
+              hintedNodes.length - i
+            )
+            if (resolution === 'stop') {
+              baseAuth = 'stop'
+            } else if (resolution === 'continue') {
+              console.log(
+                `[app-flow] states ${node.id} — launcher cleared by the user, retrying base`
+              )
+              if (await attemptEstablishAndVerify()) baseReady = true
             }
           }
-          if (!verifiedDeepLink) {
-            // Third route, and last: dispatch the route through the app's own navigator, the same
-            // mechanism Fast's render rung used to capture the base in the first place. Without
-            // it a Fast-captured node has nothing to re-reach with — it has no stored
-            // `pathCommands` and no verified deep link — and the whole pass could never do any
-            // work in that mode, which is what the old exploration-mode gate was built around.
-            //
-            // Last on purpose. A dispatched navigation is not a journey a user could repeat (see
-            // `ExplorationMode`), so the two routes above are the more faithful ways back to the
-            // screen and keep priority wherever they exist; this one only answers the case where
-            // neither does.
-            //
-            // An absent `render` port is ordinary, not a failure — every call site is required to
-            // treat the port as optional and never let its absence change what the sweep does
-            // (`reach/ports.ts`) — so it degrades to the same "no base" answer as a failed reach.
-            if (!ports.render) return false
-            // Same rule as the deep-link route below: the parameters have to be real ones. A
-            // dispatch with a stand-in value lands on a screen that is not the one being
-            // described, and nothing downstream would notice.
-            const renderParams = resolveNodeParams(node, parsed.edges, paramStore)
-            if (renderParams.unresolved.length) return false
-            const dispatched = await ports.render.navigate(node, renderParams.values)
-            if (!dispatched.ok) return false
-            // The node's own remaining budget, not a fresh one: this is the same wall-clock the
-            // rest of the route's state work is drawing down, and a settle that outlives it would
-            // be spending time the pass has already decided it does not have.
-            const settled = await ports.render.awaitSettled(node, renderParams.values, stateBudget)
-            return settled.settled
+
+          if (baseAuth === 'stop') {
+            sweepStopped = true
+            sweepStopReason ??= 'auth'
+            return { outcome: 'skip', stop: true }
           }
-          // `pickSampleParams`' `1` stand-in is for the descriptive path in the agent-device
-          // manifest and has no business building a URL that will be opened and photographed. The
-          // node reached its base capture by deep link, so a value exists; bailing rather than
-          // inventing one is what keeps that true if it ever stops being.
-          const stateParams = resolveNodeParams(node, parsed.edges, paramStore)
-          if (stateParams.unresolved.length) return false
-          const reopened = await openDeepLink(ctx, device, node, stateParams.values)
-          // `settleAfterRoute`, not the bare `waitForRoute` that used to be here. That was a flat
-          // 2.5s sleep, which is only ever right when the app is already on screen and settled —
-          // and by the time this phase starts, nothing guarantees it is. The main capture loop
-          // switched to `settleAfterRoute` for exactly this reason; this pass was left behind, so
-          // it fired every deep link into whatever the sweep happened to leave behind and judged
-          // the frame 2.5 seconds later regardless.
-          // `settleAfterRoute` returns `waitForAppReady`'s own verdict, not just a delay — false
-          // when launcher recoveries are exhausted or the app never settled at all. The deep-link
-          // probe above (`probeDeepLinkRoute`) already treats a mismatch on an unsettled frame as
-          // "inconclusive, not evidence about the scheme" rather than a real mismatch; discarding
-          // the verdict here made the same mistake in the opposite direction, calling the URL
-          // delivered and the base established just because `reopened.url` matched, with nothing
-          // checking that the app was actually there to receive it and land on that URL.
-          const settled = await settleAfterRoute(ctx, device, signal)
-          return settled && reopened.url === verifiedDeepLink.url
-        }
-
-        // Read by the arrival verifier and the trigger planner, then discarded: the delivered
-        // artefact of this phase is the state variant capture written further down.
-        const screenshotPath = getScratchPath(projectId, 'state-start')
-
-        /**
-         * Two attempts, with a relaunch between them, because "the deep link opened the wrong
-         * screen" and "the app is not running" are indistinguishable from here and only the first
-         * is a reason to give up on this route.
-         *
-         * A dev client that is not running shows its launcher — a settled, fully interactive
-         * screen — so neither `settleAfterRoute` nor `isLoadingScreen` can tell it apart from a
-         * real one, and a deep link into it does nothing. The old code read that as a plain
-         * mismatch and skipped, which meant one stalled app silently cost *every* remaining
-         * hinted route its deep link, its auth-gate call, its screenshot and its arrival call,
-         * all to reach the same `continue`. Relaunching is the same recovery the capture loop
-         * already performs on a lost session, and it is what a human does by hand when they open
-         * the app from that launcher screen and watch the rest of the pass start working.
-         */
-        let baseReady = false
-        let baseAuth: 'clear' | 'stop' | 'exhausted' = 'clear'
-
-        // Pulled out of the retry loop below so the launcher-escalation branch that follows it can
-        // ask for exactly one more attempt after the user clears a stuck launcher, instead of
-        // re-running the whole two-attempt relaunch cycle (which would relaunch an app the user
-        // just finished opening by hand).
-        const attemptEstablishAndVerify = async (): Promise<boolean> => {
-          if (!(await establishBase())) return false
-          baseAuth = await checkAuthGate(hintedNodes.length - i, stateBudget)
-          if (baseAuth !== 'clear') return false
-          await captureScreenshot(ctx, device, screenshotPath)
-          const baseArrival = await verifyCurrentTarget(node, screenshotPath, stateBudget)
-          if (baseArrival.verdict === 'match') return true
-          console.log(`[app-flow] states ${node.id} base mismatch — ${baseArrival.reason}`)
-          return false
-        }
-
-        for (let attempt = 0; attempt < 2 && !stateBudget.expired; attempt++) {
-          if (attempt > 0) {
-            console.log(`[app-flow] states ${node.id} — base not reached, relaunching and retrying`)
-            await reopenBoundApp(ctx, device)
-          }
-          if (await attemptEstablishAndVerify()) {
-            baseReady = true
-            break
-          }
-          if (baseAuth !== 'clear') break
-        }
-
-        // The two attempts above cover a lost session and a wrong-screen deep link, but neither
-        // recovers a dev-client launcher: relaunching the bound app *while it is showing the
-        // launcher* just puts the launcher back, and `establishBase`/`waitForAppReady` already
-        // tried the reconnect-then-relaunch sequence internally before giving up. The main capture
-        // loop survives exactly this condition because it has `explore()`'s LLM rung and
-        // `resolveBlocked`'s user prompt; this pass had neither, which is why it silently walked
-        // the launcher and reported `base mismatch` for every hinted route behind it instead of
-        // telling anyone. `promptToUnblock` (the capture loop's own escalation, factored out above)
-        // is reused rather than duplicated, since `kind: 'blocked'` is documented as being named for
-        // what was observed rather than for what the screen is.
-        if (
-          !baseReady &&
-          baseAuth === 'clear' &&
-          !stateBudget.expired &&
-          (await isOnDevClientLauncher(ctx, device))
-        ) {
-          const resolution = await promptToUnblock(
-            "The app is showing the dev client's launcher instead of running, so nothing behind " +
-              'it can be captured. Open the app from the launcher in the simulator, then continue.',
-            hintedNodes.length - i
+          if (!baseReady) return { outcome: 'base-failed' }
+          const fileContent = node.file ? `\nSource file:\n${node.file}` : ''
+          const { text } = await runAgent(
+            {
+              cwd: projectPath,
+              systemPrompt: STATE_TRIGGER_SYSTEM_PROMPT,
+              userPrompt: `Route: ${node.id}\nURL path: ${node.urlPath}\nState hints: ${JSON.stringify(node.stateHints)}${fileContent}\n\nSuggest how to reveal the state variant.`,
+              // No tools, for the same reason as the navigator above: this decides from a screenshot
+              // and the hints it is given, and the source path in the prompt is a label, not a task.
+              tools: [],
+              // `low` rather than the judges' `off`: this one plans an action sequence to reveal a
+              // state variant instead of classifying what is already on screen, which is the kind of
+              // question the navigator gets and is held to the same level.
+              thinkingLevel: 'low',
+              imagePath: screenshotPath,
+              timeoutMs: 30_000
+            },
+            `state-trigger ${node.id}`
           )
-          if (resolution === 'stop') {
-            baseAuth = 'stop'
-          } else if (resolution === 'continue') {
-            console.log(
-              `[app-flow] states ${node.id} — launcher cleared by the user, retrying base`
-            )
-            if (await attemptEstablishAndVerify()) baseReady = true
+
+          const plan = parseSubAgentJson<{
+            actions: Array<{
+              type: 'tap' | 'swipe' | 'input' | 'wait'
+              locator?: { by: 'text' | 'label' | 'id'; value: string }
+              value?: string
+              direction?: 'up' | 'down' | 'left' | 'right'
+              duration?: number
+            }>
+            stateName: string
+            destinationLocator: { by: 'text' | 'label' | 'id'; value: string }
+            note: string | null
+          }>(text)
+
+          if (plan?.actions.length) {
+            const stateSlug = generateStateSlug(node.slug, plan.stateName)
+            const stateScreenshot = getScreenshotPath(projectId, stateSlug)
+            // The variant's journey is the base screen's, plus the lines for the actions that open
+            // it — the same composition `exploreFrom` performs for a seeded walk, and the reason
+            // this pass no longer needs `recordStateFromReplay`/`verifyAndSaveReplay` or the
+            // `.ad` candidate those two wrote. Null when a planned action has no faithful CLI form,
+            // in which case the variant is still captured, just without a stored path.
+            //
+            // Built before the actions run so the list describes what is about to be executed; it is
+            // only stored once they all succeeded and the screenshot came back.
+            //
+            // Minimized on the same terms as a walk's own lines, and for the same reason: a state
+            // plan that opens a menu and dismisses it again stores two commands whose only effect on
+            // a replay is a race against the popover's animation. The base screen's path is left
+            // alone — it was minimized when it was stored.
+            const actionLines = walkCommands(plan.actions)
+            const statePath =
+              baseCapture.pathCommands?.length && actionLines?.length
+                ? [...baseCapture.pathCommands, ...minimizeWalkCommands(actionLines).commands]
+                : null
+            try {
+              await executeNavigationActions(ctx, device, plan.actions, stateBudget.remainingMs)
+              await captureScreenshot(ctx, device, stateScreenshot)
+            } catch (error) {
+              console.warn(`[app-flow] state ${stateSlug} failed:`, error)
+              // `stop` carries a stop the action run itself caused (a prompt answered with "stop"
+              // during it), which the old `if (sweepStopped) break` read off the shared flag.
+              return { outcome: 'failed', stop: sweepStopped }
+            }
+            captureMap[node.id].states.push({
+              name: plan.stateName,
+              screenshot: `screens/${stateSlug}.png`,
+              ...(statePath ? { pathCommands: statePath } : {})
+            })
+            return { outcome: 'captured' }
           }
-        }
-
-        if (baseAuth === 'stop') {
-          sweepStopped = true
-          break
-        }
-        if (!baseReady) {
-          recordStateOutcome('base-failed')
-          continue
-        }
-        const fileContent = node.file ? `\nSource file:\n${node.file}` : ''
-        const { text } = await runAgent(
-          {
-            cwd: projectPath,
-            systemPrompt: STATE_TRIGGER_SYSTEM_PROMPT,
-            userPrompt: `Route: ${node.id}\nURL path: ${node.urlPath}\nState hints: ${JSON.stringify(node.stateHints)}${fileContent}\n\nSuggest how to reveal the state variant.`,
-            // No tools, for the same reason as the navigator above: this decides from a screenshot
-            // and the hints it is given, and the source path in the prompt is a label, not a task.
-            tools: [],
-            // `low` rather than the judges' `off`: this one plans an action sequence to reveal a
-            // state variant instead of classifying what is already on screen, which is the kind of
-            // question the navigator gets and is held to the same level.
-            thinkingLevel: 'low',
-            imagePath: screenshotPath,
-            timeoutMs: 30_000
-          },
-          `state-trigger ${node.id}`
-        )
-
-        const plan = parseSubAgentJson<{
-          actions: Array<{
-            type: 'tap' | 'swipe' | 'input' | 'wait'
-            locator?: { by: 'text' | 'label' | 'id'; value: string }
-            value?: string
-            direction?: 'up' | 'down' | 'left' | 'right'
-            duration?: number
-          }>
-          stateName: string
-          destinationLocator: { by: 'text' | 'label' | 'id'; value: string }
-          note: string | null
-        }>(text)
-
-        if (plan?.actions.length) {
-          const stateSlug = generateStateSlug(node.slug, plan.stateName)
-          const stateScreenshot = getScreenshotPath(projectId, stateSlug)
-          // The variant's journey is the base screen's, plus the lines for the actions that open
-          // it — the same composition `exploreFrom` performs for a seeded walk, and the reason
-          // this pass no longer needs `recordStateFromReplay`/`verifyAndSaveReplay` or the
-          // `.ad` candidate those two wrote. Null when a planned action has no faithful CLI form,
-          // in which case the variant is still captured, just without a stored path.
-          //
-          // Built before the actions run so the list describes what is about to be executed; it is
-          // only stored once they all succeeded and the screenshot came back.
-          //
-          // Minimized on the same terms as a walk's own lines, and for the same reason: a state
-          // plan that opens a menu and dismisses it again stores two commands whose only effect on
-          // a replay is a race against the popover's animation. The base screen's path is left
-          // alone — it was minimized when it was stored.
-          const actionLines = walkCommands(plan.actions)
-          const statePath =
-            baseCapture.pathCommands?.length && actionLines?.length
-              ? [...baseCapture.pathCommands, ...minimizeWalkCommands(actionLines).commands]
-              : null
-          try {
-            await executeNavigationActions(ctx, device, plan.actions, stateBudget.remainingMs)
-            await captureScreenshot(ctx, device, stateScreenshot)
-          } catch (error) {
-            console.warn(`[app-flow] state ${stateSlug} failed:`, error)
-            recordStateOutcome('failed')
-            if (sweepStopped) break
-            continue
-          }
-          captureMap[node.id].states.push({
-            name: plan.stateName,
-            screenshot: `screens/${stateSlug}.png`,
-            ...(statePath ? { pathCommands: statePath } : {})
-          })
-          recordStateOutcome('captured')
-        } else {
           // The base was reached and judged, and the planner still produced no executable action
           // — an unparseable reply, or hints that described a state this screen does not actually
-          // expose. The route is marked done either way (below): re-asking the same model the
-          // same question on a resume would spend the call again for the same answer.
-          recordStateOutcome('no-trigger')
+          // expose. The route is marked done either way (the caller marks `no-trigger` done):
+          // re-asking the same model the same question on a resume would spend the call again for
+          // the same answer.
+          return { outcome: 'no-trigger' }
         }
-        statesDone.add(node.id)
-        await persistCheckpoint()
+
+        const statesSummary = await runHintedNodes({
+          nodes: hintedNodes,
+          idOf: (node) => node.id,
+          done: statesDone,
+          checkSignal: () => checkSignal(signal),
+          pauseRequested: () => options.pauseRequested?.() ?? false,
+          checkpoint: () => persistCheckpoint(),
+          onNodeStart: (node, index, total) =>
+            emit(projectId, onEvent, {
+              type: 'step',
+              phase: 'states',
+              message: `Exploring states for ${node.urlPath} (${index + 1} of ${total})`
+              // No completed/total: the panel's sweep summary is the capture phase's screen
+              // count, and the hinted-route tally would overwrite that denominator for the rest
+              // of the run.
+            }),
+          run: runHintedNode
+        })
+        if (statesSummary.paused) {
+          sweepPaused = true
+          sweepStopped = true
+          sweepStopReason ??= 'requested'
+        }
       }
+
+      await runStatesPhase()
       if (options.pauseRequested?.()) {
         sweepPaused = true
         sweepStopped = true
+        sweepStopReason ??= 'requested'
       }
 
       // Forced before the terminal writes: `clearSweepProgress` below removes the checkpoint on a

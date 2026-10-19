@@ -21,6 +21,7 @@ import { registerDeviceChoiceTools } from "../src/server/device-choice-tools.ts"
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { adapterClient } from "./agent-device-fixtures.ts";
 import { recordRuntimeCount, recordRuntimeTiming } from "../src/app-flow/runtime-telemetry.ts";
+import { recordStatesPhase } from "../src/app-flow/states-phase.ts";
 
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
@@ -837,4 +838,36 @@ test("app flow runtime metrics report settle, verify and navigate with bounded a
   recordRuntimeCount("app_flow.runtime.navigate", { outcome: "refused" });
   await Sentry.flush();
   assert.equal(JSON.stringify(envelopes), before, "Opt-out silences every app-flow runtime metric.");
+});
+
+test("the state-variant phase reports whether it ran, with a closed outcome, and honors opt-out", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const previous = process.env.MOBILE_DEV_TELEMETRY;
+  delete process.env.MOBILE_DEV_TELEMETRY;
+  t.after(async () => {
+    if (previous === undefined) delete process.env.MOBILE_DEV_TELEMETRY;
+    else process.env.MOBILE_DEV_TELEMETRY = previous;
+    await Sentry.close();
+  });
+
+  // The question the per-route series cannot answer on their own: they are silent on a run that
+  // never entered the phase, so a sweep that stopped before it looked exactly like one that had
+  // nothing to capture.
+  recordStatesPhase("entered");
+  recordStatesPhase("skipped-disabled");
+  recordStatesPhase("skipped-stopped");
+  await Sentry.flush();
+  const sent = JSON.stringify(envelopes);
+  for (const fragment of ["app_flow.states.phase", '"surface":{"value":"app-flow"', '"outcome":{"value":"entered"', '"outcome":{"value":"skipped-disabled"', '"outcome":{"value":"skipped-stopped"']) contains(sent, fragment);
+  // One count per sweep carrying an outcome and nothing else.
+  for (const fragment of ["HomeTab/Profile", "screenLimit", "user.id", "telemetry_session"]) contains(sent, fragment, false);
+
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  recordStatesPhase("skipped-stopped");
+  await Sentry.flush();
+  assert.equal(JSON.stringify(envelopes), sent, "Opt-out silences the state phase counter too.");
 });
