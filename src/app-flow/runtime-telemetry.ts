@@ -42,3 +42,21 @@ export function recordRuntimeCount(name: string, attributes: Record<string, stri
   if (!telemetryEnabled()) return
   Sentry.metrics.count(name, 1, { attributes: baseAttributes(attributes) })
 }
+
+/**
+ * A bounded magnitude, counted once per operation rather than once per item —
+ * `app_flow.runtime.presentation_unbound`, whose value is "how many live bindings the
+ * symbolication join left unresolved on this pass". The per-item alternative would be hundreds of
+ * counts for one pass, which is exactly the frequent-sample case the guidance excludes. Same
+ * opt-out, unit-less count, and `surface`/`device_platform` attribution as its siblings; the value
+ * is clamped so a miscount can never emit a negative.
+ */
+export function recordRuntimeAmount(
+  name: string,
+  value: number,
+  attributes: Record<string, string> = {}
+): void {
+  if (!telemetryEnabled()) return
+  if (!Number.isFinite(value)) return
+  Sentry.metrics.count(name, Math.max(0, Math.round(value)), { attributes: baseAttributes(attributes) })
+}

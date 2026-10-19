@@ -21,6 +21,8 @@ function fixture(canMessage = true, projectList: unknown[] = []) {
     async callServerTool(input: { name: string; arguments?: Record<string, unknown> }) {
       calls.push(input);
       if (input.name === "mobile_appflow_start") return { content: [], structuredContent: { runId: "run-1", state: "running" } };
+      if (input.name === "mobile_appflow_explore_ui") return { content: [], structuredContent: { runId: "run-1", state: "running" } };
+      if (input.name === "mobile_appflow_launch_app") return { content: [], structuredContent: {} };
       if (input.name === "mobile_appflow_status") return { content: [], structuredContent: currentStatus };
       if (input.name === "mobile_appflow_screenshot") return { content: [{ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" }] };
       if (input.name === "mobile_appflow_projects") return { content: [], structuredContent: { projects } };
@@ -450,4 +452,50 @@ test("a second direct start retires the previous run before the new one begins",
   // The new run's buffer restarts at seq 1; the old run's cursor must not swallow it.
   host.notify({ source: "app-flow", runId: "run-1", seq: 1, event: { type: "step", phase: "capture", message: "Home", completed: 1, total: 79 } });
   assert.deepEqual(panel.getSnapshot().sweepSummary, { completed: 1, total: 79, message: "Home" });
+});
+
+// UI Explore presents the app's own states on an app that is already up: no sweep, no model, so it
+// takes the direct server route and becomes an ordinary run the existing controls drive.
+test("a UI explore run starts directly, carries the capture limit, and tracks the launch", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/demo");
+  assert.equal(panel.getSnapshot().appLaunched, false);
+  await panel.launchApp();
+  assert.equal(panel.getSnapshot().appLaunched, true, "a successful launch is what enables UI Explore");
+  await panel.startUiExplore({ limit: 10 });
+  assert.deepEqual(host.calls.at(-1), { name: "mobile_appflow_explore_ui", arguments: { projectPath: "/projects/demo", limit: 10 } });
+  assert.equal(host.messages.length, 0, "no decision provider is needed, so nothing is asked of Codex");
+  assert.equal(panel.getSnapshot().runId, "run-1");
+  assert.equal(panel.getSnapshot().state, "running");
+  // Cancel is the same control the sweep uses.
+  await panel.cancel();
+  assert.equal(host.calls.find(call => call.name === "mobile_appflow_cancel")?.arguments?.runId, "run-1");
+  // An omitted limit sends no limit at all rather than a guessed one.
+  await panel.startUiExplore();
+  assert.deepEqual(host.calls.at(-1)?.arguments, { projectPath: "/projects/demo" });
+  // Another project has not been launched, whatever this one did.
+  await panel.selectProject("/projects/other");
+  assert.equal(panel.getSnapshot().appLaunched, false);
+});
+
+test("an app the server already has running enables UI Explore without a launch in this session", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  // The server is the only place that knows the app is up — launched externally, or by an earlier
+  // panel session. Selecting the project adopts its answer instead of waiting for a Launch App.
+  host.returnsStatus({ exists: true, state: "completed", projectId: "project-1", appLaunched: true });
+  panel.setAvailable(true); await panel.selectProject("/projects/demo");
+  assert.equal(panel.getSnapshot().appLaunched, true, "the gate keys off the server's view, not a launch in this session");
+
+  // And a server that reports no launched app keeps the button's own disabled reason.
+  host.returnsStatus({ exists: true, state: "completed", projectId: "project-1", appLaunched: false });
+  await panel.refreshStatus();
+  assert.equal(panel.getSnapshot().appLaunched, false);
+
+  // A successful launch is still an immediate optimistic hint, ahead of the next status read.
+  await panel.launchApp();
+  assert.equal(panel.getSnapshot().appLaunched, true);
+  // A status read that predates this field (an older server) must not undo that hint.
+  host.returnsStatus({ exists: true, state: "completed", projectId: "project-1" });
+  await panel.refreshStatus();
+  assert.equal(panel.getSnapshot().appLaunched, true);
 });

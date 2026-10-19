@@ -173,7 +173,17 @@ export function screenshotUrl(
 function withScreenshotUrls(projectId: string, capture: AppFlowCapture, version: string): AppFlowCapture {
   return {
     ...capture,
-    screenshot: screenshotUrl(projectId, capture.screenshot, version)
+    screenshot: screenshotUrl(projectId, capture.screenshot, version),
+    // UI-state variants are per-screen files the next explore pass overwrites in place, exactly
+    // like the screen's own capture, so they need the same cache-busting version.
+    ...(capture.uiStates
+      ? {
+          uiStates: capture.uiStates.map((state) => ({
+            ...state,
+            screenshot: screenshotUrl(projectId, state.screenshot, version)
+          }))
+        }
+      : {})
   }
 }
 

@@ -1,12 +1,21 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import vm from 'node:vm'
 import { runReachLadder, strategiesFor, touchedDevice, type ReachRungs, type ReachStrategy } from '../src/app-flow/reach/ladder.ts'
 import { isToolingFailure } from '../src/app-flow/exploration.ts'
 import { agentSource } from '../src/app-flow/cdp/runtime-source.ts'
 import {
   agentCollectLinks,
+  agentControlCloser,
+  agentCopiesLiveNavigation,
+  agentCreatePresentations,
   agentLinkCandidate,
+  agentModalCarryOver,
   agentNavigate,
+  agentOpeningControl,
+  agentPresentationOpen,
+  agentPresentationRollback,
+  agentSetPath,
   AGENT_FUNCTIONS,
   DEFAULT_AGENT_LIMITS,
   LINK_CANDIDATE_CAP
@@ -64,7 +73,8 @@ test('exploration modes select the exact approved pipelines', () => {
 test('the packaged Fast agent contains structured navigation and keeps its integrity guard', () => {
   const source = agentSource()
   assert.match(source, /function agentNavigate/)
-  assert.match(source, /type === 'navigate'/)
+  // esbuild's transform normalises string quotes, so match either form.
+  assert.match(source, /type === ["']navigate["']/)
 })
 
 test('Fast dispatches a nested route through the mounted navigator', () => {
@@ -1038,9 +1048,207 @@ test('a link candidate that names nothing routable is dropped before it costs a 
   })
 })
 
+test('the assembled agent evaluates in an empty node:vm context with no free module references', () => {
+  // The agent is re-created in a fresh scope inside the app, so a reference to anything that only
+  // exists in this repo's module scope (a constant, an import) type-checks, passes every test that
+  // calls the function directly, and then fails as a ReferenceError against a live device. An
+  // empty `vm` context has the standard JS builtins and nothing else, so evaluating the real,
+  // injected source there and then calling every function reproduces that failure here.
+  const names = Object.keys(AGENT_FUNCTIONS)
+  // Same text that is injected; only the closure's return value is widened so each function can be
+  // reached from outside it.
+  const exposed = agentSource().replace(
+    'return agentInstall;',
+    `return {${names.map((name) => `${name}: ${name}`).join(',')}};`
+  )
+  const context = vm.createContext({})
+  const agent = vm.runInContext(exposed, context) as Record<string, () => unknown>
+  assert.deepEqual(Object.keys(agent), names, 'every registry function reached the closure')
+  for (const name of names) {
+    try {
+      agent[name]!()
+    } catch (error) {
+      // Calling with no arguments is expected to fail inside most of these; what must never happen
+      // is failing because a name does not exist.
+      // The error is constructed by the vm's own realm, so `instanceof ReferenceError` is false
+      // here even when it is one; compare the name instead.
+      assert.notEqual(
+        (error as Error | undefined)?.name,
+        'ReferenceError',
+        `agent function "${name}" referenced a name that does not exist in the app: ${String(error)}`
+      )
+    }
+  }
+})
+
 test('the packaged Fast agent carries the link harvest and its integrity guard counts it', () => {
   const source = agentSource()
   assert.match(source, /function agentCollectLinks/)
-  assert.match(source, /type === 'links'/)
+  assert.match(source, /type === ["']links["']/)
   assert.equal(Object.keys(AGENT_FUNCTIONS).length, EXPECTED_AGENT_FUNCTION_COUNT)
+})
+
+/* ------------------------------------------------------------ presentations runtime */
+
+test('the packaged agent carries the presentation commands and counts their functions', () => {
+  const source = agentSource()
+  assert.match(source, /function agentProject/)
+  assert.match(source, /function agentRestorePresentations/)
+  assert.match(source, /type === ["']presentation-setup["']/)
+  assert.match(source, /type === ["']presentations["']/)
+  assert.match(source, /type === ["']presentation-open["']/)
+  assert.match(source, /type === ["']presentation-rollback["']/)
+  assert.equal(Object.keys(AGENT_FUNCTIONS).length, EXPECTED_AGENT_FUNCTION_COUNT)
+})
+
+test('a presentation controller needs a zero-argument opener paired with a closer', () => {
+  const sheet = { present: () => {}, dismiss: () => {} }
+  assert.equal(agentOpeningControl(sheet), true)
+  assert.equal(agentOpeningControl(sheet, 'present'), true)
+  assert.equal(agentOpeningControl(sheet, 'open'), false, 'only the named method may qualify')
+  assert.equal(agentControlCloser(sheet, 'present'), 'dismiss')
+  // An opener taking an argument is an app API that needs data we do not have; calling it is a
+  // guess, so it is refused.
+  assert.equal(agentOpeningControl({ present: (id: string) => id, dismiss: () => {} }), false)
+  // An opener with no paired closer could be opened and never put back.
+  assert.equal(agentOpeningControl({ open: () => {} }), false)
+  assert.equal(agentControlCloser({ open: () => {} }, 'open'), null)
+  // A getter must never be invoked to decide whether something is a controller.
+  let invoked = 0
+  const trap = {}
+  Object.defineProperty(trap, 'open', { get: () => { invoked++; return () => {} }, enumerable: true })
+  Object.defineProperty(trap, 'close', { get: () => { invoked++; return () => {} }, enumerable: true })
+  assert.equal(agentOpeningControl(trap), false)
+  assert.equal(invoked, 0, 'descriptors are read, never properties')
+})
+
+test('a projected copy inherits only the six presentation props of its nearest ancestor Modal', () => {
+  const Modal = function Modal() {}
+  const outer = {
+    type: Modal,
+    memoizedProps: { presentationStyle: 'fullScreen', transparent: false, animationType: 'slide' },
+    return: null
+  }
+  const nearest = {
+    type: Modal,
+    memoizedProps: {
+      presentationStyle: 'pageSheet',
+      transparent: true,
+      statusBarTranslucent: true,
+      onRequestClose: () => {},
+      children: 'ignored'
+    },
+    return: outer
+  }
+  const focus = { return: nearest }
+  assert.deepEqual(agentModalCarryOver(focus, Modal), {
+    presentationStyle: 'pageSheet',
+    transparent: true,
+    statusBarTranslucent: true
+  })
+  assert.deepEqual(agentModalCarryOver({ return: null }, Modal), {}, 'no ancestor Modal carries nothing')
+  assert.deepEqual(agentModalCarryOver(focus, undefined), {})
+})
+
+test('projection refuses a copy that would duplicate the live app navigation', () => {
+  const Provider = function Provider() {}
+  const Navigator = function Navigator() {}
+  const navigatorProps = { children: null }
+  const element = { type: Navigator, props: navigatorProps }
+  const props = { children: element }
+  const focus = { type: Provider, memoizedProps: props, return: null }
+  const navigatorFiber = { type: Navigator, memoizedProps: navigatorProps, return: focus }
+  const screen = {
+    memoizedProps: { route: { name: 'Home' }, navigation: { getState: () => ({}) } },
+    return: navigatorFiber
+  }
+  const tree = {
+    all: [focus, navigatorFiber, screen],
+    props: new Map([[navigatorProps, [navigatorFiber]]]),
+    inside: (fiber: any, owner: any) => {
+      for (let parent = fiber; parent; parent = parent.return) if (parent === owner) return true
+      return false
+    }
+  }
+  assert.equal(agentCopiesLiveNavigation(focus, props, tree), true)
+  // The same provider with no navigator under its copied children is projectable.
+  const plain = { children: { type: function Label() {}, props: {} } }
+  assert.equal(agentCopiesLiveNavigation(focus, plain, tree), false)
+  assert.equal(agentCopiesLiveNavigation(focus, { children: undefined }, tree), false)
+})
+
+test('agentSetPath writes a path immutably and an empty path replaces the value', () => {
+  const before = { form: { sheet: false, other: 1 }, kept: true }
+  const after = agentSetPath(before, ['form', 'sheet'], true)
+  assert.deepEqual(after, { form: { sheet: true, other: 1 }, kept: true })
+  assert.equal(before.form.sheet, false, 'the original is untouched')
+  assert.notEqual(after.form, before.form)
+  assert.equal(agentSetPath('closed', [], 'open'), 'open')
+  assert.deepEqual(agentSetPath([1, 2], ['1'], 9), [1, 9])
+})
+
+test('opening a state presentation pushes one undo frame and guards a queued app update', () => {
+  const Owner = function Owner() {}
+  const owner: any = {
+    tag: 0,
+    type: Owner,
+    elementType: Owner,
+    memoizedProps: {},
+    memoizedState: { memoizedState: 'closed', next: null },
+    child: null,
+    sibling: null,
+    return: null
+  }
+  const previous = (globalThis as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown })
+    .__REACT_DEVTOOLS_GLOBAL_HOOK__
+  ;(globalThis as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }).__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+    renderers: new Map([[1, { rendererPackageName: 'react-native-renderer' }]]),
+    getFiberRoots: () => new Set([{ current: owner }])
+  }
+  try {
+    const updates: Array<(value: unknown) => unknown> = []
+    const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+    pres.catalog = {
+      states: [],
+      actions: [
+        { id: 'a1', name: 'Open sheet', effect: { kind: 'state', site: 's1', path: [], value: 'open' } }
+      ]
+    }
+    pres.bindings.set('1', {
+      id: '1',
+      index: 0,
+      site: 's1',
+      fiber: owner,
+      setter: (update: (value: unknown) => unknown) => updates.push(update)
+    })
+
+    const opened = agentPresentationOpen(pres, 'a1', null)
+    assert.equal(opened.ok, true)
+    assert.equal(opened.kind, 'state')
+    assert.equal(pres.undo.length, 1)
+    assert.equal(pres.undo[0].value, 'closed', 'the undo frame remembers the value that was read')
+    assert.equal(pres.undo[0].nativeDismiss, false)
+    assert.equal(updates.length, 1)
+    // The functional form is what keeps a queued app update from being clobbered: it applies only
+    // when the state is still the one that was read.
+    assert.equal(updates[0]!('closed'), 'open')
+    assert.equal(updates[0]!('something the app queued'), 'something the app queued')
+
+    // A second open of the same entry stacks a second checkpoint; rollback unwinds in reverse.
+    let rolled: any
+    agentPresentationRollback(pres, 0, false, (value: unknown) => { rolled = value })
+    assert.equal(rolled.ok, true)
+    assert.equal(rolled.checkpoint, 0)
+    assert.equal(updates.length, 2)
+    assert.equal(updates[1]!('open'), 'closed', 'restore writes the remembered value back')
+
+    // An entry with no live binding is refused rather than opened against the wrong instance.
+    pres.bindings.clear()
+    const refused = agentPresentationOpen(pres, 'a1', null)
+    assert.equal(refused.ok, false)
+    assert.match(String(refused.error), /could not be bound/)
+  } finally {
+    ;(globalThis as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }).__REACT_DEVTOOLS_GLOBAL_HOOK__ =
+      previous
+  }
 })

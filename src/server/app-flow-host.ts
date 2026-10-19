@@ -407,6 +407,14 @@ export interface AppFlowRunSnapshot {
   manifest?: unknown;
   event?: unknown;
   error?: string;
+  /**
+   * Whether this project's app is up on the App Flow device right now, as the engine knows it —
+   * not as one panel session remembers it. The panel's own "I launched it" flag cannot see an app
+   * launched externally or in a previous session, which is exactly the case `exploreUi` accepts
+   * and the button used to refuse. Reported on every status read so the UI's gate matches the
+   * server's.
+   */
+  appLaunched?: boolean;
 }
 
 export interface AppFlowHostServices {
@@ -416,6 +424,11 @@ export interface AppFlowHostServices {
   pause(runId: string): Promise<unknown>;
   cancel(runId: string): Promise<unknown>;
   launchApp(projectPath: string): Promise<unknown>;
+  /**
+   * Start a non-blocking explore-UI pass over the already-launched app and register it as a run,
+   * so `status`, `result`, `events` and `cancel` work on it exactly as they do for a sweep.
+   */
+  exploreUi(projectPath: string, options: { limit?: number }, context: { runId: string }): Promise<unknown>;
   resolvePrompt(runId: string, resolution: "stop" | "override" | "continue", promptId?: string, projectPath?: string): Promise<unknown>;
   manualStart(projectPath: string, nodeId: string): Promise<unknown>;
   manualAct(projectPath: string, action: unknown): Promise<unknown>;
@@ -488,6 +501,13 @@ export class AppFlowHost {
   async submitDecision(runId: string, requestId: string, response: string): Promise<DecisionPollResult | AppFlowRunSnapshot> {
     this.provider(runId).submit(requestId, response);
     return this.nextDecision(runId, 15_000);
+  }
+
+  /** Starts an explore-UI pass and returns its run id, for the same poll/cancel loop as a sweep. */
+  async exploreUi(projectPath: string, options: { limit?: number }): Promise<{ runId: string; state: "running" }> {
+    const runId = randomUUID();
+    await this.services.exploreUi(projectPath, options, { runId });
+    return { runId, state: "running" };
   }
 
   async cancel(runId: string): Promise<unknown> {
@@ -675,15 +695,17 @@ export async function createAppFlowHost(options: {
       if (query.runId) {
         const run = runs.get(query.runId);
         if (!run) throw new Error("That App Flow run does not exist.");
-        return { ...run };
+        return { ...run, appLaunched: await flow.isAppLaunched(run.projectPath) };
       }
       const selectedProjectPath = projectFor(query);
+      const appLaunched = await flow.isAppLaunched(selectedProjectPath);
       const active = [...runs.values()].find(run => run.projectPath === selectedProjectPath &&
         (run.state === "running" || run.state === "needs-user-action" || run.state === "suspended"));
       const saved = await flow.getStatus(selectedProjectPath);
       if (active) {
         return {
           ...active,
+          appLaunched,
           exists: saved.exists,
           projectId: saved.projectId,
           ...(saved.manifest === undefined ? {} : { manifest: saved.manifest }),
@@ -696,6 +718,7 @@ export async function createAppFlowHost(options: {
         if (shared.state === "suspended" || ownerAlive(shared.ownerPid)) {
           return {
             ...snapshot,
+            appLaunched,
             exists: saved.exists,
             projectId: saved.projectId,
             ...(saved.manifest === undefined ? {} : { manifest: saved.manifest }),
@@ -712,6 +735,7 @@ export async function createAppFlowHost(options: {
         });
         return {
           ...failed,
+          appLaunched,
           exists: saved.exists,
           projectId: saved.projectId,
           ...(saved.manifest === undefined ? {} : { manifest: saved.manifest }),
@@ -720,6 +744,7 @@ export async function createAppFlowHost(options: {
       return {
         projectPath: selectedProjectPath,
         state: saved.exists ? "completed" : "idle",
+        appLaunched,
         exists: saved.exists,
         projectId: saved.projectId,
         ...(saved.manifest === undefined ? {} : { manifest: saved.manifest }),
@@ -758,6 +783,27 @@ export async function createAppFlowHost(options: {
     // sets. Returned as a value, every failure after the device boots — the scheme prompt, a Metro
     // cold start, an install race — reached the user as a successful launch of an app that never
     // came up, which is indistinguishable from "it only booted the simulator".
+    async exploreUi(selectedProjectPath, exploreOptions, context) {
+      if ([...runs.values()].some(run => run.state === "running" || run.state === "needs-user-action")) {
+        throw new Error("Another App Flow run is already active.");
+      }
+      const run: MutableRun = { runId: context.runId, projectPath: selectedProjectPath, state: "running" };
+      runs.set(run.runId, run);
+      persistRun(run);
+      recentEvents.delete(`project:${getProjectId(selectedProjectPath)}`);
+      const started = await flow.exploreUi(selectedProjectPath, exploreOptions);
+      if (!started.ok) {
+        run.state = "failed";
+        run.error = started.error;
+        persistRun(run);
+        runs.delete(run.runId);
+        // Benign states of the surface are tagged so the reporter counts them rather than filing
+        // an exception — the same split `launchApp` makes below.
+        if (started.expected) throw new ExpectedOperationError("invalid_input", started.error);
+        throw new Error(started.error);
+      }
+      return started;
+    },
     async launchApp(selectedProjectPath) {
       const launched = await flow.launchApp(selectedProjectPath);
       if (launched.ok) return launched;

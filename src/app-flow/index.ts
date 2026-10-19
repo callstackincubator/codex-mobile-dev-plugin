@@ -9,8 +9,14 @@ import { bootDevice, closeDevice, waitForAppReady, type CaptureDevice } from './
 import { requiresDecisionProvider, resolveAppFlowStart } from './start-request.ts'
 import { getProjectId, readAppFlowForRenderer, readManifest } from './storage.ts'
 import { configureAppFlowHost, type AppFlowHostPorts } from './host.ts'
+import { runExploreUi } from './explore-ui-run.ts'
 
 const builders = new Map<string, AppFlowBuilder>()
+/**
+ * In-flight explore-UI passes, keyed by project. One per project at a time, and cancellable
+ * through the same `cancel` the panel already calls for a sweep.
+ */
+const exploring = new Map<string, AbortController>()
 /** Apps the user launched from the App Flow screen, kept running for a later sweep to adopt. */
 const launchedApps = new Map<string, CaptureDevice>()
 const launching = new Set<string>()
@@ -34,6 +40,14 @@ export function createAppFlowService(host: AppFlowHostPorts): {
     projectPath: string
   ) => Promise<{ ok: true } | { ok: false; error: string; expected?: boolean }>
   isAppLaunched: (projectPath: string) => Promise<boolean>
+  /**
+   * Open and photograph the UI states of the screen the already-launched app is on. Non-blocking:
+   * it resolves as soon as the pass is under way, and reports through the same event stream.
+   */
+  exploreUi: (
+    projectPath: string,
+    options?: { limit?: number }
+  ) => Promise<{ ok: true } | { ok: false; error: string; expected?: boolean }>
   pause: (projectPath: string) => Promise<{ paused: boolean }>
   cancel: (projectPath: string) => Promise<{ cancelled: boolean }>
   resolvePrompt: (
@@ -106,6 +120,83 @@ export function createAppFlowService(host: AppFlowHostPorts): {
       }
     },
     isAppLaunched: async (projectPath: string) => launchedApps.has(getProjectId(projectPath)),
+    exploreUi: async (projectPath: string, options?: { limit?: number }) => {
+      const projectId = getProjectId(projectPath)
+      if (builders.get(projectId)?.isRunning()) {
+        return { ok: false, error: 'App flow build already in progress.', expected: true }
+      }
+      if (exploring.has(projectId)) {
+        return { ok: false, error: 'UI explore is already running for this project.', expected: true }
+      }
+      // The app must already be up: this pass opens states on the screen the user left it on, and
+      // relaunching would throw that screen away before anything could be captured.
+      const device = launchedApps.get(projectId)
+      if (!device) {
+        return {
+          ok: false,
+          error: 'Launch the app from the App Flow screen first, then start UI explore.',
+          expected: true
+        }
+      }
+      const parsed = await parseProject(projectPath)
+      if (!parsed) {
+        return {
+          ok: false,
+          error:
+            'No supported Expo Router or React Navigation routes were found in the selected project.',
+          expected: true
+        }
+      }
+      const controller = new AbortController()
+      exploring.set(projectId, controller)
+      const ctx = {
+        projectPath,
+        projectId,
+        scheme: parsed.scheme,
+        appName: parsed.appName,
+        bundleId: parsed.bundleId,
+        slug: parsed.slug,
+        platform: 'ios' as const,
+        sessionName: projectId,
+        signal: controller.signal
+      }
+      const emit = (event: {
+        type: 'phase' | 'step' | 'error' | 'complete'
+        message: string
+        completed?: number
+        total?: number
+      }) => {
+        host.emit({ ...event, phase: 'capture', projectId })
+      }
+      void runExploreUi({
+        projectPath,
+        projectId,
+        ctx,
+        device,
+        ...(options?.limit === undefined ? {} : { limit: options.limit }),
+        signal: controller.signal,
+        emit
+      })
+        .then((result) => {
+          emit({
+            type: 'complete',
+            message: result.cancelled
+              ? 'UI explore cancelled.'
+              : `Captured ${result.captured} UI state(s)${result.failed ? `, ${result.failed} could not be opened` : ''}.`,
+            completed: result.captured
+          })
+        })
+        .catch((error: unknown) => {
+          emit({
+            type: 'error',
+            message: error instanceof Error ? error.message : 'Unknown error'
+          })
+        })
+        .finally(() => {
+          exploring.delete(projectId)
+        })
+      return { ok: true }
+    },
     start: async (input) => {
       // Defaults live in `start-request.ts` so they are testable without Electron.
       const {
@@ -207,6 +298,12 @@ export function createAppFlowService(host: AppFlowHostPorts): {
     },
     cancel: async (projectPath: string) => {
       const projectId = getProjectId(projectPath)
+      const explore = exploring.get(projectId)
+      if (explore) {
+        explore.abort()
+        console.log(`[app-flow] cancel requested for ${projectId} — UI explore aborting`)
+        return { cancelled: true }
+      }
       const builder = builders.get(projectId)
       console.log(
         `[app-flow] cancel requested for ${projectId} — ${builder ? 'builder found' : 'no running builder'}`

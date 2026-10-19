@@ -4,8 +4,16 @@ interface RouteTargetNode {
   params: readonly string[]
 }
 
-const answersTo = (node: RouteTargetNode, routeName: string): boolean =>
+/**
+ * Whether a node is the one a live navigator route names. Exported because the explore-UI pass
+ * attributes its variants to the focused route and must use the same identity this module's own
+ * param bridge does — a second spelling of "is this the same screen" is how two consumers start
+ * disagreeing about which capture a frame belongs to.
+ */
+export const routeAnswersTo = (node: RouteTargetNode, routeName: string): boolean =>
   node.id === routeName || node.id.split('/').pop() === routeName
+
+const answersTo = routeAnswersTo
 
 /**
  * The one param-declaring node a live navigator route's params belong to, or null.

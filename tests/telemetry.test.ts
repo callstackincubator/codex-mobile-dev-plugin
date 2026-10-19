@@ -20,7 +20,7 @@ import { SimulatorUnavailableError } from "../src/server/simulator-unavailable.t
 import { registerDeviceChoiceTools } from "../src/server/device-choice-tools.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { adapterClient } from "./agent-device-fixtures.ts";
-import { recordRuntimeCount, recordRuntimeTiming } from "../src/app-flow/runtime-telemetry.ts";
+import { recordRuntimeAmount, recordRuntimeCount, recordRuntimeTiming } from "../src/app-flow/runtime-telemetry.ts";
 
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
@@ -837,4 +837,41 @@ test("app flow runtime metrics report settle, verify and navigate with bounded a
   recordRuntimeCount("app_flow.runtime.navigate", { outcome: "refused" });
   await Sentry.flush();
   assert.equal(JSON.stringify(envelopes), before, "Opt-out silences every app-flow runtime metric.");
+});
+
+test("explore-ui presentation metrics carry a closed outcome/kind pair and honor opt-out", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  t.after(() => { delete process.env.MOBILE_DEV_TELEMETRY; });
+
+  // One measurement per opened presentation, one per pass, and one bounded count of the bindings
+  // Metro's source maps could not resolve — never one per poll and never one per binding.
+  recordRuntimeTiming("app_flow.runtime.presentation", 412, { outcome: "captured", kind: "state" });
+  recordRuntimeTiming("app_flow.runtime.presentation", 2100, { outcome: "failed", kind: "control" });
+  recordRuntimeTiming("app_flow.runtime.presentation_pass", 9400, { outcome: "completed" });
+  recordRuntimeAmount("app_flow.runtime.presentation_unbound", 7, { stage: "configure" });
+  await Sentry.flush();
+  const emitted = JSON.stringify(envelopes);
+  for (const name of ["app_flow.runtime.presentation", "app_flow.runtime.presentation_pass", "app_flow.runtime.presentation_unbound"]) contains(emitted, name);
+  contains(emitted, "millisecond");
+  contains(emitted, '"surface":{"value":"app-flow"');
+  contains(emitted, '"outcome":{"value":"captured"');
+  contains(emitted, '"kind":{"value":"control"');
+  contains(emitted, '"stage":{"value":"configure"');
+  // Product detail these series must never carry: the screen, the recipe, the component it opens.
+  contains(emitted, "SettingsSheet", false);
+  contains(emitted, "HomeTab/Home", false);
+  contains(emitted, "src/Screen.tsx", false);
+
+  const before = JSON.stringify(envelopes);
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  recordRuntimeTiming("app_flow.runtime.presentation", 50, { outcome: "captured", kind: "mount" });
+  recordRuntimeTiming("app_flow.runtime.presentation_pass", 60, { outcome: "failed" });
+  recordRuntimeAmount("app_flow.runtime.presentation_unbound", 3, { stage: "configure" });
+  await Sentry.flush();
+  assert.equal(JSON.stringify(envelopes), before, "Opt-out silences every explore-ui metric.");
 });

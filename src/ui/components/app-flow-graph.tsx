@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Background, Controls, Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
-import type { AppFlowEdge, AppFlowNode } from "../../shared/app-flow.ts";
+import type { AppFlowEdge, AppFlowNode, AppFlowUiState } from "../../shared/app-flow.ts";
 import { featureGateNotice } from "../../shared/app-flow.ts";
 import type { AppFlowPanel } from "../app-flow-panel.ts";
-import { recordUiTiming } from "../telemetry.ts";
-import { BAND_COLUMNS, COL_GAP, NODE_HEIGHT, NODE_WIDTH, STRUCTURE_NODE_HEIGHT, layoutTopology, type NodePlacement, type ResolvedEdge } from "./app-flow-layout.ts";
+import { recordUiTiming, setUiGauge } from "../telemetry.ts";
+import { BAND_COLUMNS, COL_GAP, NODE_HEIGHT, NODE_WIDTH, STRUCTURE_NODE_HEIGHT, displayableUiStates, layoutTopology, uiStateCount, type NodePlacement, type ResolvedEdge } from "./app-flow-layout.ts";
 import { ManualRecorderPanel } from "./manual-recorder-panel.tsx";
 
 type Props = { nodes: AppFlowNode[]; edges: AppFlowEdge[]; runtimeEdges?: AppFlowEdge[]; entryScreenIds?: string[]; projectPath?: string; projectId: string; panel: AppFlowPanel };
@@ -49,25 +49,70 @@ function Screenshot({ projectId, path, title, panel, className = "min-h-0 flex-1
       : <div className="flex flex-1 items-center justify-center bg-muted/40 text-[10px] text-muted-foreground">Loading capture…</div>;
 }
 
+/**
+ * The captured UI states of one screen: a strip that is collapsed at rest, so a dense graph looks
+ * exactly as it did before the explore-UI pass existed. Selecting a thumbnail swaps the node's
+ * MAIN image rather than growing the node, which is what keeps `NODE_HEIGHT` and the layout math
+ * in `app-flow-layout.ts` untouched.
+ */
+function UiStateStrip({ node, title, variants, selectedId, onSelect }: { node: AppFlowNode; title: string; variants: AppFlowUiState[]; selectedId: string | null; onSelect: (id: string | null) => void }) {
+  const graph = useContext(GraphContext)!;
+  const [expanded, setExpanded] = useState(false);
+  const base = node.capture?.screenshot ?? null;
+  const thumb = "h-14 w-9 shrink-0 rounded-sm object-cover";
+  const frame = (pressed: boolean) => `nodrag nopan flex shrink-0 flex-col items-center gap-0.5 rounded-md border p-1 text-[9px] disabled:opacity-40 ${pressed ? "border-foreground bg-muted" : "border-border hover:bg-muted/60"}`;
+  return <div className="mt-0.5">
+    <button type="button" className="nodrag nopan flex w-full items-center gap-1.5 rounded-md bg-muted/40 px-1.5 py-1 text-[10px] font-medium text-muted-foreground hover:bg-muted/70"
+      aria-expanded={expanded} aria-label={`${expanded ? "Hide" : "Show"} ${variants.length} captured UI state${variants.length === 1 ? "" : "s"} of ${title}`}
+      onClick={event => { event.stopPropagation(); setExpanded(value => !value); }}>
+      <span aria-hidden>{expanded ? "▾" : "▸"}</span><span className="truncate">UI states</span>
+      <span className="ml-auto shrink-0 rounded-full bg-muted px-1.5 text-[9px] tabular-nums">{variants.length}</span></button>
+    {expanded && <div role="group" aria-label={`Captured UI states of ${title}`} className="nodrag nopan mt-1 flex gap-1.5 overflow-x-auto pb-1">
+      {base && <button type="button" className={frame(selectedId === null)} aria-pressed={selectedId === null} title={`${title} — the screen as the sweep captured it`}
+        onClick={event => { event.stopPropagation(); onSelect(null); }}>
+        <Screenshot projectId={graph.projectId} path={base} title={`${title} — Base`} panel={graph.panel} className={thumb} fallback="…" />
+        <span className="w-9 truncate text-center">Base</span></button>}
+      {variants.map(variant => variant.screenshot
+        // A variant the host could not open keeps its place, disabled, with the reason on hover:
+        // it was found in the screen's own source, so dropping it would hide a real failure.
+        ? <button key={variant.id} type="button" className={frame(selectedId === variant.id)} aria-pressed={selectedId === variant.id} title={variant.name}
+          onClick={event => { event.stopPropagation(); onSelect(variant.id); }}>
+          <Screenshot projectId={graph.projectId} path={variant.screenshot} title={`${title} — ${variant.name}`} panel={graph.panel} className={thumb} fallback="…" />
+          <span className="w-9 truncate text-center">{variant.name}</span></button>
+        : <button key={variant.id} type="button" disabled aria-pressed={false} className={frame(false)} title={`${variant.name} — not captured: ${variant.error ?? "unknown error"}`}
+          onClick={event => event.stopPropagation()}>
+          <span className={`${thumb} flex items-center justify-center bg-muted/40 text-amber-600`} aria-hidden>!</span>
+          <span className="w-9 truncate text-center text-amber-600">{variant.name}</span></button>)}
+    </div>}
+  </div>;
+}
+
 function ScreenNode({ data }: NodeProps) {
   const node = data.node as AppFlowNode;
   const graph = useContext(GraphContext)!;
   const title = nodeTitle(node); const status = captureStatus(node); const screenshot = node.capture?.screenshot;
-  const shownPath = screenshot;
+  const variants = displayableUiStates(node);
+  const [variantId, setVariantId] = useState<string | null>(null);
+  const shown = variants.find(variant => variant.id === variantId && variant.screenshot != null) ?? null;
+  const shownPath = shown?.screenshot ?? screenshot;
+  const shownTitle = shown ? `${title} — ${shown.name}` : title;
   // Read off the source, never off what this run rendered: see `featureGateNotice`.
   const gate = featureGateNotice(node.guard);
   return <><Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-0 !bg-slate-400" />
     <div className="flex h-full flex-col overflow-hidden">
-      {shownPath ? <Screenshot projectId={graph.projectId} path={shownPath} title={title} panel={graph.panel} />
+      {shownPath ? <Screenshot projectId={graph.projectId} path={shownPath} title={shownTitle} panel={graph.panel} />
         : <div className="flex flex-1 items-center bg-muted/40 px-3 py-2 text-[10px] leading-snug text-muted-foreground">
           {node.origin === "chrome" ? "Navigator surface — reachable from anywhere it is revealed" : node.origin === "runtime" ? "Discovered on device" : node.file ?? "Source component unresolved"}</div>}
-      <div className="shrink-0 space-y-1 px-3 py-2.5"><div className="flex items-center gap-1.5 overflow-hidden">
+      <div className="shrink-0 space-y-1 px-3 py-2.5">
+        {shown && <div className="truncate text-[10px] text-muted-foreground">Showing UI state: {shown.name}</div>}
+        <div className="flex items-center gap-1.5 overflow-hidden">
         <div className="shrink-0 truncate text-[12px] font-medium">{title}</div><div className="truncate text-[10px] text-muted-foreground">
           {node.origin === "chrome" ? "Not a screen — nothing to capture" : node.urlPath ?? "In-app navigation only"}</div></div>
         {status && <div className={`flex items-center gap-1.5 text-[10px] ${TONE_TEXT[status.tone]}`} title={node.capture?.note ?? undefined}>
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[status.tone]}`} /><span className="truncate">{status.label}</span></div>}
         {gate && <div className="flex items-center gap-1.5 text-[10px] text-violet-600 dark:text-violet-300/90" title={gate.detail}>
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" /><span className="truncate">{gate.label}</span></div>}
+        {variants.length > 0 && <UiStateStrip node={node} title={title} variants={variants} selectedId={shown?.id ?? null} onSelect={setVariantId} />}
         <NodeActions node={node} />
       </div>
     </div><Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !border-0 !bg-slate-400" /></>;
@@ -127,6 +172,9 @@ export function AppFlowGraph({ nodes, edges, runtimeEdges, entryScreenIds, proje
         opacity: selectedId === null ? 0.35 : highlighted ? 1 : 0.08 } };
   }), [navigations, selectedId]);
   useEffect(() => { recordUiTiming("ui.app_flow.graph_render", performance.now() - renderStartedAt); }, [flowNodes, flowEdges]);
+  // How many UI-state rows this graph offers, one plain number per node-set change. Counts rows
+  // only: no route, node, component or file identity is attached anywhere on this series.
+  useEffect(() => { setUiGauge("ui.app_flow.ui_states_rendered", uiStateCount(nodes)); }, [nodes]);
   return <GraphContext.Provider value={{ panel, projectPath: projectPath ?? null, projectId }}><div className="relative h-full min-h-80 w-full">
     <ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} onNodeClick={onNodeClick} onPaneClick={() => setSelectedId(null)} fitView fitViewOptions={FIT_VIEW_OPTIONS} colorMode="system">
       <Controls fitViewOptions={FIT_VIEW_OPTIONS} /><Background gap={16} size={1} />

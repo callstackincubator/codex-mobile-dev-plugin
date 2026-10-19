@@ -1,5 +1,5 @@
 /** Pure topology layout for the App Flow graph. */
-import type { AppFlowEdge, AppFlowNode } from "../../shared/app-flow.ts";
+import type { AppFlowEdge, AppFlowNode, AppFlowUiState } from "../../shared/app-flow.ts";
 
 export const NODE_WIDTH = 320;
 export const NODE_HEIGHT = 760;
@@ -71,6 +71,34 @@ export function captureTally(nodes: AppFlowNode[]): CaptureTally {
     if (note && !tally.reasons.includes(note)) tally.reasons.push(note);
   }
   return tally;
+}
+
+/**
+ * The UI states of one screen that are worth a row in its node's strip: every variant the
+ * explore-UI pass persisted that either has a frame to show or says why it has none. A row with
+ * neither is evidence of nothing, so it is dropped rather than rendered as an empty thumbnail.
+ *
+ * Failures are deliberately kept: `exploreUi` writes `screenshot: null` with an `error` precisely
+ * so the user can see that a state was found in source and could not be opened. Hiding them would
+ * make a partly failed pass indistinguishable from a smaller app.
+ */
+export function displayableUiStates(node: AppFlowNode): AppFlowUiState[] {
+  return (node.capture?.uiStates ?? []).filter(state => state.screenshot != null || Boolean(state.error));
+}
+
+/** Whether a node should render a UI-state strip at all. */
+export function hasUiStates(node: AppFlowNode): boolean {
+  return displayableUiStates(node).length > 0;
+}
+
+/**
+ * How many UI-state rows the whole node set renders. Reported as a gauge, never folded into
+ * `captureTally`: that headline counts screens, and a variant is not a screen.
+ */
+export function uiStateCount(nodes: AppFlowNode[]): number {
+  let total = 0;
+  for (const node of nodes) total += displayableUiStates(node).length;
+  return total;
 }
 
 export interface Topology {

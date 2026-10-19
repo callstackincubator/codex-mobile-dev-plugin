@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { AppFlowEdge, AppFlowNode, ManualSnapshotNode, ManualSnapshotRect } from "../src/shared/app-flow.ts";
-import { captureTally, layoutTopology, type ResolvedEdge } from "../src/ui/components/app-flow-layout.ts";
+import { captureTally, displayableUiStates, hasUiStates, layoutTopology, uiStateCount, type ResolvedEdge } from "../src/ui/components/app-flow-layout.ts";
 import { isTextInput, layoutWireframe, STATUS_BAR_POINTS } from "../src/ui/components/manual-wireframe.ts";
 
 function screen(id: string, status?: string): AppFlowNode {
@@ -71,6 +71,34 @@ describe("App Flow capture tally", () => {
     assert.equal(captureTally([node("chrome:tabs", { status: "ok", screenshot: "tabs.png" }, "chrome")]).total, 0);
   });
 
+});
+
+describe("App Flow UI states", () => {
+  function node(id: string, uiStates?: unknown[]): AppFlowNode {
+    return { ...screen(id), capture: { status: "ok", screenshot: `${id}.png`, ...(uiStates ? { uiStates } : {}) } } as unknown as AppFlowNode;
+  }
+  const sheet = { id: "cart", name: "Cart Sheet", screenshot: "home-cart.png", file: "app/home.tsx", line: 12 };
+  const failed = { id: "error", name: "Error Dialog", screenshot: null, error: "Setter threw", file: "app/home.tsx", line: 40 };
+
+  test("a screen the explore pass never visited has nothing to show", () => {
+    assert.deepEqual(displayableUiStates(node("Home")), []);
+    assert.equal(hasUiStates(node("Home")), false);
+    assert.equal(hasUiStates({ ...screen("Blank"), capture: null } as unknown as AppFlowNode), false);
+  });
+
+  test("a variant that failed keeps its row, and a row with neither frame nor reason is dropped", () => {
+    const home = node("Home", [sheet, failed, { id: "ghost", name: "Ghost", screenshot: null, file: "app/home.tsx", line: 7 }]);
+    assert.deepEqual(displayableUiStates(home).map(state => state.id), ["cart", "error"]);
+    assert.equal(hasUiStates(home), true);
+  });
+
+  test("the rendered variant count spans the node set and never touches the screen tally", () => {
+    const nodes = [node("Home", [sheet, failed]), node("Settings", [sheet]), node("About")];
+    assert.equal(uiStateCount(nodes), 3);
+    assert.equal(uiStateCount([]), 0);
+    assert.equal(captureTally(nodes).captured, 3, "variants are not screens");
+    assert.equal(captureTally(nodes).total, 3);
+  });
 });
 
 const BOUNDS: ManualSnapshotRect = { x: 0, y: 0, width: 390, height: 844 };

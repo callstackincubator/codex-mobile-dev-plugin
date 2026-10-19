@@ -1,11 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, no-var, @typescript-eslint/no-unused-vars, prefer-rest-params, @typescript-eslint/no-this-alias --
    `any`: everything below reads objects owned by the app under test (fibers, navigation state,
    props). None of it has a type we control, and a fake hierarchy would only pretend otherwise.
-   `var`: deliberate, see the syntax constraint below; the lint rule's advice is the very thing the
-   Hermes debugger evaluator is not trusted with. Unused catch bindings: `catch (error)` is kept
+   `var`: how the existing functions are written, see the syntax rules below; `let`/`const` are
+   allowed now but rewriting the existing bodies would be churn with no benefit. Unused catch bindings: `catch (error)` is kept
    over the newer binding-less form for the same reason. `arguments` and `this` aliasing: the
-   patch wrappers forward whatever the app passed, of any arity, with its own receiver; rest
-   parameters are banned syntax here. */
+   patch wrappers forward whatever the app passed, of any arity, with its own receiver. */
 /**
  * The in-app agent: the code that runs inside the app under test's JS runtime, as real typed
  * source.
@@ -18,35 +17,42 @@
  * tested directly against a hand-built fake fiber tree (`agent-runtime.test.ts`), and at runtime
  * `runtime-source.ts` injects them by calling `fn.toString()` on each.
  *
- * ## CRITICAL SYNTAX CONSTRAINT -- read before "modernising" anything in this file
+ * ## SYNTAX RULES -- read before "modernising" anything in this file
  *
  * The source below is evaluated by Hermes' **debugger** evaluator (`Runtime.evaluate`), which does
- * not lower code the way the app's bundler does. The reference implementation this transport is
- * modelled on runs an esbuild `target: 'es2015'` pass over its agent for exactly that reason. We
- * avoid that build step by writing the agent in conservative syntax by hand, which is also what the
- * existing ES5-style expressions already did. Inside every function in `AGENT_FUNCTIONS`:
+ * not lower code the way the app's bundler does. Nothing transforms these functions on the way out
+ * either: `runtime-source.ts` injects `fn.toString()` verbatim. (It briefly ran an esbuild
+ * `target: 'es2015'` pass, mirroring the reference's build step, but esbuild's JavaScript API
+ * cannot run from the bundled `dist/server.mjs`, so the packaged plugin failed on first connect.
+ * See the header of `runtime-source.ts`.) **What you write here is what Hermes gets.**
  *
- * - no `async` / `await` (and so no promises-as-control-flow);
- * - no optional chaining and no nullish coalescing: write the explicit null check;
- * - no spread or rest syntax, in object literals, arrays or calls;
- * - no `for...of` (use an indexed loop; `for...in` over a plain object is fine);
- * - no classes, no destructuring, no default parameters, no template literals, no getters;
- * - `var` and plain `function` only. `Set` and `Map` exist in Hermes and are already used by the
- *   expressions this replaces.
+ * The ban list is still narrower than the old hand-written one, because the evidence is: the
+ * reference's packaged artefact ships `class`, `for...of`, template literals, spread and optional
+ * chaining to the same Hermes debugger evaluator through the same `Runtime.evaluate` call, and
+ * performs no syntax scan on them at all. Inside every function in `AGENT_FUNCTIONS`:
  *
- * A violation does not fail at the edit: it type-checks, passes every test that runs the functions
- * under Node, and then arrives as a Hermes compile error against a live device. So `runtime-source.ts`
- * scans the assembled source for these tokens and refuses to build it, and the test suite runs that
- * scan. Do not add comments inside a function body that contain those tokens spelled out; the scan
- * is textual and cannot tell a comment from code.
+ * - **ES2015 and below is fine**: `class`, `for...of`, template literals, spread/rest,
+ *   destructuring, default parameters, arrow functions, `let`/`const`, `Set` and `Map`.
+ * - **Optional chaining (`?.`) is fine** — the reference ships it raw to the same evaluator.
+ * - **No `async` / `await`, and so no promises-as-control-flow.** Without a lowering pass these
+ *   reach Hermes exactly as written, and this agent has no await-based path that would justify
+ *   finding out how its debugger evaluator handles them.
+ * - **No nullish coalescing (`??`).** Banned for the same reason; write the explicit null check,
+ *   which is clearer about which falsy values you meant anyway.
+ *
+ * `runtime-source.ts` scans the assembled source for `async`, `await` and `??` and refuses to build
+ * if any appears. That scan is textual and cannot tell a comment from code, so do not spell those
+ * tokens out inside a function body — and note that comments now ride along into the injected
+ * text, where the esbuild pass used to strip them.
  *
  * ## Other rules that follow from "this is toString()'d"
  *
  * - **A function may reference only other `AGENT_FUNCTIONS` and the app's globals.** It is
  *   re-created in a fresh scope in the app, so a module constant (`WALK_BUDGET`) or an imported
  *   helper does not exist there and fails as a `ReferenceError` on first use. Configuration crosses
- *   the boundary as an argument (`AgentLimits`), and the test suite evaluates the assembled source
- *   in an empty `node:vm` context so such a reference cannot hide.
+ *   the boundary as an argument (`AgentLimits`), and the test suite evaluates the assembled,
+ *   lowered source in an empty `node:vm` context and calls every function there, so such a
+ *   reference surfaces as a `ReferenceError` in the test run instead of against a device.
  * - **Names are load-bearing.** Functions call each other by their declared name, so a bundler that
  *   renames a top-level declaration (to dodge a collision) would silently break the call. Every
  *   name carries an `agent` prefix to make a collision unlikely, and `runtime-source.ts` checks
@@ -197,6 +203,32 @@ export type AgentCommand =
       /** Override the network idle window for this call. */
       idleMs?: number
     }
+  /**
+   * Hands the agent the source presentation catalog and binds its state sites to live hooks.
+   * Opens the bounded hook-patch window, so the host allows it 5000ms — the reference's own
+   * timeout for the same command.
+   */
+  | {
+      type: 'presentation-setup'
+      states: PresentationStateSite[]
+      actions: PresentationAction[]
+      /** Metro's project root, used to resolve a catalog's relative file against a module path. */
+      projectRoot?: string | null
+    }
+  /**
+   * Labels live bindings with the source sites the host's symbolication join proved they belong
+   * to (`presentations-bindings.ts`). The in-app pass can only attribute a binding whose owner is
+   * a candidate for exactly one site; everything else needs Metro's source maps, which only the
+   * host can read. Pure bookkeeping — nothing is rendered, opened or patched — so it keeps the
+   * list command's 2000ms.
+   */
+  | { type: 'presentation-configure'; matches: { binding: string; site: string }[] }
+  /** Which catalog entries are openable right now. The reference allows this 2000ms. */
+  | { type: 'presentations' }
+  /** Opens one catalog entry and pushes its undo checkpoint. */
+  | { type: 'presentation-open'; id: string }
+  /** Unwinds the undo stack to `level`, confirming every native dismissal unless `wait` is false. */
+  | { type: 'presentation-rollback'; level?: number; wait?: boolean }
 
 export interface HeartbeatReply {
   alive: true
@@ -1460,6 +1492,1798 @@ export function agentSettle(
   }
 }
 
+
+/* ======================================================================= presentations
+
+   The in-app presentation runtime, ported from the reference implementation's
+   `src/server/app-flow/presentations-runtime.js`.
+
+   ## What this buys
+
+   A modal, bottom sheet or dialog is a *variant* of a screen, not a route. The sweep cannot reach
+   one by navigating, and reaching one by tapping needs a model planner plus a tap that may do
+   something else entirely. The reference's answer, ported here, is to open it the way the app
+   itself opens it: call the component's own `useState` setter, or the zero-argument `open()` on the
+   controller object the app already holds. The host's existing capture then photographs it, and
+   `presentation-rollback` puts the app back exactly as it was.
+
+   ## The three effect kinds
+
+   - **state** — the opening is `setShowSheet(true)`. We find the live hook, remember the current
+     value, and call the app's own setter with the functional form, which is what keeps a queued app
+     update from being clobbered by ours.
+   - **control** — the opening is `sheetRef.current.present()`. We call that zero-argument method
+     and remember its paired closer.
+   - **mount** — there is no opening at all: the component is projected on its own (below).
+
+   ## The synthetic-Modal projection
+
+   `agentProject` is the part that most deserves reading before changing. It does **not** clone a
+   fiber tree. It builds one element, `react.createElement(type, props)`, re-wraps it in the context
+   providers found up the focus's `return` chain, puts it inside an error boundary, and appends that
+   as a **sibling** of the live app inside a fresh `Modal`. Four properties are load-bearing and each
+   was a bug in the reference before it was a rule:
+
+   - The copy is a *new element of the same type*, so it renders from scratch with the app's own
+     component. A fiber clone would share mutable state with the live tree.
+   - Contexts are re-created up the chain, **excluding** `ScrollView.Context` and
+     `VirtualizedList.contextType`: a new Modal is a new native window, and restoring a list parent
+     from a different window hands native list code a container it does not own.
+   - Errors are contained by swapping the root's `onCaughtError` for a wrapper that suppresses
+     **only** this boundary's errors. Every other app error keeps the original handler, so the app's
+     own LogBox behaviour is unchanged.
+   - The new Modal is attached with `renderer.overrideProps(root, [], record.next)` where `next`
+     spreads the app's existing root children *flat* alongside the modal. Nesting them under a new
+     array would change the element identity React reconciles against and remount the whole live
+     app, re-running every effect in it.
+
+   ## Why rollback is the safety-critical half
+
+   Opening is one call. Putting the app back is a protocol. On iOS a `Modal` reports its dismissal
+   through `onDismiss`, and React Native removes that listener when the Modal unmounts. So the order
+   is: set `visible: false` but **keep the Modal mounted**, poll for `record.dismissed` with a
+   2000ms deadline, and only then restore the root's original children. Unmounting first removes the
+   listener before the event can arrive, and the app is then left with a native window nothing can
+   prove is closed. For the same reason a detached owner on iOS throws rather than quietly dropping
+   the checkpoint: a projection whose root vanished cannot be confirmed dismissed.
+
+   ## What is bounded, and why every bound is kept
+
+   Everything here runs on the app's JS thread. The hook-collection patch window is 80ms and the
+   patch is removed in every exit path; bindings are capped at 1500, hook indices at 300, stacks at
+   8000 characters; the seed substitution expires after 1000ms; a control dismissal waits at most
+   4000ms with one retry; a modal dismissal at most 2000ms. These are the reference's numbers and
+   are deliberately not re-tuned here.
+
+   ## Deliberately not ported
+
+   - The reference's Babel instrumentation plugin and its `__MOBILE_DEV_FLOW_REGISTRY__` prepared
+     binding fast path. This repo has no transform hook, so there is no registry to read and the
+     stack-symbolication path below is the only binding route.
+   - `openedSites`/`controlSites`. Those read `flow-owner-N:` ids off Profiler (`tag === 12`)
+     markers that only the instrumentation plugin emits, so here they would always return nothing.
+   - The in-app capture driver and queue. The host drives capture.
+   - The TanStack Query observer result reuse, the portal/UI-effect approval paths, the prepared
+     host-slot placement and the inline (non-Modal) projection placement. Each is an optimisation
+     layered on top of the mechanics above and each needs its own stage. */
+
+/** Most hook slots walked on one owner when locating a binding. The reference's cap. */
+export const PRESENTATION_HOOK_INDEX_CAP = 300
+/** Most live hook bindings held at once. The reference's cap. */
+export const PRESENTATION_BINDING_CAP = 1500
+/** Longest creation stack retained per binding, in characters. The reference's cap. */
+export const PRESENTATION_STACK_CAP = 8000
+/** How long hooks stay patched around a forced render pass, in milliseconds. */
+export const PRESENTATION_COLLECT_WINDOW_MS = 80
+/** How long a projected copy may go without consuming its seeded hook value. */
+export const PRESENTATION_SEED_DEADLINE_MS = 1000
+/** How long an iOS modal may take to report `onDismiss` before rollback gives up. */
+export const PRESENTATION_DISMISS_DEADLINE_MS = 2000
+/** How long a controller-owned native presentation may take to close, with one retry inside. */
+export const PRESENTATION_CONTROL_DEADLINE_MS = 4000
+/** Poll interval while waiting for a native dismissal. The reference's 40ms. */
+export const PRESENTATION_POLL_MS = 40
+
+/** The six `Modal` props a projected copy inherits from the nearest ancestor `Modal`. */
+export const MODAL_CARRY_OVER_PROPS = [
+  'presentationStyle',
+  'transparent',
+  'statusBarTranslucent',
+  'navigationBarTranslucent',
+  'hardwareAccelerated',
+  'supportedOrientations'
+] as const
+
+/** A state site as the source scan emits it; only the fields the agent reads are named. */
+export interface PresentationStateSite {
+  id: string
+  file: string
+  owner: string
+  hook?: 'useState' | 'useReducer'
+  owners?: string[]
+  ownerSites?: { file: string; owner: string }[]
+}
+/** A presentation action as the source scan emits it; only the fields the agent reads are named. */
+export interface PresentationAction {
+  id: string
+  name: string
+  owner: string
+  component: string
+  prop: string
+  preview?: boolean
+  views?: string[]
+  effect:
+    | { kind: 'mount'; file: string; export: string }
+    | { kind: 'state'; site: string; path: string[]; value: unknown }
+    | { kind: 'control'; component: string; prop: string; method: string; close: string | string[] }
+}
+
+/** `presentation-setup`: hand the agent the source catalog and bind it to the live tree. */
+export interface PresentationSetupReply {
+  ok: boolean
+  /** Live hook bindings after the collection pass. */
+  bindings: number
+  /** Bindings matched to a source state site. */
+  matched: number
+  /** Owners the pass forced a render on. Bounded; never a component name. */
+  scheduled: number
+  /**
+   * Bindings with no site yet, with the creation stack the host symbolicates against Metro. The
+   * host answers with `presentation-configure`. Bounded at 400 entries.
+   */
+  unbound?: { id: string; owner: string; kind: 'state'; stack: string }[]
+  /** Wall clock the whole pass occupied, for the host's bounded meter. */
+  elapsedMs: number
+  error?: string
+}
+/** `presentation-configure`: how many of the host's matches named a live binding. */
+export interface PresentationConfigureReply {
+  ok: boolean
+  configured: number
+  elapsedMs: number
+}
+/** `presentations`: which catalog entries are openable against the tree as it is now. */
+export interface PresentationListReply {
+  available: { id: string; kind: 'state' | 'control' | 'mount' }[]
+  /** Catalog entries with no live binding. A count only; never an id or a name. */
+  unavailable: number
+  elapsedMs: number
+}
+/** `presentation-open` / `presentation-rollback`. */
+export type PresentationOpenReply =
+  | { ok: true; kind: 'state' | 'control' | 'mount'; checkpoint: number; elapsedMs: number }
+  | { ok: false; error: string; checkpoint: number; elapsedMs: number }
+export type PresentationRollbackReply =
+  | { ok: true; checkpoint: number; elapsedMs: number }
+  | { ok: false; error: string; checkpoint: number; elapsedMs: number }
+
+/**
+ * Whether `value` is a presentation controller: a zero-argument opener paired with a closer.
+ *
+ * Ported verbatim from the reference (`openingControl`). The arity check is the whole point — a
+ * one-argument `open(id)` is an app API that needs data we do not have, and calling it would be a
+ * guess. Descriptors are read rather than properties, so a getter is never invoked: evaluating an
+ * app getter to decide whether something is a sheet controller is exactly the kind of side effect
+ * this runtime must not have.
+ */
+export function agentOpeningControl(value: any, method?: string): boolean {
+  if (!value || typeof value !== 'object') return false
+  var data = function (key: string): any {
+    var descriptor = Object.getOwnPropertyDescriptor(value, key)
+    return descriptor && 'value' in descriptor ? descriptor.value : undefined
+  }
+  var pairs: Array<[string, string[]]> = [
+    ['open', ['close', 'dismiss', 'hide']],
+    ['present', ['dismiss', 'close']],
+    ['show', ['hide', 'close']],
+    ['expand', ['close', 'collapse']]
+  ]
+  for (var at = 0; at < pairs.length; at++) {
+    var key = pairs[at]![0]
+    var closers = pairs[at]![1]
+    if (method && method !== key) continue
+    var opener = data(key)
+    if (typeof opener !== 'function' || opener.length !== 0) continue
+    for (var c = 0; c < closers.length; c++) {
+      if (typeof data(closers[c]!) === 'function') return true
+    }
+  }
+  return false
+}
+
+/** The paired closer's name for a controller, or null. Mirrors `agentOpeningControl`'s table. */
+export function agentControlCloser(value: any, method: string): string | null {
+  if (!value || typeof value !== 'object') return null
+  var table: Record<string, string[]> = {
+    open: ['close', 'dismiss', 'hide'],
+    present: ['dismiss', 'close'],
+    show: ['hide', 'close'],
+    expand: ['close', 'collapse']
+  }
+  var closers = table[method]
+  if (!closers) return null
+  for (var at = 0; at < closers.length; at++) {
+    var descriptor = Object.getOwnPropertyDescriptor(value, closers[at]!)
+    if (descriptor && 'value' in descriptor && typeof descriptor.value === 'function') {
+      return closers[at]!
+    }
+  }
+  return null
+}
+
+/**
+ * Immutably writes `next` at `path` inside `value`. The reference's `setPath`, iterative here
+ * because an injected function cannot rely on recursing by name (see the file doc).
+ *
+ * An empty path replaces the whole value, which is the common case (`setShowSheet(true)`).
+ */
+export function agentSetPath(value: any, path: string[], next: any): any {
+  if (!Array.isArray(path) || !path.length) return next
+  var copies: any[] = []
+  var cursor = value
+  for (var at = 0; at < path.length; at++) {
+    copies.push(cursor)
+    cursor = cursor === null || cursor === undefined ? undefined : cursor[path[at]!]
+  }
+  var result = next
+  for (var back = path.length - 1; back >= 0; back--) {
+    var source = copies[back]
+    var copy: any
+    if (Array.isArray(source)) copy = source.slice()
+    else if (source && typeof source === 'object') {
+      copy = {}
+      for (var key in source) copy[key] = source[key]
+    } else copy = {}
+    copy[path[back]!] = result
+    result = copy
+  }
+  return result
+}
+
+/**
+ * A committed-tree index: every visible fiber, a map from either alternate to the *current* one,
+ * and a map from a props object to the fibers rendering it.
+ *
+ * The reference's `committedStructure`/`index` pair, reduced to the three lookups this stage needs.
+ * `current` is what makes a checkpoint survive a commit: React swaps alternates on every render, so
+ * a fiber captured at open time is routinely the stale half by the time rollback runs, and every
+ * read of a remembered fiber goes through this map first. `props` is what lets a projected copy's
+ * element be found again in the tree without matching on a component name.
+ *
+ * Hidden subtrees are pruned with `agentHidden`, and — exactly as in the readiness walk — the
+ * sibling is pushed *before* the prune, because a fiber's later siblings are reachable only through
+ * it and dropping them would sever the rest of the list.
+ */
+export function agentPresentationIndex(pres: any): any {
+  if (pres.structureCache) return pres.structureCache
+  var all: any[] = []
+  var current = new Map()
+  var props = new Map()
+  var names = new Map()
+  var seen = new Set()
+  var concealed = new Set()
+  var stack = agentCollectFiberRoots()
+  var budget = pres.limits.walkBudget
+  var deadline = Date.now() + pres.limits.walkDeadlineMs
+  var capped = false
+  while (stack.length) {
+    if (budget-- <= 0 || ((budget & 255) === 0 && Date.now() > deadline)) {
+      capped = true
+      break
+    }
+    var fiber = stack.pop()
+    if (!fiber || seen.has(fiber)) continue
+    seen.add(fiber)
+    if (fiber.sibling) stack.push(fiber.sibling)
+    if (concealed.has(fiber.return) || agentHidden(fiber.memoizedProps)) {
+      concealed.add(fiber)
+      continue
+    }
+    if (fiber.child) stack.push(fiber.child)
+    all.push(fiber)
+    current.set(fiber, fiber)
+    if (fiber.alternate) current.set(fiber.alternate, fiber)
+    var label = agentComponentName(fiber.type) || agentComponentName(fiber.elementType)
+    if (label) {
+      var byName = names.get(label)
+      if (!byName) {
+        byName = []
+        names.set(label, byName)
+      }
+      byName.push(fiber)
+    }
+    var owned = fiber.memoizedProps
+    if (owned && typeof owned === 'object') {
+      var byProps = props.get(owned)
+      if (!byProps) {
+        byProps = []
+        props.set(owned, byProps)
+      }
+      byProps.push(fiber)
+    }
+  }
+  var tree = {
+    all: all,
+    current: current,
+    props: props,
+    names: names,
+    capped: capped,
+    inside: function (fiber: any, owner: any): boolean {
+      if (!owner) return false
+      // Prepared JSX and native navigation wrappers can exceed 100 ancestors. Compare exact
+      // fibers and stop on a cycle, not at an arbitrary UI depth.
+      var walked = new Set()
+      for (var parent = fiber; parent && !walked.has(parent); parent = parent.return) {
+        if (parent === owner || parent === owner.alternate) return true
+        walked.add(parent)
+      }
+      return false
+    }
+  }
+  pres.structureCache = tree
+  return tree
+}
+
+/**
+ * The value a hook binding currently holds. The reference's `hookValue`.
+ *
+ * Re-reads through the tree's `current` map first, for the alternate-swap reason above, and rebinds
+ * `binding.fiber` to the live half so the next read starts from the right place.
+ */
+export function agentHookValue(pres: any, binding: any): any {
+  var tree = agentPresentationIndex(pres)
+  var live = tree.current.get(binding.fiber)
+  if (!live) return undefined
+  binding.fiber = live
+  var state = live.memoizedState
+  for (var at = 0; state && at < binding.index; at++) state = state.next
+  return state ? state.memoizedState : undefined
+}
+
+/**
+ * The component identities a source state site's owner could be, read out of Metro's module map.
+ *
+ * Ported from the reference's `collectionTargets`. The one rule that must not be relaxed: only
+ * **data** descriptors are read (`'value' in descriptor`). Invoking an export getter to find out
+ * whether it is the `Settings` component would initialise a project module as a side effect of
+ * looking, which is the kind of thing this runtime exists not to do. A module that has not been
+ * initialised is skipped rather than loaded for the same reason.
+ *
+ * A site whose owner cannot be resolved to an identity sets `fallback`, which widens collection to
+ * every fiber with that display name rather than refusing the site outright.
+ */
+export function agentCollectionTargets(pres: any, states: any[]): any {
+  var targets = new Map()
+  var modules = (globalThis as any).__r && (globalThis as any).__r.getModules
+    ? (globalThis as any).__r.getModules()
+    : null
+  var initialized = new Map()
+  var normalize = function (value: string): string {
+    return String(value).split('\\').join('/').replace(/^file:\/\//, '').replace(/^\.\//, '')
+  }
+  if (modules && typeof modules.values === 'function') {
+    var values = modules.values()
+    var next = values.next()
+    while (!next.done) {
+      var module = next.value
+      if (module && module.isInitialized && typeof module.verboseName === 'string') {
+        initialized.set(
+          normalize(module.verboseName),
+          module.publicModule ? module.publicModule.exports : undefined
+        )
+      }
+      next = values.next()
+    }
+  }
+  var exportsFor = function (file: string): any {
+    var direct = initialized.get(file)
+    if (direct !== undefined) return direct
+    return pres.sourceRoot ? initialized.get(pres.sourceRoot + '/' + file) : undefined
+  }
+  for (var s = 0; s < states.length; s++) {
+    var site = states[s]
+    if (!site || typeof site.id !== 'string') continue
+    var qualified = Array.isArray(site.ownerSites) ? site.ownerSites : []
+    var sources: Array<{ owner: string; file: string }> = [{ owner: site.owner, file: site.file }]
+    for (var q = 0; q < qualified.length; q++) sources.push(qualified[q])
+    var extra = Array.isArray(site.owners) ? site.owners : []
+    for (var e = 0; e < extra.length; e++) {
+      var already = false
+      for (var k = 0; k < qualified.length; k++) if (qualified[k].owner === extra[e]) already = true
+      if (!already) sources.push({ owner: extra[e], file: site.file })
+    }
+    for (var at = 0; at < sources.length; at++) {
+      var owner = sources[at]!.owner
+      var file = sources[at]!.file
+      var target = targets.get(owner)
+      if (!target) {
+        target = { types: new Set(), sitesByType: new Map(), fallbackSites: new Set(), fallback: false }
+        targets.set(owner, target)
+      }
+      var addType = function (bucket: any, type: any, id: string): void {
+        bucket.types.add(type)
+        var sites = bucket.sitesByType.get(type)
+        if (!sites) {
+          sites = new Set()
+          bucket.sitesByType.set(type, sites)
+        }
+        sites.add(id)
+      }
+      var exported = exportsFor(file)
+      var matches: any[] = []
+      var descriptors =
+        exported && (typeof exported === 'object' || typeof exported === 'function')
+          ? Object.getOwnPropertyDescriptors(exported)
+          : {}
+      for (var key in descriptors) {
+        var descriptor = (descriptors as any)[key]
+        // Read data exports only. Never initialize a project module or invoke a getter to
+        // identify one of several unrelated same-named components.
+        if (!descriptor || !('value' in descriptor)) continue
+        var type = descriptor.value
+        var read = function (holder: any, field: string): any {
+          if (!holder || (typeof holder !== 'object' && typeof holder !== 'function')) return undefined
+          var found = Object.getOwnPropertyDescriptor(holder, field)
+          return found && 'value' in found ? found.value : undefined
+        }
+        var body = read(type, 'render')
+        if (body === undefined) body = read(type, 'type')
+        if (body === undefined) body = type
+        var named =
+          key === owner ||
+          (body && (body.displayName === owner || body.name === owner))
+        if (named && typeof body === 'function') {
+          matches.push(type)
+          matches.push(body)
+        }
+      }
+      if (typeof exported === 'function' && exported.name === owner) matches.push(exported)
+      if (matches.length) {
+        for (var m = 0; m < matches.length; m++) addType(target, matches[m], site.id)
+      } else {
+        target.fallback = true
+        target.fallbackSites.add(site.id)
+      }
+    }
+  }
+  return targets
+}
+
+/**
+ * Replaces React's `useState`/`useReducer` with wrappers that record every setter the forced render
+ * pass produces, and that substitute a seeded initial value for a projected copy's first render.
+ *
+ * Ported from the reference's `patchHooks`. Two properties carry over unchanged:
+ *
+ * - The **first** module exposing a complete React surface wins and the loop breaks. Several
+ *   modules re-export React; patching more than one would wrap the same functions twice.
+ * - A non-writable `useState` aborts the whole patch and un-patches what was already applied,
+ *   rather than leaving React half-wrapped.
+ *
+ * The wrappers are created by `agentHookWrapper` rather than inline in the loop because **some
+ * Hermes versions share loop bindings across closures** — the reference's own comment, and the
+ * reason each wrapper needs its own function scope. Injected code bypasses Metro's block-scope
+ * transform, so the `let` that would make this safe in app code does not help here.
+ */
+export function agentPatchPresentationHooks(pres: any): boolean {
+  if (pres.patches.length) return true
+  var modules = (globalThis as any).__r && (globalThis as any).__r.getModules
+    ? (globalThis as any).__r.getModules()
+    : null
+  if (!modules || typeof modules.values !== 'function') return false
+  var values = modules.values()
+  var next = values.next()
+  while (!next.done) {
+    var module = next.value
+    if (module && module.isInitialized) {
+      var react = agentMutableReact(module.publicModule ? module.publicModule.exports : undefined)
+      if (
+        react &&
+        typeof react.createElement === 'function' &&
+        typeof react.useState === 'function' &&
+        typeof react.useReducer === 'function'
+      ) {
+        var keys = ['useState', 'useReducer']
+        for (var at = 0; at < keys.length; at++) {
+          var key = keys[at]!
+          var descriptor = Object.getOwnPropertyDescriptor(react, key)
+          if (!descriptor || !descriptor.writable) continue
+          var original = react[key]
+          var wrapped = agentHookWrapper(pres, key, original)
+          try {
+            react[key] = wrapped
+          } catch (error) {
+            agentUnpatchPresentationHooks(pres)
+            return false
+          }
+          pres.patches.push({ react: react, key: key, original: original, wrapped: wrapped })
+        }
+        break
+      }
+    }
+    next = values.next()
+  }
+  return pres.patches.length > 0
+}
+
+/** Removes the hook patch, leaving anything a third party wrapped afterwards in place. */
+export function agentUnpatchPresentationHooks(pres: any): void {
+  for (var at = 0; at < pres.patches.length; at++) {
+    var patch = pres.patches[at]
+    if (patch.react[patch.key] === patch.wrapped) patch.react[patch.key] = patch.original
+  }
+  pres.patches.length = 0
+}
+
+/**
+ * One hook wrapper, in its own function scope.
+ *
+ * Injected code bypasses Metro's block-scope transform. Some Hermes versions share loop bindings
+ * across closures, so each wrapper needs a function scope of its own; this is that scope.
+ */
+export function agentHookWrapper(pres: any, kind: string, original: any): any {
+  return function (): any {
+    var args: any[] = []
+    for (var at = 0; at < arguments.length; at++) args.push(arguments[at])
+    return agentRegisterHook(pres, kind, original, args)
+  }
+}
+
+/**
+ * The body of every hook wrapper: seed the copy, call the real hook, record the setter.
+ *
+ * Ported from the reference's `register`. Three things are exact and each matters:
+ *
+ * - **The seed substitutes arguments, it never dispatches.** A projected copy that needs its state
+ *   to start at some value gets that value as the hook's *initial* argument
+ *   (`useReducer` keeps its reducer and takes `[reducer, value, () => value]`). Dispatching the
+ *   app's own reducer, or running its initializer, could fire a request and manufacture a backend
+ *   response for a screenshot.
+ * - **Nothing is wrapped and nothing is retained.** The real setter is returned to the app
+ *   untouched; restoration later uses the exact hook index collected during this render, including
+ *   indices contributed by custom hooks.
+ * - **The owner's alternate is checked too**, because the render being observed may be running on
+ *   either half.
+ */
+export function agentRegisterHook(pres: any, kind: string, original: any, args: any[]): any {
+  var live = pres.current()
+  if (!live) return original.apply(undefined, args)
+  var index = 0
+  for (var hook = live.fiber.memoizedState; hook && index < 300; hook = hook.next) index++
+  var pending = live.fiber.pendingProps
+  if (pending === undefined || pending === null) pending = live.fiber.memoizedProps
+  var projection: any = null
+  for (var at = 0; at < pres.projected.length && !projection; at++) {
+    var candidate = pres.projected[at]
+    if (candidate.seed && candidate.child.props === pending && candidate.focus.type === live.fiber.type) {
+      projection = candidate
+    }
+  }
+  if (projection && projection.seed.index === index && projection.seed.kind === kind) {
+    var value = projection.seed.value
+    projection.seed.applied = true
+    // Seed the temporary instance's hook. Never dispatch the original reducer or run its
+    // initializer to manufacture a backend response.
+    args =
+      kind === 'useReducer'
+        ? [args[0], value, function () { return value }]
+        : [function () { return value }]
+  }
+  var result = original.apply(undefined, args)
+  if (!pres.collecting.has(live.fiber) && !pres.collecting.has(live.fiber.alternate)) return result
+  if (!Array.isArray(result) || typeof result[1] !== 'function') return result
+  var record = pres.owners.get(live.fiber)
+  if (!record) record = pres.owners.get(live.fiber.alternate)
+  if (!record) record = new Map()
+  pres.owners.set(live.fiber, record)
+  var id = record.get(index)
+  var binding = id ? pres.bindings.get(id) : undefined
+  if (!binding && pres.bindings.size < 1500) {
+    id = String(++pres.sequence)
+    record.set(index, id)
+    binding = {
+      id: id,
+      index: index,
+      kind: kind,
+      stack: String(new Error().stack).slice(0, 8000),
+      fiber: live.fiber,
+      renderer: live.renderer,
+      setter: result[1]
+    }
+    pres.bindings.set(id, binding)
+  }
+  if (binding) {
+    binding.fiber = live.fiber
+    binding.setter = result[1]
+  }
+  // Do not wrap setters or keep a second callback in the app. Restoration uses the exact hook
+  // index collected during this render, including custom hooks.
+  return result
+}
+
+/**
+ * The real React object behind a module's exports.
+ *
+ * The reference's `mutableReact`, kept because its reason is still true here: an ESM namespace
+ * object can report a property as writable and then reject the assignment, so the `default` export
+ * is preferred — but only when it is provably the *same* runtime (same `createElement`, same
+ * `useState`, same `useReducer`), never merely because a `default` exists.
+ */
+export function agentMutableReact(exported: any): any {
+  if (!exported) return exported
+  var descriptor = Object.getOwnPropertyDescriptor(exported, 'default')
+  var value = descriptor && 'value' in descriptor ? descriptor.value : undefined
+  if (
+    value &&
+    value.createElement === exported.createElement &&
+    typeof value.useState === 'function' &&
+    value.useState === exported.useState &&
+    value.useReducer === exported.useReducer
+  ) return value
+  return exported
+}
+
+/**
+ * Binds the source catalog's state sites to live hooks, inside a bounded patch window.
+ *
+ * Ported from the reference's `collect`. The shape of it is the whole safety argument:
+ *
+ * 1. Drop bindings whose owner is no longer mounted.
+ * 2. Decide which mounted fibers are candidate owners, from `agentCollectionTargets`. A fiber whose
+ *    `_debugHookTypes` proves it has no `useState`/`useReducer` is skipped, and so is `tag === 14`
+ *    (`SimpleMemoComponent`), exactly as in the reference.
+ * 3. Patch hooks, force a render on each candidate with `renderer.scheduleUpdate(fiber)`, and wait
+ *    **80ms**.
+ * 4. Un-patch, in every exit path.
+ *
+ * Step 4 is why step 3 may be bounded at all. The app runs with wrapped hooks only for the length
+ * of one forced render pass; nothing observes it afterwards, no timer survives, no dispatcher is
+ * replaced and the app's own source is never touched. If the wait were unbounded, or the un-patch
+ * conditional, a disconnect in the middle would leave the app permanently instrumented — which is
+ * also why the agent's lease watchdog calls `restore` and reaches this through `undo`.
+ */
+export function agentPresentationCollect(pres: any, done: (value: unknown) => void): void {
+  var started = Date.now()
+  var root = globalThis as any
+  var finish = function (error?: string): void {
+    agentUnpatchPresentationHooks(pres)
+    pres.collecting.clear()
+    pres.structureCache = undefined
+    var matched = 0
+    // Bindings the in-app attribution could not name a site for, with the creation stack the host
+    // needs to symbolicate them through Metro (`presentations-bindings.ts`) and hand back with
+    // `presentation-configure`. Bounded, and carrying nothing but a stack and an owner label.
+    var unbound: Array<{ id: string; owner: string; kind: string; stack: string }> = []
+    pres.bindings.forEach(function (binding: any) {
+      if (binding.site) {
+        matched += 1
+        return
+      }
+      if (unbound.length >= 400 || !binding.stack) return
+      unbound.push({
+        id: binding.id,
+        owner:
+          agentComponentName(binding.fiber && binding.fiber.type) ||
+          agentComponentName(binding.fiber && binding.fiber.elementType) ||
+          '',
+        kind: 'state',
+        stack: binding.stack
+      })
+    })
+    done({
+      ok: !error,
+      bindings: pres.bindings.size,
+      matched: matched,
+      unbound: unbound,
+      scheduled: pres.lastScheduled,
+      elapsedMs: Date.now() - started,
+      error: error
+    })
+  }
+  try {
+    pres.lastScheduled = 0
+    pres.structureCache = undefined
+    var tree = agentPresentationIndex(pres)
+    var mounted = new Set(tree.all)
+    var stale: string[] = []
+    pres.bindings.forEach(function (binding: any, id: string) {
+      if (!mounted.has(binding.fiber) && !mounted.has(binding.fiber.alternate)) stale.push(id)
+    })
+    for (var s = 0; s < stale.length; s++) pres.bindings.delete(stale[s]!)
+    var targets = agentCollectionTargets(pres, pres.catalog.states)
+    for (var at = 0; at < tree.all.length; at++) {
+      var fiber = tree.all[at]
+      if (fiber.tag === 14) continue
+      if (Array.isArray(fiber._debugHookTypes)) {
+        var stateful = false
+        for (var h = 0; h < fiber._debugHookTypes.length; h++) {
+          var kind = fiber._debugHookTypes[h]
+          if (kind === 'useState' || kind === 'useReducer') stateful = true
+        }
+        if (!stateful) continue
+      }
+      var label = agentComponentName(fiber.type) || agentComponentName(fiber.elementType)
+      var target = targets.get(label)
+      if (!target) continue
+      if (target.fallback || target.types.has(fiber.type) || target.types.has(fiber.elementType)) {
+        pres.collecting.add(fiber)
+        var byType = target.sitesByType.get(fiber.type)
+        if (!byType) byType = target.sitesByType.get(fiber.elementType)
+        pres.pendingSites.set(fiber, byType ? byType : target.fallbackSites)
+      }
+    }
+    if (!pres.collecting.size || !agentPatchPresentationHooks(pres)) {
+      finish()
+      return
+    }
+    pres.collecting.forEach(function (fiber: any) {
+      var renderers = pres.renderers()
+      for (var r = 0; r < renderers.length; r++) {
+        if (typeof renderers[r].scheduleUpdate !== 'function') continue
+        try {
+          renderers[r].scheduleUpdate(fiber)
+          pres.lastScheduled += 1
+        } catch (error) {
+          continue
+        }
+        break
+      }
+    })
+    if (!pres.lastScheduled) {
+      finish()
+      return
+    }
+    root.setTimeout(function () {
+      try {
+        agentAttributeBindings(pres)
+      } catch (error) {
+        finish(String(error && (error as any).message).slice(0, 120))
+        return
+      }
+      finish()
+    }, 80)
+  } catch (error) {
+    finish(String(error && (error as any).message).slice(0, 120))
+  }
+}
+
+/**
+ * Labels each freshly collected binding with the source site its owner was a candidate for.
+ *
+ * Without the reference's instrumentation plugin there is no per-hook marker, so a binding can only
+ * be attributed by its owner. An owner that is a candidate for exactly one site takes that site; an
+ * owner that is a candidate for several is left unattributed rather than guessed at, because
+ * opening the wrong state is indistinguishable from the app doing it.
+ */
+export function agentAttributeBindings(pres: any): void {
+  pres.bindings.forEach(function (binding: any) {
+    if (binding.site) return
+    var sites = pres.pendingSites.get(binding.fiber)
+    if (!sites) sites = pres.pendingSites.get(binding.fiber.alternate)
+    if (!sites || sites.size !== 1) return
+    sites.forEach(function (id: string) {
+      binding.site = id
+    })
+  })
+}
+
+/**
+ * The bindings and controllers one catalog action could be opened through, right now.
+ *
+ * This is the reduced stand-in for the reference's `resolveEntry`. The reference resolves an entry
+ * through its instrumented JSX markers and falls back to an elaborate identity search; with no
+ * instrumentation the only honest resolution is:
+ *
+ * - **state**: the live binding whose `site` matches, and exactly one of them. More than one live
+ *   owner of the same source site is genuinely ambiguous and is refused, matching the reference's
+ *   `'More than one live instance owns this opening state.'`
+ * - **control**: a mounted fiber rendering the named component which carries, on the named prop (or
+ *   that prop's `ref.current`), an object `agentOpeningControl` accepts. Again exactly one.
+ * - **mount**: the exported component identity named by the effect, read from Metro's module map
+ *   without initialising anything.
+ */
+export function agentResolvePresentationEntry(pres: any, action: any, tree: any): any {
+  if (action.effect.kind === 'state') {
+    var found: any[] = []
+    pres.bindings.forEach(function (binding: any) {
+      if (binding.site === action.effect.site && tree.current.get(binding.fiber)) found.push(binding)
+    })
+    if (found.length !== 1) {
+      return { error: found.length ? 'More than one live instance owns this opening state.' : 'The opening state could not be bound to its source.' }
+    }
+    return { binding: found[0] }
+  }
+  if (action.effect.kind === 'control') {
+    var candidates: any[] = []
+    var byName = tree.names.get(action.effect.component)
+    var list = byName ? byName : []
+    for (var at = 0; at < list.length; at++) {
+      var fiber = list[at]
+      var props = fiber.memoizedProps
+      if (!props || typeof props !== 'object') continue
+      var carried = props[action.effect.prop]
+      if (carried && typeof carried === 'object' && 'current' in carried) carried = carried.current
+      if (!agentOpeningControl(carried, action.effect.method)) continue
+      var close = agentControlCloser(carried, action.effect.method)
+      if (!close) continue
+      var duplicate = false
+      for (var d = 0; d < candidates.length; d++) if (candidates[d].value === carried) duplicate = true
+      if (!duplicate) candidates.push({ value: carried, close: close, fiber: fiber })
+    }
+    if (candidates.length !== 1) {
+      return { error: candidates.length ? 'More than one live control matches this opening.' : 'The opening control could not be bound to its source.' }
+    }
+    return { target: candidates[0] }
+  }
+  if (action.effect.kind === 'mount') {
+    var type = agentMountedExport(pres, action.effect.file, action.effect.export)
+    if (!type) return { error: 'The source component is not loaded.' }
+    return { type: type }
+  }
+  return { error: 'Unsupported presentation transition.' }
+}
+
+/**
+ * One named export of an already-initialised Metro module, read as a data descriptor.
+ *
+ * Never calls `__r(key)` to warm a cold module: the reference only does that behind its prepared
+ * build, and executing a project module to obtain a component would run its top-level side effects.
+ */
+export function agentMountedExport(pres: any, file: string, name: string): any {
+  var modules = (globalThis as any).__r && (globalThis as any).__r.getModules
+    ? (globalThis as any).__r.getModules()
+    : null
+  if (!modules || typeof modules.values !== 'function') return null
+  var normalize = function (value: string): string {
+    return String(value).split('\\').join('/').replace(/^file:\/\//, '').replace(/^\.\//, '')
+  }
+  var values = modules.values()
+  var next = values.next()
+  while (!next.done) {
+    var module = next.value
+    if (module && module.isInitialized && typeof module.verboseName === 'string') {
+      var path = normalize(module.verboseName)
+      if (path === file || (pres.sourceRoot && path === pres.sourceRoot + '/' + file)) {
+        var exported = module.publicModule ? module.publicModule.exports : undefined
+        var descriptor = exported ? Object.getOwnPropertyDescriptor(exported, name) : undefined
+        if (descriptor && 'value' in descriptor && descriptor.value) return descriptor.value
+      }
+    }
+    next = values.next()
+  }
+  return null
+}
+
+/**
+ * The React and React Native module objects plus the root host `View` a projection attaches to.
+ *
+ * Ported from the reference's `projectionRoot`. Only **framework** exports are accepted: a module
+ * qualifies as React Native when it exposes `Platform.OS`, `StyleSheet.create`, `View` and `Modal`
+ * together. No project module, account store or screen controller is ever evaluated to manufacture
+ * a destination, and nothing is initialised to look.
+ *
+ * The attachment point is the nearest ancestor `View` of the focus, because the app's main window
+ * cannot present while one of its own native sheets is open; attaching inside the container the
+ * focus already lives in keeps the copy in the same native window.
+ */
+export function agentProjectionRoot(pres: any, focus: any): any {
+  var modules = (globalThis as any).__r && (globalThis as any).__r.getModules
+    ? (globalThis as any).__r.getModules()
+    : null
+  if (!modules || typeof modules.values !== 'function') return null
+  var react: any = null
+  var native: any = null
+  var values = modules.values()
+  var next = values.next()
+  while (!next.done) {
+    var module = next.value
+    if (module && module.isInitialized) {
+      var exported = module.publicModule ? module.publicModule.exports : undefined
+      if (exported && typeof exported.createElement === 'function' && typeof exported.useState === 'function') {
+        react = agentMutableReact(exported)
+      }
+      // Framework exports only. No project module, account store or native screen controller is
+      // evaluated to manufacture a destination.
+      if (
+        exported &&
+        Object.getOwnPropertyDescriptor(exported, 'Platform') &&
+        Object.getOwnPropertyDescriptor(exported, 'StyleSheet')
+      ) {
+        try {
+          if (
+            exported.Platform &&
+            typeof exported.Platform.OS === 'string' &&
+            exported.StyleSheet &&
+            typeof exported.StyleSheet.create === 'function' &&
+            exported.View &&
+            exported.Modal
+          ) native = exported
+        } catch (error) {
+          native = native
+        }
+      }
+    }
+    next = values.next()
+  }
+  if (!react || typeof react.Component !== 'function' || !native) return null
+  var ancestor: any = null
+  var seen = new Set()
+  for (var parent = focus; parent && !seen.has(parent) && !ancestor; parent = parent.return) {
+    seen.add(parent)
+    if (parent.type === native.View || parent.elementType === native.View) ancestor = parent
+  }
+  if (!ancestor) return null
+  var tree = agentPresentationIndex(pres)
+  var root = tree.current.get(ancestor)
+  if (!root) return null
+  var renderers = pres.renderers()
+  for (var at = 0; at < renderers.length; at++) {
+    if (typeof renderers[at].overrideProps === 'function') {
+      return { root: root, renderer: renderers[at], react: react, native: native }
+    }
+  }
+  return null
+}
+
+/**
+ * The union of a component's outermost native views, in window coordinates.
+ *
+ * The reference's `bodyFrame`. A projected copy goes into a brand new `Modal`, and a `Modal` starts
+ * at the window origin — so a sheet that lived below the status bar would jump to the top of the
+ * screen and photograph differently from the real thing. Positioning the copy at the original's
+ * frame is what keeps the screenshot comparable.
+ */
+export function agentBodyFrame(focus: any): any {
+  var left = Infinity
+  var top = Infinity
+  var right = -Infinity
+  var bottom = -Infinity
+  var hosts = 0
+  var stack = [focus ? focus.child : null]
+  while (stack.length && hosts < 50) {
+    var fiber = stack.pop()
+    if (!fiber) continue
+    if (fiber.sibling) stack.push(fiber.sibling)
+    if (fiber.tag !== 5) {
+      stack.push(fiber.child)
+      continue
+    }
+    hosts++
+    try {
+      var box = agentWindowRect(fiber)
+      if (!box) continue
+      if (!isFinite(box.x) || !isFinite(box.y) || !isFinite(box.width) || !isFinite(box.height)) continue
+      if (box.width <= 0 || box.height <= 0) continue
+      left = Math.min(left, box.x)
+      top = Math.min(top, box.y)
+      right = Math.max(right, box.x + box.width)
+      bottom = Math.max(bottom, box.y + box.height)
+    } catch (error) {
+      continue
+    }
+  }
+  return right > left && bottom > top
+    ? { x: left, y: top, width: right - left, height: bottom - top }
+    : undefined
+}
+
+/** One host fiber's window rect, through the public instance or Fabric's UI manager. */
+export function agentWindowRect(fiber: any): any {
+  var state = fiber.stateNode
+  var instance = state && state.canonical && state.canonical.publicInstance
+    ? state.canonical.publicInstance
+    : state
+  if (instance && typeof instance.getBoundingClientRect === 'function') {
+    return instance.getBoundingClientRect()
+  }
+  var node = state ? state.node : undefined
+  var manager = (globalThis as any).nativeFabricUIManager
+  var rect =
+    node && manager && typeof manager.getBoundingClientRect === 'function'
+      ? manager.getBoundingClientRect(node, true)
+      : undefined
+  if (!Array.isArray(rect) || rect.length !== 4) return undefined
+  return { x: rect[0], y: rect[1], width: rect[2], height: rect[3] }
+}
+
+/**
+ * The `Modal` props a projected copy inherits from the nearest ancestor `Modal`.
+ *
+ * Ported from the reference. A sheet rendered inside a `transparent` `pageSheet` modal looks
+ * nothing like the same sheet in an opaque full-screen one, so these six presentation props are
+ * carried over — and only these six, from the **nearest** ancestor, stopping at the first one
+ * found. `transparent: false` is the default the carried-over props then override, which is why the
+ * caller spreads this *after* the default rather than before.
+ *
+ * Pure, so the selection is testable without a device.
+ */
+export function agentModalCarryOver(focus: any, Modal: any): Record<string, unknown> {
+  var carried: Record<string, unknown> = {}
+  if (!Modal) return carried
+  var keys = [
+    'presentationStyle',
+    'transparent',
+    'statusBarTranslucent',
+    'navigationBarTranslucent',
+    'hardwareAccelerated',
+    'supportedOrientations'
+  ]
+  var seen = new Set()
+  for (var parent = focus ? focus.return : null; parent && !seen.has(parent); parent = parent.return) {
+    seen.add(parent)
+    if (parent.type !== Modal && parent.elementType !== Modal) continue
+    var props = parent.memoizedProps
+    if (props) {
+      for (var at = 0; at < keys.length; at++) {
+        if (keys[at]! in props) carried[keys[at]!] = props[keys[at]!]
+      }
+    }
+    break
+  }
+  return carried
+}
+
+/**
+ * Whether copying this component would mount a second copy of the live app navigation.
+ *
+ * The reference's `copiesLiveNavigation`, and the single most important refusal in this file. A
+ * provider's existing `children` can contain the whole app navigator; re-creating that provider
+ * would mount a second navigator, run its framework subscriptions, and leave errors in every later
+ * capture. The reference's rule is kept exactly: walk the element tree the props carry, find the
+ * fibers rendering those exact props objects *inside* the focus, and refuse if any mounted fiber
+ * under one of them looks like a React Navigation screen (a `route.name` string together with a
+ * `navigation.getState` function).
+ *
+ * Two deliberate conservatisms, both the reference's: an element graph that exceeds 2000 nodes is
+ * refused outright rather than walked further, and descriptors are read rather than properties so
+ * no app getter runs during the check. The branch is left unresolved rather than made to work by
+ * stripping children; only a source recipe that isolates the presentation body may unblock it.
+ */
+export function agentCopiesLiveNavigation(focus: any, props: any, tree: any): boolean {
+  var own = function (holder: any, key: string): any {
+    if (!holder || (typeof holder !== 'object' && typeof holder !== 'function')) return undefined
+    var descriptor = Object.getOwnPropertyDescriptor(holder, key)
+    return descriptor && 'value' in descriptor ? descriptor.value : undefined
+  }
+  var children = own(props, 'children')
+  if (!children || typeof children !== 'object') return false
+  var scopes: any[] = []
+  var seen = new Set()
+  var queue: any[] = [children]
+  while (queue.length && seen.size < 2000) {
+    var element = queue.pop()
+    if (!element || typeof element !== 'object' || seen.has(element)) continue
+    seen.add(element)
+    if (Array.isArray(element)) {
+      for (var at = 0; at < element.length; at++) queue.push(element[at])
+      continue
+    }
+    var type = own(element, 'type')
+    var elementProps = own(element, 'props')
+    if (!type || !elementProps) continue
+    var rendering = tree.props.get(elementProps)
+    var list = rendering ? rendering : []
+    for (var r = 0; r < list.length; r++) {
+      var fiber = list[r]
+      if ((fiber.type === type || fiber.elementType === type) && tree.inside(fiber, focus)) {
+        scopes.push(fiber)
+      }
+    }
+    var nested = own(elementProps, 'children')
+    if (nested) queue.push(nested)
+  }
+  if (queue.length) return true
+  if (!scopes.length) return false
+  for (var n = 0; n < tree.all.length; n++) {
+    var node = tree.all[n]
+    var nodeProps = node.memoizedProps
+    var route = own(nodeProps, 'route')
+    var navigation = own(nodeProps, 'navigation')
+    if (typeof own(route, 'name') !== 'string') continue
+    if (typeof own(navigation, 'getState') !== 'function') continue
+    for (var s = 0; s < scopes.length; s++) if (tree.inside(node, scopes[s])) return true
+  }
+  return false
+}
+
+/**
+ * Suppresses **only** this projection's caught render errors.
+ *
+ * Ported from the reference's `containPreviewErrors`/`previewErrorHandler`. React Native reports
+ * even caught render errors to LogBox, so a copy that throws once would paint a red box over every
+ * later capture. The root's `onCaughtError` is swapped for a wrapper that returns early *only* when
+ * the error came from this exact boundary class on this exact root; every other error reaches the
+ * app's original handler unchanged. Neither the error nor its message is retained.
+ */
+export function agentContainPreviewErrors(pres: any, focus: any, record: any, boundaryType: any): void {
+  var root: any = null
+  var seen = new Set()
+  for (var parent = focus; parent && !seen.has(parent); parent = parent.return) {
+    seen.add(parent)
+    if (parent.tag === 3) root = parent.stateNode
+  }
+  if (!root || typeof root.onCaughtError !== 'function') return
+  record.errorRoot = root
+  record.boundaryType = boundaryType
+  for (var at = 0; at < pres.caughtPatches.length; at++) {
+    if (pres.caughtPatches[at].root === root && root.onCaughtError === pres.caughtPatches[at].wrapped) return
+  }
+  var original = root.onCaughtError
+  var projected = pres.projected
+  var wrapped = function (this: any, error: any, info: any): any {
+    for (var index = 0; index < projected.length; index++) {
+      var item = projected[index]
+      if (item.errorRoot === root && info && info.errorBoundary && info.errorBoundary.constructor === item.boundaryType) {
+        item.failed = true
+        return undefined
+      }
+    }
+    return original.apply(this, arguments)
+  }
+  root.onCaughtError = wrapped
+  pres.caughtPatches.push({ root: root, original: original, wrapped: wrapped })
+}
+
+/** Restores every root error handler no live projection still needs. */
+export function agentReleasePreviewErrors(pres: any, all: boolean): void {
+  for (var index = pres.caughtPatches.length - 1; index >= 0; index--) {
+    var patch = pres.caughtPatches[index]
+    var needed = false
+    if (!all) {
+      for (var at = 0; at < pres.projected.length; at++) {
+        if (pres.projected[at].errorRoot === patch.root) needed = true
+      }
+    }
+    if (needed) continue
+    if (patch.root.onCaughtError === patch.wrapped) patch.root.onCaughtError = patch.original
+    pres.caughtPatches.splice(index, 1)
+  }
+}
+
+/** Expires a seeded hook value so the hook patch cannot outlive one render. */
+export function agentSeedDeadline(pres: any, record: any): void {
+  var root = globalThis as any
+  try {
+    root.clearTimeout(record.seedTimer)
+  } catch (error) {
+    record.seedTimer = undefined
+  }
+  record.seedTimer = root.setTimeout(function () {
+    if (pres.projected.indexOf(record) < 0) return
+    if (!record.seed.applied) record.failed = true
+    var waiting = false
+    for (var at = 0; at < pres.projected.length; at++) {
+      var item = pres.projected[at]
+      if (item.seed && !item.seed.applied && !item.failed) waiting = true
+    }
+    if (!pres.collecting.size && !waiting) agentUnpatchPresentationHooks(pres)
+  }, 1000)
+}
+
+/**
+ * Projects a component as a synthetic `Modal` sibling of the live app.
+ *
+ * Ported from the reference's `project`, minus its prepared host-slot and inline placements (see
+ * the section doc). Read the file doc above for why each of the following is the way it is; in
+ * order, this function:
+ *
+ * 1. Refuses when the copy would duplicate live navigation.
+ * 2. Builds the copy as `react.createElement(type, preview.props || focus.memoizedProps)` — one new
+ *    element of the same type, **not** a fiber-tree clone.
+ * 3. Re-wraps it in the context providers up `focus.return`, excluding `ScrollView.Context` and
+ *    `VirtualizedList.contextType`, because a new `Modal` is a new native window and restoring a
+ *    list parent from a different window hands native code a container it does not own.
+ * 4. Wraps it in a `PreviewBoundary` and swaps the root error handler for one that suppresses only
+ *    this boundary.
+ * 5. Carries the six presentation props over from the nearest ancestor `Modal`, over a default of
+ *    `transparent: false`, with `animationType: 'none'` so no transition is photographed.
+ * 6. Positions the body absolutely at the original's frame.
+ * 7. Attaches the modal as a **flat sibling** of the app's existing root children through
+ *    `renderer.overrideProps(root, [], record.next)`. Nesting the existing children under a new
+ *    array instead would change what React reconciles against and remount the live app.
+ */
+export function agentProject(pres: any, focus: any, preview: any, mountedContext: any): any {
+  pres.structureCache = undefined
+  var tree = agentPresentationIndex(pres)
+  var live = tree.current.get(focus)
+  if (live) focus = live
+  if (!focus) return { error: 'This view cannot be projected.' }
+  for (var at = 0; at < pres.projected.length; at++) {
+    if (!preview && (pres.projected[at].focus === focus || pres.projected[at].focus === focus.alternate)) {
+      return { error: 'This view cannot be projected.' }
+    }
+  }
+  var sourceProps = preview && preview.props ? preview.props : focus.memoizedProps
+  // A provider's existing children can contain the live app navigator. Copying that provider would
+  // mount a second app, run framework subscriptions and leave errors in later captures. Keep the
+  // branch unresolved until a source recipe isolates its body; never strip arbitrary children.
+  if (agentCopiesLiveNavigation(focus, sourceProps, tree)) {
+    return {
+      status: 'needs-data',
+      error: 'This preview would duplicate live navigation. Its source recipe must isolate the presentation from the existing app children.'
+    }
+  }
+  var context = mountedContext ? mountedContext : agentProjectionRoot(pres, focus)
+  if (!context) return { error: 'This renderer cannot project a local view.' }
+  var type = focus.elementType ? focus.elementType : focus.type
+  if (!type || typeof type === 'string') return { error: 'No component view to project.' }
+  var root = context.root
+  var renderer = context.renderer
+  var react = context.react
+  var native = context.native
+  var props = root.memoizedProps
+  var child = react.createElement(type, sourceProps)
+  var content = child
+  // Keep live app providers. A new Modal resets native list/scroll ownership; copying those
+  // contexts inside it would restore a parent from a different native window.
+  var resetContexts: any[] = []
+  if (native.ScrollView && native.ScrollView.Context) resetContexts.push(native.ScrollView.Context)
+  if (native.VirtualizedList && native.VirtualizedList.contextType) {
+    resetContexts.push(native.VirtualizedList.contextType)
+  }
+  var ancestors = new Set()
+  for (var parent = focus.return; parent && !ancestors.has(parent); parent = parent.return) {
+    ancestors.add(parent)
+    if (parent.tag !== 10 || !parent.memoizedProps || !('value' in parent.memoizedProps)) continue
+    var provider = parent.elementType ? parent.elementType : parent.type
+    if (!provider) continue
+    var identity = provider._context ? provider._context : provider
+    if (resetContexts.indexOf(identity) >= 0) continue
+    var carried = preview && preview.providers ? preview.providers.get(parent) : undefined
+    content = react.createElement(
+      provider,
+      { value: carried === undefined ? parent.memoizedProps.value : carried },
+      content
+    )
+  }
+  var record: any = {
+    root: root,
+    renderer: renderer,
+    react: react,
+    props: props,
+    focus: focus,
+    child: child,
+    content: content,
+    seed: preview ? preview.seed : undefined,
+    mount: preview ? preview.mount : undefined,
+    ios: native.Platform.OS === 'ios',
+    shown: false,
+    dismissed: false,
+    failed: false
+  }
+  var PreviewBoundary = class extends react.Component {
+    constructor(boundaryProps: any) {
+      super(boundaryProps)
+      ;(this as any).state = { failed: false }
+    }
+    static getDerivedStateFromError(): any {
+      return { failed: true }
+    }
+    componentDidCatch(): void {
+      record.failed = true
+    }
+    render(): any {
+      return (this as any).state.failed ? null : (this as any).props.children
+    }
+  }
+  var body = react.createElement(PreviewBoundary, null, content)
+  var key = 'mobile-flow-preview-' + ++pres.sequence
+  // A temporary Modal starts at the window origin. Keep the copy at its original body's frame, so
+  // a body below the status bar stays below it.
+  record.frame = agentBodyFrame(focus)
+  var frame = record.frame
+  var placed =
+    frame && (frame.x >= 1 || frame.y >= 1)
+      ? react.createElement(
+          native.View,
+          { style: { position: 'absolute', left: frame.x, top: frame.y, width: frame.width, height: frame.height } },
+          body
+        )
+      : body
+  record.positioned = placed !== body
+  var modalProps: any = { key: key, transparent: false }
+  var carriedProps = agentModalCarryOver(focus, native.Modal)
+  for (var carryKey in carriedProps) modalProps[carryKey] = carriedProps[carryKey]
+  modalProps.visible = true
+  modalProps.animationType = 'none'
+  modalProps.onShow = function () {
+    record.shown = true
+  }
+  modalProps.onDismiss = function () {
+    record.dismissed = true
+  }
+  var modal = react.createElement(native.Modal, modalProps, placed)
+  // React unwraps one unkeyed root Fragment before reconciling children. Append at that same
+  // level. Nesting the existing Fragment under a new sibling array would remount the live app and
+  // rerun all of its effects.
+  var transparentRoot =
+    props.children &&
+    props.children.type === react.Fragment &&
+    props.children.key == null &&
+    props.children.props &&
+    props.children.props.ref === undefined
+  var appBody = transparentRoot ? props.children.props.children : props.children
+  var appChildren = Array.isArray(appBody) ? appBody : [appBody]
+  record.element = modal
+  var nextChildren = react.createElement.apply(
+    react,
+    [react.Fragment, null].concat(appChildren).concat([modal])
+  )
+  record.next = {}
+  for (var propKey in props) record.next[propKey] = props[propKey]
+  record.next.children = nextChildren
+  if (record.seed && !agentPatchPresentationHooks(pres)) {
+    return { error: 'Temporary hook initialization is unavailable.' }
+  }
+  // React Native reports even caught render errors to LogBox. Contain only errors caught by this
+  // exact temporary boundary; all app errors keep the root's original handler.
+  agentContainPreviewErrors(pres, focus, record, PreviewBoundary)
+  pres.projected.push(record)
+  pres.undo.push({ projection: record })
+  pres.structureCache = undefined
+  renderer.overrideProps(root, [], record.next)
+  if (record.seed) agentSeedDeadline(pres, record)
+  return { ok: true, focus: focus }
+}
+
+/** Whether a projection's modal is still among its root's children. */
+export function agentProjectionAttached(pres: any, record: any): boolean {
+  var tree = agentPresentationIndex(pres)
+  var root = tree.current.get(record.root)
+  var children =
+    root && root.memoizedProps && root.memoizedProps.children && root.memoizedProps.children.props
+      ? root.memoizedProps.children.props.children
+      : undefined
+  if (!Array.isArray(children)) return false
+  for (var at = 0; at < children.length; at++) if (children[at] === record.element) return true
+  return false
+}
+
+/** Drops a projection's bookkeeping and un-patches anything no other projection still needs. */
+export function agentReleaseProjection(pres: any, record: any): void {
+  var root = globalThis as any
+  try {
+    root.clearTimeout(record.seedTimer)
+  } catch (error) {
+    record.seedTimer = undefined
+  }
+  var position = pres.projected.indexOf(record)
+  if (position >= 0) pres.projected.splice(position, 1)
+  agentReleasePreviewErrors(pres, false)
+  var waiting = false
+  for (var at = 0; at < pres.projected.length; at++) {
+    var item = pres.projected[at]
+    if (item.seed && !item.seed.applied && !item.failed) waiting = true
+  }
+  if (record.seed && !waiting) agentUnpatchPresentationHooks(pres)
+  pres.structureCache = undefined
+}
+
+/**
+ * Opens one catalog entry and pushes its undo checkpoint.
+ *
+ * Ported from the reference's `open`. The three effect kinds are described in the section doc; what
+ * is worth restating at the call site is the **functional setter**:
+ *
+ *     binding.setter(function (previous) { return guard ? previous : agentSetPath(...) })
+ *
+ * React may already have a queued update from the app itself (a response that landed between the
+ * read and the write). Passing a plain value would discard it. Passing the functional form lets the
+ * update see the newest state and decline when it is no longer the state that was read, so the
+ * opening applies source-proven UI state and never replaces the app's own newer data.
+ */
+export function agentPresentationOpen(pres: any, id: string, focus: any): any {
+  var started = Date.now()
+  for (var at = 0; at < pres.undo.length; at++) {
+    if (pres.undo[at].closing) {
+      return { ok: false, error: 'A native presentation is still dismissing.', checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
+    }
+  }
+  var action: any = null
+  for (var a = 0; a < pres.catalog.actions.length; a++) {
+    if (pres.catalog.actions[a].id === id) action = pres.catalog.actions[a]
+  }
+  if (!action) {
+    return { ok: false, error: 'The requested view is not in the source catalog.', checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
+  }
+  pres.structureCache = undefined
+  var tree = agentPresentationIndex(pres)
+  var found = agentResolvePresentationEntry(pres, action, tree)
+  if (found.error) {
+    return { ok: false, error: found.error, checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
+  }
+  if (action.effect.kind === 'mount') {
+    var context = agentProjectionRoot(pres, focus ? focus : tree.all[0])
+    var owner = { type: found.type, elementType: found.type, memoizedProps: {}, return: focus }
+    var projection = agentProject(pres, owner, { mount: true }, context)
+    if (!projection.ok) {
+      return { ok: false, error: projection.error, checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
+    }
+    return { ok: true, kind: 'mount', checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
+  }
+  if (action.effect.kind === 'state') {
+    var binding = found.binding
+    var previous = agentHookValue(pres, binding)
+    for (var p = 0; p < action.effect.path.length; p++) {
+      previous = previous === null || previous === undefined ? undefined : previous[action.effect.path[p]]
+    }
+    pres.undo.push({
+      binding: binding,
+      path: action.effect.path,
+      value: previous,
+      nativeDismiss: previous === null || previous === undefined || previous === false
+    })
+    var before = previous
+    var path = action.effect.path
+    var opened = action.effect.value
+    // Apply source-proven UI state only. A queued app update owns its newer state; never replace
+    // it with the captured opening data.
+    binding.setter(function (current: any) {
+      var reference = current
+      for (var step = 0; step < path.length; step++) {
+        reference = reference === null || reference === undefined ? undefined : reference[path[step]]
+      }
+      if (!Object.is(reference, before)) return current
+      return agentSetPath(current, path, opened)
+    })
+    pres.structureCache = undefined
+    return { ok: true, kind: 'state', checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
+  }
+  if (action.effect.kind === 'control') {
+    var target = found.target
+    for (var o = 0; o < pres.undo.length; o++) {
+      if (!pres.undo[o].closed && pres.undo[o].control === target.value) {
+        return { ok: true, kind: 'control', checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
+      }
+    }
+    pres.undo.push({
+      control: target.value,
+      close: target.close,
+      focus: target.fiber,
+      nativeFocus: target.fiber,
+      origin: target.fiber
+    })
+    target.value[action.effect.method]()
+    pres.structureCache = undefined
+    return { ok: true, kind: 'control', checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
+  }
+  return { ok: false, error: 'Unsupported presentation transition.', checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
+}
+
+/**
+ * Waits for a controller-owned presentation to report that it closed.
+ *
+ * Ported from the reference's `waitForDismissal`, with its 4000ms deadline and its single retry.
+ * The retry's reason is specific: a close can run before the native ref exists and silently do
+ * nothing, so one more close is sent — but only once, and only while the control has acknowledged
+ * no closing transition. An accepted close stays single, because sending a second one to a sheet
+ * that is already closing can dismiss whatever opened behind it.
+ *
+ * Expressed as a poll rather than a promise chain because this agent has no promise-based control
+ * flow (see the file's syntax rules).
+ */
+export function agentWaitForDismissal(pres: any, entry: any, done: (error: string | null) => void): void {
+  var root = globalThis as any
+  var started = Date.now()
+  var step = function (): void {
+    var open = agentOpeningControl(entry.control, undefined)
+    var stillOpen = entry.closedAcknowledged ? false : open
+    if (!stillOpen || entry.dismissed) {
+      done(null)
+      return
+    }
+    if (!entry.closeRetried && Date.now() - started >= 1000) {
+      // A close can run before a native ref exists and silently do nothing. Retry once only.
+      entry.closeRetried = true
+      try {
+        entry.control[entry.close]()
+      } catch (error) {
+        entry.closeRetried = true
+      }
+    }
+    // A full-height sheet in a long-running, larger app can take more than two seconds to report
+    // its dismissal; a confirmed close returns at once.
+    if (Date.now() - started >= 4000) {
+      done('Native presentation dismissal has not finished.')
+      return
+    }
+    root.setTimeout(step, 40)
+  }
+  step()
+}
+
+/**
+ * Unwinds the undo stack down to `level`, confirming every native dismissal on the way.
+ *
+ * Ported from the reference's `restorePresentations`. The iOS ordering in the projection branch is
+ * the safety-critical part of this whole file and is kept exactly:
+ *
+ * 1. Clone the modal with `visible: false` and write it back — **the Modal stays mounted**.
+ * 2. Poll for `record.dismissed` with a 2000ms deadline.
+ * 3. Only then restore the root's original children.
+ *
+ * Unmounting at step 1 would remove React Native's event listener before `onDismiss` could run, and
+ * the app would be left with a native window nothing can prove is closed. For the same reason a
+ * projection whose root has detached, on iOS, after it was shown and before it was dismissed,
+ * **throws** rather than quietly dropping the checkpoint.
+ *
+ * A checkpoint is kept until its close actually succeeds (`entry.closed` is set only afterwards), so
+ * a thrown close does not discard the only way to restore the app on the next attempt.
+ */
+export function agentRestorePresentations(
+  pres: any,
+  level: number,
+  wait: boolean,
+  done: (error: string | null) => void
+): void {
+  var root = globalThis as any
+  var floor = Math.max(0, level)
+  var step = function (): void {
+    if (pres.undo.length <= floor) {
+      if (wait) {
+        root.setTimeout(function () {
+          done(null)
+        }, 80)
+        return
+      }
+      done(null)
+      return
+    }
+    // Keep the checkpoint until its close operation succeeds. A thrown close must not discard the
+    // only way to restore the app on the next attempt.
+    var entry = pres.undo[pres.undo.length - 1]
+    if (entry.closed) {
+      pres.undo.pop()
+      step()
+      return
+    }
+    var finishEntry = function (): void {
+      entry.closed = true
+      pres.undo.pop()
+      step()
+    }
+    if (entry.projection) {
+      var record = entry.projection
+      try {
+        root.clearTimeout(record.seedTimer)
+      } catch (error) {
+        record.seedTimer = undefined
+      }
+      pres.structureCache = undefined
+      // Preserve new app children, but never infer native dismissal from an unmount which removed
+      // the callback needed to confirm it.
+      if (!agentProjectionAttached(pres, record)) {
+        if (record.ios && record.shown && !record.dismissed) {
+          done('Temporary modal dismissal is unconfirmed after its owner detached.')
+          return
+        }
+        agentReleaseProjection(pres, record)
+        finishEntry()
+        return
+      }
+      var restoreChildren = function (): void {
+        var currentProps = record.root.memoizedProps ? record.root.memoizedProps : record.props
+        var restored: any = {}
+        for (var key in currentProps) restored[key] = currentProps[key]
+        restored.children = record.props.children
+        pres.structureCache = undefined
+        record.renderer.overrideProps(record.root, [], restored)
+      }
+      if (!entry.closing) {
+        if (wait && record.ios && record.shown) {
+          // Keep Modal mounted while native dismissal runs. Unmounting first removes React
+          // Native's event listener before onDismiss can run.
+          var hidden = record.react.cloneElement(record.element, { visible: false })
+          var siblings = record.next.children.props.children
+          var swapped: any[] = []
+          for (var s = 0; s < siblings.length; s++) {
+            swapped.push(siblings[s] === record.element ? hidden : siblings[s])
+          }
+          var children = record.react.cloneElement.apply(
+            record.react,
+            [record.next.children, {}].concat(swapped)
+          )
+          var nextProps: any = {}
+          var live = record.root.memoizedProps ? record.root.memoizedProps : record.props
+          for (var liveKey in live) nextProps[liveKey] = live[liveKey]
+          nextProps.children = children
+          pres.structureCache = undefined
+          record.renderer.overrideProps(record.root, [], nextProps)
+        } else restoreChildren()
+        entry.closing = true
+      }
+      if (wait && record.ios && record.shown) {
+        // React Native emits Modal.onDismiss on iOS only. Retain the restore record while an
+        // already shown iOS modal is still dismissing.
+        var dismissStarted = Date.now()
+        var poll = function (): void {
+          if (record.dismissed) {
+            restoreChildren()
+            agentReleaseProjection(pres, record)
+            finishEntry()
+            return
+          }
+          if (!agentProjectionAttached(pres, record)) {
+            done('Temporary modal dismissal is unconfirmed after its owner detached.')
+            return
+          }
+          if (Date.now() - dismissStarted >= 2000) {
+            done('Temporary modal dismissal has not finished.')
+            return
+          }
+          root.setTimeout(poll, 40)
+        }
+        poll()
+        return
+      }
+      agentReleaseProjection(pres, record)
+      finishEntry()
+      return
+    }
+    if (entry.control) {
+      if (!entry.closing) {
+        entry.closing = true
+        try {
+          entry.control[entry.close]()
+        } catch (error) {
+          done('The presentation control refused to close.')
+          return
+        }
+      }
+      if (wait) {
+        agentWaitForDismissal(pres, entry, function (error: string | null) {
+          if (error) {
+            done(error)
+            return
+          }
+          entry.closing = false
+          finishEntry()
+        })
+        return
+      }
+      entry.closing = false
+      finishEntry()
+      return
+    }
+    if (!entry.closing) {
+      var path = entry.path
+      var value = entry.value
+      entry.binding.setter(function (current: any) {
+        return agentSetPath(current, path, value)
+      })
+      entry.closing = true
+      pres.structureCache = undefined
+    }
+    entry.closing = false
+    finishEntry()
+  }
+  step()
+}
+
+/**
+ * Serialises rollbacks. The reference keeps a `rollbackTask` promise chain for the same reason: two
+ * overlapping unwinds of one undo stack would each pop the other's checkpoint and leave the app in
+ * a state neither of them can describe. Here the chain is a queue of callbacks, because this agent
+ * has no promise-based control flow.
+ */
+export function agentPresentationRollback(
+  pres: any,
+  level: number,
+  wait: boolean,
+  done: (value: unknown) => void
+): void {
+  var started = Date.now()
+  var run = function (): void {
+    agentRestorePresentations(pres, level, wait, function (error: string | null) {
+      pres.rollbackRunning = false
+      var reply = error
+        ? { ok: false, error: error, checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
+        : { ok: true, checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
+      try {
+        done(reply)
+      } catch (replyError) {
+        pres.rollbackRunning = false
+      }
+      var next = pres.rollbackQueue.shift()
+      if (next) next()
+    })
+  }
+  if (pres.rollbackRunning) {
+    pres.rollbackQueue.push(function () {
+      pres.rollbackRunning = true
+      run()
+    })
+    return
+  }
+  pres.rollbackRunning = true
+  run()
+}
+
+/** The `presentations` command: which catalog entries are openable against the tree as it is now. */
+export function agentPresentationList(pres: any): any {
+  var started = Date.now()
+  pres.structureCache = undefined
+  var tree = agentPresentationIndex(pres)
+  var available: Array<{ id: string; kind: string }> = []
+  var unavailable = 0
+  for (var at = 0; at < pres.catalog.actions.length && available.length < 200; at++) {
+    var action = pres.catalog.actions[at]
+    var found = agentResolvePresentationEntry(pres, action, tree)
+    if (found.error) unavailable += 1
+    else available.push({ id: action.id, kind: action.effect.kind })
+  }
+  return { available: available, unavailable: unavailable, elapsedMs: Date.now() - started }
+}
+
+/**
+ * The presentation runtime's state, created once per install and torn down with the agent.
+ *
+ * Everything mutable the port needs lives here rather than in a module constant, because an
+ * injected function is re-created in a fresh scope inside the app (see the file doc). The teardown
+ * is registered on the agent's `undo` list, so the lease watchdog un-patches React's hooks and
+ * every root error handler if the host stops talking — which is the whole reason a bounded patch
+ * window is safe to open at all.
+ */
+export function agentCreatePresentations(root: any, limits: AgentLimits, undo: Array<() => void>): any {
+  var pres: any = {
+    limits: limits,
+    sequence: 0,
+    sourceRoot: undefined,
+    catalog: { states: [], actions: [] },
+    bindings: new Map(),
+    owners: new WeakMap(),
+    pendingSites: new WeakMap(),
+    collecting: new Set(),
+    patches: [],
+    caughtPatches: [],
+    projected: [],
+    undo: [],
+    rollbackQueue: [],
+    rollbackRunning: false,
+    lastScheduled: 0,
+    structureCache: undefined
+  }
+  pres.renderers = function (): any[] {
+    var hook = root.__REACT_DEVTOOLS_GLOBAL_HOOK__
+    var found: any[] = []
+    try {
+      if (hook && hook.renderers && typeof hook.renderers.forEach === 'function') {
+        hook.renderers.forEach(function (renderer: any) {
+          if (renderer && renderer.rendererPackageName === 'react-native-renderer') found.push(renderer)
+        })
+      }
+    } catch (error) {
+      return found
+    }
+    return found
+  }
+  pres.current = function (): any {
+    var renderers = pres.renderers()
+    for (var at = 0; at < renderers.length; at++) {
+      var renderer = renderers[at]
+      if (typeof renderer.getCurrentFiber !== 'function') continue
+      var fiber: any = null
+      try {
+        fiber = renderer.getCurrentFiber()
+      } catch (error) {
+        fiber = null
+      }
+      if (fiber) return { fiber: fiber, renderer: renderer }
+    }
+    return null
+  }
+  undo.push(function () {
+    agentUnpatchPresentationHooks(pres)
+    agentReleasePreviewErrors(pres, true)
+    pres.collecting.clear()
+    pres.bindings.clear()
+    pres.projected.length = 0
+    pres.undo.length = 0
+    pres.structureCache = undefined
+  })
+  return pres
+}
+
 /**
  * Installs the agent at `globalThis[key]` and arms the lease. See the file doc for the lease and
  * the fail-closed rules; the order below matters:
@@ -1495,6 +3319,7 @@ export function agentInstall(key: string, leaseMs: number, limits: AgentLimits):
   var undo: Array<() => void> = []
   var agent: InstalledAgent | null = null
   var signals: any = null
+  var presentations: any = null
 
   function restore(): void {
     if (stopped) return
@@ -1579,6 +3404,40 @@ export function agentInstall(key: string, leaseMs: number, limits: AgentLimits):
         idle,
         done
       )
+    } else if (type === 'presentation-setup') {
+      presentations.catalog = {
+        states: Array.isArray(command.states) ? command.states : [],
+        actions: Array.isArray(command.actions) ? command.actions : []
+      }
+      presentations.sourceRoot =
+        typeof command.projectRoot === 'string'
+          ? String(command.projectRoot).split('\\').join('/').replace(/\/$/, '')
+          : undefined
+      agentPresentationCollect(presentations, done)
+    } else if (type === 'presentation-configure') {
+      var configureStarted = Date.now()
+      var matches = Array.isArray(command.matches) ? command.matches : []
+      var configured = 0
+      for (var mi = 0; mi < matches.length && mi < 3000; mi++) {
+        var match = matches[mi]
+        if (!match || typeof match.binding !== 'string' || typeof match.site !== 'string') continue
+        var target = presentations.bindings.get(String(match.binding))
+        if (!target) continue
+        target.site = String(match.site)
+        configured += 1
+      }
+      presentations.structureCache = undefined
+      done({ ok: true, configured: configured, elapsedMs: Date.now() - configureStarted })
+    } else if (type === 'presentations') {
+      done(agentPresentationList(presentations))
+    } else if (type === 'presentation-open') {
+      done(agentPresentationOpen(presentations, String(command.id), null))
+    } else if (type === 'presentation-rollback') {
+      var level =
+        typeof command.level === 'number' && isFinite(command.level) && command.level >= 0
+          ? command.level
+          : 0
+      agentPresentationRollback(presentations, level, command.wait !== false, done)
     } else {
       done({ error: 'unknown-command' })
     }
@@ -1634,6 +3493,9 @@ export function agentInstall(key: string, leaseMs: number, limits: AgentLimits):
   // restore on any failure so a half-installed agent cannot leave patches behind.
   try {
     signals = agentCreateSignals(root, undo, restore)
+    // The presentation runtime registers its own teardown on `undo`, so the lease watchdog
+    // un-patches React hooks and every swapped root error handler if the host stops talking.
+    presentations = agentCreatePresentations(root, limits, undo)
     root[key] = agent
   } catch (error) {
     restore()
@@ -1663,5 +3525,37 @@ export const AGENT_FUNCTIONS = {
   agentCreateSignals,
   agentVerdict,
   agentSettle,
+  agentOpeningControl,
+  agentControlCloser,
+  agentSetPath,
+  agentPresentationIndex,
+  agentHookValue,
+  agentCollectionTargets,
+  agentMutableReact,
+  agentPatchPresentationHooks,
+  agentUnpatchPresentationHooks,
+  agentHookWrapper,
+  agentRegisterHook,
+  agentPresentationCollect,
+  agentAttributeBindings,
+  agentResolvePresentationEntry,
+  agentMountedExport,
+  agentProjectionRoot,
+  agentWindowRect,
+  agentBodyFrame,
+  agentModalCarryOver,
+  agentCopiesLiveNavigation,
+  agentContainPreviewErrors,
+  agentReleasePreviewErrors,
+  agentSeedDeadline,
+  agentProject,
+  agentProjectionAttached,
+  agentReleaseProjection,
+  agentPresentationOpen,
+  agentWaitForDismissal,
+  agentRestorePresentations,
+  agentPresentationRollback,
+  agentPresentationList,
+  agentCreatePresentations,
   agentInstall
 } as const

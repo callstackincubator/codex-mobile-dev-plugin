@@ -2,7 +2,7 @@ import type { App } from "@modelcontextprotocol/ext-apps";
 import { LoggingMessageNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { AppFlowBuildMode, AppFlowProgressEvent, AppFlowPrompt, AppFlowPromptResolution, AppFlowResult, DeepLinkJudgeMode, ExplorationMode, ManualRecordingEvent, StartAppFlowInput } from "../shared/app-flow.ts";
 import { AppFlowRecordingStore } from "./app-flow-recording.ts";
-import { countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
+import { captureUiError, countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 
 export type AppFlowRunState = "idle" | "running" | "needs-user-action" | "suspended" | "completed" | "failed" | "cancelled";
 export interface AppFlowSweepSummary { completed: number; total: number; message: string; captured?: number; captureLimit?: number; }
@@ -13,6 +13,15 @@ type Snapshot = {
   state: AppFlowRunState; result: AppFlowResult | null; progress: AppFlowProgressEvent | null;
   sweepSummary: AppFlowSweepSummary | null; prompt: AppFlowPrompt | null; error: string | null;
   launching: boolean; agentStartPending: boolean; pickingProject: boolean;
+  /**
+   * Whether this project's app is up on the App Flow device. The server owns this: every
+   * `mobile_appflow_status` read answers with its own `appLaunched`, so an app launched externally
+   * or in a previous panel session enables the actions that need one (UI Explore) exactly as the
+   * engine would accept them. A successful `launchApp` sets it optimistically so the button comes
+   * alive immediately instead of waiting for the next status read, and `selectProject` resets it
+   * before adopting the new project's status, since another project's launch says nothing here.
+   */
+  appLaunched: boolean;
 };
 
 type StartOptions = Omit<StartAppFlowInput, "projectPath">;
@@ -68,7 +77,8 @@ export class AppFlowPanel {
   private projectRequest?: Promise<void>;
   private restoreRequest?: Promise<void>;
   private snapshot: Snapshot = { open: false, available: false, projectPath: "", projects: [], runId: null, projectId: "",
-    state: "idle", result: null, progress: null, sweepSummary: null, prompt: null, error: null, launching: false, agentStartPending: false, pickingProject: false };
+    state: "idle", result: null, progress: null, sweepSummary: null, prompt: null, error: null, launching: false, agentStartPending: false, pickingProject: false,
+    appLaunched: false };
 
   constructor(app: App, pollIntervalMs = POLL_INTERVAL_MS, liveResultRefreshMs = LIVE_RESULT_REFRESH_MS) {
     this.app = app;
@@ -207,7 +217,8 @@ export class AppFlowPanel {
     this.lastLiveResultRefreshAt = Number.NEGATIVE_INFINITY;
     // Another project's run is not the one being replaced, and its status is not stale for this one.
     this.startEpoch++; this.abandonedRunId = null;
-    this.update({ projectPath: path, runId: null, projectId: "", state: "idle", result: null, progress: null, sweepSummary: null, prompt: null, error: null, agentStartPending: false });
+    this.update({ projectPath: path, runId: null, projectId: "", state: "idle", result: null, progress: null, sweepSummary: null, prompt: null, error: null, agentStartPending: false,
+      appLaunched: false });
     if (!path || !this.snapshot.available) return;
     try {
       const status = await this.call("mobile_appflow_status", { projectPath });
@@ -215,7 +226,8 @@ export class AppFlowPanel {
       const data = object(status.structuredContent) ?? {};
       const runId = typeof data.runId === "string" ? data.runId : null;
       const state = typeof data.state === "string" ? data.state as AppFlowRunState : "idle";
-      this.update({ runId, state, projectId: typeof data.projectId === "string" ? data.projectId : "", error: typeof data.error === "string" ? data.error : null });
+      this.update({ ...(typeof data.appLaunched === "boolean" ? { appLaunched: data.appLaunched } : {}),
+        runId, state, projectId: typeof data.projectId === "string" ? data.projectId : "", error: typeof data.error === "string" ? data.error : null });
       // Status retains the active run's latest event. Apply it as a recovery channel so reopening
       // the panel (or missing both a host notification and the bounded event poll) cannot leave a
       // human-action state without the prompt controls needed to resolve it.
@@ -261,21 +273,48 @@ export class AppFlowPanel {
   async start(options: StartOptions) {
     const projectPath = this.snapshot.projectPath.trim();
     if (!projectPath) return;
+    await this.beginRun("mobile_appflow_start", { projectPath, ...options }, "app_flow.start");
+  }
+
+  /**
+   * Captures the app's own UI states (modals, bottom sheets, dialogs) on an app that is already
+   * launched. No screen sweep happens and no model decides anything, so unlike a screen sweep this
+   * takes the plain server-start route rather than `requestAgentStart`'s follow-up message. The run
+   * it creates is an ordinary App Flow run: status, events, result and cancel all work unchanged.
+   */
+  async startUiExplore(options: { limit?: number } = {}) {
+    const projectPath = this.snapshot.projectPath.trim();
+    if (!projectPath) return;
+    // One bounded count per user-started UI explore. No project path, limit or capture content:
+    // the event name is the whole payload beyond the shared surface attributes.
+    countUiEvent("ui.app_flow.ui_explore_start");
+    await this.beginRun("mobile_appflow_explore_ui", { projectPath, ...(options.limit !== undefined ? { limit: options.limit } : {}) }, "app_flow.ui_explore_start");
+  }
+
+  /**
+   * Starts a run through a server tool that answers with a runId, and adopts it.
+   *
+   * Retire the previous run the same way `requestAgentStart` does. Keeping its id here meant the
+   * new run's events were dropped by the ingest guard (while still advancing the seq cursor past
+   * them) until the id finally changed, so the panel only recovered if the server's bounded
+   * buffer had not rolled in the meantime.
+   */
+  private async beginRun(name: string, arguments_: Record<string, unknown>, operation: string) {
     this.progressStartedAt = performance.now();
-    // Retire the previous run the same way `requestAgentStart` does. Keeping its id here meant the
-    // new run's events were dropped by the ingest guard (while still advancing the seq cursor past
-    // them) until the id finally changed, so the panel only recovered if the server's bounded
-    // buffer had not rolled in the meantime.
     this.startEpoch++; this.abandonedRunId = this.snapshot.runId ?? this.abandonedRunId;
     this.update({ runId: null, state: "running", error: null, progress: null, sweepSummary: null, prompt: null });
     const startedAt = performance.now();
     try {
-      const response = await this.call("mobile_appflow_start", { projectPath, ...options });
+      const response = await this.call(name, arguments_);
       const data = object(response.structuredContent) ?? {};
       const runId = typeof data.runId === "string" ? data.runId : null;
       if (!runId) throw new Error("App Flow did not return a run ID.");
       this.update({ runId, state: "running" });
-    } catch (error) { this.progressStartedAt = undefined; this.update({ state: "failed", error: error instanceof Error ? error.message : String(error) }); }
+    } catch (error) {
+      this.progressStartedAt = undefined;
+      captureUiError(error, operation);
+      this.update({ state: "failed", error: error instanceof Error ? error.message : String(error) });
+    }
     finally { recordUiTiming("ui.app_flow.start", performance.now() - startedAt); }
   }
 
@@ -325,7 +364,7 @@ export class AppFlowPanel {
     // Booting the simulator, building if needed, and waiting for the app to come up is a
     // multi-minute operation; the routine 30s tool timeout would report failure while the server
     // keeps working (and the panel restores launching=false when the run's events arrive).
-    try { await this.call("mobile_appflow_launch_app", { projectPath }, 300_000); }
+    try { await this.call("mobile_appflow_launch_app", { projectPath }, 300_000); this.update({ appLaunched: true }); }
     catch (error) { this.update({ error: error instanceof Error ? error.message : String(error) }); }
     finally { this.update({ launching: false }); }
   }
@@ -368,6 +407,7 @@ export class AppFlowPanel {
     const event = object(data.event);
     if (event && (event.type !== "prompt" || state === "needs-user-action")) this.ingest({ ...(statusRunId ? { runId: statusRunId } : {}), event });
     this.update({ state, ...(statusRunId ? { runId: statusRunId } : {}),
+      ...(typeof data.appLaunched === "boolean" ? { appLaunched: data.appLaunched } : {}),
       ...(typeof data.error === "string" ? { error: data.error } : {}),
       ...(state === "needs-user-action" ? {} : { prompt: null }) });
     if (["completed", "failed", "cancelled", "suspended"].includes(state)) await this.refreshResult();

@@ -114,12 +114,51 @@ export interface AppFlowPressable {
   role?: string
 }
 
+/**
+ * One UI state (a modal, a sheet, a dialog) that the explore-UI pass opened on a screen the sweep
+ * had already captured, by calling the app's own setter or controller — never by tapping.
+ *
+ * This is the successor to the removed `AppFlowCaptureState`, and it is deliberately *not* a graph
+ * node: a presentation is evidence about one screen, so it hangs off that screen's capture. The
+ * reference implementation mints a node per presentation and therefore needs an id, a `kind`, a
+ * `path`, a `required` list, a navigation edge and a `basePath`/`baseParams`/`expo` base to
+ * re-reach it; none of that exists here, because nothing ever navigates *to* one of these.
+ *
+ * Every field is intrinsic to discovery: the recipe that opened it, a human name, the frame, the
+ * source location the static scan found it at, and the view ids it joins to
+ * (`AppFlowPresentations.views`). A variant that could not be opened keeps its row with
+ * `screenshot: null` and an `error`, so a failure is attributable rather than silently missing.
+ */
+export interface AppFlowUiState {
+  /** The static catalog's action/recipe id (`AppFlowPresentationAction.id`). */
+  id: string
+  /** The component the press was proven to reveal — what a reader calls this state. */
+  name: string
+  /** Project-relative screenshot path (`screens/<slug>.png`), or null when it was never taken. */
+  screenshot: string | null
+  /** Where the opening press lives in the project's own source. */
+  file: string
+  line: number
+  /** `AppFlowSourceView` ids this presentation renders — the static views join. */
+  sourceViews?: string[]
+  /** How the runtime opened it; absent on a row that never opened. */
+  openedBy?: 'state' | 'control' | 'mount'
+  /** Why this variant has no screenshot. Present only on a failure. */
+  error?: string
+}
+
 export interface AppFlowCapture {
   status: AppFlowCaptureStatus
   needsNavigation: boolean
   note: string | null
   screenshot: string | null
   pressables: AppFlowPressable[]
+  /**
+   * UI states opened on this screen by `mobile_appflow_explore_ui`. Absent on every capture the
+   * explore pass never visited, and on every document written before this field existed. See
+   * `AppFlowUiState` for why these are not nodes.
+   */
+  uiStates?: AppFlowUiState[]
   captureMethod?:
     | 'saved-replay'
     | 'deep-link'
@@ -743,4 +782,150 @@ export function addTokenUsage(base: TokenUsage | undefined, delta: TokenUsage): 
     total: (base?.total ?? 0) + delta.total,
     cost: (base?.cost ?? 0) + delta.cost
   }
+}
+
+// ---------------------------------------------------------------------------
+// Static presentation discovery (host-side source analysis).
+//
+// These describe UI *presentations* — modals, bottom sheets, dialogs — found by
+// reading a project's TypeScript/TSX source, with no device, model or runtime
+// involved (`src/app-flow/presentations-source.ts`, `views-source.ts`,
+// `preview-plans.ts`). They replace a name-based heuristic that only recognised
+// four specific bottom-sheet libraries.
+//
+// A discovered presentation is evidence about source, not a graph node: it is
+// meant to be attached to an existing screen's `AppFlowCapture`, never minted as
+// a new `AppFlowNode`.
+// ---------------------------------------------------------------------------
+
+/** A bounded, serialisable description of a source expression's value. */
+export type AppFlowStateExpression =
+  | { value: string | number | boolean | null }
+  | { undefined: true }
+  | { unknown: true }
+  | { input: 'state' | 'payload' | 'props' | 'locals' }
+  | { data: { file: string; name: string } }
+  | { object: Record<string, AppFlowStateExpression> }
+  | { merge: AppFlowStateExpression[] }
+  | { has: AppFlowStateExpression; item: AppFlowStateExpression }
+  | { get: AppFlowStateExpression; key: string; optional?: boolean; chain?: boolean }
+  | { op: '?' | '!' | '===' | '!==' | '&&' | '||' | '??' | '<' | '<=' | '>' | '>='; args: AppFlowStateExpression[] }
+
+/** One `dispatch(...)` site that writes a reducer-backed state site. */
+export interface AppFlowStateSelection {
+  id: string
+  file: string
+  owner: string
+  component: string
+  source: { line: number; column: number; endLine: number; endColumn: number }
+  locals?: string[]
+  payload: Record<string, AppFlowStateExpression>
+  patch: Record<string, AppFlowStateExpression>
+}
+
+/** An effect that synchronises a reducer-backed state site from outside a handler. */
+export interface AppFlowStateSync {
+  line: number
+  column: number
+  dispatch: string
+  locals: string[]
+  updates: { when: AppFlowStateExpression; payload: Record<string, AppFlowStateExpression>; patch: Record<string, AppFlowStateExpression> }[]
+}
+
+/**
+ * One `useState`/`useReducer` call site, with the property paths of that state
+ * observed to gate a rendered component. `id` is a stable hash of the file and
+ * the call's position, so it survives a rescan of unchanged source.
+ */
+export interface AppFlowStateSite {
+  id: string
+  file: string
+  line: number
+  column: number
+  endLine: number
+  endColumn?: number
+  owner: string
+  paths: string[][]
+  selections?: AppFlowStateSelection[]
+  sync?: AppFlowStateSync[]
+  data?: { file: string; name: string }[]
+  hook?: 'useState' | 'useReducer'
+  valueName?: string
+  owners?: string[]
+  ownerSites?: { file: string; owner: string }[]
+  ownerEntries?: { component: string; file: string; owner: string; source: { line: number; column: number; endLine: number; endColumn: number } }[]
+}
+
+/** Data an opener hands the body it opens, as a symbolic expression. */
+export interface AppFlowOpeningData {
+  value: AppFlowStateExpression
+  when: AppFlowStateExpression
+  locals: string[]
+}
+
+/** A prop-level condition guarding whether a press actually opens anything. */
+export type AppFlowUiCondition =
+  | { prop: string[] }
+  | { value: unknown }
+  | { op: '!' | '&&' | '||' | '===' | '!==' | '==' | '!='; args: AppFlowUiCondition[] }
+
+/**
+ * One press handler proven (from source alone) to open a presentation, either by
+ * writing a state site or by calling a zero-argument method on a controller.
+ */
+export interface AppFlowPresentationAction {
+  id: string
+  file: string
+  line: number
+  owner: string
+  component: string
+  prop: string
+  name: string
+  source?: { line: number; column: number; endLine: number; endColumn: number }
+  trigger?: Record<string, string | number | boolean>
+  input?: AppFlowOpeningData
+  handler?: string
+  guard?: AppFlowUiCondition
+  /** Synthesised by `addSourcePreviewPlans`, not observed from a press. */
+  preview?: boolean
+  views?: string[]
+  expected?: { scope?: 'owner'; component: string; file: string; owner: string; source: { line: number; column: number; endLine: number; endColumn: number } }
+  consumer?: { component: string; entries: { file: string; owner: string; source: { line: number; column: number; endLine: number; endColumn: number } }[] }
+  effect:
+    | { kind: 'mount'; file: string; export: string }
+    | { kind: 'state'; site: string; path: string[]; value: unknown }
+    | { kind: 'control'; component: string; prop: string; method: string; close: string | string[]; target?: { file: string; owner: string; line: number; source: { line: number; column: number; endLine: number; endColumn: number } } }
+}
+
+/** A body of JSX reachable under one source condition — a branch, a finite state value, a controller target, or a whole component. */
+export interface AppFlowSourceView {
+  id: string
+  name: string
+  file: string
+  owner: string
+  line: number
+  kind: 'state' | 'control' | 'branch' | 'component'
+  source: { line: number; column: number; endLine: number; endColumn: number }
+  components: { file: string; component: string; guards?: number; entry?: { file: string; source: { line: number; column: number; endLine: number; endColumn: number } } }[]
+  state?: { site: string; path: string[]; value: unknown }
+  control?: { component: string; prop: string; boundary: boolean; generic: boolean }
+  branch?: { condition: string; side: 'true' | 'false' | 'case' }
+  /** Static evidence never proves a view can be reached on a device. */
+  availability: 'observed-only'
+  renderBody?: boolean
+  /** Render sites sharing one finite state; keeps callbacks distinct from form owners. */
+  renders?: { file: string; owner: string; line: number; source: AppFlowSourceView['source']; components: AppFlowSourceView['components']; renderBody: boolean; callbackOwner?: string; branch?: AppFlowSourceView['branch'] }[]
+  /** Exported owner whose ordinary initial render needs no supplied props. */
+  mount?: { export: string }
+  entries?: { file: string; line: number; owner: string; source?: { line: number; column: number; endLine: number; endColumn: number } }[]
+}
+
+/** Everything the static presentation scan found for one project. */
+export interface AppFlowPresentations {
+  states: AppFlowStateSite[]
+  actions: AppFlowPresentationAction[]
+  previews?: AppFlowPresentationAction[]
+  previewStates?: AppFlowStateSite[]
+  views?: AppFlowSourceView[]
+  viewStates?: AppFlowStateSite[]
 }

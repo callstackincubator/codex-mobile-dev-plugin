@@ -150,6 +150,21 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost, proje
     inputSchema: { projectPath }, annotations: write, _meta: appVisibility,
   }, safe(async ({ projectPath }: { projectPath: string }) => dataResult(await host.services.launchApp(projectPath))));
 
+  registerAppTool(server, "mobile_appflow_explore_ui", {
+    title: "Explore UI states",
+    description:
+      "Open and photograph the UI states (modals, sheets, dialogs) of the screen the already-launched app is on, by calling the app's own setters and controllers. Non-blocking: poll mobile_appflow_status and mobile_appflow_events, and stop it with mobile_appflow_cancel. The app must already be launched; nothing is tapped and no screen is navigated to.",
+    inputSchema: {
+      projectPath,
+      limit: z.number().int().positive().max(1000).optional(),
+    },
+    annotations: write,
+    _meta: sharedVisibility,
+  }, safe(async ({ projectPath: selectedProjectPath, limit }: { projectPath: string; limit?: number }) => {
+    const started = await host.exploreUi(selectedProjectPath, limit === undefined ? {} : { limit });
+    return dataResult(started, `Started UI explore ${started.runId}.`);
+  }));
+
   registerAppTool(server, "mobile_appflow_resolve_prompt", {
     title: "Resolve App Flow prompt",
     description:
