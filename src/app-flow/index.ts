@@ -113,16 +113,14 @@ export function createAppFlowService(host: AppFlowHostPorts): {
         mode,
         screenLimit,
         explorationMode,
-        deepLinkJudgeMode,
-        stateCaptureMode
+        deepLinkJudgeMode
       } = resolveAppFlowStart(input)
       // Same narrowing as `buildAppFlow`'s own check, and for the same reason: Fast asks no model
       // anything it cannot do without (see the throw there), so refusing to start it when the host
       // has no decision provider would be this surface inventing a requirement the sweep no longer
       // has. Every other mode is model-driven end to end and is still refused here, where the user
-      // can be told before a simulator boots. `stateCaptureMode` is part of the question because
-      // opting a Fast sweep into the state pass opts it back into model calls.
-      if (requiresDecisionProvider(mode, explorationMode, stateCaptureMode) && !host.decisions) {
+      // can be told before a simulator boots.
+      if (requiresDecisionProvider(mode, explorationMode) && !host.decisions) {
         return { ok: false, error: 'App Flow decision provider is not available.' }
       }
 
@@ -170,7 +168,6 @@ export function createAppFlowService(host: AppFlowHostPorts): {
           screenLimit,
           explorationMode,
           deepLinkJudgeMode,
-          stateCaptureMode,
           launchedDevice
         })
         .catch((error: unknown) => {

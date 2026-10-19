@@ -4,21 +4,6 @@
  * wording is unchanged, only the location.
  */
 
-export const STATE_TRIGGER_SYSTEM_PROMPT = `You are a mobile UI exploration assistant.
-Given a route, its source file, and a screenshot, decide how to reveal a runtime state variant (bottom sheet, modal, drawer).
-Return STRICT JSON only.
-
-{
-  "actions": [
-    { "type": "tap", "locator": { "by": "id", "value": "state-trigger" } }
-  ],
-  "stateName": "short-kebab-name",
-  "destinationLocator": { "by": "id", "value": "state-content" },
-  "note": string | null
-}
-
-If no safe trigger is visible, return actions: [] and explain in note.`
-
 export const NAVIGATION_SYSTEM_PROMPT = `You explore a mobile app one observation at a time to reach an exact target screen.
 Return STRICT JSON only:
 {

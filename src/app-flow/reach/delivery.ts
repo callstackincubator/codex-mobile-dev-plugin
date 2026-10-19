@@ -176,7 +176,6 @@ function captureRecord(
     note: fields.note,
     screenshot: fields.screenshot,
     pressables: fields.pressables,
-    states: [],
     captureMethod: fields.captureMethod,
     // Omitted rather than written as `null` when there is none, so a capture carried forward from
     // an earlier sweep is not overwritten with an absence by a later reach that walked nothing.

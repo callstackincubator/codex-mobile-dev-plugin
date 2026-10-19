@@ -119,12 +119,11 @@ describe("CodexAppFlowDecisionProvider", () => {
     assert.equal(provider.activeNow(), 1_500);
   });
 
-  it("enforces the specialized auth, arrival, runtime-screen, and state-trigger schemas", async () => {
+  it("enforces the specialized auth, arrival, and runtime-screen schemas", async () => {
     const cases: Array<[string, string, string]> = [
       ["auth-gate launch", '{"verdict":"maybe","reason":"x"}', '{"verdict":"uncertain","reason":"x"}'],
       ["arrival target", '{"verdict":"match","status":"loading","reason":"x"}', '{"verdict":"match","status":"ok","reason":"x"}'],
       ["runtime-screen inspect", '{"distinct":true}', '{"distinct":true,"key":"settings","info":"Settings"}'],
-      ["state-trigger sheet", '{"actions":[],"stateName":"Open"}', '{"actions":[],"stateName":"Open","destinationLocator":{"by":"label","value":"Close"},"note":null}'],
     ];
     for (const [role, invalid, valid] of cases) {
       const provider = new CodexAppFlowDecisionProvider(crypto.randomUUID(), "/project");

@@ -177,11 +177,6 @@ function validResponse(object: Record<string, unknown>, role: string): boolean {
     return typeof object.distinct === "boolean" &&
       (!object.distinct || (typeof object.key === "string" && typeof object.info === "string"));
   }
-  if (role.startsWith("state-trigger")) {
-    return Array.isArray(object.actions) && object.actions.every(action) &&
-      typeof object.stateName === "string" && locator(object.destinationLocator) &&
-      (object.note === null || typeof object.note === "string");
-  }
   return true;
 }
 

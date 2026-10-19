@@ -41,27 +41,6 @@ export type ExplorationMode = 'auto' | 'fast' | 'thorough'
 export type DeepLinkJudgeMode = 'on' | 'off'
 
 /**
- * Whether the sweep spends a pass trying to reveal *runtime* state variants — a bottom sheet, a
- * modal, a drawer — on the screens whose source carried a state hint.
- *
- * Opt-in, and off by default in every exploration mode. That is a deliberate change: auto and
- * thorough used to run this pass unconditionally on every hinted route. It is the most expensive
- * thing a sweep does per screen for the least certain return — the node has to be put back on
- * screen, judged, planned for by a model and then driven blind through an action sequence that
- * may reveal nothing — so it is now something a run asks for rather than something it inherits.
- *
- * - `off` — the default. No hinted route is re-reached and no `state-trigger` call is made.
- * - `on` — every hinted route is re-reached and one state variant is attempted per route.
- *
- * Independent of `ExplorationMode` on purpose. The pass is no longer built out of things Fast
- * cannot do: its base can now be re-established through the runtime navigator, which is exactly
- * the mechanism Fast's render rung already uses. What turning it on in Fast *does* cost is model
- * calls — a `state-trigger` plan and an arrival judge per hinted route — so a Fast sweep with
- * state capture on is no longer a sweep that asks a model nothing.
- */
-export type StateCaptureMode = 'off' | 'on'
-
-/**
  * One App Flow start request, as it crosses the renderer -> preload -> main boundary and as the
  * main-process service receives it. An object rather than positional arguments: the positional
  * form had reached `(projectPath, mode, screenLimit, explorationMode)` with every trailing slot
@@ -73,7 +52,6 @@ export interface StartAppFlowInput {
   screenLimit?: number
   explorationMode?: ExplorationMode
   deepLinkJudgeMode?: DeepLinkJudgeMode
-  stateCaptureMode?: StateCaptureMode
 }
 export type AppFlowSweepStatus =
   'not-requested' | 'running' | 'awaiting-user' | 'completed' | 'paused' | 'stopped' | 'failed'
@@ -129,26 +107,6 @@ export function featureGateNotice(
   return { label: 'Feature Gated', detail: `Renders <${guard.fallback}/> unless ${guard.condition}` }
 }
 
-export interface AppFlowStateHint {
-  type: 'bottom-sheet' | 'modal' | 'drawer'
-  lib: string
-  snapPoints?: number[]
-}
-
-export interface AppFlowCaptureState {
-  name: string
-  screenshot: string | null
-  replayScript?: string | null
-  /**
-   * The full `agent-device …` command list that reaches this state variant: the base screen's own
-   * `pathCommands` followed by the lines for the actions that opened the variant.
-   *
-   * Replaces `replayScript` for everything the sweep records. `replayScript` stays for documents
-   * written before this field existed; nothing produces one any more.
-   */
-  pathCommands?: string[]
-}
-
 export interface AppFlowPressable {
   text?: string
   label?: string
@@ -162,7 +120,6 @@ export interface AppFlowCapture {
   note: string | null
   screenshot: string | null
   pressables: AppFlowPressable[]
-  states: AppFlowCaptureState[]
   captureMethod?:
     | 'saved-replay'
     | 'deep-link'
@@ -311,7 +268,6 @@ export interface AppFlowNode {
   navigator: string | null
   params: string[]
   presentation: string | null
-  stateHints: AppFlowStateHint[]
   guard: AppFlowGuard | null
   capture: AppFlowCapture | null
   /** See `AppFlowDeepLinkRejection`. Absent or null: no rejection recorded, or none still current. */
@@ -613,14 +569,6 @@ export interface AgentDeviceScreenEntry {
   pathContentSelectors?: string[]
   replayScript?: string | null
   replayVerified?: boolean
-  replayStates?: Array<{
-    name: string
-    /** The command list that reaches this variant, or `[]` for an entry carried forward from a
-     *  document that only ever stored a `replayScript`. */
-    pathToReach: string[]
-    replayScript?: string | null
-    replayVerified: boolean
-  }>
 }
 
 export type AgentDeviceScreensMap = Record<string, AgentDeviceScreenEntry>
@@ -727,7 +675,7 @@ export type AppFlowPromptResolution = 'continue' | 'stop' | 'override'
 
 export interface AppFlowProgressEvent {
   type: 'phase' | 'step' | 'error' | 'prompt' | 'structure-ready' | 'complete'
-  phase: 'parse' | 'boot' | 'capture' | 'classify' | 'states' | 'render'
+  phase: 'parse' | 'boot' | 'capture' | 'classify' | 'render'
   message: string
   projectId?: string
   completed?: number

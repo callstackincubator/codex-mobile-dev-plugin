@@ -15,9 +15,9 @@
  * What this seam deliberately does NOT cover — because the plan keeps these permanently outside
  * it, not because they were missed: device boot (`bootDevice`/`waitForAppReady` at sweep start),
  * the auth gate's own body (it owns the user prompt and `manifest.sweepStatus`; `AuthPort` only
- * forwards to the `checkAuthGate` this factory is handed), the blocked-run detector
- * (`resolveBlocked`, which also owns a user prompt), and the state-variant pass. All four still
- * call `capture.ts` and `device.client` directly in `orchestrator.ts`, exactly as before.
+ * forwards to the `checkAuthGate` this factory is handed), and the blocked-run detector
+ * (`resolveBlocked`, which also owns a user prompt). All three still call `capture.ts` and
+ * `device.client` directly in `orchestrator.ts`, exactly as before.
  *
  * `path-run.ts` is imported here for the same reason `capture.ts` is: it is a device-executing
  * module, and this file is the one place under `reach/` allowed to pull one in. It is not covered

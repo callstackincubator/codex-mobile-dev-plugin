@@ -1,6 +1,6 @@
 import { AlertTriangle, Clock, Loader2, MapIcon, Pause } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import type { AppFlowBuildMode, DeepLinkJudgeMode, ExplorationMode, StateCaptureMode } from "../../shared/app-flow.ts";
+import type { AppFlowBuildMode, DeepLinkJudgeMode, ExplorationMode } from "../../shared/app-flow.ts";
 import { FAST_MODE_AUTH_NOTICE } from "../../shared/app-flow.ts";
 import type { AppFlowPanel } from "../app-flow-panel.ts";
 import { AppFlowGraph } from "./app-flow-graph.tsx";
@@ -19,14 +19,12 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   const [mode, setMode] = useState<AppFlowBuildMode>("structure-only");
   const [exploration, setExploration] = useState<ExplorationMode>("auto");
   const [deepLinkJudge, setDeepLinkJudge] = useState<DeepLinkJudgeMode>("on");
-  const [stateCapture, setStateCapture] = useState<StateCaptureMode>("off");
   const [screenLimit, setScreenLimit] = useState("");
   useEffect(() => {
     const projectPath = state.projectPath; if (!projectPath) return;
     const nextMode = stored(`app-flow-mode:${projectPath}`, "structure-only"); setMode(nextMode === "screen-ui-and-structure" ? nextMode : "structure-only");
     const nextExploration = stored(`app-flow-exploration:${projectPath}`, "auto"); setExploration(nextExploration === "fast" || nextExploration === "thorough" ? nextExploration : "auto");
     setDeepLinkJudge(stored(`app-flow-deep-link-judge:${projectPath}`, "on") === "off" ? "off" : "on");
-    setStateCapture(stored(`app-flow-state-capture:${projectPath}`, "off") === "on" ? "on" : "off");
     const limit = stored(`app-flow-screen-limit:${projectPath}`, ""); setScreenLimit(/^\d+$/.test(limit) && Number(limit) >= 1 ? limit : "");
   }, [state.projectPath]);
   const isRunning = state.state === "running" || state.state === "needs-user-action";
@@ -41,7 +39,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
     if (!state.projectPath) return;
     write(`app-flow-mode:${state.projectPath}`, mode);
     const options = { mode, ...(mode === "screen-ui-and-structure" ? { screenLimit: screenLimit ? Number(screenLimit) : undefined, explorationMode: exploration,
-      deepLinkJudgeMode: deepLinkJudge, stateCaptureMode: stateCapture } : {}) };
+      deepLinkJudgeMode: deepLinkJudge } : {}) };
     if (mode === "screen-ui-and-structure") void panel.requestAgentStart(options); else void panel.start(options);
   };
   const empty = !state.result && !isRunning;
@@ -70,19 +68,11 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
         {exploration !== "fast" && <label className="flex items-center gap-1">Deep-link check <NativeSelect size="sm" aria-label="App Flow deep-link judge" value={deepLinkJudge} disabled={isRunning} onChange={event => { const value = event.target.value as DeepLinkJudgeMode; setDeepLinkJudge(value); if (state.projectPath) write(`app-flow-deep-link-judge:${state.projectPath}`, value); }}>
           <NativeSelectOption value="on">Judge</NativeSelectOption><NativeSelectOption value="off">Screen signal</NativeSelectOption></NativeSelect></label>
         }
-        <label className="flex items-center gap-1">UI states <NativeSelect size="sm" aria-label="App Flow UI state capture" value={stateCapture} disabled={isRunning} onChange={event => { const value = event.target.value as StateCaptureMode; setStateCapture(value); if (state.projectPath) write(`app-flow-state-capture:${state.projectPath}`, value); }}>
-          <NativeSelectOption value="off">Skip</NativeSelectOption><NativeSelectOption value="on">Capture</NativeSelectOption></NativeSelect></label>
         <label className="flex items-center gap-1">Explore <Input className="w-20" aria-label="Maximum screens to explore" type="number" min={1} value={screenLimit} disabled={isRunning}
           placeholder="No limit" onChange={event => { const value = event.target.value; if (value && Number(value) < 1) return; setScreenLimit(value); if (state.projectPath) write(`app-flow-screen-limit:${state.projectPath}`, value); }} /> screens</label>
       </div>}
       {/* Fast runs have no auth gate to park on, so the sign-in has to happen before Start/Resume. */}
       {mode === "screen-ui-and-structure" && exploration === "fast" && !isRunning && <p className="w-full text-xs text-amber-600">{FAST_MODE_AUTH_NOTICE}</p>}
-      {/* Fast's promise is that nothing in it asks a model anything. State capture breaks that: it
-          spends a planner call and an arrival-judge call on every route the parser hinted carries a
-          sheet, modal or drawer. Said here rather than only in the commit message, because the cost
-          lands on the run the user is about to start. */}
-      {mode === "screen-ui-and-structure" && exploration === "fast" && stateCapture === "on" && !isRunning &&
-        <p className="w-full text-xs text-amber-600">Capturing UI states asks a model per hinted route, so this run will not be model-free.</p>}
       {mode === "screen-ui-and-structure" && !panel.canSendAgentStart && <p className="w-full text-xs text-amber-600">This host cannot send a follow-up message. Ask Codex in chat to start and service the App Flow decision loop.</p>}
     </header>
     {isRunning && state.progress && <div className="flex items-center gap-3 border-b bg-muted/40 px-4 py-2"><Loader2 className="size-4 animate-spin" />

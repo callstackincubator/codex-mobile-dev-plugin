@@ -6,7 +6,6 @@ import type {
   AppFlowGuard,
   AppFlowLayout,
   AppFlowNode,
-  AppFlowStateHint,
   AppFlowTrigger
 } from '../shared/app-flow.ts'
 
@@ -146,13 +145,6 @@ function routeMatcher(urlPath: string): RegExp {
   return new RegExp('^' + re + '/?$')
 }
 
-const SHEET_LIBS: Array<[string, string]> = [
-  ['@gorhom/bottom-sheet', 'gorhom-bottom-sheet'],
-  ['react-native-actions-sheet', 'actions-sheet'],
-  ['@lodev09/react-native-true-sheet', 'true-sheet'],
-  ['react-native-raw-bottom-sheet', 'raw-bottom-sheet']
-]
-
 /**
  * Components a screen renders *instead of itself* when a gate is closed. Anything outside this list
  * is ordinary conditional content, not a whole-screen swap, so it must not read as a guard.
@@ -209,34 +201,6 @@ export function extractGuard(src: string): AppFlowGuard | null {
     if (text) return { condition: resolveGuardCondition(src, text), fallback: returned[1] }
   }
   return null
-}
-
-function extractHints(src: string): AppFlowStateHint[] {
-  const hints: AppFlowStateHint[] = []
-  for (const [lib, label] of SHEET_LIBS) {
-    if (src.includes(lib)) {
-      const snap = src.match(/snapPoints\s*[:=][^[\n]*\[([^\]]+)\]/)
-      const snapPoints = snap
-        ? snap[1]
-            .split(',')
-            .map((s) => s.trim().replace(/["'`]/g, ''))
-            .filter(Boolean)
-            .map((s) => {
-              const n = parseFloat(s)
-              return Number.isNaN(n) ? null : n
-            })
-            .filter((n): n is number => n !== null)
-        : undefined
-      hints.push({ type: 'bottom-sheet', lib: label, snapPoints })
-    }
-  }
-  if (/useDialogControl|Dialog\.Outer/.test(src)) {
-    hints.push({ type: 'bottom-sheet', lib: 'app-dialog' })
-  }
-  if (/<Modal[\s>]/.test(src)) {
-    hints.push({ type: 'modal', lib: 'rn-modal' })
-  }
-  return hints
 }
 
 async function walk(dir: string): Promise<string[]> {
@@ -581,11 +545,7 @@ export async function parseExpoRouter(
         presentations.find((p) => e.noExt === p.prefix || e.noExt.startsWith(p.prefix + '/'))
           ?.presentation ?? null
       const src = await readFile(e.abs, 'utf-8')
-      const stateHints = extractHints(src)
       const guard = extractGuard(src)
-      if (presentation && /modal/i.test(presentation)) {
-        stateHints.push({ type: 'modal', lib: 'router-modal' })
-      }
       return {
         id: e.noExt,
         urlPath,
@@ -600,7 +560,6 @@ export async function parseExpoRouter(
         navigator: layout?.navigator ?? null,
         params,
         presentation,
-        stateHints,
         guard,
         capture: null
       }
@@ -1434,9 +1393,6 @@ export async function parseReactNavigation(projectRoot: string): Promise<ParsedA
     while (seen.has(id)) id += '_'
     seen.add(id)
     const componentSrc = componentFile ? await readFile(componentFile, 'utf-8') : ''
-    const stateHints = extractHints(componentSrc)
-    if (screen.presentation && /modal/i.test(screen.presentation))
-      stateHints.push({ type: 'modal', lib: 'router-modal' })
     const group = layoutName
     const node: AppFlowNode = {
       id,
@@ -1459,7 +1415,6 @@ export async function parseReactNavigation(projectRoot: string): Promise<ParsedA
             .map((segment) => segment.slice(1))
         : [],
       presentation: screen.presentation,
-      stateHints,
       guard: extractGuard(componentSrc),
       capture: null
     }

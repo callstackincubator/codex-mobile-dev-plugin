@@ -382,7 +382,6 @@ export function chromeVirtualNodes(chrome: readonly AppFlowChrome[]): AppFlowNod
       navigator: null,
       params: [],
       presentation: null,
-      stateHints: [],
       guard: null,
       capture: null,
       origin: 'chrome'

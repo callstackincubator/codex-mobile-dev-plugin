@@ -139,7 +139,6 @@ export function mintRuntimeNode(input: RuntimeNodeMintInput): AppFlowNode {
     navigator: null,
     params: [],
     presentation: null,
-    stateHints: [],
     guard: null,
     capture: null,
     origin: 'runtime',

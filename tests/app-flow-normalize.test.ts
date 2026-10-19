@@ -16,7 +16,6 @@ function v3Node(overrides: Partial<AppFlowNode> = {}): AppFlowNode {
     navigator: null,
     params: [],
     presentation: null,
-    stateHints: [],
     guard: null,
     capture: null,
     ...overrides,

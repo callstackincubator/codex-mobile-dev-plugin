@@ -12,10 +12,9 @@
  *
  * Each method here is a direct match for one thing the current closures already do — nothing here
  * is a capability the reach logic does not already use today. Notably absent: a raw "close session"
- * or "replay for a fixed action list" method, because neither call site that wanted one survives —
- * candidate recordings are gone with the sweep's `.ad` scripts, and the state-variant pass is
- * explicitly out of scope. See `adapters.ts`'s doc comment for which orchestrator code this seam
- * does, and does not, cover.
+ * or "replay for a fixed action list" method, because neither call site that wanted one survives:
+ * candidate recordings are gone with the sweep's `.ad` scripts. See `adapters.ts`'s doc comment
+ * for which orchestrator code this seam does, and does not, cover.
  */
 import type { AppFlowNode, AppFlowPressable } from '../../shared/app-flow.ts'
 import type { AppFlowNavigationAction } from '../capture.ts'

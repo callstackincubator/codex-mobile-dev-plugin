@@ -2763,9 +2763,8 @@ export async function executeNavigationActions(
 }
 
 // `verifyAndSaveReplay` lived here: save the live recording, close the session and replay the file
-// to prove it. Its one caller was the state-variant pass in `orchestrator.ts`, which now composes
-// a state's journey out of command lines (the base screen's `pathCommands` plus the lines for the
-// actions that open the variant) instead of recording a second `.ad` for it.
+// to prove it. Its one caller was the runtime state-variant pass in `orchestrator.ts`, which has
+// since been removed.
 
 /**
  * Drop the recorded identity of every press that hangs off the node a divergence proved unstable,

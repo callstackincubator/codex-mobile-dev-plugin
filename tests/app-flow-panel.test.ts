@@ -359,18 +359,6 @@ test("a second agent-started sweep on the same project adopts the new run", asyn
   assert.deepEqual(panel.getSnapshot().sweepSummary, { completed: 1, total: 79, message: "Home" });
 });
 
-// The dropdown that selects this is opt-in and defaults to off, so the only way the sweep ever
-// captures state variants is this value surviving the trip through the agent prompt. The panel
-// spreads start options verbatim, which is exactly the kind of pass-through that breaks silently:
-// nothing downstream complains about an option that never arrived, the run just quietly skips the
-// states pass again.
-test("state capture rides along with the sweep start options", async t => {
-  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
-  panel.setAvailable(true); await panel.selectProject("/projects/demo");
-  await panel.requestAgentStart({ mode: "screen-ui-and-structure", explorationMode: "fast", stateCaptureMode: "on" });
-  assert.match(host.messages[0].content[0].text, /"stateCaptureMode":"on"/);
-});
-
 // The freeze the user reported: the screen-sweep status stopped updating until they switched
 // projects. `requestAgentStart` clears the runId, then the discovery poll fires about a second
 // later — before Codex has called `mobile_appflow_start` — and the project-scoped status still

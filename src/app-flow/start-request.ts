@@ -10,28 +10,22 @@ import type {
   AppFlowBuildMode,
   DeepLinkJudgeMode,
   ExplorationMode,
-  StartAppFlowInput,
-  StateCaptureMode
+  StartAppFlowInput
 } from '../shared/app-flow.ts'
 
 /**
  * What an absent option means. One table so the service and its test cannot drift apart.
  * `deepLinkJudgeMode` defaults to `on`: skipping the judge changes what a sweep can tell about an
  * open, so an existing run keeps behaving exactly as it did until someone asks for the cheaper one.
- * `stateCaptureMode` defaults to `off`, which is the opposite choice and deliberately so: the
- * state pass is the one phase whose cost a caller is unlikely to have asked for, and auto and
- * thorough used to run it on every hinted route without being asked. See `StateCaptureMode`.
  */
 export const APP_FLOW_START_DEFAULTS = {
   mode: 'structure-only',
   explorationMode: 'auto',
-  deepLinkJudgeMode: 'on',
-  stateCaptureMode: 'off'
+  deepLinkJudgeMode: 'on'
 } as const satisfies {
   mode: AppFlowBuildMode
   explorationMode: ExplorationMode
   deepLinkJudgeMode: DeepLinkJudgeMode
-  stateCaptureMode: StateCaptureMode
 }
 
 /** A start request with every defaultable option filled in. */
@@ -46,8 +40,7 @@ export function resolveAppFlowStart(input: StartAppFlowInput): ResolvedAppFlowSt
     mode: input.mode ?? APP_FLOW_START_DEFAULTS.mode,
     screenLimit: input.screenLimit,
     explorationMode: input.explorationMode ?? APP_FLOW_START_DEFAULTS.explorationMode,
-    deepLinkJudgeMode: input.deepLinkJudgeMode ?? APP_FLOW_START_DEFAULTS.deepLinkJudgeMode,
-    stateCaptureMode: input.stateCaptureMode ?? APP_FLOW_START_DEFAULTS.stateCaptureMode
+    deepLinkJudgeMode: input.deepLinkJudgeMode ?? APP_FLOW_START_DEFAULTS.deepLinkJudgeMode
   }
 }
 
@@ -60,12 +53,6 @@ export function resolveAppFlowStart(input: StartAppFlowInput): ResolvedAppFlowSt
  * — which the orchestrator degrades to an `uncertain` verdict rather than a failed sweep. Auto and
  * thorough are model-driven end to end and a provider is not optional for them.
  *
- * `stateCaptureMode: 'on'` is the one thing that puts a model back into a Fast sweep. The state
- * pass spends a `state-trigger` plan and an arrival judge per hinted route, and neither degrades
- * into anything useful without a provider: an `uncertain` arrival means no base, and a missing
- * plan means no variant, so the whole opt-in phase would silently do nothing. Refusing up front
- * is the honest answer, and it is why this takes the option rather than the mode alone.
- *
  * Here rather than inline at the two call sites (`buildAppFlow`'s throw and the service's start
  * refusal) because those two must agree — a sweep the service accepts and the orchestrator then
  * throws out is a spinner that never resolves — and because this file is the one place in the
@@ -73,12 +60,10 @@ export function resolveAppFlowStart(input: StartAppFlowInput): ResolvedAppFlowSt
  */
 export function requiresDecisionProvider(
   mode: AppFlowBuildMode | undefined,
-  explorationMode: ExplorationMode | undefined,
-  stateCaptureMode?: StateCaptureMode
+  explorationMode: ExplorationMode | undefined
 ): boolean {
   if ((mode ?? APP_FLOW_START_DEFAULTS.mode) !== 'screen-ui-and-structure') return false
-  if ((explorationMode ?? APP_FLOW_START_DEFAULTS.explorationMode) !== 'fast') return true
-  return (stateCaptureMode ?? APP_FLOW_START_DEFAULTS.stateCaptureMode) === 'on'
+  return (explorationMode ?? APP_FLOW_START_DEFAULTS.explorationMode) !== 'fast'
 }
 
 export type ParsedAppFlowStart =
@@ -96,8 +81,7 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
     mode,
     screenLimit,
     explorationMode,
-    deepLinkJudgeMode,
-    stateCaptureMode
+    deepLinkJudgeMode
   } = raw as Record<string, unknown>
   if (typeof projectPath !== 'string' || projectPath.length > 4096)
     return { ok: false, error: 'Invalid project path.' }
@@ -114,8 +98,6 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
     return { ok: false, error: 'Invalid exploration mode.' }
   if (deepLinkJudgeMode !== undefined && deepLinkJudgeMode !== 'on' && deepLinkJudgeMode !== 'off')
     return { ok: false, error: 'Invalid deep-link judge mode.' }
-  if (stateCaptureMode !== undefined && stateCaptureMode !== 'on' && stateCaptureMode !== 'off')
-    return { ok: false, error: 'Invalid state capture mode.' }
   return {
     ok: true,
     input: {
@@ -123,8 +105,7 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
       mode,
       screenLimit: screenLimit as number | undefined,
       explorationMode,
-      deepLinkJudgeMode,
-      stateCaptureMode
+      deepLinkJudgeMode
     }
   }
 }

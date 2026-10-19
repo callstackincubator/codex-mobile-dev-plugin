@@ -312,8 +312,7 @@ const capture = (captureMethod: AppFlowCapture['captureMethod'], status: AppFlow
   needsNavigation: false,
   note: null,
   screenshot: status === 'missing' ? null : 'screens/example.png',
-  pressables: [],
-  states: []
+  pressables: []
 })
 
 test('checkpoint pipeline changes retain successes and re-queue unfinished screens', () => {
@@ -334,13 +333,11 @@ test('checkpoint pipeline changes retain successes and re-queue unfinished scree
       missing: capture('unreached', 'missing')
     },
     opened: { kept: { app: 'demo', url: 'demo://kept' }, missing: { app: 'demo', url: 'demo://missing' } },
-    inferred: { kept: { key: 'kept' }, missing: { key: 'missing' } },
-    statesDone: ['kept', 'missing']
+    inferred: { kept: { key: 'kept' }, missing: { key: 'missing' } }
   }, current)
   assert.equal(result.resuming, false)
   assert.equal(result.retained, 1)
   assert.deepEqual(Object.keys(result.checkpoint.captures), ['kept'])
-  assert.deepEqual(result.checkpoint.statesDone, ['kept'])
   assert.deepEqual(result.checkpoint.opened, { kept: { app: 'demo', url: 'demo://kept' } })
 })
 
@@ -359,25 +356,8 @@ test('App Flow start no longer exposes a render transport switch', () => {
     mode: 'screen-ui-and-structure',
     screenLimit: undefined,
     explorationMode: 'fast',
-    deepLinkJudgeMode: 'on',
-    stateCaptureMode: 'off'
+    deepLinkJudgeMode: 'on'
   })
-})
-
-test('state capture is opt-in and off by default, and a bad literal is rejected', () => {
-  // Off by default in *every* mode, auto included — the state pass used to run unconditionally
-  // outside Fast, and this is the line that records the change.
-  for (const explorationMode of ['auto', 'fast', 'thorough'] as const) {
-    const resolved = resolveAppFlowStart({ projectPath: '/project', explorationMode })
-    assert.equal(resolved.stateCaptureMode, 'off')
-  }
-  const on = parseAppFlowStartRequest({ projectPath: '/project', stateCaptureMode: 'on' })
-  assert.equal(on.ok, true)
-  if (on.ok) assert.equal(resolveAppFlowStart(on.input).stateCaptureMode, 'on')
-  // Rejected rather than coerced to the default, like every other literal crossing the boundary:
-  // a caller that asked for state capture and silently did not get it is the worse outcome.
-  const bad = parseAppFlowStartRequest({ projectPath: '/project', stateCaptureMode: 'yes' })
-  assert.equal(bad.ok, false)
 })
 
 test('Fast remembers a guarded render 404 and skips siblings behind the same gate', async () => {
@@ -564,14 +544,6 @@ test('a Fast sweep starts without a decision provider; every other mode still de
   // A structure build never asked for one in the first place.
   assert.equal(requiresDecisionProvider('structure-only', 'auto'), false)
   assert.equal(requiresDecisionProvider(undefined, 'auto'), false)
-  // Opting Fast into the state pass puts `state-trigger` and a real arrival judgement back on
-  // every hinted route, so that run does need a provider — and an explicit `off`, or an absent
-  // option, leaves Fast exactly where it was.
-  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast', 'on'), true)
-  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast', 'off'), false)
-  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast', undefined), false)
-  // A structure-only build runs no sweep at all, so the option cannot make it need one.
-  assert.equal(requiresDecisionProvider('structure-only', 'fast', 'on'), false)
 })
 
 test('a live feed that never goes quiet is verified from its own evidence, not by the judge', async () => {

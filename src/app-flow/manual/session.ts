@@ -401,7 +401,6 @@ export class ManualSession extends EventEmitter {
           note: 'Recorded manually',
           screenshot: outcome.screenshot,
           pressables: outcome.pressables,
-          states: [],
           captureMethod: 'manual',
           replayScript: outcome.replayScript,
           replayVerified: outcome.replayVerified,
@@ -438,8 +437,7 @@ export class ManualSession extends EventEmitter {
       pathVerified: outcome.pathToReach.length > 0,
       ...(contentSelectors.length ? { pathContentSelectors: contentSelectors } : {}),
       replayScript: outcome.replayScript,
-      replayVerified: outcome.replayVerified,
-      replayStates: []
+      replayVerified: outcome.replayVerified
     }
     await writeAgentDeviceScreens(this.projectId, screens)
   }

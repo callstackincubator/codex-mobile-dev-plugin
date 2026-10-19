@@ -33,7 +33,7 @@ export const AUTH_CHECKPOINT_SLUG = '--auth-checkpoint'
 /**
  * Screenshots the sweep needs to look at but must never keep: exploration frames and arrival
  * diagnostics. They live outside `screens/` so the delivered folder holds exactly one capture per
- * screen (plus its state variants and the two prompt screenshots the renderer displays).
+ * screen (plus the two prompt screenshots the renderer displays).
  */
 export function getScratchDir(projectId: string): string {
   return join(getProjectDir(projectId), SCRATCH_DIR_NAME)
@@ -173,11 +173,7 @@ export function screenshotUrl(
 function withScreenshotUrls(projectId: string, capture: AppFlowCapture, version: string): AppFlowCapture {
   return {
     ...capture,
-    screenshot: screenshotUrl(projectId, capture.screenshot, version),
-    states: capture.states.map((state) => ({
-      ...state,
-      screenshot: screenshotUrl(projectId, state.screenshot, version)
-    }))
+    screenshot: screenshotUrl(projectId, capture.screenshot, version)
   }
 }
 
@@ -293,13 +289,11 @@ export interface AppFlowSweepProgress {
   opened: Record<string, { app: string; url: string }>
   /** Screen identities inferred by the arrival verifier. */
   inferred: Record<string, { key?: string; info?: string | null }>
-  /** Node ids whose state-variant pass already ran. */
-  statesDone: string[]
   /**
    * Runtime-discovered nodes/edges and chrome inventories found so far this sweep (plan Steps 3d,
    * 4a), carried in the checkpoint so a resumed sweep reuses their ids instead of re-minting them
    * under different ones. Additive and optional, following the same `?? []` back-fill pattern as
-   * `captures`/`opened`/`inferred`/`statesDone` above — a checkpoint written before this round, or
+   * `captures`/`opened`/`inferred` above — a checkpoint written before this round, or
    * by code that has not started producing any of these yet, simply has none. Deliberately NOT
    * where a deep-link rejection lives (see `AppFlowDeepLinkRejection`'s doc comment in
    * `shared/app-flow.ts`): `clearSweepProgress` deletes this whole file on every completed sweep,
@@ -321,7 +315,6 @@ export async function readSweepProgress(projectId: string): Promise<AppFlowSweep
     captures: progress.captures ?? {},
     opened: progress.opened ?? {},
     inferred: progress.inferred ?? {},
-    statesDone: progress.statesDone ?? [],
     runtimeNodes: progress.runtimeNodes ?? [],
     runtimeEdges: progress.runtimeEdges ?? [],
     chrome: progress.chrome ?? []
@@ -344,10 +337,6 @@ export function generateSlug(routeId: string): string {
     .replace(/[^a-zA-Z0-9]/g, '_')
     .replace(/_+/g, '_')
     .toLowerCase()
-}
-
-export function generateStateSlug(slug: string, stateName: string): string {
-  return `${slug}--${stateName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`
 }
 
 export function getScreenshotPath(projectId: string, slug: string): string {

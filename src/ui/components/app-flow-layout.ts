@@ -1,5 +1,5 @@
 /** Pure topology layout for the App Flow graph. */
-import type { AppFlowCaptureState, AppFlowEdge, AppFlowNode } from "../../shared/app-flow.ts";
+import type { AppFlowEdge, AppFlowNode } from "../../shared/app-flow.ts";
 
 export const NODE_WIDTH = 320;
 export const NODE_HEIGHT = 760;
@@ -71,26 +71,6 @@ export function captureTally(nodes: AppFlowNode[]): CaptureTally {
     if (note && !tally.reasons.includes(note)) tally.reasons.push(note);
   }
   return tally;
-}
-
-/**
- * The state variants of a screen that can actually be shown: the opt-in state pass records a
- * variant even when its screenshot failed, and a variant with nothing to display is not a variant
- * a reader can look at. Variants are *not* screens — they live on the base node's capture, carry
- * no node id, and deliberately stay out of `captureTally`, so "Captured N of M" keeps meaning
- * screens.
- */
-export function capturedStates(node: AppFlowNode): (AppFlowCaptureState & { screenshot: string })[] {
-  const states = node.capture?.states;
-  if (!states?.length) return [];
-  return states.filter((state): state is AppFlowCaptureState & { screenshot: string } => Boolean(state.screenshot));
-}
-
-/** Total displayable state variants across the graph — one bounded number, never one per node. */
-export function capturedStateCount(nodes: AppFlowNode[]): number {
-  let total = 0;
-  for (const node of nodes) total += capturedStates(node).length;
-  return total;
 }
 
 export interface Topology {
