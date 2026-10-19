@@ -59,6 +59,22 @@ export async function listIosDevices(signal?: AbortSignal, run: DeviceCommand = 
   }));
 }
 
+const app = z.object({ bundleIdentifier: text, url: text });
+const appsResponse = z.object({ info, result: z.object({ apps: z.array(app) }) });
+
+/** Executable names of a phone's installed apps by bundle ID, read from each bundle's folder name. */
+export async function listIosAppExecutables(udid: string, signal?: AbortSignal, run: DeviceCommand = execute): Promise<Map<string, string>> {
+  const args = ["devicectl", "device", "info", "apps", "--device", udid, "--quiet", "--timeout", "10", "--omit-deprecated-fields-in-json", "--json-output", "-"];
+  const output = await run("/usr/bin/xcrun", args, { encoding: "utf8", timeout: 15000, maxBuffer: 8 * 1024 * 1024, signal });
+  const parsed = appsResponse.parse(JSON.parse(output.stdout));
+  const executables = new Map<string, string>();
+  for (const { bundleIdentifier, url } of parsed.result.apps) {
+    const folder = /\/([^/]+)\.app\/?$/.exec(url)?.[1];
+    if (folder) executables.set(bundleIdentifier, decodeURIComponent(folder));
+  }
+  return executables;
+}
+
 export function registerIosDeviceTools(server: McpServer, discover: () => Promise<PhysicalIosDevice[]> = listIosDevices) {
   const physicalDevices = z.array(physicalIosDeviceSchema);
   const failures = new FailureEpisodes();

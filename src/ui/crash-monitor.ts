@@ -14,10 +14,9 @@ type Snapshot = {
 };
 
 function crashTarget(device?: SimulatorDevice): CrashWatchTarget | undefined {
+  if (device?.platform === "ios" && device.kind === "physical") return device.state === "connected" ? { platform: "ios", kind: "physical", deviceId: device.udid } : undefined;
   if (!device || device.state !== "Booted") return;
   if (device.platform === "android") return { platform: "android", deviceId: device.udid };
-  // Physical iPhones keep crash reports on the device.
-  if (device.kind === "physical") return;
   return { platform: "ios", deviceId: device.udid };
 }
 
@@ -110,8 +109,9 @@ export class CrashMonitor {
     if (sameProcess && !crash.stack) return;
     clearTimeout(this.reportTimer);
     const reportPending = crash.origin === "ios" && !crash.stack;
+    // A physical iPhone's report is copied off the phone, so the server keeps looking for up to two minutes.
     if (reportPending) {
-      this.reportTimer = setTimeout(() => this.update({ reportPending: false }), 60000);
+      this.reportTimer = setTimeout(() => this.update({ reportPending: false }), 120000);
     }
     if (sameProcess) {
       countUiEvent("ui.crash.report_attached");

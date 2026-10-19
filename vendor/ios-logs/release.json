@@ -1,7 +1,7 @@
 {
   "name": "mobile-dev-ios-logs",
   "target": "darwin-arm64",
-  "sourceSHA256": "c47ec02574d77cdcb963955bf1ee491139bb5052c308e8fef6ee3eaa56581b64",
+  "sourceSHA256": "ad67281cbbe499b25cf7ae2bf220a544e3a4f3f5f917b221c03f5f2f3d160ef8",
   "sources": [
     {
       "name": "libplist",
@@ -34,39 +34,39 @@
       "sha256": "23cc0077e221c7d991bd0eb02150a0d49199bcca1ddf059edccee9ffd914939d"
     }
   ],
-  "openssl": "OpenSSL 3.6.2 7 Apr 2026 (Library: OpenSSL 3.6.2 7 Apr 2026)",
+  "openssl": "OpenSSL 3.6.3 9 Jun 2026 (Library: OpenSSL 3.6.3 9 Jun 2026)",
   "binaries": {
     "mobile-dev-ios-logs": {
-      "sha256": "eb09c5d9e85cf462ee59cd8a192e83f3c15dad442d027896f12a6fb6b554d0d1",
-      "bytes": 384944
+      "sha256": "21097f489d8169c0c997c1fd21c26f023794840cf2a1478ea26277c908c0d6a3",
+      "bytes": 385536
     },
     "libimobiledevice-1.0.6.dylib": {
-      "sha256": "229bb457ff0b3b701045ed124e3fdbce0e2115daf01b163735dcfba69c765927",
+      "sha256": "6a10d929ff31c95f6e51d2ee1c57392cff4125e2a318cb2b30255137c29562ab",
       "bytes": 278608
     },
     "libimobiledevice-glue-1.0.0.dylib": {
-      "sha256": "e2fa173219ed5b6352d76232556b499cdac255cf28b0e277a8867e6b7a1615b8",
+      "sha256": "afbd4e3baa9920ff66d5fadc6cf0dc1101a546c0225e816516d5ab9538894324",
       "bytes": 79568
     },
     "libplist-2.0.12.dylib": {
-      "sha256": "205279316a58b20e84495fdfdb8d9f860e5197e1602bfd7e80f75a7bcced1ee6",
+      "sha256": "8b04d03f707f0e325f92763e4b329454a595bbb2479f49776a856826535ee1f4",
       "bytes": 114976
     },
     "libtatsu.0.dylib": {
-      "sha256": "3a85f550bca667dc9ff46ccb72fe716b33b9f13126d34dfb0bc88f6176fd2a1f",
+      "sha256": "b3432f9b8e3d45284fc7f041c8c7f16e585e243571c04c397eb0421c27455034",
       "bytes": 55408
     },
     "libusbmuxd-2.0.7.dylib": {
-      "sha256": "fad3c8ea428fe603b894133d64610921ddd573e7951a9670b11ea54b03fd584b",
+      "sha256": "5c429ac0a1673205f88b91b570fc51fe8eb7920b12b1b4299e8463e7a77af0d6",
       "bytes": 71984
     },
     "libssl.3.dylib": {
-      "sha256": "11291c1d6f0527e20448dc06d5bc93f839f33f22a552cf24d6edbd0d1160d158",
-      "bytes": 866576
+      "sha256": "e5b125734246020bbd812e2f7dd2ea19e302608d15ac44ae8bf36ba73799c8fb",
+      "bytes": 882816
     },
     "libcrypto.3.dylib": {
-      "sha256": "fe33b1fe402dc6f540edb1b10e5619f9ddc3dfa90d0ae977c0e0843019495eba",
-      "bytes": 4827728
+      "sha256": "7b074ac6ddc685fe2b2c69669eb1ce9797517e53a3913830b58ee5e8238c52b9",
+      "bytes": 4842528
     }
   }
 }

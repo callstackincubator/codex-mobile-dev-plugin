@@ -4,7 +4,8 @@ import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { AndroidCrashCollector, crashWatchFor, iosCrashLogPredicate, parseIosAppExit, parseIosCrashLog, parseIosCrashReport, watchIosCrashReports } from "../src/server/crash-reports.ts";
+import { AndroidCrashCollector, crashWatchFor, iosCrashLogPredicate, parseIosAppExit, parseIosCrashLog, parseIosCrashReport, watchIosCrashReports, watchPhysicalIosCrashes } from "../src/server/crash-reports.ts";
+import { listIosAppExecutables } from "../src/server/ios-devices.ts";
 import { parseLogcat } from "../src/server/log-parsers.ts";
 import { formatLogContext, logKey } from "../src/shared/logs.ts";
 import type { CrashWatchTarget, LogRecord, StackedLog } from "../src/shared/logs.ts";
@@ -54,6 +55,17 @@ test("iOS crash reports from other simulators, the host, or partial writes are i
   assert.equal(parseIosCrashReport(ipsReport("99999999-2222-3333-4444-555555555555"), udid), undefined);
   assert.equal(parseIosCrashReport(ipsReport(udid, { procPath: "/Applications/Blender.app/Contents/MacOS/Blender" }), udid), undefined);
   assert.equal(parseIosCrashReport(ipsReport().slice(0, 300), udid), undefined);
+});
+
+const phoneUdid = "00008110-001A2B3C4D5E6F70";
+const phoneReport = (pid = 4242) => ipsReport(udid, { pid, procPath: "/private/var/containers/Bundle/Application/ABC/Example.app/Example" });
+
+test("physical iPhone crash reports parse without a simulator path", () => {
+  const record = parseIosCrashReport(phoneReport())!;
+  assert.equal(record.appId, "com.example.app");
+  assert.equal(record.process, "Example");
+  assert.match(record.stack!, /Thread 0 crashed/);
+  assert.equal(parseIosCrashReport(phoneReport(), udid), undefined);
 });
 
 test("the simulator crash watcher reports new matching reports once and stops on abort", async () => {
@@ -194,8 +206,8 @@ test("log sessions watch crashes for the same app or process as their native tar
     emit!({ ...crash, appId: "com.other.app" });
     emit!({ ...crash, appId: "com.example.app" });
     assert.deepEqual((await logs.read(id, 0, 0)).entries.map(entry => entry.appId), ["com.example.app"]);
-    logs.open({ native: { platform: "ios", kind: "physical", deviceId: "00008110-001A2B3C4D5E6F70" } });
-    assert.equal(targets.length, 1);
+    logs.open({ native: { platform: "ios", kind: "physical", deviceId: phoneUdid } });
+    assert.deepEqual(targets[1], { platform: "ios", kind: "physical", deviceId: phoneUdid });
   } finally { await logs.close(); }
   const ios = crashWatchFor({ platform: "ios", deviceId: "C6C04008-45B0-431B-9BA8-96BE5BE99C56", process: "Expo Go" })!;
   assert.equal(ios.includes({ timestamp: "", level: "error", source: "native", origin: "ios", message: "", process: "Expo Go" }), true);
@@ -208,7 +220,8 @@ function crashMonitorFixture() {
   Object.defineProperty(globalThis, "document", { value: visibility, configurable: true });
   let emit: ((crash: LogRecord) => void) | undefined;
   const calls: string[] = [];
-  const logs = new LogSessions({ native: () => async () => {}, metro: () => async () => {}, crashes: (_target, next) => { emit = next; return async () => {}; } });
+  const targets: CrashWatchTarget[] = [];
+  const logs = new LogSessions({ native: () => async () => {}, metro: () => async () => {}, crashes: (target, next) => { targets.push(target); emit = next; return async () => {}; } });
   const app = {
     async callServerTool(input: { name: string; arguments: { target?: CrashWatchTarget; sessionId?: string } }) {
       calls.push(input.name);
@@ -237,7 +250,7 @@ function crashMonitorFixture() {
   monitor.connect(app as never, context as unknown as PanelContext);
   const crash = (message: string, deviceId = "emulator-5554"): LogRecord => ({ timestamp: "2026-10-19T10:00:00Z", level: "error", source: "native", origin: "android", kind: "crash", deviceId, appId: "host.exp.exponent", message, stack: "at main" });
   const until = async (condition: () => boolean) => { for (let attempt = 0; attempt < 100 && !condition(); attempt++) await delay(10); assert.ok(condition()); };
-  return { monitor, context, calls, logs, crash, until, emit: (record: LogRecord) => emit!(record), ready: () => emit !== undefined };
+  return { monitor, context, calls, targets, logs, crash, until, emit: (record: LogRecord) => emit!(record), ready: () => emit !== undefined };
 }
 
 const emulator = { udid: "emulator-5554", name: "Pixel 9", state: "Booted", runtime: "Android 16", platform: "android", kind: "emulator" } as const;
@@ -294,14 +307,18 @@ test("an iOS exit crash shows at once, then gains its stack and keeps an early a
   } finally { monitor.dispose(); await logs.close(); }
 });
 
-test("the crash toast skips physical iPhones and clears when switching devices", async () => {
-  const { monitor, calls, logs, crash, until, emit, ready } = crashMonitorFixture();
+test("the crash toast watches connected iPhones and clears when switching devices", async () => {
+  const { monitor, calls, targets, logs, crash, until, emit, ready } = crashMonitorFixture();
+  const phone = { udid: phoneUdid, name: "iPhone", state: "connected", runtime: "", platform: "ios", kind: "physical" } as never;
   try {
-    monitor.configure({ udid: "00008110-001A2B3C4D5E6F70", name: "iPhone", state: "connected", runtime: "", platform: "ios", kind: "physical" } as never, true);
+    monitor.configure({ ...(phone as object), state: "disconnected" } as never, true);
     await delay(20);
     assert.deepEqual(calls, []);
-    monitor.configure(emulator, true);
+    monitor.configure(phone, true);
     await until(ready);
+    assert.deepEqual(targets, [{ platform: "ios", kind: "physical", deviceId: phoneUdid }]);
+    monitor.configure(emulator, true);
+    await until(() => targets.length === 2);
     emit(crash("boom"));
     await until(() => monitor.getSnapshot().crash !== undefined);
     monitor.configure(emulator, false);
@@ -310,4 +327,42 @@ test("the crash toast skips physical iPhones and clears when switching devices",
     monitor.configure({ ...emulator, udid: "emulator-5556" }, true);
     assert.equal(monitor.getSnapshot().crash, undefined);
   } finally { monitor.dispose(); await logs.close(); }
+});
+// SpringBoard's exit line as the phone's log relay prints it.
+const relayExit = (pid: number) => JSON.stringify({ timestamp: "2026-10-19T10:00:00.250000Z", messageType: "Notice", processID: 34, process: "SpringBoard",
+  eventMessage: `Process exited: <FBApplicationProcess: 0x1; app<com.example.app>:${pid}(v1A2)> -> <RBSProcessExitContext| specific, voluntary; status:<RBSProcessExitStatus| domain:signal(2) code:SIGABRT(6)>>` });
+
+test("physical iPhone exits show at once, then pick up the report copied off the phone", async () => {
+  const controller = new AbortController();
+  const records: LogRecord[] = [];
+  const polls: number[] = [];
+  const script = `console.log('{"ready":true}'); console.log(${JSON.stringify(relayExit(4242))}); setInterval(() => {}, 1000);`;
+  const watching = watchPhysicalIosCrashes(phoneUdid, record => records.push(record), controller.signal, {
+    exits: async target => { assert.equal(target.process, "SpringBoard"); return { command: process.execPath, args: ["-e", script] }; },
+    // The first copy has only another process's report; the next one has this crash's.
+    reports: async (_udid, since) => { polls.push(since); return polls.length === 1 ? [{ name: "a.ips", modified: 0, text: phoneReport(1) }] : [{ name: "b.ips", modified: 0, text: phoneReport() }]; },
+    executables: async () => new Map([["com.example.app", "Example"]]),
+  }, 10);
+  try {
+    for (let attempt = 0; attempt < 200 && records.length < 2; attempt++) await delay(10);
+    assert.equal(records.length, 2);
+    assert.deepEqual({ ...records[0], timestamp: undefined }, { timestamp: undefined, level: "error", source: "native", origin: "ios", kind: "crash",
+      appId: "com.example.app", pid: 4242, process: "Example", reason: "SIGABRT", message: "Example crashed: SIGABRT" });
+    assert.equal(records[0].timestamp, "2026-10-19T10:00:00.250Z");
+    assert.equal(polls[0], Date.parse("2026-10-19T10:00:00.250Z") - 5000);
+    assert.equal(records[1].pid, 4242);
+    assert.match(records[1].stack!, /Thread 0 crashed/);
+  } finally { controller.abort(); await watching; }
+});
+
+test("installed iPhone apps map bundle IDs to executable names", async () => {
+  const stdout = JSON.stringify({ info: { jsonVersion: 5, outcome: "success" }, result: { apps: [
+    { bundleIdentifier: "com.example.app", url: "file:///private/var/containers/Bundle/Application/ABC/Pump%20Party.app/" },
+    { bundleIdentifier: "com.example.odd", url: "file:///private/var/containers/Bundle/Application/DEF/" },
+  ] } });
+  const executables = await listIosAppExecutables(phoneUdid, undefined, async (_file, args) => {
+    assert.deepEqual(args.slice(0, 6), ["devicectl", "device", "info", "apps", "--device", phoneUdid]);
+    return { stdout };
+  });
+  assert.deepEqual([...executables], [["com.example.app", "Pump Party"]]);
 });

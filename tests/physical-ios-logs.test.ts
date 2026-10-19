@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import childProcess from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
 import { promisify } from "node:util";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -14,7 +14,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { nativeLogTargetSchema } from "../src/shared/logs.ts";
 import type { LogRecord, LogSourceStatus } from "../src/shared/logs.ts";
 import type { PhysicalIosDevice } from "../src/shared/ios-devices.ts";
-import { physicalIosLogCommand } from "../src/server/physical-ios-logs.ts";
+import { physicalIosCrashReports, physicalIosLogCommand } from "../src/server/physical-ios-logs.ts";
 import type { PhysicalIosLogTarget } from "../src/server/physical-ios-logs.ts";
 import { startNativeLogs } from "../src/server/native-logs.ts";
 import { LogSessions } from "../src/server/log-sessions.ts";
@@ -63,6 +63,18 @@ test("physical readers reuse discovery UDIDs and select its current USB or Wi-Fi
   await assert.rejects(unpaired, /not paired/);
   const absent = physicalIosLogCommand(target, undefined, async () => [], helper);
   await assert.rejects(absent, /no longer connected/);
+});
+
+test("physical crash reports come from the bundled reader's report mode", { skip: process.platform !== "darwin" }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mobile-dev-crash-reader-"));
+  try {
+    const helper = join(directory, "reader");
+    const report = JSON.stringify({ name: "Example-2026-10-19-120000.ips", modified: 1760868000000, text: "{}\n{}" });
+    await writeFile(helper, `#!/bin/sh\n[ "$*" = "--device ${phone.udid} network --crash-reports 1760867995000" ] || exit 3\nprintf '%s\\n' '${report}' 'not json'\n`);
+    await chmod(helper, 0o755);
+    const reports = await physicalIosCrashReports(phone.udid, 1760867995000.5, undefined, async () => [{ ...phone, transportType: "localNetwork" }], pathToFileURL(helper));
+    assert.deepEqual(reports, [JSON.parse(report)]);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test("closing physical logs cancels pending discovery without spawning a reader", { skip: process.platform !== "darwin", timeout: 1000 }, async t => {

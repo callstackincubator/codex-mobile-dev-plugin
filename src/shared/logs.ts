@@ -22,7 +22,8 @@ export const metroLogTargetSchema = z.object({ url: z.string().max(2048), target
 export const logOptionsSchema = z.object({ native: nativeLogTargetSchema.optional(), metro: metroLogTargetSchema.optional() })
   .strict().refine(value => value.native || value.metro, "Choose a native device or Metro target.");
 export const crashWatchTargetSchema = z.union([
-  z.object({ platform: z.literal("ios"), deviceId: udidSchema }).strict(),
+  z.object({ platform: z.literal("ios"), kind: z.literal("simulator").optional(), deviceId: udidSchema }).strict(),
+  z.object({ platform: z.literal("ios"), kind: z.literal("physical"), deviceId: physicalUdid }).strict(),
   z.object({ platform: z.literal("android"), deviceId: z.string().regex(/^[a-zA-Z0-9._:-]{1,128}$/) }).strict(),
 ]);
 export type CrashWatchTarget = z.infer<typeof crashWatchTargetSchema>;
