@@ -70,6 +70,10 @@ import { listMetroTargets, type MetroCdpTarget } from './cdp/discovery.ts'
 import type { LinksReply, NavigateReply, NavStateReply, ReadinessReply } from './cdp/agent-runtime.ts'
 import { LINK_CANDIDATE_CAP } from './cdp/agent-runtime.ts'
 import { agentSource } from './cdp/runtime-source.ts'
+import { ExpectedOperationError } from '../shared/error-reporting.ts'
+import { captureServerError } from '../server/telemetry.ts'
+import { attachSweepUiStates, createSweepUiStateCapturer } from './explore-ui.ts'
+import { openSweepUiStateSession } from './explore-ui-run.ts'
 import {
   AUTH_GATE_FRAME_WAIT_MS,
   settlesAuthGateForRun,
@@ -337,6 +341,12 @@ export interface AppFlowBuildOptions {
    * what stands in for the judge's `status: 'not-found'` when it is `off`.
    */
   deepLinkJudgeMode?: DeepLinkJudgeMode
+  /**
+   * Also capture each delivered screen's UI states (sheets, modals, dialogs its own source proves
+   * it can open) while the device is still standing on it. Omitted means off. A failure here never
+   * fails the sweep; see `createSweepUiStateCapturer`.
+   */
+  captureUiStates?: boolean
   /** An app the user already launched. The sweep adopts it instead of building and booting again. */
   launchedDevice?: CaptureDevice
   onEvent(event: AppFlowProgressEvent): void
@@ -1654,6 +1664,61 @@ export async function buildAppFlow(
         // had, so the poll's behaviour outside Fast is unchanged.
         settleDeadlinesMs: options.explorationMode === 'fast' ? [3_000, 8_000] : [8_000]
       })
+
+      /**
+       * UI-state capture, folded into the sweep: while the device is still standing on a screen
+       * this sweep has just delivered, open each UI state its own source proves it can open,
+       * photograph it and roll it back (`explore-ui.ts`). Opt-in, and a second pass over every
+       * screen is exactly what this replaces.
+       *
+       * Per project, once: the static catalog and the connection. This rides the sweep's own CDP
+       * runtime (`renderTransport.ready()` is idempotent — Fast already holds it, and auto/thorough
+       * open it here on first use and `close` it with the sweep) rather than dialling a second
+       * debugger onto the same Hermes target. Per screen, inside the primitive: the live-binding
+       * collection, because bindings only exist for what is mounted.
+       *
+       * Progress goes out as `step` events carrying the sweep's own counters. The pass's
+       * per-state `completed`/`total` are deliberately dropped: the panel reads those fields as
+       * the sweep summary, and a state count there would read as a screen count.
+       */
+      const uiStateCapturer = options.captureUiStates
+        ? createSweepUiStateCapturer({
+            signal,
+            note: (message) =>
+              emit(projectId, onEvent, {
+                type: 'step',
+                phase: 'capture',
+                message,
+                completed: sweepQueue.completed,
+                total: sweepQueue.total,
+                captured: explorationControl.screensExplored,
+                captureLimit: options.screenLimit
+              }),
+            report: (error) => captureServerError(error, 'app_flow.capture_ui_states'),
+            open: async () => {
+              const ready = await renderTransport.ready()
+              const runtime = fastRuntime
+              if (!ready.ok || !runtime) {
+                // A benign state of the surface (Metro down, an app that refused the agent), so the
+                // reporter counts it rather than filing an exception.
+                throw new ExpectedOperationError(
+                  'device_unavailable',
+                  `the app’s runtime could not be reached (${ready.ok ? 'not connected' : ready.reason})`
+                )
+              }
+              return openSweepUiStateSession({
+                projectPath,
+                projectId,
+                ctx,
+                device,
+                runtime,
+                signal,
+                // Per-state `phase`/`step` messages from the pass are not forwarded: see above.
+                emit: () => undefined
+              })
+            }
+          })
+        : null
 
       // A sweep with no decision provider is only reachable in Fast (see the throw above), and the
       // one role that can still be asked for there is the arrival judge, on a node whose runtime
@@ -4429,7 +4494,17 @@ export async function buildAppFlow(
           captureMethod: captureMethod as NonNullable<AppFlowCapture['captureMethod']>,
           structureRevision
         })
-        captureMap[node.id] = delivery.capture
+        // The device is still standing on this screen — it was reached and verified above and
+        // nothing has navigated since — which is the only moment its UI states can be opened
+        // without visiting the screen a second time. Only a screen that actually delivered a
+        // screenshot is worth presenting things on. The states are *returned* and attached to
+        // this node's capture here, so they ride the same `captureMap` / checkpoint publish as the
+        // rest of the capture instead of a second write path. Awaited to completion — including
+        // the rollback to level 0 — before the loop advances, because the next screen is reached
+        // from this very device. `capture` never throws: a failure here costs this node its
+        // states, never the sweep.
+        const nodeCapture = await attachSweepUiStates(uiStateCapturer, node, delivery)
+        captureMap[node.id] = nodeCapture
         // Closes this node's run-log record. Counts and timings only — see `SweepLogPort` for
         // what deliberately never goes in it.
         const nodeLog = sweepLog?.node(node.id)
@@ -4682,6 +4757,7 @@ export class AppFlowBuilder extends EventEmitter {
     screenLimit?: number
     explorationMode?: ExplorationMode
     deepLinkJudgeMode?: DeepLinkJudgeMode
+    captureUiStates?: boolean
     launchedDevice?: CaptureDevice
   }): Promise<void> {
     if (this.running) throw new Error('Build already in progress')

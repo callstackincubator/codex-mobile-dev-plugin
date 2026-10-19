@@ -853,10 +853,11 @@ test("explore-ui presentation metrics carry a closed outcome/kind pair and honor
   recordRuntimeTiming("app_flow.runtime.presentation", 412, { outcome: "captured", kind: "state" });
   recordRuntimeTiming("app_flow.runtime.presentation", 2100, { outcome: "failed", kind: "control" });
   recordRuntimeTiming("app_flow.runtime.presentation_pass", 9400, { outcome: "completed" });
+  recordRuntimeTiming("app_flow.runtime.presentation_open_session", 640, { outcome: "ready" });
   recordRuntimeAmount("app_flow.runtime.presentation_unbound", 7, { stage: "configure" });
   await Sentry.flush();
   const emitted = JSON.stringify(envelopes);
-  for (const name of ["app_flow.runtime.presentation", "app_flow.runtime.presentation_pass", "app_flow.runtime.presentation_unbound"]) contains(emitted, name);
+  for (const name of ["app_flow.runtime.presentation", "app_flow.runtime.presentation_pass", "app_flow.runtime.presentation_open_session", "app_flow.runtime.presentation_unbound"]) contains(emitted, name);
   contains(emitted, "millisecond");
   contains(emitted, '"surface":{"value":"app-flow"');
   contains(emitted, '"outcome":{"value":"captured"');
@@ -871,7 +872,44 @@ test("explore-ui presentation metrics carry a closed outcome/kind pair and honor
   process.env.MOBILE_DEV_TELEMETRY = "off";
   recordRuntimeTiming("app_flow.runtime.presentation", 50, { outcome: "captured", kind: "mount" });
   recordRuntimeTiming("app_flow.runtime.presentation_pass", 60, { outcome: "failed" });
+  recordRuntimeTiming("app_flow.runtime.presentation_open_session", 60, { outcome: "unavailable" });
   recordRuntimeAmount("app_flow.runtime.presentation_unbound", 3, { stage: "configure" });
   await Sentry.flush();
   assert.equal(JSON.stringify(envelopes), before, "Opt-out silences every explore-ui metric.");
+});
+
+test("the sweep's in-line UI-state capture emits the same app-flow series, attributed to the sweep and free of screen names", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  const { createSweepUiStateCapturer } = await import("../src/app-flow/explore-ui.ts");
+  const capturer = createSweepUiStateCapturer({
+    note() {},
+    open: async () => ({
+      catalog: { states: [], actions: [{ id: "open-1", name: "SettingsSheet", file: "src/Screen.tsx", line: 1, owner: "S", component: "B", prop: "p", effect: { kind: "state", site: "s", path: [], value: true } }] },
+      ports: {
+        runtime: {
+          async setup() { return { ok: true, bindings: 1, matched: 1 }; },
+          async configure() { return { configured: 0 }; },
+          async list() { return { available: [{ id: "open-1", kind: "state" }], unavailable: 0 }; },
+          async open() { return { ok: true, kind: "state", checkpoint: 1 }; },
+          async rollback() { return { ok: true, checkpoint: 0 }; },
+        },
+        async bind() { return []; }, async settle() {}, async screenshot(slug: string) { return `screens/${slug}.png`; }, emit() {},
+      },
+    } as never),
+  });
+  await capturer.capture({ id: "HomeTab/Home", slug: "home" });
+  await Sentry.flush();
+  const emitted = JSON.stringify(envelopes);
+  for (const name of ["app_flow.runtime.presentation", "app_flow.runtime.presentation_pass", "app_flow.runtime.presentation_open_session", "app_flow.runtime.presentation_unbound"]) contains(emitted, name);
+  contains(emitted, '"surface":{"value":"app-flow"');
+  contains(emitted, '"outcome":{"value":"completed"');
+  contains(emitted, '"outcome":{"value":"ready"');
+  contains(emitted, "SettingsSheet", false);
+  contains(emitted, "HomeTab/Home", false);
+  contains(emitted, "home_state_open_1", false);
 });

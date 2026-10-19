@@ -52,6 +52,12 @@ export interface StartAppFlowInput {
   screenLimit?: number
   explorationMode?: ExplorationMode
   deepLinkJudgeMode?: DeepLinkJudgeMode
+  /**
+   * Also capture each screen's UI states (sheets, modals, dialogs its own source proves it can
+   * open) while the sweep is standing on it. Omitted means off. Only the screen sweep
+   * (`screen-ui-and-structure`) reads it; a structure-only build has no device to open them on.
+   */
+  captureUiStates?: boolean
 }
 export type AppFlowSweepStatus =
   'not-requested' | 'running' | 'awaiting-user' | 'completed' | 'paused' | 'stopped' | 'failed'
@@ -154,8 +160,8 @@ export interface AppFlowCapture {
   screenshot: string | null
   pressables: AppFlowPressable[]
   /**
-   * UI states opened on this screen by `mobile_appflow_explore_ui`. Absent on every capture the
-   * explore pass never visited, and on every document written before this field existed. See
+   * UI states opened on this screen, either by the sweep's "Capture UI states" option or by
+   * `mobile_appflow_explore_ui`. Absent on every capture neither visited, and on every document written before this field existed. See
    * `AppFlowUiState` for why these are not nodes.
    */
   uiStates?: AppFlowUiState[]

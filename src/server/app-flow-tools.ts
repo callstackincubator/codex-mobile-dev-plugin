@@ -106,6 +106,7 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost, proje
       screenLimit: z.number().int().min(1).max(1000).optional(),
       explorationMode: z.enum(["auto", "fast", "thorough"]).optional(),
       deepLinkJudgeMode: z.enum(["on", "off"]).optional(),
+      captureUiStates: z.boolean().optional(),
     },
     annotations: write,
     _meta: sharedVisibility,

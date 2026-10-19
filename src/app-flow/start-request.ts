@@ -17,15 +17,18 @@ import type {
  * What an absent option means. One table so the service and its test cannot drift apart.
  * `deepLinkJudgeMode` defaults to `on`: skipping the judge changes what a sweep can tell about an
  * open, so an existing run keeps behaving exactly as it did until someone asks for the cheaper one.
+ * `captureUiStates` defaults to off for the same reason: it adds device work to every screen.
  */
 export const APP_FLOW_START_DEFAULTS = {
   mode: 'structure-only',
   explorationMode: 'auto',
-  deepLinkJudgeMode: 'on'
+  deepLinkJudgeMode: 'on',
+  captureUiStates: false
 } as const satisfies {
   mode: AppFlowBuildMode
   explorationMode: ExplorationMode
   deepLinkJudgeMode: DeepLinkJudgeMode
+  captureUiStates: boolean
 }
 
 /** A start request with every defaultable option filled in. */
@@ -40,7 +43,8 @@ export function resolveAppFlowStart(input: StartAppFlowInput): ResolvedAppFlowSt
     mode: input.mode ?? APP_FLOW_START_DEFAULTS.mode,
     screenLimit: input.screenLimit,
     explorationMode: input.explorationMode ?? APP_FLOW_START_DEFAULTS.explorationMode,
-    deepLinkJudgeMode: input.deepLinkJudgeMode ?? APP_FLOW_START_DEFAULTS.deepLinkJudgeMode
+    deepLinkJudgeMode: input.deepLinkJudgeMode ?? APP_FLOW_START_DEFAULTS.deepLinkJudgeMode,
+    captureUiStates: input.captureUiStates ?? APP_FLOW_START_DEFAULTS.captureUiStates
   }
 }
 
@@ -81,7 +85,8 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
     mode,
     screenLimit,
     explorationMode,
-    deepLinkJudgeMode
+    deepLinkJudgeMode,
+    captureUiStates
   } = raw as Record<string, unknown>
   if (typeof projectPath !== 'string' || projectPath.length > 4096)
     return { ok: false, error: 'Invalid project path.' }
@@ -98,6 +103,8 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
     return { ok: false, error: 'Invalid exploration mode.' }
   if (deepLinkJudgeMode !== undefined && deepLinkJudgeMode !== 'on' && deepLinkJudgeMode !== 'off')
     return { ok: false, error: 'Invalid deep-link judge mode.' }
+  if (captureUiStates !== undefined && typeof captureUiStates !== 'boolean')
+    return { ok: false, error: 'Capture UI states must be true or false.' }
   return {
     ok: true,
     input: {
@@ -105,7 +112,8 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
       mode,
       screenLimit: screenLimit as number | undefined,
       explorationMode,
-      deepLinkJudgeMode
+      deepLinkJudgeMode,
+      captureUiStates
     }
   }
 }

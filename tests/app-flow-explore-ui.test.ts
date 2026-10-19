@@ -14,13 +14,17 @@ import { AppFlowProjectChoices } from "../src/server/app-flow-projects.ts";
 import { AppFlowHost, type AppFlowHostServices } from "../src/server/app-flow-host.ts";
 import { registerAppFlowTools } from "../src/server/app-flow-tools.ts";
 import {
+  EXPLORE_UI_SWEEP_LIMIT,
+  attachSweepUiStates,
   attributeToNode,
+  captureScreenUiStates,
+  createSweepUiStateCapturer,
   exploreUiStates,
   uiStateSlug,
   type ExploreUiPorts,
   type ExploreUiRuntimePort,
 } from "../src/app-flow/explore-ui.ts";
-import type { AppFlowNode, AppFlowPresentationAction, AppFlowPresentations } from "../src/shared/app-flow.ts";
+import type { AppFlowCapture, AppFlowNode, AppFlowPresentationAction, AppFlowPresentations } from "../src/shared/app-flow.ts";
 
 function action(id: string, name: string, overrides: Partial<AppFlowPresentationAction> = {}): AppFlowPresentationAction {
   return {
@@ -239,4 +243,177 @@ test("two variants that pick the same name on one screen get distinct screenshot
   assert.equal(uiStateSlug("home", "open-1", used), "home_state_open_1");
   assert.equal(uiStateSlug("home", "open-1", used), "home_state_open_1_2");
   assert.equal(uiStateSlug("home", "open/1", used), "home_state_open_1_3");
+});
+
+// ---- The sweep's in-line capture: one catalog, one session, many screens ------------------------
+
+/** A sweep session over a recording runtime: `available` is what `list` offers on every screen. */
+function sweepSession(available: string[], log: string[], overrides: Partial<ExploreUiRuntimePort> = {}, screenshots: string[] = [], signal?: AbortSignal) {
+  const entries = available.map(id => action(id, `Sheet ${id}`));
+  const runtimePort = runtime({
+    async setup() { log.push("setup"); return { ok: true, bindings: 1, matched: 1 }; },
+    async list() { log.push("list"); return { available: available.map(id => ({ id, kind: "state" as const })), unavailable: 0 }; },
+    ...overrides,
+  }, log);
+  const { focusedRoute: _focusedRoute, ...screenPorts } = ports(runtimePort, {
+    async screenshot(slug) { log.push(`shot:${slug}`); screenshots.push(slug); return `screens/${slug}.png`; },
+    ...(signal ? { signal } : {}),
+  });
+  return { catalog: catalog(entries), ports: screenPorts };
+}
+
+test("the per-screen primitive targets the node it is given and never asks the device which screen it is on", async () => {
+  const log: string[] = [];
+  const session = sweepSession(["a"], log);
+  let asked = false;
+  const outcome = await captureScreenUiStates({ catalog: session.catalog, node: { id: "Settings", slug: "settings" } }, {
+    ...session.ports, ...({ focusedRoute: async () => { asked = true; return "Home"; } } as object),
+  });
+  assert.equal(asked, false);
+  assert.deepEqual(outcome.uiStates.map(state => state.screenshot), ["screens/settings_state_a.png"]);
+  assert.equal(outcome.rolledBack, true);
+  assert.equal(outcome.error, undefined);
+});
+
+test("the sweep captures per delivered screen: the session opens once, collection runs per screen, rollback precedes the next screen", async () => {
+  const log: string[] = [];
+  let opens = 0;
+  const capturer = createSweepUiStateCapturer({
+    open: async () => { opens += 1; log.push("open-session"); return sweepSession(["a"], log); },
+    note: message => log.push(`note:${message}`),
+  });
+  const first = await capturer.capture({ id: "Home", slug: "home" });
+  log.push("advance");
+  const second = await capturer.capture({ id: "Settings", slug: "settings" });
+
+  assert.equal(opens, 1, "catalog and connection are per sweep, not per screen");
+  // `setup` is the live-binding collection, which only sees what is mounted, so it is per screen.
+  assert.deepEqual(log.filter(entry => entry === "setup").length, 2);
+  assert.deepEqual(first!.map(state => state.screenshot), ["screens/home_state_a.png"]);
+  assert.deepEqual(second!.map(state => state.screenshot), ["screens/settings_state_a.png"]);
+  // Everything this screen opened is unwound to level 0 before the sweep is allowed to advance.
+  const advance = log.indexOf("advance");
+  assert.equal(log.slice(0, advance).at(-1), "rollback:0");
+  assert.ok(log.slice(0, advance).includes("open:a"));
+  assert.equal(capturer.captured, 2);
+});
+
+test("a delivery gets its node's own states, and only a reached, photographed delivery does", async () => {
+  const capturer = createSweepUiStateCapturer({ open: async () => sweepSession(["a"], []), note() {} });
+  const base: AppFlowCapture = { status: "ok", needsNavigation: false, note: null, screenshot: "screens/home.png", pressables: [] };
+  const attached = await attachSweepUiStates(capturer, { id: "Home", slug: "home" }, { kind: "reached", capture: base });
+  assert.equal(attached.uiStates?.[0]?.screenshot, "screens/home_state_a.png");
+  assert.equal(base.uiStates, undefined, "the delivery's own capture is not mutated");
+  assert.equal(attached.screenshot, "screens/home.png", "the rest of the capture is untouched");
+
+  // Nothing the device is standing on: no states, and the capture is returned as it came.
+  const missing = { ...base, screenshot: null };
+  assert.equal(await attachSweepUiStates(capturer, { id: "Gone", slug: "gone" }, { kind: "reached", capture: missing }), missing);
+  assert.equal(await attachSweepUiStates(capturer, { id: "Gone", slug: "gone" }, { kind: "unavailable", capture: base }), base);
+  assert.equal(await attachSweepUiStates(null, { id: "Home", slug: "home" }, { kind: "reached", capture: base }), base, "switch off");
+  assert.equal(capturer.captured, 1, "only the reached screen was presented on");
+});
+
+test("the sweep keeps one cap across all screens and shares screenshot slugs", async () => {
+  assert.equal(EXPLORE_UI_SWEEP_LIMIT, 10);
+  const log: string[] = [];
+  const shots: string[] = [];
+  const capturer = createSweepUiStateCapturer({
+    limit: 3,
+    open: async () => sweepSession(["a", "b"], log, {}, shots),
+    note() {},
+  });
+  const one = await capturer.capture({ id: "One", slug: "one" });
+  const two = await capturer.capture({ id: "Two", slug: "two" });
+  const three = await capturer.capture({ id: "Three", slug: "three" });
+  assert.equal(one!.length, 2);
+  assert.equal(two!.length, 1, "only the remainder of the sweep's budget is offered to the next screen");
+  assert.equal(three, undefined, "a spent budget opens nothing and costs the screen nothing");
+  assert.equal(capturer.done, true);
+  assert.deepEqual(log.filter(entry => entry.startsWith("open:")).length, 3);
+  assert.equal(new Set(shots).size, shots.length);
+});
+
+test("a pass that throws on one screen costs that screen its states, never the sweep, and still unwinds", async () => {
+  const log: string[] = [];
+  const reported: unknown[] = [];
+  let calls = 0;
+  const capturer = createSweepUiStateCapturer({
+    open: async () => sweepSession(["a"], log, {
+      async list() { log.push("list"); calls += 1; if (calls === 1) throw new Error("the runtime stopped replying"); return { available: [{ id: "a", kind: "state" as const }], unavailable: 0 }; },
+    }),
+    note() {},
+    report: error => reported.push(error),
+  });
+  assert.equal(await capturer.capture({ id: "Home", slug: "home" }), undefined);
+  assert.equal(log.at(-1), "rollback:0", "the failed pass unwound before returning");
+  assert.equal(reported.length, 1);
+  // The sweep moves on, and the next screen is still captured.
+  const next = await capturer.capture({ id: "Settings", slug: "settings" });
+  assert.equal(next?.[0]?.screenshot, "screens/settings_state_a.png");
+});
+
+test("a session that cannot open latches the capturer off and says so once", async () => {
+  const notes: string[] = [];
+  let opens = 0;
+  const capturer = createSweepUiStateCapturer({
+    open: async () => { opens += 1; throw new Error("the app’s runtime could not be reached (no Metro)"); },
+    note: message => notes.push(message),
+  });
+  assert.equal(await capturer.capture({ id: "Home", slug: "home" }), undefined);
+  assert.equal(await capturer.capture({ id: "Settings", slug: "settings" }), undefined);
+  assert.equal(opens, 1, "an unavailable runtime is not retried per screen");
+  assert.equal(notes.length, 1);
+  assert.match(notes[0]!, /UI states unavailable/);
+});
+
+test("a failed unwind stops the sweep presenting anything further and is reported, not swallowed", async () => {
+  const log: string[] = [];
+  const notes: string[] = [];
+  const reported: unknown[] = [];
+  const capturer = createSweepUiStateCapturer({
+    open: async () => sweepSession(["a", "b"], log, {
+      async rollback() { log.push("rollback:0"); return { ok: false, error: "The presentation control refused to close.", checkpoint: 1 }; },
+    }),
+    note: message => notes.push(message),
+    report: error => reported.push(error),
+  });
+  const first = await capturer.capture({ id: "Home", slug: "home" });
+  // The first unwind failed, so the second presentation was never opened on top of it.
+  assert.deepEqual(log.filter(entry => entry.startsWith("open:")), ["open:a"]);
+  assert.equal(first?.length, 1, "what was captured before the failure is kept");
+  assert.equal(notes.length, 1);
+  assert.match(notes[0]!, /may still be showing/);
+  assert.equal(reported.length, 1);
+  // And the next screen is not touched at all.
+  assert.equal(await capturer.capture({ id: "Settings", slug: "settings" }), undefined);
+  assert.deepEqual(log.filter(entry => entry.startsWith("open:")), ["open:a"]);
+});
+
+test("a cancelled sweep opens nothing further, and a pass cancelled mid-screen still unwinds", async () => {
+  const controller = new AbortController();
+  const log: string[] = [];
+  const capturer = createSweepUiStateCapturer({
+    signal: controller.signal,
+    open: async () => sweepSession(["a", "b"], log, {
+      async open(id) { log.push(`open:${id}`); controller.abort(); return { ok: true, kind: "state" as const, checkpoint: 1 }; },
+    }, [], controller.signal),
+    note() {},
+  });
+  const partial = await capturer.capture({ id: "Home", slug: "home" });
+  assert.equal(partial?.length, 1);
+  assert.equal(log.at(-1), "rollback:0");
+  assert.equal(await capturer.capture({ id: "Settings", slug: "settings" }), undefined);
+  assert.deepEqual(log.filter(entry => entry.startsWith("open:")), ["open:a"]);
+});
+
+test("the standalone run is unchanged in its throw-on-failure contract and reports an unwound-failed app in the message", async () => {
+  const runtimePort = runtime({
+    async list() { throw new Error("the runtime stopped replying"); },
+    async rollback() { return { ok: false, error: "refused", checkpoint: 1 }; },
+  });
+  await assert.rejects(
+    exploreUiStates({ catalog: catalog([action("open-1", "Sheet1")]), nodes: [node("Home")] }, ports(runtimePort)),
+    /stopped replying\. The app may still be showing/,
+  );
 });

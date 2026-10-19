@@ -16,9 +16,9 @@ type Snapshot = {
   /**
    * Whether this project's app is up on the App Flow device. The server owns this: every
    * `mobile_appflow_status` read answers with its own `appLaunched`, so an app launched externally
-   * or in a previous panel session enables the actions that need one (UI Explore) exactly as the
-   * engine would accept them. A successful `launchApp` sets it optimistically so the button comes
-   * alive immediately instead of waiting for the next status read, and `selectProject` resets it
+   * or in a previous panel session is still reported accurately, exactly as the engine sees it. A
+   * successful `launchApp` sets it optimistically so it is true immediately instead of waiting for
+   * the next status read, and `selectProject` resets it
    * before adopting the new project's status, since another project's launch says nothing here.
    */
   appLaunched: boolean;
@@ -270,25 +270,18 @@ export class AppFlowPanel {
     void this.refreshResult().catch(() => { /* the terminal refresh, or the next tick, covers it */ });
   }
 
+  /**
+   * One bounded count per user-started run that has "Capture UI states" switched on. It replaces
+   * the count the removed UI Explore button made, and like it carries no project path, state name
+   * or capture content: the event name is the whole payload beyond the shared surface attributes.
+   */
+  private countUiStateOption(options: StartOptions) { if (options.captureUiStates === true) countUiEvent("ui.app_flow.capture_ui_states_start"); }
+
   async start(options: StartOptions) {
     const projectPath = this.snapshot.projectPath.trim();
     if (!projectPath) return;
+    this.countUiStateOption(options);
     await this.beginRun("mobile_appflow_start", { projectPath, ...options }, "app_flow.start");
-  }
-
-  /**
-   * Captures the app's own UI states (modals, bottom sheets, dialogs) on an app that is already
-   * launched. No screen sweep happens and no model decides anything, so unlike a screen sweep this
-   * takes the plain server-start route rather than `requestAgentStart`'s follow-up message. The run
-   * it creates is an ordinary App Flow run: status, events, result and cancel all work unchanged.
-   */
-  async startUiExplore(options: { limit?: number } = {}) {
-    const projectPath = this.snapshot.projectPath.trim();
-    if (!projectPath) return;
-    // One bounded count per user-started UI explore. No project path, limit or capture content:
-    // the event name is the whole payload beyond the shared surface attributes.
-    countUiEvent("ui.app_flow.ui_explore_start");
-    await this.beginRun("mobile_appflow_explore_ui", { projectPath, ...(options.limit !== undefined ? { limit: options.limit } : {}) }, "app_flow.ui_explore_start");
   }
 
   /**
@@ -347,6 +340,7 @@ export class AppFlowPanel {
     // are what make the adoption site reject those answers.
     this.startEpoch++; this.abandonedRunId = this.snapshot.runId ?? this.abandonedRunId;
     this.update({ runId: null, progress: null, sweepSummary: null, prompt: null });
+    this.countUiStateOption(options);
     const input = { projectPath, ...options, mode: "screen-ui-and-structure" satisfies AppFlowBuildMode };
     const prompt = `Start an App Flow screen sweep with mobile_appflow_start using these exact arguments, then service its mobile_appflow_next_decision and mobile_appflow_submit_decision loop until the run completes, fails, is cancelled, is suspended, or needs user action. Do not resolve a human auth/review prompt yourself.\n\n${JSON.stringify(input)}`;
     this.update({ agentStartPending: true, error: null });

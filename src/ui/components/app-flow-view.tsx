@@ -9,37 +9,16 @@ import { AppFlowProjectPicker } from "./app-flow-project-picker.tsx";
 import { Button } from "./ui/button.tsx";
 import { Input } from "./ui/input.tsx";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select.tsx";
+import { Switch } from "./ui/switch.tsx";
 
 function stored(key: string, fallback: string) { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } }
 function write(key: string, value: string) { try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key); } catch { /* best effort */ } }
-/** How many UI states one explore run captures unless the user says otherwise. */
-const UI_STATE_LIMIT_DEFAULT = "10";
-/** The server accepts a positive integer up to 1000; anything else means "send no limit". */
-export function uiStateLimitOf(raw: string): number | undefined {
-  if (!/^\d+$/.test(raw)) return undefined;
-  const value = Number(raw);
-  return value >= 1 && value <= 1000 ? value : undefined;
-}
 /**
- * Why the UI Explore button cannot run right now, or "" when it can. UI Explore presents states in
- * the app that is already on the device, so it is gated on `appLaunched` — which the server
- * reports on every `mobile_appflow_status` read, so an app launched externally or in an earlier
- * panel session enables the button exactly as the engine would accept the run. It is deliberately
- * not gated on captured screens: this pass never re-navigates to a previously captured screen.
- */
-export function uiExploreBlockedReason(state: { projectPath: string; launching: boolean; appLaunched: boolean; agentStartPending: boolean }, isRunning: boolean): string {
-  if (!state.projectPath) return "Choose a project first.";
-  if (isRunning) return "A run is already in progress.";
-  if (state.launching) return "The app is still launching.";
-  if (!state.appLaunched) return "Launch the app first — UI Explore presents states in the running app.";
-  if (state.agentStartPending) return "A screen sweep start is still pending.";
-  return "";
-}
-/**
- * The live counter beside the progress spinner. A UI Explore run walks no route queue, so its
- * summary carries `completed`/`total` of 0 — rendering that verbatim produced "0 / 0 screens" (and
- * "· route 0 / 0"), which reads as a stalled sweep. With no routes to report, only the capture
- * tally is shown, and a run with neither is left without a counter.
+ * The live counter beside the progress spinner. A run that walks no route queue (the standalone
+ * `mobile_appflow_explore_ui` tool, started from chat) has a summary with `completed`/`total` of 0
+ * — rendering that verbatim produced "0 / 0 screens" (and "· route 0 / 0"), which reads as a
+ * stalled sweep. With no routes to report, only the capture tally is shown, and a run with neither
+ * is left without a counter.
  */
 export function progressTally(summary: AppFlowSweepSummary): string {
   const captures = summary.captured !== undefined
@@ -49,6 +28,8 @@ export function progressTally(summary: AppFlowSweepSummary): string {
   const routes = `${summary.completed} / ${summary.total}`;
   return captures ? `${captures} · route ${routes}` : `${routes} screens`;
 }
+/** Per-project localStorage key for the "Capture UI states" switch. Stored as "on"/"off"; absent means off. */
+const CAPTURE_UI_STATES_KEY = "app-flow-capture-ui-states";
 function duration(milliseconds: number) { if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`; const seconds = Math.round(milliseconds / 1000); return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`; }
 
 export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
@@ -57,14 +38,14 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   const [exploration, setExploration] = useState<ExplorationMode>("auto");
   const [deepLinkJudge, setDeepLinkJudge] = useState<DeepLinkJudgeMode>("on");
   const [screenLimit, setScreenLimit] = useState("");
-  const [uiStateLimit, setUiStateLimit] = useState(UI_STATE_LIMIT_DEFAULT);
+  const [captureUiStates, setCaptureUiStates] = useState(false);
   useEffect(() => {
     const projectPath = state.projectPath; if (!projectPath) return;
     const nextMode = stored(`app-flow-mode:${projectPath}`, "structure-only"); setMode(nextMode === "screen-ui-and-structure" ? nextMode : "structure-only");
     const nextExploration = stored(`app-flow-exploration:${projectPath}`, "auto"); setExploration(nextExploration === "fast" || nextExploration === "thorough" ? nextExploration : "auto");
     setDeepLinkJudge(stored(`app-flow-deep-link-judge:${projectPath}`, "on") === "off" ? "off" : "on");
     const limit = stored(`app-flow-screen-limit:${projectPath}`, ""); setScreenLimit(/^\d+$/.test(limit) && Number(limit) >= 1 ? limit : "");
-    const uiLimit = stored(`app-flow-ui-explore-limit:${projectPath}`, UI_STATE_LIMIT_DEFAULT); setUiStateLimit(uiStateLimitOf(uiLimit) === undefined ? UI_STATE_LIMIT_DEFAULT : uiLimit);
+    setCaptureUiStates(stored(`${CAPTURE_UI_STATES_KEY}:${projectPath}`, "off") === "on");
   }, [state.projectPath]);
   const isRunning = state.state === "running" || state.state === "needs-user-action";
   const sweepStatus = state.result?.manifest.sweepStatus;
@@ -78,15 +59,8 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
     if (!state.projectPath) return;
     write(`app-flow-mode:${state.projectPath}`, mode);
     const options = { mode, ...(mode === "screen-ui-and-structure" ? { screenLimit: screenLimit ? Number(screenLimit) : undefined, explorationMode: exploration,
-      deepLinkJudgeMode: deepLinkJudge } : {}) };
+      deepLinkJudgeMode: deepLinkJudge, captureUiStates } : {}) };
     if (mode === "screen-ui-and-structure") void panel.requestAgentStart(options); else void panel.start(options);
-  };
-  const uiExploreBlocked = uiExploreBlockedReason(state, isRunning);
-  const startUiExplore = () => {
-    if (!state.projectPath || uiExploreBlocked) return;
-    write(`app-flow-ui-explore-limit:${state.projectPath}`, uiStateLimit);
-    const limit = uiStateLimitOf(uiStateLimit);
-    void panel.startUiExplore(limit === undefined ? {} : { limit });
   };
   const empty = !state.result && !isRunning;
   return <section className="flex h-full min-h-0 flex-col" aria-label="App Flow">
@@ -105,11 +79,6 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
           <Button variant="secondary" size="sm" onClick={() => void panel.cancel()} disabled={!state.runId}>Cancel</Button></>
           : <><Button variant="secondary" size="sm" onClick={() => void panel.launchApp()} disabled={!state.projectPath || state.launching}>
             {state.launching && <Loader2 className="animate-spin" />}{state.launching ? "Launching…" : "Launch App"}</Button>
-            {/* Not mode-gated: this run works against whatever the app is showing, so it sits with
-                Launch App in the run actions rather than inside the sweep's options cluster. */}
-            <Button variant="secondary" size="sm" onClick={startUiExplore} disabled={uiExploreBlocked !== ""}
-              aria-label={uiExploreBlocked ? `Start UI Explore — ${uiExploreBlocked}` : "Start UI Explore"}
-              title={uiExploreBlocked || "Present and capture the launched app’s UI states"}>Start UI Explore</Button>
             <Button size="sm" onClick={start} disabled={!state.projectPath || state.launching || state.agentStartPending || (mode === "screen-ui-and-structure" && !panel.canSendAgentStart)}>
               {state.agentStartPending ? "Asking Codex…" : isPaused ? "Resume" : state.result ? "Regenerate" : "Start"}</Button></>}
       </div>
@@ -121,12 +90,12 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
         }
         <label className="flex items-center gap-1">Explore <Input className="w-20" aria-label="Maximum screens to explore" type="number" min={1} value={screenLimit} disabled={isRunning}
           placeholder="No limit" onChange={event => { const value = event.target.value; if (value && Number(value) < 1) return; setScreenLimit(value); if (state.projectPath) write(`app-flow-screen-limit:${state.projectPath}`, value); }} /> screens</label>
+        {/* Sweep-only: the states are opened while the sweep stands on each screen, so there is no
+            run without a sweep to switch this on for. */}
+        <label className="flex items-center gap-1.5" title="Also open each screen’s sheets, modals and dialogs while the sweep is on it, and capture them">Capture UI states
+          <Switch aria-label="Capture UI states" checked={captureUiStates} disabled={isRunning}
+            onCheckedChange={value => { setCaptureUiStates(value); if (state.projectPath) write(`${CAPTURE_UI_STATES_KEY}:${state.projectPath}`, value ? "on" : "off"); }} /></label>
       </div>}
-      {/* Always shown: UI Explore is not gated on the capture mode. */}
-      <div className="flex w-full flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
-        <label className="flex items-center gap-1">Capture <Input className="w-20" aria-label="Maximum UI states to capture" type="number" min={1} max={1000} value={uiStateLimit} disabled={isRunning}
-          onChange={event => { const value = event.target.value; if (value && Number(value) < 1) return; setUiStateLimit(value); if (state.projectPath) write(`app-flow-ui-explore-limit:${state.projectPath}`, value); }} /> UI states</label>
-      </div>
       {/* Fast runs have no auth gate to park on, so the sign-in has to happen before Start/Resume. */}
       {mode === "screen-ui-and-structure" && exploration === "fast" && !isRunning && <p className="w-full text-xs text-amber-600">{FAST_MODE_AUTH_NOTICE}</p>}
       {mode === "screen-ui-and-structure" && !panel.canSendAgentStart && <p className="w-full text-xs text-amber-600">This host cannot send a follow-up message. Ask Codex in chat to start and service the App Flow decision loop.</p>}

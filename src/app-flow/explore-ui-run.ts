@@ -2,11 +2,18 @@
  * Wiring for the explore-UI pass: the only file that implements `explore-ui.ts`'s ports against a
  * real device, a real Metro and the real store.
  *
- * It reuses, rather than re-implements, everything it can: the already-launched device the user
- * started from the App Flow screen, `capture.ts`'s settle and screenshot calls (the same two the
- * sweep's delivery uses), `cdp/connection.ts` for the injected agent, `presentations-source.ts` /
- * `views-source.ts` / `preview-plans.ts` for the catalog, and `presentations-bindings.ts` for the
- * Metro symbolication join.
+ * It reuses, rather than re-implements, everything it can: the already-launched device, `capture.ts`'s
+ * settle and screenshot calls (the same two the sweep's delivery uses), `cdp/connection.ts` for the
+ * injected agent, `presentations-source.ts` / `views-source.ts` / `preview-plans.ts` for the
+ * catalog, and `presentations-bindings.ts` for the Metro symbolication join.
+ *
+ * There are two entry points and one port builder. `runExploreUi` is the standalone
+ * `mobile_appflow_explore_ui` run: it opens its own connection to the app the user left running
+ * and writes what it finds to storage. `openSweepUiStateSession` is the screen sweep's: it is
+ * handed the sweep's *own* CDP connection (a second one would be a second debugger on the same
+ * Hermes target) and returns the ports for it, and the orchestrator attaches the result itself.
+ * Both build their ports with `createExploreUiPorts`, so the commands, budgets and telemetry
+ * cannot differ between them.
  */
 import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -16,6 +23,7 @@ import type {
   AppFlowResult,
   AppFlowUiState
 } from '../shared/app-flow.ts'
+import { ExpectedOperationError } from '../shared/error-reporting.ts'
 import { bindPresentationSites } from './presentations-bindings.ts'
 import {
   captureScreenshot,
@@ -30,7 +38,12 @@ import { addSourcePreviewPlans } from './preview-plans.ts'
 import { scanPresentations } from './presentations-source.ts'
 import { createSourceUnits, createSymbolResolver } from './source-units.ts'
 import { scanSourceViews } from './views-source.ts'
-import { exploreUiStates, EXPLORE_UI_ROLLBACK_TIMEOUT_MS, type ExploreUiPorts } from './explore-ui.ts'
+import {
+  exploreUiStates,
+  EXPLORE_UI_ROLLBACK_TIMEOUT_MS,
+  type ExploreUiPorts,
+  type SweepUiStateSession
+} from './explore-ui.ts'
 import { recordRuntimeTiming } from './runtime-telemetry.ts'
 import { getScreenshotPath, readAppFlow, writeAppFlow } from './storage.ts'
 
@@ -85,6 +98,23 @@ export async function buildPresentationCatalog(root: string): Promise<AppFlowPre
   return addSourcePreviewPlans({ ...found, views: views.views, viewStates: views.states })
 }
 
+/** The one thing the ports need from a CDP connection. `CdpConnection` satisfies it. */
+export interface ExploreUiRuntime {
+  invoke<T>(payload: AgentCommand, timeoutMs: number): Promise<T>
+}
+
+/** Everything the ports are bound to, whichever driver is asking. */
+export interface ExploreUiPortOptions {
+  projectPath: string
+  projectId: string
+  ctx: CaptureContext
+  device: CaptureDevice
+  runtime: ExploreUiRuntime
+  catalog: AppFlowPresentations
+  signal?: AbortSignal
+  emit: ExploreUiPorts['emit']
+}
+
 export interface ExploreUiRunOptions {
   projectPath: string
   projectId: string
@@ -104,82 +134,20 @@ export interface ExploreUiRunResult {
 }
 
 /**
- * Attach a connection to the app the user already launched. Throws with a product sentence when
- * there is nothing to attach to — the panel shows it verbatim, so it says what to do next.
+ * Implement `explore-ui.ts`'s ports against a real device, for a connection somebody else owns.
+ * Closing that connection is the caller's job — the sweep keeps using it after the pass.
  */
-async function connectToLaunchedApp(
-  options: ExploreUiRunOptions,
-  appName: string | null
-): Promise<CdpConnection> {
-  const started = performance.now()
-  let connection: CdpConnection | null = null
-  try {
-    const targets = await listMetroTargets(options.device.metroPort, { signal: options.signal })
-    const normalize = (value: string | null | undefined): string =>
-      (value ?? '').toLowerCase().replace(/[^a-z\d]/g, '')
-    const app = normalize(appName)
-    const candidates = targets
-      .filter((target) => target.supportsMultipleDebuggers)
-      .filter(
-        (target) =>
-          target.deviceId === options.device.deviceId ||
-          (!!target.deviceName &&
-            normalize(target.deviceName) === normalize(options.device.deviceName))
-      )
-    const target =
-      candidates.find(
-        (candidate) =>
-          !app || normalize(candidate.title) === app || normalize(candidate.appId) === app
-      ) ?? (candidates.length === 1 ? candidates[0]! : null)
-    if (!target) {
-      throw new Error(
-        'No running app could be reached through Metro. Launch the app from the App Flow screen first, then start UI explore.'
-      )
-    }
-    connection = new CdpConnection({
-      resolveTarget: createTargetResolver(options.device.metroPort, target),
-      sessionId: `explore-ui-${options.projectId}`,
-      log: (message) => console.log(`[app-flow] explore-ui runtime — ${message}`)
-    })
-    await connection.connect()
-    return connection
-  } finally {
-    recordRuntimeTiming('app_flow.runtime.connect', performance.now() - started, {
-      outcome: connection?.state === 'ready' ? 'ready' : 'unavailable'
-    })
-  }
-}
-
-/**
- * Run the pass against a live app and persist what it found.
- *
- * The variants are written onto the focused screen's existing capture (`AppFlowCapture.uiStates`);
- * no node is minted, no edge is drawn, and the sweep's own fields are untouched.
- */
-export async function runExploreUi(options: ExploreUiRunOptions): Promise<ExploreUiRunResult> {
-  const saved = await readAppFlow(options.projectId)
-  if (!saved) {
-    throw new Error(
-      'This project has no saved App Flow yet. Build the flow first — UI states attach to screens the flow already captured.'
-    )
-  }
-  options.emit({ type: 'phase', message: 'Reading UI states from the project’s source…' })
-  const catalog = await buildPresentationCatalog(options.projectPath)
-  if (!catalog.actions.length && !(catalog.previews ?? []).length) {
-    throw new Error('No UI states were found in this project’s source.')
-  }
-
-  const connection = await connectToLaunchedApp(options, options.ctx.appName)
+export function createExploreUiPorts(options: ExploreUiPortOptions): ExploreUiPorts {
+  const { catalog } = options
   const command = async <T>(payload: AgentCommand, timeoutMs: number, operation: string): Promise<T> => {
     const started = performance.now()
     try {
-      return await connection.invoke<T>(payload, timeoutMs)
+      return await options.runtime.invoke<T>(payload, timeoutMs)
     } finally {
       recordRuntimeTiming('app_flow.runtime.command', performance.now() - started, { operation })
     }
   }
-
-  const ports: ExploreUiPorts = {
+  return {
     runtime: {
       setup: (catalogue) =>
         command(
@@ -244,6 +212,95 @@ export async function runExploreUi(options: ExploreUiRunOptions): Promise<Explor
     emit: options.emit,
     ...(options.signal ? { signal: options.signal } : {})
   }
+}
+
+/**
+ * The sweep's session: the project's catalog (scanned once, here) bound to the sweep's own
+ * connection, device and ctx. Nothing here connects to anything — `runtime` is the connection the
+ * sweep already holds — and nothing here reads the device's focused route, because the sweep
+ * passes the node it is standing on. Throws a product sentence when there is nothing to capture.
+ */
+export async function openSweepUiStateSession(
+  options: Omit<ExploreUiPortOptions, 'catalog'>
+): Promise<SweepUiStateSession> {
+  const catalog = await buildPresentationCatalog(options.projectPath)
+  if (!catalog.actions.length && !(catalog.previews ?? []).length) {
+    throw new ExpectedOperationError('invalid_input', 'No UI states were found in this project’s source.')
+  }
+  return { catalog, ports: createExploreUiPorts({ ...options, catalog }) }
+}
+
+/**
+ * Attach a connection to the app the user already launched. Throws with a product sentence when
+ * there is nothing to attach to — the panel shows it verbatim, so it says what to do next.
+ */
+async function connectToLaunchedApp(
+  options: ExploreUiRunOptions,
+  appName: string | null
+): Promise<CdpConnection> {
+  const started = performance.now()
+  let connection: CdpConnection | null = null
+  try {
+    const targets = await listMetroTargets(options.device.metroPort, { signal: options.signal })
+    const normalize = (value: string | null | undefined): string =>
+      (value ?? '').toLowerCase().replace(/[^a-z\d]/g, '')
+    const app = normalize(appName)
+    const candidates = targets
+      .filter((target) => target.supportsMultipleDebuggers)
+      .filter(
+        (target) =>
+          target.deviceId === options.device.deviceId ||
+          (!!target.deviceName &&
+            normalize(target.deviceName) === normalize(options.device.deviceName))
+      )
+    const target =
+      candidates.find(
+        (candidate) =>
+          !app || normalize(candidate.title) === app || normalize(candidate.appId) === app
+      ) ?? (candidates.length === 1 ? candidates[0]! : null)
+    if (!target) {
+      throw new Error(
+        'No running app could be reached through Metro. Launch the app from the App Flow screen first, then start UI explore.'
+      )
+    }
+    connection = new CdpConnection({
+      resolveTarget: createTargetResolver(options.device.metroPort, target),
+      sessionId: `explore-ui-${options.projectId}`,
+      log: (message) => console.log(`[app-flow] explore-ui runtime — ${message}`)
+    })
+    await connection.connect()
+    return connection
+  } finally {
+    recordRuntimeTiming('app_flow.runtime.connect', performance.now() - started, {
+      outcome: connection?.state === 'ready' ? 'ready' : 'unavailable'
+    })
+  }
+}
+
+/**
+ * Run the pass against a live app and persist what it found. This is the standalone entry: it
+ * opens its own connection to whatever the user left running, and attributes the states to the
+ * screen the app reports as focused. (A screen sweep captures states through
+ * `openSweepUiStateSession` instead and persists them with the rest of the node's capture.)
+ *
+ * The variants are written onto the focused screen's existing capture (`AppFlowCapture.uiStates`);
+ * no node is minted, no edge is drawn, and the sweep's own fields are untouched.
+ */
+export async function runExploreUi(options: ExploreUiRunOptions): Promise<ExploreUiRunResult> {
+  const saved = await readAppFlow(options.projectId)
+  if (!saved) {
+    throw new Error(
+      'This project has no saved App Flow yet. Build the flow first — UI states attach to screens the flow already captured.'
+    )
+  }
+  options.emit({ type: 'phase', message: 'Reading UI states from the project’s source…' })
+  const catalog = await buildPresentationCatalog(options.projectPath)
+  if (!catalog.actions.length && !(catalog.previews ?? []).length) {
+    throw new Error('No UI states were found in this project’s source.')
+  }
+
+  const connection = await connectToLaunchedApp(options, options.ctx.appName)
+  const ports = createExploreUiPorts({ ...options, runtime: connection, catalog })
 
   try {
     const outcome = await exploreUiStates(

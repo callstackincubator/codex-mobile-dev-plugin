@@ -366,8 +366,23 @@ test('App Flow start no longer exposes a render transport switch', () => {
     mode: 'screen-ui-and-structure',
     screenLimit: undefined,
     explorationMode: 'fast',
-    deepLinkJudgeMode: 'on'
+    deepLinkJudgeMode: 'on',
+    captureUiStates: false
   })
+})
+
+test('Capture UI states is one optional boolean, off unless asked for, and nothing else is accepted', () => {
+  const base = { projectPath: '/project', mode: 'screen-ui-and-structure' as const }
+  for (const value of [true, false]) {
+    const parsed = parseAppFlowStartRequest({ ...base, captureUiStates: value })
+    assert.equal(parsed.ok, true)
+    if (parsed.ok) assert.equal(resolveAppFlowStart(parsed.input).captureUiStates, value)
+  }
+  const absent = parseAppFlowStartRequest(base)
+  assert.equal(absent.ok && resolveAppFlowStart(absent.input).captureUiStates, false)
+  for (const value of ['true', 1, null, {}]) {
+    assert.equal(parseAppFlowStartRequest({ ...base, captureUiStates: value }).ok, false, `${String(value)} is refused`)
+  }
 })
 
 test('Fast remembers a guarded render 404 and skips siblings behind the same gate', async () => {

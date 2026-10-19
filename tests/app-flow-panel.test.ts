@@ -454,39 +454,36 @@ test("a second direct start retires the previous run before the new one begins",
   assert.deepEqual(panel.getSnapshot().sweepSummary, { completed: 1, total: 79, message: "Home" });
 });
 
-// UI Explore presents the app's own states on an app that is already up: no sweep, no model, so it
-// takes the direct server route and becomes an ordinary run the existing controls drive.
-test("a UI explore run starts directly, carries the capture limit, and tracks the launch", async t => {
+// "Capture UI states" is one boolean on the sweep's own start request: it is forwarded unchanged on
+// both start routes, and the panel has no separate UI-explore run of its own any more.
+test("the Capture UI states option rides the sweep's start request on both routes", async t => {
   const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
   panel.setAvailable(true); await panel.selectProject("/projects/demo");
   assert.equal(panel.getSnapshot().appLaunched, false);
   await panel.launchApp();
-  assert.equal(panel.getSnapshot().appLaunched, true, "a successful launch is what enables UI Explore");
-  await panel.startUiExplore({ limit: 10 });
-  assert.deepEqual(host.calls.at(-1), { name: "mobile_appflow_explore_ui", arguments: { projectPath: "/projects/demo", limit: 10 } });
-  assert.equal(host.messages.length, 0, "no decision provider is needed, so nothing is asked of Codex");
-  assert.equal(panel.getSnapshot().runId, "run-1");
-  assert.equal(panel.getSnapshot().state, "running");
-  // Cancel is the same control the sweep uses.
-  await panel.cancel();
-  assert.equal(host.calls.find(call => call.name === "mobile_appflow_cancel")?.arguments?.runId, "run-1");
-  // An omitted limit sends no limit at all rather than a guessed one.
-  await panel.startUiExplore();
-  assert.deepEqual(host.calls.at(-1)?.arguments, { projectPath: "/projects/demo" });
+  assert.equal(panel.getSnapshot().appLaunched, true, "a successful launch is still reflected");
+  assert.equal("startUiExplore" in panel, false, "the standalone run is not started from the panel");
+
+  await panel.start({ mode: "structure-only", captureUiStates: true });
+  assert.deepEqual(host.calls.at(-1), { name: "mobile_appflow_start", arguments: { projectPath: "/projects/demo", mode: "structure-only", captureUiStates: true } });
+
+  await panel.requestAgentStart({ mode: "screen-ui-and-structure", explorationMode: "fast", captureUiStates: true });
+  const prompt = host.messages.at(-1)!.content[0]!.text;
+  assert.match(prompt, /"captureUiStates":true/);
   // Another project has not been launched, whatever this one did.
   await panel.selectProject("/projects/other");
   assert.equal(panel.getSnapshot().appLaunched, false);
 });
 
-test("an app the server already has running enables UI Explore without a launch in this session", async t => {
+test("an app the server already has running is reported launched without a launch in this session", async t => {
   const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
   // The server is the only place that knows the app is up — launched externally, or by an earlier
   // panel session. Selecting the project adopts its answer instead of waiting for a Launch App.
   host.returnsStatus({ exists: true, state: "completed", projectId: "project-1", appLaunched: true });
   panel.setAvailable(true); await panel.selectProject("/projects/demo");
-  assert.equal(panel.getSnapshot().appLaunched, true, "the gate keys off the server's view, not a launch in this session");
+  assert.equal(panel.getSnapshot().appLaunched, true, "the flag keys off the server's view, not a launch in this session");
 
-  // And a server that reports no launched app keeps the button's own disabled reason.
+  // And a server that reports no launched app reports it as not launched.
   host.returnsStatus({ exists: true, state: "completed", projectId: "project-1", appLaunched: false });
   await panel.refreshStatus();
   assert.equal(panel.getSnapshot().appLaunched, false);
