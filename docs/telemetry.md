@@ -207,7 +207,9 @@ memory cache and are returned only to the panel.
 
 The device popover's App tab records `ui.app_tools.list`, `.icons`, `.launch`,
 `.stop`, `.open_url`, `.permission`, `.push`, and `.language` round trips in
-milliseconds with bounded aggregate windows, and counts `ui.app_tools.failure`.
+milliseconds with bounded aggregate windows, and counts `ui.app_tools.failure`. Since 0.1.181 app icons come from a cache shared by
+every panel in the view, so an icon requested by one panel is not fetched again by
+another; each caller keeps its own timing name (`ui.app_tools.icons`, `ui.storage.icons`).
 Results that finish after a surface or device change are not recorded. Recent URLs
 and the last picked app stay in the panel's local storage and are never sent.
 
@@ -218,7 +220,7 @@ platform and a success or failure outcome. The duration covers listing the data
 directory, reading and decoding every recognized store, and for clears stopping the
 app first. Unexpected failures report under `app_storage.<operation>` with a fixed
 message; a release Android build, a missing app, or a stopped device counts only
-through `server.error.outcome`. The panel records `ui.storage.list_apps`, `.read`,
+through `server.error.outcome`. The panel records `ui.storage.list_apps`, `.icons`, `.read`,
 `.clear`, `.reset`, and `.launch` round trips, `ui.storage.process` for validating
 a snapshot and computing the Changes feed, gauges `ui.storage.stores` and `ui.storage.entries`,
 and counts `ui.storage.failure`. Bundle IDs, store names, paths, keys, values, and

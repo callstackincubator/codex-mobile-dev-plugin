@@ -1,5 +1,6 @@
 import { useId, useRef, useState, useSyncExternalStore } from "react";
 import type { LucideIcon } from "lucide-react";
+import { AppAvatar } from "./app-avatar";
 import { ActivityIcon, ArrowRightIcon, BellIcon, BracesIcon, CalendarIcon, CameraIcon, ChevronDownIcon, ClockIcon, ContactIcon, ImageIcon, InfoIcon, LanguagesIcon, ListChecksIcon, MapPinIcon, MicIcon, RotateCcwIcon, RotateCwIcon, SendIcon, ShieldIcon, SquareIcon } from "lucide-react";
 import { z } from "zod";
 import type { AppPermission, PermissionState } from "../../shared/app-control";
@@ -46,15 +47,6 @@ function Disclosure({ section, state, store, icon: Icon, title, summary, childre
   </Collapsible>;
 }
 
-// Matches the device picker's running dot so both pickers read the same way.
-function AppAvatar({ app, running, small = false }: { app: AppEntry; running: boolean; small?: boolean }) {
-  const shape = small ? "size-6 rounded-md text-xs" : "size-8 rounded-lg text-sm";
-  return <span aria-hidden className={`relative grid shrink-0 place-items-center ${shape} ${app.icon ? "" : "border bg-muted font-medium text-muted-foreground"}`}>
-    {app.icon ? <img src={app.icon} alt="" draggable={false} className={`size-full object-cover ${small ? "rounded-md" : "rounded-lg"}`} /> : app.name.trim().charAt(0).toUpperCase() || "?"}
-    {running && <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-green-500 ring-2 ring-popover" />}
-  </span>;
-}
-
 function AppPicker({ store, state, app, blocked }: SectionProps) {
   const running = state.runningBundleIds.includes(app.bundleId);
   const action = "h-auto w-9 shrink-0 rounded-none border-l border-l-border text-muted-foreground hover:text-foreground focus-visible:z-10";
@@ -62,7 +54,7 @@ function AppPicker({ store, state, app, blocked }: SectionProps) {
     <Select items={state.apps.map(entry => ({ value: entry.bundleId, label: entry.name }))} value={app.bundleId} disabled={blocked} onValueChange={value => { if (value !== null) void store.open(value); }}>
       <SelectTrigger aria-label="App" title="Choose an app to launch" className="min-w-0 flex-1 gap-2.5 rounded-r-none border-0 py-2 pl-2 pr-2 data-[size=default]:h-auto hover:bg-muted/50 focus-visible:z-10 [&>svg]:text-muted-foreground">
         <span className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
-          <AppAvatar app={app} running={false} />
+          <AppAvatar name={app.name} icon={app.icon} />
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium leading-5">{app.name}</span>
             <span className="flex items-center gap-1.5 text-xs leading-4 text-muted-foreground">
@@ -75,7 +67,7 @@ function AppPicker({ store, state, app, blocked }: SectionProps) {
       <SelectContent align="start" alignItemWithTrigger={false} className="w-(--anchor-width)"><SelectGroup>
         {state.apps.map(entry => <SelectItem key={entry.bundleId} value={entry.bundleId} className="py-1.5 *:first:min-w-0 *:first:shrink">
           <span className="flex min-w-0 items-center gap-2.5">
-            <AppAvatar app={entry} running={state.runningBundleIds.includes(entry.bundleId)} small />
+            <AppAvatar name={entry.name} icon={entry.icon} running={state.runningBundleIds.includes(entry.bundleId)} size="sm" />
             <span className="flex min-w-0 flex-col"><span className="truncate leading-5">{entry.name}</span>{entry.name !== entry.bundleId && <span className="truncate text-xs leading-4 text-muted-foreground">{entry.bundleId}</span>}</span>
           </span>
         </SelectItem>)}

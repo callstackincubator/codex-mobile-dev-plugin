@@ -6,6 +6,7 @@ import type { StorageEntry, StorageSnapshot, StorageStore } from "../shared/app-
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import { errorMessage } from "../shared/protocol.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
+import { appIcons } from "./app-icons.ts";
 import { isSdkStore } from "./storage-labels.ts";
 import { measureUiOperation, recordUiTiming, setUiGauge } from "./telemetry.ts";
 
@@ -182,6 +183,8 @@ export class StoragePanel {
       const installed = new Set(data.apps.map(app => app.bundleId));
       const bundleId = [this.state.bundleId, data.runningBundleIds[0]].find(id => id && installed.has(id)) ?? "";
       this.update({ apps: data.apps, busy: null });
+      void appIcons.load((name, args) => this.call(name, args), this.state.platform, this.state.deviceId, data.apps.map(app => app.bundleId),
+        { measure: work => measureUiOperation("ui.storage.icons", "ui.storage.failure", work) });
       if (bundleId !== this.state.bundleId || this.state.snapshot === undefined) this.selectApp(bundleId);
     } catch (error) {
       if (current()) this.update({ busy: null, error: errorMessage(error) });

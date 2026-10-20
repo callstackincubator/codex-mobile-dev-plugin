@@ -515,7 +515,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
   await selectTool("storage");
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-  assert.deepEqual(storageCalls, ["mobile_list_apps", "mobile_app_storage"]);
+  assert.deepEqual(storageCalls, ["mobile_list_apps", "mobile_app_icons", "mobile_app_storage"]);
   const storageDrawer = dom.window.document.getElementById("storage-drawer")!;
   const storeNames = [...storageDrawer.querySelectorAll('nav[aria-label="Stores"] button')].map(button => button.textContent);
   assert.deepEqual(storeNames.slice(0, 2), ["Default instanceMMKV2", "secureMMKV"]);

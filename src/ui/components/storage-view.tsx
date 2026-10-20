@@ -13,6 +13,8 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
 import { ButtonGroup } from "./ui/button-group";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select";
 import { Tabs, TabsList, TabsTrigger } from "./ui/base-tabs";
+import { AppAvatar } from "./app-avatar";
+import { appIcons } from "../app-icons.ts";
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "./ui/popover";
 
 export { formatBytes } from "../storage-labels.ts";
@@ -309,6 +311,8 @@ function ChangesView({ panel, query }: { panel: StoragePanel; query: string }) {
 
 export const StorageView = memo(function StorageView({ panel }: { panel: StoragePanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  useSyncExternalStore(appIcons.subscribe, appIcons.getSnapshot);
+  const icon = (bundleId: string) => appIcons.get(state.platform, state.deviceId, bundleId)?.icon;
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState("");
   const snapshot = state.snapshot;
@@ -331,11 +335,11 @@ export const StorageView = memo(function StorageView({ panel }: { panel: Storage
           <SelectValue>{(value: string | null) => {
             const app = state.apps.find(item => item.bundleId === value);
             if (!app) return value ? <span className="truncate">{value}</span> : <span className="text-muted-foreground">{state.busy === "apps" ? "Loading apps…" : "Choose an app"}</span>;
-            return <><span className="max-w-40 shrink-0 truncate">{app.name}</span>{app.name !== app.bundleId && <span className="min-w-0 truncate text-xs text-muted-foreground">{app.bundleId}</span>}</>;
+            return <><AppAvatar name={app.name} icon={icon(app.bundleId)} size="xs" /><span className="max-w-40 shrink-0 truncate">{app.name}</span>{app.name !== app.bundleId && <span className="min-w-0 truncate text-xs text-muted-foreground">{app.bundleId}</span>}</>;
           }}</SelectValue>
         </SelectTrigger>
         <SelectContent align="start" alignItemWithTrigger={false} className="w-auto max-w-[min(30rem,calc(100vw-16px))] min-w-(--anchor-width)"><SelectGroup>
-          {state.apps.map(app => <SelectItem key={app.bundleId} value={app.bundleId}>{app.name}{app.name !== app.bundleId && <span className="text-xs text-muted-foreground">{app.bundleId}</span>}</SelectItem>)}
+          {state.apps.map(app => <SelectItem key={app.bundleId} value={app.bundleId}><AppAvatar name={app.name} icon={icon(app.bundleId)} size="xs" />{app.name}{app.name !== app.bundleId && <span className="text-xs text-muted-foreground">{app.bundleId}</span>}</SelectItem>)}
         </SelectGroup></SelectContent>
       </Select>
       <Tabs value={state.tab} onValueChange={value => panel.setTab(value as StorageTab)} className="shrink-0">
