@@ -197,7 +197,7 @@ function TableGrid({ panel, table }: { panel: StoragePanel; table: NonNullable<S
         </thead>
         <tbody>{data.rows.map((row, index) => <tr key={data.offset + index} className="hover:bg-muted/50">
           {row.map((cell, column) => <td key={column} title={cell === null ? "NULL" : String(cell)}
-            className={`max-w-80 truncate border-b px-3 py-1.5 whitespace-nowrap ${typeof cell === "number" ? "text-right text-blue-600 tabular-nums dark:text-blue-400" : cell === null || /^x'/.test(cell) ? "text-muted-foreground" : ""}`}>
+            className={`max-w-80 truncate border-b px-3 py-1.5 whitespace-nowrap ${typeof cell === "number" ? "text-blue-600 tabular-nums dark:text-blue-400" : cell === null || /^x'/.test(cell) ? "text-muted-foreground" : ""}`}>
             {cell === null ? <span className="italic">NULL</span> : String(cell)}
           </td>)}
         </tr>)}</tbody>
