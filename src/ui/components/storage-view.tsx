@@ -170,23 +170,9 @@ const entryMatches = (entry: StorageEntry, query: string) => entry.key.toLowerCa
   || (entry.type === "data" ? bytesAsText(entry) ?? "" : entry.value).toLowerCase().includes(query);
 
 // One page of a SQLite table as a grid. Long cells are cut short and show in full on hover.
-function TableGrid({ panel, table }: { panel: StoragePanel; table: NonNullable<StorageState["table"]> }) {
+function TableGrid({ table }: { table: NonNullable<StorageState["table"]> }) {
   const data = table.data;
-  const first = data ? data.offset + 1 : 0;
-  const last = data ? data.offset + data.rows.length : 0;
-  const page = (offset: number) => void panel.openTable(table.storeId, table.name, offset);
   return <div className="flex min-h-0 flex-1 flex-col">
-    <div className="flex h-10 shrink-0 items-center gap-2 border-b px-2 text-xs">
-      <Button variant="ghost" size="xs" onClick={() => panel.closeTable()}><ChevronLeftIcon />Tables</Button>
-      <span className="truncate font-mono font-medium">{table.name}</span>
-      {data && <span className="shrink-0 text-muted-foreground">{data.columns.length} columns</span>}
-      {table.loading && <RefreshCwIcon className="size-3.5 shrink-0 animate-spin text-muted-foreground" aria-label="Loading" />}
-      {data && <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">{data.total === 0 ? "No rows" : `${first}–${last} of ${data.total}`}</span>}
-      {data && <ButtonGroup className="shrink-0">
-        <Button variant="outline" size="icon-xs" aria-label="Previous rows" disabled={table.loading || data.offset === 0} onClick={() => page(Math.max(0, data.offset - tablePageSize))}><ChevronLeftIcon /></Button>
-        <Button variant="outline" size="icon-xs" aria-label="Next rows" disabled={table.loading || last >= data.total} onClick={() => page(data.offset + tablePageSize)}><ChevronRightIcon /></Button>
-      </ButtonGroup>}
-    </div>
     {table.error && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription className="text-xs">{table.error}</AlertDescription></Alert>}
     <div className="min-h-0 flex-1 overflow-auto" role="region" aria-label={`${table.name} rows`}>
       {data && <table className="w-max min-w-full border-separate border-spacing-0 font-mono text-xs">
@@ -281,21 +267,34 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
     </div>;
   } else {
     const json = () => JSON.stringify(Object.fromEntries(store.entries.map(entry => [entry.key, parseJson(entry) ?? (entry.type === "boolean" ? entry.value === "true" : entry.type === "number" || entry.type === "integer" ? Number(entry.value) : entry.type === "data" ? bytesAsText(entry) ?? entry.value : entry.value)])), null, 2);
+    const openTable = state.table?.storeId === store.id ? state.table : undefined;
+    const tableData = openTable?.data;
     main = <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex items-center gap-3 border-b px-4 py-3">
+        {openTable && <Button variant="outline" size="icon-xs" aria-label="Back to tables" title="Back to tables" onClick={() => panel.closeTable()}><ChevronLeftIcon className="size-4" /></Button>}
         <KindIcon kind={store.kind} size="lg" />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold">{title(store)}</div>
-          <div className="truncate text-xs text-muted-foreground">{storeKindLabels[store.kind]} · {store.entryCount} {store.kind === "sqlite" ? "table" : "key"}{store.entryCount === 1 ? "" : "s"} · {formatBytes(store.bytes)} · <span className="font-mono">{store.path}</span></div>
+          <div className="truncate text-sm font-semibold">{title(store)}{openTable && <><span className="mx-1.5 font-normal text-muted-foreground">/</span><span className="font-mono">{openTable.name}</span></>}</div>
+          <div className="truncate text-xs text-muted-foreground">{openTable
+            ? <>{tableData ? `${tableData.columns.length} columns · ${tableData.total} row${tableData.total === 1 ? "" : "s"}` : "Loading…"} · <span className="font-mono">{store.path}</span></>
+            : <>{storeKindLabels[store.kind]} · {store.entryCount} {store.kind === "sqlite" ? "table" : "key"}{store.entryCount === 1 ? "" : "s"} · {formatBytes(store.bytes)} · <span className="font-mono">{store.path}</span></>}</div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {openTable?.loading && <RefreshCwIcon className="size-3.5 animate-spin text-muted-foreground" aria-label="Loading" />}
+          {tableData && tableData.total > tableData.rows.length && <>
+            <span className="mr-0.5 text-xs text-muted-foreground tabular-nums">{tableData.offset + 1}–{tableData.offset + tableData.rows.length} of {tableData.total}</span>
+            <ButtonGroup>
+              <Button variant="outline" size="icon-xs" aria-label="Previous rows" disabled={openTable?.loading || tableData.offset === 0} onClick={() => void panel.openTable(store.id, tableData.table, Math.max(0, tableData.offset - tablePageSize))}><ChevronLeftIcon className="size-4" /></Button>
+              <Button variant="outline" size="icon-xs" aria-label="Next rows" disabled={openTable?.loading || tableData.offset + tableData.rows.length >= tableData.total} onClick={() => void panel.openTable(store.id, tableData.table, tableData.offset + tablePageSize)}><ChevronRightIcon className="size-4" /></Button>
+            </ButtonGroup>
+          </>}
           {store.status === "ok" && store.kind !== "sqlite" && <Button variant="outline" size="xs" onClick={() => copy(json())}><CopyIcon />Copy as JSON</Button>}
           <ConfirmButton title={`Clear ${title(store)}`} action="Clear" disabled={busy} description={`Stops the app and deletes ${store.path}. The app is not relaunched.`} onConfirm={() => void panel.clear(store.id)}
             variant="outline" className="text-destructive hover:bg-destructive/10 hover:text-destructive">Clear</ConfirmButton>
         </div>
       </div>
       {store.note && <p className="flex items-center gap-1.5 border-b px-4 py-1.5 text-[11px] text-muted-foreground">{store.status === "encrypted" ? <LockIcon className="size-3" /> : store.status === "unreadable" ? <TriangleAlertIcon className="size-3" /> : null}{store.note}</p>}
-      {state.table?.storeId === store.id ? <TableGrid panel={panel} table={state.table} /> : <div className="min-h-0 flex-1 overflow-auto font-mono text-xs" role="table" aria-label={`${title(store)} entries`}>
+      {state.table?.storeId === store.id ? <TableGrid table={state.table} /> : <div className="min-h-0 flex-1 overflow-auto font-mono text-xs" role="table" aria-label={`${title(store)} entries`}>
         {store.entries.map(entry => store.kind === "sqlite" && entry.type === "table"
           ? <button key={entry.key} type="button" role="row" onClick={() => void panel.openTable(store.id, entry.key)} className="grid w-full grid-cols-[16px_minmax(8rem,2fr)_minmax(0,3fr)_16px] items-center gap-3 border-b px-3 py-1.5 text-left hover:bg-muted/60">
             <DatabaseIcon className="size-4 text-muted-foreground/70" /><span role="cell" className="truncate">{entry.key}</span><span role="cell" className="truncate text-muted-foreground">{entry.value}</span><ChevronRightIcon className="size-4 text-muted-foreground" />
