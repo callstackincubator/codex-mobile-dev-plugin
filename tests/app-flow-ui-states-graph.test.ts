@@ -103,4 +103,19 @@ test("captured UI states ride on their screen's node, collapsed until asked for"
   await act(async () => { (strip()!.querySelector("button") as HTMLButtonElement).click(); });
   await act(async () => { await Promise.resolve(); });
   assert.equal(mainImage().getAttribute("alt"), "Home", "Base puts the sweep's own capture back");
+
+  // The jump pickers. A UI state has no node of its own on this canvas, so choosing one has to
+  // reach into the screen that opened it: open its strip and put that frame up.
+  const select = (label: string) => dom.window.document.querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement;
+  assert.deepEqual(Array.from(select("Jump to screen").options).map(option => option.value), ["", "about", "home"]);
+  assert.deepEqual(Array.from(select("Jump to UI state").options).map(option => option.textContent),
+    ["Jump to…", "Home — Cart Sheet", "Home — Error Dialog (not captured)"]);
+
+  await act(async () => { toggle.click(); });
+  assert.equal(toggle.getAttribute("aria-expanded"), "false", "collapsed again, so the picker has something to open");
+  const picker = select("Jump to UI state");
+  await act(async () => { picker.value = "home::cart"; picker.dispatchEvent(new dom.window.Event("change", { bubbles: true })); });
+  await act(async () => { await Promise.resolve(); });
+  assert.equal(toggle.getAttribute("aria-expanded"), "true", "the jump opens the strip it chose from");
+  assert.equal(mainImage().getAttribute("alt"), "Home — Cart Sheet", "and shows the chosen state");
 });

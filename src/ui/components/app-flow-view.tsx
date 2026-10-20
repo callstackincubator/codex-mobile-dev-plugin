@@ -4,7 +4,8 @@ import type { AppFlowBuildMode, DeepLinkJudgeMode, ExplorationMode } from "../..
 import { FAST_MODE_AUTH_NOTICE } from "../../shared/app-flow.ts";
 import type { AppFlowPanel, AppFlowSweepSummary } from "../app-flow-panel.ts";
 import { AppFlowGraph } from "./app-flow-graph.tsx";
-import { captureTally } from "./app-flow-layout.ts";
+import { captureTally, uiStateCount } from "./app-flow-layout.ts";
+import { AppFlowUiStatesGraph } from "./app-flow-ui-states-graph.tsx";
 import { AppFlowProjectPicker } from "./app-flow-project-picker.tsx";
 import { Button } from "./ui/button.tsx";
 import { Input } from "./ui/input.tsx";
@@ -39,6 +40,11 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   const [deepLinkJudge, setDeepLinkJudge] = useState<DeepLinkJudgeMode>("on");
   const [screenLimit, setScreenLimit] = useState("");
   const [captureUiStates, setCaptureUiStates] = useState(false);
+  /**
+   * Which canvas the body shows. Two graphs rather than one: a UI state is not somewhere a user
+   * navigates to, so it has no place in the navigation map — see `AppFlowUiState`.
+   */
+  const [view, setView] = useState<"flow" | "ui-states">("flow");
   useEffect(() => {
     const projectPath = state.projectPath; if (!projectPath) return;
     const nextMode = stored(`app-flow-mode:${projectPath}`, "structure-only"); setMode(nextMode === "screen-ui-and-structure" ? nextMode : "structure-only");
@@ -55,6 +61,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
      advanced it. The summary keeps driving the live chip and the "Last step:" line below. */
   const tally = useMemo(() => { const nodes = state.result?.nodes ?? []; const counts = captureTally(nodes);
     return counts.total ? counts : null; }, [state.result]);
+  const uiStates = useMemo(() => uiStateCount(state.result?.nodes ?? []), [state.result]);
   const start = () => {
     if (!state.projectPath) return;
     write(`app-flow-mode:${state.projectPath}`, mode);
@@ -72,6 +79,10 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
+        {state.result && <NativeSelect aria-label="App Flow view" size="sm" value={view} onChange={event => setView(event.target.value as "flow" | "ui-states")}>
+          <NativeSelectOption value="flow">Flow graph</NativeSelectOption>
+          <NativeSelectOption value="ui-states">UI states{uiStates > 0 ? ` · ${uiStates}` : ""}</NativeSelectOption>
+        </NativeSelect>}
         <NativeSelect aria-label="App Flow capture mode" size="sm" value={mode} disabled={isRunning} onChange={event => setMode(event.target.value as AppFlowBuildMode)}>
           <NativeSelectOption value="structure-only">Structure only</NativeSelectOption><NativeSelectOption value="screen-ui-and-structure">Screen UI + Structure</NativeSelectOption>
         </NativeSelect>
@@ -119,6 +130,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
       action={<Button onClick={() => void panel.pickProject()} disabled={state.pickingProject}>{state.pickingProject ? <Loader2 className="animate-spin" /> : null}{state.pickingProject ? "Waiting for the folder…" : "Choose project folder"}</Button>} />
       : empty ? <Empty title="No app flow yet" detail="Build a visual map of every screen and navigation edge in this app." action={<Button onClick={start}
           disabled={!state.available || state.agentStartPending || (mode === "screen-ui-and-structure" && !panel.canSendAgentStart)}>Start Building App Flow</Button>} />
+      : state.result && view === "ui-states" ? <AppFlowUiStatesGraph panel={panel} projectId={state.projectId} nodes={state.result.nodes} projectPath={isRunning ? undefined : state.projectPath} />
       : state.result ? <AppFlowGraph panel={panel} projectId={state.projectId} nodes={state.result.nodes} edges={state.result.edges}
           runtimeEdges={state.result.runtimeEdges} entryScreenIds={state.result.navigation?.entryScreenIds} projectPath={isRunning ? undefined : state.projectPath} /> : null}</div>
   </section>;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { AppFlowEdge, AppFlowNode, ManualSnapshotNode, ManualSnapshotRect } from "../src/shared/app-flow.ts";
-import { captureTally, displayableUiStates, hasUiStates, layoutTopology, uiStateCount, type ResolvedEdge } from "../src/ui/components/app-flow-layout.ts";
+import { NODE_WIDTH, UI_STATE_COL_GAP, UI_STATE_NODE_HEIGHT, UI_STATE_NODE_WIDTH, UI_STATE_ROW_GAP, captureTally, displayableUiStates, hasUiStates, layoutTopology, layoutUiStates, nodeTitle, screenOptions, uiStateCount, uiStateNodeId, uiStateOptions, type ResolvedEdge } from "../src/ui/components/app-flow-layout.ts";
 import { isTextInput, layoutWireframe, STATUS_BAR_POINTS } from "../src/ui/components/manual-wireframe.ts";
 
 function screen(id: string, status?: string): AppFlowNode {
@@ -98,6 +98,47 @@ describe("App Flow UI states", () => {
     assert.equal(uiStateCount([]), 0);
     assert.equal(captureTally(nodes).captured, 3, "variants are not screens");
     assert.equal(captureTally(nodes).total, 3);
+  });
+
+  test("the UI-states graph gives every captured variant a node under its screen", () => {
+    const topology = layoutUiStates([node("Home", [sheet, failed]), node("About"), node("Settings", [sheet])]);
+    assert.deepEqual(topology.placements.map(placement => [placement.kind, placement.id]), [
+      ["screen", "Home"], ["state", "Home::cart"], ["state", "Home::error"],
+      ["screen", "Settings"], ["state", "Settings::cart"],
+    ], "a screen with no states is not drawn, and a state id is only unique within its screen");
+    assert.deepEqual(topology.edges.map(edge => [edge.source, edge.target]), [
+      ["Home", "Home::cart"], ["Home", "Home::error"], ["Settings", "Settings::cart"],
+    ]);
+    const at = (id: string) => topology.placements.find(placement => placement.id === id)!.position;
+    assert.equal(at("Home").y, 0);
+    assert.equal(at("Home::cart").y, UI_STATE_NODE_HEIGHT + UI_STATE_ROW_GAP, "states sit one row below their screen");
+    assert.equal(at("Home::error").x - at("Home::cart").x, UI_STATE_NODE_WIDTH + UI_STATE_COL_GAP, "siblings are laid out left to right");
+    assert.ok(at("Settings").x > at("Home").x + NODE_WIDTH, "one screen's family never overlaps the next");
+    assert.deepEqual(layoutUiStates([node("About")]), { placements: [], edges: [] });
+  });
+
+  test("a failed variant still gets a node, carrying its reason", () => {
+    const placement = layoutUiStates([node("Home", [failed])]).placements.find(entry => entry.kind === "state")!;
+    assert.equal(placement.state!.error, "Setter threw");
+    assert.equal(placement.state!.screenshot, null);
+    assert.equal(placement.id, uiStateNodeId("Home", "error"));
+  });
+
+  test("the pickers list screens by title and states by screen, keeping uncaptured ones", () => {
+    const chrome = { ...node("chrome:tabs"), origin: "chrome" } as AppFlowNode;
+    const nodes = [node("Settings", [sheet]), node("Home", [sheet, failed]), chrome];
+    assert.deepEqual(screenOptions(nodes).map(option => option.id), ["Home", "Settings"], "alphabetical, and navigator chrome is not a screen");
+    assert.deepEqual(uiStateOptions(nodes), [
+      { id: "Settings::cart", nodeId: "Settings", stateId: "cart", label: "Settings — Cart Sheet", captured: true },
+      { id: "Home::cart", nodeId: "Home", stateId: "cart", label: "Home — Cart Sheet", captured: true },
+      { id: "Home::error", nodeId: "Home", stateId: "error", label: "Home — Error Dialog", captured: false },
+    ], "qualified by screen, because two screens may open a state of the same name");
+  });
+
+  test("a node with no title is named after its route segment", () => {
+    assert.equal(nodeTitle({ id: "app/user-profile", title: undefined, urlPath: null } as never), "User Profile");
+    assert.equal(nodeTitle({ id: "app/[id]", title: undefined, urlPath: "/u" } as never), "Id");
+    assert.equal(nodeTitle({ id: "app/home", title: "Home", urlPath: null } as never), "Home");
   });
 });
 

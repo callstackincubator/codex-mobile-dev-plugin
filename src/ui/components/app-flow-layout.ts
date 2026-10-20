@@ -222,3 +222,122 @@ export function layoutTopology(nodes: AppFlowNode[], edges: ResolvedEdge[], entr
   }
   return { positions, placement, bandHeadings };
 }
+
+/**
+ * The human name of a node, the one the graph writes on it and the pickers list it by. Lives here
+ * rather than in the graph component so the option builders below stay pure and testable.
+ */
+export function nodeTitle(node: Pick<AppFlowNode, "title" | "id" | "urlPath">): string {
+  if (node.title) return node.title;
+  const last = node.id.split("/").pop() ?? "";
+  if (last === "index") return "index";
+  const cleaned = last.replace(/^\[(?:\.\.\.)?/, "").replace(/\]$/, "").replace(/[-_]+/g, " ");
+  return cleaned.replace(/\b[a-z]/g, character => character.toUpperCase()) || node.urlPath || node.id;
+}
+
+/** Width of a UI-state card in the UI-states graph. Narrower than a screen: it carries one frame. */
+export const UI_STATE_NODE_WIDTH = 220;
+/** Height of both a UI-state card and its parent screen card in the UI-states graph. */
+export const UI_STATE_NODE_HEIGHT = 480;
+/** Gap between sibling UI-state cards. */
+export const UI_STATE_COL_GAP = 28;
+/** Gap between a screen card and the row of its states. */
+export const UI_STATE_ROW_GAP = 96;
+/** Gap between one screen's family and the next. */
+export const UI_STATE_FAMILY_GAP = 120;
+
+/**
+ * The React Flow id of a UI-state card. A state id is only unique within the screen that opened it
+ * (`AppFlowPresentationAction.id` is per catalog site), so the screen is part of the key.
+ */
+export function uiStateNodeId(nodeId: string, stateId: string): string {
+  return `${nodeId}::${stateId}`;
+}
+
+export interface UiStatePlacement {
+  /** React Flow node id: the screen's own id for a parent, `uiStateNodeId` for a state. */
+  id: string;
+  kind: "screen" | "state";
+  node: AppFlowNode;
+  /** The variant this card shows; null on the parent screen card. */
+  state: AppFlowUiState | null;
+  position: { x: number; y: number };
+}
+export interface UiStateTopology {
+  placements: UiStatePlacement[];
+  edges: { id: string; source: string; target: string }[];
+}
+
+/**
+ * The second graph: one row of screens that captured UI states, each with its own states hanging
+ * beneath it.
+ *
+ * This is deliberately *not* `layoutTopology` with extra nodes. Nothing navigates to a UI state —
+ * see `AppFlowUiState` — so a presentation has no place in the navigation tree, and splicing one in
+ * would change every screen's column width and push the deep-link/uncaptured bands around. Keeping
+ * it a separate forest means the flow graph is byte-for-byte what it was, and this view answers the
+ * one question it is for: what did this screen's sheets and dialogs look like.
+ *
+ * Screens with no displayable state are left out entirely: an empty parent is a row of nothing.
+ */
+export function layoutUiStates(nodes: AppFlowNode[]): UiStateTopology {
+  const placements: UiStatePlacement[] = [];
+  const edges: UiStateTopology["edges"] = [];
+  let left = 0;
+  for (const node of nodes) {
+    const states = displayableUiStates(node);
+    if (states.length === 0) continue;
+    const childrenWidth = states.length * UI_STATE_NODE_WIDTH + (states.length - 1) * UI_STATE_COL_GAP;
+    const width = Math.max(NODE_WIDTH, childrenWidth);
+    placements.push({ id: node.id, kind: "screen", node, state: null, position: { x: left + (width - NODE_WIDTH) / 2, y: 0 } });
+    let cursor = left + Math.max(0, (width - childrenWidth) / 2);
+    for (const state of states) {
+      const id = uiStateNodeId(node.id, state.id);
+      placements.push({ id, kind: "state", node, state, position: { x: cursor, y: UI_STATE_NODE_HEIGHT + UI_STATE_ROW_GAP } });
+      edges.push({ id: `ui-${id}`, source: node.id, target: id });
+      cursor += UI_STATE_NODE_WIDTH + UI_STATE_COL_GAP;
+    }
+    left += width + UI_STATE_FAMILY_GAP;
+  }
+  return { placements, edges };
+}
+
+export interface ScreenOption { id: string; label: string }
+export interface UiStateOption {
+  /** The UI-states graph's node id for this variant. */
+  id: string;
+  /** The screen that opened it — what the flow graph focuses instead. */
+  nodeId: string;
+  /** `AppFlowUiState.id`, which is what a node's own variant selection is keyed by. */
+  stateId: string;
+  label: string;
+  /** False for a variant the pass found in source and could not open; it still gets a row. */
+  captured: boolean;
+}
+
+/**
+ * The screen picker's options. Navigator chrome is excluded: it is not a screen, so "jump to a
+ * screen" listing it would be listing a thing the user cannot read a capture off.
+ */
+export function screenOptions(nodes: AppFlowNode[]): ScreenOption[] {
+  return nodes.filter(node => node.origin !== "chrome")
+    .map(node => ({ id: node.id, label: nodeTitle(node) }))
+    .sort((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id));
+}
+
+/**
+ * The UI-state picker's options, qualified by their screen because two screens may well have opened
+ * a state of the same name. Order follows the screens, then discovery order within a screen, so the
+ * list reads the way the graph is drawn rather than alphabetically across unrelated screens.
+ */
+export function uiStateOptions(nodes: AppFlowNode[]): UiStateOption[] {
+  const options: UiStateOption[] = [];
+  for (const node of nodes) {
+    const title = nodeTitle(node);
+    for (const state of displayableUiStates(node)) {
+      options.push({ id: uiStateNodeId(node.id, state.id), nodeId: node.id, stateId: state.id,
+        label: `${title} — ${state.name}`, captured: state.screenshot != null });
+    }
+  }
+  return options;
+}
