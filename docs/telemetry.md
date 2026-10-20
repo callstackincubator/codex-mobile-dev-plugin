@@ -220,9 +220,11 @@ app first. Unexpected failures report under `app_storage.<operation>` with a fix
 message; a release Android build, a missing app, or a stopped device counts only
 through `server.error.outcome`. The panel records `ui.storage.list_apps`, `.read`,
 `.clear`, `.reset`, and `.launch` round trips, `ui.storage.process` for validating
-a snapshot and marking changes, gauges `ui.storage.stores` and `ui.storage.entries`,
+a snapshot and computing the Changes feed, gauges `ui.storage.stores` and `ui.storage.entries`,
 and counts `ui.storage.failure`. Bundle IDs, store names, paths, keys, values, and
-file names are never sent.
+file names are never sent. Since 0.1.173 the Changes tab reads storage again every
+5 seconds while it is open and the page is visible; each read is one `ui.storage.read`
+sample, and the interval stops when the tab, panel, or page is hidden.
 
 Since 0.1.152, `mobile_app_language` and `mobile_set_app_language` use the same
 app control coverage under `app_control.language` and `app_control.set_language`.

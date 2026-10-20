@@ -5,7 +5,7 @@ export const storeKinds = ["mmkv", "async-storage", "user-defaults", "shared-pre
 export type StoreKind = typeof storeKinds[number];
 export const storeKindLabels: Record<StoreKind, string> = {
   "mmkv": "MMKV", "async-storage": "AsyncStorage", "user-defaults": "UserDefaults", "shared-preferences": "SharedPreferences",
-  "datastore": "DataStore", "sqlite": "Databases", "realm": "Realm",
+  "datastore": "DataStore", "sqlite": "SQLite", "realm": "Realm",
 };
 
 export const entryTypes = ["string", "json", "number", "integer", "boolean", "date", "data", "array", "object", "null", "table"] as const;

@@ -2,14 +2,27 @@ import type { App } from "@modelcontextprotocol/ext-apps";
 import { installedAppsSchema } from "../shared/app-control.ts";
 import type { InstalledApp } from "../shared/app-control.ts";
 import { storageClearSchema, storageLimits, storageSnapshotSchema } from "../shared/app-storage.ts";
-import type { StorageSnapshot } from "../shared/app-storage.ts";
+import type { StorageEntry, StorageSnapshot, StorageStore } from "../shared/app-storage.ts";
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import { errorMessage } from "../shared/protocol.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
+import { isSdkStore } from "./storage-labels.ts";
 import { measureUiOperation, recordUiTiming, setUiGauge } from "./telemetry.ts";
 
-export type StorageChange = "new" | "changed";
 export type StorageAction = "apps" | "read" | "clear" | "reset" | "launch";
+export type StorageTab = "browse" | "changes";
+export type StorageChangeKind = "added" | "changed" | "removed";
+// One key that differed between two reads, kept in the Changes feed.
+export type StorageChangeEvent = {
+  id: number;
+  at: number;
+  store: Pick<StorageStore, "id" | "kind" | "name" | "path">;
+  sdk: boolean;
+  key: string;
+  change: StorageChangeKind;
+  before?: StorageEntry;
+  after?: StorageEntry;
+};
 export type StorageState = {
   open: boolean;
   available: boolean;
@@ -21,8 +34,10 @@ export type StorageState = {
   apps: InstalledApp[];
   bundleId: string;
   snapshot?: StorageSnapshot;
-  // Keyed by store ID, then entry key, against the first read of this app since it was picked.
-  changes: ReadonlyMap<string, ReadonlyMap<string, StorageChange>>;
+  tab: StorageTab;
+  // Newest first, from the first read of this app until the feed is cleared.
+  changes: readonly StorageChangeEvent[];
+  watchingSince?: number;
   busy: StorageAction | null;
   error: string;
   status: string;
@@ -30,22 +45,38 @@ export type StorageState = {
 
 // The panel shows long values in full up to this length; the tool truncates beyond it.
 const panelValueLength = 4000;
+// While the Changes tab is visible, storage is read again on this interval.
+export const changesPollMs = 5000;
+const maxChanges = 500;
 
-export function diffSnapshots(baseline: StorageSnapshot | undefined, next: StorageSnapshot) {
-  const changes = new Map<string, Map<string, StorageChange>>();
-  if (baseline === undefined) return changes;
-  const before = new Map(baseline.stores.map(store => [store.id, new Map(store.entries.map(entry => [entry.key, `${entry.type}\u0000${entry.value}`]))]));
+const same = (a: StorageEntry, b: StorageEntry) => a.type === b.type && a.value === b.value;
+
+// Keys added, changed, or removed between two reads. Stores that were capped skip removals,
+// since a key past the cap is not missing.
+export function diffSnapshots(previous: StorageSnapshot, next: StorageSnapshot): Omit<StorageChangeEvent, "id">[] {
+  const events: Omit<StorageChangeEvent, "id">[] = [];
+  const before = new Map(previous.stores.map(store => [store.id, store]));
+  const after = new Map(next.stores.map(store => [store.id, store]));
+  const event = (store: StorageStore, key: string, change: StorageChangeKind, old?: StorageEntry, value?: StorageEntry) =>
+    events.push({ at: next.readAt, store: { id: store.id, kind: store.kind, name: store.name, path: store.path }, sdk: isSdkStore(store), key, change, before: old, after: value });
   for (const store of next.stores) {
-    const previous = before.get(store.id);
-    const marks = new Map<string, StorageChange>();
+    const old = before.get(store.id);
+    if (store.status !== "ok" || (old && old.status !== "ok")) continue;
+    const oldEntries = new Map(old?.entries.map(entry => [entry.key, entry]));
     for (const entry of store.entries) {
-      const value = previous?.get(entry.key);
-      if (value === undefined) marks.set(entry.key, "new");
-      else if (value !== `${entry.type}\u0000${entry.value}`) marks.set(entry.key, "changed");
+      const previousEntry = oldEntries.get(entry.key);
+      if (previousEntry === undefined) event(store, entry.key, "added", undefined, entry);
+      else if (!same(previousEntry, entry)) event(store, entry.key, "changed", previousEntry, entry);
     }
-    if (marks.size > 0) changes.set(store.id, marks);
+    if (old === undefined || old.entries.length < old.entryCount || store.entries.length < store.entryCount) continue;
+    const keys = new Set(store.entries.map(entry => entry.key));
+    for (const entry of old.entries) if (!keys.has(entry.key)) event(store, entry.key, "removed", entry);
   }
-  return changes;
+  for (const store of previous.stores) {
+    if (after.has(store.id) || store.status !== "ok") continue;
+    for (const entry of store.entries) event(store, entry.key, "removed", entry);
+  }
+  return events;
 }
 
 export class StoragePanel {
@@ -54,10 +85,11 @@ export class StoragePanel {
   private readonly unsubscribe: () => void;
   private listeners = new Set<() => void>();
   private revision = 0;
-  private baseline?: StorageSnapshot;
+  private nextChange = 1;
+  private poll?: ReturnType<typeof setInterval>;
   private appsFor = "";
   private selections = new Map<string, string>();
-  private state: StorageState = { open: false, available: false, platform: "ios", deviceId: "", deviceLabel: "", unsupported: "", apps: [], bundleId: "", changes: new Map(), busy: null, error: "", status: "" };
+  private state: StorageState = { open: false, available: false, platform: "ios", deviceId: "", deviceLabel: "", unsupported: "", apps: [], bundleId: "", tab: "browse", changes: [], busy: null, error: "", status: "" };
 
   constructor(app: App, deviceApps: DeviceAppsStore) {
     this.app = app;
@@ -94,18 +126,40 @@ export class StoragePanel {
       return;
     }
     this.revision++;
-    this.baseline = undefined;
     this.appsFor = "";
-    this.update({ platform, deviceId, deviceLabel: device?.name ?? "", unsupported, apps: [], bundleId: this.selections.get(`${platform}:${deviceId}`) ?? "", snapshot: undefined, changes: new Map(), busy: null, error: "", status: "" });
+    this.update({ platform, deviceId, deviceLabel: device?.name ?? "", unsupported, apps: [], bundleId: this.selections.get(`${platform}:${deviceId}`) ?? "", snapshot: undefined, changes: [], watchingSince: undefined, busy: null, error: "", status: "" });
     if (this.state.open) void this.loadApps();
   }
 
   show() {
     this.update({ open: true });
     void this.loadApps();
+    this.schedule();
   }
 
-  hide() { this.update({ open: false }); }
+  hide() { this.update({ open: false }); this.schedule(); }
+
+  setTab(tab: StorageTab) {
+    if (tab === this.state.tab) return;
+    this.update({ tab });
+    this.schedule();
+    if (tab === "changes") void this.refresh();
+  }
+
+  clearChanges() { this.update({ changes: [], watchingSince: this.state.snapshot?.readAt }); }
+
+  // Only the visible Changes tab re-reads storage; Browse refreshes on request.
+  private schedule() {
+    const watching = this.state.open && this.state.tab === "changes";
+    if (watching && this.poll === undefined) {
+      this.poll = setInterval(() => {
+        if (document.visibilityState !== "hidden" && this.state.busy === null) void this.refresh();
+      }, changesPollMs);
+    } else if (!watching && this.poll !== undefined) {
+      clearInterval(this.poll);
+      this.poll = undefined;
+    }
+  }
 
   private async call(name: string, args: Record<string, unknown>) {
     const result = await this.app.callServerTool({ name, arguments: { platform: this.state.platform, deviceId: this.state.deviceId, ...args } }, { timeout: 60000 });
@@ -137,9 +191,8 @@ export class StoragePanel {
   selectApp(bundleId: string) {
     if (bundleId !== this.state.bundleId) {
       this.revision++;
-      this.baseline = undefined;
       this.selections.set(`${this.state.platform}:${this.state.deviceId}`, bundleId);
-      this.update({ bundleId, snapshot: undefined, changes: new Map(), busy: null, error: "", status: "" });
+      this.update({ bundleId, snapshot: undefined, changes: [], watchingSince: undefined, busy: null, error: "", status: "" });
     }
     if (bundleId) void this.refresh();
   }
@@ -154,18 +207,19 @@ export class StoragePanel {
       if (!current()) return;
       const startedAt = performance.now();
       const snapshot = storageSnapshotSchema.parse(data);
-      const changes = diffSnapshots(this.baseline, snapshot);
-      this.baseline ??= snapshot;
+      const previous = this.state.snapshot;
+      const found = previous ? diffSnapshots(previous, snapshot).map(event => ({ ...event, id: this.nextChange++ })) : [];
+      const changes = found.length > 0 ? [...found.reverse(), ...this.state.changes].slice(0, maxChanges) : this.state.changes;
       recordUiTiming("ui.storage.process", performance.now() - startedAt);
       setUiGauge("ui.storage.stores", snapshot.stores.length);
       setUiGauge("ui.storage.entries", snapshot.stores.reduce((total, store) => total + store.entries.length, 0));
-      this.update({ snapshot, changes, busy: null });
+      this.update({ snapshot, changes, watchingSince: this.state.watchingSince ?? snapshot.readAt, busy: null });
     } catch (error) {
       if (current()) this.update({ busy: null, error: errorMessage(error) });
     }
   }
 
-  // Clearing stops the app; the panel then reads again and starts change tracking over.
+  // Clearing stops the app; the next read records the cleared keys as removed.
   async clear(storeId?: string) {
     const bundleId = this.state.bundleId;
     if (!this.ready() || !bundleId || this.state.busy) return;
@@ -175,7 +229,6 @@ export class StoragePanel {
     try {
       const result = storageClearSchema.parse(await measureUiOperation(`ui.storage.${action}`, "ui.storage.failure", () => this.call("mobile_clear_app_storage", storeId ? { bundleId, store: storeId } : { bundleId })));
       if (!current()) return;
-      this.baseline = undefined;
       this.update({ busy: null, status: result.cleared === "all" ? "Cleared all app data. The app was stopped." : `Cleared ${result.cleared}. The app was stopped.` });
       await this.refresh();
     } catch (error) {
@@ -198,6 +251,8 @@ export class StoragePanel {
 
   dispose() {
     this.revision++;
+    if (this.poll !== undefined) clearInterval(this.poll);
+    this.poll = undefined;
     this.unsubscribe();
     this.listeners.clear();
   }

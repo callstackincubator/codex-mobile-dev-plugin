@@ -210,14 +210,25 @@ test("storage tools stop the app before clearing and reset everything when no st
   await client.close();
 });
 
-test("change markers compare each read with the first read of the app", async () => {
+test("the change feed records keys added, changed, and removed between reads, and labels SDK stores", async () => {
   const { diffSnapshots } = await import("../src/ui/storage-panel.ts");
-  const snapshot = (entries: [string, string][]) => storageSnapshotSchema.parse({ platform: "ios", bundleId: "com.example", readAt: 0, files: [], fileCount: 0, totalBytes: 0,
-    stores: [{ id: "mmkv:a", kind: "mmkv", name: "a", path: "a", status: "ok", bytes: 0, entryCount: entries.length, entries: entries.map(([key, value]) => ({ key, type: "string", value, bytes: value.length })) }] });
-  const first = snapshot([["kept", "1"], ["edited", "1"]]);
-  assert.equal(diffSnapshots(undefined, first).size, 0);
-  const marks = diffSnapshots(first, snapshot([["kept", "1"], ["edited", "2"], ["added", "x"]]));
-  assert.deepEqual([...marks.get("mmkv:a")!], [["edited", "changed"], ["added", "new"]]);
+  const { changedFields, bytesAsText, isSdkStore, storeTitle } = await import("../src/ui/storage-labels.ts");
+  const snapshot = (readAt: number, entries: [string, string][], entryCount = entries.length) => storageSnapshotSchema.parse({ platform: "ios", bundleId: "com.example", readAt, files: [], fileCount: 0, totalBytes: 0,
+    stores: [{ id: "mmkv:a", kind: "mmkv", name: "a", path: "a", status: "ok", bytes: 0, entryCount, entries: entries.map(([key, value]) => ({ key, type: "string", value, bytes: value.length })) }] });
+  const first = snapshot(1, [["kept", "1"], ["edited", "1"], ["dropped", "x"]]);
+  const events = diffSnapshots(first, snapshot(2, [["kept", "1"], ["edited", "2"], ["added", "x"]]));
+  assert.deepEqual(events.map(event => [event.key, event.change, event.before?.value, event.after?.value, event.at]), [
+    ["edited", "changed", "1", "2", 2], ["added", "added", undefined, "x", 2], ["dropped", "removed", "x", undefined, 2],
+  ]);
+  // A capped read is not evidence that keys past the cap were removed.
+  assert.deepEqual(diffSnapshots(first, snapshot(3, [["kept", "1"]], 3)).map(event => event.change), []);
+  assert.deepEqual(changedFields({ user: "ada", count: 1 }, { user: "ada", count: 2 }), [{ path: "count", before: "1", after: "2" }]);
+  assert.equal(changedFields("a", "b"), undefined);
+  assert.equal(bytesAsText({ key: "k", type: "data", value: Buffer.from("[1,2]").toString("hex"), bytes: 5 }), "[1,2]");
+  assert.equal(bytesAsText({ key: "k", type: "data", value: "ff00", bytes: 2 }), undefined);
+  assert.equal(isSdkStore({ name: "com.google.gmp.measurement.monitor", path: "Library/Preferences/com.google.gmp.measurement.monitor.plist" }), true);
+  assert.equal(isSdkStore({ name: "com.example", path: "Library/Preferences/com.example.plist" }), false);
+  assert.equal(storeTitle({ kind: "user-defaults", name: "com.example" }, "com.example"), "Standard defaults");
 });
 
 test("simulator resets empty the container but keep its layout, metadata, and cfprefsd in sync", async () => {

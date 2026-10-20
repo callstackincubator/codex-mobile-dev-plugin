@@ -517,11 +517,22 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   assert.deepEqual(storageCalls, ["mobile_list_apps", "mobile_app_storage"]);
   const storageDrawer = dom.window.document.getElementById("storage-drawer")!;
-  assert.deepEqual([...storageDrawer.querySelectorAll('nav[aria-label="Stores"] button')].map(button => button.textContent), ["mmkv.default2", "secure—", "Files300 B"]);
-  const valueRow = [...storageDrawer.querySelectorAll('[role="row"]')].find(row => row.textContent?.startsWith("user")) as HTMLElement;
+  const storeNames = [...storageDrawer.querySelectorAll('nav[aria-label="Stores"] button')].map(button => button.textContent);
+  assert.deepEqual(storeNames.slice(0, 2), ["Default instanceMMKV2", "secureMMKV"]);
+  assert.match(storeNames[2] ?? "", /^Files300 B/);
+  const valueRow = [...storageDrawer.querySelectorAll('[role="row"] > button')].find(row => row.textContent?.startsWith("user")) as HTMLElement;
   await act(async () => { valueRow.click(); });
-  assert.equal(storageDrawer.querySelector('[aria-label="Value"] pre')?.textContent, '{\n  "id": 1\n}');
-  assert.match(storageDrawer.textContent ?? "", /Type guessed from the stored bytes/);
+  assert.equal(storageDrawer.querySelector('[aria-label="Value"]')?.textContent?.startsWith("id: 1"), true);
+  assert.match(storageDrawer.textContent ?? "", /guessed; MMKV does not record types/);
+  const search = storageDrawer.querySelector('input[type="search"]') as HTMLInputElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!.call(search, "onboarding");
+    search.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  assert.equal(storageDrawer.querySelector('[aria-label="Search results"] [role="status"]')?.textContent, "1 match in 1 store");
+  await act(async () => { (storageDrawer.querySelector('[role="tab"]:nth-child(2)') as HTMLElement).click(); });
+  assert.match(storageDrawer.textContent ?? "", /No changes yet/);
+  await act(async () => { (storageDrawer.querySelector('[role="tab"]:nth-child(1)') as HTMLElement).click(); });
   assert.equal(dom.window.document.querySelector("canvas"), canvas, "The storage tool preserves the device DOM.");
   await selectTool("logs");
   assert.equal(dom.window.document.getElementById("storage-drawer"), null);
