@@ -271,8 +271,9 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
     const tableData = openTable?.data;
     main = <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex items-center gap-3 border-b px-4 py-3">
-        {openTable && <Button variant="outline" size="icon-xs" aria-label="Back to tables" title="Back to tables" onClick={() => panel.closeTable()}><ChevronLeftIcon className="size-4" /></Button>}
-        <KindIcon kind={store.kind} size="lg" />
+        {/* An open table swaps the store icon for a back button of the same size. */}
+        {openTable ? <Button variant="outline" size="icon-sm" className="shrink-0" aria-label="Back to tables" title="Back to tables" onClick={() => panel.closeTable()}><ChevronLeftIcon className="size-4" /></Button>
+          : <KindIcon kind={store.kind} size="lg" />}
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold">{title(store)}{openTable && <><span className="mx-1.5 font-normal text-muted-foreground">/</span><span className="font-mono">{openTable.name}</span></>}</div>
           <div className="truncate text-xs text-muted-foreground">{openTable
