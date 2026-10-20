@@ -210,7 +210,6 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
   const select = (id: string) => { setSelected(id); setOpen(undefined); panel.closeTable(); };
 
   const sidebar = <nav aria-label="Stores" className="h-full w-60 shrink-0 overflow-auto border-r p-1.5 text-[13px] @max-[640px]:hidden">
-    <div className="px-2 pt-1 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Your app</div>
     {own.filter(visible).map(item => <StoreButton key={item.id} store={item} title={title(item)} count={query ? matches.get(item.id)?.length ?? 0 : item.entryCount} selected={!query && store?.id === item.id} onSelect={() => select(item.id)} />)}
     {own.length === 0 && <p className="px-2 py-1 text-muted-foreground">No storage written by the app yet.</p>}
     {sdks.length > 0 && <>
