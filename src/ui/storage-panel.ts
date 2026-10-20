@@ -38,6 +38,8 @@ export type StorageState = {
   tab: StorageTab;
   // Newest first, from the first read of this app until the feed is cleared.
   changes: readonly StorageChangeEvent[];
+  // SDK stores (analytics, crash reporting) write often, so their changes are hidden unless asked for.
+  showSdkChanges: boolean;
   watchingSince?: number;
   busy: StorageAction | null;
   error: string;
@@ -90,7 +92,7 @@ export class StoragePanel {
   private poll?: ReturnType<typeof setInterval>;
   private appsFor = "";
   private selections = new Map<string, string>();
-  private state: StorageState = { open: false, available: false, platform: "ios", deviceId: "", deviceLabel: "", unsupported: "", apps: [], bundleId: "", tab: "browse", changes: [], busy: null, error: "", status: "" };
+  private state: StorageState = { open: false, available: false, platform: "ios", deviceId: "", deviceLabel: "", unsupported: "", apps: [], bundleId: "", tab: "browse", changes: [], showSdkChanges: false, busy: null, error: "", status: "" };
 
   constructor(app: App, deviceApps: DeviceAppsStore) {
     this.app = app;
@@ -146,6 +148,11 @@ export class StoragePanel {
     this.schedule();
     if (tab === "changes") void this.refresh();
   }
+
+  setShowSdkChanges(showSdkChanges: boolean) { this.update({ showSdkChanges }); }
+
+  // The changes the feed shows, honoring the SDK toggle.
+  visibleChanges() { return this.state.showSdkChanges ? this.state.changes : this.state.changes.filter(event => !event.sdk); }
 
   clearChanges() { this.update({ changes: [], watchingSince: this.state.snapshot?.readAt }); }
 

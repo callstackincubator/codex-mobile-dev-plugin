@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from "./ui/base-tabs";
 import { AppAvatar } from "./app-avatar";
 import { appIcons } from "../app-icons.ts";
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Switch } from "./ui/switch";
 
 export { formatBytes } from "../storage-labels.ts";
 
@@ -298,8 +299,8 @@ function ChangeDiff({ event }: { event: StorageChangeEvent }) {
 
 function ChangesView({ panel, query }: { panel: StoragePanel; query: string }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
-  const own = state.changes.filter(event => !event.sdk);
-  const hidden = state.changes.length - own.length;
+  const own = panel.visibleChanges();
+  const sdkCount = state.changes.filter(event => event.sdk).length;
   const visible = query ? own.filter(event => event.key.toLowerCase().includes(query) || event.store.name.toLowerCase().includes(query)
     || [event.before, event.after].some(entry => entry && shown(entry).toLowerCase().includes(query))) : own;
   return <div className="flex min-h-0 flex-1 flex-col">
@@ -310,15 +311,19 @@ function ChangesView({ panel, query }: { panel: StoragePanel; query: string }) {
           return <div key={event.id} role="row" className="grid grid-cols-[16px_8ch_minmax(8rem,18rem)_minmax(0,1fr)] items-center gap-x-3 border-b px-3 py-2">
             <span role="cell" aria-label={look.label} title={look.label} className={`inline-flex items-center justify-center ${look.tone}`}><look.icon className="size-4" /></span>
             <span role="cell" className="font-mono text-muted-foreground tabular-nums">{timeFormat.format(event.at)}</span>
-            <span role="cell" className="flex min-w-0 items-center gap-2" title={`${storeKindLabels[event.store.kind]} · ${event.store.name}`}><KindIcon kind={event.store.kind} /><span className={`truncate font-mono font-medium ${event.change === "removed" ? "text-muted-foreground line-through" : ""}`}>{event.key}</span></span>
+            <span role="cell" className="flex min-w-0 items-center gap-2" title={`${storeKindLabels[event.store.kind]} · ${event.store.name}`}><KindIcon kind={event.store.kind} /><span className={`truncate font-mono font-medium ${event.change === "removed" ? "text-muted-foreground line-through" : ""}`}>{event.key}</span>{event.sdk && <span className="shrink-0 rounded border px-1 text-[10px] text-muted-foreground">SDK</span>}</span>
             <span role="cell" className="flex min-w-0 font-mono"><ChangeDiff event={event} /></span>
           </div>;
         })}
         {visible.length === 0 && <p className="p-4 text-muted-foreground">No changes match.</p>}
       </div>}
     <footer className="flex h-9 shrink-0 items-center gap-2 border-t px-3 text-xs text-muted-foreground">
-      <span role="status">{own.length} change{own.length === 1 ? "" : "s"}{state.watchingSince ? ` since ${timeFormat.format(state.watchingSince)}` : ""}{hidden > 0 ? ` · ${hidden} SDK change${hidden === 1 ? "" : "s"} hidden` : " · SDK data hidden"}</span>
-      <Button variant="ghost" size="xs" className="ml-auto" disabled={state.changes.length === 0} onClick={() => panel.clearChanges()}>Clear</Button>
+      <span role="status">{own.length} change{own.length === 1 ? "" : "s"}{state.watchingSince ? ` since ${timeFormat.format(state.watchingSince)}` : ""}</span>
+      <label htmlFor="storage-sdk-changes" className="ml-auto flex cursor-pointer items-center gap-2" title="Changes written by analytics, crash reporting, and other SDKs">
+        SDK changes{!state.showSdkChanges && sdkCount > 0 && <span className="tabular-nums">({sdkCount} hidden)</span>}
+        <Switch id="storage-sdk-changes" checked={state.showSdkChanges} onCheckedChange={checked => panel.setShowSdkChanges(checked)} />
+      </label>
+      <Button variant="ghost" size="xs" disabled={state.changes.length === 0} onClick={() => panel.clearChanges()}>Clear</Button>
     </footer>
   </div>;
 }
@@ -332,7 +337,7 @@ export const StorageView = memo(function StorageView({ panel }: { panel: Storage
   const snapshot = state.snapshot;
   const busy = state.busy !== null && state.busy !== "apps";
   const search = query.trim().toLowerCase();
-  const ownChanges = state.changes.filter(event => !event.sdk).length;
+  const ownChanges = panel.visibleChanges().length;
   const copy = (text: string) => { void navigator.clipboard.writeText(text).then(() => setCopied("Copied"), () => setCopied("Could not copy")); };
 
   let body: ReactNode;
