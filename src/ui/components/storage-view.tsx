@@ -18,14 +18,14 @@ import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "./ui/popo
 export { formatBytes } from "../storage-labels.ts";
 
 const FILES = "files";
-const kindLook: Record<StoreKind, { tone: string; icon: typeof LayersIcon }> = {
-  "user-defaults": { tone: "text-sky-600 bg-sky-500/10", icon: LayersIcon },
-  "shared-preferences": { tone: "text-sky-600 bg-sky-500/10", icon: LayersIcon },
-  "datastore": { tone: "text-sky-600 bg-sky-500/10", icon: LayersIcon },
-  "mmkv": { tone: "text-amber-600 bg-amber-500/10", icon: LayersIcon },
-  "async-storage": { tone: "text-violet-600 bg-violet-500/10", icon: BracesIcon },
-  "sqlite": { tone: "text-emerald-600 bg-emerald-500/10", icon: DatabaseIcon },
-  "realm": { tone: "text-rose-600 bg-rose-500/10", icon: DatabaseIcon },
+const kindLook: Record<StoreKind, { tone: string; tint: string; icon: typeof LayersIcon }> = {
+  "user-defaults": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-500/10", icon: LayersIcon },
+  "shared-preferences": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-500/10", icon: LayersIcon },
+  "datastore": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-500/10", icon: LayersIcon },
+  "mmkv": { tone: "text-amber-600 dark:text-amber-400", tint: "bg-amber-500/10", icon: LayersIcon },
+  "async-storage": { tone: "text-violet-600 dark:text-violet-400", tint: "bg-violet-500/10", icon: BracesIcon },
+  "sqlite": { tone: "text-emerald-600 dark:text-emerald-400", tint: "bg-emerald-500/10", icon: DatabaseIcon },
+  "realm": { tone: "text-rose-600 dark:text-rose-400", tint: "bg-rose-500/10", icon: DatabaseIcon },
 };
 const typeIcons: Record<StorageEntry["type"], typeof TypeIcon> = {
   string: TypeIcon, json: BracesIcon, object: BracesIcon, array: BracesIcon, number: HashIcon, integer: HashIcon,
@@ -34,9 +34,13 @@ const typeIcons: Record<StorageEntry["type"], typeof TypeIcon> = {
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
 function KindIcon({ kind, large }: { kind: StoreKind; large?: boolean }) {
-  const { tone, icon: Icon } = kindLook[kind];
-  // Multiply lets the tint take on a hovered or selected row's grey in light mode.
-  return <span className={`inline-flex shrink-0 items-center justify-center rounded-md mix-blend-multiply dark:mix-blend-normal ${tone} ${large ? "size-7" : "size-5"}`} aria-hidden="true"><Icon className={large ? "size-4" : "size-3"} /></span>;
+  const { tone, tint, icon: Icon } = kindLook[kind];
+  // Only the tint blends, so it takes on a hovered or selected row's grey while the icon keeps its color.
+  // Multiply darkens a light row; screen lightens a dark one.
+  return <span className={`relative inline-flex shrink-0 items-center justify-center ${tone} ${large ? "size-7" : "size-5"}`} aria-hidden="true">
+    <span className={`absolute inset-0 rounded-md mix-blend-multiply dark:mix-blend-screen ${tint}`} />
+    <Icon className={`relative ${large ? "size-4" : "size-3"}`} />
+  </span>;
 }
 
 function Highlight({ text, query }: { text: string; query: string }) {
