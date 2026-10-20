@@ -29,6 +29,7 @@ const toolIcons = { logs: TerminalIcon, performance: ActivityIcon, storage: Data
 export function Workspace({ logs, performance, storage, recordingController, updates, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; recordingController: RecordingController; updates?: PluginUpdateController; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
   const [tool, setTool] = useState<Tool>("logs");
   const [savedVisible, setSavedVisible] = useState(false);
+  const [simulatorsCollapsed, setSimulatorsCollapsed] = useState(false);
   const [layout, setLayout] = useState<DeviceLayout>(automaticLayout ?? "none");
   const manualLayout = useRef(false);
   const recordingState = useSyncExternalStore(recordingController.subscribe, recordingController.getSnapshot);
@@ -124,7 +125,7 @@ export function Workspace({ logs, performance, storage, recordingController, upd
       </SelectGroup></SelectContent>
     </Select>
   </nav>;
-  const simulatorPanel = <ResizablePanel key="simulators" id="simulators-resizable" minSize="0%" maxSize="100%" collapsible collapsedSize="0px" defaultSize={split ? "36%" : "60%"}>
+  const simulatorPanel = <ResizablePanel key="simulators" id="simulators-resizable" minSize="0%" maxSize="100%" collapsible collapsedSize="0px" defaultSize={split ? "36%" : "60%"} onResize={size => setSimulatorsCollapsed(size.inPixels < 1)}>
     <div className="flex h-full min-h-0 flex-col">
       <ResizablePanelGroup id="simulator-panels" groupRef={simulatorGroupRef} orientation="horizontal" className="min-h-0 flex-1" aria-label="Simulators">
         <ResizablePanel id="ios-resizable" defaultSize="100%" minSize="0px" maxSize="100%" collapsible collapsedSize="0px"><SimulatorView platform="ios" visible={layout === "ios" || layout === "both"} /></ResizablePanel>
@@ -134,7 +135,9 @@ export function Workspace({ logs, performance, storage, recordingController, upd
       {bottomToolbar && toolbar}
     </div>
   </ResizablePanel>;
-  const divider = <ResizableHandle key="divider" hidden={layout === "none" || (!fullscreen && !open)} disabled={layout === "none" || (!fullscreen && !open)} aria-label="Resize tools and simulators" />;
+  // A collapsed simulator area would put the handle's line against the toolbar's border, doubling it.
+  // The handle stays draggable so the simulators can be pulled back open.
+  const divider = <ResizableHandle key="divider" hidden={layout === "none" || (!fullscreen && !open)} disabled={layout === "none" || (!fullscreen && !open)} className={simulatorsCollapsed ? "bg-transparent" : undefined} aria-label="Resize tools and simulators" />;
   return <main className="flex h-dvh flex-col">
     {updates && <PluginUpdateBanner controller={updates} />}
     {!bottomToolbar && toolbar}
