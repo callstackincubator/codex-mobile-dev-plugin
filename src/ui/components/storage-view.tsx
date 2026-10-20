@@ -35,7 +35,8 @@ const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute:
 
 function KindIcon({ kind, large }: { kind: StoreKind; large?: boolean }) {
   const { tone, icon: Icon } = kindLook[kind];
-  return <span className={`inline-flex shrink-0 items-center justify-center rounded-md ${tone} ${large ? "size-7" : "size-5"}`} aria-hidden="true"><Icon className={large ? "size-4" : "size-3"} /></span>;
+  // Multiply lets the tint take on a hovered or selected row's grey in light mode.
+  return <span className={`inline-flex shrink-0 items-center justify-center rounded-md mix-blend-multiply dark:mix-blend-normal ${tone} ${large ? "size-7" : "size-5"}`} aria-hidden="true"><Icon className={large ? "size-4" : "size-3"} /></span>;
 }
 
 function Highlight({ text, query }: { text: string; query: string }) {
