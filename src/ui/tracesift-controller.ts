@@ -3,6 +3,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { OpenAIMessageParams } from "@openai/mcp-extensions/app";
 import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "../shared/tracesift.ts";
 import { decodeTraceSiftExplorePayload, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, type TraceSiftExploreKind } from "../shared/tracesift-explore.ts";
+import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "../shared/tracesift-selection.ts";
 import type { ContributionChartKind } from "./components/tracesift/contribution-chart.tsx";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
 
@@ -33,6 +34,17 @@ type State = {
     focus?: string;
     /** Which commit of a React timeline is open, as `<rootId>.<commitIndex>`; the explorer reports switches. */
     commitKey?: string;
+    /**
+     * Whether a click on a frame picks it rather than navigating to it. Held here
+     * rather than inside the explorer so the bar above the views can show the
+     * count, and so leaving and coming back does not resurrect a half-built set.
+     */
+    picking?: boolean;
+    /**
+     * The frames the reader has picked, in the order they chose them, as
+     * `TaskTreeNode.id`s — the one identity all four task views share.
+     */
+    selected?: string[];
   };
 };
 
@@ -103,6 +115,11 @@ export class TraceSiftController {
     recordUiTiming("ui.tracesift.process", performance.now() - startedAt);
     this.update({ analysis, error: "", busyCard: undefined, copiedCard: undefined, handoffCard: undefined, openingExploreCard: undefined, explorer: undefined });
     setUiTelemetryContext({ tracesift_view: "cards" });
+    // A new analysis drops the explorer along with the picks it held. The gauge
+    // has to follow the state and not the navigation: staying on the cards means
+    // `tracesift_view` never changes, so nothing else would clear it and a fresh
+    // reading would be reported as still holding the last one's selection.
+    setUiGauge("ui.tracesift.selected_frames", 0);
     markUiSurfaceReady(this.readyAt);
     if (remember && this.viewId !== undefined) void this.remember(this.viewId, analysis.analysisId);
   }
@@ -177,33 +194,52 @@ export class TraceSiftController {
       if (!this.state.analysis) this.update({ error: error instanceof Error ? error.message : "TraceSift could not restore this analysis." });
     }
   };
-  investigate = async (cardId: string) => {
-    const { analysis, canInvestigate, busyCard } = this.state;
-    if (!analysis || !canInvestigate || busyCard || this.disposed || !analysis.cards.some(card => card.id === cardId)) return;
-    this.update({ busyCard: cardId, error: "" });
+  /**
+   * One hand-off to the active chat, and the taxonomy of the ways that fails.
+   *
+   * A timeout is not a failure to retry: the message may well have landed, and
+   * sending an investigation twice reads as two findings.
+   */
+  private async sendHandoff(text: string, event: string) {
     let sending = false;
-    let toolFailed = false;
     try {
-      let handoff: string;
-      try { handoff = await this.handoff(cardId); }
-      catch (error) { toolFailed = true; throw error; }
-      const message: OpenAIMessageParams = { role: "user", content: [{ type: "text", text: handoff }], _meta: { "openai/message": { target: "active", send: true } } };
+      const message: OpenAIMessageParams = { role: "user", content: [{ type: "text", text }], _meta: { "openai/message": { target: "active", send: true } } };
       const sendStartedAt = performance.now();
       sending = true;
       const sent = await this.app.sendMessage(message, { timeout: 5000, maxTotalTimeout: 5000 });
       if (sent.isError) throw new Error("Codex could not start this investigation.");
       recordUiTiming("ui.tracesift.message_ack", performance.now() - sendStartedAt);
-      countUiEvent("ui.tracesift.investigate");
+      countUiEvent(event);
     } catch (error) {
       const timedOut = sending && typeof error === "object" && error !== null && "code" in error && error.code === -32001;
       const missingComposer = sending && composerUnavailable(error);
-      countUiEvent(timedOut ? "ui.tracesift.delivery_unconfirmed" : missingComposer ? "ui.tracesift.composer_unavailable" : toolFailed ? "ui.tracesift.handoff_failed" : "ui.tracesift.send_failed");
-      if (!timedOut && !missingComposer && !toolFailed) captureUiError(new Error("TraceSift investigation action failed."), "tracesift.investigate");
-      this.update({ error: timedOut
+      countUiEvent(timedOut ? "ui.tracesift.delivery_unconfirmed" : missingComposer ? "ui.tracesift.composer_unavailable" : "ui.tracesift.send_failed");
+      if (!timedOut && !missingComposer) captureUiError(new Error("TraceSift investigation action failed."), "tracesift.investigate");
+      throw new Error(timedOut
         ? "Codex did not confirm delivery. Check the chat before retrying to avoid sending the investigation twice."
         : missingComposer
           ? "Codex could not find this chat's input. Reopen the chat, then try Investigate again."
-        : error instanceof Error ? error.message : "Could not start this investigation." });
+          : error instanceof Error ? error.message : "Could not start this investigation.",
+        { cause: error });
+    }
+  }
+
+  investigate = async (cardId: string) => {
+    const { analysis, canInvestigate, busyCard } = this.state;
+    if (!analysis || !canInvestigate || busyCard || this.disposed || !analysis.cards.some(card => card.id === cardId)) return;
+    this.update({ busyCard: cardId, error: "" });
+    try {
+      // Fetching the hand-off and delivering it fail differently: the first is
+      // this plugin or the TraceSift service, the second is the host's composer.
+      let handoff: string;
+      try { handoff = await this.handoff(cardId); }
+      catch (error) {
+        countUiEvent("ui.tracesift.handoff_failed");
+        throw error;
+      }
+      await this.sendHandoff(handoff, "ui.tracesift.investigate");
+    } catch (error) {
+      this.update({ error: error instanceof Error ? error.message : "Could not start this investigation." });
     } finally { this.update({ busyCard: undefined }); }
   };
   setChartKind = (chartKind: ContributionChartKind) => { this.update({ chartKind }); };
@@ -289,6 +325,9 @@ export class TraceSiftController {
     if (this.disposed || !this.state.explorer) return;
     this.update({ explorer: undefined });
     setUiTelemetryContext({ tracesift_view: "cards" });
+    // A picked set belongs to the reading that built it. Left standing, the last
+    // count would keep being reported against the card list that replaced it.
+    setUiGauge("ui.tracesift.selected_frames", 0);
   };
 
   /**
@@ -310,6 +349,109 @@ export class TraceSiftController {
     const explorer = this.state.explorer;
     if (this.disposed || !explorer || explorer.commitKey === commitKey) return;
     this.update({ explorer: { ...explorer, commitKey } });
+  };
+
+  /**
+   * Switch between picking frames and navigating them.
+   *
+   * Turning it off with picks still standing empties the set. The reader has one
+   * way to say "I am done with these" — this switch — and they have already used
+   * it, so the state has to go with the affordance that built it. Leaving picks
+   * behind showed a bar explaining how to add frames while four frames stayed
+   * ringed, which reads as a mode still on, and then sent a set whose number the
+   * reader could no longer see. A reader who means to keep them clicks the switch
+   * back on; a reader who means to navigate is not asked to keep a set they just
+   * switched off.
+   */
+  setPicking = (picking: boolean) => {
+    const explorer = this.state.explorer;
+    if (this.disposed || !explorer || explorer.picking === picking) return;
+    this.update({ explorer: { ...explorer, picking, ...(picking ? {} : { selected: [] }) } });
+    countUiEvent(picking ? "ui.tracesift.pick_on" : "ui.tracesift.pick_off");
+    if (!picking && explorer.selected?.length) {
+      setUiGauge("ui.tracesift.selected_frames", 0);
+      countUiEvent("ui.tracesift.pick_clear");
+    }
+  };
+
+  /**
+   * A frame was clicked while picking. Adding and removing run through here in
+   * both directions, so the second click on a frame takes it back out.
+   */
+  toggleSelectedFrame = (nodeId: string) => {
+    const explorer = this.state.explorer;
+    if (this.disposed || !explorer || !explorer.picking) return;
+    const selected = explorer.selected ?? [];
+    const next = selected.includes(nodeId) ? selected.filter(id => id !== nodeId) : [...selected, nodeId];
+    this.update({ explorer: { ...explorer, selected: next } });
+    setUiGauge("ui.tracesift.selected_frames", next.length);
+    countUiEvent(next.length > selected.length ? "ui.tracesift.frame_add" : "ui.tracesift.frame_remove");
+  };
+
+  /** Empty the set without leaving picking mode, which is what the button beside it says. */
+  clearSelectedFrames = () => {
+    const explorer = this.state.explorer;
+    if (this.disposed || !explorer || !explorer.selected?.length) return;
+    this.update({ explorer: { ...explorer, selected: [] } });
+    setUiGauge("ui.tracesift.selected_frames", 0);
+    countUiEvent("ui.tracesift.pick_clear");
+  };
+
+  /**
+   * Ask the chat about the frames picked inside the explorer.
+   *
+   * Unlike Investigate, this needs neither the service nor a version of it new
+   * enough to know the question: the picks only exist in this frame and the
+   * whole call tree is already here, so the hand-off is written here from the
+   * same figures the reader was looking at.
+   */
+  investigateSelected = async () => {
+    const { analysis, canInvestigate, busyCard, explorer } = this.state;
+    if (!analysis || !canInvestigate || busyCard || this.disposed) return;
+    const card = analysis.cards.find(entry => entry.id === explorer?.cardId);
+    if (!card || !explorer) return;
+    const handoff = explorer.payload as { card?: unknown } | null;
+    const tree = handoff && typeof handoff.card === "object" && handoff.card !== null
+      ? handoff.card as SelectionCard
+      : undefined;
+    if (!tree?.tree) {
+      this.update({ error: "This task's call tree is not loaded, so its selection cannot be described." });
+      return;
+    }
+
+    this.update({ busyCard: card.id, error: "" });
+    // Set once the text is on its way to the host: a delivery failure is already
+    // counted and captured by `sendHandoff`, which knows the difference between a
+    // timeout, a missing composer and a refusal.
+    let sending = false;
+    try {
+      const evidence = frameSelectionEvidence(tree, explorer.selected ?? []);
+      if (evidence.frames.length === 0) {
+        countUiEvent("ui.tracesift.pick_investigate_empty");
+        this.update({
+          error: explorer.selected?.length
+            // The ids came from the views, so a tree that holds none of them is a
+            // payload that stopped matching what is on screen — worth telling
+            // apart from a reader who has not clicked anything yet.
+            ? "None of the selected frames are in this task's call tree, so they cannot be described. Reopen Explore and try again."
+            : "Nothing is selected yet. Turn on Select frames, then click the frames you want asked about.",
+        });
+        return;
+      }
+      const text = buildSelectionPrompt({
+        card: tree,
+        evidence,
+        ...(analysis.title ? { profileTitle: analysis.title } : {}),
+      });
+      sending = true;
+      await this.sendHandoff(text, "ui.tracesift.pick_investigate");
+    } catch (error) {
+      if (!sending) {
+        countUiEvent("ui.tracesift.pick_investigate_failed");
+        captureUiError(new Error("TraceSift selection handoff failed."), "tracesift.selection");
+      }
+      this.update({ error: error instanceof Error ? error.message : "Could not describe this selection to the chat." });
+    } finally { this.update({ busyCard: undefined }); }
   };
 
   /**

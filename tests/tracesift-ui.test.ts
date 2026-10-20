@@ -369,3 +369,151 @@ test("TraceSift Copy handoff puts the authoritative text on the clipboard and ne
   assert.equal(controller.getSnapshot().handoffCard, undefined);
   controller.dispose();
 });
+
+/** A task payload the explorer can describe: the tree and figures a hand-off reads. */
+const taskHandoff = {
+  apiVersion: 1, analysisId: "private-analysis", totalMs: 180,
+  card: {
+    id: "task-0", durationMs: 75, percentOfProfile: 40, boundaries: "tasks",
+    headline: "A long task", pathline: "Search_Search rendered the list",
+    culprits: [{ nodeId: "0.1", name: "Search_Search", selfMs: 30, totalMs: 60, invocations: 2 }],
+    tree: {
+      id: "0", name: "runRoot", frameClass: "app", totalMs: 75, selfMs: 0, invocations: 1,
+      children: [{ id: "0.1", name: "Search_Search", frameClass: "app", totalMs: 60, selfMs: 30, invocations: 2, children: [] }],
+    },
+  },
+};
+
+function exploreApp(messages: unknown[]) {
+  return {
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    getHostContext: () => hostContext,
+    async callServerTool() { return payloadResult("task", taskHandoff); },
+    async sendMessage(message: unknown) { messages.push(message); return {}; },
+  };
+}
+
+async function exploringTask(messages: unknown[]) {
+  const controller = new TraceSiftController(exploreApp(messages) as never);
+  controller.hostChanged();
+  controller.accept({ content: [], structuredContent: cpuAnalysis });
+  await controller.openExplore("task-0");
+  return controller;
+}
+
+test("TraceSift picks frames across views and toggles a pick off on the second click", async () => {
+  const messages: unknown[] = [];
+  const controller = await exploringTask(messages);
+  assert.equal(controller.getSnapshot().explorer?.selected, undefined);
+
+  controller.setPicking(true);
+  controller.toggleSelectedFrame("0");
+  controller.toggleSelectedFrame("0.1");
+  assert.deepEqual(controller.getSnapshot().explorer?.selected, ["0", "0.1"]);
+  // The second click is a take-it-out, not a second finding.
+  controller.toggleSelectedFrame("0");
+  assert.deepEqual(controller.getSnapshot().explorer?.selected, ["0.1"]);
+
+  // Clearing empties the set and stays in picking mode, which is what the button
+  // beside the count says it does.
+  controller.clearSelectedFrames();
+  assert.deepEqual(controller.getSnapshot().explorer?.selected, []);
+  assert.equal(controller.getSnapshot().explorer?.picking, true);
+  controller.dispose();
+});
+
+test("TraceSift empties the selection when the reader switches picking off", async () => {
+  const messages: unknown[] = [];
+  const controller = await exploringTask(messages);
+  controller.setPicking(true);
+  controller.toggleSelectedFrame("0.1");
+  assert.deepEqual(controller.getSnapshot().explorer?.selected, ["0.1"]);
+
+  // The bar that explains picking goes with the mode, so the picks go with it:
+  // switching off and still seeing frames ringed reads as a mode that never
+  // turned off, and a send would then carry a set whose count is no longer shown.
+  controller.setPicking(false);
+  assert.deepEqual(controller.getSnapshot().explorer?.selected, []);
+  assert.equal(controller.getSnapshot().explorer?.picking, false);
+
+  // Out of picking mode a frame click is navigation, not a pick, so nothing lands.
+  controller.toggleSelectedFrame("0.1");
+  assert.deepEqual(controller.getSnapshot().explorer?.selected, []);
+
+  // And the switch works again on the way back in.
+  controller.setPicking(true);
+  controller.toggleSelectedFrame("0.1");
+  assert.deepEqual(controller.getSnapshot().explorer?.selected, ["0.1"]);
+  controller.dispose();
+});
+
+test("TraceSift sends the selected frames' measured evidence to the active chat", async () => {
+  const messages: unknown[] = [];
+  const controller = await exploringTask(messages);
+  controller.setPicking(true);
+  controller.toggleSelectedFrame("0.1");
+  await controller.investigateSelected();
+
+  assert.equal(messages.length, 1);
+  const text = (messages[0] as { content: Array<{ text: string }> }).content[0]!.text;
+  assert.match(text, /1\. `Search_Search`/);
+  assert.match(text, /60 ms including everything it called/);
+  assert.match(text, /Search_Search rendered the list/);
+  assert.match(text, /← selection #1/);
+  assert.deepEqual((messages[0] as { _meta: unknown })._meta, { "openai/message": { target: "active", send: true } });
+  // The picks never leave the frame: no handoff round trip, so an older
+  // installed TraceSift answers this question just as well.
+  assert.equal(controller.getSnapshot().error, "");
+  controller.dispose();
+});
+
+test("TraceSift will not send an empty selection and says why", async () => {
+  const messages: unknown[] = [];
+  const controller = await exploringTask(messages);
+  controller.setPicking(true);
+  await controller.investigateSelected();
+  assert.deepEqual(messages, []);
+  assert.match(controller.getSnapshot().error, /Nothing is selected/);
+  controller.dispose();
+});
+
+test("TraceSift reports a selection it cannot describe rather than sending an empty ask", async () => {
+  const messages: unknown[] = [];
+  const controller = new TraceSiftController({
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    getHostContext: () => hostContext,
+    async callServerTool() { return payloadResult("task", { apiVersion: 1, analysisId: "private-analysis", card: { durationMs: 75, tree: { id: "0", name: "root", frameClass: "app", totalMs: 75, selfMs: 75, invocations: 1, children: [] } } }); },
+    async sendMessage(message: unknown) { messages.push(message); return {}; },
+  } as never);
+  controller.hostChanged();
+  controller.accept({ content: [], structuredContent: cpuAnalysis });
+  await controller.openExplore("task-0");
+  controller.setPicking(true);
+  // A frame the tree collapsed away can still be showing on screen.
+  controller.toggleSelectedFrame("0.4.2");
+  await controller.investigateSelected();
+  assert.deepEqual(messages, []);
+  // Named apart from having selected nothing: the reader did click, and the
+  // thing that failed is the payload matching what they can see.
+  assert.match(controller.getSnapshot().error, /None of the selected frames are in this task's call tree/);
+  controller.dispose();
+});
+
+test("TraceSift reports a selection whose tree never arrived without sending an empty ask", async () => {
+  const messages: unknown[] = [];
+  const controller = new TraceSiftController({
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    getHostContext: () => hostContext,
+    async callServerTool() { return payloadResult("task", { apiVersion: 1, analysisId: "private-analysis" }); },
+    async sendMessage(message: unknown) { messages.push(message); return {}; },
+  } as never);
+  controller.hostChanged();
+  controller.accept({ content: [], structuredContent: cpuAnalysis });
+  await controller.openExplore("task-0");
+  controller.setPicking(true);
+  controller.toggleSelectedFrame("0.1");
+  await controller.investigateSelected();
+  assert.deepEqual(messages, []);
+  assert.match(controller.getSnapshot().error, /call tree is not loaded/);
+  controller.dispose();
+});
