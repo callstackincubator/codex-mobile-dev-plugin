@@ -36,11 +36,11 @@ const typeIcons: Record<StorageEntry["type"], typeof TypeIcon> = {
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
 const kindIconSizes = { sm: { box: "size-5", glyph: "size-3" }, md: { box: "size-6", glyph: "size-3.5" }, lg: { box: "size-7", glyph: "size-4" } };
-function KindIcon({ kind, size = "sm" }: { kind: StoreKind; size?: keyof typeof kindIconSizes }) {
+function KindIcon({ kind, size = "sm", className = "" }: { kind: StoreKind; size?: keyof typeof kindIconSizes; className?: string }) {
   const { tone, tint, icon: Icon } = kindLook[kind];
   // Only the tint blends, so it takes on a hovered or selected row's grey while the icon keeps its color.
   // Multiply darkens a light row; screen lightens a dark one.
-  return <span className={`relative inline-flex shrink-0 items-center justify-center ${tone} ${kindIconSizes[size].box}`} aria-hidden="true">
+  return <span className={`relative inline-flex shrink-0 items-center justify-center ${tone} ${kindIconSizes[size].box} ${className}`} aria-hidden="true">
     <span className={`absolute inset-0 rounded-md mix-blend-multiply dark:mix-blend-screen ${tint}`} />
     <Icon className={`relative ${kindIconSizes[size].glyph}`} />
   </span>;
@@ -113,7 +113,7 @@ function EntryRow({ entry, store, query, open, onToggle, copy }: { entry: Storag
 function StoreButton({ store, title, count, selected, onSelect }: { store: StorageStore; title: string; count: number; selected: boolean; onSelect: () => void }) {
   return <button type="button" data-selected={selected} onClick={onSelect} title={store.path}
     className="my-0.5 flex w-full items-start gap-2 rounded-md px-2 py-1 text-left hover:bg-muted data-[selected=true]:bg-muted">
-    <KindIcon kind={store.kind} size="md" />
+    <KindIcon kind={store.kind} size="md" className="mt-0.5" />
     <span className="min-w-0 flex-1"><span className="block truncate font-medium">{title}</span><span className="block truncate text-[11px] text-muted-foreground">{storeKindLabels[store.kind]}</span></span>
     {store.status === "encrypted" ? <LockIcon className="size-3.5 self-center text-muted-foreground" aria-label="Encrypted" />
       : store.status === "unreadable" ? <TriangleAlertIcon className="size-3.5 self-center text-amber-500" aria-label="Unreadable" />
@@ -191,7 +191,7 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
     <div className="mx-2 my-1.5 border-t" />
     <button type="button" data-selected={selected === FILES && !query} onClick={() => select(FILES)} title="Every file in the app's data directory"
       className="my-0.5 flex w-full items-start gap-2 rounded-md px-2 py-1 text-left hover:bg-muted data-[selected=true]:bg-muted">
-      <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground" aria-hidden="true"><FolderIcon className="size-3.5" /></span>
+      <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground" aria-hidden="true"><FolderIcon className="size-3.5" /></span>
       <span className="min-w-0 flex-1"><span className="block truncate font-medium">Files</span><span className="block truncate text-[11px] text-muted-foreground tabular-nums">{formatBytes(snapshot.totalBytes)}</span></span>
       <span className="self-center text-muted-foreground tabular-nums">{snapshot.fileCount}</span>
     </button>
@@ -347,7 +347,7 @@ export const StorageView = memo(function StorageView({ panel }: { panel: Storage
         </SelectTrigger>
         <SelectContent align="start" alignItemWithTrigger={false} className="w-auto max-w-[min(30rem,calc(100vw-16px))] min-w-(--anchor-width)"><SelectGroup>
           {state.apps.map(app => <SelectItem key={app.bundleId} value={app.bundleId} className="py-1.5">
-            <AppAvatar name={app.name} icon={icon(app.bundleId)} size="sm" />
+            <AppAvatar name={app.name} icon={icon(app.bundleId)} size="sm" className="mt-0.5 self-start" />
             <span className="flex min-w-0 flex-col">
               <span className="truncate leading-5">{app.name}</span>
               {app.name !== app.bundleId && <span className="truncate text-xs leading-4 text-muted-foreground">{app.bundleId}</span>}
