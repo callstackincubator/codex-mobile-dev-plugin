@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { AppFlowPresentationAction, AppFlowStateSite } from '../src/shared/app-flow.ts'
 import { bindPresentationSites } from '../src/app-flow/presentations-bindings.ts'
-import type { AppFlowPresentationBinding } from '../src/app-flow/presentations-bindings.ts'
+import type { AppFlowBindingStats, AppFlowPresentationBinding } from '../src/app-flow/presentations-bindings.ts'
 
 const root = '/app'
 const metroOrigin = 'http://localhost:8081'
@@ -139,5 +139,46 @@ describe('App Flow presentation binding symbolication', () => {
       sourceUiPortal: () => ({ append: 'attach', remove: 'detach' }),
     })
     assert.deepEqual(matches, [{ binding: 'p', site: 'portal:attach:detach' }])
+  })
+
+  it('reaches the same Metro whatever host the device used, and posts only to its own base', async () => {
+    // The plugin launches the app on 127.0.0.1 while Metro is named localhost; origins differ.
+    const device = 'http://127.0.0.1:8081/index.bundle?platform=ios&dev=true'
+    const action: AppFlowPresentationAction = {
+      id: 'action-1', file: 'src/Screen.tsx', line: 12, owner: 'Screen', component: 'Button', prop: 'onPress', name: 'open',
+      source: { line: 12, column: 4, endLine: 12, endColumn: 60 },
+      effect: { kind: 'state', site: 'only', path: ['open'], value: true },
+    }
+    const stack = [`Error: react-stack-top-frame`, `    at jsxDEV (${device}:5:9)`, `    at Screen (${device}:2:1)`].join('\n')
+    const { fetch, batches } = metro((frame, index) => ({
+      file: `${root}/${index === 0 ? 'node_modules/react/jsx-dev-runtime.js' : 'src/Screen.tsx'}`, lineNumber: 12, column: 10,
+    }))
+    let stats: AppFlowBindingStats | undefined
+    const matches = await bindPresentationSites(root, [{ id: 'e', owner: 'Button', kind: 'entry', stack }], { states: [], actions: [action] }, {
+      metroOrigin, fetch, report: reported => { stats = reported },
+    })
+    assert.deepEqual(matches, [{ binding: 'e', site: 'action-1' }])
+    assert.equal((batches[0] as unknown as { file: string }[])[0]!.file, 'http://localhost:8081/index.bundle?platform=ios&dev=true')
+    assert.deepEqual(stats, {
+      records: 1, entryRecords: 1, noFrames: 0, foreignFrames: 0, frames: 2, resolved: 2,
+      failedBatches: 0, projectFrames: 1, placed: 1, entryPlaced: 1,
+    })
+  })
+
+  it('counts where the join stopped: unreadable stacks, another server, a lost lookup', async () => {
+    const bindings: AppFlowPresentationBinding[] = [
+      { id: 'blank', owner: 'Screen', stack: 'Error: nothing to parse' },
+      { id: 'other', owner: 'Screen', stack: '    at Screen (http://127.0.0.1:9999/index.bundle:3:4)' },
+      { id: 'real', owner: 'Screen', stack: `    at Screen (${bundle}:10:5)` },
+    ]
+    const failing = (async () => { throw new Error('timed out') }) as unknown as typeof globalThis.fetch
+    let stats: AppFlowBindingStats | undefined
+    assert.deepEqual(await bindPresentationSites(root, bindings, { states: [], actions: [] }, { metroOrigin, fetch: failing, report: reported => { stats = reported } }), [])
+    assert.equal(stats?.records, 3)
+    assert.equal(stats?.noFrames, 2, 'the unreadable stack and the one whose only frame was foreign')
+    assert.equal(stats?.foreignFrames, 1)
+    assert.equal(stats?.frames, 1)
+    assert.equal(stats?.failedBatches, 1)
+    assert.equal(stats?.resolved, 0)
   })
 })

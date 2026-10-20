@@ -855,9 +855,11 @@ test("explore-ui presentation metrics carry a closed outcome/kind pair and honor
   recordRuntimeTiming("app_flow.runtime.presentation_pass", 9400, { outcome: "completed" });
   recordRuntimeTiming("app_flow.runtime.presentation_open_session", 640, { outcome: "ready" });
   recordRuntimeAmount("app_flow.runtime.presentation_unbound", 7, { stage: "configure" });
+  recordRuntimeAmount("app_flow.runtime.presentation_refused", 3, { stage: "list", reason: "unbound" });
   await Sentry.flush();
   const emitted = JSON.stringify(envelopes);
-  for (const name of ["app_flow.runtime.presentation", "app_flow.runtime.presentation_pass", "app_flow.runtime.presentation_open_session", "app_flow.runtime.presentation_unbound"]) contains(emitted, name);
+  for (const name of ["app_flow.runtime.presentation", "app_flow.runtime.presentation_pass", "app_flow.runtime.presentation_open_session", "app_flow.runtime.presentation_unbound", "app_flow.runtime.presentation_refused"]) contains(emitted, name);
+  contains(emitted, '"reason":{"value":"unbound"');
   contains(emitted, "millisecond");
   contains(emitted, '"surface":{"value":"app-flow"');
   contains(emitted, '"outcome":{"value":"captured"');

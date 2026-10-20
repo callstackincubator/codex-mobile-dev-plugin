@@ -1695,6 +1695,8 @@ export async function buildAppFlow(
                 captureLimit: options.screenLimit
               }),
             report: (error) => captureServerError(error, 'app_flow.capture_ui_states'),
+            // Counts and categories into this node's run-log record (closed by `nodeLog.finish`).
+            onScreen: (screenNode, log) => sweepLog?.node(screenNode.id).uiStates(log),
             open: async () => {
               const ready = await renderTransport.ready()
               const runtime = fastRuntime

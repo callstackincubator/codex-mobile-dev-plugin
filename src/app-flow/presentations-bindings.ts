@@ -48,6 +48,11 @@ export interface AppFlowBindingPorts {
   timeoutMs?: number
   signal?: AbortSignal
   /**
+   * Receives the join's stage counts when it finishes. Counts only: no stack text, component
+   * name, path or id, so the caller may log and meter them.
+   */
+  report?(stats: AppFlowBindingStats): void
+  /**
    * Reads one absolute project file for the deferred portal/ui-effect leg.
    * Returning `undefined` (the default) disables that leg entirely.
    */
@@ -59,6 +64,27 @@ export interface AppFlowBindingPorts {
    */
   sourceUiPortal?(source: string, line: number, column: number): AppFlowUiPortalMethods | false
   sourceUiOpenEffect?(source: string, line: number, column: number): AppFlowUiOpenEffect | undefined
+}
+
+/**
+ * How far the join got, as counts per stage, so a run that places nothing says where it stopped:
+ *
+ * - emission: `noFrames` records whose stack text held no bundle frame the parser reads;
+ * - symbolication: `foreignFrames` frames from some other server, `failedBatches` Metro lookups
+ *   that failed or timed out, `resolved` of `frames` Metro located;
+ * - placement: `projectFrames` of those inside the project, and `placed` matches onto a site.
+ */
+export interface AppFlowBindingStats {
+  records: number
+  entryRecords: number
+  noFrames: number
+  foreignFrames: number
+  frames: number
+  resolved: number
+  failedBatches: number
+  projectFrames: number
+  placed: number
+  entryPlaced: number
 }
 
 /** One runtime binding resolved onto one statically discovered site. */
@@ -73,6 +99,12 @@ const bindingLimit = 3000
 const frameLimit = 16
 /** Frames sent per `/symbolicate` request. */
 const batchSize = 120
+/**
+ * Milliseconds per `/symbolicate` batch. The first request after a bundle is built reads and
+ * indexes its source map, which took most of three seconds on a mid-sized app, so a tighter limit
+ * turned a slow first lookup into a join that placed nothing.
+ */
+const symbolicateTimeoutMs = 15_000
 /** Largest project file the deferred leg will parse. */
 const sourceLimit = 512_000
 
@@ -80,6 +112,25 @@ const framePatterns = [
   /at\s+(.*?)\s+\((?:address at )?(https?:\/\/.*):(\d+):(\d+)\)/,
   /^(.*?)@(https?:\/\/.*):(\d+):(\d+)$/,
 ]
+
+/** A URL's port with the scheme default made explicit, so `http://h/` and `http://h:80/` agree. */
+function portOf(url: URL): string {
+  return url.port || (url.protocol === 'https:' ? '443' : '80')
+}
+
+/**
+ * The same Metro, whatever name the app reached it by.
+ *
+ * The device's bundle URL carries the host its dev client was pointed at, and the plugin launches
+ * the app on `127.0.0.1` while the caller names Metro `localhost` (or an app opened by LAN address
+ * reports that one). Those are one server, but their `URL.origin`s differ, so comparing origins
+ * discarded every frame of every stack and the join placed nothing. Metro's `/symbolicate` reads
+ * only the path and query of `file`, and this module posts only to its own loopback base, so the
+ * port is the one thing worth matching: it keeps another dev server's frames out of the request.
+ */
+function sameMetro(frame: URL, base: URL): boolean {
+  return frame.protocol.startsWith('http') && portOf(frame) === portOf(base)
+}
 
 /** True when `file` is a project-relative path outside `node_modules`. */
 function isProjectFile(file: string): boolean {
@@ -125,9 +176,14 @@ export async function bindPresentationSites(
   const references: { owner: AppFlowPresentationBinding; index: number }[] = []
   const resolved: (AppFlowSymbolicatedFrame | undefined)[] = []
 
+  const stats: AppFlowBindingStats = {
+    records: 0, entryRecords: 0, noFrames: 0, foreignFrames: 0, frames: 0,
+    resolved: 0, failedBatches: 0, projectFrames: 0, placed: 0, entryPlaced: 0,
+  }
   const matches: AppFlowPresentationBindingMatch[] = []
   const resolvedEntries = new Set<string>()
   const resolvedStates = new Set<string>()
+  const entryIds = new Set(bindings.filter(binding => binding.kind === 'entry').map(binding => binding.id))
   const deferred: { binding: string; frame: AppFlowSymbolicatedFrame }[] = []
 
   const matchFrame = (binding: AppFlowPresentationBinding, frame: AppFlowSymbolicatedFrame) => {
@@ -139,6 +195,7 @@ export async function bindPresentationSites(
     }
     const file = relative(root, frame.file.replace(/^file:\/\//, ''))
     if (!isProjectFile(file)) return
+    stats.projectFrames += 1
     const column = frame.column
 
     if (binding.kind === 'entry') {
@@ -178,17 +235,26 @@ export async function bindPresentationSites(
   }
 
   for (const binding of bindings.slice(0, bindingLimit)) {
+    stats.records += 1
+    if (binding.kind === 'entry') stats.entryRecords += 1
     if (binding.source) {
       matchFrame(binding, { file: binding.source.file, lineNumber: binding.source.line, column: binding.source.column })
       continue
     }
+    let parsed = 0
     for (const line of (binding.stack ?? '').split('\n').slice(0, frameLimit)) {
       const match = framePatterns[0].exec(line) ?? framePatterns[1].exec(line)
       if (!match) continue
       let url: URL
       try { url = new URL(match[2]) } catch { continue }
-      if (url.origin !== base.origin) continue
-      const frame = { file: url.href, methodName: match[1], lineNumber: Number(match[3]), column: Math.max(0, Number(match[4]) - 1) }
+      if (!sameMetro(url, base)) {
+        stats.foreignFrames += 1
+        continue
+      }
+      parsed += 1
+      // Metro keys its bundle graph by path and query, so the lookup goes to this base whatever
+      // host the device used.
+      const frame = { file: `${base.origin}${url.pathname}${url.search}`, methodName: match[1], lineNumber: Number(match[3]), column: Math.max(0, Number(match[4]) - 1) }
       const key = JSON.stringify(frame)
       let index = frameIds.get(key)
       if (index === undefined) {
@@ -198,9 +264,12 @@ export async function bindPresentationSites(
       }
       references.push({ owner: binding, index })
     }
+    if (!parsed) stats.noFrames += 1
   }
 
-  await symbolicate(base, frames, resolved, ports)
+  stats.frames = frames.length
+  stats.failedBatches = await symbolicate(base, frames, resolved, ports)
+  stats.resolved = resolved.filter(Boolean).length
 
   // Shared creation stacks need one lookup per distinct frame. Replay each
   // owner's original frame order so an ancestor cannot claim a nested entry.
@@ -210,6 +279,9 @@ export async function bindPresentationSites(
   }
 
   await resolveDeferred(root, bindings, deferred, matches, ports)
+  stats.placed = new Set(matches.map(match => match.binding)).size
+  stats.entryPlaced = new Set(matches.filter(match => entryIds.has(match.binding)).map(match => match.binding)).size
+  ports.report?.(stats)
   return matches
 }
 
@@ -237,14 +309,15 @@ function entrySites(action: AppFlowPresentationAction, owner: string) {
   return sites
 }
 
-/** Map bundle frames onto project locations, in bounded batches. */
+/** Map bundle frames onto project locations, in bounded batches. Returns how many batches failed. */
 async function symbolicate(
   base: URL,
   frames: { file: string; methodName: string; lineNumber: number; column: number }[],
   resolved: (AppFlowSymbolicatedFrame | undefined)[],
   ports: AppFlowBindingPorts,
-): Promise<void> {
-  if (!frames.length) return
+): Promise<number> {
+  let failed = 0
+  if (!frames.length) return failed
   const request = ports.fetch ?? globalThis.fetch
   for (let offset = 0; offset < frames.length; offset += batchSize) {
     const batch = frames.slice(offset, offset + batchSize)
@@ -254,14 +327,18 @@ async function symbolicate(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stack: batch }),
         redirect: 'error',
-        signal: AbortSignal.any([AbortSignal.timeout(ports.timeoutMs ?? 3000), ...(ports.signal ? [ports.signal] : [])]),
+        signal: AbortSignal.any([AbortSignal.timeout(ports.timeoutMs ?? symbolicateTimeoutMs), ...(ports.signal ? [ports.signal] : [])]),
       })
-      if (!response.ok) continue
+      if (!response.ok) {
+        failed += 1
+        continue
+      }
       const result = await response.json() as { stack?: AppFlowSymbolicatedFrame[] }
       // A failed or partial lookup costs a binding, never the whole join.
       for (const [index, frame] of (result.stack ?? []).slice(0, batch.length).entries()) resolved[offset + index] = frame
-    } catch { /* Metro is optional here; unresolved frames simply bind nothing. */ }
+    } catch { failed += 1 /* Metro is optional here; unresolved frames simply bind nothing. */ }
   }
+  return failed
 }
 
 /**

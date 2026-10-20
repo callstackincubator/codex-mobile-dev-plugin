@@ -13,8 +13,13 @@ import {
   agentModalCarryOver,
   agentNavigate,
   agentOpeningControl,
+  agentPresentationCollect,
+  agentPresentationIndex,
+  agentPresentationList,
+  agentPresentationContent,
   agentPresentationOpen,
   agentPresentationRollback,
+  agentProjectionRoot,
   agentSetPath,
   AGENT_FUNCTIONS,
   DEFAULT_AGENT_LIMITS,
@@ -1202,68 +1207,599 @@ test('agentSetPath writes a path immutably and an empty path replaces the value'
   assert.deepEqual(agentSetPath([1, 2], ['1'], 9), [1, 9])
 })
 
-test('opening a state presentation pushes one undo frame and guards a queued app update', () => {
-  const Owner = function Owner() {}
-  const owner: any = {
-    tag: 0,
-    type: Owner,
-    elementType: Owner,
-    memoizedProps: {},
-    memoizedState: { memoizedState: 'closed', next: null },
-    child: null,
-    sibling: null,
-    return: null
+/** Minimal React-shaped fibers: enough structure for the presentation index to walk. */
+function presFiber(type: unknown, props: Record<string, unknown>, children: any[] = [], extra: Record<string, unknown> = {}): any {
+  const fiber: any = { tag: 0, type, elementType: type, memoizedProps: props, child: null, sibling: null, return: null, ...extra }
+  let previous: any = null
+  for (const child of children) {
+    child.return = fiber
+    if (previous) previous.sibling = child
+    else fiber.child = child
+    previous = child
   }
-  const previous = (globalThis as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown })
-    .__REACT_DEVTOOLS_GLOBAL_HOOK__
-  ;(globalThis as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }).__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+  return fiber
+}
+
+function withFiberRoot<T>(root: any, body: () => T): T {
+  const holder = globalThis as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }
+  const previous = holder.__REACT_DEVTOOLS_GLOBAL_HOOK__
+  holder.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
     renderers: new Map([[1, { rendererPackageName: 'react-native-renderer' }]]),
-    getFiberRoots: () => new Set([{ current: owner }])
+    getFiberRoots: () => new Set([{ current: root }])
   }
+  const restore = () => { holder.__REACT_DEVTOOLS_GLOBAL_HOOK__ = previous }
+  let result: T
   try {
-    const updates: Array<(value: unknown) => unknown> = []
+    result = body()
+  } catch (error) {
+    restore()
+    throw error
+  }
+  // An async body keeps the hook until it settles.
+  if (result && typeof (result as { then?: unknown }).then === 'function') {
+    return (result as unknown as Promise<unknown>).finally(restore) as T
+  }
+  restore()
+  return result
+}
+
+/**
+ * The shape of the bug: one app-wide dialog controller, one opener that lives on one screen only.
+ * `Feed` owns a `PostMenuItems` that renders the opener and the `ReportDialog`; `Settings` has
+ * neither. Both screens stay mounted, as React Navigation keeps them, and focus is a flag.
+ */
+function reportDialogApp(options: { openers?: number; focused?: 'Feed' | 'Settings' } = {}) {
+  const control = { open() {}, close() {} }
+  const PostMenuItem = function PostMenuItem() {}
+  const ReportDialog = function ReportDialog() {}
+  const PostMenuItems = function PostMenuItems() {}
+  const Screen = function Screen() {}
+  const App = function App() {}
+  const focusedName = options.focused ?? 'Feed'
+  const route = (name: string, kids: any[]) =>
+    presFiber(
+      Screen,
+      { route: { name }, navigation: { isFocused: () => name === focusedName } },
+      kids
+    )
+  const owners = Array.from({ length: options.openers ?? 1 }, () => {
+    const opener = presFiber(PostMenuItem, { onPress: () => {} }, [], { _debugStack: { stack: 'at PostMenuItems (address at http://localhost:8081/index.bundle:10:5)' } })
+    const dialog = presFiber(ReportDialog, { control })
+    return { owner: presFiber(PostMenuItems, {}, [opener, dialog]), opener, dialog }
+  })
+  const feed = route('Feed', owners.map(entry => entry.owner))
+  const settings = route('Settings', [presFiber(function Label() {}, {})])
+  const root = presFiber(App, {}, [feed, settings])
+  const action = {
+    id: 'a1',
+    name: 'Report',
+    owner: 'PostMenuItems',
+    component: 'PostMenuItem',
+    prop: 'onPress',
+    effect: { kind: 'control', component: 'ReportDialog', prop: 'control', method: 'open', close: 'close' }
+  }
+  return { root, control, owners, feed, settings, action }
+}
+
+function collectEntries(pres: any): any {
+  let reply: any
+  agentPresentationCollect(pres, value => { reply = value })
+  return reply
+}
+
+test('a control opener that is not bound to a live entry on the focused screen is refused', () => {
+  const app = reportDialogApp()
+  withFiberRoot(app.root, () => {
     const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
-    pres.catalog = {
-      states: [],
-      actions: [
-        { id: 'a1', name: 'Open sheet', effect: { kind: 'state', site: 's1', path: [], value: 'open' } }
-      ]
+    pres.catalog = { states: [], actions: [app.action] }
+
+    // The controller is mounted and well-formed, but nothing proves this action's opener is here:
+    // the reference's hard gate. This is what let one dialog open on every screen.
+    const unbound = agentPresentationList(pres)
+    assert.deepEqual(unbound.available, [])
+    assert.deepEqual(unbound.rejected, { unbound: 1 })
+    const refused = agentPresentationOpen(pres, 'a1', null)
+    assert.equal(refused.ok, false)
+    assert.equal(refused.reason, 'unbound')
+
+    // The collection pass records the opener's creation stack and offers it to the host.
+    const reply = collectEntries(pres)
+    assert.equal(reply.ok, true)
+    assert.deepEqual(reply.unbound.map((entry: any) => [entry.kind, entry.owner]), [['entry', 'PostMenuItem']])
+    assert.match(reply.unbound[0].stack, /PostMenuItems/)
+    assert.equal(reply.entries, 1)
+    assert.equal(reply.entriesMatched, 0)
+
+    // The host's join names the site; configure is the same write the command performs.
+    pres.entries.forEach((record: any) => record.actions.add('a1'))
+    pres.structureCache = undefined
+    const listed = agentPresentationList(pres)
+    assert.deepEqual(listed.available, [{ id: 'a1', kind: 'control' }])
+    const opened = agentPresentationOpen(pres, 'a1', null)
+    assert.equal(opened.ok, true)
+    assert.equal(pres.undo[0].control, app.control)
+    // An opener the host looked at and could not place is not offered again.
+    pres.entries.forEach((record: any) => { record.actions.clear(); record.checked = true })
+    assert.deepEqual(collectEntries(pres).unbound, [])
+  })
+})
+
+test('a control opener on a screen that is mounted but not focused does not open from another screen', () => {
+  const app = reportDialogApp({ focused: 'Settings' })
+  withFiberRoot(app.root, () => {
+    const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+    pres.catalog = { states: [], actions: [app.action] }
+    collectEntries(pres)
+    pres.entries.forEach((record: any) => record.actions.add('a1'))
+    pres.structureCache = undefined
+
+    const listed = agentPresentationList(pres)
+    assert.deepEqual(listed.available, [], 'Settings is focused and renders no opener')
+    assert.deepEqual(listed.rejected, { 'not-in-view': 1 })
+    assert.equal(agentPresentationOpen(pres, 'a1', null).reason, 'not-in-view')
+    assert.equal(pres.undo.length, 0, 'nothing was opened')
+  })
+})
+
+test('two owners of one control opener outside a list stay ambiguous, and list rows open the first', () => {
+  const app = reportDialogApp({ openers: 2 })
+  withFiberRoot(app.root, () => {
+    const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+    pres.catalog = { states: [], actions: [app.action] }
+    collectEntries(pres)
+    pres.entries.forEach((record: any) => record.actions.add('a1'))
+    pres.structureCache = undefined
+    assert.equal(agentPresentationOpen(pres, 'a1', null).reason, 'ambiguous-owner')
+
+    // Put both owners in one vertical scroll container: rows of a feed.
+    const list = presFiber('RCTScrollView', {}, [], { tag: 5, type: 'RCTScrollView' })
+    for (const entry of app.owners) entry.owner.return = list
+    list.return = app.feed
+    pres.structureCache = undefined
+    const rows = agentPresentationOpen(pres, 'a1', null)
+    assert.equal(rows.ok, true, 'one control per row means one distinct controller per owner')
+  })
+})
+
+test('the entry index follows the current alternate and drops records for unmounted openers', () => {
+  const app = reportDialogApp()
+  withFiberRoot(app.root, () => {
+    const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+    pres.catalog = { states: [], actions: [app.action] }
+    collectEntries(pres)
+    pres.entries.forEach((record: any) => record.actions.add('a1'))
+    pres.structureCache = undefined
+    assert.equal(agentPresentationIndex(pres).entries.get('a1')?.length, 1)
+    // Unmount the opener's owner; the next pass frees the record.
+    app.feed.child = null
+    pres.structureCache = undefined
+    collectEntries(pres)
+    assert.equal(pres.entries.size, 0)
+  })
+})
+
+/**
+ * The shape of the sweep bug for state openers: one provider `useState` (a composer sheet), a
+ * button on each of two screens that both end in it. Screen A is focused; B stays mounted.
+ */
+function composerApp(options: { focused?: 'A' | 'B'; guard?: boolean; second?: boolean } = {}) {
+  const Provider = function Provider() {}
+  const Fab = function Fab() {}
+  const FeedScreen = function FeedScreen() {}
+  const ProfileScreen = function ProfileScreen() {}
+  const Screen = function Screen() {}
+  const App = function App() {}
+  const focusedName = options.focused ?? 'A'
+  const updates: Array<(value: unknown) => unknown> = []
+  const stack = (owner: string) => ({ stack: `at ${owner} (address at http://localhost:8081/index.bundle:10:5)` })
+  const press = () => {}
+  const feedFab = presFiber(Fab, { onPress: press, enabled: options.guard ?? true }, [], { _debugStack: stack('FeedScreen') })
+  const extraFab = presFiber(Fab, { onPress: press }, [], { _debugStack: stack('FeedScreenSecond') })
+  const profileFab = presFiber(Fab, { onPress: press }, [], { _debugStack: stack('ProfileScreen') })
+  const feed = presFiber(FeedScreen, { enabled: options.guard ?? true }, options.second ? [feedFab, extraFab] : [feedFab])
+  const profile = presFiber(ProfileScreen, {}, [profileFab])
+  const route = (name: string, kids: any[]) =>
+    presFiber(Screen, { route: { name }, navigation: { isFocused: () => name === focusedName } }, kids)
+  const screenA = route('A', [feed])
+  const screenB = route('B', [profile])
+  const provider = presFiber(Provider, {}, [screenA, screenB], {
+    memoizedState: { memoizedState: undefined, next: null }
+  })
+  const root = presFiber(App, {}, [provider])
+  const binding = { id: 'b1', index: 0, kind: 'useState', site: 's1', fiber: provider, setter: (update: (value: unknown) => unknown) => updates.push(update) }
+  const act = (id: string, owner: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    name: 'ComposePost',
+    owner,
+    component: 'Fab',
+    prop: 'onPress',
+    effect: { kind: 'state', site: 's1', path: [], value: { open: true } },
+    ...extra
+  })
+  const states = [{ id: 's1', owner: 'Provider' }]
+  return { root, provider, binding, updates, feed, profile, feedFab, extraFab, profileFab, act, states }
+}
+
+/** What the host's source join does: attach each record whose creation stack names `owner`. */
+function bindEntries(pres: any, ids: Record<string, string>): void {
+  pres.entries.forEach((record: any) => {
+    for (const [owner, id] of Object.entries(ids)) {
+      if (String(record.stack).includes(`at ${owner} `)) record.actions.add(id)
     }
-    pres.bindings.set('1', {
-      id: '1',
-      index: 0,
-      site: 's1',
-      fiber: owner,
-      setter: (update: (value: unknown) => unknown) => updates.push(update)
-    })
+  })
+  pres.structureCache = undefined
+}
+
+test('a state opener with no entry bound to a live fiber is refused, so a failed join captures nothing', () => {
+  const app = composerApp()
+  withFiberRoot(app.root, () => {
+    const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+    pres.catalog = { states: app.states, actions: [app.act('a1', 'FeedScreen'), app.act('a2', 'ProfileScreen')] }
+    pres.bindings.set('b1', app.binding)
+    // The hook binding is live and unambiguous, which is all the old resolver asked for.
+    const listed = agentPresentationList(pres)
+    assert.deepEqual(listed.available, [])
+    assert.deepEqual(listed.rejected, { unbound: 2 })
+    const refused = agentPresentationOpen(pres, 'a1', null)
+    assert.equal(refused.ok, false)
+    assert.equal(refused.reason, 'unbound')
+    assert.equal(pres.undo.length, 0)
+    assert.equal(app.updates.length, 0, 'the setter was never called')
+  })
+})
+
+test('a state opener opens only on the screen that renders it, and pushes one undo frame that guards a queued update', () => {
+  const app = composerApp()
+  withFiberRoot(app.root, () => {
+    const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+    pres.catalog = { states: app.states, actions: [app.act('a1', 'FeedScreen'), app.act('a2', 'ProfileScreen')] }
+    pres.bindings.set('b1', app.binding)
+    collectEntries(pres)
+    bindEntries(pres, { FeedScreen: 'a1', ProfileScreen: 'a2' })
+
+    const listed = agentPresentationList(pres)
+    assert.deepEqual(listed.available, [{ id: 'a1', kind: 'state' }], 'both reach one hook; only A is on screen')
+    assert.deepEqual(listed.rejected, { 'not-in-view': 1 })
+    assert.deepEqual(listed.kinds, { state: 1 })
+    assert.equal(agentPresentationOpen(pres, 'a2', null).reason, 'not-in-view')
+    assert.equal(app.updates.length, 0)
 
     const opened = agentPresentationOpen(pres, 'a1', null)
     assert.equal(opened.ok, true)
     assert.equal(opened.kind, 'state')
     assert.equal(pres.undo.length, 1)
-    assert.equal(pres.undo[0].value, 'closed', 'the undo frame remembers the value that was read')
-    assert.equal(pres.undo[0].nativeDismiss, false)
-    assert.equal(updates.length, 1)
-    // The functional form is what keeps a queued app update from being clobbered: it applies only
-    // when the state is still the one that was read.
-    assert.equal(updates[0]!('closed'), 'open')
-    assert.equal(updates[0]!('something the app queued'), 'something the app queued')
+    assert.equal(pres.undo[0].value, undefined)
+    assert.equal(pres.undo[0].nativeDismiss, true)
+    assert.equal(app.updates.length, 1)
+    assert.deepEqual(app.updates[0]!(undefined), { open: true })
+    assert.equal(app.updates[0]!('something the app queued'), 'something the app queued')
 
-    // A second open of the same entry stacks a second checkpoint; rollback unwinds in reverse.
     let rolled: any
     agentPresentationRollback(pres, 0, false, (value: unknown) => { rolled = value })
     assert.equal(rolled.ok, true)
-    assert.equal(rolled.checkpoint, 0)
-    assert.equal(updates.length, 2)
-    assert.equal(updates[1]!('open'), 'closed', 'restore writes the remembered value back')
+    assert.equal(app.updates.length, 2)
+  })
+})
 
-    // An entry with no live binding is refused rather than opened against the wrong instance.
-    pres.bindings.clear()
-    const refused = agentPresentationOpen(pres, 'a1', null)
-    assert.equal(refused.ok, false)
-    assert.match(String(refused.error), /could not be bound/)
+test('the same openers resolve on the other screen once it is focused', () => {
+  const app = composerApp({ focused: 'B' })
+  withFiberRoot(app.root, () => {
+    const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+    pres.catalog = { states: app.states, actions: [app.act('a1', 'FeedScreen'), app.act('a2', 'ProfileScreen')] }
+    pres.bindings.set('b1', app.binding)
+    collectEntries(pres)
+    bindEntries(pres, { FeedScreen: 'a1', ProfileScreen: 'a2' })
+    assert.deepEqual(agentPresentationList(pres).available, [{ id: 'a2', kind: 'state' }])
+  })
+})
+
+test('two openers on one screen that write the same state are listed once', () => {
+  const app = composerApp({ second: true })
+  withFiberRoot(app.root, () => {
+    const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+    // Both sit under FeedScreen, so one owner holds two openers whose callback is the same function.
+    pres.catalog = { states: app.states, actions: [app.act('a1', 'FeedScreen'), app.act('a3', 'FeedScreen')] }
+    pres.bindings.set('b1', app.binding)
+    collectEntries(pres)
+    bindEntries(pres, { FeedScreen: 'a1', FeedScreenSecond: 'a3' })
+    const listed = agentPresentationList(pres)
+    assert.deepEqual(listed.available, [{ id: 'a1', kind: 'state' }])
+    assert.equal(listed.aliased, 1, 'the second opener reaches the destination the first already does')
+    assert.deepEqual(listed.rejected, {})
+  })
+})
+
+test('a state opener is refused when its state already holds the value, needs opener data, or fails its guard', () => {
+  const app = composerApp()
+  withFiberRoot(app.root, () => {
+    const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+    pres.catalog = {
+      states: app.states,
+      actions: [
+        app.act('a1', 'FeedScreen'),
+        app.act('a4', 'FeedScreen', { input: { value: { expr: 'x' }, when: { expr: 'y' }, locals: [] } }),
+        app.act('a5', 'FeedScreen', { guard: { prop: ['enabled'] }, effect: { kind: 'state', site: 's1', path: [], value: { open: 'other' } } })
+      ]
+    }
+    pres.bindings.set('b1', app.binding)
+    collectEntries(pres)
+    bindEntries(pres, { FeedScreen: 'a1' })
+    pres.entries.forEach((record: any) => { record.actions.add('a4'); record.actions.add('a5') })
+    pres.structureCache = undefined
+    // a1 opens; a4 would need the opener's own argument; a5's guard holds (enabled is true).
+    const first = agentPresentationList(pres)
+    assert.deepEqual(first.available.map((entry: any) => entry.id), ['a1', 'a5'])
+    assert.equal(first.rejected.unsupported, 1)
+
+    app.feed.memoizedProps = { enabled: false }
+    pres.structureCache = undefined
+    const guarded = agentPresentationList(pres)
+    assert.equal(guarded.rejected['unmet-condition'], 1, 'a5 no longer holds')
+
+    app.feed.memoizedProps = { enabled: true }
+    app.provider.memoizedState = { memoizedState: { open: true }, next: null }
+    pres.structureCache = undefined
+    assert.equal(agentPresentationList(pres).rejected['already-open'], 2)
+  })
+})
+
+test('a state opener needs one distinct callback, and a state declared by its own owner binds inside it', () => {
+  const app = composerApp({ second: true })
+  withFiberRoot(app.root, () => {
+    const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+    pres.catalog = { states: app.states, actions: [app.act('a1', 'FeedScreen')] }
+    pres.bindings.set('b1', app.binding)
+    collectEntries(pres)
+    bindEntries(pres, { FeedScreen: 'a1', FeedScreenSecond: 'a1' })
+    const first = () => Object.assign(() => {}, {})
+    const named = function openComposer() {}
+    app.feedFab.memoizedProps = { onPress: first() }
+    app.extraFab.memoizedProps = { onPress: named }
+    pres.structureCache = undefined
+    assert.equal(agentPresentationList(pres).rejected['ambiguous-callback'], 1)
+    // A named handler breaks the tie, as the reference does.
+    pres.catalog = { states: app.states, actions: [app.act('a1', 'FeedScreen', { handler: 'openComposer' })] }
+    pres.structureCache = undefined
+    assert.deepEqual(agentPresentationList(pres).available, [{ id: 'a1', kind: 'state' }])
+
+    // The site is declared by the action's own owner: a binding above that owner is not its own.
+    pres.catalog = { states: [{ id: 's1', owner: 'FeedScreen' }], actions: [app.act('a1', 'FeedScreen', { handler: 'openComposer' })] }
+    pres.structureCache = undefined
+    assert.equal(agentPresentationList(pres).rejected['no-binding'], 1)
+  })
+})
+
+test('a source join failing mid-pass leaves every entry unplaced and every state refused', () => {
+  const app = composerApp()
+  withFiberRoot(app.root, () => {
+    const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+    pres.catalog = { states: app.states, actions: [app.act('a1', 'FeedScreen')] }
+    pres.bindings.set('b1', app.binding)
+    const reply = collectEntries(pres)
+    assert.ok(reply.unbound.some((entry: any) => entry.kind === 'entry'))
+    assert.equal(reply.entriesMatched, 0)
+    assert.deepEqual(agentPresentationList(pres).available, [])
+  })
+})
+
+/** A controller whose close removes (or fails to remove) the sheet content from the tree. */
+function dismissalApp(closes: boolean, sheetSize: number) {
+  const Sheet = function Sheet() {}
+  const App = function App() {}
+  const Row = function Row() {}
+  const base = [presFiber(Row, {}), presFiber(Row, {})]
+  const sheet = Array.from({ length: sheetSize }, () => presFiber(Sheet, {}))
+  const root = presFiber(App, {}, [...base, ...sheet])
+  const control: any = {
+    open() {},
+    close() {
+      if (!closes) return
+      for (const fiber of sheet) {
+        fiber.return = null
+      }
+      // Rebuild the sibling chain without the sheet.
+      root.child = base[0]
+      base[0].sibling = base[1]
+      base[1].sibling = null
+    }
+  }
+  return { root, control, baseline: 1 + base.length }
+}
+
+test('a control dismissal is confirmed by the sheet leaving the tree, not by the controller still looking like one', async () => {
+  const app = dismissalApp(true, 6)
+  await withFiberRoot(app.root, async () => {
+    const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+    pres.undo.push({ control: app.control, close: 'close', baseline: app.baseline })
+    const started = Date.now()
+    const rolled: any = await new Promise(resolve => agentPresentationRollback(pres, 0, true, resolve))
+    assert.equal(rolled.ok, true, 'the controller shape never changes, so only the tree can confirm this')
+    assert.equal(rolled.evidence, 'tree')
+    assert.equal(pres.undo.length, 0)
+    assert.ok(Date.now() - started < 1500, 'a confirmed close returns at once rather than at the deadline')
+  })
+})
+
+test('a control dismissal that never takes the sheet away still fails, so the sweep latch stays meaningful', async () => {
+  const app = dismissalApp(false, 6)
+  await withFiberRoot(app.root, async () => {
+    const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+    pres.undo.push({ control: app.control, close: 'close', baseline: app.baseline })
+    const rolled: any = await new Promise(resolve => agentPresentationRollback(pres, 0, true, resolve))
+    assert.equal(rolled.ok, false)
+    assert.match(String(rolled.error), /has not finished/)
+    assert.equal(pres.undo.length, 1, 'the checkpoint is kept so the close can be retried')
+  })
+})
+
+/**
+ * A mount preview projects from the focused leaf route. The tree's first fiber is the HostRoot,
+ * which has no `View` above it, so projecting from there refused every mount on every screen.
+ */
+function mountApp(options: { focus?: boolean } = {}) {
+  const View = function View() {}
+  const Modal = function Modal() {}
+  const Preview = function Preview() {}
+  const Screen = function Screen() {}
+  const App = function App() {}
+  const react = {
+    createElement: (type: unknown, props: unknown, ...children: unknown[]) => ({ type, props: { ...(props as object), children }, key: null }),
+    useState() {},
+    useReducer() {},
+    Fragment: Symbol('fragment'),
+    Component: class {}
+  }
+  const native = { Platform: { OS: 'ios' }, StyleSheet: { create: (value: unknown) => value }, View, Modal }
+  const route = presFiber(
+    Screen,
+    { route: { name: 'Profile' }, navigation: { isFocused: () => options.focus ?? true } },
+    []
+  )
+  const container = presFiber(View, {}, [route])
+  const host = presFiber(App, { children: { type: react.Fragment, key: null, props: { children: [] } } }, [container])
+  const overrides: unknown[] = []
+  const modules = new Map<number, unknown>([
+    [1, { isInitialized: true, publicModule: { exports: react } }],
+    [2, { isInitialized: true, publicModule: { exports: native } }],
+    [3, { isInitialized: true, verboseName: 'src/Preview.tsx', publicModule: { exports: Object.defineProperty({}, 'Preview', { value: Preview }) } }]
+  ])
+  return { View, host, route, container, modules, overrides, mounted: Preview }
+}
+
+test('a mount preview projects from the focused route, not from the HostRoot', () => {
+  const app = mountApp()
+  const holder = globalThis as { __r?: unknown; __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }
+  const previousR = holder.__r
+  try {
+    holder.__r = { getModules: () => app.modules }
+    withFiberRoot(app.host, () => {
+      const hook = holder.__REACT_DEVTOOLS_GLOBAL_HOOK__ as { renderers: Map<number, object> }
+      hook.renderers.set(1, { rendererPackageName: 'react-native-renderer', overrideProps: (_root: unknown, _path: unknown, next: unknown) => app.overrides.push(next) })
+      const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+      pres.catalog = {
+        states: [],
+        actions: [{ id: 'm1', name: 'Preview', owner: 'Preview', component: 'Preview', prop: '', preview: true, effect: { kind: 'mount', file: 'src/Preview.tsx', export: 'Preview' } }]
+      }
+      const tree = agentPresentationIndex(pres)
+      assert.equal(agentProjectionRoot(pres, tree.all[0]), null, 'the HostRoot has no View ancestor')
+      assert.ok(agentProjectionRoot(pres, app.route), 'the focused route sits inside one')
+      const opened = agentPresentationOpen(pres, 'm1', null)
+      assert.equal(opened.ok, true, String(opened.error))
+      assert.equal(opened.kind, 'mount')
+      assert.equal(app.overrides.length, 1)
+    })
   } finally {
-    ;(globalThis as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }).__REACT_DEVTOOLS_GLOBAL_HOOK__ =
-      previous
+    holder.__r = previousR
+  }
+})
+
+test('a mount preview of a component the app already renders is refused, not projected again', () => {
+  // The reference's `mountedExport` alreadyMounted guard (presentations-runtime.js:1314). Without
+  // it an app-wide component — a NUX announcement mounted in the shell — is offered on every
+  // screen, and the cold second copy draws nothing because it has none of the live provider state.
+  const app = mountApp()
+  const holder = globalThis as { __r?: unknown; __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }
+  const previousR = holder.__r
+  try {
+    holder.__r = { getModules: () => app.modules }
+    // Put the very component the preview would project into the live tree.
+    const live = presFiber(app.mounted, {}, [])
+    app.route.child = live
+    live.return = app.route
+    withFiberRoot(app.host, () => {
+      const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+      pres.catalog = {
+        states: [],
+        actions: [{ id: 'm1', name: 'Preview', owner: 'Preview', component: 'Preview', prop: '', preview: true, effect: { kind: 'mount', file: 'src/Preview.tsx', export: 'Preview' } }]
+      }
+      const opened = agentPresentationOpen(pres, 'm1', null)
+      assert.equal(opened.ok, false)
+      assert.equal(opened.reason, 'already-mounted')
+      assert.equal(pres.projected.length, 0, 'nothing was projected')
+      assert.equal(app.overrides.length, 0)
+    })
+  } finally {
+    holder.__r = previousR
+  }
+})
+
+test('a mount preview whose export is not the named component is refused', () => {
+  // The reference's ownerMismatch guard (presentations-runtime.js:1313).
+  const app = mountApp()
+  const holder = globalThis as { __r?: unknown; __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }
+  const previousR = holder.__r
+  try {
+    holder.__r = { getModules: () => app.modules }
+    withFiberRoot(app.host, () => {
+      const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+      pres.catalog = {
+        states: [],
+        actions: [{ id: 'm1', name: 'Other', owner: 'SomethingElse', component: 'Other', prop: '', preview: true, effect: { kind: 'mount', file: 'src/Preview.tsx', export: 'Preview' } }]
+      }
+      const opened = agentPresentationOpen(pres, 'm1', null)
+      assert.equal(opened.ok, false)
+      assert.equal(opened.reason, 'owner-mismatch')
+      assert.equal(pres.projected.length, 0)
+    })
+  } finally {
+    holder.__r = previousR
+  }
+})
+
+test('a mount preview open names the component the host must find drawing', () => {
+  const app = mountApp()
+  const holder = globalThis as { __r?: unknown; __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }
+  const previousR = holder.__r
+  try {
+    holder.__r = { getModules: () => app.modules }
+    withFiberRoot(app.host, () => {
+      const hook = holder.__REACT_DEVTOOLS_GLOBAL_HOOK__ as { renderers: Map<number, object> }
+      hook.renderers.set(1, { rendererPackageName: 'react-native-renderer', overrideProps: (_root: unknown, _path: unknown, next: unknown) => app.overrides.push(next) })
+      const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+      pres.catalog = {
+        states: [],
+        actions: [{ id: 'm1', name: 'Preview', owner: 'Preview', component: 'Preview', prop: '', preview: true, effect: { kind: 'mount', file: 'src/Preview.tsx', export: 'Preview' } }]
+      }
+      const opened = agentPresentationOpen(pres, 'm1', null)
+      assert.equal(opened.ok, true, String(opened.error))
+      // The reference returns `expected: action.owner` from every open so readiness can refuse a
+      // projection that mounted nothing or drew nothing.
+      assert.equal(opened.expected, 'Preview')
+    })
+  } finally {
+    holder.__r = previousR
+  }
+})
+
+test('the content probe separates "not mounted" from "mounted but drawing nothing"', () => {
+  const app = mountApp()
+  withFiberRoot(app.host, () => {
+    const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+    pres.catalog = { states: [], actions: [] }
+    const absent = agentPresentationContent(pres, 'NotHere')
+    assert.equal(absent.found, false, 'a component that never mounted')
+    assert.equal(absent.visible, 0)
+  })
+})
+
+test('a mount preview with no single focused route refuses without projecting', () => {
+  const app = mountApp({ focus: false })
+  const holder = globalThis as { __r?: unknown; __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }
+  const previousR = holder.__r
+  try {
+    holder.__r = { getModules: () => app.modules }
+    withFiberRoot(app.host, () => {
+      const pres = agentCreatePresentations(globalThis, DEFAULT_AGENT_LIMITS, [])
+      pres.catalog = {
+        states: [],
+        actions: [{ id: 'm1', name: 'Preview', owner: 'Preview', component: 'Preview', prop: '', preview: true, effect: { kind: 'mount', file: 'src/Preview.tsx', export: 'Preview' } }]
+      }
+      const opened = agentPresentationOpen(pres, 'm1', null)
+      assert.equal(opened.ok, false)
+      assert.match(String(opened.error), /cannot project/)
+      assert.equal(pres.projected.length, 0)
+    })
+  } finally {
+    holder.__r = previousR
   }
 })

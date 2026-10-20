@@ -61,7 +61,7 @@
 import { AGENT_FUNCTIONS } from './agent-runtime.ts'
 
 /** The number of functions the agent is made of. Changing the registry means changing this. */
-export const EXPECTED_AGENT_FUNCTION_COUNT = 50
+export const EXPECTED_AGENT_FUNCTION_COUNT = 62
 /**
  * Upper bound on the assembled source. This is a tripwire for an accidental large import, not a
  * byte budget: the agent is meant to grow. Measured after the presentation runtime landed and the

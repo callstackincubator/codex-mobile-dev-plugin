@@ -153,6 +153,22 @@ test("the Fast run log appends one record per node and closes with the sweep's p
   assert.deepEqual(lines[2], { summary: ["[app-flow] sweep wall clock — 18.4s"] });
 });
 
+test("the run log keeps a node's UI-state counts beside its other parts, with no names in them", async () => {
+  await appFlowDataDir();
+  const projectId = getProjectId("/projects/demo");
+  const log = await createSweepLog({ projectId, runId: "33334444", startedAt: new Date("2026-10-16T10:30:00.000Z") });
+  assert.ok(log);
+  const uiStates = {
+    candidates: 4, listed: 1, listedKinds: {}, aliased: 0, refusedAtList: { unbound: 3 }, opened: 1, refusedAtOpen: {}, captured: 1,
+    unbound: 2, rolledBack: false, rollbackFailure: "dismissal-timeout", latched: true,
+  };
+  log.node("Home").uiStates(uiStates);
+  log.node("Home").finish({ status: "ok", totalMs: 10 });
+  await log.close();
+  const lines = (await readFile(log.path, "utf-8")).trim().split("\n").map(line => JSON.parse(line) as Record<string, any>);
+  assert.deepEqual(lines[0].uiStates, uiStates);
+});
+
 test("the run log records an unavailable transport once, however many nodes skip for it", async () => {
   await appFlowDataDir();
   const projectId = getProjectId("/projects/demo");

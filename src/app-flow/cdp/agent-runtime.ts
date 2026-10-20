@@ -222,11 +222,13 @@ export type AgentCommand =
    * host can read. Pure bookkeeping — nothing is rendered, opened or patched — so it keeps the
    * list command's 2000ms.
    */
-  | { type: 'presentation-configure'; matches: { binding: string; site: string }[] }
+  | { type: 'presentation-configure'; matches: { binding: string; site: string }[]; checked?: string[] }
   /** Which catalog entries are openable right now. The reference allows this 2000ms. */
   | { type: 'presentations' }
   /** Opens one catalog entry and pushes its undo checkpoint. */
   | { type: 'presentation-open'; id: string }
+  /** Whether the component an open projected is mounted and drawing. */
+  | { type: 'presentation-content'; expected: string }
   /** Unwinds the undo stack to `level`, confirming every native dismissal unless `wait` is false. */
   | { type: 'presentation-rollback'; level?: number; wait?: boolean }
 
@@ -1615,7 +1617,16 @@ export interface PresentationAction {
   effect:
     | { kind: 'mount'; file: string; export: string }
     | { kind: 'state'; site: string; path: string[]; value: unknown }
-    | { kind: 'control'; component: string; prop: string; method: string; close: string | string[] }
+    | {
+        kind: 'control'
+        component: string
+        prop: string
+        method: string
+        close: string | string[]
+        target?: { file: string; owner: string }
+      }
+  trigger?: Record<string, string | number | boolean>
+  consumer?: { component: string }
 }
 
 /** `presentation-setup`: hand the agent the source catalog and bind it to the live tree. */
@@ -1629,9 +1640,18 @@ export interface PresentationSetupReply {
   scheduled: number
   /**
    * Bindings with no site yet, with the creation stack the host symbolicates against Metro. The
-   * host answers with `presentation-configure`. Bounded at 400 entries.
+   * host answers with `presentation-configure`. Bounded at 400 per kind.
    */
-  unbound?: { id: string; owner: string; kind: 'state'; stack: string }[]
+  unbound?: {
+    id: string
+    owner: string
+    kind: 'state' | 'entry'
+    stack: string
+    source?: { file: string; line: number; column: number }
+  }[]
+  /** Live opener JSX records (the entry leg) and how many already name a catalog site. */
+  entries?: number
+  entriesMatched?: number
   /** Wall clock the whole pass occupied, for the host's bounded meter. */
   elapsedMs: number
   error?: string
@@ -1647,14 +1667,16 @@ export interface PresentationListReply {
   available: { id: string; kind: 'state' | 'control' | 'mount' }[]
   /** Catalog entries with no live binding. A count only; never an id or a name. */
   unavailable: number
+  /** Why entries were refused, as a count per closed-set reason. Never an id or a name. */
+  rejected?: Record<string, number>
   elapsedMs: number
 }
 /** `presentation-open` / `presentation-rollback`. */
 export type PresentationOpenReply =
   | { ok: true; kind: 'state' | 'control' | 'mount'; checkpoint: number; elapsedMs: number }
-  | { ok: false; error: string; checkpoint: number; elapsedMs: number }
+  | { ok: false; error: string; reason?: string; checkpoint: number; elapsedMs: number }
 export type PresentationRollbackReply =
-  | { ok: true; checkpoint: number; elapsedMs: number }
+  | { ok: true; checkpoint: number; elapsedMs: number; evidence?: string }
   | { ok: false; error: string; checkpoint: number; elapsedMs: number }
 
 /**
@@ -1802,12 +1824,45 @@ export function agentPresentationIndex(pres: any): any {
       byProps.push(fiber)
     }
   }
-  var tree = {
+  // Live opener JSX records, keyed by the catalog site the host's join matched them to. A site id
+  // is an action id, or `<action id>:target` / `:consumer` / `:expected` for the other JSX the
+  // action names. Only fibers that are in this (visible) tree are listed, as their current half.
+  var entryMap = new Map()
+  if (pres.entries) {
+    pres.entries.forEach(function (record: any) {
+      record.fibers.forEach(function (entryFiber: any) {
+        var live = current.get(entryFiber)
+        if (!live) return
+        record.actions.forEach(function (site: string) {
+          var list = entryMap.get(site)
+          if (!list) {
+            list = []
+            entryMap.set(site, list)
+          }
+          if (list.indexOf(live) < 0) list.push(live)
+        })
+      })
+    })
+  }
+  var visibility = new Map()
+  var tree: any = {
     all: all,
     current: current,
     props: props,
     names: names,
+    entries: entryMap,
     capped: capped,
+    // Mounted, not pruned as hidden, and not under a disabled, unfocused or hidden-modal ancestor.
+    isVisible: function (fiber: any): boolean {
+      var live = current.get(fiber)
+      if (!live) return false
+      var known = visibility.get(live)
+      if (known === undefined) {
+        known = agentActiveAncestors(live)
+        visibility.set(live, known)
+      }
+      return known
+    },
     inside: function (fiber: any, owner: any): boolean {
       if (!owner) return false
       // Prepared JSX and native navigation wrappers can exceed 100 ancestors. Compare exact
@@ -1822,6 +1877,133 @@ export function agentPresentationIndex(pres: any): any {
   }
   pres.structureCache = tree
   return tree
+}
+
+/**
+ * Whether a fiber is live on screen as far as its own ancestors can say: no hidden, disabled,
+ * unfocused or closed-modal ancestor.
+ *
+ * The reference's `activeAncestors`, without its native-bounds measurement. A screen that React
+ * Navigation keeps mounted but not focused reports `navigation.isFocused() === false`, which is the
+ * property that keeps another screen's opener from counting as this screen's.
+ */
+export function agentActiveAncestors(fiber: any): boolean {
+  var walked = new Set()
+  for (var parent = fiber; parent && !walked.has(parent); parent = parent.return) {
+    walked.add(parent)
+    var props = parent.memoizedProps
+    if (!props || typeof props !== 'object') continue
+    if (agentHidden(props)) return false
+    if (props.disabled === true) return false
+    if (props.accessibilityState && props.accessibilityState.disabled === true) return false
+    if (
+      props.visible === false &&
+      (agentComponentName(parent.type) === 'Modal' ||
+        (parent.tag === 5 && typeof props.onShow === 'function'))
+    ) {
+      return false
+    }
+    for (var key in props) {
+      if (props[key] === false && /^(?:is)?(?:screen|page|tab)(?:focused|active)$/i.test(key)) {
+        return false
+      }
+    }
+    if (props.route && props.navigation && typeof props.navigation.isFocused === 'function') {
+      try {
+        if (!props.navigation.isFocused()) return false
+      } catch (error) {
+        return false
+      }
+    }
+  }
+  return true
+}
+
+/**
+ * The focused leaf route: the one mounted screen whose `navigation.isFocused()` is true and that
+ * contains no other focused screen. Modelled on the reference's `mountContext`.
+ *
+ * Returns that route's fiber, or null when there is none or more than one. Null means "do not
+ * restrict by screen", not "refuse": the visibility rules still apply on their own.
+ */
+export function agentFocusedScope(tree: any): any {
+  if (tree.scopeResolved) return tree.scope
+  var routes: any[] = []
+  for (var at = 0; at < tree.all.length; at++) {
+    var fiber = tree.all[at]
+    var props = fiber.memoizedProps
+    if (!props || !props.route || typeof props.route.name !== 'string') continue
+    if (!props.navigation || typeof props.navigation.isFocused !== 'function') continue
+    var focused = false
+    try {
+      focused = props.navigation.isFocused() === true && tree.isVisible(fiber)
+    } catch (error) {
+      focused = false
+    }
+    if (focused) routes.push(fiber)
+  }
+  var leaves: any[] = []
+  for (var r = 0; r < routes.length; r++) {
+    var holdsAnother = false
+    for (var c = 0; c < routes.length; c++) {
+      if (c !== r && tree.inside(routes[c], routes[r])) holdsAnother = true
+    }
+    if (!holdsAnother) leaves.push(routes[r])
+  }
+  tree.scope = leaves.length === 1 ? leaves[0] : null
+  tree.scopeResolved = true
+  return tree.scope
+}
+
+/**
+ * Whether `fiber` belongs to `owner`: physically beneath it, or rendered by it (React's dev-only
+ * `_debugOwner` chain). The second route is what survives a portal, which moves an element's host
+ * parents away from the component that created it. Bounded and cycle-safe.
+ */
+export function agentOwnedBy(fiber: any, owner: any): boolean {
+  if (!fiber || !owner) return false
+  var queue: any[] = [fiber]
+  var seen = new Set()
+  for (var at = 0; at < queue.length && at < 2000; at++) {
+    var node = queue[at]
+    if (!node || seen.has(node)) continue
+    seen.add(node)
+    if (node === owner || node === owner.alternate) return true
+    if (node.return) queue.push(node.return)
+    if (node._debugOwner) queue.push(node._debugOwner)
+  }
+  return false
+}
+
+/**
+ * The nearest vertical scroll container above a fiber, or null. Owners sharing one are rows of the
+ * same list; pagers, horizontal lists and unrelated owners elsewhere on screen do not.
+ */
+export function agentListOf(fiber: any, tree: any): any {
+  var walked = new Set()
+  for (var parent = fiber.return; parent && !walked.has(parent) && walked.size < 400; parent = parent.return) {
+    walked.add(parent)
+    if (parent.tag !== 5) continue
+    var kind =
+      parent.stateNode && parent.stateNode.viewConfig && parent.stateNode.viewConfig.uiViewClassName
+        ? parent.stateNode.viewConfig.uiViewClassName
+        : typeof parent.type === 'string'
+          ? parent.type
+          : undefined
+    if (kind !== 'RCTScrollView' && kind !== 'AndroidScrollView') continue
+    var props = parent.memoizedProps
+    if (props && (props.horizontal || props.pagingEnabled || props.scrollEnabled === false)) return null
+    return tree.current.get(parent) ? tree.current.get(parent) : parent
+  }
+  return null
+}
+
+/** The visible fiber count of a freshly walked tree, or -1 when the walk hit its budget. */
+export function agentVisibleCount(pres: any): number {
+  pres.structureCache = undefined
+  var tree = agentPresentationIndex(pres)
+  pres.structureCache = undefined
+  return tree.capped ? -1 : tree.all.length
 }
 
 /**
@@ -2124,6 +2306,91 @@ export function agentMutableReact(exported: any): any {
 }
 
 /**
+ * Records the opener JSX of every catalog action that is mounted right now: the entry leg.
+ *
+ * Ported from the reference's `entry`/`records`. A fiber's `_debugStack` is the `Error` React's
+ * development build captures where its element was created, so its frames point at the JSX that
+ * rendered it, even when many unrelated components share a display name. Nothing here calls the
+ * element's callback or reads anything but the stack text. Records are keyed by component name plus
+ * stack, and bounded; the host symbolicates each record's stack through Metro and the answer comes
+ * back as `presentation-configure`, which fills `record.actions`.
+ */
+export function agentRegisterEntries(pres: any, tree: any): void {
+  var wanted = new Set()
+  var actions = pres.catalog.actions
+  for (var a = 0; a < actions.length; a++) {
+    var action = actions[a]
+    if (!action || !action.effect || action.effect.kind === 'mount') continue
+    wanted.add(action.component)
+    if (action.effect.kind === 'control') wanted.add(action.effect.component)
+    if (action.consumer) wanted.add(action.consumer.component)
+  }
+  var mounted = new Set(tree.all)
+  var gone: string[] = []
+  pres.entries.forEach(function (record: any, id: string) {
+    var live = false
+    record.fibers.forEach(function (fiber: any) {
+      if (mounted.has(fiber) || mounted.has(fiber.alternate)) live = true
+    })
+    if (live) record.fibers.clear()
+    else gone.push(id)
+  })
+  for (var g = 0; g < gone.length; g++) {
+    var dead = pres.entries.get(gone[g]!)
+    pres.entries.delete(gone[g]!)
+    if (dead) pres.entryKeys.delete(dead.key)
+  }
+  for (var at = 0; at < tree.all.length; at++) {
+    var fiber = tree.all[at]
+    var label = agentComponentName(fiber.type) || agentComponentName(fiber.elementType)
+    if (!label || !wanted.has(label)) continue
+    var origin = fiber._debugStack ? fiber._debugStack : fiber._debugSource
+    if (!origin || typeof origin !== 'object') continue
+    var record = pres.entrySources.get(origin)
+    if (record && pres.entries.get(record.id) !== record) {
+      // The record was dropped as stale; a source object can outlive it, so look it up again.
+      var existing = pres.entryKeys.get(record.key)
+      if (existing) record = existing
+      else if (pres.entries.size < 1500) {
+        pres.entries.set(record.id, record)
+        pres.entryKeys.set(record.key, record)
+      } else record = undefined
+    }
+    if (!record) {
+      var stack = typeof origin.stack === 'string' ? origin.stack.slice(0, 8000) : undefined
+      var location =
+        !stack && typeof origin.fileName === 'string'
+          ? {
+              file: origin.fileName,
+              line: origin.lineNumber,
+              column: Math.max(0, (origin.columnNumber === undefined ? 1 : origin.columnNumber) - 1)
+            }
+          : undefined
+      if (!stack && !location) continue
+      var key = JSON.stringify([label, stack ? stack : location])
+      record = pres.entryKeys.get(key)
+      if (!record && pres.entries.size < 1500) {
+        record = {
+          id: 'entry-' + ++pres.sequence,
+          key: key,
+          kind: 'entry',
+          name: label,
+          stack: stack,
+          source: location,
+          actions: new Set(),
+          fibers: new Set(),
+          checked: false
+        }
+        pres.entryKeys.set(key, record)
+        pres.entries.set(record.id, record)
+      }
+      if (record) pres.entrySources.set(origin, record)
+    }
+    if (record) record.fibers.add(fiber)
+  }
+}
+
+/**
  * Binds the source catalog's state sites to live hooks, inside a bounded patch window.
  *
  * Ported from the reference's `collect`. The shape of it is the whole safety argument:
@@ -2153,13 +2420,15 @@ export function agentPresentationCollect(pres: any, done: (value: unknown) => vo
     // Bindings the in-app attribution could not name a site for, with the creation stack the host
     // needs to symbolicate them through Metro (`presentations-bindings.ts`) and hand back with
     // `presentation-configure`. Bounded, and carrying nothing but a stack and an owner label.
-    var unbound: Array<{ id: string; owner: string; kind: string; stack: string }> = []
+    var unbound: Array<{ id: string; owner: string; kind: string; stack: string; source?: any }> = []
+    var stateCount = 0
     pres.bindings.forEach(function (binding: any) {
       if (binding.site) {
         matched += 1
         return
       }
-      if (unbound.length >= 400 || !binding.stack) return
+      if (stateCount >= 400 || !binding.stack || binding.checked) return
+      stateCount += 1
       unbound.push({
         id: binding.id,
         owner:
@@ -2170,10 +2439,28 @@ export function agentPresentationCollect(pres: any, done: (value: unknown) => vo
         stack: binding.stack
       })
     })
+    // The entry leg: opener JSX the host has not yet matched to a catalog site. A record the host
+    // already looked at and could not place is `checked` and is not sent again.
+    var entryCount = 0
+    var entriesMatched = 0
+    pres.entries.forEach(function (record: any) {
+      if (record.actions.size) {
+        entriesMatched += 1
+        return
+      }
+      if (record.checked || entryCount >= 400) return
+      if (!record.stack && !record.source) return
+      entryCount += 1
+      var wire: any = { id: record.id, owner: record.name, kind: 'entry', stack: record.stack ? record.stack : '' }
+      if (record.source) wire.source = record.source
+      unbound.push(wire)
+    })
     done({
       ok: !error,
       bindings: pres.bindings.size,
       matched: matched,
+      entries: pres.entries.size,
+      entriesMatched: entriesMatched,
       unbound: unbound,
       scheduled: pres.lastScheduled,
       elapsedMs: Date.now() - started,
@@ -2190,6 +2477,13 @@ export function agentPresentationCollect(pres: any, done: (value: unknown) => vo
       if (!mounted.has(binding.fiber) && !mounted.has(binding.fiber.alternate)) stale.push(id)
     })
     for (var s = 0; s < stale.length; s++) pres.bindings.delete(stale[s]!)
+    // The entry leg must never cost the state leg: a failure here only means fewer entries.
+    try {
+      agentRegisterEntries(pres, tree)
+    } catch (error) {
+      pres.entries.clear()
+      pres.entryKeys.clear()
+    }
     var targets = agentCollectionTargets(pres, pres.catalog.states)
     for (var at = 0; at < tree.all.length; at++) {
       var fiber = tree.all[at]
@@ -2274,53 +2568,381 @@ export function agentAttributeBindings(pres: any): void {
  * through its instrumented JSX markers and falls back to an elaborate identity search; with no
  * instrumentation the only honest resolution is:
  *
- * - **state**: the live binding whose `site` matches, and exactly one of them. More than one live
- *   owner of the same source site is genuinely ambiguous and is refused, matching the reference's
- *   `'More than one live instance owns this opening state.'`
+ * - **state**: gated on the entry leg exactly as a control is (`agentResolveStateEntry`). A catalog
+ *   `site` is the `useState` call, and many openers share one (every button that calls a provider's
+ *   `openComposer` writes the same hook), so the site alone says nothing about which screen the
+ *   opener is on.
  * - **control**: a mounted fiber rendering the named component which carries, on the named prop (or
  *   that prop's `ref.current`), an object `agentOpeningControl` accepts. Again exactly one.
  * - **mount**: the exported component identity named by the effect, read from Metro's module map
  *   without initialising anything.
  */
 export function agentResolvePresentationEntry(pres: any, action: any, tree: any): any {
-  if (action.effect.kind === 'state') {
-    var found: any[] = []
-    pres.bindings.forEach(function (binding: any) {
-      if (binding.site === action.effect.site && tree.current.get(binding.fiber)) found.push(binding)
-    })
-    if (found.length !== 1) {
-      return { error: found.length ? 'More than one live instance owns this opening state.' : 'The opening state could not be bound to its source.' }
-    }
-    return { binding: found[0] }
-  }
-  if (action.effect.kind === 'control') {
-    var candidates: any[] = []
-    var byName = tree.names.get(action.effect.component)
-    var list = byName ? byName : []
-    for (var at = 0; at < list.length; at++) {
-      var fiber = list[at]
-      var props = fiber.memoizedProps
-      if (!props || typeof props !== 'object') continue
-      var carried = props[action.effect.prop]
-      if (carried && typeof carried === 'object' && 'current' in carried) carried = carried.current
-      if (!agentOpeningControl(carried, action.effect.method)) continue
-      var close = agentControlCloser(carried, action.effect.method)
-      if (!close) continue
-      var duplicate = false
-      for (var d = 0; d < candidates.length; d++) if (candidates[d].value === carried) duplicate = true
-      if (!duplicate) candidates.push({ value: carried, close: close, fiber: fiber })
-    }
-    if (candidates.length !== 1) {
-      return { error: candidates.length ? 'More than one live control matches this opening.' : 'The opening control could not be bound to its source.' }
-    }
-    return { target: candidates[0] }
-  }
+  if (action.effect.kind === 'state') return agentResolveStateEntry(pres, action, tree)
+  if (action.effect.kind === 'control') return agentResolveControlEntry(pres, action, tree)
   if (action.effect.kind === 'mount') {
     var type = agentMountedExport(pres, action.effect.file, action.effect.export)
-    if (!type) return { error: 'The source component is not loaded.' }
-    return { type: type }
+    if (!type) return { reason: 'not-loaded', error: 'The source component is not loaded.' }
+    // The reference's two `mountedExport` guards (presentations-runtime.js:1313-1314), which the
+    // first port left out. Without them any always-loaded module's export is offered on every
+    // screen, because nothing else about a mount is screen-scoped.
+    var body = agentMountBody(type)
+    if (typeof body !== 'function' || agentComponentName(type) !== action.owner) {
+      return { reason: 'owner-mismatch', error: 'The source export is not the named component.' }
+    }
+    // An app-wide component the app already renders itself — a NUX announcement mounted in the
+    // shell, say. Projecting a second cold copy shows whatever it renders with no provider state,
+    // which for a gated component is nothing at all; the live one is the real thing.
+    var mounted = false
+    for (var m = 0; m < tree.all.length; m++) {
+      var fiber = tree.all[m]
+      if (fiber.type === type || fiber.elementType === type || fiber.type === body) {
+        mounted = true
+        break
+      }
+    }
+    if (mounted) {
+      return { reason: 'already-mounted', error: 'The app already renders this component.' }
+    }
+    return { type: type, expected: action.owner }
   }
-  return { error: 'Unsupported presentation transition.' }
+  return { reason: 'unsupported', error: 'Unsupported presentation transition.' }
+}
+
+/**
+ * The entry leg shared by every non-preview action: which one visible owner this action's opener
+ * JSX lives in, or why there is none.
+ *
+ * Modelled on the reference's `find` (entries ~1404, owners ~1411, hard gate ~1558):
+ *
+ * - The hard gate: a non-preview action whose opener JSX the host has not matched to a live fiber
+ *   is refused outright (`unbound`). Nothing about a state site or a controller can stand in for it.
+ * - Each bound opener must be the named component carrying a function on the named prop, enabled,
+ *   inside the focused screen and visible; `trigger` props must match.
+ * - The owner is the innermost visible fiber named `action.owner` that holds an opener. Owners that
+ *   are rows of one vertical list are the only case where several are accepted.
+ *
+ * Returns `{ owners, openers }`, or a refusal `{ reason, error }` from a closed set.
+ */
+export function agentResolveOpener(pres: any, action: any, tree: any): any {
+  var scope = agentFocusedScope(tree)
+  var inScope = function (fiber: any): boolean {
+    return !scope || tree.inside(fiber, scope)
+  }
+  var refuse = function (reason: string, error: string): any {
+    return { reason: reason, error: error }
+  }
+  var labelOf = function (fiber: any): string {
+    return agentComponentName(fiber.type) || agentComponentName(fiber.elementType)
+  }
+  var bound = tree.entries.get(action.id)
+  if (!bound || !bound.length) {
+    return refuse('unbound', 'The opening control could not be bound to its source.')
+  }
+  var openers: any[] = []
+  var disabled = 0
+  for (var e = 0; e < bound.length; e++) {
+    var opener = bound[e]
+    var props = opener.memoizedProps
+    if (labelOf(opener) !== action.component) continue
+    if (!props || typeof props[action.prop] !== 'function') continue
+    if (
+      props.disabled === true ||
+      props['aria-disabled'] === true ||
+      (props.accessibilityState && props.accessibilityState.disabled === true)
+    ) {
+      disabled += 1
+      continue
+    }
+    if (!inScope(opener) || !tree.isVisible(opener)) continue
+    var triggered = true
+    if (action.trigger) {
+      for (var key in action.trigger) if (props[key] !== action.trigger[key]) triggered = false
+    }
+    if (triggered) openers.push(opener)
+  }
+  if (!openers.length) {
+    return disabled
+      ? refuse('disabled', 'The opening control is disabled in this app state.')
+      : refuse('not-in-view', 'The opening control is not in the active view.')
+  }
+  var candidates = tree.names.get(action.owner)
+  var visibleOwners: any[] = []
+  for (var c = 0; candidates && c < candidates.length; c++) {
+    if (tree.isVisible(candidates[c]) && inScope(candidates[c])) visibleOwners.push(candidates[c])
+  }
+  var owners: any[] = []
+  for (var o = 0; o < visibleOwners.length; o++) {
+    var owner = visibleOwners[o]
+    var holdsOpener = false
+    for (var h = 0; h < openers.length; h++) if (tree.inside(openers[h], owner)) holdsOpener = true
+    if (!holdsOpener) continue
+    var holdsInner = false
+    for (var i = 0; i < visibleOwners.length; i++) {
+      if (visibleOwners[i] !== owner && tree.inside(visibleOwners[i], owner)) holdsInner = true
+    }
+    if (!holdsInner) owners.push(owner)
+  }
+  if (!owners.length) return refuse('no-owner', 'The opening control has no visible source owner in the active view.')
+  if (owners.length > 1) {
+    var list = agentListOf(owners[0], tree)
+    var rows = !!list
+    for (var r = 1; rows && r < owners.length; r++) if (agentListOf(owners[r], tree) !== list) rows = false
+    if (!rows) return refuse('ambiguous-owner', 'More than one live owner renders this opening control.')
+  }
+  return { owners: owners, openers: openers }
+}
+
+/**
+ * Resolves a `state` action to the one `useState` binding it may write, or says why it cannot.
+ *
+ * A state site is a hook call, not a screen: a provider's single `useState` is the destination of
+ * every opener that calls its `openComposer`, so matching `binding.site === effect.site` alone made
+ * one sheet "belong" to every opener in the app and opened it on screens that render none of them.
+ * The opener's entry is what places an action on a screen, so it gates a state action just as it
+ * gates a control (`agentResolveOpener`), and then, as in the reference's `resolveOwner`:
+ *
+ * - the owner's own opener callbacks must be one distinct function (a `handler` name may break a tie);
+ * - the action's prop `guard` must hold on the owner's props;
+ * - exactly one visible `useState` binding carries the site, and when the site is declared by the
+ *   action's own owner component that binding must live inside the chosen owner;
+ * - the state must not already hold the opening value.
+ *
+ * An action that carries opening `input` (data computed from the opener's arguments) is refused:
+ * this runtime only writes the catalog's static `effect.value` and never evaluates `input`, so
+ * writing it would open the wrong thing. A failed or missing source join leaves no entry bound and
+ * the action is refused as `unbound`, so a degraded join captures nothing rather than something
+ * else. Previews are source-synthesised views, not presses, and keep the visibility-only rule.
+ */
+export function agentResolveStateEntry(pres: any, action: any, tree: any): any {
+  var effect = action.effect
+  var refuse = function (reason: string, error: string): any {
+    return { reason: reason, error: error }
+  }
+  var read = function (binding: any): any {
+    var value = agentHookValue(pres, binding)
+    for (var p = 0; p < effect.path.length; p++) {
+      value = value === null || value === undefined ? undefined : value[effect.path[p]]
+    }
+    return value
+  }
+  var sameSite = function (binding: any): boolean {
+    return binding.site === effect.site && binding.kind !== 'useReducer' && !!tree.current.get(binding.fiber)
+  }
+  if (action.preview) {
+    var visible: any[] = []
+    pres.bindings.forEach(function (binding: any) {
+      if (sameSite(binding) && tree.isVisible(binding.fiber)) visible.push(binding)
+    })
+    if (visible.length !== 1) {
+      return visible.length
+        ? refuse('ambiguous-binding', 'More than one live instance owns this opening state.')
+        : refuse('no-binding', 'The opening state could not be bound to its source.')
+    }
+    return { binding: visible[0] }
+  }
+  if (action.input) {
+    return refuse('unsupported', 'This opening needs data from its opener, which this runtime cannot supply.')
+  }
+  var resolved = agentResolveOpener(pres, action, tree)
+  if (resolved.error) return resolved
+  var site: any = null
+  var states = pres.catalog.states
+  for (var s = 0; states && s < states.length; s++) if (states[s].id === effect.site) site = states[s]
+  var last: any = null
+  for (var w = 0; w < resolved.owners.length && w < 24; w++) {
+    var owner = resolved.owners[w]
+    var callbacks: any[] = []
+    var named: any[] = []
+    for (var o = 0; o < resolved.openers.length; o++) {
+      var opener = resolved.openers[o]
+      if (!tree.inside(opener, owner)) continue
+      var callback = opener.memoizedProps[action.prop]
+      if (callbacks.indexOf(callback) < 0) callbacks.push(callback)
+    }
+    if (callbacks.length > 1 && action.handler) {
+      for (var c = 0; c < callbacks.length; c++) if (callbacks[c].name === action.handler) named.push(callbacks[c])
+      callbacks = named
+    }
+    if (callbacks.length !== 1) {
+      last = refuse('ambiguous-callback', 'More than one opening entry matches this control.')
+      continue
+    }
+    if (!agentCondition(action.guard, owner.memoizedProps)) {
+      last = refuse('unmet-condition', 'The opening control does not meet its source condition.')
+      continue
+    }
+    var matches: any[] = []
+    pres.bindings.forEach(function (binding: any) {
+      if (!sameSite(binding) || !tree.isVisible(binding.fiber)) return
+      if (site && site.owner === action.owner && !tree.inside(binding.fiber, owner)) return
+      matches.push(binding)
+    })
+    if (matches.length !== 1) {
+      last = matches.length
+        ? refuse('ambiguous-binding', 'More than one live instance owns this opening state.')
+        : refuse('no-binding', 'The opening state could not be bound to its source.')
+      continue
+    }
+    var value = read(matches[0])
+    var already =
+      JSON.stringify(value) === JSON.stringify(effect.value) ||
+      (!effect.path.length && typeof effect.value === 'object' && value !== null && value !== undefined)
+    if (already) {
+      last = refuse('already-open', 'This state already holds the opening value.')
+      continue
+    }
+    return { binding: matches[0] }
+  }
+  return last
+}
+
+/**
+ * Evaluates a source-derived prop condition (`AppFlowUiCondition`) against a props object.
+ * The reference's `condition`. A missing node is true; an unknown operator is false.
+ */
+export function agentCondition(node: any, props: any): any {
+  if (!node) return true
+  if ('value' in node) return node.value
+  if (node.prop) {
+    var value = props
+    for (var at = 0; at < node.prop.length; at++) {
+      value = value === null || value === undefined ? undefined : value[node.prop[at]]
+    }
+    return value
+  }
+  var a = agentCondition(node.args[0], props)
+  var b = node.args[1] && agentCondition(node.args[1], props)
+  switch (node.op) {
+    case '!':
+      return !a
+    case '&&':
+      return a && b
+    case '||':
+      return a || b
+    case '===':
+      return a === b
+    case '!==':
+      return a !== b
+    case '==':
+      // eslint-disable-next-line eqeqeq
+      return a == b
+    case '!=':
+      // eslint-disable-next-line eqeqeq
+      return a != b
+  }
+  return false
+}
+
+/**
+ * Resolves a `control` action to the one controller it may open, or says why it cannot.
+ *
+ * A controller is app-wide in the way a context value is: the same `ReportDialog` can be mounted by
+ * a component that appears on no screen at all. Binding by name alone therefore opened it on every
+ * screen. Ownership is what makes it this screen's, and it is enforced the way the reference's
+ * `find` does:
+ *
+ * - The action's opener JSX (the entry, matched to this action by the host's source join) must be
+ *   a live, visible fiber inside the focused screen. A non-preview action with no bound entry at all
+ *   is refused outright: that is the reference's hard gate.
+ * - It must sit inside exactly one visible owner (the innermost visible fiber named `action.owner`).
+ *   Owners that are rows of one vertical list are the only exception, and the first row whose
+ *   controller resolves is used.
+ * - The controller must be rendered inside that owner, and there must be exactly one distinct value.
+ *
+ * Every refusal carries a `reason` from a closed set, so it can be counted without naming anything.
+ */
+export function agentResolveControlEntry(pres: any, action: any, tree: any): any {
+  var effect = action.effect
+  var scope = agentFocusedScope(tree)
+  var inScope = function (fiber: any): boolean {
+    return !scope || tree.inside(fiber, scope)
+  }
+  var refuse = function (reason: string, error: string): any {
+    return { reason: reason, error: error }
+  }
+  var labelOf = function (fiber: any): string {
+    return agentComponentName(fiber.type) || agentComponentName(fiber.elementType)
+  }
+  var controllerOf = function (fiber: any): any {
+    var props = fiber.memoizedProps
+    if (!props || typeof props !== 'object') return null
+    var carried = props[effect.prop]
+    if (carried && typeof carried === 'object' && 'current' in carried) carried = carried.current
+    if (!agentOpeningControl(carried, effect.method)) return null
+    var close = agentControlCloser(carried, effect.method)
+    return close ? { value: carried, close: close, fiber: fiber } : null
+  }
+  var controllers = function (pool: any[], keep: (fiber: any) => boolean): any {
+    var seen: any[] = []
+    var distinct: any[] = []
+    for (var at = 0; at < pool.length; at++) {
+      var fiber = pool[at]
+      if (labelOf(fiber) !== effect.component || !keep(fiber)) continue
+      var carried = controllerOf(fiber)
+      if (!carried) continue
+      if (seen.indexOf(carried.value) >= 0) continue
+      seen.push(carried.value)
+      distinct.push(carried)
+    }
+    return distinct
+  }
+  var targetPool = function (): any[] {
+    if (effect.target) {
+      var bound = tree.entries.get(action.id + ':target')
+      return bound ? bound : []
+    }
+    var named = tree.names.get(effect.component)
+    return named ? named : []
+  }
+  var pick = function (distinct: any[]): any {
+    if (distinct.length === 1) return { target: distinct[0] }
+    return distinct.length
+      ? refuse('ambiguous-control', 'More than one live control matches this opening.')
+      : refuse('no-control', 'The opening control could not be bound to its source.')
+  }
+
+  if (action.preview) {
+    return pick(
+      controllers(targetPool(), function (fiber: any): boolean {
+        return inScope(fiber) && tree.isVisible(fiber)
+      })
+    )
+  }
+
+  var resolved = agentResolveOpener(pres, action, tree)
+  if (resolved.error) return resolved
+  var owners = resolved.owners
+  var last: any = null
+  for (var w = 0; w < owners.length && w < 24; w++) {
+    var current = owners[w]
+    last = pick(
+      controllers(targetPool(), function (fiber: any): boolean {
+        return agentOwnedBy(fiber, current)
+      })
+    )
+    if (last.target) return last
+  }
+  return last
+}
+
+/**
+ * The function a component type renders through: `memo`'s `type`, `forwardRef`'s `render`, or the
+ * component itself. Ported from the reference's `mountedExport` (presentations-runtime.js:1312).
+ *
+ * Read through own data descriptors so a getter on a user component is never invoked.
+ */
+export function agentMountBody(type: any): any {
+  if (!type || (typeof type !== 'object' && typeof type !== 'function')) return undefined
+  var read = function (key: string): any {
+    var descriptor = Object.getOwnPropertyDescriptor(type, key)
+    return descriptor && 'value' in descriptor ? descriptor.value : undefined
+  }
+  var render = read('render')
+  if (render !== undefined) return render
+  var inner = read('type')
+  if (inner !== undefined) return inner
+  return type
 }
 
 /**
@@ -2890,16 +3512,43 @@ export function agentPresentationOpen(pres: any, id: string, focus: any): any {
   var tree = agentPresentationIndex(pres)
   var found = agentResolvePresentationEntry(pres, action, tree)
   if (found.error) {
-    return { ok: false, error: found.error, checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
+    return {
+      ok: false,
+      error: found.error,
+      reason: found.reason ? found.reason : 'other',
+      checkpoint: pres.undo.length,
+      elapsedMs: Date.now() - started
+    }
   }
   if (action.effect.kind === 'mount') {
-    var context = agentProjectionRoot(pres, focus ? focus : tree.all[0])
+    // The context is the focused leaf route, as in the reference's `mountContext`. The first fiber
+    // of the tree is the HostRoot, which has no `View` above it, so projecting from there found no
+    // attachment point and refused every mount preview on every screen.
+    var mountScope = focus ? focus : agentFocusedScope(tree)
+    var context = mountScope ? agentProjectionRoot(pres, mountScope) : null
+    if (!context) {
+      return {
+        ok: false,
+        error: 'This renderer cannot project a local view.',
+        checkpoint: pres.undo.length,
+        elapsedMs: Date.now() - started
+      }
+    }
     var owner = { type: found.type, elementType: found.type, memoizedProps: {}, return: focus }
     var projection = agentProject(pres, owner, { mount: true }, context)
     if (!projection.ok) {
       return { ok: false, error: projection.error, checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
     }
-    return { ok: true, kind: 'mount', checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
+    // The reference returns `expected: action.owner` from every open and refuses readiness when
+    // that component is absent or draws nothing (`presentations-runtime.js:2156-2159`). The host
+    // probes it with `presentation-content` once the screen settles.
+    return {
+      ok: true,
+      kind: 'mount',
+      expected: action.owner,
+      checkpoint: pres.undo.length,
+      elapsedMs: Date.now() - started
+    }
   }
   if (action.effect.kind === 'state') {
     var binding = found.binding
@@ -2941,7 +3590,9 @@ export function agentPresentationOpen(pres: any, id: string, focus: any): any {
       close: target.close,
       focus: target.fiber,
       nativeFocus: target.fiber,
-      origin: target.fiber
+      origin: target.fiber,
+      // What the tree looked like before this opened. A dismissal is confirmed against it.
+      baseline: tree.capped ? -1 : tree.all.length
     })
     target.value[action.effect.method]()
     pres.structureCache = undefined
@@ -2954,10 +3605,11 @@ export function agentPresentationOpen(pres: any, id: string, focus: any): any {
  * Waits for a controller-owned presentation to report that it closed.
  *
  * Ported from the reference's `waitForDismissal`, with its 4000ms deadline and its single retry.
- * The retry's reason is specific: a close can run before the native ref exists and silently do
- * nothing, so one more close is sent — but only once, and only while the control has acknowledged
- * no closing transition. An accepted close stays single, because sending a second one to a sheet
- * that is already closing can dismiss whatever opened behind it.
+ * The reference confirms against native presentation status it observes; this port has none, so the
+ * confirmation is read off the committed tree (see the comments in the body). The shape check this
+ * used to make (`agentOpeningControl` on the controller) was true whether the sheet was open or
+ * not, so every control close ran to the deadline and failed, and a failed unwind is what latches
+ * the sweep's UI-state capture off.
  *
  * Expressed as a poll rather than a promise chain because this agent has no promise-based control
  * flow (see the file's syntax rules).
@@ -2965,15 +3617,45 @@ export function agentPresentationOpen(pres: any, id: string, focus: any): any {
 export function agentWaitForDismissal(pres: any, entry: any, done: (error: string | null) => void): void {
   var root = globalThis as any
   var started = Date.now()
+  var stable = 0
+  var last = -2
   var step = function (): void {
-    var open = agentOpeningControl(entry.control, undefined)
-    var stillOpen = entry.closedAcknowledged ? false : open
-    if (!stillOpen || entry.dismissed) {
+    if (entry.dismissed) {
+      pres.lastDismissEvidence = 'event'
       done(null)
       return
     }
-    if (!entry.closeRetried && Date.now() - started >= 1000) {
-      // A close can run before a native ref exists and silently do nothing. Retry once only.
+    // A controller is a plain object with an opener and a closer; it looks identical open and
+    // closed, so its shape says nothing about whether the presentation went away. The tree does:
+    // an opened sheet mounts content, and a dismissed one takes it away again.
+    var count = agentVisibleCount(pres)
+    if (count >= 0) {
+      if (entry.openCount === undefined) entry.openCount = count
+      var grew = entry.baseline >= 0 ? entry.openCount - entry.baseline : 0
+      if (grew > 0) {
+        // Back to (nearly) what it was before opening: the content is gone.
+        if (count - entry.baseline <= Math.max(2, Math.floor(grew / 4))) {
+          pres.lastDismissEvidence = 'tree'
+          done(null)
+          return
+        }
+      } else {
+        // The open added nothing visible to compare against, so the only evidence available is a
+        // tree that has stopped changing a while after the close was sent.
+        stable = count === last ? stable + 1 : 0
+        last = count
+        if (stable >= 4 && Date.now() - started >= 800) {
+          pres.lastDismissEvidence = 'stable'
+          done(null)
+          return
+        }
+      }
+    }
+    var shrinking = count >= 0 && entry.openCount !== undefined && count < entry.openCount
+    if (!entry.closeRetried && !shrinking && Date.now() - started >= 1000) {
+      // A close can run before a native ref exists and silently do nothing. Retry once only, and
+      // only while nothing has begun to leave the tree: a close that is already animating stays
+      // single, because a second one can dismiss whatever opened behind it.
       entry.closeRetried = true
       try {
         entry.control[entry.close]()
@@ -2987,7 +3669,7 @@ export function agentWaitForDismissal(pres: any, entry: any, done: (error: strin
       done('Native presentation dismissal has not finished.')
       return
     }
-    root.setTimeout(step, 40)
+    root.setTimeout(step, 100)
   }
   step()
 }
@@ -3123,6 +3805,11 @@ export function agentRestorePresentations(
     if (entry.control) {
       if (!entry.closing) {
         entry.closing = true
+        // What the sheet looks like in the tree, measured before the close can change it.
+        if (wait && entry.openCount === undefined) {
+          var openCount = agentVisibleCount(pres)
+          if (openCount >= 0) entry.openCount = openCount
+        }
         try {
           entry.control[entry.close]()
         } catch (error) {
@@ -3166,6 +3853,45 @@ export function agentRestorePresentations(
  * a state neither of them can describe. Here the chain is a queue of callbacks, because this agent
  * has no promise-based control flow.
  */
+/**
+ * Whether what a projection put on screen is actually worth photographing: the expected component
+ * is mounted, and something under it draws.
+ *
+ * The reference gets this from its readiness probe, whose reason chain answers `'target'` when the
+ * expected component is absent and `'empty'` when the focused view has no content
+ * (`presentations-runtime.js`, readiness at `runtime.js:629-649`). This port settles on device
+ * pressables instead, which cannot tell "still loading" from "renders nothing", so a component
+ * that draws nothing burned the full settle timeout and was then photographed blank anyway.
+ *
+ * Counts host fibers (`tag === 5`) with a non-zero visible box under the expected component. No app
+ * content is read: the result is two numbers and a boolean.
+ */
+export function agentPresentationContent(pres: any, expected: string): any {
+  pres.structureCache = undefined
+  var tree = agentPresentationIndex(pres)
+  var targets = expected ? tree.names.get(expected) : undefined
+  if (!targets || !targets.length) return { found: false, hosts: 0, visible: 0 }
+  var hosts = 0
+  var visible = 0
+  for (var t = 0; t < targets.length; t++) {
+    var root = targets[t]
+    var stack = [root]
+    var seen = 0
+    while (stack.length && seen < 4000) {
+      var fiber = stack.pop()
+      seen++
+      if (!fiber) continue
+      if (fiber.tag === 5) {
+        hosts++
+        if (tree.isVisible(fiber)) visible++
+      }
+      if (fiber.child) stack.push(fiber.child)
+      if (fiber !== root && fiber.sibling) stack.push(fiber.sibling)
+    }
+  }
+  return { found: true, hosts: hosts, visible: visible }
+}
+
 export function agentPresentationRollback(
   pres: any,
   level: number,
@@ -3176,9 +3902,13 @@ export function agentPresentationRollback(
   var run = function (): void {
     agentRestorePresentations(pres, level, wait, function (error: string | null) {
       pres.rollbackRunning = false
-      var reply = error
+      var reply: any = error
         ? { ok: false, error: error, checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
         : { ok: true, checkpoint: pres.undo.length, elapsedMs: Date.now() - started }
+      if (pres.lastDismissEvidence) {
+        reply.evidence = pres.lastDismissEvidence
+        pres.lastDismissEvidence = undefined
+      }
       try {
         done(reply)
       } catch (replyError) {
@@ -3206,13 +3936,49 @@ export function agentPresentationList(pres: any): any {
   var tree = agentPresentationIndex(pres)
   var available: Array<{ id: string; kind: string }> = []
   var unavailable = 0
+  var rejected: Record<string, number> = {}
+  // Openers that reach the same destination are one view, listed once (the reference's `list`
+  // keys on the controller, or on `[site, path, value]` for a state). Without this a screen with
+  // two buttons for one provider's composer photographs that composer twice.
+  var aliased = 0
+  var seenStates = new Set()
+  var seenControls: any[] = []
+  var kinds: Record<string, number> = {}
   for (var at = 0; at < pres.catalog.actions.length && available.length < 200; at++) {
     var action = pres.catalog.actions[at]
     var found = agentResolvePresentationEntry(pres, action, tree)
-    if (found.error) unavailable += 1
-    else available.push({ id: action.id, kind: action.effect.kind })
+    if (found.error) {
+      unavailable += 1
+      var why = found.reason ? found.reason : 'other'
+      rejected[why] = (rejected[why] ? rejected[why] : 0) + 1
+      continue
+    }
+    if (found.binding && !action.preview) {
+      var stateKey = JSON.stringify([action.effect.site, action.effect.path, action.effect.value])
+      if (seenStates.has(stateKey)) {
+        aliased += 1
+        continue
+      }
+      seenStates.add(stateKey)
+    }
+    if (found.target && !action.preview) {
+      if (seenControls.indexOf(found.target.value) >= 0) {
+        aliased += 1
+        continue
+      }
+      seenControls.push(found.target.value)
+    }
+    kinds[action.effect.kind] = (kinds[action.effect.kind] ? kinds[action.effect.kind] : 0) + 1
+    available.push({ id: action.id, kind: action.effect.kind })
   }
-  return { available: available, unavailable: unavailable, elapsedMs: Date.now() - started }
+  return {
+    available: available,
+    unavailable: unavailable,
+    rejected: rejected,
+    aliased: aliased,
+    kinds: kinds,
+    elapsedMs: Date.now() - started
+  }
 }
 
 /**
@@ -3231,6 +3997,10 @@ export function agentCreatePresentations(root: any, limits: AgentLimits, undo: A
     sourceRoot: undefined,
     catalog: { states: [], actions: [] },
     bindings: new Map(),
+    entries: new Map(),
+    entryKeys: new Map(),
+    entrySources: new WeakMap(),
+    lastDismissEvidence: undefined,
     owners: new WeakMap(),
     pendingSites: new WeakMap(),
     collecting: new Set(),
@@ -3277,6 +4047,8 @@ export function agentCreatePresentations(root: any, limits: AgentLimits, undo: A
     agentReleasePreviewErrors(pres, true)
     pres.collecting.clear()
     pres.bindings.clear()
+    pres.entries.clear()
+    pres.entryKeys.clear()
     pres.projected.length = 0
     pres.undo.length = 0
     pres.structureCache = undefined
@@ -3422,9 +4194,24 @@ export function agentInstall(key: string, leaseMs: number, limits: AgentLimits):
         var match = matches[mi]
         if (!match || typeof match.binding !== 'string' || typeof match.site !== 'string') continue
         var target = presentations.bindings.get(String(match.binding))
-        if (!target) continue
-        target.site = String(match.site)
-        configured += 1
+        if (target) {
+          target.site = String(match.site)
+          configured += 1
+          continue
+        }
+        var entryRecord = presentations.entries.get(String(match.binding))
+        if (entryRecord) {
+          entryRecord.actions.add(String(match.site))
+          configured += 1
+        }
+      }
+      // Records the host looked at and could not place are not offered again.
+      var checkedIds = Array.isArray(command.checked) ? command.checked : []
+      for (var ci = 0; ci < checkedIds.length && ci < 3000; ci++) {
+        var checkedRecord =
+          presentations.bindings.get(String(checkedIds[ci])) ||
+          presentations.entries.get(String(checkedIds[ci]))
+        if (checkedRecord) checkedRecord.checked = true
       }
       presentations.structureCache = undefined
       done({ ok: true, configured: configured, elapsedMs: Date.now() - configureStarted })
@@ -3432,6 +4219,8 @@ export function agentInstall(key: string, leaseMs: number, limits: AgentLimits):
       done(agentPresentationList(presentations))
     } else if (type === 'presentation-open') {
       done(agentPresentationOpen(presentations, String(command.id), null))
+    } else if (type === 'presentation-content') {
+      done(agentPresentationContent(presentations, String(command.expected)))
     } else if (type === 'presentation-rollback') {
       var level =
         typeof command.level === 'number' && isFinite(command.level) && command.level >= 0
@@ -3528,6 +4317,11 @@ export const AGENT_FUNCTIONS = {
   agentOpeningControl,
   agentControlCloser,
   agentSetPath,
+  agentActiveAncestors,
+  agentFocusedScope,
+  agentOwnedBy,
+  agentListOf,
+  agentVisibleCount,
   agentPresentationIndex,
   agentHookValue,
   agentCollectionTargets,
@@ -3538,7 +4332,12 @@ export const AGENT_FUNCTIONS = {
   agentRegisterHook,
   agentPresentationCollect,
   agentAttributeBindings,
+  agentRegisterEntries,
   agentResolvePresentationEntry,
+  agentResolveOpener,
+  agentResolveStateEntry,
+  agentCondition,
+  agentResolveControlEntry,
   agentMountedExport,
   agentProjectionRoot,
   agentWindowRect,
@@ -3554,6 +4353,8 @@ export const AGENT_FUNCTIONS = {
   agentPresentationOpen,
   agentWaitForDismissal,
   agentRestorePresentations,
+  agentMountBody,
+  agentPresentationContent,
   agentPresentationRollback,
   agentPresentationList,
   agentCreatePresentations,

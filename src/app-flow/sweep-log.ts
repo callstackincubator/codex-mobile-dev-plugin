@@ -97,6 +97,7 @@ interface NodeRecord {
   settle?: unknown
   verify?: unknown
   delivery?: unknown
+  uiStates?: unknown
   status?: string
   totalMs?: number
 }
@@ -204,6 +205,9 @@ export async function createSweepLog(options: {
         },
         delivery(entry) {
           record.delivery = entry
+        },
+        uiStates(entry) {
+          record.uiStates = entry
         },
         finish(closing) {
           // Guards only against one record being appended twice; a requeued node gets a new one.

@@ -48,9 +48,23 @@ import { recordRuntimeTiming } from './runtime-telemetry.ts'
 import { getScreenshotPath, readAppFlow, writeAppFlow } from './storage.ts'
 
 /** The reference's own per-command budgets, kept so a port change is visible as a change. */
-const SETUP_TIMEOUT_MS = 5_000
+// Setup carries the whole catalog over the wire, reads every initialised module once and forces one
+// render pass, so on the first screens of a cold app it is the one command that can run long. The
+// first two screens of an otherwise healthy sweep ended `pass-failed` with nothing listed.
+const SETUP_TIMEOUT_MS = 20_000
 const LIST_TIMEOUT_MS = 2_000
 const OPEN_TIMEOUT_MS = 5_000
+const CONTENT_TIMEOUT_MS = 2_000
+/**
+ * Bound on the settle after a presentation opens.
+ *
+ * This used to pass `undefined` and inherit `ROUTE_SETTLE_TIMEOUT_MS` (30s). That bound is sized
+ * for a *deep link* resolving a whole route; a presentation opens over a screen that has already
+ * settled, so the only wait that matters is the sheet's own transition. The 30s was being paid in
+ * full on every screen whose state drew nothing — about 30s x 8 of one 304s ten-screen sweep —
+ * and the frame was then photographed anyway, because `waitForAppReady` captures on timeout.
+ */
+const UI_STATE_SETTLE_TIMEOUT_MS = 4_000
 
 /** Directories a React Native project never keeps its own screens in. */
 const SKIPPED_DIRECTORIES = new Set([
@@ -160,12 +174,26 @@ export function createExploreUiPorts(options: ExploreUiPortOptions): ExploreUiPo
           SETUP_TIMEOUT_MS,
           'presentation-setup'
         ),
-      configure: (matches) =>
-        command({ type: 'presentation-configure', matches: [...matches] }, LIST_TIMEOUT_MS, 'presentation-configure'),
+      configure: (matches, checked) =>
+        command(
+          {
+            type: 'presentation-configure',
+            matches: [...matches],
+            ...(checked?.length ? { checked: [...checked] } : {})
+          },
+          LIST_TIMEOUT_MS,
+          'presentation-configure'
+        ),
       list: () => command({ type: 'presentations' }, LIST_TIMEOUT_MS, 'presentations'),
       open: (id) => command({ type: 'presentation-open', id }, OPEN_TIMEOUT_MS, 'presentation-open'),
       // Above the in-app deadlines it confirms against (2000ms modal dismissal, 4000ms control
       // close), so a slow but successful unwind is never cut off by the transport.
+      content: (expected) =>
+        command(
+          { type: 'presentation-content', expected },
+          CONTENT_TIMEOUT_MS,
+          'presentation-content'
+        ),
       rollback: (level) =>
         command(
           { type: 'presentation-rollback', level, wait: true },
@@ -175,7 +203,7 @@ export function createExploreUiPorts(options: ExploreUiPortOptions): ExploreUiPo
     },
     // The same merged state/action set `presentation-setup` was given, so a binding resolved here
     // names a site the device also knows about.
-    bind: (bindings) =>
+    bind: (bindings, report) =>
       bindPresentationSites(
         options.projectPath,
         [...bindings],
@@ -186,7 +214,8 @@ export function createExploreUiPorts(options: ExploreUiPortOptions): ExploreUiPo
         {
           metroOrigin: `http://localhost:${options.device.metroPort}`,
           ...(options.signal ? { signal: options.signal } : {}),
-          readSource: (file) => readFile(file, 'utf8').catch(() => undefined)
+          readSource: (file) => readFile(file, 'utf8').catch(() => undefined),
+          ...(report ? { report } : {})
         }
       ),
     focusedRoute: async () => {
@@ -197,7 +226,7 @@ export function createExploreUiPorts(options: ExploreUiPortOptions): ExploreUiPo
     // The same settle the Fast delivery path waits on — a frame the app has stopped changing,
     // with enough interactive elements to be the presentation rather than its transition.
     settle: async () => {
-      await settleAfterRoute(options.ctx, options.device, options.signal, undefined, {
+      await settleAfterRoute(options.ctx, options.device, options.signal, UI_STATE_SETTLE_TIMEOUT_MS, {
         minInteractiveElements: 1
       })
     },

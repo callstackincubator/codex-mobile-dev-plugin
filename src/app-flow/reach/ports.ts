@@ -329,6 +329,62 @@ export interface RenderPort {
  * those for the same reason), screenshots, device identifiers and anything that feeds telemetry.
  * This file is local, and stays local.
  */
+/** Stage counts of the Metro join for one screen's pass. Counts only; see `AppFlowBindingStats`. */
+export interface SweepUiJoinLog {
+  emittedState: number
+  emittedEntry: number
+  /** Opener JSX records live in the app, and how many already named a site before this pass. */
+  entriesLive: number
+  entriesPlacedBefore: number
+  noFrames: number
+  foreignFrames: number
+  frames: number
+  resolved: number
+  failedBatches: number
+  projectFrames: number
+  placed: number
+  entryPlaced: number
+  /** Matches the device attached to a live record. Fewer than `placed` is a placement failure. */
+  configured: number
+}
+
+/** One screen's UI-state pass, as the run log records it. See `SweepNodeLog.uiStates`. */
+export interface SweepUiStatesLog {
+  /** Catalog presentations the device was asked about (`listed + aliased + refusedAtList`). */
+  candidates: number
+  /** Resolved to a live opener/controller on this screen. */
+  listed: number
+  /** `listed` by kind (`state`, `control`, `mount`). */
+  listedKinds: Record<string, number>
+  /** Openers that reach a destination another listed opener already reaches; opened once. */
+  aliased: number
+  /** Refused when listing, by closed-set reason (`unbound`, `not-in-view`, ...). */
+  refusedAtList: Record<string, number>
+  /** Opened without error. */
+  opened: number
+  /** Refused or failed at open time, by closed-set reason. */
+  refusedAtOpen: Record<string, number>
+  captured: number
+  /** Live opener/hook records the host's source join could not place. */
+  unbound: number
+  /**
+   * Where the join stopped, as stage counts. Present when the pass offered records to the host.
+   * Emission is `emitted*`/`noFrames`, symbolication is `foreignFrames`/`frames`/`resolved`/
+   * `failedBatches`, placement is `projectFrames`/`placed`/`entryPlaced`/`configured`.
+   */
+  join?: SweepUiJoinLog
+  /** Whether the unwind reached level 0. */
+  rolledBack: boolean
+  /** Why an unwind failed, by closed-set category; absent when it did not. */
+  rollbackFailure?: string
+  /** How the last control dismissal was confirmed: `event`, `tree` or `stable`. */
+  dismissEvidence?: string
+  /** True when this screen's pass latched UI-state capture off for the rest of the sweep. */
+  latched: boolean
+  /** Closed-set category of the failure that ended the pass, when one did. */
+  failure?: string
+}
+
 export interface SweepNodeLog {
   /** The route asked for (the node's own id, which is the parser's spelling of it) and what the
    *  in-app resolver turned it into — null when the navigator refused or reported no path. */
@@ -342,6 +398,12 @@ export interface SweepNodeLog {
   settle(entry: { polls: number; stop: string | null; ms: number; content: number }): void
   verify(entry: { path: 'runtime' | 'judge'; verdict: string; ms: number }): void
   delivery(entry: { screenshotMs: number | null; pressables: number }): void
+  /**
+   * What the UI-state pass did on this screen. Counts and closed-set categories only: how many
+   * presentations were candidates, how many opened versus were refused (and why, as a category),
+   * how the unwind ended. Never a component name, file path, id or screenshot.
+   */
+  uiStates(entry: SweepUiStatesLog): void
   /** Closes the record and appends it. Calling it twice appends once. */
   finish(entry: { status: string; totalMs: number }): void
 }

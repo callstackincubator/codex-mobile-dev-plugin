@@ -55,13 +55,17 @@ import type {
 } from '../shared/app-flow.ts'
 import { recordRuntimeAmount, recordRuntimeTiming } from './runtime-telemetry.ts'
 import { routeAnswersTo } from './nav-route-target.ts'
+import type { SweepUiStatesLog } from './reach/ports.ts'
+import type { AppFlowBindingStats } from './presentations-bindings.ts'
 
 /** One live binding the in-app pass could not name a site for, as the agent reports it. */
 export interface ExploreUiUnboundBinding {
   id: string
   owner: string
-  kind: 'state'
+  /** `state` is a hook binding; `entry` is opener JSX matched through its creation stack. */
+  kind: 'state' | 'entry'
   stack: string
+  source?: { file: string; line: number; column: number }
 }
 
 /** The four runtime commands this pass issues, behind one seam. */
@@ -72,19 +76,46 @@ export interface ExploreUiRuntimePort {
     bindings: number
     matched: number
     unbound?: ExploreUiUnboundBinding[]
+    /** Opener JSX records live in the app, and how many already name a catalog site. */
+    entries?: number
+    entriesMatched?: number
     error?: string
   }>
   /** `presentation-configure`: label bindings with the sites the host's join resolved. */
-  configure(matches: readonly { binding: string; site: string }[]): Promise<{ configured: number }>
+  configure(
+    matches: readonly { binding: string; site: string }[],
+    /** Records the join looked at and could not place; the device stops offering them. */
+    checked?: readonly string[]
+  ): Promise<{ configured: number }>
   /** `presentations`: what the device can actually open, as the tree stands now. */
-  list(): Promise<{ available: { id: string; kind: 'state' | 'control' | 'mount' }[]; unavailable: number }>
+  list(): Promise<{
+    available: { id: string; kind: 'state' | 'control' | 'mount' }[]
+    unavailable: number
+    /** Why the unavailable ones were refused, as a count per closed-set reason. */
+    rejected?: Record<string, number>
+    /** Openers that reached a destination another listed opener already reaches, so not listed. */
+    aliased?: number
+    /** What was listed, by kind. */
+    kinds?: Record<string, number>
+  }>
   /** `presentation-open`. */
   open(id: string): Promise<
-    | { ok: true; kind: 'state' | 'control' | 'mount'; checkpoint: number }
-    | { ok: false; error: string; checkpoint: number }
+    | {
+        ok: true
+        kind: 'state' | 'control' | 'mount'
+        checkpoint: number
+        /** The component this open expects to find drawing, probed by `content` after the settle. */
+        expected?: string
+      }
+    | { ok: false; error: string; reason?: string; checkpoint: number }
   >
+  /**
+   * `presentation-content`: is the component the open expected mounted, and does anything under it
+   * draw? A projection that renders nothing is photographed as a blank frame otherwise.
+   */
+  content(expected: string): Promise<{ found: boolean; hosts: number; visible: number }>
   /** `presentation-rollback` to `level`, confirming every native dismissal. */
-  rollback(level: number): Promise<{ ok: boolean; error?: string; checkpoint: number }>
+  rollback(level: number): Promise<{ ok: boolean; error?: string; checkpoint: number; evidence?: string }>
 }
 
 /** What `captureScreenUiStates` needs from the device and the host, for one screen. */
@@ -94,7 +125,11 @@ export interface ExploreUiScreenPorts {
    * The Metro symbolication join (`bindPresentationSites`). A failure here costs bindings, never
    * the pass: an unresolved binding simply means one fewer openable presentation.
    */
-  bind(bindings: readonly ExploreUiUnboundBinding[]): Promise<{ binding: string; site: string }[]>
+  bind(
+    bindings: readonly ExploreUiUnboundBinding[],
+    /** Receives the join's stage counts once it has run. */
+    report?: (stats: AppFlowBindingStats) => void
+  ): Promise<{ binding: string; site: string }[]>
   /** The Fast path's own settle/readiness wait, after a presentation has been opened. */
   settle(): Promise<void>
   /** Take one screenshot into `screens/<slug>.png`; resolves to the stored relative path. */
@@ -147,6 +182,54 @@ export const EXPLORE_UI_ROLLBACK_TIMEOUT_MS = 8_000
  * hours-long run, so the old default survives as an internal ceiling applied across the whole run.
  */
 export const EXPLORE_UI_SWEEP_LIMIT = 10
+
+/** Closed set of reasons the device gives for refusing a presentation. Anything else is `other`. */
+const REFUSAL_REASONS = new Set([
+  'unbound',
+  'not-in-view',
+  'disabled',
+  'no-owner',
+  'ambiguous-owner',
+  'no-control',
+  'ambiguous-control',
+  'not-loaded',
+  'unsupported',
+  'no-binding',
+  'ambiguous-binding',
+  'ambiguous-callback',
+  'unmet-condition',
+  'already-open',
+  // The reference's two `mountedExport` guards, and its readiness reasons for a projection that
+  // mounted nothing (`target`) or drew nothing (`empty`).
+  'owner-mismatch',
+  'already-mounted',
+  'target',
+  'empty'
+])
+
+function refusalReason(reason: string | undefined): string {
+  return reason !== undefined && REFUSAL_REASONS.has(reason) ? reason : 'other'
+}
+
+/** A closed-set category for an unwind failure, from the device's message. Never the message. */
+export function rollbackFailureCategory(error: string | undefined): string {
+  if (!error) return 'unknown'
+  if (/has not finished/i.test(error)) return 'dismissal-timeout'
+  if (/unconfirmed/i.test(error)) return 'dismissal-unconfirmed'
+  if (/refused to close/i.test(error)) return 'close-refused'
+  if (/rollback failed|timed out|timeout/i.test(error)) return 'transport'
+  return 'other'
+}
+
+/**
+ * A closed-set category for a failed pass: the stage it stopped in and whether the command timed
+ * out. A pass that fails before it lists anything has `candidates: 0`, which otherwise could not
+ * be told apart from a catalog with nothing in it. Never the message.
+ */
+export function passFailureCategory(stage: 'setup' | 'list' | 'open', error: string): string {
+  if (stage === 'open') return 'pass-failed'
+  return `${stage}-${/did not complete within|timed out|timeout/i.test(error) ? 'timeout' : 'failed'}`
+}
 
 function aborted(signal?: AbortSignal): boolean {
   return signal?.aborted === true
@@ -203,6 +286,8 @@ export interface ScreenUiStatesOutcome {
   /** Whether the app was returned to the state it was found in. False means a state may be stuck open. */
   rolledBack: boolean
   cancelled: boolean
+  /** What the pass did, as counts and categories, for the run log. See `SweepUiStatesLog`. */
+  diagnostics: SweepUiStatesLog
   /**
    * Set when the pass for this screen stopped on a failure (setup refused, the transport died, ...)
    * rather than finishing. `uiStates` still holds whatever was captured before it. Never thrown:
@@ -236,9 +321,32 @@ export async function captureScreenUiStates(
     discoveryFailures,
     unresolvedBindings: 0,
     rolledBack: true,
-    cancelled: false
+    cancelled: false,
+    diagnostics: {
+      candidates: 0,
+      listed: 0,
+      listedKinds: {},
+      aliased: 0,
+      refusedAtList: {},
+      opened: 0,
+      refusedAtOpen: {},
+      captured: 0,
+      unbound: 0,
+      rolledBack: true,
+      latched: false
+    }
+  }
+  const diag = result.diagnostics
+  const noteUnwind = (unwound: { ok: boolean; error?: string; evidence?: string }) => {
+    if (unwound.evidence) diag.dismissEvidence = unwound.evidence
+    if (!unwound.ok) {
+      result.rolledBack = false
+      diag.rollbackFailure = rollbackFailureCategory(unwound.error)
+    }
   }
   let opened = false
+  // Where the pass was when it stopped, so a failure is told apart without keeping its message.
+  let stage: 'setup' | 'list' | 'open' = 'setup'
   let outcome: 'completed' | 'failed' | 'cancelled' = 'completed'
 
   const actions = new Map(input.catalog.actions.map((action) => [action.id, action]))
@@ -261,16 +369,59 @@ export async function captureScreenUiStates(
     // site. Everything else needs Metro's source maps, which only the host can read.
     const unbound = setup.unbound ?? []
     if (unbound.length) {
-      const matches = await ports.bind(unbound).catch(() => [])
-      if (matches.length) await ports.runtime.configure(matches)
+      let joined = true
+      let stats: AppFlowBindingStats | undefined
+      const matches = await ports.bind(unbound, (reported) => { stats = reported }).catch(() => {
+        joined = false
+        return []
+      })
       const resolved = new Set(matches.map((match) => match.binding))
+      // Only a join that ran may declare a record unplaceable. A failed one (Metro unreachable, or
+      // any symbolication batch lost) leaves every record offered again on the next screen: a
+      // record whose frames were never looked up has not been judged.
+      const trusted = joined && !(stats && stats.failedBatches > 0)
+      const checked = trusted ? unbound.filter((binding) => !resolved.has(binding.id)).map((binding) => binding.id) : []
+      let configured = 0
+      if (matches.length || checked.length) {
+        configured = (await ports.runtime.configure(matches, checked).catch(() => undefined))?.configured ?? 0
+      }
       result.unresolvedBindings = unbound.filter((binding) => !resolved.has(binding.id)).length
+      diag.join = {
+        emittedState: unbound.filter((binding) => binding.kind === 'state').length,
+        emittedEntry: unbound.filter((binding) => binding.kind === 'entry').length,
+        entriesLive: setup.entries ?? 0,
+        entriesPlacedBefore: setup.entriesMatched ?? 0,
+        noFrames: stats?.noFrames ?? 0,
+        foreignFrames: stats?.foreignFrames ?? 0,
+        frames: stats?.frames ?? 0,
+        resolved: stats?.resolved ?? 0,
+        failedBatches: stats?.failedBatches ?? (joined ? 0 : 1),
+        projectFrames: stats?.projectFrames ?? 0,
+        placed: stats?.placed ?? 0,
+        entryPlaced: stats?.entryPlaced ?? 0,
+        configured
+      }
+      // The same bounded count per stage the join stopped in, once per screen's pass.
+      for (const [name, count] of [
+        ['no-frames', diag.join.noFrames],
+        ['foreign-frames', diag.join.foreignFrames],
+        ['symbolicate-failed', diag.join.failedBatches]
+      ] as const) {
+        if (count > 0) recordRuntimeAmount('app_flow.runtime.presentation_unbound', count, { stage: name })
+      }
     }
+    diag.unbound = result.unresolvedBindings
     recordRuntimeAmount('app_flow.runtime.presentation_unbound', result.unresolvedBindings, {
       stage: 'configure'
     })
 
+    stage = 'list'
     const listed = await ports.runtime.list()
+    diag.listed = listed.available.length
+    diag.aliased = listed.aliased ?? 0
+    diag.listedKinds = { ...(listed.kinds ?? {}) }
+    diag.candidates = listed.available.length + diag.aliased + listed.unavailable
+    diag.refusedAtList = { ...(listed.rejected ?? {}) }
     const limit = input.limit ?? listed.available.length
     ports.emit({
       type: 'phase',
@@ -279,6 +430,7 @@ export async function captureScreenUiStates(
       total: Math.min(limit, listed.available.length)
     })
 
+    stage = 'open'
     for (const entry of listed.available) {
       if (uiStates.filter((state) => state.screenshot).length >= limit) break
       if (aborted(ports.signal)) {
@@ -298,6 +450,8 @@ export async function captureScreenUiStates(
       const openStartedAt = clock()
       const openedState = await ports.runtime.open(entry.id)
       if (!openedState.ok) {
+        const why = refusalReason(openedState.reason)
+        diag.refusedAtOpen[why] = (diag.refusedAtOpen[why] ?? 0) + 1
         recordRuntimeTiming('app_flow.runtime.presentation', clock() - openStartedAt, {
           outcome: 'failed',
           kind: entry.kind
@@ -314,13 +468,44 @@ export async function captureScreenUiStates(
         })
         // A refused open still pushes nothing, but a *partial* one may have; unwind either way,
         // and count a failed unwind exactly as the captured path does.
-        const unwound = await ports.runtime.rollback(0).catch(() => ({ ok: false }))
-        if (!unwound.ok) result.rolledBack = false
+        noteUnwind(await ports.runtime.rollback(0).catch(() => ({ ok: false, error: 'rollback failed' })))
         continue
       }
       opened = true
+      diag.opened += 1
       try {
         await ports.settle()
+        // A projection that draws nothing is not a UI state. The reference refuses it in its
+        // readiness chain (reason `'empty'`/`'target'`); this port settles on device pressables,
+        // which cannot tell "renders nothing" from "still loading", so without this check a blank
+        // frame was photographed and reported as a capture.
+        if (openedState.expected) {
+          const content = await ports.runtime
+            .content(openedState.expected)
+            .catch(() => ({ found: true, hosts: 1, visible: 1 }))
+          if (!content.found || content.visible === 0) {
+            const why = content.found ? 'empty' : 'target'
+            diag.refusedAtOpen[why] = (diag.refusedAtOpen[why] ?? 0) + 1
+            recordRuntimeTiming('app_flow.runtime.presentation', clock() - openStartedAt, {
+              outcome: 'failed',
+              kind: entry.kind
+            })
+            const reason = content.found
+              ? 'This view renders nothing in this app state.'
+              : 'The expected component did not mount.'
+            discoveryFailures.push({ id: entry.id, reason })
+            uiStates.push({
+              id: action.id,
+              name: action.name,
+              screenshot: null,
+              file: action.file,
+              line: action.line,
+              ...(action.views?.length ? { sourceViews: action.views } : {}),
+              error: reason
+            })
+            continue
+          }
+        }
         const slug = uiStateSlug(node.slug, action.id, used)
         const screenshot = await ports.screenshot(slug)
         uiStates.push({
@@ -361,8 +546,7 @@ export async function captureScreenUiStates(
       } finally {
         // Every opened presentation is closed before the next one is opened, so a failure can
         // never leave a stack of projections on screen for the user to find.
-        const unwound = await ports.runtime.rollback(0).catch(() => ({ ok: false }))
-        if (!unwound.ok) result.rolledBack = false
+        noteUnwind(await ports.runtime.rollback(0).catch(() => ({ ok: false, error: 'rollback failed' })))
       }
     }
 
@@ -382,8 +566,24 @@ export async function captureScreenUiStates(
     // failed unwind is worth reporting as a projected app. A pass that stopped on a failure counts
     // as opened too: the throw may have landed between the app opening something and the reply
     // saying so.
-    const unwound = await ports.runtime.rollback(0).catch(() => ({ ok: false, error: 'rollback failed' }))
-    if (!unwound.ok && (opened || result.error !== undefined)) result.rolledBack = false
+    const unwound: { ok: boolean; error?: string; evidence?: string } = await ports.runtime
+      .rollback(0)
+      .catch(() => ({ ok: false, error: 'rollback failed' }))
+    if (unwound.evidence) diag.dismissEvidence = unwound.evidence
+    if (!unwound.ok && (opened || result.error !== undefined)) {
+      result.rolledBack = false
+      diag.rollbackFailure = rollbackFailureCategory(unwound.error)
+    }
+    // One bounded count per screen per closed-set reason, never one per presentation.
+    for (const [reason, count] of Object.entries(diag.refusedAtList)) {
+      recordRuntimeAmount('app_flow.runtime.presentation_refused', count, { stage: 'list', reason })
+    }
+    for (const [reason, count] of Object.entries(diag.refusedAtOpen)) {
+      recordRuntimeAmount('app_flow.runtime.presentation_refused', count, { stage: 'open', reason })
+    }
+    diag.rolledBack = result.rolledBack
+    diag.captured = uiStates.filter((state) => state.screenshot).length
+    if (result.error !== undefined) diag.failure = outcome === 'cancelled' ? 'cancelled' : passFailureCategory(stage, result.error)
     recordRuntimeTiming('app_flow.runtime.presentation_pass', clock() - passStartedAt, { outcome })
   }
   return result
@@ -450,6 +650,12 @@ export interface SweepUiStateCapturerDeps {
   signal?: AbortSignal
   /** Where a failure is reported, besides the sweep's own progress stream. */
   report?(error: unknown): void
+  /**
+   * One call per screen the pass ran on, with counts and categories only (`SweepUiStatesLog`).
+   * This is what makes a latched sweep diagnosable after the fact: it says whether presentations
+   * were refused, opened, or opened and then failed to close.
+   */
+  onScreen?(node: ExploreUiTarget, log: SweepUiStatesLog): void
 }
 
 /**
@@ -501,6 +707,12 @@ export function createSweepUiStateCapturer(deps: SweepUiStateCapturerDeps) {
           session.ports
         )
         captured += screen.uiStates.filter((state) => state.screenshot).length
+        if (!screen.rolledBack) screen.diagnostics.latched = true
+        try {
+          deps.onScreen?.(node, screen.diagnostics)
+        } catch {
+          // A log that cannot be written must not cost the sweep its screen.
+        }
         if (!screen.rolledBack) {
           // Reported, not swallowed: it is on the progress stream, the server log and the error
           // reporter. Nothing further is opened, because the app may still be projected.
@@ -517,6 +729,24 @@ export function createSweepUiStateCapturer(deps: SweepUiStateCapturerDeps) {
         // `open` (or an unexpected bug) threw. Nothing was opened on the device by the session
         // that failed to start, and the sweep must carry on without UI states.
         latched = true
+        try {
+          deps.onScreen?.(node, {
+            candidates: 0,
+            listed: 0,
+            listedKinds: {},
+            aliased: 0,
+            refusedAtList: {},
+            opened: 0,
+            refusedAtOpen: {},
+            captured: 0,
+            unbound: 0,
+            rolledBack: true,
+            latched: true,
+            failure: session ? 'capture-threw' : 'session-unavailable'
+          })
+        } catch {
+          // See above.
+        }
         if (!aborted(deps.signal)) {
           deps.note(
             `UI states unavailable — ${error instanceof Error ? error.message : String(error)}`

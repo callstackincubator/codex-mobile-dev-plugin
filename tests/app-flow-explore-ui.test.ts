@@ -417,3 +417,152 @@ test("the standalone run is unchanged in its throw-on-failure contract and repor
     /stopped replying\. The app may still be showing/,
   );
 });
+
+test("the per-screen log carries counts and categories: refused at list, refused at open, opened, unwound", async () => {
+  const runtimePort = runtime({
+    async list() {
+      return {
+        available: [{ id: "a", kind: "control" as const }, { id: "b", kind: "control" as const }],
+        unavailable: 3,
+        rejected: { unbound: 2, "not-in-view": 1 },
+        aliased: 1,
+        kinds: { control: 2 },
+      };
+    },
+    async open(id) {
+      return id === "a"
+        ? { ok: true as const, kind: "control" as const, checkpoint: 1 }
+        : { ok: false as const, error: "More than one live control matches this opening.", reason: "ambiguous-control", checkpoint: 0 };
+    },
+    async rollback() { return { ok: true, checkpoint: 0, evidence: "tree" }; },
+  });
+  const outcome = await captureScreenUiStates(
+    { catalog: catalog([action("a", "A"), action("b", "B")]), node: { id: "Home", slug: "home" } },
+    ports(runtimePort),
+  );
+  assert.deepEqual(outcome.diagnostics, {
+    candidates: 6,
+    listed: 2,
+    listedKinds: { control: 2 },
+    aliased: 1,
+    refusedAtList: { unbound: 2, "not-in-view": 1 },
+    opened: 1,
+    refusedAtOpen: { "ambiguous-control": 1 },
+    captured: 1,
+    unbound: 0,
+    rolledBack: true,
+    dismissEvidence: "tree",
+    latched: false,
+  });
+  // Nothing in the record can name the app: no ids, no component names, no paths.
+  assert.doesNotMatch(JSON.stringify(outcome.diagnostics), /Screen|Button|src\/|"a"|"b"/);
+});
+
+test("an unknown refusal reason is bucketed as other, and a failed unwind is categorised, not quoted", async () => {
+  const runtimePort = runtime({
+    async list() { return { available: [{ id: "a", kind: "control" as const }], unavailable: 0 }; },
+    async open() { return { ok: false as const, error: "something about SecretComponent", reason: "SecretComponent", checkpoint: 0 }; },
+    async rollback() { return { ok: false, error: "Native presentation dismissal has not finished.", checkpoint: 1 }; },
+  });
+  const outcome = await captureScreenUiStates(
+    { catalog: catalog([action("a", "A")]), node: { id: "Home", slug: "home" } },
+    ports(runtimePort),
+  );
+  assert.deepEqual(outcome.diagnostics.refusedAtOpen, { other: 1 });
+  assert.equal(outcome.diagnostics.rollbackFailure, "dismissal-timeout");
+  assert.equal(outcome.diagnostics.rolledBack, false);
+  assert.doesNotMatch(JSON.stringify(outcome.diagnostics), /SecretComponent/);
+});
+
+test("records the join could not place are marked checked, and a join that failed marks nothing", async () => {
+  const configured: Array<{ matches: number; checked: readonly string[] | undefined }> = [];
+  const setup = async () => ({
+    ok: true, bindings: 0, matched: 0,
+    unbound: [
+      { id: "1", owner: "X", kind: "state" as const, stack: "" },
+      { id: "entry-2", owner: "Button", kind: "entry" as const, stack: "" },
+      { id: "entry-3", owner: "Button", kind: "entry" as const, stack: "" },
+    ],
+  });
+  const configure = async (matches: readonly unknown[], checked?: readonly string[]) => {
+    configured.push({ matches: matches.length, checked });
+    return { configured: matches.length };
+  };
+  const node = { id: "Home", slug: "home" };
+  await captureScreenUiStates({ catalog: catalog([]), node }, ports(runtime({ setup, configure }), {
+    async bind() { return [{ binding: "entry-2", site: "a" }]; },
+  }));
+  assert.deepEqual(configured, [{ matches: 1, checked: ["1", "entry-3"] }]);
+
+  configured.length = 0;
+  const outcome = await captureScreenUiStates({ catalog: catalog([]), node }, ports(runtime({ setup, configure }), {
+    async bind() { throw new Error("Metro unreachable"); },
+  }));
+  assert.deepEqual(configured, [], "an unreachable Metro must not declare anything unplaceable");
+  assert.equal(outcome.diagnostics.unbound, 3);
+});
+
+test("the sweep hands every screen's counts to the run log, and marks the screen that latched it off", async () => {
+  const logged: Array<{ id: string; latched: boolean; rolledBack: boolean; failure?: string }> = [];
+  const capturer = createSweepUiStateCapturer({
+    open: async () => sweepSession(["a"], [], {
+      async rollback() { return { ok: false, error: "Native presentation dismissal has not finished.", checkpoint: 1 }; },
+    }),
+    note: () => {},
+    onScreen: (screen, log) => logged.push({ id: screen.id, latched: log.latched, rolledBack: log.rolledBack, ...(log.failure ? { failure: log.failure } : {}) }),
+  });
+  await capturer.capture({ id: "Home", slug: "home" });
+  await capturer.capture({ id: "Settings", slug: "settings" });
+  // Settings was never attempted: the log shows exactly which screen stopped the sweep.
+  assert.deepEqual(logged, [{ id: "Home", latched: true, rolledBack: false }]);
+
+  const unavailable: typeof logged = [];
+  const failing = createSweepUiStateCapturer({
+    open: async () => { throw new Error("no Metro"); },
+    note: () => {},
+    onScreen: (screen, log) => unavailable.push({ id: screen.id, latched: log.latched, rolledBack: log.rolledBack, ...(log.failure ? { failure: log.failure } : {}) }),
+  });
+  await failing.capture({ id: "Home", slug: "home" });
+  assert.deepEqual(unavailable, [{ id: "Home", latched: true, rolledBack: true, failure: "session-unavailable" }]);
+});
+
+test("a join that lost a Metro lookup does not mark records unplaceable, and the stage counts are logged", async () => {
+  const configured: Array<{ matches: number; checked: readonly string[] | undefined }> = [];
+  const setup = async () => ({
+    ok: true, bindings: 1, matched: 0, entries: 5, entriesMatched: 1,
+    unbound: [
+      { id: "1", owner: "X", kind: "state" as const, stack: "" },
+      { id: "entry-2", owner: "Button", kind: "entry" as const, stack: "" },
+    ],
+  });
+  const configure = async (matches: readonly unknown[], checked?: readonly string[]) => {
+    configured.push({ matches: matches.length, checked });
+    return { configured: matches.length };
+  };
+  const stats = { records: 2, entryRecords: 1, noFrames: 0, foreignFrames: 0, frames: 4, resolved: 0, failedBatches: 1, projectFrames: 0, placed: 0, entryPlaced: 0 };
+  const outcome = await captureScreenUiStates({ catalog: catalog([]), node: { id: "Home", slug: "home" } }, ports(runtime({ setup, configure }), {
+    async bind(_bindings, report) { report?.(stats); return []; },
+  }));
+  assert.deepEqual(configured, [], "a lost lookup has judged nothing, so nothing is latched");
+  assert.deepEqual(outcome.diagnostics.join, {
+    emittedState: 1, emittedEntry: 1, entriesLive: 5, entriesPlacedBefore: 1, noFrames: 0, foreignFrames: 0,
+    frames: 4, resolved: 0, failedBatches: 1, projectFrames: 0, placed: 0, entryPlaced: 0, configured: 0,
+  });
+});
+
+test("a pass that fails before it lists names the stage and whether it timed out", async () => {
+  const node = { id: "Home", slug: "home" };
+  const timedOut = await captureScreenUiStates({ catalog: catalog([]), node }, ports(runtime({
+    async setup() { throw new Error("presentation-setup did not complete within 20000ms"); },
+  })));
+  assert.equal(timedOut.diagnostics.failure, "setup-timeout");
+  assert.equal(timedOut.diagnostics.candidates, 0);
+  const refused = await captureScreenUiStates({ catalog: catalog([]), node }, ports(runtime({
+    async setup() { return { ok: false, bindings: 0, matched: 0, error: "no" }; },
+  })));
+  assert.equal(refused.diagnostics.failure, "setup-failed");
+  const listing = await captureScreenUiStates({ catalog: catalog([]), node }, ports(runtime({
+    async list() { throw new Error("presentations did not complete within 2000ms"); },
+  })));
+  assert.equal(listing.diagnostics.failure, "list-timeout");
+});
