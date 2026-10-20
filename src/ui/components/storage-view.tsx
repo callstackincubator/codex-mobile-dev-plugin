@@ -21,13 +21,13 @@ export { formatBytes } from "../storage-labels.ts";
 
 const FILES = "files";
 const kindLook: Record<StoreKind, { tone: string; tint: string; icon: typeof LayersIcon }> = {
-  "user-defaults": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-500/12 ring-1 ring-inset ring-sky-500/25", icon: LayersIcon },
-  "shared-preferences": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-500/12 ring-1 ring-inset ring-sky-500/25", icon: LayersIcon },
-  "datastore": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-500/12 ring-1 ring-inset ring-sky-500/25", icon: LayersIcon },
-  "mmkv": { tone: "text-amber-600 dark:text-amber-400", tint: "bg-amber-500/12 ring-1 ring-inset ring-amber-500/25", icon: LayersIcon },
-  "async-storage": { tone: "text-violet-600 dark:text-violet-400", tint: "bg-violet-500/12 ring-1 ring-inset ring-violet-500/25", icon: BracesIcon },
-  "sqlite": { tone: "text-emerald-600 dark:text-emerald-400", tint: "bg-emerald-500/12 ring-1 ring-inset ring-emerald-500/25", icon: DatabaseIcon },
-  "realm": { tone: "text-rose-600 dark:text-rose-400", tint: "bg-rose-500/12 ring-1 ring-inset ring-rose-500/25", icon: DatabaseIcon },
+  "user-defaults": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-100 dark:bg-sky-500/15 ring-1 ring-inset ring-sky-500/25", icon: LayersIcon },
+  "shared-preferences": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-100 dark:bg-sky-500/15 ring-1 ring-inset ring-sky-500/25", icon: LayersIcon },
+  "datastore": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-100 dark:bg-sky-500/15 ring-1 ring-inset ring-sky-500/25", icon: LayersIcon },
+  "mmkv": { tone: "text-amber-600 dark:text-amber-400", tint: "bg-amber-100 dark:bg-amber-500/15 ring-1 ring-inset ring-amber-500/25", icon: LayersIcon },
+  "async-storage": { tone: "text-violet-600 dark:text-violet-400", tint: "bg-violet-100 dark:bg-violet-500/15 ring-1 ring-inset ring-violet-500/25", icon: BracesIcon },
+  "sqlite": { tone: "text-emerald-600 dark:text-emerald-400", tint: "bg-emerald-100 dark:bg-emerald-500/15 ring-1 ring-inset ring-emerald-500/25", icon: DatabaseIcon },
+  "realm": { tone: "text-rose-600 dark:text-rose-400", tint: "bg-rose-100 dark:bg-rose-500/15 ring-1 ring-inset ring-rose-500/25", icon: DatabaseIcon },
 };
 const typeIcons: Record<StorageEntry["type"], typeof TypeIcon> = {
   string: TypeIcon, json: BracesIcon, object: BracesIcon, array: BracesIcon, number: HashIcon, integer: HashIcon,
@@ -49,7 +49,7 @@ function IconChip({ look: { tone, tint, icon: Icon }, size = "sm", className = "
 function KindIcon({ kind, size, className }: { kind: StoreKind; size?: keyof typeof kindIconSizes; className?: string }) {
   return <IconChip look={kindLook[kind]} size={size} className={className} />;
 }
-const filesLook: ChipLook = { tone: "text-neutral-600 dark:text-neutral-400", tint: "bg-neutral-500/12 ring-1 ring-inset ring-neutral-500/25", icon: FolderIcon };
+const filesLook: ChipLook = { tone: "text-neutral-600 dark:text-neutral-400", tint: "bg-neutral-100 dark:bg-neutral-500/15 ring-1 ring-inset ring-neutral-500/25", icon: FolderIcon };
 
 function Highlight({ text, query }: { text: string; query: string }) {
   const index = query ? text.toLowerCase().indexOf(query) : -1;
