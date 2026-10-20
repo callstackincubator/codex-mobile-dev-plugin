@@ -36,16 +36,20 @@ const typeIcons: Record<StorageEntry["type"], typeof TypeIcon> = {
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
 const kindIconSizes = { sm: { box: "size-5", glyph: "size-3" }, md: { box: "size-6", glyph: "size-3.5" }, lg: { box: "size-7", glyph: "size-4" } };
-function KindIcon({ kind, size = "sm", className = "" }: { kind: StoreKind; size?: keyof typeof kindIconSizes; className?: string }) {
-  const { tone, tint, icon: Icon } = kindLook[kind];
-  // Only the tint blends, so it takes on a hovered or selected row's grey while the icon keeps its color.
-  // The ring of the same hue keeps the chip's edge visible against grey rows.
-  // Multiply darkens a light row; screen lightens a dark one.
+type ChipLook = { tone: string; tint: string; icon: typeof LayersIcon };
+// Only the tint blends, so it takes on a hovered or selected row's grey while the icon keeps its color.
+// The ring of the same hue keeps the chip's edge visible against grey rows.
+// Multiply darkens a light row; screen lightens a dark one.
+function IconChip({ look: { tone, tint, icon: Icon }, size = "sm", className = "" }: { look: ChipLook; size?: keyof typeof kindIconSizes; className?: string }) {
   return <span className={`relative inline-flex shrink-0 items-center justify-center ${tone} ${kindIconSizes[size].box} ${className}`} aria-hidden="true">
     <span className={`absolute inset-0 rounded-md mix-blend-multiply dark:mix-blend-screen ${tint}`} />
     <Icon className={`relative ${kindIconSizes[size].glyph}`} />
   </span>;
 }
+function KindIcon({ kind, size, className }: { kind: StoreKind; size?: keyof typeof kindIconSizes; className?: string }) {
+  return <IconChip look={kindLook[kind]} size={size} className={className} />;
+}
+const filesLook: ChipLook = { tone: "text-neutral-600 dark:text-neutral-400", tint: "bg-neutral-500/12 ring-1 ring-inset ring-neutral-500/25", icon: FolderIcon };
 
 function Highlight({ text, query }: { text: string; query: string }) {
   const index = query ? text.toLowerCase().indexOf(query) : -1;
@@ -192,7 +196,7 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
     <div className="mx-2 my-1.5 border-t" />
     <button type="button" data-selected={selected === FILES && !query} onClick={() => select(FILES)} title="Every file in the app's data directory"
       className="my-0.5 flex w-full items-start gap-2 rounded-md px-2 py-1 text-left hover:bg-muted data-[selected=true]:bg-muted">
-      <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground" aria-hidden="true"><FolderIcon className="size-3.5" /></span>
+      <IconChip look={filesLook} size="md" className="mt-0.5" />
       <span className="min-w-0 flex-1"><span className="block truncate font-medium">Files</span><span className="block truncate text-[11px] text-muted-foreground tabular-nums">{formatBytes(snapshot.totalBytes)}</span></span>
       <span className="self-center text-muted-foreground tabular-nums">{snapshot.fileCount}</span>
     </button>
@@ -216,7 +220,7 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
   } else if (store === undefined) {
     main = <div className="min-h-0 flex-1 overflow-auto font-mono text-xs" role="table" aria-label="Largest files">
       <div className="flex items-center gap-3 border-b px-4 py-3 font-sans">
-        <span className="inline-flex size-7 items-center justify-center rounded-md bg-muted"><FolderIcon className="size-4" /></span>
+        <IconChip look={filesLook} size="lg" />
         <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Files</span><span className="block text-xs text-muted-foreground">{snapshot.fileCount} files · {formatBytes(snapshot.totalBytes)} in the app's data directory</span></span>
       </div>
       <div className="border-b px-4 py-3 font-sans" aria-label="Size by kind">
