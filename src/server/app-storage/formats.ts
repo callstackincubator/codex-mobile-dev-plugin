@@ -3,6 +3,10 @@ import { jsonType, readVarint } from "./mmkv.ts";
 
 export type ParsedEntry = { key: string; type: EntryType; value: string; bytes: number; guessed?: boolean };
 
+// Text that parses as a JSON object or array is typed json, so the panel can show it as a tree.
+export const textEntry = (key: string, value: string, bytes = Buffer.byteLength(value)): ParsedEntry => ({ key, type: jsonType(value) ?? "string", value, bytes });
+export const nullEntry = (key: string): ParsedEntry => ({ key, type: "null", value: "null", bytes: 0 });
+
 // ---- Property lists (UserDefaults), parsed from the XML that `defaults export` and `plutil -convert xml1` print.
 
 class PlistData { readonly bytes: Buffer; constructor(bytes: Buffer) { this.bytes = bytes; } }
@@ -102,7 +106,7 @@ export function plistEntries(dict: Record<string, PlistValue>): ParsedEntry[] {
     if (typeof value === "boolean") return { key, type: "boolean", value: String(value), bytes: 1 };
     if (typeof value === "bigint") return { key, type: "integer", value: value.toString(), bytes: 8 };
     if (typeof value === "number") return { key, type: Number.isInteger(value) ? "integer" : "number", value: String(value), bytes: 8 };
-    if (typeof value === "string") return { key, type: jsonType(value) ?? "string", value, bytes: Buffer.byteLength(value) };
+    if (typeof value === "string") return textEntry(key, value);
     const json = JSON.stringify(plainPlist(value));
     return { key, type: Array.isArray(value) ? "array" : "object", value: json, bytes: Buffer.byteLength(json) };
   });
@@ -117,14 +121,12 @@ export function parseSharedPreferences(xml: string): ParsedEntry[] {
   for (const match of body.matchAll(element)) {
     const [, tag, rawName, rawValue, content = ""] = match;
     const key = unescapeXml(rawName);
-    if (tag === "string") {
-      const value = unescapeXml(content);
-      entries.push({ key, type: jsonType(value) ?? "string", value, bytes: Buffer.byteLength(value) });
-    } else if (tag === "set") {
+    if (tag === "string") entries.push(textEntry(key, unescapeXml(content)));
+    else if (tag === "set") {
       const items = [...content.matchAll(/<string>([\s\S]*?)<\/string>/g)].map(item => unescapeXml(item[1]));
       const value = JSON.stringify(items);
       entries.push({ key, type: "array", value, bytes: Buffer.byteLength(value) });
-    } else if (tag === "null") entries.push({ key, type: "null", value: "null", bytes: 0 });
+    } else if (tag === "null") entries.push(nullEntry(key));
     else {
       const value = unescapeXml(rawValue ?? "");
       const type: EntryType = tag === "boolean" ? "boolean" : tag === "float" ? "number" : "integer";
@@ -175,14 +177,14 @@ export function parseDataStorePreferences(buffer: Buffer): ParsedEntry[] {
     const value = pair.find(item => item.number === 2)?.bytes;
     if (key === undefined || value === undefined) return [];
     const [inner] = fields(value);
-    if (inner === undefined) return [{ key, type: "null", value: "null", bytes: 0 } satisfies ParsedEntry];
+    if (inner === undefined) return [nullEntry(key)];
     const entry = (type: EntryType, text: string, bytes: number): ParsedEntry => ({ key, type, value: text, bytes });
     switch (inner.number) {
       case 1: return [entry("boolean", String(inner.varint === 1n), 1)];
       case 2: return [entry("number", String(inner.bytes!.readFloatLE(0)), 4)];
       case 3: return [entry("integer", BigInt.asIntN(32, inner.varint!).toString(), 4)];
       case 4: return [entry("integer", BigInt.asIntN(64, inner.varint!).toString(), 8)];
-      case 5: { const text = inner.bytes!.toString("utf8"); return [entry(jsonType(text) ?? "string", text, inner.bytes!.length)]; }
+      case 5: return [textEntry(key, inner.bytes!.toString("utf8"), inner.bytes!.length)];
       case 6: { const json = JSON.stringify(fields(inner.bytes!).map(item => item.bytes?.toString("utf8") ?? "")); return [entry("array", json, Buffer.byteLength(json))]; }
       case 7: return [entry("number", String(inner.bytes!.readDoubleLE(0)), 8)];
       case 8: return [entry("data", inner.bytes!.toString("hex"), inner.bytes!.length)];
@@ -199,7 +201,7 @@ export type StoreCandidate = { kind: StoreKind; name: string; path: string; file
 const systemPaths = /^(?:Library\/(?:Caches|HTTPStorages|WebKit|Cookies|SplashBoard|Saved Application State)\/|SystemData\/|cache\/|code_cache\/|app_webview\/|no_backup\/androidx\.work)/;
 const sqliteSuffix = /-(?:wal|shm|journal)$/;
 
-const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+export const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 const dirname = (path: string) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 
 export function classifyFiles(paths: readonly string[], platform: "ios" | "android"): StoreCandidate[] {

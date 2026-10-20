@@ -22,9 +22,9 @@ import type { PluginUpdateController } from "../plugin-updates.ts";
 import type { DeviceLayout } from "../device-layout.ts";
 export type { DeviceLayout } from "../device-layout.ts";
 
-type Tool = "logs" | "performance" | "storage";
-const toolLabels: Record<Tool, string> = { logs: "Logs", performance: "Performance", storage: "Storage" };
-const toolIcons = { logs: TerminalIcon, performance: ActivityIcon, storage: DatabaseIcon };
+const tools = { logs: { label: "Logs", icon: TerminalIcon }, performance: { label: "Performance", icon: ActivityIcon }, storage: { label: "Storage", icon: DatabaseIcon } };
+type Tool = keyof typeof tools;
+const isTool = (value: string): value is Tool => value in tools;
 
 export function Workspace({ logs, performance, storage, recordingController, updates, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; recordingController: RecordingController; updates?: PluginUpdateController; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
   const [tool, setTool] = useState<Tool>("logs");
@@ -56,12 +56,14 @@ export function Workspace({ logs, performance, storage, recordingController, upd
   const collapsedToolSize = fullscreen ? (split ? 48 : 44) : 0;
   const logState = useSyncExternalStore(logs.subscribe, logs.getSnapshot);
   const storageState = useSyncExternalStore(storage.subscribe, storage.getSnapshot);
-  const open = tool === "logs" ? logState.open : tool === "storage" ? storageState.open : savedVisible || performanceState.open;
+  // A saved recording shows in the performance tool, so it counts as that tool being open.
+  const panels = { logs, performance, storage };
+  const open = { logs: logState.open, performance: savedVisible || performanceState.open, storage: storageState.open }[tool];
   useEffect(() => { setUiSurface(open ? savedVisible ? "recording" : tool : "simulator"); }, [tool, open, savedVisible]);
   useEffect(() => {
     setUiTelemetryContext({ logs_open: logState.open, logs_paused: logState.paused, performance_running: performanceState.monitoring || performanceState.fpsMonitoring });
   }, [logState.open, logState.paused, performanceState.monitoring, performanceState.fpsMonitoring]);
-  const isOpen = () => tool === "logs" ? logs.getSnapshot().open : tool === "storage" ? storage.getSnapshot().open : savedVisible || performance.getSnapshot().open;
+  const isOpen = () => (tool === "performance" && savedVisible) || panels[tool].getSnapshot().open;
   const closeTools = () => {
     setSavedVisible(false);
     if (logs.getSnapshot().open) logs.toggle();
@@ -75,10 +77,8 @@ export function Workspace({ logs, performance, storage, recordingController, upd
     setUiSurface(next);
     setTool(next);
     setSavedVisible(false);
-    if (next !== "storage") storage.hide();
-    if (next === "logs") { performance.hide(); logs.show(); }
-    else if (next === "performance") { logs.hide(); performance.show(); }
-    else { logs.hide(); performance.hide(); storage.show(); }
+    for (const [name, panel] of Object.entries(panels)) if (name !== next) panel.hide();
+    panels[next].show();
     markUiSurfaceReady(startedAt);
   };
   const logsRef = usePanelRef();
@@ -99,18 +99,16 @@ export function Workspace({ logs, performance, storage, recordingController, upd
   // platform, moves them above the tools.
   const bottomToolbar = !fullscreen && layout !== "none";
   const menuSide = bottomToolbar ? "top" : "bottom";
-  const ToolIcon = toolIcons[tool];
+  const ToolIcon = tools[tool].icon;
   const toolbar = <nav className={`workspace-toolbar @container flex h-12 shrink-0 items-center justify-between gap-2 px-2 ${bottomToolbar ? "border-t" : "border-y"}`} aria-label="Developer tools">
-    <Select items={[{ value: "none", label: "Tools" }, { value: "logs", label: "Logs" }, { value: "performance", label: "Performance" }, { value: "storage", label: "Storage" }]} value={open ? tool : "none"} onValueChange={value => {
+    <Select items={[{ value: "none", label: "Tools" }, ...Object.entries(tools).map(([value, { label }]) => ({ value, label }))]} value={open ? tool : "none"} onValueChange={value => {
       if (value === "none") closeTools();
-      else if (value === "logs" || value === "performance" || value === "storage") showTool(value);
+      else if (value && isTool(value)) showTool(value);
     }}>
-      <SelectTrigger id="tool-select" size="sm" className="shrink-0" aria-label="Developer tools"><SelectValue>{open ? <ToolIcon /> : <PanelsTopLeftIcon />}<span className="@max-[600px]:sr-only">{open ? toolLabels[tool] : "Tools"}</span></SelectValue></SelectTrigger>
+      <SelectTrigger id="tool-select" size="sm" className="shrink-0" aria-label="Developer tools"><SelectValue>{open ? <ToolIcon /> : <PanelsTopLeftIcon />}<span className="@max-[600px]:sr-only">{open ? tools[tool].label : "Tools"}</span></SelectValue></SelectTrigger>
       <SelectContent side={menuSide} align="start" alignItemWithTrigger={false}><SelectGroup>
         <SelectItem id="tool-none" value="none">Hide tools</SelectItem>
-        <SelectItem id="tool-logs" value="logs"><TerminalIcon />Logs</SelectItem>
-        <SelectItem id="tool-performance" value="performance"><ActivityIcon />Performance</SelectItem>
-        <SelectItem id="tool-storage" value="storage"><DatabaseIcon />Storage</SelectItem>
+        {Object.entries(tools).map(([value, { label, icon: Icon }]) => <SelectItem key={value} id={`tool-${value}`} value={value}><Icon />{label}</SelectItem>)}
       </SelectGroup></SelectContent>
     </Select>
     <Select multiple items={[{ value: "ios", label: "iOS" }, { value: "android", label: "Android" }]} value={layout === "both" ? ["ios", "android"] : layout === "none" ? [] : [layout]} onValueChange={values => {

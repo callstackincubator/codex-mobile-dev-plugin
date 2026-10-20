@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { ExpectedOperationError } from "../../shared/error-reporting.ts";
 import { commandError, commandOutput } from "../app-control/commands.ts";
@@ -11,8 +11,6 @@ export interface AppContainer {
   readonly platform: "ios" | "android";
   list(): Promise<ContainerFile[]>;
   read(path: string): Promise<Buffer>;
-  // Copies files into a local directory under their base names, for tools such as sqlite3.
-  copy(paths: string[], directory: string): Promise<void>;
   remove(paths: string[]): Promise<void>;
   // The current UserDefaults domain as plist XML, including values cfprefsd has not written yet.
   preferences?(path: string): Promise<string>;
@@ -22,7 +20,7 @@ export interface AppContainer {
 }
 
 // A container directory can hold caches with many files; listing stops here.
-export const maxContainerFiles = 20000;
+const maxContainerFiles = 20000;
 
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 
@@ -72,10 +70,6 @@ export class SimulatorContainer implements AppContainer {
   }
 
   async read(path: string) { return readFile(join(this.root, safePath(path))); }
-
-  async copy(paths: string[], directory: string) {
-    await Promise.all(paths.map(async path => writeFile(join(directory, path.slice(path.lastIndexOf("/") + 1)), await this.read(path))));
-  }
 
   async remove(paths: string[]) {
     await Promise.all(paths.map(path => rm(join(this.root, safePath(path)), { recursive: true, force: true })));
@@ -142,10 +136,6 @@ export class AndroidContainer implements AppContainer {
     const adb = await this.commands.adb();
     try { return await this.commands.readBinary(adb, ["-s", this.serial, "exec-out", `run-as ${this.bundleId} cat ${shellQuote(safePath(path))}`], { timeout: 30000 }); }
     catch (error) { throw runAsError(error, "Reading app data", this.bundleId); }
-  }
-
-  async copy(paths: string[], directory: string) {
-    for (const path of paths) await writeFile(join(directory, path.slice(path.lastIndexOf("/") + 1)), await this.read(path));
   }
 
   async remove(paths: string[]) {

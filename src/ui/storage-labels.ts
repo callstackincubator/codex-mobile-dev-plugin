@@ -54,3 +54,17 @@ export function changedFields(before: unknown, after: unknown): { path: string; 
     .map(key => ({ path: key, before: before[key] === undefined ? undefined : JSON.stringify(before[key]), after: after[key] === undefined ? undefined : JSON.stringify(after[key]) }));
   return fields.length > 0 && fields.length <= 3 ? fields : undefined;
 }
+
+export const clockTime = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+
+// An entry as a JSON value: parsed JSON, real booleans and numbers, and byte values as text when they are text.
+export function plainValue(entry: StorageEntry): unknown {
+  const parsed = parseJson(entry);
+  if (parsed !== undefined) return parsed;
+  if (entry.type === "boolean") return entry.value === "true";
+  if (entry.type === "number" || entry.type === "integer") return Number(entry.value);
+  if (entry.type === "data") return bytesAsText(entry) ?? entry.value;
+  return entry.value;
+}
+
+export const storeJson = (store: Pick<StorageStore, "entries">) => JSON.stringify(Object.fromEntries(store.entries.map(entry => [entry.key, plainValue(entry)])), null, 2);

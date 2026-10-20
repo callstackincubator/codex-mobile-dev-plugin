@@ -1,17 +1,19 @@
 import { createHash } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ExpectedOperationError } from "../../shared/error-reporting.ts";
 import { storageLimits } from "../../shared/app-storage.ts";
-import type { StorageEntry, StorageFile, StorageSnapshot, StorageStore, StorageTable } from "../../shared/app-storage.ts";
+import type { StorageEntry, StorageFile, StorageSnapshot, StorageStore, StorageTable, StoreKind } from "../../shared/app-storage.ts";
 import { withTemporaryDirectory } from "../app-control/commands.ts";
 import type { CommandRunner } from "../app-control/commands.ts";
 import type { AppContainer, ContainerFile } from "./container.ts";
-import { classifyFiles, parseDataStorePreferences, parsePlistXml, parseSharedPreferences, plistEntries, storeId } from "./formats.ts";
+import { basename, classifyFiles, nullEntry, parseDataStorePreferences, parsePlistXml, parseSharedPreferences, plistEntries, storeId, textEntry } from "./formats.ts";
 import type { ParsedEntry, StoreCandidate } from "./formats.ts";
-import { decodeMmkv, guessMmkvValue, jsonType } from "./mmkv.ts";
+import { decodeMmkv, guessMmkvValue } from "./mmkv.ts";
 
 export type ReadOptions = { entries: number; valueLength: number; bundleId: string; run: CommandRunner };
-type StoreContent = { status: StorageStore["status"]; note?: string; entries: ParsedEntry[] };
+// AsyncStorage databases are SQLite files recognized by their tables, so reading one can change its kind.
+type StoreContent = { status: StorageStore["status"]; note?: string; entries: ParsedEntry[]; kind?: StoreKind };
 
 const sqlite3 = process.platform === "darwin" ? "/usr/bin/sqlite3" : "sqlite3";
 const quoteIdentifier = (name: string) => `"${name.replaceAll("\"", "\"\"")}"`;
@@ -21,30 +23,31 @@ async function sqlite(run: CommandRunner, file: string, sql: string): Promise<Re
   return output.trim() ? JSON.parse(output) : [];
 }
 
-function keyValueEntries(rows: Record<string, unknown>[]): ParsedEntry[] {
-  return rows.map(row => {
-    const value = row.value === null || row.value === undefined ? null : String(row.value);
-    if (value === null) return { key: String(row.key), type: "null", value: "null", bytes: 0 };
-    return { key: String(row.key), type: jsonType(value) ?? "string", value, bytes: Buffer.byteLength(value) };
+const listTables = async (run: CommandRunner, file: string) =>
+  (await sqlite(run, file, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).map(row => String(row.name));
+
+// sqlite3 reads a local copy that includes the write-ahead log, so writes SQLite has not checkpointed are read too.
+function withDatabase<T>(container: AppContainer, candidate: StoreCandidate, work: (file: string) => Promise<T>): Promise<T> {
+  return withTemporaryDirectory(async directory => {
+    await Promise.all(candidate.files.map(async path => writeFile(join(directory, basename(path)), await container.read(path))));
+    return work(join(directory, candidate.name));
   });
 }
 
 // AsyncStorage tables are recognized by name: v1/v2 use catalystLocalStorage, v2's next storage a Room
 // table named Storage, and v3 an `entries` table under async-storage/databases/.
-async function readSqlite(container: AppContainer, candidate: StoreCandidate, run: CommandRunner): Promise<StoreContent & { asyncStorage?: boolean }> {
-  return withTemporaryDirectory(async directory => {
-    // The copy includes the write-ahead log, so recent writes that SQLite has not checkpointed are read too.
-    await container.copy(candidate.files, directory);
-    const file = join(directory, candidate.name);
+async function readSqlite(container: AppContainer, candidate: StoreCandidate, run: CommandRunner): Promise<StoreContent> {
+  return withDatabase(container, candidate, async file => {
     let tables: string[];
-    try { tables = (await sqlite(run, file, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).map(row => String(row.name)); }
+    try { tables = await listTables(run, file); }
     catch { return { status: "unreadable", note: "Not a readable SQLite database.", entries: [] }; }
     const keyValueTable = tables.includes("catalystLocalStorage") ? "catalystLocalStorage"
       : tables.includes("entries") && candidate.path.includes("async-storage/") ? "entries"
       : tables.includes("Storage") && /^AsyncStorage/.test(candidate.name) ? "Storage" : undefined;
     if (keyValueTable) {
       const rows = await sqlite(run, file, `SELECT key, value FROM ${quoteIdentifier(keyValueTable)}`);
-      return { status: "ok", entries: keyValueEntries(rows), asyncStorage: true };
+      const entries = rows.map(row => row.value === null || row.value === undefined ? nullEntry(String(row.key)) : textEntry(String(row.key), String(row.value)));
+      return { status: "ok", kind: "async-storage", entries };
     }
     const entries = await Promise.all(tables.map(async (table): Promise<ParsedEntry> => {
       const [count] = await sqlite(run, file, `SELECT count(*) AS rows FROM ${quoteIdentifier(table)}`).catch(() => [{ rows: "?" }]);
@@ -64,13 +67,12 @@ async function readAsyncManifest(container: AppContainer, candidate: StoreCandid
   const entries = await Promise.all(Object.entries(manifest).map(async ([key, stored]): Promise<ParsedEntry> => {
     const value = typeof stored === "string" ? stored
       : await container.read(`${directory}/${createHash("md5").update(key).digest("hex")}`).then(buffer => buffer.toString("utf8"), () => null);
-    if (value === null) return { key, type: "null", value: "null", bytes: 0 };
-    return { key, type: jsonType(value) ?? "string", value, bytes: Buffer.byteLength(value) };
+    return value === null ? nullEntry(key) : textEntry(key, value);
   }));
   return { status: "ok", entries };
 }
 
-async function readStore(container: AppContainer, candidate: StoreCandidate, run: CommandRunner): Promise<StoreContent & { asyncStorage?: boolean }> {
+async function readStore(container: AppContainer, candidate: StoreCandidate, run: CommandRunner): Promise<StoreContent> {
   switch (candidate.kind) {
     case "mmkv": {
       const [data, meta] = await Promise.all(candidate.files.map(file => container.read(file)));
@@ -124,15 +126,14 @@ export async function readStorage(container: AppContainer, { entries: entryLimit
   const stores = await mapLimited(candidates, 4, async (candidate): Promise<StorageStore> => {
     const id = storeId(candidate);
     for (const file of candidate.files) owner.set(file, id);
-    let content: StoreContent & { asyncStorage?: boolean };
+    let content: StoreContent;
     try { content = await readStore(container, candidate, run); }
     catch (error) {
       if (error instanceof ExpectedOperationError) throw error;
       content = { status: "unreadable", note: "This file could not be read or parsed.", entries: [] };
     }
-    const kind = content.asyncStorage ? "async-storage" : candidate.kind;
     return {
-      id, kind, name: candidate.name, path: candidate.path, status: content.status, ...content.note ? { note: content.note } : {},
+      id, kind: content.kind ?? candidate.kind, name: candidate.name, path: candidate.path, status: content.status, ...content.note ? { note: content.note } : {},
       bytes: candidate.files.reduce((total, file) => total + (sizes.get(file) ?? 0), 0),
       entryCount: content.entries.length,
       entries: content.entries.slice(0, entryLimit).map(entry => limitEntry(entry, valueLength)),
@@ -147,30 +148,29 @@ export async function readStorage(container: AppContainer, { entries: entryLimit
   };
 }
 
-// Store IDs are matched against a fresh listing, so a caller can only remove files that belong to a found store.
-export async function clearStore(container: AppContainer, id: string) {
+// Store IDs are matched against a fresh listing, so callers can only reach files that belong to a found store.
+async function findStore(container: AppContainer, id: string, kind?: StoreKind) {
   const files = await container.list();
-  const candidate = classifyFiles(files.map(file => file.path), container.platform).find(store => storeId(store) === id);
+  const candidate = classifyFiles(files.map(file => file.path), container.platform).find(store => storeId(store) === id && (kind === undefined || store.kind === kind));
   if (candidate === undefined) throw new ExpectedOperationError("invalid_input", "That storage no longer exists. Refresh and try again.");
+  return candidate;
+}
+
+export async function clearStore(container: AppContainer, id: string) {
+  const candidate = await findStore(container, id);
   if (candidate.kind === "user-defaults" && container.forgetPreferences) await container.forgetPreferences(candidate.path);
   await container.remove(candidate.files);
   return candidate;
 }
 
-// One page of a table from a database the snapshot found. The store and table are matched against a fresh
-// listing and the database's own table list, so callers cannot name other files or inject SQL.
+// One page of a table. The table must be in the database's own list, so callers cannot inject SQL.
 export async function readTable(container: AppContainer, id: string, table: string, { offset, limit, valueLength, run }: { offset: number; limit: number; valueLength: number; run: CommandRunner }): Promise<StorageTable> {
-  const files = await container.list();
-  const candidate = classifyFiles(files.map(file => file.path), container.platform).find(store => storeId(store) === id && store.kind === "sqlite");
-  if (candidate === undefined) throw new ExpectedOperationError("invalid_input", "That database no longer exists. Refresh and try again.");
-  return withTemporaryDirectory(async directory => {
-    await container.copy(candidate.files, directory);
-    const file = join(directory, candidate.name);
-    const tables = (await sqlite(run, file, "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%'")).map(row => String(row.name));
-    if (!tables.includes(table)) throw new ExpectedOperationError("invalid_input", `The table ${table} no longer exists. Refresh and try again.`);
+  const candidate = await findStore(container, id, "sqlite");
+  return withDatabase(container, candidate, async file => {
+    if (!(await listTables(run, file)).includes(table)) throw new ExpectedOperationError("invalid_input", `The table ${table} no longer exists. Refresh and try again.`);
     const name = quoteIdentifier(table);
-    const columns = (await sqlite(run, file, `PRAGMA table_info(${name})`)).map(column => ({ name: String(column.name), type: String(column.type ?? "") }));
-    const [count] = await sqlite(run, file, `SELECT count(*) AS total FROM ${name}`);
+    const [info, [count]] = await Promise.all([sqlite(run, file, `PRAGMA table_info(${name})`), sqlite(run, file, `SELECT count(*) AS total FROM ${name}`)]);
+    const columns = info.map(column => ({ name: String(column.name), type: String(column.type ?? "") }));
     // Blobs cannot travel as JSON, so they become a hex preview no longer than the value limit.
     const select = columns.map((column, index) => {
       const quoted = quoteIdentifier(column.name);
@@ -181,8 +181,7 @@ export async function readTable(container: AppContainer, id: string, table: stri
       table, columns, offset, total: Number(count?.total ?? 0),
       rows: rows.map(row => columns.map((_, index) => {
         const cell = row[`c${index}`];
-        if (cell === null || cell === undefined) return null;
-        if (typeof cell === "number") return cell;
+        if (cell === null || cell === undefined || typeof cell === "number") return cell ?? null;
         const text = String(cell);
         return text.length > valueLength ? `${text.slice(0, valueLength)}…` : text;
       })),

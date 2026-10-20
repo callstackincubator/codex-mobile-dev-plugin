@@ -252,7 +252,7 @@ test("simulator resets empty the container but keep its layout, metadata, and cf
 });
 
 test("the change feed hides SDK changes until the toggle shows them", async () => {
-  const { StoragePanel } = await import("../src/ui/storage-panel.ts");
+  const { StoragePanel, shownChanges } = await import("../src/ui/storage-panel.ts");
   const deviceApps = { subscribe: () => () => {}, getSnapshot: () => ({ device: undefined }) };
   const panel = new StoragePanel({} as never, deviceApps as never);
   const store = { id: "s", kind: "user-defaults" as const, name: "n", path: "p" };
@@ -260,9 +260,9 @@ test("the change feed hides SDK changes until the toggle shows them", async () =
     { id: 2, at: 2, store, sdk: true, key: "firebase", change: "added" },
     { id: 1, at: 1, store, sdk: false, key: "onboarded", change: "added" },
   ] });
-  assert.deepEqual(panel.visibleChanges().map(event => event.key), ["onboarded"]);
+  assert.deepEqual(shownChanges(panel.getSnapshot()).map(event => event.key), ["onboarded"]);
   panel.setShowSdkChanges(true);
-  assert.deepEqual(panel.visibleChanges().map(event => event.key), ["firebase", "onboarded"]);
+  assert.deepEqual(shownChanges(panel.getSnapshot()).map(event => event.key), ["firebase", "onboarded"]);
   panel.dispose();
 });
 

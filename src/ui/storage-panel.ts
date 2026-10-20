@@ -1,7 +1,7 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
 import { installedAppsSchema } from "../shared/app-control.ts";
 import type { InstalledApp } from "../shared/app-control.ts";
-import { storageClearSchema, storageLimits, storageSnapshotSchema, storageTableSchema, tablePageSize } from "../shared/app-storage.ts";
+import { storageClearSchema, storageLimits, storageSnapshotSchema, storageTableSchema } from "../shared/app-storage.ts";
 import type { StorageEntry, StorageSnapshot, StorageStore, StorageTable } from "../shared/app-storage.ts";
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import { errorMessage } from "../shared/protocol.ts";
@@ -24,6 +24,7 @@ export type StorageChangeEvent = {
   before?: StorageEntry;
   after?: StorageEntry;
 };
+export type StorageTableView = { storeId: string; name: string; data?: StorageTable; loading: boolean; error: string };
 export type StorageState = {
   open: boolean;
   available: boolean;
@@ -41,7 +42,7 @@ export type StorageState = {
   // SDK stores (analytics, crash reporting) write often, so their changes are hidden unless asked for.
   showSdkChanges: boolean;
   // The database table open in Browse, page by page.
-  table?: { storeId: string; name: string; data?: StorageTable; loading: boolean; error: string };
+  table?: StorageTableView;
   watchingSince?: number;
   busy: StorageAction | null;
   error: string;
@@ -55,6 +56,11 @@ export const changesPollMs = 5000;
 const maxChanges = 500;
 
 const same = (a: StorageEntry, b: StorageEntry) => a.type === b.type && a.value === b.value;
+
+// Listing apps runs alongside other work; anything else blocks further reads and actions.
+export const isWorking = (state: StorageState) => state.busy !== null && state.busy !== "apps";
+// The changes the feed shows, honoring the SDK toggle.
+export const shownChanges = (state: StorageState) => state.showSdkChanges ? state.changes : state.changes.filter(event => !event.sdk);
 
 // Keys added, changed, or removed between two reads. Stores that were capped skip removals,
 // since a key past the cap is not missing.
@@ -157,20 +163,22 @@ export class StoragePanel {
     const bundleId = this.state.bundleId;
     if (!this.ready() || !bundleId) return;
     const current = this.current();
-    this.update({ table: { storeId, name, data: this.state.table?.name === name && this.state.table.storeId === storeId ? this.state.table.data : undefined, loading: true, error: "" } });
+    const previous = this.state.table;
+    const isOpen = (table?: StorageTableView) => table?.storeId === storeId && table.name === name;
+    // Paging keeps the current rows on screen until the next page arrives.
+    const table: StorageTableView = { storeId, name, data: isOpen(previous) ? previous?.data : undefined, loading: true, error: "" };
+    this.update({ table });
+    const stillOpen = () => current() && isOpen(this.state.table);
     try {
       const data = storageTableSchema.parse(await measureUiOperation("ui.storage.table", "ui.storage.failure",
-        () => this.call("mobile_app_storage_table", { bundleId, store: storeId, table: name, offset, limit: tablePageSize })));
-      if (current() && this.state.table?.name === name) this.update({ table: { storeId, name, data, loading: false, error: "" } });
+        () => this.call("mobile_app_storage_table", { bundleId, store: storeId, table: name, offset, limit: storageLimits.tableRows })));
+      if (stillOpen()) this.update({ table: { ...table, data, loading: false } });
     } catch (error) {
-      if (current() && this.state.table?.name === name) this.update({ table: { storeId, name, data: this.state.table.data, loading: false, error: errorMessage(error) } });
+      if (stillOpen()) this.update({ table: { ...table, loading: false, error: errorMessage(error) } });
     }
   }
 
   closeTable() { if (this.state.table) this.update({ table: undefined }); }
-
-  // The changes the feed shows, honoring the SDK toggle.
-  visibleChanges() { return this.state.showSdkChanges ? this.state.changes : this.state.changes.filter(event => !event.sdk); }
 
   clearChanges() { this.update({ changes: [], watchingSince: this.state.snapshot?.readAt }); }
 
@@ -195,13 +203,19 @@ export class StoragePanel {
 
   private ready() { return this.state.available && this.state.unsupported === "" && this.state.deviceId !== ""; }
 
+  // One operation on the selected device and app. Its results and errors apply only while that selection lasts.
+  private async run(busy: StorageAction, start: Partial<StorageState>, work: (current: () => boolean) => Promise<void>) {
+    const current = this.current();
+    this.update({ busy, error: "", ...start });
+    try { await work(current); }
+    catch (error) { if (current()) this.update({ busy: null, error: errorMessage(error) }); }
+  }
+
   async loadApps(force = false) {
     if (!this.ready() || this.state.busy === "apps") return;
     const key = `${this.state.platform}:${this.state.deviceId}`;
     if (!force && this.appsFor === key) return;
-    const current = this.current();
-    this.update({ busy: "apps", error: "" });
-    try {
+    await this.run("apps", {}, async current => {
       const data = installedAppsSchema.parse(await measureUiOperation("ui.storage.list_apps", "ui.storage.failure", () => this.call("mobile_list_apps", {})));
       if (!current()) return;
       this.appsFor = key;
@@ -211,9 +225,7 @@ export class StoragePanel {
       void appIcons.load((name, args) => this.call(name, args), this.state.platform, this.state.deviceId, data.apps.map(app => app.bundleId),
         { measure: work => measureUiOperation("ui.storage.icons", "ui.storage.failure", work) });
       if (bundleId !== this.state.bundleId || this.state.snapshot === undefined) this.selectApp(bundleId);
-    } catch (error) {
-      if (current()) this.update({ busy: null, error: errorMessage(error) });
-    }
+    });
   }
 
   selectApp(bundleId: string) {
@@ -227,10 +239,8 @@ export class StoragePanel {
 
   async refresh() {
     const bundleId = this.state.bundleId;
-    if (!this.ready() || !bundleId || (this.state.busy && this.state.busy !== "apps")) return;
-    const current = this.current();
-    this.update({ busy: "read", error: "" });
-    try {
+    if (!this.ready() || !bundleId || isWorking(this.state)) return;
+    await this.run("read", {}, async current => {
       const data = await measureUiOperation("ui.storage.read", "ui.storage.failure", () => this.call("mobile_app_storage", { bundleId, entries: storageLimits.maxEntries, valueLength: panelValueLength }));
       if (!current()) return;
       const startedAt = performance.now();
@@ -242,9 +252,7 @@ export class StoragePanel {
       setUiGauge("ui.storage.stores", snapshot.stores.length);
       setUiGauge("ui.storage.entries", snapshot.stores.reduce((total, store) => total + store.entries.length, 0));
       this.update({ snapshot, changes, watchingSince: this.state.watchingSince ?? snapshot.readAt, busy: null });
-    } catch (error) {
-      if (current()) this.update({ busy: null, error: errorMessage(error) });
-    }
+    });
   }
 
   // Clearing stops the app; the next read records the cleared keys as removed.
@@ -252,29 +260,21 @@ export class StoragePanel {
     const bundleId = this.state.bundleId;
     if (!this.ready() || !bundleId || this.state.busy) return;
     const action = storeId ? "clear" : "reset";
-    const current = this.current();
-    this.update({ busy: action, error: "", status: "" });
-    try {
+    await this.run(action, { status: "" }, async current => {
       const result = storageClearSchema.parse(await measureUiOperation(`ui.storage.${action}`, "ui.storage.failure", () => this.call("mobile_clear_app_storage", storeId ? { bundleId, store: storeId } : { bundleId })));
       if (!current()) return;
       this.update({ busy: null, status: result.cleared === "all" ? "Cleared all app data. The app was stopped." : `Cleared ${result.cleared}. The app was stopped.` });
       await this.refresh();
-    } catch (error) {
-      if (current()) this.update({ busy: null, error: errorMessage(error) });
-    }
+    });
   }
 
   async launch() {
     const bundleId = this.state.bundleId;
     if (!this.ready() || !bundleId || this.state.busy) return;
-    const current = this.current();
-    this.update({ busy: "launch", error: "", status: "" });
-    try {
+    await this.run("launch", { status: "" }, async current => {
       await measureUiOperation("ui.storage.launch", "ui.storage.failure", () => this.call("mobile_launch_app", { bundleId }));
       if (current()) this.update({ busy: null, status: "Launched the app." });
-    } catch (error) {
-      if (current()) this.update({ busy: null, error: errorMessage(error) });
-    }
+    });
   }
 
   dispose() {
