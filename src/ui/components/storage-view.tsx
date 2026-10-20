@@ -21,13 +21,13 @@ export { formatBytes } from "../storage-labels.ts";
 
 const FILES = "files";
 const kindLook: Record<StoreKind, { tone: string; tint: string; icon: typeof LayersIcon }> = {
-  "user-defaults": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-500/10", icon: LayersIcon },
-  "shared-preferences": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-500/10", icon: LayersIcon },
-  "datastore": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-500/10", icon: LayersIcon },
-  "mmkv": { tone: "text-amber-600 dark:text-amber-400", tint: "bg-amber-500/10", icon: LayersIcon },
-  "async-storage": { tone: "text-violet-600 dark:text-violet-400", tint: "bg-violet-500/10", icon: BracesIcon },
-  "sqlite": { tone: "text-emerald-600 dark:text-emerald-400", tint: "bg-emerald-500/10", icon: DatabaseIcon },
-  "realm": { tone: "text-rose-600 dark:text-rose-400", tint: "bg-rose-500/10", icon: DatabaseIcon },
+  "user-defaults": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-500/12 ring-1 ring-inset ring-sky-500/25", icon: LayersIcon },
+  "shared-preferences": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-500/12 ring-1 ring-inset ring-sky-500/25", icon: LayersIcon },
+  "datastore": { tone: "text-sky-600 dark:text-sky-400", tint: "bg-sky-500/12 ring-1 ring-inset ring-sky-500/25", icon: LayersIcon },
+  "mmkv": { tone: "text-amber-600 dark:text-amber-400", tint: "bg-amber-500/12 ring-1 ring-inset ring-amber-500/25", icon: LayersIcon },
+  "async-storage": { tone: "text-violet-600 dark:text-violet-400", tint: "bg-violet-500/12 ring-1 ring-inset ring-violet-500/25", icon: BracesIcon },
+  "sqlite": { tone: "text-emerald-600 dark:text-emerald-400", tint: "bg-emerald-500/12 ring-1 ring-inset ring-emerald-500/25", icon: DatabaseIcon },
+  "realm": { tone: "text-rose-600 dark:text-rose-400", tint: "bg-rose-500/12 ring-1 ring-inset ring-rose-500/25", icon: DatabaseIcon },
 };
 const typeIcons: Record<StorageEntry["type"], typeof TypeIcon> = {
   string: TypeIcon, json: BracesIcon, object: BracesIcon, array: BracesIcon, number: HashIcon, integer: HashIcon,
@@ -39,6 +39,7 @@ const kindIconSizes = { sm: { box: "size-5", glyph: "size-3" }, md: { box: "size
 function KindIcon({ kind, size = "sm", className = "" }: { kind: StoreKind; size?: keyof typeof kindIconSizes; className?: string }) {
   const { tone, tint, icon: Icon } = kindLook[kind];
   // Only the tint blends, so it takes on a hovered or selected row's grey while the icon keeps its color.
+  // The ring of the same hue keeps the chip's edge visible against grey rows.
   // Multiply darkens a light row; screen lightens a dark one.
   return <span className={`relative inline-flex shrink-0 items-center justify-center ${tone} ${kindIconSizes[size].box} ${className}`} aria-hidden="true">
     <span className={`absolute inset-0 rounded-md mix-blend-multiply dark:mix-blend-screen ${tint}`} />
