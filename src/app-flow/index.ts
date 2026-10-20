@@ -7,7 +7,7 @@ import { parseProject } from './parser.ts'
 import { AppFlowBuilder } from './orchestrator.ts'
 import { bootDevice, closeDevice, waitForAppReady, type CaptureDevice } from './capture.ts'
 import { requiresDecisionProvider, resolveAppFlowStart } from './start-request.ts'
-import { getProjectId, readAppFlowForRenderer, readManifest } from './storage.ts'
+import { clearSavedAppFlow, getProjectId, readAppFlowForRenderer, readManifest } from './storage.ts'
 import { configureAppFlowHost, type AppFlowHostPorts } from './host.ts'
 import { runExploreUi } from './explore-ui-run.ts'
 
@@ -30,6 +30,7 @@ export function createAppFlowService(host: AppFlowHostPorts): {
     projectPath: string
   ) => Promise<{ exists: boolean; projectId: string; manifest?: unknown; error?: string }>
   getResult: (projectPath: string) => Promise<unknown | null>
+  clear: (projectPath: string) => Promise<{ cleared: true; projectId: string }>
   start: (options: StartAppFlowInput) => Promise<{ ok: true } | { ok: false; error: string }>
   /**
    * `expected: true` marks a refusal that is a normal state of the surface rather than a fault —
@@ -66,6 +67,14 @@ export function createAppFlowService(host: AppFlowHostPorts): {
     getResult: async (projectPath: string) => {
       const projectId = getProjectId(projectPath)
       return readAppFlowForRenderer(projectId)
+    },
+    clear: async (projectPath: string) => {
+      const projectId = getProjectId(projectPath)
+      if (builders.get(projectId)?.isRunning() || exploring.has(projectId) || launching.has(projectId)) {
+        throw new Error('Stop the active App Flow operation before clearing its saved data.')
+      }
+      await clearSavedAppFlow(projectId)
+      return { cleared: true, projectId }
     },
     launchApp: async (projectPath: string) => {
       const projectId = getProjectId(projectPath)

@@ -11,6 +11,7 @@ import type { AppFlowProjectChoices } from "./app-flow-projects.ts";
 
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
+const destructive = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
 const appVisibility = { ui: { visibility: ["app"] as ("app" | "model")[] } };
 const modelVisibility = { ui: { visibility: ["model"] as ("app" | "model")[] } };
 const sharedVisibility = { ui: { visibility: ["app", "model"] as ("app" | "model")[] } };
@@ -103,7 +104,7 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost, proje
     inputSchema: {
       projectPath,
       mode: z.enum(["structure-only", "screen-ui-and-structure"]).default("structure-only"),
-      screenLimit: z.number().int().min(1).max(1000).optional(),
+      screenLimit: z.number().int().min(0).max(1000).optional(),
       explorationMode: z.enum(["auto", "fast", "thorough"]).optional(),
       deepLinkJudgeMode: z.enum(["on", "off"]).optional(),
       captureUiStates: z.boolean().optional(),
@@ -132,6 +133,15 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost, proje
     _meta: sharedVisibility,
   }, safe(async (input: { runId?: string; projectPath?: string }) =>
     dataResult(await host.services.result(lookup(input)))));
+
+  registerAppTool(server, "mobile_appflow_clear", {
+    title: "Clear App Flow",
+    description: "Delete the saved App Flow graph, captures, and resumable progress for one project. The project remains available in the picker.",
+    inputSchema: { projectPath },
+    annotations: destructive,
+    _meta: appVisibility,
+  }, safe(async ({ projectPath }: { projectPath: string }) =>
+    dataResult(await host.services.clear(projectPath))));
 
   registerAppTool(server, "mobile_appflow_pause", {
     title: "Pause App Flow",

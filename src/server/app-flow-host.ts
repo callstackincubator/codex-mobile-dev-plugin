@@ -421,6 +421,7 @@ export interface AppFlowHostServices {
   start(input: Record<string, unknown>, context: { runId: string; decisions?: CodexAppFlowDecisionProvider }): Promise<unknown>;
   status(query: { runId?: string; projectPath?: string }): Promise<AppFlowRunSnapshot>;
   result(query: { runId?: string; projectPath?: string }): Promise<unknown>;
+  clear(projectPath: string): Promise<{ cleared: true; projectId: string }>;
   pause(runId: string): Promise<unknown>;
   cancel(runId: string): Promise<unknown>;
   launchApp(projectPath: string): Promise<unknown>;
@@ -758,6 +759,45 @@ export async function createAppFlowHost(options: {
         projectId: getProjectId(selectedProjectPath),
         result: await flow.getResult(selectedProjectPath),
       };
+    },
+    async clear(selectedProjectPath) {
+      const liveStates: AppFlowRunState[] = ["running", "needs-user-action", "suspended"];
+      const projectRuns = [...runs.values()].filter(run => run.projectPath === selectedProjectPath);
+      const local = projectRuns.find(run =>
+        run.projectPath === selectedProjectPath && liveStates.includes(run.state));
+      if (local) throw new Error("Stop the active App Flow run before clearing its saved data.");
+
+      // A screen sweep may be owned by the Codex MCP process while this panel uses another
+      // process. Its shared run record is the only safe cross-process guard against deleting the
+      // checkpoint and captures underneath that worker. Suspended runs remain resumable work and
+      // are guarded even when their original process has exited.
+      const shared = await runStore.readRun(selectedProjectPath);
+      const sharedIsLive = shared && liveStates.includes(shared.state)
+        && (shared.state === "suspended" || ownerAlive(shared.ownerPid));
+      if (sharedIsLive) throw new Error("Stop the active App Flow run before clearing its saved data.");
+      if (manual.isActive(selectedProjectPath)) {
+        throw new Error("Stop the active App Flow recording before clearing its saved data.");
+      }
+
+      // A terminal event persists its final active-run record asynchronously. Let those writes
+      // drain before deleting the directory, or a late rename could recreate it after `clear`
+      // returned and make the removed flow appear to exist again.
+      await Promise.all(projectRuns.map(run => runWrites.get(run.runId)).filter(
+        (pending): pending is Promise<void> => pending !== undefined));
+      const cleared = await flow.clear(selectedProjectPath);
+      for (const [runId, run] of runs) {
+        if (run.projectPath === selectedProjectPath) {
+          stopPromptRelay(runId);
+          runs.delete(runId);
+          runWrites.delete(runId);
+        }
+      }
+      for (const [runId, projectPath] of remoteRunProjects) {
+        if (projectPath === selectedProjectPath) remoteRunProjects.delete(runId);
+      }
+      recentEvents.delete(`project:${cleared.projectId}`);
+      recentEvents.delete(`manual:${cleared.projectId}`);
+      return cleared;
     },
     async pause(selectedRunId) {
       const run = runs.get(selectedRunId);

@@ -36,6 +36,7 @@ async function closeLingeringDevice(projectId: string): Promise<void> {
 }
 
 export function createManualRecordingService(host: AppFlowHostPorts): {
+  isActive: (projectPath: string) => boolean
   start: (
     projectPath: string,
     nodeId: string
@@ -53,6 +54,7 @@ export function createManualRecordingService(host: AppFlowHostPorts): {
 } {
   configureAppFlowHost(host)
   return {
+    isActive: (projectPath: string) => sessions.has(getProjectId(projectPath)),
     start: async (projectPath: string, nodeId: string) => {
       const projectId = getProjectId(projectPath)
       // A sweep and a manual session would fight over the same simulator and the same `.ad` files.

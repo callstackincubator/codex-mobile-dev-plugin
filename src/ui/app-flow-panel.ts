@@ -364,6 +364,26 @@ export class AppFlowPanel {
   }
   async pause() { await this.mutateRun("mobile_appflow_pause"); }
   async cancel() { await this.mutateRun("mobile_appflow_cancel"); }
+  async clear() {
+    const projectPath = this.snapshot.projectPath.trim();
+    if (!projectPath) return;
+    try {
+      await this.call("mobile_appflow_clear", { projectPath });
+      // Invalidate a graph/status read that started before the clear, otherwise its late response
+      // can repaint the just-deleted map. The selected project itself intentionally stays put.
+      this.loadRevision++;
+      this.startEpoch++;
+      this.abandonedRunId = this.snapshot.runId ?? this.abandonedRunId;
+      clearTimeout(this.agentStartTimer); this.agentStartTimer = undefined;
+      this.progressStartedAt = undefined;
+      this.lastLiveResultRefreshAt = Number.NEGATIVE_INFINITY;
+      this.urls.clear();
+      this.update({ runId: null, projectId: "", state: "idle", result: null, progress: null,
+        sweepSummary: null, prompt: null, error: null, agentStartPending: false });
+    } catch (error) {
+      this.update({ error: error instanceof Error ? error.message : String(error) });
+    }
+  }
   private async mutateRun(name: string) {
     const runId = this.snapshot.runId; if (!runId) return;
     try { await this.call(name, { runId }); await this.refreshStatus(); }

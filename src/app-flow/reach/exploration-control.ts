@@ -1,3 +1,5 @@
+import { normalizeAppFlowScreenLimit } from '../start-request.ts'
+
 /** Why a device exploration should stop before starting another screen. */
 export type ExplorationPauseReason = 'requested' | 'limit' | 'attempts' | 'deadline'
 
@@ -76,6 +78,7 @@ export class ExplorationControl {
     pauseRequested: () => boolean = () => false,
     options: ExplorationControlOptions = {}
   ) {
+    screenLimit = normalizeAppFlowScreenLimit(screenLimit)
     this.screenLimit = screenLimit
     this.pauseRequested = pauseRequested
     this.now = options.now ?? Date.now

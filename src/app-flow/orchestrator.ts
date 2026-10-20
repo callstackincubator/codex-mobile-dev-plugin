@@ -56,7 +56,7 @@ import {
   type CaptureContext,
   type CaptureDevice
 } from './capture.ts'
-import { requiresDecisionProvider } from './start-request.ts'
+import { normalizeAppFlowScreenLimit, requiresDecisionProvider } from './start-request.ts'
 import { parseProject } from './parser.ts'
 import { baselineLaunchCommands, walkCommands, walkStepCommand } from './walk-commands.ts'
 import { contentMatchedSelectors, minimizeWalkCommands } from './path-minimize.ts'
@@ -770,6 +770,10 @@ function captureContext(
 export async function buildAppFlow(
   options: AppFlowBuildOptions
 ): Promise<AppFlowBuildResult | AppFlowBuildError> {
+  // `0` is the start API's explicit "all screens" sentinel. Normalize once so progress payloads,
+  // pause messages, derived attempt/deadline budgets, and the exploration loop all consume the
+  // engine's single uncapped representation even when a caller bypasses the service resolver.
+  options = { ...options, screenLimit: normalizeAppFlowScreenLimit(options.screenLimit) }
   const { projectPath, signal } = options
   const mode = options.mode ?? 'structure-only'
   const activeNow = (): number => options.decisionProvider?.activeNow?.() ?? Date.now()

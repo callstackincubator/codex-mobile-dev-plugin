@@ -144,7 +144,11 @@ test("the panel's project tools stay out of the model's tool list and keep only 
   const { directory, choices } = await projects(t, async () => fromDialog);
   const listed = await folder(t, directory, "Listed");
   const server = new McpServer({ name: "app-flow-projects-test", version: "1" });
-  const close = registerAppFlowTools(server, new AppFlowHost({} as AppFlowHostServices), choices);
+  const cleared: string[] = [];
+  const services = {
+    async clear(projectPath: string) { cleared.push(projectPath); return { cleared: true as const, projectId: "project-1" }; },
+  } as unknown as AppFlowHostServices;
+  const close = registerAppFlowTools(server, new AppFlowHost(services), choices);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "app-flow-projects-test-client", version: "1" });
   t.after(async () => { await client.close(); await close(); await server.close(); });
@@ -155,6 +159,14 @@ test("the panel's project tools stay out of the model's tool list and keep only 
     assert.ok(tool, `${name} is registered`);
     assert.deepEqual(tool._meta?.ui?.visibility, ["app"], `${name} stays out of the model's tool budget`);
   }
+  const clear = (await client.listTools()).tools.find(candidate => candidate.name === "mobile_appflow_clear");
+  assert.ok(clear, "mobile_appflow_clear is registered");
+  assert.deepEqual(clear._meta?.ui?.visibility, ["app"], "clearing stays out of the model's tool budget");
+  assert.equal(clear.annotations?.destructiveHint, true);
+  assert.deepEqual(clear.inputSchema.required, ["projectPath"]);
+  const clearedResult = await client.callTool({ name: "mobile_appflow_clear", arguments: { projectPath: listed } });
+  assert.equal(clearedResult.isError, undefined);
+  assert.deepEqual(cleared, [listed]);
   const empty = await client.callTool({ name: "mobile_appflow_projects", arguments: {} });
   assert.equal(empty.isError, undefined);
   assert.deepEqual(empty.structuredContent?.projects, []);

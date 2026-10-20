@@ -94,6 +94,23 @@ export function getFlowsDir(projectId: string): string {
   return join(getProjectDir(projectId), 'flows')
 }
 
+/**
+ * Removes every generated artifact for one project without removing either project registry.
+ *
+ * App Flow's files are a single consistency unit: the graph refers to screenshots and recorded
+ * flows, while the manifest, capture status, parameter store and sweep checkpoint all describe
+ * that same graph. Deleting individual known files would leave new supporting files behind as the
+ * format grows, so clearing owns the whole hashed project directory instead. A later build
+ * recreates it through `registerProject`; `app-flows/projects.json` remains alongside it and the
+ * panel's selected-project registry lives one level above `app-flows/`.
+ *
+ * Callers must reject active runs before invoking this function. The engine service does that at
+ * the same boundary where starts are serialized.
+ */
+export async function clearSavedAppFlow(projectId: string): Promise<void> {
+  await rm(getProjectDir(projectId), { recursive: true, force: true })
+}
+
 async function ensureDir(path: string): Promise<void> {
   await mkdir(path, { recursive: true })
 }

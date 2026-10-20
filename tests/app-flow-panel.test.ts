@@ -101,6 +101,28 @@ test("capture progress distinguishes successful captures from route attempts", a
   assert.deepEqual(panel.getSnapshot().sweepSummary, { completed: 9, total: 79, captured: 3, captureLimit: 6, message: "Reaching route" });
 });
 
+test("clear removes the selected project's displayed result and run summaries", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/demo");
+  host.returnsResult({ manifest: { formatVersion: 4 }, nodes: [], edges: [] });
+  await panel.start({ mode: "structure-only" });
+  host.notify({ source: "app-flow", runId: "run-1", event: { type: "step", phase: "capture", message: "Profile", completed: 3, total: 8 } });
+  host.notify({ source: "app-flow", runId: "run-1", event: { type: "complete", phase: "render", message: "Done", completed: 8, total: 8 } });
+  await settle();
+  assert.ok(panel.getSnapshot().result);
+  assert.ok(panel.getSnapshot().sweepSummary);
+
+  await panel.clear();
+
+  assert.deepEqual(host.calls.at(-1), { name: "mobile_appflow_clear", arguments: { projectPath: "/projects/demo" } });
+  assert.equal(panel.getSnapshot().projectPath, "/projects/demo", "the selected project is preserved");
+  assert.equal(panel.getSnapshot().state, "idle");
+  assert.equal(panel.getSnapshot().result, null);
+  assert.equal(panel.getSnapshot().sweepSummary, null);
+  assert.equal(panel.getSnapshot().progress, null);
+  assert.equal(panel.getSnapshot().error, null);
+});
+
 test("status restores prompt controls when the live event channels were missed", async t => {
   const host = fixture();
   host.returnsStatus({

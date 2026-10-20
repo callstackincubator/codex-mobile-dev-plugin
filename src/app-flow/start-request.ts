@@ -31,17 +31,31 @@ export const APP_FLOW_START_DEFAULTS = {
   captureUiStates: boolean
 }
 
+/**
+ * Converts the UI/API sentinel for "all screens" to the engine's existing uncapped value.
+ *
+ * Keep this at the start boundary rather than teaching every consumer that both `0` and
+ * `undefined` mean the same thing. Lower-level entry points call it defensively as well, because
+ * `buildAppFlow` and `ExplorationControl` are also used directly by tests and integrations.
+ */
+export function normalizeAppFlowScreenLimit(screenLimit: number | undefined): number | undefined {
+  return screenLimit === 0 ? undefined : screenLimit
+}
+
 /** A start request with every defaultable option filled in. */
 export type ResolvedAppFlowStart = Omit<Required<StartAppFlowInput>, 'screenLimit'> & {
   screenLimit?: number
 }
 
-/** Fills absent options with `APP_FLOW_START_DEFAULTS`. `screenLimit` has no default: absent means no cap. */
+/**
+ * Fills absent options with `APP_FLOW_START_DEFAULTS`. An absent or zero `screenLimit` means no
+ * cap; the resolved engine contract represents both as `undefined`.
+ */
 export function resolveAppFlowStart(input: StartAppFlowInput): ResolvedAppFlowStart {
   return {
     projectPath: input.projectPath,
     mode: input.mode ?? APP_FLOW_START_DEFAULTS.mode,
-    screenLimit: input.screenLimit,
+    screenLimit: normalizeAppFlowScreenLimit(input.screenLimit),
     explorationMode: input.explorationMode ?? APP_FLOW_START_DEFAULTS.explorationMode,
     deepLinkJudgeMode: input.deepLinkJudgeMode ?? APP_FLOW_START_DEFAULTS.deepLinkJudgeMode,
     captureUiStates: input.captureUiStates ?? APP_FLOW_START_DEFAULTS.captureUiStates
@@ -92,8 +106,8 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
     return { ok: false, error: 'Invalid project path.' }
   if (mode !== undefined && mode !== 'structure-only' && mode !== 'screen-ui-and-structure')
     return { ok: false, error: 'Invalid App Flow mode.' }
-  if (screenLimit !== undefined && (!Number.isInteger(screenLimit) || (screenLimit as number) < 1))
-    return { ok: false, error: 'Screen limit must be a positive integer.' }
+  if (screenLimit !== undefined && (!Number.isInteger(screenLimit) || (screenLimit as number) < 0))
+    return { ok: false, error: 'Screen limit must be a non-negative integer.' }
   if (
     explorationMode !== undefined &&
     explorationMode !== 'auto' &&

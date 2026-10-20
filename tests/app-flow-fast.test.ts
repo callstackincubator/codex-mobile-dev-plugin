@@ -376,6 +376,27 @@ test('App Flow start no longer exposes a render transport switch', () => {
   })
 })
 
+test('App Flow start accepts zero as all screens and resolves it to the uncapped engine value', () => {
+  const parsed = parseAppFlowStartRequest({
+    projectPath: '/project',
+    mode: 'screen-ui-and-structure',
+    screenLimit: 0
+  })
+  assert.equal(parsed.ok, true)
+  if (!parsed.ok) return
+  assert.equal(parsed.input.screenLimit, 0)
+  assert.equal(resolveAppFlowStart(parsed.input).screenLimit, undefined)
+
+  for (const value of [-1, 1.5, Number.NaN, '0']) {
+    assert.equal(
+      parseAppFlowStartRequest({ projectPath: '/project', screenLimit: value }).ok,
+      false,
+      `${String(value)} is refused`
+    )
+  }
+  assert.equal(parseAppFlowStartRequest({ projectPath: '/project', screenLimit: 1 }).ok, true)
+})
+
 test('Capture UI states is one optional boolean, off unless asked for, and nothing else is accepted', () => {
   const base = { projectPath: '/project', mode: 'screen-ui-and-structure' as const }
   for (const value of [true, false]) {

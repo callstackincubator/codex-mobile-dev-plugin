@@ -49,6 +49,7 @@ export type DeepLinkJudgeMode = 'on' | 'off'
 export interface StartAppFlowInput {
   projectPath: string
   mode?: AppFlowBuildMode
+  /** Maximum screens to capture. Zero or omitted means explore every available screen. */
   screenLimit?: number
   explorationMode?: ExplorationMode
   deepLinkJudgeMode?: DeepLinkJudgeMode

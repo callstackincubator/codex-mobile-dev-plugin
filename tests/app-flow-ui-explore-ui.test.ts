@@ -24,7 +24,7 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
   }
   const directory = await mkdtemp(resolve("node_modules/.mobile-dev-ui-explore-test-"));
   let cleanup = async () => {};
-  t.after(async () => { await cleanup(); dom.window.close(); for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); } await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { await cleanup(); await new Promise(done => setTimeout(done, 50)); dom.window.close(); for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); } await rm(directory, { recursive: true, force: true }); });
   const output = resolve(directory, "app-flow-view.mjs");
   await build({
     stdin: { contents: 'export { AppFlowView, progressTally } from "./src/ui/components/app-flow-view.tsx";', resolveDir: process.cwd(), loader: "ts" },
@@ -47,13 +47,17 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
     launching: false, agentStartPending: false, pickingProject: false, appLaunched: false,
   };
   const starts: unknown[] = [];
+  let canSendAgentStart = true;
+  let clears = 0;
+  const recordingSnapshot = { nodeId: null, status: null, steps: [] };
   const panel = {
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     getSnapshot: () => snapshot,
-    canSendAgentStart: true,
-    recording: { subscribe: () => () => {}, getSnapshot: () => ({ nodeId: null, status: null, steps: [] }) },
+    get canSendAgentStart() { return canSendAgentStart; },
+    recording: { subscribe: () => () => {}, getSnapshot: () => recordingSnapshot },
     refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
     launchApp: async () => {},
+    clear: async () => { clears += 1; },
     start: async () => {}, requestAgentStart: async (options: unknown) => { starts.push(options); },
   };
   const document = dom.window.document;
@@ -77,11 +81,40 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
   const second = createRoot(document.getElementById("root")!);
   cleanup = async () => { await act(async () => { second.unmount(); }); };
   await act(async () => { second.render(createElement(AppFlowView, { panel })); });
+  // The sweep options live in a popover: nothing is rendered until its trigger (which summarizes them) is opened.
+  const trigger = () => Array.from(document.querySelectorAll("button")).find(entry => /screens?$/.test(entry.textContent ?? "") && entry.getAttribute("aria-haspopup") === "dialog") as HTMLButtonElement;
+  assert.equal(trigger().textContent, "Fast · 10 screens", "the sweep defaults to Fast over 10 screens");
+  assert.equal(labelled("Capture UI states"), null, "the options are closed until the trigger is opened");
+  await act(async () => { trigger().click(); });
   const toggle = () => labelled("Capture UI states") as HTMLButtonElement;
+  const routes = labelled("App Flow exploration mode") as HTMLElement;
+  const screenLimit = labelled("Maximum screens to explore") as HTMLInputElement;
   assert.ok(toggle(), "the switch is offered beside the sweep options");
   assert.equal(toggle().getAttribute("role"), "switch");
   assert.equal(toggle().getAttribute("aria-checked"), "false", "default off");
   assert.equal(storage.getItem(key), null);
+  assert.equal(routes.getAttribute("role"), "combobox", "the reach mode is a themed dropdown, not a native select");
+  assert.match(routes.textContent ?? "", /^Fast/, "fast is the default selection");
+  const note = () => document.getElementById("app-flow-exploration-note")?.textContent ?? "";
+  assert.match(note(), /runtime navigator/i, "the note explains the selected mode");
+  assert.equal(routes.getAttribute("aria-describedby"), "app-flow-exploration-note");
+  assert.equal(labelled("App Flow deep-link judge"), null, "the deep-link check is no longer a UI choice");
+  assert.equal(storage.getItem("app-flow-deep-link-judge:/projects/demo"), null);
+
+  // Zero is an explicit unlimited sweep, persists, and is sent rather than collapsed to undefined.
+  assert.equal(screenLimit.min, "0");
+  assert.match(document.getElementById("app-flow-screen-limit-help")?.textContent ?? "", /0 explores all screens/i);
+  const valueSetter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")?.set;
+  assert.ok(valueSetter);
+  await act(async () => { valueSetter.call(screenLimit, "0"); screenLimit.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
+  assert.equal(screenLimit.value, "0");
+  assert.equal(storage.getItem("app-flow-screen-limit:/projects/demo"), "0");
+  assert.equal(trigger().textContent, "Fast · All screens", "0 reads as All");
+  await act(async () => { valueSetter.call(screenLimit, "15"); screenLimit.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
+  assert.equal(trigger().textContent, "Fast · 15 screens");
+  await act(async () => { valueSetter.call(screenLimit, "0"); screenLimit.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
+  await act(async () => { startButton().click(); });
+  assert.equal((starts.at(-1) as { screenLimit?: number }).screenLimit, 0);
 
   // Off is sent as an explicit false on the one start request the sweep already makes.
   await act(async () => { startButton().click(); });
@@ -92,14 +125,44 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
   assert.equal(toggle().getAttribute("aria-checked"), "true");
   assert.equal(storage.getItem(key), "on");
   await act(async () => { startButton().click(); });
-  assert.deepEqual(starts.at(-1), { mode: "screen-ui-and-structure", screenLimit: undefined, explorationMode: "auto", deepLinkJudgeMode: "on", captureUiStates: true });
+  assert.deepEqual(starts.at(-1), { mode: "screen-ui-and-structure", screenLimit: 0, explorationMode: "fast", deepLinkJudgeMode: "off", captureUiStates: true });
+
+  // Existing results can be cleared, but never while a run is active.
+  snapshot = { ...snapshot, result: { manifest: { formatVersion: 4, durationMs: 1 }, nodes: [], edges: [] } };
+  await act(async () => { for (const listener of listeners) listener(); });
+  const clearButton = () => Array.from(document.querySelectorAll("button")).find(entry => entry.textContent === "Clear app flow") as HTMLButtonElement;
+  assert.ok(clearButton(), "a result exposes the clear action");
+  assert.equal(clearButton().disabled, false);
+  await act(async () => { clearButton().click(); });
+  assert.equal(clears, 1);
+  snapshot = { ...snapshot, state: "running", runId: "run-1" };
+  await act(async () => { for (const listener of listeners) listener(); });
+  assert.equal(clearButton().disabled, true, "the clear action is disabled during a run");
+  snapshot = { ...snapshot, state: "idle", runId: null, result: null };
+  await act(async () => { for (const listener of listeners) listener(); });
 
   // A fresh mount of the same project restores it; another project does not inherit it.
   await act(async () => { second.unmount(); });
   const third = createRoot(document.getElementById("root")!);
   cleanup = async () => { await act(async () => { third.unmount(); }); };
   await act(async () => { third.render(createElement(AppFlowView, { panel })); });
+  await act(async () => { trigger().click(); });
   assert.equal(toggle().getAttribute("aria-checked"), "true", "restored from localStorage");
+  assert.equal((labelled("Maximum screens to explore") as HTMLInputElement).value, "0", "zero is restored from localStorage");
+
+  // Warnings use the shared accessible alert treatment and explain the action to take.
+  storage.setItem("app-flow-exploration:/projects/demo", "fast");
+  canSendAgentStart = false;
+  snapshot = { ...snapshot, projectPath: "/projects/warnings" };
+  storage.setItem("app-flow-mode:/projects/warnings", "screen-ui-and-structure");
+  storage.setItem("app-flow-exploration:/projects/warnings", "fast");
+  await act(async () => { for (const listener of listeners) listener(); });
+  const alerts = Array.from(document.querySelectorAll('[role="alert"]'));
+  assert.equal(alerts.length, 2);
+  assert.ok(alerts.some(alert => /Sign in before using Fast/.test(alert.textContent ?? "")));
+  assert.match(note(), /runtime navigator.*skips deep links/i, "the note follows the stored Fast selection");
+  assert.ok(alerts.some(alert => /Start this flow from chat/.test(alert.textContent ?? "")));
+
   snapshot = { ...snapshot, projectPath: "/projects/other" };
   storage.setItem("app-flow-mode:/projects/other", "screen-ui-and-structure");
   await act(async () => { for (const listener of listeners) listener(); });

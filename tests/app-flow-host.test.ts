@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -8,6 +8,8 @@ import {
   DecisionSuspendedError,
   type AppFlowDecisionRequest,
 } from "../src/server/app-flow-host.ts";
+import { getProjectId } from "../src/app-flow/storage.ts";
+import { AppFlowRunStore } from "../src/server/app-flow-run-store.ts";
 
 const temporary: string[] = [];
 
@@ -164,6 +166,37 @@ describe("launchApp", () => {
     const error = await host.services.launchApp(projectDir).then(() => undefined, (cause: unknown) => cause);
     assert.ok(error instanceof Error);
     assert.ok(!error.message.includes(projectDir), `message leaked a local path: ${error.message}`);
+    await host.services.close?.();
+  });
+});
+
+describe("clear", () => {
+  it("rejects resumable work, then removes artifacts without losing the project registry", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "mobile-dev-app-flow-"));
+    temporary.push(dataDir);
+    const projectPath = "/projects/demo";
+    const projectId = getProjectId(projectPath);
+    const projectDir = join(dataDir, "app-flows", projectId);
+    const registry = JSON.stringify([{ id: projectId, path: projectPath }]);
+    await mkdir(join(projectDir, "screens"), { recursive: true });
+    await Promise.all([
+      writeFile(join(dataDir, "app-flows", "projects.json"), registry),
+      writeFile(join(projectDir, "manifest.json"), "{}"),
+      writeFile(join(projectDir, "app-flow.json"), "{}"),
+      writeFile(join(projectDir, "screens", "home.png"), "screen"),
+    ]);
+    const runStore = new AppFlowRunStore(dataDir);
+    await runStore.writeRun({ runId: "run-1", projectPath, state: "suspended", ownerPid: process.pid });
+    const { createAppFlowHost } = await import("../src/server/app-flow-host.ts");
+    const host = await createAppFlowHost({ dataDir });
+
+    await assert.rejects(host.services.clear(projectPath), /stop the active app flow run/i);
+    await runStore.writeRun({ runId: "run-1", projectPath, state: "completed", ownerPid: process.pid });
+    assert.deepEqual(await host.services.clear(projectPath), { cleared: true, projectId });
+
+    await assert.rejects(access(projectDir));
+    assert.equal(await readFile(join(dataDir, "app-flows", "projects.json"), "utf8"), registry);
+    assert.equal((await host.services.status({ projectPath })).state, "idle");
     await host.services.close?.();
   });
 });
