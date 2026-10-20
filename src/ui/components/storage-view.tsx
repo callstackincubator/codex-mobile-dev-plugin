@@ -1,4 +1,4 @@
-import { BinaryIcon, BracesIcon, CalendarIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, DatabaseIcon, FolderIcon, HashIcon, LayersIcon, LockIcon, MinusIcon, PlayIcon, PuzzleIcon, RefreshCwIcon, RotateCcwIcon, SearchIcon, ToggleLeftIcon, TriangleAlertIcon, TypeIcon } from "lucide-react";
+import { BinaryIcon, BracesIcon, CalendarIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, DatabaseIcon, FolderIcon, HashIcon, LayersIcon, LockIcon, MinusIcon, PlayIcon, PlusIcon, PuzzleIcon, RefreshCwIcon, RotateCcwIcon, SearchIcon, ToggleLeftIcon, TriangleAlertIcon, TypeIcon } from "lucide-react";
 import { memo, useMemo, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { storeKindLabels, storeKinds } from "../../shared/app-storage.ts";
@@ -249,10 +249,14 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
   return <div className="flex min-h-0 flex-1">{sidebar}<div className="flex min-h-0 min-w-0 flex-1 flex-col">{picker}{main}</div></div>;
 }
 
+// lucide has no tilde; this matches its 24px grid and 2px round stroke.
+function TildeIcon({ className }: { className?: string }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d="M4 14c1.5-3 4-3.8 6-2s4.5 3.2 6 1.6S19 11 20 10" /></svg>;
+}
 const changeLook = {
-  added: { label: "Added", text: "text-emerald-700 dark:text-emerald-400", dot: "bg-emerald-500" },
-  changed: { label: "Changed", text: "text-amber-700 dark:text-amber-400", dot: "bg-amber-500" },
-  removed: { label: "Removed", text: "text-rose-700 dark:text-rose-400", dot: "bg-rose-500" },
+  added: { label: "Added", icon: PlusIcon, tone: "text-emerald-600 bg-emerald-500/10 dark:text-emerald-400" },
+  changed: { label: "Changed", icon: TildeIcon, tone: "text-amber-600 bg-amber-500/10 dark:text-amber-400" },
+  removed: { label: "Removed", icon: MinusIcon, tone: "text-rose-600 bg-rose-500/10 dark:text-rose-400" },
 };
 function Old({ children }: { children: ReactNode }) { return <span className="truncate rounded bg-rose-500/10 px-1 text-rose-700 line-through decoration-rose-400/70 dark:text-rose-300">{children}</span>; }
 function New({ children }: { children: ReactNode }) { return <span className="truncate rounded bg-emerald-500/12 px-1 text-emerald-800 dark:text-emerald-300">{children}</span>; }
@@ -282,9 +286,9 @@ function ChangesView({ panel, query }: { panel: StoragePanel; query: string }) {
       : <div className="min-h-0 flex-1 overflow-auto text-xs" role="table" aria-label="Storage changes">
         {visible.map(event => {
           const look = changeLook[event.change];
-          return <div key={event.id} role="row" className="grid grid-cols-[8ch_5.5rem_minmax(8rem,18rem)_minmax(0,1fr)] items-center gap-x-3 border-b px-3 py-2">
+          return <div key={event.id} role="row" className="grid grid-cols-[8ch_20px_minmax(8rem,18rem)_minmax(0,1fr)] items-center gap-x-3 border-b px-3 py-2">
             <span role="cell" className="font-mono text-muted-foreground tabular-nums">{timeFormat.format(event.at)}</span>
-            <span role="cell" className={`flex items-center gap-1.5 font-medium ${look.text}`}><span className={`size-1.5 rounded-full ${look.dot}`} />{look.label}</span>
+            <span role="cell" aria-label={look.label} title={look.label} className={`inline-flex size-5 items-center justify-center rounded-md ${look.tone}`}><look.icon className="size-3.5" /></span>
             <span role="cell" className="flex min-w-0 items-center gap-2" title={`${storeKindLabels[event.store.kind]} · ${event.store.name}`}><KindIcon kind={event.store.kind} /><span className={`truncate font-mono font-medium ${event.change === "removed" ? "text-muted-foreground line-through" : ""}`}>{event.key}</span></span>
             <span role="cell" className="flex min-w-0 font-mono"><ChangeDiff event={event} /></span>
           </div>;
