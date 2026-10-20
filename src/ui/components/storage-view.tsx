@@ -112,12 +112,12 @@ function EntryRow({ entry, store, query, open, onToggle, copy }: { entry: Storag
 
 function StoreButton({ store, title, count, selected, onSelect }: { store: StorageStore; title: string; count: number; selected: boolean; onSelect: () => void }) {
   return <button type="button" data-selected={selected} onClick={onSelect} title={store.path}
-    className="my-0.5 flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted data-[selected=true]:bg-muted">
+    className="my-0.5 flex w-full items-start gap-2 rounded-md px-2 py-1 text-left hover:bg-muted data-[selected=true]:bg-muted">
     <KindIcon kind={store.kind} size="md" />
     <span className="min-w-0 flex-1"><span className="block truncate font-medium">{title}</span><span className="block truncate text-[11px] text-muted-foreground">{storeKindLabels[store.kind]}</span></span>
-    {store.status === "encrypted" ? <LockIcon className="size-3.5 text-muted-foreground" aria-label="Encrypted" />
-      : store.status === "unreadable" ? <TriangleAlertIcon className="size-3.5 text-amber-500" aria-label="Unreadable" />
-      : <span className="text-muted-foreground tabular-nums">{count}</span>}
+    {store.status === "encrypted" ? <LockIcon className="size-3.5 self-center text-muted-foreground" aria-label="Encrypted" />
+      : store.status === "unreadable" ? <TriangleAlertIcon className="size-3.5 self-center text-amber-500" aria-label="Unreadable" />
+      : <span className="self-center text-muted-foreground tabular-nums">{count}</span>}
   </button>;
 }
 
@@ -188,12 +188,12 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
       </button>
       {(showSdks || query) && sdks.filter(visible).map(item => <StoreButton key={item.id} store={item} title={title(item)} count={query ? matches.get(item.id)?.length ?? 0 : item.entryCount} selected={!query && store?.id === item.id} onSelect={() => select(item.id)} />)}
     </>}
-    <button type="button" data-selected={selected === FILES && !query} onClick={() => select(FILES)} className="mt-3 w-full rounded-lg border p-2.5 text-left hover:bg-muted/50 data-[selected=true]:bg-muted">
-      <span className="mb-2 flex items-center gap-2"><FolderIcon className="size-4 text-muted-foreground" /><span className="flex-1 font-medium">Files</span><span className="text-muted-foreground tabular-nums">{formatBytes(snapshot.totalBytes)}</span></span>
-      <span className="flex h-1.5 overflow-hidden rounded-full bg-muted">{containerBreakdown(snapshot).map(([label, bytes, tone]) => <span key={label} className={tone} style={{ width: `${snapshot.totalBytes ? bytes / snapshot.totalBytes * 100 : 0}%` }} />)}</span>
-      <span className="mt-2 grid grid-cols-[auto_1fr_auto] items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
-        {containerBreakdown(snapshot).filter(([, bytes]) => bytes > 0).map(([label, bytes, tone]) => <span key={label} className="contents"><span className={`size-1.5 rounded-full ${tone}`} /><span>{label}</span><span className="tabular-nums">{formatBytes(bytes)}</span></span>)}
-      </span>
+    <div className="mx-2 my-1.5 border-t" />
+    <button type="button" data-selected={selected === FILES && !query} onClick={() => select(FILES)} title="Every file in the app's data directory"
+      className="my-0.5 flex w-full items-start gap-2 rounded-md px-2 py-1 text-left hover:bg-muted data-[selected=true]:bg-muted">
+      <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground" aria-hidden="true"><FolderIcon className="size-3.5" /></span>
+      <span className="min-w-0 flex-1"><span className="block truncate font-medium">Files</span><span className="block truncate text-[11px] text-muted-foreground tabular-nums">{formatBytes(snapshot.totalBytes)}</span></span>
+      <span className="self-center text-muted-foreground tabular-nums">{snapshot.fileCount}</span>
     </button>
   </nav>;
 
@@ -217,6 +217,12 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
       <div className="flex items-center gap-3 border-b px-4 py-3 font-sans">
         <span className="inline-flex size-7 items-center justify-center rounded-md bg-muted"><FolderIcon className="size-4" /></span>
         <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Files</span><span className="block text-xs text-muted-foreground">{snapshot.fileCount} files · {formatBytes(snapshot.totalBytes)} in the app's data directory</span></span>
+      </div>
+      <div className="border-b px-4 py-3 font-sans" aria-label="Size by kind">
+        <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">{containerBreakdown(snapshot).map(([label, bytes, tone]) => <span key={label} className={tone} style={{ width: `${snapshot.totalBytes ? bytes / snapshot.totalBytes * 100 : 0}%` }} />)}</div>
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          {containerBreakdown(snapshot).filter(([, bytes]) => bytes > 0).map(([label, bytes, tone]) => <span key={label} className="flex items-center gap-1.5"><span className={`size-2 rounded-full ${tone}`} />{label}<span className="text-foreground tabular-nums">{formatBytes(bytes)}</span></span>)}
+        </div>
       </div>
       {snapshot.files.map(file => {
         const owner = file.store ? snapshot.stores.find(item => item.id === file.store) : undefined;
