@@ -180,6 +180,42 @@ sums), and the caveats that decide how a number is read. Frames folded by the
 focused views are folded in its tree too, so it describes the stack the reader was
 looking at.
 
+### Picking components out of a React recording
+
+The same switch, over a recording. **Select components** turns the render tree
+and the component table from navigating to collecting, and **Investigate
+selected components** writes its own hand-off from
+`src/shared/tracesift-react-selection.ts`. The state is the one field the task
+side uses, because it is the same shape; what differs is the id, the arithmetic
+and the words.
+
+A pick is a `reactNodeKey` — `<rootId>.<commitIndex>.<fiberId>` — rather than a
+bare fiber id, because a fiber id is unique inside its root and nowhere else.
+Naming the commit is what lets a selection outlive the commit picker: a reader
+works a cascade by stepping through commits, and a per-commit set would empty
+itself under exactly the navigation the reading is made of. Choosing a commit
+stays navigation, the way moving the task focus is.
+
+One pick rings one fiber, which is the opposite of the task side and
+deliberately so. A task's merged tree has one node per call site, so one pick has
+to ring every box drawn of that function; React's tree merges nothing, and two
+renders of a component are two fibers with their own causes, their own changed
+props and their own time. Ringing both because they share a name would claim a
+sameness React did not record. The render tree says so when a pick of the open
+commit is not drawn — collapsed as a pass-through, or below one that was.
+
+The hand-off keeps the same conventions and almost none of the same caveats,
+because the measurement is different. React's profiler is not sampled:
+`selfDuration` and `actualDuration` are recorded per fiber per commit, so the
+figures are exact for the render phase and say nothing about the commit phase,
+the effects, or the time between two commits — which the prompt states rather
+than leaving a reader to assume a recording covers an interaction. Own time is a
+true partition of a commit, so the picks' own times add and the remainder is the
+other components plus the reconciler's own walk; inclusive times overlap every
+ancestor and are never summed. Picks are grouped by the commit that measured
+them, and the same component picked in two commits is named as the repeated
+render it is rather than as one finding listed twice.
+
 ## Sources
 
 The implementation follows [Baguette's HTTP and WebSocket routes](https://github.com/tddworks/baguette/blob/v0.2.1/docs/serve.md) and [gesture protocol](https://github.com/tddworks/baguette/blob/v0.2.1/docs/wire.md). The bundled automation server follows [agent-device's official MCP setup](https://github.com/callstack/agent-device#add-mcp-tools-to-your-agent). Native panel metadata follows [OpenAI's plugin extensions](https://developers.openai.com/plugins/build/extensions). The package uses the [portable plugin format](https://developers.openai.com/plugins/build/plugins).

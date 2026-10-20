@@ -4,6 +4,7 @@ import type { OpenAIMessageParams } from "@openai/mcp-extensions/app";
 import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "../shared/tracesift.ts";
 import { decodeTraceSiftExplorePayload, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, type TraceSiftExploreKind } from "../shared/tracesift-explore.ts";
 import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "../shared/tracesift-selection.ts";
+import { buildReactSelectionPrompt, reactSelectionEvidence, type ReactSelectionRecording } from "../shared/tracesift-react-selection.ts";
 import type { ContributionChartKind } from "./components/tracesift/contribution-chart.tsx";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
 
@@ -41,8 +42,14 @@ type State = {
      */
     picking?: boolean;
     /**
-     * The frames the reader has picked, in the order they chose them, as
-     * `TaskTreeNode.id`s — the one identity all four task views share.
+     * The frames or components the reader has picked, in the order they chose
+     * them.
+     *
+     * One field for both kinds because the state is the same shape either way
+     * and the ids come from whichever views are on screen: a task frame is a
+     * `TaskTreeNode.id`, the identity all four task views share, and a React
+     * component is a `reactNodeKey`, `<rootId>.<commitIndex>.<fiberId>`, which
+     * names the commit so a pick outlives the commit picker.
      */
     selected?: string[];
   };
@@ -114,7 +121,13 @@ export class TraceSiftController {
     setUiGauge("ui.tracesift.cards", analysis.cards.length);
     recordUiTiming("ui.tracesift.process", performance.now() - startedAt);
     this.update({ analysis, error: "", busyCard: undefined, copiedCard: undefined, handoffCard: undefined, openingExploreCard: undefined, explorer: undefined });
-    setUiTelemetryContext({ tracesift_view: "cards" });
+    // Which kind of recording is open, so the explorer's own timings can be told
+    // apart: a CPU task's call tree and a React recording's commits are
+    // different amounts of work through the same code. Two values, set with the
+    // analysis and never derived from anything about the device or the profile
+    // itself. Setting it flushes the measurements taken under the last one, so
+    // one recording's work is never attributed to another's.
+    setUiTelemetryContext({ tracesift_view: "cards", tracesift_profile: analysis.profileType });
     // A new analysis drops the explorer along with the picks it held. The gauge
     // has to follow the state and not the navigation: staying on the cards means
     // `tracesift_view` never changes, so nothing else would clear it and a fresh
@@ -398,26 +411,73 @@ export class TraceSiftController {
   };
 
   /**
-   * Ask the chat about the frames picked inside the explorer.
+   * The hand-off for a set of picked task frames, or the reason there is none.
+   *
+   * Separated from `investigateSelected` so the two kinds of recording each own
+   * their own arithmetic and their own words. They measure different things —
+   * a CPU profile is sampled and a React profile is not — and a single builder
+   * taking a flag would have had to hedge every figure it printed.
+   */
+  private taskSelectionHandoff(payload: unknown, selected: readonly string[], profileTitle?: string) {
+    const handoff = payload as { card?: unknown } | null;
+    const card = handoff && typeof handoff.card === "object" && handoff.card !== null
+      ? handoff.card as SelectionCard
+      : undefined;
+    if (!card?.tree) return { error: "This task's call tree is not loaded, so its selection cannot be described." };
+    const evidence = frameSelectionEvidence(card, selected);
+    if (evidence.frames.length === 0) {
+      return {
+        empty: selected.length
+          // The ids came from the views, so a tree that holds none of them is a
+          // payload that stopped matching what is on screen — worth telling
+          // apart from a reader who has not clicked anything yet.
+          ? "None of the selected frames are in this task's call tree, so they cannot be described. Reopen Explore and try again."
+          : "Nothing is selected yet. Turn on Select frames, then click the frames you want asked about.",
+      };
+    }
+    return { text: buildSelectionPrompt({ card, evidence, ...(profileTitle ? { profileTitle } : {}) }) };
+  }
+
+  /** The same, for components picked out of a React recording's commits. */
+  private reactSelectionHandoff(payload: unknown, selected: readonly string[], profileTitle?: string, headline?: string) {
+    const handoff = payload as { explore?: unknown } | null;
+    const recording = handoff && typeof handoff.explore === "object" && handoff.explore !== null
+      ? handoff.explore as ReactSelectionRecording
+      : undefined;
+    if (!recording?.commits) return { error: "This recording's commits are not loaded, so its selection cannot be described." };
+    const evidence = reactSelectionEvidence(recording, selected);
+    if (evidence.components.length === 0) {
+      return {
+        empty: selected.length
+          // A pick names its commit, so a recording holding none of them is one
+          // that stopped matching the view the reader clicked in.
+          ? "None of the selected components are in this recording's commits, so they cannot be described. Reopen Explore and try again."
+          : "Nothing is selected yet. Turn on Select components, then click the components you want asked about.",
+      };
+    }
+    return {
+      text: buildReactSelectionPrompt({
+        recording,
+        evidence,
+        ...(profileTitle ? { profileTitle } : {}),
+        ...(headline ? { headline } : {}),
+      }),
+    };
+  }
+
+  /**
+   * Ask the chat about the frames or components picked inside the explorer.
    *
    * Unlike Investigate, this needs neither the service nor a version of it new
    * enough to know the question: the picks only exist in this frame and the
-   * whole call tree is already here, so the hand-off is written here from the
-   * same figures the reader was looking at.
+   * whole call tree or recording is already here, so the hand-off is written
+   * here from the same figures the reader was looking at.
    */
   investigateSelected = async () => {
     const { analysis, canInvestigate, busyCard, explorer } = this.state;
     if (!analysis || !canInvestigate || busyCard || this.disposed) return;
     const card = analysis.cards.find(entry => entry.id === explorer?.cardId);
     if (!card || !explorer) return;
-    const handoff = explorer.payload as { card?: unknown } | null;
-    const tree = handoff && typeof handoff.card === "object" && handoff.card !== null
-      ? handoff.card as SelectionCard
-      : undefined;
-    if (!tree?.tree) {
-      this.update({ error: "This task's call tree is not loaded, so its selection cannot be described." });
-      return;
-    }
 
     this.update({ busyCard: card.id, error: "" });
     // Set once the text is on its way to the host: a delivery failure is already
@@ -425,26 +485,21 @@ export class TraceSiftController {
     // timeout, a missing composer and a refusal.
     let sending = false;
     try {
-      const evidence = frameSelectionEvidence(tree, explorer.selected ?? []);
-      if (evidence.frames.length === 0) {
-        countUiEvent("ui.tracesift.pick_investigate_empty");
-        this.update({
-          error: explorer.selected?.length
-            // The ids came from the views, so a tree that holds none of them is a
-            // payload that stopped matching what is on screen — worth telling
-            // apart from a reader who has not clicked anything yet.
-            ? "None of the selected frames are in this task's call tree, so they cannot be described. Reopen Explore and try again."
-            : "Nothing is selected yet. Turn on Select frames, then click the frames you want asked about.",
-        });
+      const selected = explorer.selected ?? [];
+      const built = explorer.kind === "react"
+        ? this.reactSelectionHandoff(explorer.payload, selected, analysis.title, card.headline)
+        : this.taskSelectionHandoff(explorer.payload, selected, analysis.title);
+      if ("error" in built) {
+        this.update({ error: built.error });
         return;
       }
-      const text = buildSelectionPrompt({
-        card: tree,
-        evidence,
-        ...(analysis.title ? { profileTitle: analysis.title } : {}),
-      });
+      if ("empty" in built) {
+        countUiEvent("ui.tracesift.pick_investigate_empty");
+        this.update({ error: built.empty });
+        return;
+      }
       sending = true;
-      await this.sendHandoff(text, "ui.tracesift.pick_investigate");
+      await this.sendHandoff(built.text, "ui.tracesift.pick_investigate");
     } catch (error) {
       if (!sending) {
         countUiEvent("ui.tracesift.pick_investigate_failed");

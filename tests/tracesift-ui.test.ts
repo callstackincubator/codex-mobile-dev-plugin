@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { gzipSync } from "node:zlib";
 import { TraceSiftController } from "../src/ui/tracesift-controller.ts";
+import { getUiTelemetryAttributes } from "../src/ui/telemetry.ts";
 
 const analysis = {
   apiVersion: 1, analysisId: "private-analysis", profileType: "react", title: "Profile", summary: { rootCount: 1, commitCount: 3, totalCommitRenderDurationMs: 50, peakCommitDurationMs: 30, commitsOverBudget: 1, omittedEvidenceCommitCount: 0 },
@@ -515,5 +516,114 @@ test("TraceSift reports a selection whose tree never arrived without sending an 
   await controller.investigateSelected();
   assert.deepEqual(messages, []);
   assert.match(controller.getSnapshot().error, /call tree is not loaded/);
+  controller.dispose();
+});
+
+/** One recording with two commits, so a pick can outlive the commit picker. */
+const reactExplorePayload = {
+  apiVersion: 1,
+  analysisId: "private-analysis",
+  explore: {
+    budgetMs: 16, spanMs: 300, commitsOverBudget: 2,
+    commits: [
+      {
+        rootId: 1, commitIndex: 2, startMs: 10, durationMs: 30, renderedCount: 3,
+        summedSelfMs: 28, unattributedMs: 2, overBudget: true, causesRecorded: true, treeDropped: false,
+        tree: [{
+          id: 2, name: "Screen", componentClass: "app", selfMs: 3, actualMs: 28, cause: "state",
+          changedProps: [], changedHooks: [], compiledWithForget: false, sourceHint: "src/screen.tsx:4",
+          children: [{
+            id: 4, name: "Chart", componentClass: "app", selfMs: 25, actualMs: 25, cause: "props",
+            changedProps: ["data"], changedHooks: [], compiledWithForget: false, sourceHint: "src/chart.tsx:9",
+            children: [],
+          }],
+        }],
+      },
+      {
+        rootId: 1, commitIndex: 3, startMs: 60, durationMs: 18, renderedCount: 1,
+        summedSelfMs: 18, unattributedMs: 0, overBudget: true, causesRecorded: true, treeDropped: false,
+        tree: [{
+          id: 4, name: "Chart", componentClass: "app", selfMs: 18, actualMs: 18, cause: "nothing-changed",
+          changedProps: [], changedHooks: [], compiledWithForget: false, sourceHint: "src/chart.tsx:9",
+          children: [],
+        }],
+      },
+    ],
+  },
+  cards: [],
+};
+
+async function exploringReact(messages: unknown[]) {
+  const controller = new TraceSiftController({
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    getHostContext: () => hostContext,
+    async callServerTool() { return payloadResult("react", reactExplorePayload); },
+    async sendMessage(message: unknown) { messages.push(message); return {}; },
+  } as never);
+  controller.hostChanged();
+  controller.accept({ content: [], structuredContent: analysis });
+  await controller.openExplore("react-commit-1-2");
+  return controller;
+}
+
+test("TraceSift keeps React picks while the reader walks the commits", async () => {
+  const messages: unknown[] = [];
+  const controller = await exploringReact(messages);
+  assert.equal(controller.getSnapshot().explorer?.kind, "react");
+  assert.equal(controller.getSnapshot().explorer?.commitKey, "1.2");
+  // Which kind of recording is open, so the explorer's timings can be told
+  // apart. Two values, taken from the analysis rather than from the device or
+  // the profile's contents.
+  assert.equal(getUiTelemetryAttributes().tracesift_profile, "react");
+
+  controller.setPicking(true);
+  controller.toggleSelectedFrame("1.2.4");
+  // Stepping to the next commit is navigation, the way moving the task focus is.
+  // The pick made behind the reader is the whole reason it names its commit.
+  controller.setExploreCommit("1.3");
+  controller.toggleSelectedFrame("1.3.4");
+  assert.deepEqual(controller.getSnapshot().explorer?.selected, ["1.2.4", "1.3.4"]);
+  assert.equal(controller.getSnapshot().explorer?.commitKey, "1.3");
+  controller.dispose();
+});
+
+test("TraceSift sends the selected components' measured evidence to the active chat", async () => {
+  const messages: unknown[] = [];
+  const controller = await exploringReact(messages);
+  controller.setPicking(true);
+  controller.toggleSelectedFrame("1.2.4");
+  controller.toggleSelectedFrame("1.3.4");
+  await controller.investigateSelected();
+
+  assert.equal(messages.length, 1);
+  const text = (messages[0] as { content: Array<{ text: string }> }).content[0]!.text;
+  assert.match(text, /investigate 2 component renders I selected/);
+  assert.match(text, /### Commit 2 — 30 ms rendering/);
+  assert.match(text, /### Commit 3 — 18 ms rendering/);
+  assert.match(text, /25 ms of its own render time \(83\.3% of this commit\)/);
+  assert.match(text, /Why it rendered: props changed: data\./);
+  // The same component in two commits is the finding, not a duplicate to merge.
+  assert.match(text, /`Chart` is selections 1, 2: the same component rendering in 2 separate commits/);
+  assert.match(text, /← selection #1/);
+  assert.match(text, /Heavy component/, "the card's own headline says which finding this came from");
+  assert.deepEqual((messages[0] as { _meta: unknown })._meta, { "openai/message": { target: "active", send: true } });
+  assert.equal(controller.getSnapshot().error, "");
+  controller.dispose();
+});
+
+test("TraceSift reports React picks it cannot place rather than sending an empty ask", async () => {
+  const messages: unknown[] = [];
+  const controller = await exploringReact(messages);
+  controller.setPicking(true);
+  // A commit this recording does not hold: the payload stopped matching the view.
+  controller.toggleSelectedFrame("1.99.4");
+  await controller.investigateSelected();
+  assert.deepEqual(messages, []);
+  assert.match(controller.getSnapshot().error, /None of the selected components are in this recording's commits/);
+
+  controller.clearSelectedFrames();
+  await controller.investigateSelected();
+  assert.deepEqual(messages, []);
+  assert.match(controller.getSnapshot().error, /Nothing is selected yet. Turn on Select components/);
   controller.dispose();
 });
