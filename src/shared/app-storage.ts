@@ -57,3 +57,15 @@ export const storageClearSchema = z.object({ cleared: z.string(), stopped: z.boo
 
 // Defaults keep model-visible results small; the panel asks for more.
 export const storageLimits = { entries: 200, maxEntries: 2000, valueLength: 300, maxValueLength: 16000, files: 400 };
+
+// One page of rows from a SQLite table. Cells are text, numbers, or null; blobs arrive as x'…' hex.
+const tableCell = z.union([z.string(), z.number(), z.null()]);
+export const storageTableSchema = z.object({
+  table: z.string(),
+  columns: z.array(z.object({ name: z.string(), type: z.string() })),
+  rows: z.array(z.array(tableCell)),
+  total: z.number().int().nonnegative(),
+  offset: z.number().int().nonnegative(),
+});
+export type StorageTable = z.infer<typeof storageTableSchema>;
+export const tablePageSize = 100;

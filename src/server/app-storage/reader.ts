@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { ExpectedOperationError } from "../../shared/error-reporting.ts";
 import { storageLimits } from "../../shared/app-storage.ts";
-import type { StorageEntry, StorageFile, StorageSnapshot, StorageStore } from "../../shared/app-storage.ts";
+import type { StorageEntry, StorageFile, StorageSnapshot, StorageStore, StorageTable } from "../../shared/app-storage.ts";
 import { withTemporaryDirectory } from "../app-control/commands.ts";
 import type { CommandRunner } from "../app-control/commands.ts";
 import type { AppContainer, ContainerFile } from "./container.ts";
@@ -155,4 +155,37 @@ export async function clearStore(container: AppContainer, id: string) {
   if (candidate.kind === "user-defaults" && container.forgetPreferences) await container.forgetPreferences(candidate.path);
   await container.remove(candidate.files);
   return candidate;
+}
+
+// One page of a table from a database the snapshot found. The store and table are matched against a fresh
+// listing and the database's own table list, so callers cannot name other files or inject SQL.
+export async function readTable(container: AppContainer, id: string, table: string, { offset, limit, valueLength, run }: { offset: number; limit: number; valueLength: number; run: CommandRunner }): Promise<StorageTable> {
+  const files = await container.list();
+  const candidate = classifyFiles(files.map(file => file.path), container.platform).find(store => storeId(store) === id && store.kind === "sqlite");
+  if (candidate === undefined) throw new ExpectedOperationError("invalid_input", "That database no longer exists. Refresh and try again.");
+  return withTemporaryDirectory(async directory => {
+    await container.copy(candidate.files, directory);
+    const file = join(directory, candidate.name);
+    const tables = (await sqlite(run, file, "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%'")).map(row => String(row.name));
+    if (!tables.includes(table)) throw new ExpectedOperationError("invalid_input", `The table ${table} no longer exists. Refresh and try again.`);
+    const name = quoteIdentifier(table);
+    const columns = (await sqlite(run, file, `PRAGMA table_info(${name})`)).map(column => ({ name: String(column.name), type: String(column.type ?? "") }));
+    const [count] = await sqlite(run, file, `SELECT count(*) AS total FROM ${name}`);
+    // Blobs cannot travel as JSON, so they become a hex preview no longer than the value limit.
+    const select = columns.map((column, index) => {
+      const quoted = quoteIdentifier(column.name);
+      return `CASE typeof(${quoted}) WHEN 'blob' THEN 'x''' || substr(hex(${quoted}), 1, ${valueLength}) || '''' ELSE ${quoted} END AS c${index}`;
+    }).join(", ") || "NULL AS c0";
+    const rows = await sqlite(run, file, `SELECT ${select} FROM ${name} LIMIT ${limit} OFFSET ${offset}`);
+    return {
+      table, columns, offset, total: Number(count?.total ?? 0),
+      rows: rows.map(row => columns.map((_, index) => {
+        const cell = row[`c${index}`];
+        if (cell === null || cell === undefined) return null;
+        if (typeof cell === "number") return cell;
+        const text = String(cell);
+        return text.length > valueLength ? `${text.slice(0, valueLength)}…` : text;
+      })),
+    };
+  });
 }

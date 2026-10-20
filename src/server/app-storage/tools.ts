@@ -5,14 +5,14 @@ import { captureServerError, recordAppStorageOperation } from "../telemetry.ts";
 import { errorMessage } from "../../shared/protocol.ts";
 import { expectedOutcome } from "../../shared/error-reporting.ts";
 import { appTargetShape, bundleIdSchema } from "../../shared/app-control.ts";
-import { storageLimits } from "../../shared/app-storage.ts";
+import { storageLimits, tablePageSize } from "../../shared/app-storage.ts";
 import { systemCommands } from "../app-control/commands.ts";
 import type { Commands } from "../app-control/commands.ts";
 import { createDrivers } from "../app-control/tools.ts";
 import type { DriverFactory } from "../app-control/tools.ts";
 import { AndroidContainer, SimulatorContainer } from "./container.ts";
 import type { AppContainer } from "./container.ts";
-import { clearStore, readStorage } from "./reader.ts";
+import { clearStore, readStorage, readTable } from "./reader.ts";
 
 type Target = { platform: "ios" | "android"; deviceId: string };
 export type ContainerFactory = (target: Target, bundleId: string) => Promise<AppContainer>;
@@ -26,7 +26,7 @@ export function createContainers(commands: Commands = systemCommands): Container
 const bundleId = bundleIdSchema.describe("App bundle ID or Android package name.");
 
 export function registerAppStorageTools(server: McpServer, commands: Commands = systemCommands, driverFor: DriverFactory = createDrivers(commands), containerFor: ContainerFactory = createContainers(commands)) {
-  async function run(operation: "read" | "clear" | "reset", target: Target, work: () => Promise<Record<string, unknown>>) {
+  async function run(operation: "read" | "clear" | "reset" | "table", target: Target, work: () => Promise<Record<string, unknown>>) {
     const startedAt = performance.now();
     try {
       const result = await work();
@@ -58,6 +58,28 @@ export function registerAppStorageTools(server: McpServer, commands: Commands = 
       const container = await containerFor(target, input.bundleId);
       const snapshot = await readStorage(container, { bundleId: input.bundleId, entries: input.entries ?? storageLimits.entries, valueLength: input.valueLength ?? storageLimits.valueLength, run: commands.run });
       return input.store ? { ...snapshot, stores: snapshot.stores.filter(store => store.id === input.store) } : snapshot;
+    });
+  });
+
+  registerAppTool(server, "mobile_app_storage_table", {
+    title: "Read a database table",
+    description: "Read one page of rows from a SQLite table found by mobile_app_storage.",
+    inputSchema: {
+      ...appTargetShape, bundleId,
+      store: z.string().max(4096).describe("A SQLite store ID from mobile_app_storage."),
+      table: z.string().min(1).max(512),
+      offset: z.number().int().min(0).optional(),
+      limit: z.number().int().min(1).max(500).optional(),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    // Panel-only: the shared model tool budget is full.
+    _meta: { ui: { visibility: ["app"] } },
+  }, async input => {
+    const target = { platform: input.platform, deviceId: input.deviceId };
+    return run("table", target, async () => {
+      driverFor(target);
+      const container = await containerFor(target, input.bundleId);
+      return readTable(container, input.store, input.table, { offset: input.offset ?? 0, limit: input.limit ?? tablePageSize, valueLength: 2000, run: commands.run });
     });
   });
 

@@ -51,7 +51,7 @@ Track app CPU and memory, expand individual thread charts, and view device-wide 
 ![](/img/screenshot_performance.png)
 
 ### App storage
-See what an app has saved without adding code to it: MMKV, AsyncStorage, UserDefaults, SharedPreferences, DataStore, SQLite databases, and the largest files in its data directory. Search across every store at once, and open the Changes tab to watch keys being added, changed, and removed while you use the app, with only the changed part of JSON values highlighted. SDK data from Firebase, Google Analytics and similar libraries is grouped separately. Clear one store or reset all app data. Works on iOS simulators and debuggable Android builds; MMKV value types are guessed from the stored bytes, and encrypted MMKV instances show as locked.
+See what an app has saved without adding code to it: MMKV, AsyncStorage, UserDefaults, SharedPreferences, DataStore, SQLite databases, and the largest files in its data directory. Open SQLite tables as a paged grid, search across every store at once, and open the Changes tab to watch keys being added, changed, and removed while you use the app, with only the changed part of JSON values highlighted. SDK data from Firebase, Google Analytics and similar libraries is grouped separately. Clear one store or reset all app data. Works on iOS simulators and debuggable Android builds; MMKV value types are guessed from the stored bytes, and encrypted MMKV instances show as locked.
 
 
 ## Requirements

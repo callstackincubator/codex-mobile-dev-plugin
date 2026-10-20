@@ -265,3 +265,30 @@ test("the change feed hides SDK changes until the toggle shows them", async () =
   assert.deepEqual(panel.visibleChanges().map(event => event.key), ["firebase", "onboarded"]);
   panel.dispose();
 });
+
+test("database tables are read page by page with blobs as hex, and unknown tables are rejected", { skip: process.platform !== "darwin" && "needs sqlite3" }, async () => {
+  const { mkdtemp, mkdir, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { execFileSync } = await import("node:child_process");
+  const { SimulatorContainer } = await import("../src/server/app-storage/container.ts");
+  const { readTable } = await import("../src/server/app-storage/reader.ts");
+  const { systemCommands } = await import("../src/server/app-control/commands.ts");
+  const root = await mkdtemp(join(tmpdir(), "mobile-dev-table-"));
+  try {
+    await mkdir(join(root, "Documents"), { recursive: true });
+    const file = join(root, "Documents/app.db");
+    execFileSync("/usr/bin/sqlite3", [file, "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, data BLOB); WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 250) INSERT INTO items SELECT i, 'item ' || i, CASE WHEN i = 1 THEN x'CAFE' END FROM n;"]);
+    const container = new SimulatorContainer(root, "B5C969F6-58A4-4C31-AB12-FB9E56D681DE", systemCommands);
+    const options = { limit: 100, valueLength: 80, run: systemCommands.run };
+    const first = await readTable(container, "sqlite:Documents/app.db", "items", { ...options, offset: 0 });
+    assert.equal(first.total, 250);
+    assert.deepEqual(first.columns, [{ name: "id", type: "INTEGER" }, { name: "name", type: "TEXT" }, { name: "data", type: "BLOB" }]);
+    assert.deepEqual(first.rows[0], [1, "item 1", "x'CAFE'"]);
+    assert.deepEqual(first.rows[1], [2, "item 2", null]);
+    const last = await readTable(container, "sqlite:Documents/app.db", "items", { ...options, offset: 200 });
+    assert.deepEqual([last.offset, last.rows.length, last.rows[0][0]], [200, 50, 201]);
+    await assert.rejects(readTable(container, "sqlite:Documents/app.db", "items\"; DROP TABLE items; --", { ...options, offset: 0 }), error => expectedOutcome(error) === "invalid_input");
+    await assert.rejects(readTable(container, "sqlite:../outside.db", "items", { ...options, offset: 0 }), error => expectedOutcome(error) === "invalid_input");
+    assert.equal(execFileSync("/usr/bin/sqlite3", [file, "SELECT count(*) FROM items"], { encoding: "utf8" }).trim(), "250");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

@@ -1,8 +1,8 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
 import { installedAppsSchema } from "../shared/app-control.ts";
 import type { InstalledApp } from "../shared/app-control.ts";
-import { storageClearSchema, storageLimits, storageSnapshotSchema } from "../shared/app-storage.ts";
-import type { StorageEntry, StorageSnapshot, StorageStore } from "../shared/app-storage.ts";
+import { storageClearSchema, storageLimits, storageSnapshotSchema, storageTableSchema, tablePageSize } from "../shared/app-storage.ts";
+import type { StorageEntry, StorageSnapshot, StorageStore, StorageTable } from "../shared/app-storage.ts";
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import { errorMessage } from "../shared/protocol.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
@@ -40,6 +40,8 @@ export type StorageState = {
   changes: readonly StorageChangeEvent[];
   // SDK stores (analytics, crash reporting) write often, so their changes are hidden unless asked for.
   showSdkChanges: boolean;
+  // The database table open in Browse, page by page.
+  table?: { storeId: string; name: string; data?: StorageTable; loading: boolean; error: string };
   watchingSince?: number;
   busy: StorageAction | null;
   error: string;
@@ -130,7 +132,7 @@ export class StoragePanel {
     }
     this.revision++;
     this.appsFor = "";
-    this.update({ platform, deviceId, deviceLabel: device?.name ?? "", unsupported, apps: [], bundleId: this.selections.get(`${platform}:${deviceId}`) ?? "", snapshot: undefined, changes: [], watchingSince: undefined, busy: null, error: "", status: "" });
+    this.update({ platform, deviceId, deviceLabel: device?.name ?? "", unsupported, apps: [], bundleId: this.selections.get(`${platform}:${deviceId}`) ?? "", snapshot: undefined, changes: [], table: undefined, watchingSince: undefined, busy: null, error: "", status: "" });
     if (this.state.open) void this.loadApps();
   }
 
@@ -150,6 +152,22 @@ export class StoragePanel {
   }
 
   setShowSdkChanges(showSdkChanges: boolean) { this.update({ showSdkChanges }); }
+
+  async openTable(storeId: string, name: string, offset = 0) {
+    const bundleId = this.state.bundleId;
+    if (!this.ready() || !bundleId) return;
+    const current = this.current();
+    this.update({ table: { storeId, name, data: this.state.table?.name === name && this.state.table.storeId === storeId ? this.state.table.data : undefined, loading: true, error: "" } });
+    try {
+      const data = storageTableSchema.parse(await measureUiOperation("ui.storage.table", "ui.storage.failure",
+        () => this.call("mobile_app_storage_table", { bundleId, store: storeId, table: name, offset, limit: tablePageSize })));
+      if (current() && this.state.table?.name === name) this.update({ table: { storeId, name, data, loading: false, error: "" } });
+    } catch (error) {
+      if (current() && this.state.table?.name === name) this.update({ table: { storeId, name, data: this.state.table.data, loading: false, error: errorMessage(error) } });
+    }
+  }
+
+  closeTable() { if (this.state.table) this.update({ table: undefined }); }
 
   // The changes the feed shows, honoring the SDK toggle.
   visibleChanges() { return this.state.showSdkChanges ? this.state.changes : this.state.changes.filter(event => !event.sdk); }
@@ -202,7 +220,7 @@ export class StoragePanel {
     if (bundleId !== this.state.bundleId) {
       this.revision++;
       this.selections.set(`${this.state.platform}:${this.state.deviceId}`, bundleId);
-      this.update({ bundleId, snapshot: undefined, changes: [], watchingSince: undefined, busy: null, error: "", status: "" });
+      this.update({ bundleId, snapshot: undefined, changes: [], table: undefined, watchingSince: undefined, busy: null, error: "", status: "" });
     }
     if (bundleId) void this.refresh();
   }

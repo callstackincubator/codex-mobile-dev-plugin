@@ -1,10 +1,11 @@
-import { ArrowRightLeftIcon, BinaryIcon, BracesIcon, CalendarIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, DatabaseIcon, FolderIcon, HashIcon, LayersIcon, LockIcon, MinusIcon, PlayIcon, PlusIcon, PuzzleIcon, RefreshCwIcon, RotateCcwIcon, SearchIcon, ToggleLeftIcon, TriangleAlertIcon, TypeIcon } from "lucide-react";
+import { ArrowRightLeftIcon, BinaryIcon, BracesIcon, CalendarIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, CopyIcon, DatabaseIcon, FolderIcon, HashIcon, LayersIcon, LockIcon, MinusIcon, PlayIcon, PlusIcon, PuzzleIcon, RefreshCwIcon, RotateCcwIcon, SearchIcon, ToggleLeftIcon, TriangleAlertIcon, TypeIcon } from "lucide-react";
 import { memo, useMemo, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { storeKindLabels, storeKinds } from "../../shared/app-storage.ts";
 import type { StorageEntry, StorageSnapshot, StorageStore, StoreKind } from "../../shared/app-storage.ts";
 import { changesPollMs } from "../storage-panel.ts";
-import type { StorageChangeEvent, StoragePanel, StorageTab } from "../storage-panel.ts";
+import { tablePageSize } from "../../shared/app-storage.ts";
+import type { StorageChangeEvent, StoragePanel, StorageState, StorageTab } from "../storage-panel.ts";
 import { bytesAsText, changedFields, formatBytes, isSdkStore, parseJson, relativeTime, storeTitle } from "../storage-labels.ts";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
@@ -168,6 +169,44 @@ function StorageEmpty({ title, description }: { title: string; description: stri
 const entryMatches = (entry: StorageEntry, query: string) => entry.key.toLowerCase().includes(query)
   || (entry.type === "data" ? bytesAsText(entry) ?? "" : entry.value).toLowerCase().includes(query);
 
+// One page of a SQLite table as a grid. Long cells are cut short and show in full on hover.
+function TableGrid({ panel, table }: { panel: StoragePanel; table: NonNullable<StorageState["table"]> }) {
+  const data = table.data;
+  const first = data ? data.offset + 1 : 0;
+  const last = data ? data.offset + data.rows.length : 0;
+  const page = (offset: number) => void panel.openTable(table.storeId, table.name, offset);
+  return <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex h-10 shrink-0 items-center gap-2 border-b px-2 text-xs">
+      <Button variant="ghost" size="xs" onClick={() => panel.closeTable()}><ChevronLeftIcon />Tables</Button>
+      <span className="truncate font-mono font-medium">{table.name}</span>
+      {data && <span className="shrink-0 text-muted-foreground">{data.columns.length} columns</span>}
+      {table.loading && <RefreshCwIcon className="size-3.5 shrink-0 animate-spin text-muted-foreground" aria-label="Loading" />}
+      {data && <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">{data.total === 0 ? "No rows" : `${first}–${last} of ${data.total}`}</span>}
+      {data && <ButtonGroup className="shrink-0">
+        <Button variant="outline" size="icon-xs" aria-label="Previous rows" disabled={table.loading || data.offset === 0} onClick={() => page(Math.max(0, data.offset - tablePageSize))}><ChevronLeftIcon /></Button>
+        <Button variant="outline" size="icon-xs" aria-label="Next rows" disabled={table.loading || last >= data.total} onClick={() => page(data.offset + tablePageSize)}><ChevronRightIcon /></Button>
+      </ButtonGroup>}
+    </div>
+    {table.error && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription className="text-xs">{table.error}</AlertDescription></Alert>}
+    <div className="min-h-0 flex-1 overflow-auto" role="region" aria-label={`${table.name} rows`}>
+      {data && <table className="w-max min-w-full border-separate border-spacing-0 font-mono text-xs">
+        <thead className="sticky top-0 z-10 bg-background">
+          <tr>{data.columns.map(column => <th key={column.name} scope="col" className="border-b px-3 py-1.5 text-left font-sans font-medium whitespace-nowrap">
+            {column.name}{column.type && <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">{column.type.toLowerCase()}</span>}
+          </th>)}</tr>
+        </thead>
+        <tbody>{data.rows.map((row, index) => <tr key={data.offset + index} className="hover:bg-muted/50">
+          {row.map((cell, column) => <td key={column} title={cell === null ? "NULL" : String(cell)}
+            className={`max-w-80 truncate border-b px-3 py-1.5 whitespace-nowrap ${typeof cell === "number" ? "text-right text-blue-600 tabular-nums dark:text-blue-400" : cell === null || /^x'/.test(cell) ? "text-muted-foreground" : ""}`}>
+            {cell === null ? <span className="italic">NULL</span> : String(cell)}
+          </td>)}
+        </tr>)}</tbody>
+      </table>}
+      {data && data.rows.length === 0 && <p className="p-4 font-sans text-xs text-muted-foreground">This table has no rows.</p>}
+    </div>
+  </div>;
+}
+
 function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; snapshot: StorageSnapshot; query: string; copy: (text: string) => void }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const [selected, setSelected] = useState("");
@@ -182,7 +221,7 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
   const store = snapshot.stores.find(item => item.id === selected) ?? (selected === FILES ? undefined : own[0] ?? sdks[0]);
   const toggle = (store: StorageStore, key: string) => { const id = `${store.id}\u0000${key}`; setOpen(open === id ? undefined : id); };
   const visible = (store: StorageStore) => !query || (matches.get(store.id)?.length ?? 0) > 0;
-  const select = (id: string) => { setSelected(id); setOpen(undefined); };
+  const select = (id: string) => { setSelected(id); setOpen(undefined); panel.closeTable(); };
 
   const sidebar = <nav aria-label="Stores" className="h-full w-60 shrink-0 overflow-auto border-r p-1.5 text-[13px] @max-[640px]:hidden">
     <div className="px-2 pt-1 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Your app</div>
@@ -256,11 +295,15 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
         </div>
       </div>
       {store.note && <p className="flex items-center gap-1.5 border-b px-4 py-1.5 text-[11px] text-muted-foreground">{store.status === "encrypted" ? <LockIcon className="size-3" /> : store.status === "unreadable" ? <TriangleAlertIcon className="size-3" /> : null}{store.note}</p>}
-      <div className="min-h-0 flex-1 overflow-auto font-mono text-xs" role="table" aria-label={`${title(store)} entries`}>
-        {store.entries.map(entry => <EntryRow key={entry.key} entry={entry} store={store} query="" open={open === `${store.id}\u0000${entry.key}`} onToggle={() => toggle(store, entry.key)} copy={copy} />)}
+      {state.table?.storeId === store.id ? <TableGrid panel={panel} table={state.table} /> : <div className="min-h-0 flex-1 overflow-auto font-mono text-xs" role="table" aria-label={`${title(store)} entries`}>
+        {store.entries.map(entry => store.kind === "sqlite" && entry.type === "table"
+          ? <button key={entry.key} type="button" role="row" onClick={() => void panel.openTable(store.id, entry.key)} className="grid w-full grid-cols-[16px_minmax(8rem,2fr)_minmax(0,3fr)_16px] items-center gap-3 border-b px-3 py-1.5 text-left hover:bg-muted/60">
+            <DatabaseIcon className="size-4 text-muted-foreground/70" /><span role="cell" className="truncate">{entry.key}</span><span role="cell" className="truncate text-muted-foreground">{entry.value}</span><ChevronRightIcon className="size-4 text-muted-foreground" />
+          </button>
+          : <EntryRow key={entry.key} entry={entry} store={store} query="" open={open === `${store.id}\u0000${entry.key}`} onToggle={() => toggle(store, entry.key)} copy={copy} />)}
         {store.entries.length === 0 && store.status === "ok" && <p className="p-4 font-sans text-muted-foreground">Empty.</p>}
         {store.entries.length < store.entryCount && <p className="p-3 font-sans text-[11px] text-muted-foreground">Showing the first {store.entries.length} of {store.entryCount}.</p>}
-      </div>
+      </div>}
     </div>;
   }
   // Narrow panels swap the sidebar for a picker.
