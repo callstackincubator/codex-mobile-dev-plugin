@@ -1,4 +1,4 @@
-import { BinaryIcon, BracesIcon, CalendarIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, DatabaseIcon, FolderIcon, HashIcon, LayersIcon, LockIcon, MinusIcon, PlayIcon, PlusIcon, PuzzleIcon, RefreshCwIcon, RotateCcwIcon, SearchIcon, ToggleLeftIcon, TriangleAlertIcon, TypeIcon } from "lucide-react";
+import { ArrowRightLeftIcon, BinaryIcon, BracesIcon, CalendarIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, DatabaseIcon, FolderIcon, HashIcon, LayersIcon, LockIcon, MinusIcon, PlayIcon, PlusIcon, PuzzleIcon, RefreshCwIcon, RotateCcwIcon, SearchIcon, ToggleLeftIcon, TriangleAlertIcon, TypeIcon } from "lucide-react";
 import { memo, useMemo, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { storeKindLabels, storeKinds } from "../../shared/app-storage.ts";
@@ -249,13 +249,9 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
   return <div className="flex min-h-0 flex-1">{sidebar}<div className="flex min-h-0 min-w-0 flex-1 flex-col">{picker}{main}</div></div>;
 }
 
-// lucide has no tilde; this matches its 24px grid and 2px round stroke.
-function TildeIcon({ className }: { className?: string }) {
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d="M4 14c1.5-3 4-3.8 6-2s4.5 3.2 6 1.6S19 11 20 10" /></svg>;
-}
 const changeLook = {
   added: { label: "Added", icon: PlusIcon, tone: "text-emerald-600 dark:text-emerald-400" },
-  changed: { label: "Changed", icon: TildeIcon, tone: "text-amber-600 dark:text-amber-400" },
+  changed: { label: "Changed", icon: ArrowRightLeftIcon, tone: "text-amber-600 dark:text-amber-400" },
   removed: { label: "Removed", icon: MinusIcon, tone: "text-rose-600 dark:text-rose-400" },
 };
 function Old({ children }: { children: ReactNode }) { return <span className="truncate rounded bg-rose-500/10 px-1 text-rose-700 line-through decoration-rose-400/70 dark:text-rose-300">{children}</span>; }
