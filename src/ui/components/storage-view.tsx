@@ -340,7 +340,13 @@ export const StorageView = memo(function StorageView({ panel }: { panel: Storage
           }}</SelectValue>
         </SelectTrigger>
         <SelectContent align="start" alignItemWithTrigger={false} className="w-auto max-w-[min(30rem,calc(100vw-16px))] min-w-(--anchor-width)"><SelectGroup>
-          {state.apps.map(app => <SelectItem key={app.bundleId} value={app.bundleId}><AppAvatar name={app.name} icon={icon(app.bundleId)} size="xs" />{app.name}{app.name !== app.bundleId && <span className="text-xs text-muted-foreground">{app.bundleId}</span>}</SelectItem>)}
+          {state.apps.map(app => <SelectItem key={app.bundleId} value={app.bundleId} className="py-1.5">
+            <AppAvatar name={app.name} icon={icon(app.bundleId)} size="sm" />
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate leading-5">{app.name}</span>
+              {app.name !== app.bundleId && <span className="truncate text-xs leading-4 text-muted-foreground">{app.bundleId}</span>}
+            </span>
+          </SelectItem>)}
         </SelectGroup></SelectContent>
       </Select>
       <Tabs value={state.tab} onValueChange={value => panel.setTab(value as StorageTab)} className="shrink-0">
