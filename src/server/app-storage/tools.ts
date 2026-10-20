@@ -42,12 +42,12 @@ export function registerAppStorageTools(server: McpServer, commands: Commands = 
 
   registerAppTool(server, "mobile_app_storage", {
     title: "Read app storage",
-    description: "Read an app's saved data without changes to the app: MMKV, AsyncStorage, UserDefaults, SharedPreferences, DataStore, SQLite databases, and the largest files. iOS simulators, and debuggable Android builds. MMKV value types are guessed from bytes.",
+    description: "Read an app's saved data (MMKV, AsyncStorage, UserDefaults, SharedPreferences, DataStore, SQLite, largest files) on iOS simulators and debuggable Android builds. MMKV types are guessed.",
     inputSchema: {
       ...appTargetShape, bundleId,
-      store: z.string().max(4096).optional().describe("Only return this store ID from an earlier result."),
-      entries: z.number().int().min(1).max(storageLimits.maxEntries).optional().describe(`Entries per store, default ${storageLimits.entries}.`),
-      valueLength: z.number().int().min(40).max(storageLimits.maxValueLength).optional().describe(`Characters per value, default ${storageLimits.valueLength}.`),
+      store: z.string().max(4096).optional().describe("A store ID to return alone."),
+      entries: z.number().int().min(1).max(storageLimits.maxEntries).optional(),
+      valueLength: z.number().int().min(40).max(storageLimits.maxValueLength).optional(),
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     _meta: { ui: { visibility: ["app", "model"] } },
@@ -66,7 +66,8 @@ export function registerAppStorageTools(server: McpServer, commands: Commands = 
     description: "Stop the app, then delete one store from mobile_app_storage, or all of the app's saved data when store is omitted. The app stays installed and is not relaunched.",
     inputSchema: { ...appTargetShape, bundleId, store: z.string().max(4096).optional().describe("Store ID to clear. Omit to reset all app data.") },
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-    _meta: { ui: { visibility: ["app", "model"] } },
+    // Panel-only: the shared model tool budget is full, and clearing is a confirmed panel action.
+    _meta: { ui: { visibility: ["app"] } },
   }, async input => {
     const target = { platform: input.platform, deviceId: input.deviceId };
     return run(input.store ? "clear" : "reset", target, async () => {
