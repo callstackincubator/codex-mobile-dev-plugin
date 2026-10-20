@@ -207,7 +207,7 @@ memory cache and are returned only to the panel.
 
 The device popover's App tab records `ui.app_tools.list`, `.icons`, `.launch`,
 `.stop`, `.open_url`, `.permission`, `.push`, and `.language` round trips in
-milliseconds with bounded aggregate windows, and counts `ui.app_tools.failure`. Since 0.1.181 app icons come from a cache shared by
+milliseconds with bounded aggregate windows, and counts `ui.app_tools.failure`. Since 0.1.161 app icons come from a cache shared by
 every panel in the view, so an icon requested by one panel is not fetched again by
 another; each caller keeps its own timing name (`ui.app_tools.icons`, `ui.storage.icons`).
 Results that finish after a surface or device change are not recorded. Recent URLs
@@ -225,7 +225,7 @@ through `server.error.outcome`. The panel records `ui.storage.list_apps`, `.icon
 a snapshot and computing the Changes feed, gauges `ui.storage.stores` and `ui.storage.entries`,
 and counts `ui.storage.failure`. Bundle IDs, store names, paths, keys, values, and
 file names are never sent; table names and cell values from `mobile_app_storage_table`
-stay local too. Since 0.1.173 the Changes tab reads storage again every
+stay local too. Since 0.1.161 the Changes tab reads storage again every
 5 seconds while it is open and the page is visible; each read is one `ui.storage.read`
 sample, and the interval stops when the tab, panel, or page is hidden.
 
