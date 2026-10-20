@@ -35,13 +35,14 @@ const typeIcons: Record<StorageEntry["type"], typeof TypeIcon> = {
 };
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
-function KindIcon({ kind, large }: { kind: StoreKind; large?: boolean }) {
+const kindIconSizes = { sm: { box: "size-5", glyph: "size-3" }, md: { box: "size-6", glyph: "size-3.5" }, lg: { box: "size-7", glyph: "size-4" } };
+function KindIcon({ kind, size = "sm" }: { kind: StoreKind; size?: keyof typeof kindIconSizes }) {
   const { tone, tint, icon: Icon } = kindLook[kind];
   // Only the tint blends, so it takes on a hovered or selected row's grey while the icon keeps its color.
   // Multiply darkens a light row; screen lightens a dark one.
-  return <span className={`relative inline-flex shrink-0 items-center justify-center ${tone} ${large ? "size-7" : "size-5"}`} aria-hidden="true">
+  return <span className={`relative inline-flex shrink-0 items-center justify-center ${tone} ${kindIconSizes[size].box}`} aria-hidden="true">
     <span className={`absolute inset-0 rounded-md mix-blend-multiply dark:mix-blend-screen ${tint}`} />
-    <Icon className={`relative ${large ? "size-4" : "size-3"}`} />
+    <Icon className={`relative ${kindIconSizes[size].glyph}`} />
   </span>;
 }
 
@@ -112,8 +113,8 @@ function EntryRow({ entry, store, query, open, onToggle, copy }: { entry: Storag
 function StoreButton({ store, title, count, selected, onSelect }: { store: StorageStore; title: string; count: number; selected: boolean; onSelect: () => void }) {
   return <button type="button" data-selected={selected} onClick={onSelect} title={store.path}
     className="my-0.5 flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted data-[selected=true]:bg-muted">
-    <KindIcon kind={store.kind} />
-    <span className="min-w-0 flex-1"><span className="block truncate font-medium">{title}</span><span className="block truncate text-[10px] text-muted-foreground">{storeKindLabels[store.kind]}</span></span>
+    <KindIcon kind={store.kind} size="md" />
+    <span className="min-w-0 flex-1"><span className="block truncate font-medium">{title}</span><span className="block truncate text-[11px] text-muted-foreground">{storeKindLabels[store.kind]}</span></span>
     {store.status === "encrypted" ? <LockIcon className="size-3.5 text-muted-foreground" aria-label="Encrypted" />
       : store.status === "unreadable" ? <TriangleAlertIcon className="size-3.5 text-amber-500" aria-label="Unreadable" />
       : <span className="text-muted-foreground tabular-nums">{count}</span>}
@@ -177,20 +178,20 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
   const visible = (store: StorageStore) => !query || (matches.get(store.id)?.length ?? 0) > 0;
   const select = (id: string) => { setSelected(id); setOpen(undefined); };
 
-  const sidebar = <nav aria-label="Stores" className="h-full w-56 shrink-0 overflow-auto border-r p-1.5 text-xs @max-[640px]:hidden">
-    <div className="px-2 pt-1 pb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">Your app</div>
+  const sidebar = <nav aria-label="Stores" className="h-full w-60 shrink-0 overflow-auto border-r p-1.5 text-[13px] @max-[640px]:hidden">
+    <div className="px-2 pt-1 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Your app</div>
     {own.filter(visible).map(item => <StoreButton key={item.id} store={item} title={title(item)} count={query ? matches.get(item.id)?.length ?? 0 : item.entryCount} selected={!query && store?.id === item.id} onSelect={() => select(item.id)} />)}
     {own.length === 0 && <p className="px-2 py-1 text-muted-foreground">No storage written by the app yet.</p>}
     {sdks.length > 0 && <>
       <button type="button" aria-expanded={showSdks || Boolean(query)} onClick={() => setShowSdks(!showSdks)} className="mt-1 mb-0.5 flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-muted-foreground hover:bg-muted">
-        {showSdks || query ? <ChevronDownIcon className="size-3.5" /> : <ChevronRightIcon className="size-3.5" />}<PuzzleIcon className="size-3.5" /><span className="flex-1">SDKs & system</span><span className="tabular-nums">{sdks.length}</span>
+        {showSdks || query ? <ChevronDownIcon className="size-4" /> : <ChevronRightIcon className="size-4" />}<PuzzleIcon className="size-4" /><span className="flex-1">SDKs & system</span><span className="tabular-nums">{sdks.length}</span>
       </button>
       {(showSdks || query) && sdks.filter(visible).map(item => <StoreButton key={item.id} store={item} title={title(item)} count={query ? matches.get(item.id)?.length ?? 0 : item.entryCount} selected={!query && store?.id === item.id} onSelect={() => select(item.id)} />)}
     </>}
     <button type="button" data-selected={selected === FILES && !query} onClick={() => select(FILES)} className="mt-3 w-full rounded-lg border p-2.5 text-left hover:bg-muted/50 data-[selected=true]:bg-muted">
-      <span className="mb-2 flex items-center gap-2"><FolderIcon className="size-3.5 text-muted-foreground" /><span className="flex-1 font-medium">Files</span><span className="text-muted-foreground tabular-nums">{formatBytes(snapshot.totalBytes)}</span></span>
+      <span className="mb-2 flex items-center gap-2"><FolderIcon className="size-4 text-muted-foreground" /><span className="flex-1 font-medium">Files</span><span className="text-muted-foreground tabular-nums">{formatBytes(snapshot.totalBytes)}</span></span>
       <span className="flex h-1.5 overflow-hidden rounded-full bg-muted">{containerBreakdown(snapshot).map(([label, bytes, tone]) => <span key={label} className={tone} style={{ width: `${snapshot.totalBytes ? bytes / snapshot.totalBytes * 100 : 0}%` }} />)}</span>
-      <span className="mt-2 grid grid-cols-[auto_1fr_auto] items-center gap-x-1.5 gap-y-0.5 text-[10px] text-muted-foreground">
+      <span className="mt-2 grid grid-cols-[auto_1fr_auto] items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
         {containerBreakdown(snapshot).filter(([, bytes]) => bytes > 0).map(([label, bytes, tone]) => <span key={label} className="contents"><span className={`size-1.5 rounded-full ${tone}`} /><span>{label}</span><span className="tabular-nums">{formatBytes(bytes)}</span></span>)}
       </span>
     </button>
@@ -231,7 +232,7 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
     const json = () => JSON.stringify(Object.fromEntries(store.entries.map(entry => [entry.key, parseJson(entry) ?? (entry.type === "boolean" ? entry.value === "true" : entry.type === "number" || entry.type === "integer" ? Number(entry.value) : entry.type === "data" ? bytesAsText(entry) ?? entry.value : entry.value)])), null, 2);
     main = <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex items-center gap-3 border-b px-4 py-3">
-        <KindIcon kind={store.kind} large />
+        <KindIcon kind={store.kind} size="lg" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold">{title(store)}</div>
           <div className="truncate text-xs text-muted-foreground">{storeKindLabels[store.kind]} · {store.entryCount} {store.kind === "sqlite" ? "table" : "key"}{store.entryCount === 1 ? "" : "s"} · {formatBytes(store.bytes)} · <span className="font-mono">{store.path}</span></div>
