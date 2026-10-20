@@ -10,7 +10,9 @@ import { Alert, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
-import { NativeSelect, NativeSelectOption } from "./ui/native-select";
+import { ButtonGroup } from "./ui/button-group";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select";
+import { Tabs, TabsList, TabsTrigger } from "./ui/base-tabs";
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "./ui/popover";
 
 export { formatBytes } from "../storage-labels.ts";
@@ -102,7 +104,7 @@ function EntryRow({ entry, store, query, open, onToggle, copy }: { entry: Storag
 
 function StoreButton({ store, title, count, selected, onSelect }: { store: StorageStore; title: string; count: number; selected: boolean; onSelect: () => void }) {
   return <button type="button" data-selected={selected} onClick={onSelect} title={store.path}
-    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted data-[selected=true]:bg-muted">
+    className="my-0.5 flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted data-[selected=true]:bg-muted">
     <KindIcon kind={store.kind} />
     <span className="min-w-0 flex-1"><span className="block truncate font-medium">{title}</span><span className="block truncate text-[10px] text-muted-foreground">{storeKindLabels[store.kind]}</span></span>
     {store.status === "encrypted" ? <LockIcon className="size-3.5 text-muted-foreground" aria-label="Encrypted" />
@@ -125,9 +127,9 @@ function containerBreakdown(snapshot: StorageSnapshot) {
   return [["Caches", parts.Caches, "bg-neutral-400"], ["Databases", parts.Databases, "bg-emerald-500"], ["Preferences", parts.Preferences, "bg-sky-500"], ["Other", other, "bg-muted-foreground/30"]] as const;
 }
 
-function ConfirmButton({ children, title, description, action, disabled, onConfirm, className }: { children: ReactNode; title: string; description: string; action: string; disabled?: boolean; onConfirm: () => void; className?: string }) {
+function ConfirmButton({ children, title, description, action, disabled, onConfirm, className, variant = "ghost", size = "xs" }: { children: ReactNode; title: string; description: string; action: string; disabled?: boolean; onConfirm: () => void; className?: string; variant?: "ghost" | "outline"; size?: "xs" | "default" }) {
   return <Popover>
-    <PopoverTrigger asChild><button type="button" aria-label={title} title={title} disabled={disabled} className={className}>{children}</button></PopoverTrigger>
+    <PopoverTrigger asChild><Button variant={variant} size={size} aria-label={title} title={title} disabled={disabled} className={className}>{children}</Button></PopoverTrigger>
     <PopoverContent align="end" className="w-[min(300px,calc(100vw-24px))] p-3 text-xs">
       <p className="mb-1 font-medium">{title}?</p>
       <p className="mb-3 text-muted-foreground">{description}</p>
@@ -173,7 +175,7 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
     {own.filter(visible).map(item => <StoreButton key={item.id} store={item} title={title(item)} count={query ? matches.get(item.id)?.length ?? 0 : item.entryCount} selected={!query && store?.id === item.id} onSelect={() => select(item.id)} />)}
     {own.length === 0 && <p className="px-2 py-1 text-muted-foreground">No storage written by the app yet.</p>}
     {sdks.length > 0 && <>
-      <button type="button" aria-expanded={showSdks || Boolean(query)} onClick={() => setShowSdks(!showSdks)} className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-muted-foreground hover:bg-muted">
+      <button type="button" aria-expanded={showSdks || Boolean(query)} onClick={() => setShowSdks(!showSdks)} className="mt-1 mb-0.5 flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-muted-foreground hover:bg-muted">
         {showSdks || query ? <ChevronDownIcon className="size-3.5" /> : <ChevronRightIcon className="size-3.5" />}<PuzzleIcon className="size-3.5" /><span className="flex-1">SDKs & system</span><span className="tabular-nums">{sdks.length}</span>
       </button>
       {(showSdks || query) && sdks.filter(visible).map(item => <StoreButton key={item.id} store={item} title={title(item)} count={query ? matches.get(item.id)?.length ?? 0 : item.entryCount} selected={!query && store?.id === item.id} onSelect={() => select(item.id)} />)}
@@ -229,7 +231,7 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
         </div>
         {store.status === "ok" && store.kind !== "sqlite" && <Button variant="outline" size="xs" onClick={() => copy(json())}><CopyIcon />Copy as JSON</Button>}
         <ConfirmButton title={`Clear ${title(store)}`} action="Clear" disabled={busy} description={`Stops the app and deletes ${store.path}. The app is not relaunched.`} onConfirm={() => void panel.clear(store.id)}
-          className="inline-flex h-6 items-center rounded-md px-2 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50">Clear</ConfirmButton>
+          className="text-destructive hover:bg-destructive/10 hover:text-destructive">Clear</ConfirmButton>
       </div>
       {store.note && <p className="flex items-center gap-1.5 border-b px-4 py-1.5 text-[11px] text-muted-foreground">{store.status === "encrypted" ? <LockIcon className="size-3" /> : store.status === "unreadable" ? <TriangleAlertIcon className="size-3" /> : null}{store.note}</p>}
       <div className="min-h-0 flex-1 overflow-auto font-mono text-xs" role="table" aria-label={`${title(store)} entries`}>
@@ -240,11 +242,13 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
     </div>;
   }
   // Narrow panels swap the sidebar for a picker.
+  const choices = [...own, ...sdks].map(item => ({ value: item.id, label: `${title(item)} · ${storeKindLabels[item.kind]}${isSdkStore(item) ? " (SDK)" : ""}` }))
+    .concat({ value: FILES, label: `Files · ${formatBytes(snapshot.totalBytes)}` });
   const picker = !query && <div className="hidden shrink-0 border-b p-2 @max-[640px]:block">
-    <NativeSelect size="sm" aria-label="Store" className="w-full" value={store?.id ?? FILES} onChange={event => select(event.target.value)}>
-      {[...own, ...sdks].map(item => <NativeSelectOption key={item.id} value={item.id}>{title(item)} · {storeKindLabels[item.kind]}{isSdkStore(item) ? " (SDK)" : ""}</NativeSelectOption>)}
-      <NativeSelectOption value={FILES}>Files · {formatBytes(snapshot.totalBytes)}</NativeSelectOption>
-    </NativeSelect>
+    <Select items={choices} value={store?.id ?? FILES} onValueChange={value => { if (value) select(value); }}>
+      <SelectTrigger size="sm" aria-label="Store" className="w-full"><SelectValue /></SelectTrigger>
+      <SelectContent align="start" alignItemWithTrigger={false}><SelectGroup>{choices.map(choice => <SelectItem key={choice.value} value={choice.value}>{choice.label}</SelectItem>)}</SelectGroup></SelectContent>
+    </Select>
   </div>;
   return <div className="flex min-h-0 flex-1">{sidebar}<div className="flex min-h-0 min-w-0 flex-1 flex-col">{picker}{main}</div></div>;
 }
@@ -307,8 +311,6 @@ export const StorageView = memo(function StorageView({ panel }: { panel: Storage
   const search = query.trim().toLowerCase();
   const ownChanges = state.changes.filter(event => !event.sdk).length;
   const copy = (text: string) => { void navigator.clipboard.writeText(text).then(() => setCopied("Copied"), () => setCopied("Could not copy")); };
-  const tab = (value: StorageTab, label: string, count?: number) => <button type="button" role="tab" aria-selected={state.tab === value} onClick={() => panel.setTab(value)}
-    className="flex h-full items-center gap-1.5 rounded-md px-2.5 text-muted-foreground aria-selected:bg-muted aria-selected:font-medium aria-selected:text-foreground">{label}{count !== undefined && count > 0 && <span className="font-normal text-muted-foreground tabular-nums">{count}</span>}</button>;
 
   let body: ReactNode;
   if (state.unsupported || !state.available) body = <StorageEmpty title="App storage unavailable" description={state.available ? state.unsupported : "This host cannot call the plugin's tools."} />;
@@ -319,21 +321,33 @@ export const StorageView = memo(function StorageView({ panel }: { panel: Storage
 
   return <section id="storage-drawer" className="@container flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-label="Storage">
     <header className="flex h-[49px] shrink-0 items-center gap-2 border-b px-2">
-      <NativeSelect id="storage-app" aria-label="App" className="w-52 min-w-28 shrink" value={state.bundleId} disabled={!state.available || state.unsupported !== ""} onChange={event => panel.selectApp(event.target.value)}>
-        <NativeSelectOption value="">{state.busy === "apps" ? "Loading apps…" : "Choose an app"}</NativeSelectOption>
-        {state.apps.map(app => <NativeSelectOption key={app.bundleId} value={app.bundleId}>{app.name === app.bundleId ? app.bundleId : `${app.name} · ${app.bundleId}`}</NativeSelectOption>)}
-      </NativeSelect>
-      <div role="tablist" aria-label="Storage view" className="flex h-8 shrink-0 items-center gap-0.5 rounded-lg border p-0.5 text-xs">
-        {tab("browse", "Browse")}{tab("changes", "Changes", ownChanges)}
-      </div>
-      <InputGroup className="h-8 min-w-16 flex-1"><InputGroupInput className="text-xs" aria-label={state.tab === "browse" ? "Filter keys and values" : "Filter changes"} type="search" placeholder={state.tab === "browse" ? "Filter keys and values…" : "Filter changes…"} maxLength={256} autoComplete="off" spellCheck={false} value={query} onChange={event => setQuery(event.target.value)} /><InputGroupAddon className="pl-2.5"><SearchIcon className="size-4" /></InputGroupAddon></InputGroup>
-      <div className="flex h-8 shrink-0 items-center divide-x overflow-hidden rounded-lg border text-xs">
-        <button type="button" aria-label="Refresh" title={snapshot ? `Read again · last read ${timeFormat.format(snapshot.readAt)}` : "Read again"} disabled={!state.bundleId || busy} onClick={() => void panel.refresh()}
-          className="flex h-full w-8 items-center justify-center hover:bg-muted disabled:opacity-50"><RefreshCwIcon className={`size-4 ${state.busy === "read" ? "animate-spin" : ""}`} /></button>
-        <ConfirmButton title="Reset app data" action="Reset app data" disabled={!state.bundleId || busy || state.unsupported !== ""}
+      <Select items={state.apps.map(app => ({ value: app.bundleId, label: app.name }))} value={state.bundleId || null} disabled={!state.available || state.unsupported !== ""} onValueChange={value => { if (value) panel.selectApp(value); }}>
+        <SelectTrigger id="storage-app" aria-label="App" className="w-64 min-w-28 shrink">
+          <SelectValue>{(value: string | null) => {
+            const app = state.apps.find(item => item.bundleId === value);
+            if (!app) return value ? <span className="truncate">{value}</span> : <span className="text-muted-foreground">{state.busy === "apps" ? "Loading apps…" : "Choose an app"}</span>;
+            return <><span className="max-w-40 shrink-0 truncate">{app.name}</span>{app.name !== app.bundleId && <span className="min-w-0 truncate text-xs text-muted-foreground">{app.bundleId}</span>}</>;
+          }}</SelectValue>
+        </SelectTrigger>
+        <SelectContent align="start" alignItemWithTrigger={false} className="w-auto max-w-[min(30rem,calc(100vw-16px))] min-w-(--anchor-width)"><SelectGroup>
+          {state.apps.map(app => <SelectItem key={app.bundleId} value={app.bundleId}>{app.name}{app.name !== app.bundleId && <span className="text-xs text-muted-foreground">{app.bundleId}</span>}</SelectItem>)}
+        </SelectGroup></SelectContent>
+      </Select>
+      <Tabs value={state.tab} onValueChange={value => panel.setTab(value as StorageTab)} className="shrink-0">
+        <TabsList aria-label="Storage view">
+          <TabsTrigger value="browse">Browse</TabsTrigger>
+          <TabsTrigger value="changes">Changes{ownChanges > 0 && <span className="font-normal text-muted-foreground tabular-nums">{ownChanges}</span>}</TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <InputGroup className="min-w-16 flex-1"><InputGroupInput aria-label={state.tab === "browse" ? "Filter keys and values" : "Filter changes"} type="search" placeholder={state.tab === "browse" ? "Filter keys and values…" : "Filter changes…"} maxLength={256} autoComplete="off" spellCheck={false} value={query} onChange={event => setQuery(event.target.value)} /><InputGroupAddon><SearchIcon /></InputGroupAddon></InputGroup>
+      <ButtonGroup className="shrink-0">
+        <Button variant="outline" size="icon" aria-label="Refresh" title={snapshot ? `Read again · last read ${timeFormat.format(snapshot.readAt)}` : "Read again"} disabled={!state.bundleId || busy} onClick={() => void panel.refresh()}>
+          <RefreshCwIcon className={state.busy === "read" ? "animate-spin" : undefined} />
+        </Button>
+        <ConfirmButton variant="outline" size="default" title="Reset app data" action="Reset app data" disabled={!state.bundleId || busy || state.unsupported !== ""}
           description={state.platform === "android" ? "Stops the app and clears all its data with pm clear, like Settings › Clear storage. The app stays installed." : "Stops the app and deletes everything in its data container, including UserDefaults. The app stays installed."}
-          onConfirm={() => void panel.clear()} className="flex h-full items-center gap-1.5 px-2.5 hover:bg-muted disabled:opacity-50"><RotateCcwIcon className="size-4" />Reset</ConfirmButton>
-      </div>
+          onConfirm={() => void panel.clear()}><RotateCcwIcon />Reset</ConfirmButton>
+      </ButtonGroup>
     </header>
     <span className="sr-only" role="status">{copied}</span>
     {state.error && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription className="text-xs">{state.error}</AlertDescription></Alert>}
