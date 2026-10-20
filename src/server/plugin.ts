@@ -16,6 +16,7 @@ import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { z } from "zod";
 import { registerDeviceSettingsTools } from "./device-settings.ts";
 import { registerAppControlTools } from "./app-control/tools.ts";
+import { registerAppStorageTools } from "./app-storage/tools.ts";
 import { readBezel } from "./bezel.ts";
 import { ServeEmu } from "./serve-emu.ts";
 import { registerAndroidTools } from "./android-tools.ts";
@@ -123,6 +124,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   });
   const closeDeviceSettings = registerDeviceSettingsTools(server, baguette, android);
   registerAppControlTools(server);
+  registerAppStorageTools(server);
 
   const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<{ inputStatus: InputStatus; inputRepairMessage: string }> }>();
   async function panelInputStatus(udid: string) {

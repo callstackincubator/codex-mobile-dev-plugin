@@ -50,6 +50,9 @@ Track app CPU and memory, expand individual thread charts, and view device-wide 
 
 ![](/img/screenshot_performance.png)
 
+### App storage
+See what an app has saved without adding code to it: MMKV, AsyncStorage, UserDefaults, SharedPreferences, DataStore, SQLite databases, and the largest files in its data directory. Keys added or changed since the first read are marked, so you can watch stale flags and cached logins change. Clear one store or reset all app data. Works on iOS simulators and debuggable Android builds; MMKV value types are guessed from the stored bytes, and encrypted MMKV instances show as locked.
+
 
 ## Requirements
 
@@ -87,7 +90,7 @@ Ask Codex to work with your app, for example:
 - “Record CPU and memory for 30 seconds while I scroll checkout.”
 - “Compare these two performance recordings.”
 
-Open Logs or Performance to inspect the selected device. Use Screenshot to attach
+Open Logs, Performance, or Storage to inspect the selected device. Use Screenshot to attach
 an image to your next message, or Select to annotate an element or region with an
 instruction. Physical iOS supports taps and drags; keyboard and hardware-button
 controls are unavailable.

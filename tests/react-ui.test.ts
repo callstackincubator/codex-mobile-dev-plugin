@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { LogsPanel } from "../src/ui/logs-panel.ts";
 import { createDeviceApps } from "./device-apps-fixtures.ts";
 import { PerformancePanel } from "../src/ui/performance-panel.ts";
+import { StoragePanel } from "../src/ui/storage-panel.ts";
 import { RecordingController } from "../src/ui/recording-controller.ts";
 import { recordingFixture } from "./recording-fixtures.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
@@ -20,7 +21,7 @@ import type { DeviceLayout } from "../src/ui/device-layout.ts";
 
 test("React log controls filter virtual rows, attach full logs, and preserve simulator DOM", async t => {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
-  async function selectTool(tool: "logs" | "performance" | "none") {
+  async function selectTool(tool: "logs" | "performance" | "storage" | "none") {
     await act(async () => { (dom.window.document.getElementById("tool-select") as HTMLButtonElement).click(); });
     await act(async () => { (dom.window.document.getElementById(`tool-${tool}`) as HTMLElement).click(); });
   }
@@ -95,17 +96,33 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   };
 
   const performance = new PerformancePanel(performanceApp as unknown as App, deviceApps);
+  const storageCalls: string[] = [];
+  const storageApp = {
+    async callServerTool({ name }: { name: string }) {
+      storageCalls.push(name);
+      if (name === "mobile_list_apps") return { content: [], structuredContent: { apps: [{ bundleId: "com.example.app", name: "Example" }], foregroundBundleId: "com.example.app", runningBundleIds: ["com.example.app"] } };
+      return { content: [], structuredContent: { platform: "ios", bundleId: "com.example.app", readAt: Date.now(), fileCount: 3, totalBytes: 300,
+        files: [{ path: "Documents/mmkv/mmkv.default", bytes: 200, store: "mmkv:Documents/mmkv/mmkv.default" }],
+        stores: [
+          { id: "mmkv:Documents/mmkv/mmkv.default", kind: "mmkv", name: "mmkv.default", path: "Documents/mmkv/mmkv.default", status: "ok", bytes: 200, entryCount: 2,
+            entries: [{ key: "onboarding.done", type: "boolean", value: "true", bytes: 1, guessed: true }, { key: "user", type: "json", value: "{\"id\":1}", bytes: 8, guessed: true }] },
+          { id: "mmkv:Documents/mmkv/secure", kind: "mmkv", name: "secure", path: "Documents/mmkv/secure", status: "encrypted", note: "Encrypted with a key only the app knows.", bytes: 100, entryCount: 0, entries: [] },
+        ] } };
+    },
+  };
+  const storage = new StoragePanel(storageApp as unknown as App, deviceApps);
+  storage.setAvailable(true);
   const recordingController = new RecordingController(performanceApp as unknown as App);
   deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
   performance.setAvailable(true);
   deviceApps.setAvailable(true);
   const root = createRoot(dom.window.document.getElementById("root")!);
-  cleanupView = async () => { recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); deviceApps.dispose(); await performance.dispose(); }); };
+  cleanupView = async () => { recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); deviceApps.dispose(); storage.dispose(); await performance.dispose(); }); };
   const layouts: string[] = [];
   let commits = 0;
   const onLayout = (layout: string) => { layouts.push(layout); };
   const renderWorkspace = (automaticLayout?: DeviceLayout) => {
-    const workspace = createElement(Workspace, { logs: panel, performance, recordingController, automaticLayout, onLayout });
+    const workspace = createElement(Workspace, { logs: panel, performance, storage, recordingController, automaticLayout, onLayout });
     const profiled = createElement(Profiler, { id: "workspace", onRender() { commits++; } }, workspace);
     root.render(profiled);
   };
@@ -496,6 +513,18 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   await togglePlatform("android");
   assert.deepEqual(layouts, ["both", "android", "none", "ios", "both"]);
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
+  await selectTool("storage");
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  assert.deepEqual(storageCalls, ["mobile_list_apps", "mobile_app_storage"]);
+  const storageDrawer = dom.window.document.getElementById("storage-drawer")!;
+  assert.deepEqual([...storageDrawer.querySelectorAll('nav[aria-label="Stores"] button')].map(button => button.textContent), ["mmkv.default2", "secure—", "Files300 B"]);
+  const valueRow = [...storageDrawer.querySelectorAll('[role="row"]')].find(row => row.textContent?.startsWith("user")) as HTMLElement;
+  await act(async () => { valueRow.click(); });
+  assert.equal(storageDrawer.querySelector('[aria-label="Value"] pre')?.textContent, '{\n  "id": 1\n}');
+  assert.match(storageDrawer.textContent ?? "", /Type guessed from the stored bytes/);
+  assert.equal(dom.window.document.querySelector("canvas"), canvas, "The storage tool preserves the device DOM.");
+  await selectTool("logs");
+  assert.equal(dom.window.document.getElementById("storage-drawer"), null);
   await selectTool("none");
   assert.equal(dom.window.document.getElementById("logs-body")?.hidden, true);
   assert.equal(dom.window.document.querySelectorAll("[data-log-row]").length, 0);

@@ -1,10 +1,12 @@
-import { ActivityIcon, TerminalIcon, PanelsTopLeftIcon } from "lucide-react";
+import { ActivityIcon, DatabaseIcon, TerminalIcon, PanelsTopLeftIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { LogsPanel } from "../logs-panel.ts";
 import type { PerformancePanel } from "../performance-panel.ts";
+import type { StoragePanel } from "../storage-panel.ts";
 import { PerformanceView } from "./performance-view";
 import { SimulatorView } from "./simulator-view";
 import { LogsView } from "./logs-view";
+import { StorageView } from "./storage-view";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select";
 import { Button } from "./ui/button";
 
@@ -20,8 +22,12 @@ import type { PluginUpdateController } from "../plugin-updates.ts";
 import type { DeviceLayout } from "../device-layout.ts";
 export type { DeviceLayout } from "../device-layout.ts";
 
-export function Workspace({ logs, performance, recordingController, updates, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; recordingController: RecordingController; updates?: PluginUpdateController; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
-  const [tool, setTool] = useState<"logs" | "performance">("logs");
+type Tool = "logs" | "performance" | "storage";
+const toolLabels: Record<Tool, string> = { logs: "Logs", performance: "Performance", storage: "Storage" };
+const toolIcons = { logs: TerminalIcon, performance: ActivityIcon, storage: DatabaseIcon };
+
+export function Workspace({ logs, performance, storage, recordingController, updates, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; recordingController: RecordingController; updates?: PluginUpdateController; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
+  const [tool, setTool] = useState<Tool>("logs");
   const [savedVisible, setSavedVisible] = useState(false);
   const [layout, setLayout] = useState<DeviceLayout>(automaticLayout ?? "none");
   const manualLayout = useRef(false);
@@ -40,6 +46,7 @@ export function Workspace({ logs, performance, recordingController, updates, aut
     onLayout("none");
     logs.hide();
     performance.hide();
+    storage.hide();
   }, [recordingState.recording?.id]);
   const performanceState = useSyncExternalStore(performance.subscribe, performance.getSnapshot);
   const wide = useMediaQuery("(min-width: 900px)");
@@ -47,26 +54,30 @@ export function Workspace({ logs, performance, recordingController, updates, aut
   const split = wide && fullscreen;
   const collapsedToolSize = fullscreen ? (split ? 48 : 44) : 0;
   const logState = useSyncExternalStore(logs.subscribe, logs.getSnapshot);
-  const open = tool === "logs" ? logState.open : savedVisible || performanceState.open;
+  const storageState = useSyncExternalStore(storage.subscribe, storage.getSnapshot);
+  const open = tool === "logs" ? logState.open : tool === "storage" ? storageState.open : savedVisible || performanceState.open;
   useEffect(() => { setUiSurface(open ? savedVisible ? "recording" : tool : "simulator"); }, [tool, open, savedVisible]);
   useEffect(() => {
     setUiTelemetryContext({ logs_open: logState.open, logs_paused: logState.paused, performance_running: performanceState.monitoring || performanceState.fpsMonitoring });
   }, [logState.open, logState.paused, performanceState.monitoring, performanceState.fpsMonitoring]);
-  const isOpen = () => tool === "logs" ? logs.getSnapshot().open : savedVisible || performance.getSnapshot().open;
+  const isOpen = () => tool === "logs" ? logs.getSnapshot().open : tool === "storage" ? storage.getSnapshot().open : savedVisible || performance.getSnapshot().open;
   const closeTools = () => {
     setSavedVisible(false);
     if (logs.getSnapshot().open) logs.toggle();
     performance.hide();
+    storage.hide();
     void performance.disconnect();
   };
-  const showTool = (next: "logs" | "performance") => {
+  const showTool = (next: Tool) => {
     const startedAt = globalThis.performance.now();
     if (next === tool && isOpen()) { closeTools(); return; }
     setUiSurface(next);
     setTool(next);
     setSavedVisible(false);
+    if (next !== "storage") storage.hide();
     if (next === "logs") { performance.hide(); logs.show(); }
-    else { logs.hide(); performance.show(); }
+    else if (next === "performance") { logs.hide(); performance.show(); }
+    else { logs.hide(); performance.hide(); storage.show(); }
     markUiSurfaceReady(startedAt);
   };
   const logsRef = usePanelRef();
@@ -82,21 +93,23 @@ export function Workspace({ logs, performance, recordingController, updates, aut
     if (!previous) return;
     if (size.inPixels <= collapsedToolSize + 1 && isOpen()) closeTools();
     else if (size.inPixels > 80 && isOpen() === false) showTool(tool);
-  }}>{tool === "logs" && <LogsView panel={logs} />}{tool === "performance" && open && (savedVisible ? <div className="recording-workspace"><Button variant="outline" size="sm" onClick={() => { setSavedVisible(false); performance.show(); }}>Live performance</Button><RecordingCard controller={recordingController} detailed /></div> : <PerformanceView panel={performance} />)}</ResizablePanel>;
+  }}>{tool === "logs" && <LogsView panel={logs} />}{tool === "storage" && <StorageView panel={storage} />}{tool === "performance" && open && (savedVisible ? <div className="recording-workspace"><Button variant="outline" size="sm" onClick={() => { setSavedVisible(false); performance.show(); }}>Live performance</Button><RecordingCard controller={recordingController} detailed /></div> : <PerformanceView panel={performance} />)}</ResizablePanel>;
   // The sidebar keeps these controls under its simulators. Fullscreen, or no visible
   // platform, moves them above the tools.
   const bottomToolbar = !fullscreen && layout !== "none";
   const menuSide = bottomToolbar ? "top" : "bottom";
+  const ToolIcon = toolIcons[tool];
   const toolbar = <nav className={`workspace-toolbar @container flex h-12 shrink-0 items-center justify-between gap-2 px-2 ${bottomToolbar ? "border-t" : "border-y"}`} aria-label="Developer tools">
-    <Select items={[{ value: "none", label: "Tools" }, { value: "logs", label: "Logs" }, { value: "performance", label: "Performance" }]} value={open ? tool : "none"} onValueChange={value => {
+    <Select items={[{ value: "none", label: "Tools" }, { value: "logs", label: "Logs" }, { value: "performance", label: "Performance" }, { value: "storage", label: "Storage" }]} value={open ? tool : "none"} onValueChange={value => {
       if (value === "none") closeTools();
-      else if (value === "logs" || value === "performance") showTool(value);
+      else if (value === "logs" || value === "performance" || value === "storage") showTool(value);
     }}>
-      <SelectTrigger id="tool-select" size="sm" className="shrink-0" aria-label="Developer tools"><SelectValue>{open ? tool === "logs" ? <TerminalIcon /> : <ActivityIcon /> : <PanelsTopLeftIcon />}<span className="@max-[600px]:sr-only">{open ? tool === "logs" ? "Logs" : "Performance" : "Tools"}</span></SelectValue></SelectTrigger>
+      <SelectTrigger id="tool-select" size="sm" className="shrink-0" aria-label="Developer tools"><SelectValue>{open ? <ToolIcon /> : <PanelsTopLeftIcon />}<span className="@max-[600px]:sr-only">{open ? toolLabels[tool] : "Tools"}</span></SelectValue></SelectTrigger>
       <SelectContent side={menuSide} align="start" alignItemWithTrigger={false}><SelectGroup>
         <SelectItem id="tool-none" value="none">Hide tools</SelectItem>
         <SelectItem id="tool-logs" value="logs"><TerminalIcon />Logs</SelectItem>
         <SelectItem id="tool-performance" value="performance"><ActivityIcon />Performance</SelectItem>
+        <SelectItem id="tool-storage" value="storage"><DatabaseIcon />Storage</SelectItem>
       </SelectGroup></SelectContent>
     </Select>
     <Select multiple items={[{ value: "ios", label: "iOS" }, { value: "android", label: "Android" }]} value={layout === "both" ? ["ios", "android"] : layout === "none" ? [] : [layout]} onValueChange={values => {
