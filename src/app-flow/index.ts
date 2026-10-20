@@ -5,7 +5,13 @@ import type {
 } from '../shared/app-flow.ts'
 import { parseProject } from './parser.ts'
 import { AppFlowBuilder } from './orchestrator.ts'
-import { bootDevice, closeDevice, waitForAppReady, type CaptureDevice } from './capture.ts'
+import {
+  bootDevice,
+  closeDevice,
+  waitForAppReady,
+  type CaptureContext,
+  type CaptureDevice
+} from './capture.ts'
 import { requiresDecisionProvider, resolveAppFlowStart } from './start-request.ts'
 import { clearSavedAppFlow, getProjectId, readAppFlowForRenderer, readManifest } from './storage.ts'
 import { configureAppFlowHost, type AppFlowHostPorts } from './host.ts'
@@ -17,12 +23,30 @@ const builders = new Map<string, AppFlowBuilder>()
  * through the same `cancel` the panel already calls for a sweep.
  */
 const exploring = new Map<string, AbortController>()
-/** Apps the user launched from the App Flow screen, kept running for a later sweep to adopt. */
-const launchedApps = new Map<string, CaptureDevice>()
+/**
+ * Apps the user launched from the App Flow screen, kept running for a later sweep to adopt.
+ *
+ * The context is kept beside the device because every adopter needs it and none of them can
+ * reconstruct it faithfully: it names the agent-device session the device's client was opened
+ * under, and a second context built from `readAppConfig` would be a different session that
+ * `closeDevice` would then shut down out from under this one. The UI-state pass used to rebuild
+ * it from `parseProject` on every call; it now borrows this one and adds its own signal.
+ */
+const launchedApps = new Map<string, { device: CaptureDevice; ctx: CaptureContext }>()
 const launching = new Set<string>()
 
 export function getAppFlowBuilders(): Map<string, AppFlowBuilder> {
   return builders
+}
+
+/**
+ * The apps the user has launched and left running, for the surfaces that can work on one instead
+ * of opening a device of their own — the sweep (through `launchedDevice`), the UI-state pass, and
+ * the manual path recorder. Read-only by convention: `launchApp` owns every entry and is the only
+ * thing that closes one.
+ */
+export function getLaunchedApps(): ReadonlyMap<string, { device: CaptureDevice; ctx: CaptureContext }> {
+  return launchedApps
 }
 
 export function createAppFlowService(host: AppFlowHostPorts): {
@@ -100,7 +124,7 @@ export function createAppFlowService(host: AppFlowHostPorts): {
         const previous = launchedApps.get(projectId)
         if (previous) {
           launchedApps.delete(projectId)
-          await closeDevice(previous)
+          await closeDevice(previous.device)
         }
         const ctx = {
           projectPath,
@@ -119,7 +143,7 @@ export function createAppFlowService(host: AppFlowHostPorts): {
           await closeDevice(device)
           throw error
         }
-        launchedApps.set(projectId, device)
+        launchedApps.set(projectId, { device, ctx })
         return { ok: true }
       } catch (error) {
         console.error('[app-flow] launch failed:', error)
@@ -139,14 +163,15 @@ export function createAppFlowService(host: AppFlowHostPorts): {
       }
       // The app must already be up: this pass opens states on the screen the user left it on, and
       // relaunching would throw that screen away before anything could be captured.
-      const device = launchedApps.get(projectId)
-      if (!device) {
+      const launched = launchedApps.get(projectId)
+      if (!launched) {
         return {
           ok: false,
           error: 'Launch the app from the App Flow screen first, then start UI explore.',
           expected: true
         }
       }
+      const device = launched.device
       const parsed = await parseProject(projectPath)
       if (!parsed) {
         return {
@@ -158,17 +183,7 @@ export function createAppFlowService(host: AppFlowHostPorts): {
       }
       const controller = new AbortController()
       exploring.set(projectId, controller)
-      const ctx = {
-        projectPath,
-        projectId,
-        scheme: parsed.scheme,
-        appName: parsed.appName,
-        bundleId: parsed.bundleId,
-        slug: parsed.slug,
-        platform: 'ios' as const,
-        sessionName: projectId,
-        signal: controller.signal
-      }
+      const ctx = { ...launched.ctx, signal: controller.signal }
       const emit = (event: {
         type: 'phase' | 'step' | 'error' | 'complete'
         message: string
@@ -232,7 +247,7 @@ export function createAppFlowService(host: AppFlowHostPorts): {
       }
 
       if (launching.has(projectId)) return { ok: false, error: 'App is still launching.' }
-      const launchedDevice = launchedApps.get(projectId)
+      const launchedDevice = launchedApps.get(projectId)?.device
 
       builder = new AppFlowBuilder()
       builders.set(projectId, builder)

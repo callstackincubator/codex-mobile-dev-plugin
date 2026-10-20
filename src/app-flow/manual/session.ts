@@ -31,6 +31,7 @@ import {
   capturePressables,
   captureScreenshot,
   closeDevice,
+  endLiveSession,
   pressWithLocator,
   replayPathToReach,
   saveAndReplayRecording,
@@ -52,11 +53,22 @@ import {
   writeAppFlow
 } from '../storage.ts'
 import { fillCommand, isPortable, pressCommand, pressPointCommand, scrollCommand } from './commands.ts'
+import { recordRuntimeCount, recordRuntimeTiming } from '../runtime-telemetry.ts'
 import { contentMatchedSelectors } from '../path-minimize.ts'
 import { destinationLocator, locatorFor, rectCenter } from './locators.ts'
 
-/** How often the panel's wireframe is refreshed while the user is deciding what to tap. */
-const SNAPSHOT_INTERVAL_MS = 2_000
+/**
+ * How long the wireframe rests between refreshes while the user is deciding what to tap.
+ *
+ * Measured from the *end* of one snapshot to the start of the next, not on a fixed interval. A
+ * read of the accessibility tree is itself most of a second on a dense screen, and a fixed 1s
+ * interval would fire the next tick while the previous one still held the agent-device session:
+ * every one of those is dropped by the `busy` guard, so the panel would refresh no faster while
+ * the user's next tap waited behind an in-flight read (`waitForIdle`). Resting a second between
+ * reads keeps the wireframe about as fresh as the device can report it and still leaves a window
+ * for the tap, which is the interaction that actually matters.
+ */
+const SNAPSHOT_REST_MS = 1_000
 
 function log(step: string, detail?: string): void {
   console.log(detail ? `[app-flow:manual] ${step} — ${detail}` : `[app-flow:manual] ${step}`)
@@ -66,10 +78,44 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/**
+ * Where the device a session runs on came from, which is also who owns it afterwards.
+ *
+ * `launched` is the app the user started from the App Flow screen — the sweep already adopts it
+ * (`AppFlowBuilder.start`'s `launchedDevice`), and the recorder now does too, so pressing "Record
+ * path" on a running app costs a relaunch rather than a build, a boot and a Metro cold start.
+ * `warm` is a device a previous recording on this project left parked. `booted` is this session's
+ * own, and the only one `closeDevice` may ever be called on by default.
+ */
+export type ManualDeviceSource = 'launched' | 'warm' | 'booted'
+
+/** A device acquired before the session was constructed, with the context it was opened under. */
+export interface PreparedManualDevice {
+  device: CaptureDevice
+  ctx: CaptureContext
+  source: Exclude<ManualDeviceSource, 'booted'>
+}
+
+/**
+ * What a finished session does with its device instead of always closing it.
+ *
+ * `done` is a stop or a discard — the device is healthy and worth keeping for the next recording.
+ * `failed` is a session that threw, where the device's state is unknown and closing is the only
+ * safe answer.
+ */
+export type ReleaseManualDevice = (
+  device: CaptureDevice,
+  ctx: CaptureContext | null,
+  outcome: { source: ManualDeviceSource; reason: 'done' | 'failed' }
+) => Promise<void>
+
 export class ManualSession extends EventEmitter {
   private readonly projectPath: string
   private readonly projectId: string
   private readonly nodeId: string
+  private readonly prepared: PreparedManualDevice | null
+  private readonly release: ReleaseManualDevice
+  private deviceSource: ManualDeviceSource = 'booted'
   private device: CaptureDevice | null = null
   private ctx: CaptureContext | null = null
   private node: AppFlowNode | null = null
@@ -90,12 +136,20 @@ export class ManualSession extends EventEmitter {
   constructor(
     projectPath: string,
     projectId: string,
-    nodeId: string
+    nodeId: string,
+    options: { prepared?: PreparedManualDevice | null; release?: ReleaseManualDevice } = {}
   ) {
     super()
     this.projectPath = projectPath
     this.projectId = projectId
     this.nodeId = nodeId
+    this.prepared = options.prepared ?? null
+    this.release = options.release ?? ((device) => closeDevice(device))
+  }
+
+  /** Which device this session is running on — read by the service for its own bookkeeping. */
+  get source(): ManualDeviceSource {
+    return this.deviceSource
   }
 
   private emitEvent(event: ManualRecordingEvent): void {
@@ -126,7 +180,8 @@ export class ManualSession extends EventEmitter {
     }
     this.node = node
 
-    this.ctx = await manualCaptureContext(this.projectPath, this.projectId)
+    const startedAt = Date.now()
+    this.ctx = this.prepared?.ctx ?? (await manualCaptureContext(this.projectPath, this.projectId))
 
     // Creates `flows/` and `screens/` if a previous build left them missing, and refreshes the
     // registry's `lastOpenedAt` — the user is working on this project right now.
@@ -134,8 +189,23 @@ export class ManualSession extends EventEmitter {
     this.candidatePath = join(getFlowsDir(this.projectId), `.${node.slug}.manual.candidate.ad`)
     this.publishedPath = join(getFlowsDir(this.projectId), `${node.slug}.ad`)
 
-    this.status('starting', 'Booting simulator')
-    this.device = await bootDevice(this.ctx)
+    if (this.prepared) {
+      // The expensive half of a start — the native build, the simulator boot and Metro's cold
+      // start — has already been paid for by whoever opened this device. Skipping it is the whole
+      // point of handing one in; the relaunch below is still taken, because the recorded script's
+      // first line has to be `open --relaunch` for it to replay from any state.
+      this.deviceSource = this.prepared.source
+      this.device = this.prepared.device
+      log('start', `reusing the ${this.prepared.source} device — no build, boot or Metro start`)
+      this.status(
+        'starting',
+        this.prepared.source === 'launched' ? 'Reusing the app you launched' : 'Reusing the running app'
+      )
+    } else {
+      this.deviceSource = 'booted'
+      this.status('starting', 'Booting simulator')
+      this.device = await bootDevice(this.ctx)
+    }
 
     this.status('starting', 'Launching app')
     // Opens with `saveScript`, so the launch itself is the first line of the recording. This is
@@ -144,8 +214,14 @@ export class ManualSession extends EventEmitter {
     await startReplayRecording(this.ctx, this.device, this.candidatePath, this.device.launchUrl)
 
     this.status('recording')
+    // One measurement per started recording, with the device's provenance as a closed-set
+    // attribute: this is the series that says whether reuse is actually happening and what it
+    // saves. No screen, node, route or device identity rides on it.
+    recordRuntimeTiming('app_flow.manual.start', Date.now() - startedAt, {
+      device: this.deviceSource
+    })
     await this.tick()
-    this.pollTimer = setInterval(() => void this.tick(), SNAPSHOT_INTERVAL_MS)
+    this.schedulePoll()
   }
 
   /**
@@ -198,6 +274,7 @@ export class ManualSession extends EventEmitter {
 
     this.busy = true
     this.status('acting')
+    const startedAt = Date.now()
     try {
       const step = await this.perform(ctx, device, action)
       this.literalCommands.push(step.command)
@@ -210,12 +287,36 @@ export class ManualSession extends EventEmitter {
       })
       await waitForRoute()
       this.status('recording')
+      recordRuntimeTiming('app_flow.manual.act', Date.now() - startedAt, {
+        action: action.type,
+        outcome: 'ok'
+      })
+    } catch (error) {
+      // A failed interaction is not a failed session, and the panel must say so: without this the
+      // status stayed on `acting` forever and the header read "Sending the command…" over a
+      // session that had already given up, with no way to tell it apart from a slow tap. The
+      // session is still live and the user can try another element — which is exactly what
+      // `recording` means.
+      recordRuntimeTiming('app_flow.manual.act', Date.now() - startedAt, {
+        action: action.type,
+        outcome: 'failed'
+      })
+      this.status('recording')
+      throw error
     } finally {
       this.busy = false
+      // Both outcomes, and in a `finally` rather than after the try: a failed interaction rethrows
+      // from the catch above, and re-arming the poll anywhere the throw can skip would freeze the
+      // wireframe for the rest of the session — the self-rescheduling poll has no standing
+      // interval to fall back on. A failed tap can still have moved the app, so the refresh is
+      // worth taking on that path too.
+      //
+      // Refreshing now rather than waiting out the rest: agent-device `@ref`s expire after any
+      // action, and the user is looking at a wireframe of the screen they just left. The poll's
+      // rest restarts from here, so the queued tick cannot land on top of this one.
+      await this.tick()
+      this.schedulePoll()
     }
-    // Refresh immediately rather than waiting out the interval: agent-device `@ref`s expire after
-    // any action, and the user is looking at a wireframe of the screen they just left.
-    await this.tick()
   }
 
   private async perform(
@@ -341,7 +442,11 @@ export class ManualSession extends EventEmitter {
       replayVerified,
       ...(fallbackReason ? { fallbackReason } : {})
     })
-    await this.teardown()
+    recordRuntimeCount('app_flow.manual.stop', {
+      outcome: replayVerified ? 'verified' : 'fallback',
+      device: this.deviceSource
+    })
+    await this.teardown('done')
   }
 
   private async collectPressables(
@@ -444,32 +549,59 @@ export class ManualSession extends EventEmitter {
 
   async cancel(): Promise<void> {
     if (this.finished) return
+    // Waited out for the same reason `stop` waits: everything below releases the device, and since
+    // a discarded recording now hands that device to the next session rather than closing it, a
+    // snapshot still in flight would have its session closed underneath it and its read would land
+    // on whatever opens next. `finished` is set after the wait so the in-flight tick's own
+    // rescheduling is what `stopPolling` below cancels.
+    await this.waitForIdle()
     this.finished = true
     this.stopPolling()
+    // Ends the `--saveScript` transaction this session armed and clears the marker with it. It
+    // used to be enough to let `closeDevice` take the whole session down, but a discarded
+    // recording now hands its device on to the next one: a live transaction left armed on it
+    // would suppress every later `goHome`, and agent-device would refuse to arm the next
+    // recording over it. See `endLiveSession` and `armed-recording.ts`.
+    if (this.device) await endLiveSession(this.device)
     await unlink(this.candidatePath).catch(() => undefined)
     this.status('stopped', 'Recording discarded')
-    await this.teardown()
+    await this.teardown('done')
   }
 
   /**
    * Always runs, on every exit path. A leaked agent-device session keeps the iOS runner lease, and
    * the next sweep fails with "iOS runner is already owned by another agent-device daemon".
+   *
+   * What "release" means is the service's call, not this class's: a device the user launched is
+   * handed back untouched, this session's own is parked for the next recording to reuse, and a
+   * failed session's is closed. The default — used by tests and any caller that hands in nothing —
+   * is still `closeDevice`, so nothing leaks by omission.
    */
-  async teardown(): Promise<void> {
+  async teardown(reason: 'done' | 'failed' = 'done'): Promise<void> {
     this.stopPolling()
     const device = this.device
+    const ctx = this.ctx
     this.device = null
     if (!device) return
     try {
-      await closeDevice(device)
+      await this.release(device, ctx, { source: this.deviceSource, reason })
     } catch (error) {
-      console.error('Failed to close manual recording device:', error)
+      console.error('Failed to release manual recording device:', error)
     }
+  }
+
+  /** Queues the next wireframe refresh, a rest after whatever the last one cost. */
+  private schedulePoll(): void {
+    if (this.finished) return
+    this.stopPolling()
+    this.pollTimer = setTimeout(() => {
+      void this.tick().finally(() => this.schedulePoll())
+    }, SNAPSHOT_REST_MS)
   }
 
   private stopPolling(): void {
     if (!this.pollTimer) return
-    clearInterval(this.pollTimer)
+    clearTimeout(this.pollTimer)
     this.pollTimer = null
   }
 
@@ -477,6 +609,9 @@ export class ManualSession extends EventEmitter {
   async failed(error: unknown): Promise<void> {
     this.finished = true
     this.stopPolling()
+    // Same reason as `cancel`'s, and it matters even here: a failed session on a device the user
+    // launched releases that device back untouched rather than closing it.
+    if (this.device) await endLiveSession(this.device).catch(() => undefined)
     await unlink(this.candidatePath).catch(() => undefined)
     this.emitEvent({
       type: 'error',
@@ -484,6 +619,6 @@ export class ManualSession extends EventEmitter {
       nodeId: this.nodeId,
       message: errorMessage(error)
     })
-    await this.teardown()
+    await this.teardown('failed')
   }
 }

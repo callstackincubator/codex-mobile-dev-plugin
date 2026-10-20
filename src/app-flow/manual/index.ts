@@ -4,39 +4,132 @@
  * renderer, and work started without awaiting so the IPC call returns immediately.
  */
 import type { ManualRecordingAction, ManualRecordingEvent } from '../../shared/app-flow.ts'
-import { bootDevice, closeDevice, type CaptureDevice } from '../capture.ts'
-import { getAppFlowBuilders } from '../index.ts'
+import { bootDevice, closeDevice, type CaptureContext, type CaptureDevice } from '../capture.ts'
+import { isMetroReady } from '../../server/app-flow-deps/metro/port.ts'
+import { getAppFlowBuilders, getLaunchedApps } from '../index.ts'
 import { getProjectId, readAgentDeviceScreens } from '../storage.ts'
 import { manualCaptureContext } from './context.ts'
 import { runPathToReach } from '../path-run.ts'
-import { ManualSession } from './session.ts'
+import { ManualSession, type PreparedManualDevice } from './session.ts'
 import { configureAppFlowHost, type AppFlowHostPorts } from '../host.ts'
 
 const sessions = new Map<string, ManualSession>()
 
 /**
- * Devices left running by the Replay button, keyed by project id.
+ * Devices this module opened and is keeping warm, keyed by project id.
  *
- * Replay exists to put the app on a screen and leave it there, so it cannot close its own device —
- * `closeDevice` shuts the agent-device session down, and the app under test goes with the runner.
- * What that leaks is the Metro child process and its log file, which only `closeDevice` reaps, so
- * the device is parked here and closed by whatever starts next on this project. The agent-device
- * session itself needs no such care: `bootDevice` opens with a `sessions.close` that drops any
- * leftover one.
+ * Two kinds of caller park one here, for the same reason. Replay exists to put the app on a screen
+ * and leave it there, so it cannot close its own device — `closeDevice` shuts the agent-device
+ * session down, and the app under test goes with the runner. A finished recording is the same
+ * situation seen from the other end: the user has just saved a path and, far more often than not,
+ * the next thing they do is record a path to another screen, and closing the device between the
+ * two meant paying a simulator boot and a Metro cold start again for a device that was healthy.
+ *
+ * So a device is parked rather than closed, reused by whatever starts next on this project, and
+ * closed when it goes stale, when its idle window expires, or when a sweep needs the runner.
  */
-const lingering = new Map<string, CaptureDevice>()
+const warmDevices = new Map<string, { device: CaptureDevice; ctx: CaptureContext; timer: NodeJS.Timeout }>()
 
-async function closeLingeringDevice(projectId: string): Promise<void> {
-  const device = lingering.get(projectId)
-  if (!device) return
-  lingering.delete(projectId)
-  await closeDevice(device).catch((error: unknown) => {
-    console.error('[app-flow:manual] could not close the parked replay device:', error)
+/**
+ * How long a parked device waits for the next recording before closing itself.
+ *
+ * It holds a booted simulator, an agent-device session and a Metro process, and nothing else can
+ * reap them: the panel can be closed, the project switched, or the user can simply walk away, and
+ * none of those reach this module. Ten minutes is long enough to cover "record the next screen"
+ * — the case the parking exists for — and short enough that a forgotten session is not still
+ * holding the iOS runner an hour later.
+ */
+const WARM_DEVICE_IDLE_MS = 10 * 60 * 1000
+
+async function closeWarmDevice(projectId: string): Promise<void> {
+  const parked = warmDevices.get(projectId)
+  if (!parked) return
+  warmDevices.delete(projectId)
+  clearTimeout(parked.timer)
+  await closeDevice(parked.device).catch((error: unknown) => {
+    console.error('[app-flow:manual] could not close the parked device:', error)
   })
+}
+
+function parkWarmDevice(projectId: string, device: CaptureDevice, ctx: CaptureContext): void {
+  const timer = setTimeout(() => {
+    console.log('[app-flow:manual] parked device idle — closing it')
+    void closeWarmDevice(projectId)
+  }, WARM_DEVICE_IDLE_MS)
+  // Never hold the process open for a device nobody is waiting on.
+  timer.unref?.()
+  warmDevices.set(projectId, { device, ctx, timer })
+}
+
+/** Whether the dev server a device was opened against is still answering on its port. */
+async function metroAlive(device: CaptureDevice): Promise<boolean> {
+  if (device.launchProcess && device.launchProcess.exitCode !== null) return false
+  return device.metroPort > 0 ? isMetroReady(device.metroPort) : false
+}
+
+/**
+ * The device the next recording should run on, cheapest first.
+ *
+ * 1. The app the user launched from the App Flow screen. This is the case the panel's "Record
+ *    path" button hits most often — the user has the app up, they can see the screen they want a
+ *    path to — and reusing it skips the native build, the boot and Metro entirely. It is owned by
+ *    `launchApp`, so it is borrowed and never closed here.
+ * 2. A device a previous recording or replay on this project parked, which is what makes the
+ *    second "Record path" of a sitting cheap after the first one paid for the boot.
+ * 3. Nothing, meaning the session boots its own.
+ *
+ * Every reuse is probed first. A stale device is strictly worse than a slow one: the app would
+ * relaunch against a dev server that is gone and every step of the recording would fail minutes
+ * later, where a fresh boot just works.
+ */
+async function prepareDevice(projectId: string): Promise<PreparedManualDevice | null> {
+  const launched = getLaunchedApps().get(projectId)
+  if (launched) {
+    if (await metroAlive(launched.device)) {
+      // Our own parked device is redundant while a launched one is up, and holding both means two
+      // simulators and two Metro processes for one project.
+      await closeWarmDevice(projectId)
+      return { device: launched.device, ctx: launched.ctx, source: 'launched' }
+    }
+    console.log('[app-flow:manual] the launched app’s dev server is gone — not adopting it')
+  }
+
+  const parked = warmDevices.get(projectId)
+  if (!parked) return null
+  warmDevices.delete(projectId)
+  clearTimeout(parked.timer)
+  if (!(await metroAlive(parked.device))) {
+    console.log('[app-flow:manual] parked device’s dev server is gone — closing it and booting fresh')
+    await closeDevice(parked.device).catch(() => undefined)
+    return null
+  }
+  try {
+    // Idempotent, and the cheapest proof that the simulator is still there and the agent-device
+    // session can be re-established: the same call `bootDevice` makes on a cold start.
+    await parked.device.client.devices.boot({
+      platform: 'ios',
+      target: 'mobile',
+      udid: parked.device.deviceId
+    })
+  } catch (error) {
+    console.log(`[app-flow:manual] parked device did not answer (${String(error)}) — booting fresh`)
+    await closeDevice(parked.device).catch(() => undefined)
+    return null
+  }
+  return { device: parked.device, ctx: parked.ctx, source: 'warm' }
 }
 
 export function createManualRecordingService(host: AppFlowHostPorts): {
   isActive: (projectPath: string) => boolean
+  /**
+   * Close any device this module is keeping warm for a project.
+   *
+   * Called before a sweep, a launch or a UI-state pass starts: a parked agent-device session holds
+   * the iOS runner lease, and the next thing to want it fails with "iOS runner is already owned by
+   * another agent-device daemon". Parking buys a cheaper second recording, never at the price of
+   * the surface beside it.
+   */
+  releaseDevices: (projectPath: string) => Promise<void>
   start: (
     projectPath: string,
     nodeId: string
@@ -55,6 +148,7 @@ export function createManualRecordingService(host: AppFlowHostPorts): {
   configureAppFlowHost(host)
   return {
     isActive: (projectPath: string) => sessions.has(getProjectId(projectPath)),
+    releaseDevices: (projectPath: string) => closeWarmDevice(getProjectId(projectPath)),
     start: async (projectPath: string, nodeId: string) => {
       const projectId = getProjectId(projectPath)
       // A sweep and a manual session would fight over the same simulator and the same `.ad` files.
@@ -64,9 +158,25 @@ export function createManualRecordingService(host: AppFlowHostPorts): {
       if (sessions.has(projectId)) {
         return { ok: false, error: 'A recording is already in progress for this project.' }
       }
-      await closeLingeringDevice(projectId)
 
-      const session = new ManualSession(projectPath, projectId, nodeId)
+      const prepared = await prepareDevice(projectId)
+      const session = new ManualSession(projectPath, projectId, nodeId, {
+        prepared,
+        /**
+         * A device the user launched goes back untouched — `launchApp` owns it, and closing it
+         * here would pull the app out from under the panel's Launch state. One this module opened
+         * is parked for the next recording unless the session failed, where its state is unknown
+         * and closing is the only safe answer.
+         */
+        release: async (device, ctx, outcome) => {
+          if (outcome.source === 'launched') return
+          if (outcome.reason === 'failed' || !ctx) {
+            await closeDevice(device)
+            return
+          }
+          parkWarmDevice(projectId, device, ctx)
+        }
+      })
       sessions.set(projectId, session)
       session.on('event', (event: ManualRecordingEvent) => {
         host.emit(event)
@@ -150,7 +260,6 @@ export function createManualRecordingService(host: AppFlowHostPorts): {
         return { ok: false, error: 'This screen has no recorded path to replay yet.' }
       }
 
-      await closeLingeringDevice(projectId)
       console.log(
         `[app-flow:manual] replay ${nodeId} for ${projectPath} (${projectId})` +
           // Said out loud before the device is booted, because this is the one place that knows
@@ -163,11 +272,15 @@ export function createManualRecordingService(host: AppFlowHostPorts): {
             ? ` — matches on rendered content: ${entry.pathContentSelectors.join(', ')}`
             : '')
       )
-      const ctx = await manualCaptureContext(projectPath, projectId)
-      const device = await bootDevice(ctx)
+      // Same ladder as a recording's: the app the user launched, then a device a previous
+      // recording parked, then a boot of our own.
+      const prepared = await prepareDevice(projectId)
+      const ctx = prepared?.ctx ?? (await manualCaptureContext(projectPath, projectId))
+      const device = prepared?.device ?? (await bootDevice(ctx))
       // Parked before the walk, not after: if a step throws, the device is still up and still owns
-      // a Metro process, and the next start is the only thing that will ever clean it up.
-      lingering.set(projectId, device)
+      // a Metro process, and the next start is the only thing that will ever clean it up. A device
+      // the user launched is not ours to park — `launchApp` already holds it.
+      if (prepared?.source !== 'launched') parkWarmDevice(projectId, device, ctx)
       try {
         await runPathToReach(ctx, device, entry.pathToReach)
         return { ok: true }

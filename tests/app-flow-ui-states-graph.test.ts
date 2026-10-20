@@ -6,6 +6,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+const VIEW_OPTIONS = [{ value: "flow", label: "Flow graph" }, { value: "ui-states", label: "UI states" }];
+
 test("captured UI states ride on their screen's node, collapsed until asked for", async t => {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
   const previous = new Map<string, PropertyDescriptor | undefined>();
@@ -56,11 +58,13 @@ test("captured UI states ride on their screen's node, collapsed until asked for"
   };
   const root = createRoot(dom.window.document.getElementById("root")!);
   cleanup = async () => { await act(async () => { root.unmount(); }); };
-  await act(async () => { root.render(createElement(AppFlowGraph, { nodes, edges: [], entryScreenIds: ["home"], projectId: "project-1", panel })); });
+  await act(async () => { root.render(createElement(AppFlowGraph, { nodes, edges: [], entryScreenIds: ["home"], projectId: "project-1", panel,
+    view: "flow", viewOptions: VIEW_OPTIONS, onViewChange: () => {} })); });
   await act(async () => { await Promise.resolve(); });
 
   const buttons = () => Array.from(dom.window.document.querySelectorAll("button")) as HTMLButtonElement[];
-  const toggles = buttons().filter(button => button.hasAttribute("aria-expanded"));
+  // The canvas pickers are buttons with `aria-expanded` too, so read the strip toggles by label.
+  const toggles = buttons().filter(button => /captured UI state/.test(button.getAttribute("aria-label") ?? ""));
   assert.equal(toggles.length, 1, "only the screen with captured states grows a strip");
   const toggle = toggles[0];
   assert.equal(toggle.getAttribute("aria-expanded"), "false", "collapsed at rest, so a dense graph is unchanged");
@@ -104,18 +108,20 @@ test("captured UI states ride on their screen's node, collapsed until asked for"
   await act(async () => { await Promise.resolve(); });
   assert.equal(mainImage().getAttribute("alt"), "Home", "Base puts the sweep's own capture back");
 
-  // The jump pickers. A UI state has no node of its own on this canvas, so choosing one has to
-  // reach into the screen that opened it: open its strip and put that frame up.
-  const select = (label: string) => dom.window.document.querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement;
-  assert.deepEqual(Array.from(select("Jump to screen").options).map(option => option.value), ["", "about", "home"]);
-  assert.deepEqual(Array.from(select("Jump to UI state").options).map(option => option.textContent),
-    ["Jump to…", "Home — Cart Sheet", "Home — Error Dialog (not captured)"]);
-
-  await act(async () => { toggle.click(); });
-  assert.equal(toggle.getAttribute("aria-expanded"), "false", "collapsed again, so the picker has something to open");
-  const picker = select("Jump to UI state");
-  await act(async () => { picker.value = "home::cart"; picker.dispatchEvent(new dom.window.Event("change", { bubbles: true })); });
-  await act(async () => { await Promise.resolve(); });
-  assert.equal(toggle.getAttribute("aria-expanded"), "true", "the jump opens the strip it chose from");
-  assert.equal(mainImage().getAttribute("alt"), "Home — Cart Sheet", "and shows the chosen state");
+  // The pickers. This canvas offers the view switch and the screen jump; a UI state is a thumbnail
+  // inside a node here, so its own picker belongs to the UI-states view.
+  const trigger = (label: string) => dom.window.document.querySelector(`[data-slot="select-trigger"][aria-label="${label}"]`) as HTMLElement | null;
+  // A base-ui select opens a popup elsewhere in the document, so read the list the trigger owns.
+  const openOptions = async (label: string) => {
+    const control = trigger(label)!;
+    await act(async () => { control.click(); });
+    await act(async () => { await Promise.resolve(); });
+    const list = dom.window.document.getElementById(control.getAttribute("aria-controls")!)!;
+    return Array.from(list.querySelectorAll('[role="option"]')) as HTMLElement[];
+  };
+  const closeOptions = async (label: string) => { await act(async () => { trigger(label)!.click(); }); await act(async () => { await Promise.resolve(); }); };
+  assert.equal(trigger("Jump to UI state"), null, "no UI-state jump on the flow canvas");
+  assert.deepEqual((await openOptions("App Flow view")).map(option => option.textContent), ["Flow graph", "UI states"]);
+  await closeOptions("App Flow view");
+  assert.deepEqual((await openOptions("Jump to screen")).map(option => option.textContent), ["Jump to…", "About", "Home"]);
 });

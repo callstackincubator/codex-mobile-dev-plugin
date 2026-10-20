@@ -6,6 +6,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+const VIEW_OPTIONS = [{ value: "flow", label: "Flow graph" }, { value: "ui-states", label: "UI states" }];
+
 /**
  * The UI-states canvas: screens as parents, their captured states as child nodes, plus the two
  * jump pickers. Rendered for real, because the thing under test is that a state becomes a node —
@@ -55,7 +57,8 @@ test("the UI-states graph draws each captured state as a child of its screen, an
   const panel = { screenshot: async (_projectId: string, path: string) => `blob:${path}`, recording: { subscribe: () => () => {}, getSnapshot: () => ({ nodeId: null, status: null, steps: [] }) }, replay: async () => {} };
   const root = createRoot(dom.window.document.getElementById("root")!);
   cleanup = async () => { await act(async () => { root.unmount(); }); };
-  await act(async () => { root.render(createElement(AppFlowUiStatesGraph, { nodes, projectId: "project-1", panel })); });
+  await act(async () => { root.render(createElement(AppFlowUiStatesGraph, { nodes, projectId: "project-1", panel,
+    view: "ui-states", viewOptions: VIEW_OPTIONS, onViewChange: () => {} })); });
   await act(async () => { await Promise.resolve(); });
 
   const text = () => dom.window.document.body.textContent ?? "";
@@ -72,13 +75,25 @@ test("the UI-states graph draws each captured state as a child of its screen, an
   assert.deepEqual(images.map(image => image.getAttribute("src")), ["blob:screens/home.png", "blob:screens/home-cart.png"],
     "the parent shows the screen, the child its own frame, and the failed variant has none");
 
-  const select = (label: string) => dom.window.document.querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement;
-  const options = (label: string) => Array.from(select(label).options).map(option => [option.value, option.textContent]);
-  assert.deepEqual(options("Jump to screen"), [["", "Jump to…"], ["home", "Home"]], "only screens this canvas draws");
-  assert.deepEqual(options("Jump to UI state"), [["", "Jump to…"], ["home::cart", "Home — Cart Sheet"], ["home::error", "Home — Error Dialog (not captured)"]]);
+  const trigger = (label: string) => dom.window.document.querySelector(`[data-slot="select-trigger"][aria-label="${label}"]`) as HTMLElement | null;
+  // A base-ui select opens a popup elsewhere in the document, so read the list the trigger owns.
+  const openOptions = async (label: string) => {
+    const control = trigger(label)!;
+    await act(async () => { control.click(); });
+    await act(async () => { await Promise.resolve(); });
+    const list = dom.window.document.getElementById(control.getAttribute("aria-controls")!)!;
+    return Array.from(list.querySelectorAll('[role="option"]')) as HTMLElement[];
+  };
+  const closeOptions = async (label: string) => { await act(async () => { trigger(label)!.click(); }); await act(async () => { await Promise.resolve(); }); };
+  assert.equal(trigger("Jump to screen"), null, "this canvas jumps to UI states, not screens");
+  assert.deepEqual((await openOptions("App Flow view")).map(option => option.textContent), ["Flow graph", "UI states"],
+    "the canvas switch sits above the jump picker");
+  await closeOptions("App Flow view");
 
-  const picker = select("Jump to UI state");
-  await act(async () => { picker.value = "home::cart"; picker.dispatchEvent(new dom.window.Event("change", { bubbles: true })); });
+  const states = await openOptions("Jump to UI state");
+  assert.deepEqual(states.map(option => option.textContent), ["Jump to…", "Home — Cart Sheet", "Home — Error Dialog (not captured)"]);
+  await act(async () => { states[1].click(); });
   await act(async () => { await Promise.resolve(); });
-  assert.equal(picker.value, "home::cart", "the picker keeps the chosen state, so the canvas says what it is showing");
+  assert.match(trigger("Jump to UI state")!.textContent!, /Home — Cart Sheet/,
+    "the picker keeps the chosen state, so the canvas says what it is showing");
 });

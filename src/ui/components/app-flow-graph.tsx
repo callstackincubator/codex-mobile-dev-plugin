@@ -1,21 +1,15 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Background, Controls, Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import type { AppFlowEdge, AppFlowNode, AppFlowUiState } from "../../shared/app-flow.ts";
 import { featureGateNotice } from "../../shared/app-flow.ts";
 import type { AppFlowPanel } from "../app-flow-panel.ts";
 import { recordUiTiming, setUiGauge } from "../telemetry.ts";
-import { GraphContext, GraphFocusPanel, Screenshot } from "./app-flow-graph-shared.tsx";
-import { BAND_COLUMNS, COL_GAP, NODE_HEIGHT, NODE_WIDTH, STRUCTURE_NODE_HEIGHT, displayableUiStates, layoutTopology, nodeTitle, screenOptions, uiStateCount, uiStateOptions, type NodePlacement, type ResolvedEdge } from "./app-flow-layout.ts";
+import { GraphContext, GraphFocusPanel, Screenshot, type GraphView, type GraphViewOption } from "./app-flow-graph-shared.tsx";
+import { BAND_COLUMNS, COL_GAP, NODE_HEIGHT, NODE_WIDTH, STRUCTURE_NODE_HEIGHT, displayableUiStates, layoutTopology, nodeTitle, screenOptions, uiStateCount, type NodePlacement, type ResolvedEdge } from "./app-flow-layout.ts";
 import { ManualRecorderPanel } from "./manual-recorder-panel.tsx";
 
-type Props = { nodes: AppFlowNode[]; edges: AppFlowEdge[]; runtimeEdges?: AppFlowEdge[]; entryScreenIds?: string[]; projectPath?: string; projectId: string; panel: AppFlowPanel };
-/**
- * A UI state chosen in the jump picker. A state is a thumbnail inside its screen's node here, not
- * a node of its own, so "focus" means: scroll to that screen, open its strip and show that frame.
- * The token is what makes picking the same state twice land again.
- */
-type UiStateFocus = { nodeId: string; stateId: string; token: number };
-const UiStateFocusContext = createContext<UiStateFocus | null>(null);
+type Props = { nodes: AppFlowNode[]; edges: AppFlowEdge[]; runtimeEdges?: AppFlowEdge[]; entryScreenIds?: string[]; projectPath?: string; projectId: string; panel: AppFlowPanel;
+  view: GraphView; viewOptions: GraphViewOption[]; onViewChange: (view: GraphView) => void };
 const EMPTY_NODE_TITLE_SOURCE = { title: "", urlPath: null };
 const FIT_VIEW_OPTIONS = { padding: 0.12, minZoom: 0.7, maxZoom: 1 };
 
@@ -46,12 +40,9 @@ const TONE_TEXT: Record<CaptureTone, string> = { good: "text-emerald-600 dark:te
  * MAIN image rather than growing the node, which is what keeps `NODE_HEIGHT` and the layout math
  * in `app-flow-layout.ts` untouched.
  */
-function UiStateStrip({ node, title, variants, selectedId, onSelect, openToken }: { node: AppFlowNode; title: string; variants: AppFlowUiState[]; selectedId: string | null; onSelect: (id: string | null) => void; openToken?: number }) {
+function UiStateStrip({ node, title, variants, selectedId, onSelect }: { node: AppFlowNode; title: string; variants: AppFlowUiState[]; selectedId: string | null; onSelect: (id: string | null) => void }) {
   const graph = useContext(GraphContext)!;
   const [expanded, setExpanded] = useState(false);
-  // Jumping to a UI state from the picker has to show the frame, and the strip is where the frame
-  // is chosen; a collapsed strip would land the viewport on the screen and nothing else.
-  useEffect(() => { if (openToken !== undefined) setExpanded(true); }, [openToken]);
   const base = node.capture?.screenshot ?? null;
   const thumb = "h-14 w-9 shrink-0 rounded-sm object-cover";
   const frame = (pressed: boolean) => `nodrag nopan flex shrink-0 flex-col items-center gap-0.5 rounded-md border p-1 text-[9px] disabled:opacity-40 ${pressed ? "border-foreground bg-muted" : "border-border hover:bg-muted/60"}`;
@@ -87,10 +78,6 @@ function ScreenNode({ data }: NodeProps) {
   const title = nodeTitle(node); const status = captureStatus(node); const screenshot = node.capture?.screenshot;
   const variants = displayableUiStates(node);
   const [variantId, setVariantId] = useState<string | null>(null);
-  const focus = useContext(UiStateFocusContext);
-  const focused = focus && focus.nodeId === node.id ? focus : null;
-  const focusToken = focused?.token;
-  useEffect(() => { if (focused) setVariantId(focused.stateId); }, [focusToken]);
   const shown = variants.find(variant => variant.id === variantId && variant.screenshot != null) ?? null;
   const shownPath = shown?.screenshot ?? screenshot;
   const shownTitle = shown ? `${title} — ${shown.name}` : title;
@@ -110,7 +97,7 @@ function ScreenNode({ data }: NodeProps) {
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[status.tone]}`} /><span className="truncate">{status.label}</span></div>}
         {gate && <div className="flex items-center gap-1.5 text-[10px] text-violet-600 dark:text-violet-300/90" title={gate.detail}>
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" /><span className="truncate">{gate.label}</span></div>}
-        {variants.length > 0 && <UiStateStrip node={node} title={title} variants={variants} selectedId={shown?.id ?? null} onSelect={setVariantId} openToken={focusToken} />}
+        {variants.length > 0 && <UiStateStrip node={node} title={title} variants={variants} selectedId={shown?.id ?? null} onSelect={setVariantId} />}
         <NodeActions node={node} />
       </div>
     </div><Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !border-0 !bg-slate-400" /></>;
@@ -144,16 +131,13 @@ function BandHeading({ data }: NodeProps) { const value = data as { title: strin
     <div className="max-w-3xl text-[10px] leading-snug text-muted-foreground/70">{value.detail}</div></div>; }
 const nodeTypes = { screen: ScreenNode, band: BandHeading };
 
-export function AppFlowGraph({ nodes, edges, runtimeEdges, entryScreenIds, projectPath, projectId, panel }: Props) {
+export function AppFlowGraph({ nodes, edges, runtimeEdges, entryScreenIds, projectPath, projectId, panel, view, viewOptions, onViewChange }: Props) {
   const renderStartedAt = performance.now();
   const navigations = useMemo(() => resolvedEdges([...edges, ...(runtimeEdges ?? [])]), [edges, runtimeEdges]);
   const topology = useMemo(() => { const startedAt = performance.now(); const value = layoutTopology(nodes, navigations, entryScreenIds ?? []);
     recordUiTiming("ui.app_flow.graph_process", performance.now() - startedAt); return value; }, [nodes, navigations, entryScreenIds]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [uiStateFocus, setUiStateFocus] = useState<UiStateFocus | null>(null);
-  const focusToken = useRef(0);
   const screens = useMemo(() => screenOptions(nodes), [nodes]);
-  const states = useMemo(() => uiStateOptions(nodes), [nodes]);
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => setSelectedId(current => current === node.id ? null : node.id), []);
   const recording = useSyncExternalStore(panel.recording.subscribe, panel.recording.getSnapshot);
   const flowNodes = useMemo<Node[]>(() => {
@@ -177,18 +161,15 @@ export function AppFlowGraph({ nodes, edges, runtimeEdges, entryScreenIds, proje
   // How many UI-state rows this graph offers, one plain number per node-set change. Counts rows
   // only: no route, node, component or file identity is attached anywhere on this series.
   useEffect(() => { setUiGauge("ui.app_flow.ui_states_rendered", uiStateCount(nodes)); }, [nodes]);
-  return <GraphContext.Provider value={{ panel, projectPath: projectPath ?? null, projectId }}><UiStateFocusContext.Provider value={uiStateFocus}><div className="relative h-full min-h-80 w-full">
+  return <GraphContext.Provider value={{ panel, projectPath: projectPath ?? null, projectId }}><div className="relative h-full min-h-80 w-full">
     <ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} onNodeClick={onNodeClick} onPaneClick={() => setSelectedId(null)} fitView fitViewOptions={FIT_VIEW_OPTIONS} colorMode="system">
-      {/* A UI state has no node of its own here, so it jumps to the screen that opened it and the
-          node shows that frame. The UI-states graph is where a state is a node in its own right. */}
-      <GraphFocusPanel screens={screens} uiStates={states} uiStateFocusId={option => option.nodeId} onPick={pick => {
-        if (pick.kind === "screen") { setSelectedId(pick.id); setUiStateFocus(null); return; }
-        setSelectedId(pick.option.nodeId);
-        setUiStateFocus({ nodeId: pick.option.nodeId, stateId: pick.option.stateId, token: ++focusToken.current });
-      }} />
+      {/* Only screens are jumped to here: a UI state is a thumbnail inside a node on this canvas,
+          and the UI-states view is where a state is a node in its own right. */}
+      <GraphFocusPanel view={view} viewOptions={viewOptions} onViewChange={onViewChange} screens={screens} uiStates={[]} uiStateFocusId={option => option.nodeId}
+        onPick={pick => { if (pick.kind === "screen") setSelectedId(pick.id); }} />
       <Controls fitViewOptions={FIT_VIEW_OPTIONS} /><Background gap={16} size={1} />
     </ReactFlow>
     {projectPath && recording.nodeId && <ManualRecorderPanel projectPath={projectPath} store={panel.recording}
       title={nodeTitle(nodes.find(node => node.id === recording.nodeId) ?? { ...EMPTY_NODE_TITLE_SOURCE, id: recording.nodeId })} />}
-  </div></UiStateFocusContext.Provider></GraphContext.Provider>;
+  </div></GraphContext.Provider>;
 }

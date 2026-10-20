@@ -680,6 +680,14 @@ export async function createAppFlowHost(options: {
       persistRun(run);
       recentEvents.delete(`project:${getProjectId(selectedProjectPath)}`);
       recentEvents.delete(`manual:${getProjectId(selectedProjectPath)}`);
+      // A recording drives the same device these do, and now sometimes literally the same one:
+      // the recorder adopts the app the user launched rather than booting its own.
+      if (manual.isActive(selectedProjectPath)) {
+        throw new ExpectedOperationError("invalid_input", "Stop the active App Flow recording first.");
+      }
+      // A device the recorder is keeping warm holds the iOS runner lease the sweep is about to
+      // ask for. See `releaseDevices`.
+      await manual.releaseDevices(selectedProjectPath);
       activeDecisions = context.decisions;
       const started = await flow.start(input as never);
       if (!started.ok) {
@@ -831,6 +839,12 @@ export async function createAppFlowHost(options: {
       runs.set(run.runId, run);
       persistRun(run);
       recentEvents.delete(`project:${getProjectId(selectedProjectPath)}`);
+      // A recording drives the same device these do, and now sometimes literally the same one:
+      // the recorder adopts the app the user launched rather than booting its own.
+      if (manual.isActive(selectedProjectPath)) {
+        throw new ExpectedOperationError("invalid_input", "Stop the active App Flow recording first.");
+      }
+      await manual.releaseDevices(selectedProjectPath);
       const started = await flow.exploreUi(selectedProjectPath, exploreOptions);
       if (!started.ok) {
         run.state = "failed";
@@ -845,6 +859,12 @@ export async function createAppFlowHost(options: {
       return started;
     },
     async launchApp(selectedProjectPath) {
+      // A recording drives the same device these do, and now sometimes literally the same one:
+      // the recorder adopts the app the user launched rather than booting its own.
+      if (manual.isActive(selectedProjectPath)) {
+        throw new ExpectedOperationError("invalid_input", "Stop the active App Flow recording first.");
+      }
+      await manual.releaseDevices(selectedProjectPath);
       const launched = await flow.launchApp(selectedProjectPath);
       if (launched.ok) return launched;
       // Benign states of the surface (a second click, a project with no routes) are raised so the

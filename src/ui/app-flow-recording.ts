@@ -10,9 +10,18 @@ type Snapshot = {
   steps: Array<{ command: string; portable: boolean }>;
   error: string | null;
   outcome: { pathToReach: string[]; replayVerified: boolean; fallbackReason?: string } | null;
+  /**
+   * The interaction currently in flight, so the panel can name it and time it.
+   *
+   * Without this the panel showed one unchanging "Sending the command…" for anything from a 300ms
+   * tap to a 60s timeout, which is indistinguishable from a hang — and when the call failed the
+   * line stayed up, because nothing cleared it. Both halves are fixed here: the label says what is
+   * being sent, `startedAt` lets the panel count the seconds, and every exit path clears it.
+   */
+  pending: { label: string; startedAt: number } | null;
 };
 
-const INITIAL: Snapshot = { nodeId: null, status: null, statusMessage: null, snapshot: [], bounds: null, steps: [], error: null, outcome: null };
+const INITIAL: Snapshot = { nodeId: null, status: null, statusMessage: null, snapshot: [], bounds: null, steps: [], error: null, outcome: null, pending: null };
 
 export class AppFlowRecordingStore {
   private readonly app: App;
@@ -54,10 +63,18 @@ export class AppFlowRecordingStore {
     catch (error) { this.update({ status: "error", error: error instanceof Error ? error.message : String(error) }); }
   }
   async act(projectPath: string, action: ManualRecordingAction) {
+    if (this.value.pending) return;
+    this.update({ pending: { label: actionLabel(action), startedAt: Date.now() }, error: null });
     // One interaction settles the app, waits for the route, and re-snapshots; that can outlast a
     // routine tool timeout while the session is still healthy.
     try { await this.call("mobile_appflow_manual_act", { projectPath, action }, 60000); this.update({ error: null }); }
     catch (error) { this.update({ error: error instanceof Error ? error.message : String(error) }); }
+    finally {
+      // The server emits `recording` again on both outcomes, but a transport-level failure (a tool
+      // timeout, a dropped connection) produces no event at all, and leaving `acting` up is what
+      // made the panel read as hung. Clear it here, where every outcome passes.
+      this.update({ pending: null, ...(this.value.status === "acting" ? { status: "recording" as const } : {}) });
+    }
   }
   async stop(projectPath: string) {
     this.update({ status: "saving" });
@@ -70,6 +87,14 @@ export class AppFlowRecordingStore {
     try { await this.call("mobile_appflow_manual_cancel", { projectPath }); }
     finally { this.reset(null); }
   }
+  /** Clears the last failed interaction's message without touching the live session. */
+  clearError() { this.update({ error: null }); }
   dismiss() { this.reset(null); }
   dispose() { this.listeners.clear(); this.reset(null); }
+}
+
+function actionLabel(action: ManualRecordingAction): string {
+  if (action.type === "scroll") return `Scrolling ${action.direction}`;
+  const target = action.target.label?.trim() || action.target.identifier?.trim() || action.target.value?.trim() || "element";
+  return action.type === "fill" ? `Typing into ${target}` : `Tapping ${target}`;
 }

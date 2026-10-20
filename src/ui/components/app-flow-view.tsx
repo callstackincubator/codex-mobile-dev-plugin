@@ -4,6 +4,7 @@ import type { AppFlowBuildMode, ExplorationMode } from "../../shared/app-flow.ts
 import { FAST_MODE_AUTH_NOTICE } from "../../shared/app-flow.ts";
 import type { AppFlowPanel, AppFlowSweepSummary } from "../app-flow-panel.ts";
 import { AppFlowGraph } from "./app-flow-graph.tsx";
+import { ToolbarSelect, type GraphView, type GraphViewOption } from "./app-flow-graph-shared.tsx";
 import { captureTally, uiStateCount } from "./app-flow-layout.ts";
 import { AppFlowUiStatesGraph } from "./app-flow-ui-states-graph.tsx";
 import { AppFlowProjectPicker } from "./app-flow-project-picker.tsx";
@@ -11,7 +12,6 @@ import { Alert, AlertDescription, AlertTitle } from "./ui/alert.tsx";
 import { Button } from "./ui/button.tsx";
 import { Input } from "./ui/input.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select.tsx";
 import { Switch } from "./ui/switch.tsx";
 
 function stored(key: string, fallback: string) { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } }
@@ -45,7 +45,7 @@ export const EXPLORATION_NOTES: Record<ExplorationMode, string> = {
 const EXPLORATION_OPTIONS: { value: ExplorationMode; label: string }[] = [
   { value: "fast", label: "Fast" }, { value: "auto", label: "Deep Link + Fast" }, { value: "thorough", label: "Deep Link + Explore" },
 ];
-const VIEW_OPTIONS = [{ value: "flow", label: "Flow graph" }, { value: "ui-states", label: "UI states" }];
+const VIEW_OPTIONS: GraphViewOption[] = [{ value: "flow", label: "Flow graph" }, { value: "ui-states", label: "UI states" }];
 /** Compact trigger text for the sweep options popover, e.g. "Deep Link + Explore · 15 screens"; an empty or 0 limit reads "All screens". */
 export function sweepOptionsSummary(exploration: ExplorationMode, screenLimit: string): string {
   const reach = EXPLORATION_OPTIONS.find(item => item.value === exploration)?.label ?? exploration;
@@ -56,13 +56,7 @@ const CAPTURE_MODE_OPTIONS: { value: AppFlowBuildMode; label: string }[] = [
   { value: "structure-only", label: "Structure only" }, { value: "screen-ui-and-structure", label: "Screen UI + Structure" },
 ];
 
-/** Themed compact dropdown (base-select) used by every toolbar choice, so the open list matches the panel theme. */
-function ToolbarSelect<T extends string>({ label, value, items, disabled, describedBy, onChange }: { label: string; value: T; items: { value: T; label: string }[]; disabled?: boolean; describedBy?: string; onChange: (value: T) => void }) {
-  return <Select items={items} value={value} disabled={disabled} onValueChange={next => { if (next !== null) onChange(next as T); }}>
-    <SelectTrigger size="sm" aria-label={label} aria-describedby={describedBy} className="min-w-0"><SelectValue /></SelectTrigger>
-    <SelectContent align="start" alignItemWithTrigger={false} className="w-max min-w-(--anchor-width) max-w-(--available-width)"><SelectGroup>{items.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
-  </Select>;
-}
+
 /** Per-project localStorage key for the "Capture UI states" switch. Stored as "on"/"off"; absent means off. */
 const CAPTURE_UI_STATES_KEY = "app-flow-capture-ui-states";
 function duration(milliseconds: number) { if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`; const seconds = Math.round(milliseconds / 1000); return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`; }
@@ -77,7 +71,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
    * Which canvas the body shows. Two graphs rather than one: a UI state is not somewhere a user
    * navigates to, so it has no place in the navigation map — see `AppFlowUiState`.
    */
-  const [view, setView] = useState<"flow" | "ui-states">("flow");
+  const [view, setView] = useState<GraphView>("flow");
   useEffect(() => {
     const projectPath = state.projectPath; if (!projectPath) return;
     const nextMode = stored(`app-flow-mode:${projectPath}`, "structure-only"); setMode(nextMode === "screen-ui-and-structure" ? nextMode : "structure-only");
@@ -94,6 +88,8 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   const tally = useMemo(() => { const nodes = state.result?.nodes ?? []; const counts = captureTally(nodes);
     return counts.total ? counts : null; }, [state.result]);
   const uiStates = useMemo(() => uiStateCount(state.result?.nodes ?? []), [state.result]);
+  // The count rides on the option label so the picker says how much the other canvas holds.
+  const viewOptions = useMemo(() => VIEW_OPTIONS.map(option => option.value === "ui-states" && uiStates > 0 ? { ...option, label: `${option.label} · ${uiStates}` } : option), [uiStates]);
   const start = () => {
     if (!state.projectPath) return;
     write(`app-flow-mode:${state.projectPath}`, mode);
@@ -112,7 +108,6 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        {state.result && <ToolbarSelect label="App Flow view" value={view} items={VIEW_OPTIONS.map(item => item.value === "ui-states" && uiStates > 0 ? { ...item, label: `${item.label} · ${uiStates}` } : item) as { value: "flow" | "ui-states"; label: string }[]} onChange={setView} />}
         <ToolbarSelect label="App Flow capture mode" value={mode} items={CAPTURE_MODE_OPTIONS} disabled={isRunning} onChange={setMode} />
         {mode === "screen-ui-and-structure" && <Popover>
           <PopoverTrigger asChild><Button variant="secondary" size="sm" className="min-w-0 max-w-56 justify-start" title={sweepOptionsSummary(exploration, screenLimit)}>
@@ -166,9 +161,11 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
       action={<Button onClick={() => void panel.pickProject()} disabled={state.pickingProject}>{state.pickingProject ? <Loader2 className="animate-spin" /> : null}{state.pickingProject ? "Waiting for the folder…" : "Choose project folder"}</Button>} />
       : empty ? <Empty title="No app flow yet" detail="Build a visual map of every screen and navigation edge in this app." action={<Button onClick={start}
           disabled={!state.available || state.agentStartPending || (mode === "screen-ui-and-structure" && !panel.canSendAgentStart)}>Start Building App Flow</Button>} />
-      : state.result && view === "ui-states" ? <AppFlowUiStatesGraph panel={panel} projectId={state.projectId} nodes={state.result.nodes} projectPath={isRunning ? undefined : state.projectPath} />
+      : state.result && view === "ui-states" ? <AppFlowUiStatesGraph panel={panel} projectId={state.projectId} nodes={state.result.nodes} projectPath={isRunning ? undefined : state.projectPath}
+          view={view} viewOptions={viewOptions} onViewChange={setView} />
       : state.result ? <AppFlowGraph panel={panel} projectId={state.projectId} nodes={state.result.nodes} edges={state.result.edges}
-          runtimeEdges={state.result.runtimeEdges} entryScreenIds={state.result.navigation?.entryScreenIds} projectPath={isRunning ? undefined : state.projectPath} /> : null}</div>
+          runtimeEdges={state.result.runtimeEdges} entryScreenIds={state.result.navigation?.entryScreenIds} projectPath={isRunning ? undefined : state.projectPath}
+          view={view} viewOptions={viewOptions} onViewChange={setView} /> : null}</div>
   </section>;
 }
 

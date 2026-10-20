@@ -12,10 +12,11 @@ import { Background, Controls, Handle, Position, ReactFlow, type Edge, type Node
 import type { AppFlowNode, AppFlowUiState } from "../../shared/app-flow.ts";
 import type { AppFlowPanel } from "../app-flow-panel.ts";
 import { recordUiTiming, setUiGauge } from "../telemetry.ts";
-import { GraphContext, GraphFocusPanel, Screenshot, useGraphContext } from "./app-flow-graph-shared.tsx";
+import { GraphContext, GraphFocusPanel, GraphViewSelect, Screenshot, useGraphContext, type GraphView, type GraphViewOption } from "./app-flow-graph-shared.tsx";
 import { NODE_WIDTH, UI_STATE_NODE_HEIGHT, UI_STATE_NODE_WIDTH, hasUiStates, layoutUiStates, nodeTitle, screenOptions, uiStateOptions, uiStateCount } from "./app-flow-layout.ts";
 
-type Props = { nodes: AppFlowNode[]; projectPath?: string; projectId: string; panel: AppFlowPanel };
+type Props = { nodes: AppFlowNode[]; projectPath?: string; projectId: string; panel: AppFlowPanel;
+  view: GraphView; viewOptions: GraphViewOption[]; onViewChange: (view: GraphView) => void };
 const FIT_VIEW_OPTIONS = { padding: 0.12, minZoom: 0.3, maxZoom: 1 };
 const OPENED_BY: Record<NonNullable<AppFlowUiState["openedBy"]>, string> = {
   state: "Opened by the screen’s own state setter",
@@ -60,7 +61,7 @@ function UiStateNode({ data }: NodeProps) {
 }
 const nodeTypes = { "ui-state-screen": ScreenParentNode, "ui-state": UiStateNode };
 
-export function AppFlowUiStatesGraph({ nodes, projectPath, projectId, panel }: Props) {
+export function AppFlowUiStatesGraph({ nodes, projectPath, projectId, panel, view, viewOptions, onViewChange }: Props) {
   const renderStartedAt = performance.now();
   const topology = useMemo(() => { const startedAt = performance.now(); const value = layoutUiStates(nodes);
     recordUiTiming("ui.app_flow.ui_states_graph_process", performance.now() - startedAt); return value; }, [nodes]);
@@ -84,14 +85,17 @@ export function AppFlowUiStatesGraph({ nodes, projectPath, projectId, panel }: P
   // route, node, component or file identity is attached anywhere on this series.
   useEffect(() => { setUiGauge("ui.app_flow.ui_state_nodes", uiStateCount(nodes)); }, [nodes]);
   if (topology.placements.length === 0) {
-    return <div className="flex h-full min-h-60 flex-col items-center justify-center gap-2 p-6 text-center">
+    return <div className="relative flex h-full min-h-60 flex-col items-center justify-center gap-2 p-6 text-center">
+      {/* The canvas picker lives over the graph, which this branch does not draw — without it here
+          there would be no way back to the flow graph. */}
+      <div className="absolute top-3 right-3 w-44"><GraphViewSelect view={view} viewOptions={viewOptions} onViewChange={onViewChange} /></div>
       <h3 className="text-base font-medium">No UI states captured</h3>
       <p className="max-w-md text-sm text-muted-foreground">Turn on “Capture UI states” before a sweep and this map fills with each screen’s sheets, modals and dialogs.</p></div>;
   }
   return <GraphContext.Provider value={{ panel, projectPath: projectPath ?? null, projectId }}><div className="relative h-full min-h-80 w-full">
     <ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} onNodeClick={(_, node) => setSelectedId(current => current === node.id ? null : node.id)}
       onPaneClick={() => setSelectedId(null)} fitView fitViewOptions={FIT_VIEW_OPTIONS} colorMode="system">
-      <GraphFocusPanel screens={screens} uiStates={states} uiStateFocusId={option => option.id} onPick={pick => setSelectedId(pick.kind === "screen" ? pick.id : pick.option.id)} />
+      <GraphFocusPanel view={view} viewOptions={viewOptions} onViewChange={onViewChange} screens={screens} uiStates={states} uiStateFocusId={option => option.id} onPick={pick => setSelectedId(pick.kind === "screen" ? pick.id : pick.option.id)} />
       <Controls fitViewOptions={FIT_VIEW_OPTIONS} /><Background gap={16} size={1} />
     </ReactFlow>
   </div></GraphContext.Provider>;

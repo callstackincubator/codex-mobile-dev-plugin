@@ -11,7 +11,7 @@ import { Panel, useReactFlow } from "@xyflow/react";
 import type { AppFlowPanel } from "../app-flow-panel.ts";
 import { countUiEvent } from "../telemetry.ts";
 import type { ScreenOption, UiStateOption } from "./app-flow-layout.ts";
-import { NativeSelect, NativeSelectOption } from "./ui/native-select.tsx";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select.tsx";
 
 export type GraphContextValue = { panel: AppFlowPanel; projectPath: string | null; projectId: string };
 export const GraphContext = createContext<GraphContextValue | null>(null);
@@ -35,7 +35,28 @@ const FOCUS_VIEW_OPTIONS = { duration: 400, padding: 0.35, minZoom: 0.4, maxZoom
 export type FocusPick = { kind: "screen"; id: string } | { kind: "ui-state"; option: UiStateOption };
 
 /**
- * The two jump pickers, drawn over the canvas.
+ * Themed compact dropdown (base-select) used by every App Flow choice — the header toolbar and the
+ * pickers over the canvas — so an open list matches the panel theme instead of the OS menu.
+ */
+export function ToolbarSelect<T extends string>({ label, value, items, disabled, describedBy, className, onChange }: { label: string; value: T; items: { value: T; label: string }[]; disabled?: boolean; describedBy?: string; className?: string; onChange: (value: T) => void }) {
+  return <Select items={items} value={value} disabled={disabled} onValueChange={next => { if (next !== null) onChange(next as T); }}>
+    <SelectTrigger size="sm" aria-label={label} aria-describedby={describedBy} className={`min-w-0 ${className ?? ""}`}><SelectValue /></SelectTrigger>
+    <SelectContent align="start" alignItemWithTrigger={false} className="w-max min-w-(--anchor-width) max-w-(--available-width)"><SelectGroup>{items.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
+  </Select>;
+}
+
+/** Which canvas the App Flow body draws. Lives here because both graphs and the view host share it. */
+export type GraphView = "flow" | "ui-states";
+export type GraphViewOption = { value: GraphView; label: string };
+
+/** The canvas picker. Standalone so the UI-states graph can offer a way back out of its empty state. */
+export function GraphViewSelect({ view, viewOptions, onViewChange }: { view: GraphView; viewOptions: GraphViewOption[]; onViewChange: (view: GraphView) => void }) {
+  return <ToolbarSelect label="App Flow view" value={view} items={viewOptions} className="w-full" onChange={onViewChange} />;
+}
+
+/**
+ * The canvas picker and, beneath it, the jump picker that belongs to the chosen canvas: screens on
+ * the flow graph, UI states on the UI-states graph. Drawn over the canvas as one column.
  *
  * It must render *inside* `<ReactFlow>`: that is what puts it in React Flow's provider, so
  * `useReactFlow` resolves without wrapping the whole panel in a `ReactFlowProvider`.
@@ -44,7 +65,8 @@ export type FocusPick = { kind: "screen"; id: string } | { kind: "ui-state"; opt
  * screen that opened it in the flow graph, where it is a thumbnail rather than a node — so the
  * caller supplies that mapping and whatever selection it wants to make alongside the jump.
  */
-export function GraphFocusPanel({ screens, uiStates, uiStateFocusId, onPick }: {
+export function GraphFocusPanel({ view, viewOptions, onViewChange, screens, uiStates, uiStateFocusId, onPick }: {
+  view: GraphView; viewOptions: GraphViewOption[]; onViewChange: (view: GraphView) => void;
   screens: ScreenOption[]; uiStates: UiStateOption[];
   uiStateFocusId: (option: UiStateOption) => string;
   onPick?: (pick: FocusPick) => void;
@@ -57,29 +79,25 @@ export function GraphFocusPanel({ screens, uiStates, uiStateFocusId, onPick }: {
     void flow.fitView({ nodes: [{ id }], ...FOCUS_VIEW_OPTIONS });
     return true;
   };
-  if (screens.length === 0 && uiStates.length === 0) return null;
-  return <Panel position="top-right" className="flex flex-wrap items-center gap-1.5 rounded-lg border bg-background/90 p-1.5 text-xs shadow-sm backdrop-blur">
-    {screens.length > 0 && <label className="flex items-center gap-1">Screen
-      <NativeSelect size="sm" aria-label="Jump to screen" value={screenId} onChange={event => {
-        const id = event.target.value; setScreenId(id); setUiStateId("");
+  return <Panel position="top-right" className="flex w-44 flex-col items-stretch gap-1.5 rounded-lg border bg-background/90 p-1.5 text-xs shadow-sm backdrop-blur">
+    <GraphViewSelect view={view} viewOptions={viewOptions} onViewChange={onViewChange} />
+    {view === "flow" && screens.length > 0 && <ToolbarSelect label="Jump to screen" value={screenId} className="w-full"
+      items={[{ value: "", label: "Jump to…" }, ...screens.map(option => ({ value: option.id, label: option.label }))]}
+      onChange={id => {
+        setScreenId(id); setUiStateId("");
         if (!id || !jump(id)) return;
         // One plain count. No route, node or file identity rides on it — see the gauge in the graph.
         countUiEvent("ui.app_flow.focus_screen");
         onPick?.({ kind: "screen", id });
-      }}>
-        <NativeSelectOption value="">Jump to…</NativeSelectOption>
-        {screens.map(option => <NativeSelectOption key={option.id} value={option.id}>{option.label}</NativeSelectOption>)}
-      </NativeSelect></label>}
-    {uiStates.length > 0 && <label className="flex items-center gap-1">UI state
-      <NativeSelect size="sm" aria-label="Jump to UI state" value={uiStateId} onChange={event => {
-        const id = event.target.value; setUiStateId(id); setScreenId("");
+      }} />}
+    {view === "ui-states" && uiStates.length > 0 && <ToolbarSelect label="Jump to UI state" value={uiStateId} className="w-full"
+      items={[{ value: "", label: "Jump to…" }, ...uiStates.map(option => ({ value: option.id, label: option.captured ? option.label : `${option.label} (not captured)` }))]}
+      onChange={id => {
+        setUiStateId(id); setScreenId("");
         const option = uiStates.find(entry => entry.id === id);
         if (!option || !jump(uiStateFocusId(option))) return;
         countUiEvent("ui.app_flow.focus_ui_state");
         onPick?.({ kind: "ui-state", option });
-      }}>
-        <NativeSelectOption value="">Jump to…</NativeSelectOption>
-        {uiStates.map(option => <NativeSelectOption key={option.id} value={option.id}>{option.captured ? option.label : `${option.label} (not captured)`}</NativeSelectOption>)}
-      </NativeSelect></label>}
+      }} />}
   </Panel>;
 }
