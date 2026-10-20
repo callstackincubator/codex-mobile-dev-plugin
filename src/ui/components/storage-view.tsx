@@ -243,9 +243,11 @@ function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePanel; sna
           <div className="truncate text-sm font-semibold">{title(store)}</div>
           <div className="truncate text-xs text-muted-foreground">{storeKindLabels[store.kind]} · {store.entryCount} {store.kind === "sqlite" ? "table" : "key"}{store.entryCount === 1 ? "" : "s"} · {formatBytes(store.bytes)} · <span className="font-mono">{store.path}</span></div>
         </div>
-        {store.status === "ok" && store.kind !== "sqlite" && <Button variant="outline" size="xs" onClick={() => copy(json())}><CopyIcon />Copy as JSON</Button>}
-        <ConfirmButton title={`Clear ${title(store)}`} action="Clear" disabled={busy} description={`Stops the app and deletes ${store.path}. The app is not relaunched.`} onConfirm={() => void panel.clear(store.id)}
-          variant="outline" className="text-destructive hover:bg-destructive/10 hover:text-destructive">Clear</ConfirmButton>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {store.status === "ok" && store.kind !== "sqlite" && <Button variant="outline" size="xs" onClick={() => copy(json())}><CopyIcon />Copy as JSON</Button>}
+          <ConfirmButton title={`Clear ${title(store)}`} action="Clear" disabled={busy} description={`Stops the app and deletes ${store.path}. The app is not relaunched.`} onConfirm={() => void panel.clear(store.id)}
+            variant="outline" className="text-destructive hover:bg-destructive/10 hover:text-destructive">Clear</ConfirmButton>
+        </div>
       </div>
       {store.note && <p className="flex items-center gap-1.5 border-b px-4 py-1.5 text-[11px] text-muted-foreground">{store.status === "encrypted" ? <LockIcon className="size-3" /> : store.status === "unreadable" ? <TriangleAlertIcon className="size-3" /> : null}{store.note}</p>}
       <div className="min-h-0 flex-1 overflow-auto font-mono text-xs" role="table" aria-label={`${title(store)} entries`}>
