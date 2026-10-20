@@ -132,7 +132,7 @@ function containerBreakdown(snapshot: StorageSnapshot) {
   return [["Caches", parts.Caches, "bg-neutral-400"], ["Databases", parts.Databases, "bg-emerald-500"], ["Preferences", parts.Preferences, "bg-sky-500"], ["Other", other, "bg-muted-foreground/30"]] as const;
 }
 
-function ConfirmButton({ children, title, description, action, disabled, onConfirm, className, variant = "ghost", size = "xs" }: { children: ReactNode; title: string; description: string; action: string; disabled?: boolean; onConfirm: () => void; className?: string; variant?: "ghost" | "outline"; size?: "xs" | "default" }) {
+function ConfirmButton({ children, title, description, action, disabled, onConfirm, className, variant = "ghost", size = "xs" }: { children: ReactNode; title: string; description: string; action: string; disabled?: boolean; onConfirm: () => void; className?: string; variant?: "ghost" | "outline"; size?: "xs" | "sm" }) {
   return <Popover>
     <PopoverTrigger asChild><Button variant={variant} size={size} aria-label={title} title={title} disabled={disabled} className={className}>{children}</Button></PopoverTrigger>
     <PopoverContent align="end" className="w-[min(300px,calc(100vw-24px))] p-3 text-xs">
@@ -327,7 +327,7 @@ export const StorageView = memo(function StorageView({ panel }: { panel: Storage
   return <section id="storage-drawer" className="@container flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-label="Storage">
     <header className="flex h-[49px] shrink-0 items-center gap-2 border-b px-2">
       <Select items={state.apps.map(app => ({ value: app.bundleId, label: app.name }))} value={state.bundleId || null} disabled={!state.available || state.unsupported !== ""} onValueChange={value => { if (value) panel.selectApp(value); }}>
-        <SelectTrigger id="storage-app" aria-label="App" className="w-64 min-w-28 shrink">
+        <SelectTrigger id="storage-app" size="sm" aria-label="App" className="w-64 min-w-28 shrink">
           <SelectValue>{(value: string | null) => {
             const app = state.apps.find(item => item.bundleId === value);
             if (!app) return value ? <span className="truncate">{value}</span> : <span className="text-muted-foreground">{state.busy === "apps" ? "Loading apps…" : "Choose an app"}</span>;
@@ -339,17 +339,17 @@ export const StorageView = memo(function StorageView({ panel }: { panel: Storage
         </SelectGroup></SelectContent>
       </Select>
       <Tabs value={state.tab} onValueChange={value => panel.setTab(value as StorageTab)} className="shrink-0">
-        <TabsList aria-label="Storage view">
+        <TabsList size="sm" aria-label="Storage view">
           <TabsTrigger value="browse">Browse</TabsTrigger>
           <TabsTrigger value="changes">Changes{ownChanges > 0 && <span className="font-normal text-muted-foreground tabular-nums">{ownChanges}</span>}</TabsTrigger>
         </TabsList>
       </Tabs>
-      <InputGroup className="min-w-16 flex-1"><InputGroupInput aria-label={state.tab === "browse" ? "Filter keys and values" : "Filter changes"} type="search" placeholder={state.tab === "browse" ? "Filter keys and values…" : "Filter changes…"} maxLength={256} autoComplete="off" spellCheck={false} value={query} onChange={event => setQuery(event.target.value)} /><InputGroupAddon><SearchIcon /></InputGroupAddon></InputGroup>
+      <InputGroup size="sm" className="min-w-16 flex-1"><InputGroupInput aria-label={state.tab === "browse" ? "Filter keys and values" : "Filter changes"} type="search" placeholder={state.tab === "browse" ? "Filter keys and values…" : "Filter changes…"} maxLength={256} autoComplete="off" spellCheck={false} value={query} onChange={event => setQuery(event.target.value)} /><InputGroupAddon><SearchIcon /></InputGroupAddon></InputGroup>
       <ButtonGroup className="shrink-0">
-        <Button variant="outline" size="icon" aria-label="Refresh" title={snapshot ? `Read again · last read ${timeFormat.format(snapshot.readAt)}` : "Read again"} disabled={!state.bundleId || busy} onClick={() => void panel.refresh()}>
+        <Button variant="outline" size="icon-sm" aria-label="Refresh" title={snapshot ? `Read again · last read ${timeFormat.format(snapshot.readAt)}` : "Read again"} disabled={!state.bundleId || busy} onClick={() => void panel.refresh()}>
           <RefreshCwIcon className={state.busy === "read" ? "animate-spin" : undefined} />
         </Button>
-        <ConfirmButton variant="outline" size="default" title="Reset app data" action="Reset app data" disabled={!state.bundleId || busy || state.unsupported !== ""}
+        <ConfirmButton variant="outline" size="sm" title="Reset app data" action="Reset app data" disabled={!state.bundleId || busy || state.unsupported !== ""}
           description={state.platform === "android" ? "Stops the app and clears all its data with pm clear, like Settings › Clear storage. The app stays installed." : "Stops the app and deletes everything in its data container, including UserDefaults. The app stays installed."}
           onConfirm={() => void panel.clear()}><RotateCcwIcon />Reset</ConfirmButton>
       </ButtonGroup>
