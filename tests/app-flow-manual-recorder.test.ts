@@ -209,3 +209,55 @@ test("the wireframe poll survives a failed interaction and stops dead on a disca
   await new Promise(resolve => setTimeout(resolve, 1400));
   assert.equal(snapshots, settled, "a discarded session must not keep polling");
 });
+
+/**
+ * The discard-during-boot leak.
+ *
+ * A cold start is a native build, a simulator boot and a Metro cold start — minutes during which
+ * the panel's × is live. `cancel` ran with `this.device` still null, so its `teardown` found
+ * nothing to release; the boot then finished into a session nobody held, and the agent-device
+ * session it owned kept the iOS runner lease. The next sweep failed with "iOS runner ... is
+ * already owned by another agent-device daemon", which is what made a discarded recording block
+ * the next exploration.
+ */
+test("a recording discarded mid-boot still releases the device its start was acquiring", async () => {
+  const { ManualSession } = await import("../src/app-flow/manual/session.ts");
+  const released: Array<{ source: string; reason: string }> = [];
+  const closes: string[] = [];
+  const device = {
+    client: { capture: {}, sessions: { close: async () => { closes.push("close"); } }, interactions: {} },
+    launchProcess: null, metroLogPath: null, metroPort: 8081, deviceId: "sim", deviceName: "iPhone",
+    launchTarget: "app", launchUrl: null, setupCommands: [], lastRead: null, armedRecording: {},
+  };
+  const session = new ManualSession("/tmp/project", "project-1", "node-1", {
+    release: async (_device: unknown, _ctx: unknown, outcome: { source: string; reason: string }) => {
+      released.push(outcome);
+    },
+  });
+  const live = session as unknown as { device: unknown; ctx: unknown; abandonIfFinished(): Promise<boolean> };
+
+  // The discard lands while the boot is still in flight: no device yet, so there is nothing for
+  // the ordinary teardown to hand back.
+  await session.cancel();
+  assert.deepEqual(released, [], "there is genuinely nothing to release yet — this is the window");
+
+  // …and now the boot that was still running completes and assigns its device.
+  live.device = device;
+  live.ctx = { projectPath: "/tmp/project", projectId: "project-1", platform: "ios", sessionName: "project-1-manual", scheme: null, appName: null, bundleId: null, slug: null };
+  assert.equal(await live.abandonIfFinished(), true, "start must notice it was discarded and unwind");
+
+  assert.deepEqual(released, [{ source: "booted", reason: "done" }], "the device is handed back, not leaked");
+  assert.deepEqual(closes, ["close"], "the live --saveScript transaction is ended with it");
+  assert.equal(device.armedRecording, null, "a transaction left armed would block the next recording");
+});
+
+test("a start that was never discarded is not unwound", async () => {
+  const { ManualSession } = await import("../src/app-flow/manual/session.ts");
+  const released: unknown[] = [];
+  const session = new ManualSession("/tmp/project", "project-1", "node-1", {
+    release: async () => { released.push(1); },
+  });
+  const live = session as unknown as { abandonIfFinished(): Promise<boolean> };
+  assert.equal(await live.abandonIfFinished(), false);
+  assert.deepEqual(released, []);
+});

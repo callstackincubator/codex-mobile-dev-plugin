@@ -17,6 +17,19 @@ import { configureAppFlowHost, type AppFlowHostPorts } from '../host.ts'
 const sessions = new Map<string, ManualSession>()
 
 /**
+ * The in-flight `start()` of each session, so a discard can wait for it to unwind.
+ *
+ * `start` is deliberately not awaited — a cold start is a native build, a simulator boot and a
+ * Metro cold start, and the renderer follows along on the event channel instead of blocking on a
+ * tool call for minutes. The cost is that a discard arriving during those minutes returns while
+ * the boot is still running, `isActive` goes false, and the sweep the user starts next walks
+ * straight past the guard into a device that is still being built. Holding the promise here lets
+ * `cancel` answer only once the start has seen the discard and released whatever it acquired
+ * (`ManualSession.abandonIfFinished`).
+ */
+const starting = new Map<string, Promise<void>>()
+
+/**
  * Devices this module opened and is keeping warm, keyed by project id.
  *
  * Two kinds of caller park one here, for the same reason. Replay exists to put the app on a screen
@@ -197,12 +210,19 @@ export function createManualRecordingService(host: AppFlowHostPorts): {
 
       console.log(`[app-flow:manual] start ${nodeId} for ${projectPath} (${projectId})`)
       // Not awaited: booting a simulator and launching the app takes minutes, and the renderer
-      // follows along on the event channel.
-      void session.start().catch((error: unknown) => {
-        console.error('[app-flow:manual] start rejected:', error)
-        sessions.delete(projectId)
-        void session.failed(error)
-      })
+      // follows along on the event channel. Tracked in `starting` so a discard can still wait for
+      // it — see that map's comment.
+      const pending = session
+        .start()
+        .catch((error: unknown) => {
+          console.error('[app-flow:manual] start rejected:', error)
+          sessions.delete(projectId)
+          return session.failed(error)
+        })
+        .finally(() => {
+          if (starting.get(projectId) === pending) starting.delete(projectId)
+        })
+      starting.set(projectId, pending)
       return { ok: true }
     },
 
@@ -242,10 +262,21 @@ export function createManualRecordingService(host: AppFlowHostPorts): {
       const projectId = getProjectId(projectPath)
       const session = sessions.get(projectId)
       if (!session) return { cancelled: false }
-      sessions.delete(projectId)
-      await session.cancel().catch((error: unknown) => {
-        console.error('[app-flow:manual] cancel failed:', error)
-      })
+      try {
+        // `cancel` first, so `finished` is set before the wait below: that is what makes an
+        // in-flight `start` release the device it is mid-way through acquiring instead of
+        // finishing into a session nobody holds.
+        await session.cancel().catch((error: unknown) => {
+          console.error('[app-flow:manual] cancel failed:', error)
+        })
+        await starting.get(projectId)?.catch(() => undefined)
+      } finally {
+        // Deleted only once the device is genuinely released. Dropping it up front made
+        // `isActive` false while the teardown was still running, so a sweep started straight
+        // after a discard passed the host's guard and then collided with a live agent-device
+        // session that still held the iOS runner lease.
+        sessions.delete(projectId)
+      }
       return { cancelled: true }
     },
 

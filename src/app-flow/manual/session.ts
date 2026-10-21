@@ -206,12 +206,24 @@ export class ManualSession extends EventEmitter {
       this.status('starting', 'Booting simulator')
       this.device = await bootDevice(this.ctx)
     }
+    // Discard can land here: a cold start is a native build, a simulator boot and a Metro cold
+    // start — minutes during which the panel's × is live, and `cancel` ran while `this.device`
+    // was still null, so its `teardown` found nothing to release. Without this check the device
+    // that finished booting afterwards belonged to nobody: the session was already out of
+    // `sessions`, so `isActive` was false, and nothing was in `warmDevices`, so `releaseDevices`
+    // closed nothing — while the agent-device session kept the iOS runner lease and the next
+    // sweep failed with "iOS runner ... is already owned by another agent-device daemon".
+    if (await this.abandonIfFinished()) return
 
     this.status('starting', 'Launching app')
     // Opens with `saveScript`, so the launch itself is the first line of the recording. This is
     // what makes "the app launch is always part of pathToReach" true for both output shapes: the
     // published script replays it, and the literal fallback reproduces it as `agent-device open`.
     await startReplayRecording(this.ctx, this.device, this.candidatePath, this.device.launchUrl)
+    // The same check again, because the launch and the `--saveScript` arming are their own wait:
+    // a transaction left armed on a handed-on device suppresses every later `goHome` and makes
+    // agent-device refuse to arm the next recording over it. `abandonIfFinished` ends it.
+    if (await this.abandonIfFinished()) return
 
     this.status('recording')
     // One measurement per started recording, with the device's provenance as a closed-set
@@ -222,6 +234,29 @@ export class ManualSession extends EventEmitter {
     })
     await this.tick()
     this.schedulePoll()
+  }
+
+  /**
+   * Releases a device `start` acquired after the session was already discarded, and says whether
+   * it did.
+   *
+   * `cancel` and `failed` can both run while `start` is still booting, and `teardown` is a no-op
+   * when `this.device` is null — which it is for the whole expensive half of a start. So the
+   * checkpoints in `start` call this after every step that can leave something behind, and it
+   * performs the half of the discard that was skipped: end the live `--saveScript` transaction,
+   * drop the candidate script, hand the device to the service's `release`.
+   *
+   * It releases through the same `teardown('done')` an ordinary discard uses, so a device booted
+   * for a recording nobody wants is parked for the next session rather than thrown away — the
+   * boot has been paid for either way, and `releaseDevices` closes it before any sweep.
+   */
+  private async abandonIfFinished(): Promise<boolean> {
+    if (!this.finished) return false
+    log('start', 'discarded while starting — releasing the device it had already acquired')
+    if (this.device) await endLiveSession(this.device).catch(() => undefined)
+    await unlink(this.candidatePath).catch(() => undefined)
+    await this.teardown('done')
+    return true
   }
 
   /**

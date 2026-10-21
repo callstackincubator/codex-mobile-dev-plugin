@@ -120,6 +120,14 @@ function NodeActions({ node }: { node: AppFlowNode }) {
   const replayable = node.capture?.replayable ?? node.capture?.status === "ok"; const inferred = node.capture?.pathVerified === false;
   const selectors = node.capture?.pathContentSelectors ?? [];
   const busy = replaying !== null || recording.nodeId !== null;
+  /**
+   * A screen the sweep never actually rendered has nothing to navigate to: `not-found` and
+   * `unavailable` are this build answering that the route is not there or renders a fallback
+   * instead, and no capture at all means nothing has ever reached it. The runtime would refuse
+   * the dispatch for the same reason a moment later, so the button says so up front rather than
+   * spending a device boot to arrive at it.
+   */
+  const captured = Boolean(node.capture) && node.capture?.status !== "unavailable" && node.capture?.status !== "not-found";
   const run = (variant: "runtime" | "manual") => (event: { stopPropagation: () => void }) => {
     event.stopPropagation(); setReplayError(null); setReplaying(variant);
     void (variant === "runtime" ? graph.panel.replayRuntime(node.id) : graph.panel.replay(node.id))
@@ -131,9 +139,11 @@ function NodeActions({ node }: { node: AppFlowNode }) {
     <button type="button" className={`nodrag nopan flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium disabled:opacity-35 ${active ? "bg-rose-500 text-white" : "bg-muted text-foreground hover:bg-muted/70"}`}
       disabled={otherRunning || replaying !== null} onClick={event => { event.stopPropagation(); void (active ? graph.panel.recording.stop(graph.projectPath!) : graph.panel.recording.start(graph.projectPath!, node.id)); }}>
       <span className={`h-1.5 w-1.5 rounded-full ${active ? "animate-pulse bg-white" : "bg-rose-400"}`} />{active ? "Stop" : "Record path"}</button>
-    <button type="button" title={`Launch the app and navigate straight to this screen through its own navigator${params.length ? `, using the last observed ${params.map(key => `:${key}`).join(", ")}` : ""}. Needs a running dev server.`}
+    <button type="button" title={captured
+      ? `Launch the app and navigate straight to this screen through its own navigator${params.length ? `, using the last observed ${params.map(key => `:${key}`).join(", ")}` : ""}. Needs a running dev server.`
+      : "This screen has not been captured yet — run a sweep that reaches it first."}
       className="nodrag nopan flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border px-2 py-1 text-[10px] font-medium disabled:opacity-35"
-      disabled={busy} onClick={run("runtime")}>
+      disabled={busy || !captured} onClick={run("runtime")}>
       <span aria-hidden>▶</span>{replaying === "runtime" ? "Navigating…" : "Replay"}</button>
   </div>
   {replayable && <button type="button" title={`${inferred ? "Walk this screen’s inferred path" : "Launch the app and walk this screen’s recorded path"}${selectors.length ? `. Depends on visible text: ${selectors.join(", ")}` : ""}`}
