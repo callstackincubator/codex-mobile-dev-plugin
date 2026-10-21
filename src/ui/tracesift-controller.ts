@@ -439,7 +439,7 @@ export class TraceSiftController {
   }
 
   /** The same, for components picked out of a React recording's commits. */
-  private reactSelectionHandoff(payload: unknown, selected: readonly string[], profileTitle?: string, headline?: string) {
+  private reactSelectionHandoff(payload: unknown, selected: readonly string[], profileTitle?: string) {
     const handoff = payload as { explore?: unknown } | null;
     const recording = handoff && typeof handoff.explore === "object" && handoff.explore !== null
       ? handoff.explore as ReactSelectionRecording
@@ -460,7 +460,6 @@ export class TraceSiftController {
         recording,
         evidence,
         ...(profileTitle ? { profileTitle } : {}),
-        ...(headline ? { headline } : {}),
       }),
     };
   }
@@ -487,7 +486,7 @@ export class TraceSiftController {
     try {
       const selected = explorer.selected ?? [];
       const built = explorer.kind === "react"
-        ? this.reactSelectionHandoff(explorer.payload, selected, analysis.title, card.headline)
+        ? this.reactSelectionHandoff(explorer.payload, selected, analysis.title)
         : this.taskSelectionHandoff(explorer.payload, selected, analysis.title);
       if ("error" in built) {
         this.update({ error: built.error });

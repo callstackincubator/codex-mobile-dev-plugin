@@ -271,124 +271,10 @@ const CAUSE_TEXT: Record<string, string> = {
   unknown: "render reason not recorded",
 };
 
-/** What each non-product class is called when a run of them is folded away. */
-const FOLD_WORDS: Record<string, string> = {
-  framework: "React",
-  host: "platform view",
-  unnamed: "unnamed",
-  library: "dependency",
-};
-
-/**
- * Which components the tree prints rather than folds.
- *
- * The same cut the component table's "Your code only" draws by, so the tree
- * describes the stack the reader was looking at. A dependency is kept: a slow
- * render inside a charting library is a finding a reader acts on, even though
- * the fix is usually above it.
- */
-const KEPT_CLASSES = new Set(["app", "library"]);
-
-/** How far below a picked component to follow the heaviest child. */
-const MAX_HOT_DESCENT = 3;
-
-/** Below this many components folded, it is not worth a line of its own. */
-const MIN_COLLAPSED_RUN = 3;
-
-interface TreeRow {
-  label: string;
-  note?: string;
-  named: boolean;
-  componentClass: string;
-  children: TreeRow[];
-}
-
-/**
- * The components joining a commit to every pick inside it, and the heaviest
- * components inside each pick, as one tree.
- *
- * Same reason the CPU hand-off merges: four picks under one screen share the
- * chain above them, and four separate stacks would bury the branch point, which
- * is the useful fact. Drawn per commit, because two commits are two trees and
- * merging them would invent a parent neither has.
- */
-function commitTree(commit: SelectedCommit, nodes: readonly ReactSelectionNode[]): string[] {
-  const byId = new Map<number, { node: ReactSelectionNode; parent: number | null }>();
-  const walk = (list: readonly ReactSelectionNode[], parent: number | null) => {
-    for (const node of list) { byId.set(node.id, { node, parent }); walk(node.children, node.id); }
-  };
-  walk(nodes, null);
-
-  const marked = new Map<number, number>();
-  for (const pick of commit.picks) {
-    if (byId.has(pick.fiberId)) marked.set(pick.fiberId, pick.pick);
-  }
-  if (marked.size === 0) return [];
-
-  const keep = new Set<number>();
-  for (const id of marked.keys()) {
-    let here = byId.get(id);
-    while (here && !keep.has(here.node.id)) {
-      keep.add(here.node.id);
-      here = here.parent === null ? undefined : byId.get(here.parent);
-    }
-  }
-  for (const id of marked.keys()) {
-    let node = byId.get(id)?.node;
-    for (let depth = 0; depth < MAX_HOT_DESCENT && node; depth += 1) {
-      // The heaviest child by what it rendered, which is where a parent's width
-      // went. Ties and recursion end the descent rather than repeating a name.
-      const next = [...node.children].sort((a, b) => b.actualMs - a.actualMs)[0];
-      if (!next || next.name === node.name) break;
-      keep.add(next.id);
-      node = next;
-    }
-  }
-
-  const rowFor = (node: ReactSelectionNode): TreeRow => ({
-    label: node.name,
-    ...(marked.has(node.id) ? { note: `  ← selection #${marked.get(node.id)}` } : {}),
-    named: KEPT_CLASSES.has(node.componentClass),
-    componentClass: node.componentClass,
-    children: node.children
-      .filter(child => keep.has(child.id))
-      .sort((a, b) => b.actualMs - a.actualMs)
-      .map(rowFor),
-  });
-
-  return nodes.filter(node => keep.has(node.id)).flatMap(node => drawRow(collapse(rowFor(node)), "", true, true));
-}
-
-/** Fold a run of single-child scaffolding into one line; never fold a picked or product row. */
-function collapse(row: TreeRow): TreeRow {
-  const run: TreeRow[] = [];
-  let current = row;
-  while (!current.note && !current.named && current.children.length === 1) {
-    run.push(current);
-    current = current.children[0]!;
-  }
-  const tail: TreeRow = { ...current, children: current.children.map(collapse) };
-  if (run.length >= MIN_COLLAPSED_RUN) {
-    const kinds = new Set(run.map(node => FOLD_WORDS[node.componentClass]));
-    const kind = kinds.size === 1 ? [...kinds][0] : undefined;
-    return {
-      label: `… (${run.length} ${kind ? `${kind} ` : ""}component${run.length === 1 ? "" : "s"})`,
-      named: false,
-      componentClass: run[0]!.componentClass,
-      children: [tail],
-    };
-  }
-  return run.reduceRight<TreeRow>((child, node) => ({ ...node, children: [child] }), tail);
-}
-
-function drawRow(row: TreeRow, prefix: string, isLast: boolean, isRoot: boolean): string[] {
-  const connector = isRoot ? "" : isLast ? "└─ " : "├─ ";
-  const lines = [`${prefix}${connector}${row.label}${row.note ?? ""}`];
-  const childPrefix = isRoot ? prefix : `${prefix}${isLast ? "   " : "│  "}`;
-  row.children.forEach((child, index) => {
-    lines.push(...drawRow(child, childPrefix, index === row.children.length - 1, false));
-  });
-  return lines;
+/** Keep component ancestry useful without handing the model a page of navigator scaffolding. */
+function compactPath(path: readonly string[]): string {
+  if (path.length <= 4) return path.map(part => `\`${part}\``).join(" › ");
+  return [`\`${path[0]}\``, "…", ...path.slice(-3).map(part => `\`${part}\``)].join(" › ");
 }
 
 /** A share, with the one decimal the CPU hand-off uses and for the same reason. */
@@ -414,8 +300,6 @@ export function buildReactSelectionPrompt(input: {
   evidence: ReactSelectionEvidence;
   /** The profile this came from, when the panel knows it. */
   profileTitle?: string;
-  /** The card's own headline, so the chat says which finding the picks came from. */
-  headline?: string;
 }): string {
   const { recording, evidence } = input;
   const lines: string[] = [];
@@ -423,20 +307,14 @@ export function buildReactSelectionPrompt(input: {
   const commitCount = evidence.commits.length;
 
   lines.push(
-    `Use the measured evidence below to investigate ${count} component render${count === 1 ? "" : "s"} I selected while exploring a React profile in TraceSift, and tell me what they say about why this interaction is slow and what would be worth changing first.`,
-  );
-  lines.push("");
-  lines.push(
-    `I picked these myself, one at a time, in the Explorer's render tree and component table${commitCount > 1 ? `, across ${commitCount} commits` : ""}. They are a starting point rather than a verdict: I have not concluded that they are the cause, and the measurements do not say they are.`,
+    `Use the measured evidence below to investigate ${count} component render${count === 1 ? "" : "s"} I selected in a React profile. Explain what the evidence supports about the slow interaction, what it cannot establish, and what would be worth investigating or changing first.`,
   );
   lines.push("");
 
   lines.push(`## The recording they sit in`);
-  if (input.headline) lines.push(`- ${input.headline}`);
   lines.push(
     `- Measured by React's own profiler on a running build: ${recording.commits.length} commit${recording.commits.length === 1 ? "" : "s"} across ${ms(recording.spanMs)}, ${ms(evidence.recordedCommitsMs)} of it spent rendering.`,
   );
-  lines.push(`- ${recording.commitsOverBudget} commit${recording.commitsOverBudget === 1 ? "" : "s"} ran over the ${recording.budgetMs} ms frame budget.`);
   if (input.profileTitle) lines.push(`- Recording: ${input.profileTitle}`);
   lines.push("");
 
@@ -461,9 +339,7 @@ export function buildReactSelectionPrompt(input: {
         lines.push(`   - Classified as \`${pick.componentClass}\`, not application code.`);
       }
       if (pick.compiledWithForget) lines.push(`   - Compiled by the React Compiler, so its memoization is generated rather than written.`);
-      lines.push(
-        `   - Rendered under: ${pick.path.slice(0, -1).map(part => `\`${part}\``).join(" › ") || "the root of this commit"}`,
-      );
+      lines.push(`   - Location: ${compactPath(pick.path)}.`);
     }
   }
   lines.push("");
@@ -505,13 +381,10 @@ export function buildReactSelectionPrompt(input: {
     lines.push("");
   }
 
-  lines.push(`## What they add up to`);
-  lines.push(
-    `- Their own render time together is ${ms(evidence.selfMsTogether)}${commitCount > 1 ? `, across ${commitCount} commits totalling ${ms(evidence.pickedCommitsMs)} of rendering` : ` — ${percentText(percentOf(evidence.selfMsTogether, evidence.pickedCommitsMs))} of the commit's ${ms(evidence.pickedCommitsMs)}`}. Own time is React's \`selfDuration\`: a true partition of the render phase, so it adds across these whether or not one rendered another.`,
-  );
-  if (commitCount > 1) {
+  lines.push(`## Coverage outside the selection`);
+  if (count > 1) {
     lines.push(
-      `- That is ${percentText(percentOf(evidence.selfMsTogether, evidence.pickedCommitsMs))} of the render time of the commits I picked in, and ${percentText(percentOf(evidence.selfMsTogether, evidence.recordedCommitsMs))} of the ${ms(evidence.recordedCommitsMs)} this recording spent rendering in total. Commits do not overlap in time, so these do add.`,
+      `- The selections account for ${ms(evidence.selfMsTogether)} of their own render time${commitCount > 1 ? ` across ${commitCount} commits totalling ${ms(evidence.pickedCommitsMs)}` : ` — ${percentText(percentOf(evidence.selfMsTogether, evidence.pickedCommitsMs))} of the commit`}.`,
     );
   }
   for (const commit of evidence.commits) {
@@ -523,29 +396,12 @@ export function buildReactSelectionPrompt(input: {
     if (otherComponents > 0.005) parts.push(`${ms(otherComponents)} in the other components it rendered`);
     if (commit.unattributedMs > 0.005) parts.push(`${ms(commit.unattributedMs)} in React's own walk of the tree, which reached no component`);
     if (parts.length === 0) continue;
-    lines.push(
-      `- Commit ${commit.commitIndex}: my picks are ${ms(commit.selfMsTogether)} of its ${ms(commit.durationMs)} (${percentText(commit.selfShare)}). The rest is ${parts.join(", and ")}. That is not time accounted for — it is the part of this commit I have not asked you about.`,
-    );
+    const scope = count > 1
+      ? `after the selected ${ms(commit.selfMsTogether)} (${percentText(commit.selfShare)})`
+      : `outside the selected component`;
+    lines.push(`- Commit ${commit.commitIndex}: ${scope}, the remaining render time is ${parts.join(" plus ")}.`);
   }
   lines.push("");
-
-  const trees = evidence.commits.flatMap((commit) => {
-    const source = recording.commits.find(entry => entry.rootId === commit.rootId && entry.commitIndex === commit.commitIndex);
-    const drawn = source ? commitTree(commit, source.tree) : [];
-    return drawn.length > 0 ? [{ commit, drawn }] : [];
-  });
-  if (trees.length > 0) {
-    lines.push(`## Where those components sit`);
-    lines.push(
-      `The components joining each commit to everything I selected in it, with the heaviest components inside each. \`←\` marks a selection and its number, \`…\` a run of components carrying no name worth reading.`,
-    );
-    for (const { commit, drawn } of trees) {
-      lines.push("");
-      lines.push(`Commit ${commit.commitIndex}:`);
-      lines.push("```", ...drawn, "```");
-    }
-    lines.push("");
-  }
 
   if (evidence.unresolved.length > 0) {
     lines.push(`## I could not place ${evidence.unresolved.length === 1 ? "one selection" : `${evidence.unresolved.length} selections`}`);
@@ -555,15 +411,12 @@ export function buildReactSelectionPrompt(input: {
     lines.push("");
   }
 
-  lines.push(`## How to read these numbers`);
+  lines.push(`## Interpretation constraints`);
   lines.push(`- This has only component names, source hints and timings. It has not read any source file. Confirm what each of these components actually does before changing it.`);
-  lines.push(`- These are React's own measurements, not samples: own time is \`selfDuration\` and the inclusive figure is \`actualDuration\`, recorded per component per commit. They are exact for what they cover and say nothing about anything else.`);
+  lines.push(`- These are React's own measurements, not samples. Own time is \`selfDuration\`; inclusive time is \`actualDuration\`.`);
   lines.push(`- They cover the render phase only. Layout and passive effects, the commit phase, native view updates, and every millisecond between two commits are not in this document, so a slow interaction can have most of its cost outside everything measured here.`);
-  lines.push(`- An inclusive figure overlaps every component above it and never sums to anything. Own time is the partition: over every component React rendered it adds up to the commit, with the reconciler's own walk as the remainder.`);
-  lines.push(`- Nesting is by the nearest ancestor that also rendered, so a component whose parent bailed out sits higher here than it does in the source.`);
-  lines.push(`- A render reason of "nothing changed" means React re-rendered a component whose props and state it recorded as unchanged. That is a candidate for memoization rather than a proven waste: the recording cannot see what the component would have returned.`);
-  lines.push(`- Where I picked a component in the render tree, components that burned no measurable time and rendered one child were collapsed away in what I was looking at, and their cost was charged to the nearest component kept above them. The tree above shows the recorded nesting; what I saw on screen may have shown fewer rows.`);
-  lines.push(`- Nothing here is a conclusion, and I did not rank these. Say which of these figures supports what you conclude, and where the measurement cannot tell two explanations apart, say that instead of choosing one.`);
+  lines.push(`- Own time partitions render cost and can be added. Inclusive time overlaps descendants and must not be summed.`);
+  lines.push(`- Treat each selection and render reason as a lead, not proof of causation or avoidable work. Tie conclusions to specific measurements, and say when the evidence cannot distinguish between explanations.`);
 
   return lines.join("\n");
 }

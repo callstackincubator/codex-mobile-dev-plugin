@@ -125,28 +125,50 @@ test("a pick that rendered another pick is named, because only the inclusive fig
   assert.match(text, /Classified as `library`, not application code/);
 });
 
-test("the prompt accounts for the commit it did not ask about, and draws where the picks sit", () => {
+test("the prompt accounts for work outside one selection without repeating its evidence", () => {
   const evidence = reactSelectionEvidence(recording, ["1.0.4"]);
-  const text = buildReactSelectionPrompt({ recording, evidence, profileTitle: "Search.reactprofile", headline: "Heavy component" });
+  const text = buildReactSelectionPrompt({ recording, evidence, profileTitle: "Search.reactprofile" });
 
   assert.match(text, /investigate 1 component render I selected/);
   assert.match(text, /Recording: Search\.reactprofile/);
-  assert.match(text, /- Heavy component/);
   assert.match(text, /2 commits across 300 ms, 60 ms of it spent rendering/);
   // Both sides of the subtraction are figures this document states: 38 ms of
   // component time less the 30 ms picked, plus the reconciler's own 2 ms.
-  assert.match(text, /my picks are 30 ms of its 40 ms \(75\.0%\)/);
-  assert.match(text, /8 ms in the other components it rendered, and 2 ms in React's own walk of the tree/);
-  assert.match(text, /← selection #1/);
-  assert.match(text, /Screen/, "the ancestors joining the commit to the pick are drawn");
+  assert.match(text, /30 ms of its own render time \(75\.0% of this commit\)/);
+  assert.match(text, /8 ms in the other components it rendered plus 2 ms in React's own walk of the tree/);
+  assert.match(text, /Location: `Screen` › `Provider` › `Chart`\./);
+  assert.equal(text.match(/30 ms/g)?.length, 2, "the selection and inclusive duration are equal; no aggregate repeats them");
+  assert.doesNotMatch(text, /Heavy component|Rendered under|Where those components sit|What they add up to/);
 
   // The caveats that decide how the figures read travel with them, and they are
   // React's rather than the CPU side's: nothing here was sampled.
   assert.match(text, /render phase only/);
-  assert.match(text, /nearest ancestor that also rendered/);
   assert.match(text, /React's own measurements, not samples/);
+  assert.match(text, /lead, not proof of causation or avoidable work/);
   assert.doesNotMatch(text, /A CPU profile is samples/, "the CPU prompt's sampling language describes a measurement this recording did not make");
   assert.doesNotMatch(text, /on top of the stack/);
+});
+
+test("a long rendered path is compacted instead of duplicated as a tree", () => {
+  const longRecording: ReactSelectionRecording = {
+    ...recording,
+    commits: [{
+      ...recording.commits[0]!,
+      renderedCount: 5,
+      tree: [node(1, "Navigation", 0, 30, { children: [
+        node(2, "Provider", 0, 30, { children: [
+          node(3, "Screen", 0, 30, { children: [
+            node(4, "View", 0, 30, { children: [node(5, "Chart", 30, 30)] }),
+          ] }),
+        ] }),
+      ] })],
+    }],
+  };
+  const evidence = reactSelectionEvidence(longRecording, ["1.0.5"]);
+  const text = buildReactSelectionPrompt({ recording: longRecording, evidence });
+
+  assert.match(text, /Location: `Navigation` › … › `Screen` › `View` › `Chart`\./);
+  assert.doesNotMatch(text, /## Where those components sit/);
 });
 
 test("a pick the recording no longer holds is named rather than guessed at", () => {

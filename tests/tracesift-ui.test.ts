@@ -604,8 +604,9 @@ test("TraceSift sends the selected components' measured evidence to the active c
   assert.match(text, /Why it rendered: props changed: data\./);
   // The same component in two commits is the finding, not a duplicate to merge.
   assert.match(text, /`Chart` is selections 1, 2: the same component rendering in 2 separate commits/);
-  assert.match(text, /← selection #1/);
-  assert.match(text, /Heavy component/, "the card's own headline says which finding this came from");
+  assert.match(text, /Location: `Screen` › `Chart`\./);
+  assert.match(text, /Treat each selection and render reason as a lead, not proof/);
+  assert.doesNotMatch(text, /Heavy component|Where those components sit/);
   assert.deepEqual((messages[0] as { _meta: unknown })._meta, { "openai/message": { target: "active", send: true } });
   assert.equal(controller.getSnapshot().error, "");
   controller.dispose();
