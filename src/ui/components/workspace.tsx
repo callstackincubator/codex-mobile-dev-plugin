@@ -22,7 +22,12 @@ import type { PluginUpdateController } from "../plugin-updates.ts";
 import type { DeviceLayout } from "../device-layout.ts";
 export type { DeviceLayout } from "../device-layout.ts";
 
-const tools = { logs: { label: "Logs", icon: TerminalIcon }, performance: { label: "Performance", icon: ActivityIcon }, storage: { label: "Storage", icon: DatabaseIcon } };
+// Menu item IDs stay literal so tests and the package smoke check can find them in the bundle.
+const tools = {
+  logs: { id: "tool-logs", label: "Logs", icon: TerminalIcon },
+  performance: { id: "tool-performance", label: "Performance", icon: ActivityIcon },
+  storage: { id: "tool-storage", label: "Storage", icon: DatabaseIcon },
+};
 type Tool = keyof typeof tools;
 const isTool = (value: string): value is Tool => value in tools;
 
@@ -108,7 +113,7 @@ export function Workspace({ logs, performance, storage, recordingController, upd
       <SelectTrigger id="tool-select" size="sm" className="shrink-0" aria-label="Developer tools"><SelectValue>{open ? <ToolIcon /> : <PanelsTopLeftIcon />}<span className="@max-[600px]:sr-only">{open ? tools[tool].label : "Tools"}</span></SelectValue></SelectTrigger>
       <SelectContent side={menuSide} align="start" alignItemWithTrigger={false}><SelectGroup>
         <SelectItem id="tool-none" value="none">Hide tools</SelectItem>
-        {Object.entries(tools).map(([value, { label, icon: Icon }]) => <SelectItem key={value} id={`tool-${value}`} value={value}><Icon />{label}</SelectItem>)}
+        {Object.entries(tools).map(([value, { id, label, icon: Icon }]) => <SelectItem key={value} id={id} value={value}><Icon />{label}</SelectItem>)}
       </SelectGroup></SelectContent>
     </Select>
     <Select multiple items={[{ value: "ios", label: "iOS" }, { value: "android", label: "Android" }]} value={layout === "both" ? ["ios", "android"] : layout === "none" ? [] : [layout]} onValueChange={values => {
