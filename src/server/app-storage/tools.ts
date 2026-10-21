@@ -14,9 +14,10 @@ import type { DriverFactory } from "../app-control/tools.ts";
 import { AndroidContainer, SimulatorContainer } from "./container.ts";
 import type { AppContainer } from "./container.ts";
 import { clearStore, readStorage, readTable } from "./reader.ts";
+import { previewFile } from "./preview.ts";
 
 type Target = { platform: "ios" | "android"; deviceId: string };
-type Operation = "read" | "clear" | "reset" | "table";
+type Operation = "read" | "clear" | "reset" | "table" | "file";
 export type ContainerFactory = (target: Target, bundleId: string) => Promise<AppContainer>;
 
 export function createContainers(commands: Commands = systemCommands): ContainerFactory {
@@ -77,6 +78,16 @@ export function registerAppStorageTools(server: McpServer, commands: Commands = 
     _meta: { ui: { visibility: ["app", "model"] } },
   }, input => run("table", input, container => readTable(container, input.store, input.table, {
     offset: input.offset ?? 0, limit: input.limit ?? storageLimits.tableRows, valueLength: storageLimits.tableValueLength, run: commands.run,
+  })));
+
+  registerAppTool(server, "mobile_app_storage_file", {
+    title: "Read an app data file",
+    description: "Read one file listed by mobile_app_storage, decoded by its contents: JSON, property lists (including binary and NSKeyedArchiver archives) as JSON, text, or hex for other binary data.",
+    inputSchema: { ...appTargetShape, bundleId, path: z.string().min(1).max(4096).describe("A file path from mobile_app_storage's files list.") },
+    annotations: readOnly,
+    _meta: { ui: { visibility: ["app", "model"] } },
+  }, input => run("file", input, container => previewFile(container, input.path, {
+    maxBytes: storageLimits.previewBytes, maxLength: storageLimits.previewLength, hexBytes: storageLimits.hexBytes, run: commands.run,
   })));
 
   registerAppTool(server, "mobile_clear_app_storage", {

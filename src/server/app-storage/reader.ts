@@ -7,7 +7,7 @@ import type { StorageEntry, StorageFile, StorageSnapshot, StorageStore, StorageT
 import { withTemporaryDirectory } from "../app-control/commands.ts";
 import type { CommandRunner } from "../app-control/commands.ts";
 import type { AppContainer, ContainerFile } from "./container.ts";
-import { basename, classifyFiles, nullEntry, parseDataStorePreferences, parsePlistXml, parseSharedPreferences, plistEntries, storeId, textEntry } from "./formats.ts";
+import { basename, classifyFiles, nullEntry, parseDataStorePreferences, parsePlistXml, parseSharedPreferences, plistEntries, protobufEntries, storeId, textEntry } from "./formats.ts";
 import type { ParsedEntry, StoreCandidate } from "./formats.ts";
 import { decodeMmkv, guessMmkvValue } from "./mmkv.ts";
 
@@ -17,6 +17,7 @@ type StoreContent = { status: StorageStore["status"]; note?: string; entries: Pa
 
 const sqlite3 = process.platform === "darwin" ? "/usr/bin/sqlite3" : "sqlite3";
 const quoteIdentifier = (name: string) => `"${name.replaceAll("\"", "\"\"")}"`;
+const sqlString = (text: string) => `'${text.replaceAll("'", "''")}'`;
 
 async function sqlite(run: CommandRunner, file: string, sql: string): Promise<Record<string, unknown>[]> {
   const output = await run(sqlite3, ["-json", file, sql], { timeout: 15000, maxBuffer: 64 * 1024 * 1024 });
@@ -49,13 +50,16 @@ async function readSqlite(container: AppContainer, candidate: StoreCandidate, ru
       const entries = rows.map(row => row.value === null || row.value === undefined ? nullEntry(String(row.key)) : textEntry(String(row.key), String(row.value)));
       return { status: "ok", kind: "async-storage", entries };
     }
-    const entries = await Promise.all(tables.map(async (table): Promise<ParsedEntry> => {
-      const [count] = await sqlite(run, file, `SELECT count(*) AS rows FROM ${quoteIdentifier(table)}`).catch(() => [{ rows: "?" }]);
-      const columns = (await sqlite(run, file, `PRAGMA table_info(${quoteIdentifier(table)})`).catch(() => [])).map(column => String(column.name));
-      const value = `${count?.rows ?? "?"} rows · ${columns.join(", ")}`;
-      return { key: table, type: "table", value, bytes: 0 };
-    }));
-    return { status: "ok", entries };
+    if (tables.length === 0) return { status: "ok", entries: [] };
+    // Two queries cover every table. Running one sqlite3 per table in parallel let the first process recover the
+    // write-ahead log while the others failed on its lock.
+    const counts = new Map((await sqlite(run, file, tables.map(table => `SELECT ${sqlString(table)} AS name, count(*) AS total FROM ${quoteIdentifier(table)}`).join(" UNION ALL ")))
+      .map(row => [String(row.name), Number(row.total)]));
+    const columns = new Map<string, string[]>();
+    for (const row of await sqlite(run, file, "SELECT m.name AS tbl, p.name AS col FROM sqlite_master m JOIN pragma_table_info(m.name) p WHERE m.type='table' AND m.name NOT LIKE 'sqlite_%' ORDER BY m.name, p.cid")) {
+      columns.set(String(row.tbl), [...columns.get(String(row.tbl)) ?? [], String(row.col)]);
+    }
+    return { status: "ok", entries: tables.map(table => ({ key: table, type: "table", value: `${counts.get(table) ?? "?"} rows · ${(columns.get(table) ?? []).join(", ")}`, bytes: 0 })) };
   });
 }
 
@@ -91,10 +95,19 @@ async function readStore(container: AppContainer, candidate: StoreCandidate, run
       const xml = container.preferences ? await container.preferences(candidate.path) : (await container.read(candidate.path)).toString("utf8");
       return { status: "ok", entries: plistEntries(parsePlistXml(xml)) };
     }
-    case "shared-preferences":
-      return { status: "ok", entries: parseSharedPreferences((await container.read(candidate.path)).toString("utf8")) };
-    case "datastore":
-      return { status: "ok", entries: parseDataStorePreferences(await container.read(candidate.path)) };
+    case "shared-preferences": {
+      const entries = parseSharedPreferences((await container.read(candidate.path)).toString("utf8"));
+      // EncryptedSharedPreferences stores its keysets beside encrypted keys and values, which would read as noise.
+      if (entries.some(entry => entry.key.startsWith("__androidx_security_crypto_encrypted_prefs_"))) {
+        return { status: "encrypted", note: "EncryptedSharedPreferences: keys and values are encrypted with a key in the Android Keystore.", entries: [] };
+      }
+      return { status: "ok", entries };
+    }
+    case "datastore": {
+      const bytes = await container.read(candidate.path);
+      if (candidate.path.endsWith(".preferences_pb")) return { status: "ok", entries: parseDataStorePreferences(bytes) };
+      return { status: "ok", note: "Proto DataStore has no schema in the file, so keys are field numbers and types are guessed.", entries: protobufEntries(bytes) };
+    }
     case "async-storage":
       return readAsyncManifest(container, candidate);
     case "sqlite":
@@ -169,7 +182,8 @@ export async function readTable(container: AppContainer, id: string, table: stri
   return withDatabase(container, candidate, async file => {
     if (!(await listTables(run, file)).includes(table)) throw new ExpectedOperationError("invalid_input", `The table ${table} no longer exists. Refresh and try again.`);
     const name = quoteIdentifier(table);
-    const [info, [count]] = await Promise.all([sqlite(run, file, `PRAGMA table_info(${name})`), sqlite(run, file, `SELECT count(*) AS total FROM ${name}`)]);
+    const info = await sqlite(run, file, `PRAGMA table_info(${name})`);
+    const [count] = await sqlite(run, file, `SELECT count(*) AS total FROM ${name}`);
     const columns = info.map(column => ({ name: String(column.name), type: String(column.type ?? "") }));
     // Blobs cannot travel as JSON, so they become a hex preview no longer than the value limit.
     const select = columns.map((column, index) => {

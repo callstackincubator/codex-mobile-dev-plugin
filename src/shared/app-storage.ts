@@ -56,7 +56,7 @@ export type StorageSnapshot = z.infer<typeof storageSnapshotSchema>;
 export const storageClearSchema = z.object({ cleared: z.string(), stopped: z.boolean() });
 
 // Defaults keep model-visible results small; the panel asks for more. Tables are read a page of rows at a time.
-export const storageLimits = { entries: 200, maxEntries: 2000, valueLength: 300, maxValueLength: 16000, files: 400, tableRows: 100, maxTableRows: 500, tableValueLength: 2000 };
+export const storageLimits = { entries: 200, maxEntries: 2000, valueLength: 300, maxValueLength: 16000, files: 400, tableRows: 100, maxTableRows: 500, tableValueLength: 2000, previewBytes: 8 * 1024 * 1024, previewLength: 200000, hexBytes: 4096 };
 
 // One page of rows from a SQLite table. Cells are text, numbers, or null; blobs arrive as x'…' hex.
 const tableCell = z.union([z.string(), z.number(), z.null()]);
@@ -68,3 +68,14 @@ export const storageTableSchema = z.object({
   offset: z.number().int().nonnegative(),
 });
 export type StorageTable = z.infer<typeof storageTableSchema>;
+
+// One file's contents. json, plist, and archive (NSKeyedArchiver) arrive as JSON text; binary as hex of its first bytes.
+export const filePreviewFormats = ["json", "plist", "archive", "text", "binary"] as const;
+export const storageFileSchema = z.object({
+  path: z.string(),
+  bytes: z.number().int().nonnegative(),
+  format: z.enum(filePreviewFormats),
+  content: z.string(),
+  truncated: z.boolean(),
+});
+export type StorageFilePreview = z.infer<typeof storageFileSchema>;

@@ -1,8 +1,8 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
 import { installedAppsSchema } from "../shared/app-control.ts";
 import type { InstalledApp } from "../shared/app-control.ts";
-import { storageClearSchema, storageLimits, storageSnapshotSchema, storageTableSchema } from "../shared/app-storage.ts";
-import type { StorageEntry, StorageSnapshot, StorageStore, StorageTable } from "../shared/app-storage.ts";
+import { storageClearSchema, storageFileSchema, storageLimits, storageSnapshotSchema, storageTableSchema } from "../shared/app-storage.ts";
+import type { StorageEntry, StorageFilePreview, StorageSnapshot, StorageStore, StorageTable } from "../shared/app-storage.ts";
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import { errorMessage } from "../shared/protocol.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
@@ -25,6 +25,7 @@ export type StorageChangeEvent = {
   after?: StorageEntry;
 };
 export type StorageTableView = { storeId: string; name: string; data?: StorageTable; loading: boolean; error: string };
+export type StorageFileView = { path: string; data?: StorageFilePreview; loading: boolean; error: string };
 export type StorageState = {
   open: boolean;
   available: boolean;
@@ -43,6 +44,8 @@ export type StorageState = {
   showSdkChanges: boolean;
   // The database table open in Browse, page by page.
   table?: StorageTableView;
+  // The file open in Files.
+  file?: StorageFileView;
   watchingSince?: number;
   busy: StorageAction | null;
   error: string;
@@ -138,7 +141,7 @@ export class StoragePanel {
     }
     this.revision++;
     this.appsFor = "";
-    this.update({ platform, deviceId, deviceLabel: device?.name ?? "", unsupported, apps: [], bundleId: this.selections.get(`${platform}:${deviceId}`) ?? "", snapshot: undefined, changes: [], table: undefined, watchingSince: undefined, busy: null, error: "", status: "" });
+    this.update({ platform, deviceId, deviceLabel: device?.name ?? "", unsupported, apps: [], bundleId: this.selections.get(`${platform}:${deviceId}`) ?? "", snapshot: undefined, changes: [], table: undefined, file: undefined, watchingSince: undefined, busy: null, error: "", status: "" });
     if (this.state.open) void this.loadApps();
   }
 
@@ -179,6 +182,23 @@ export class StoragePanel {
   }
 
   closeTable() { if (this.state.table) this.update({ table: undefined }); }
+
+  async openFile(path: string) {
+    const bundleId = this.state.bundleId;
+    if (!this.ready() || !bundleId) return;
+    const current = this.current();
+    const file: StorageFileView = { path, loading: true, error: "" };
+    this.update({ file });
+    const stillOpen = () => current() && this.state.file?.path === path;
+    try {
+      const data = storageFileSchema.parse(await measureUiOperation("ui.storage.file", "ui.storage.failure", () => this.call("mobile_app_storage_file", { bundleId, path })));
+      if (stillOpen()) this.update({ file: { ...file, data, loading: false } });
+    } catch (error) {
+      if (stillOpen()) this.update({ file: { ...file, loading: false, error: errorMessage(error) } });
+    }
+  }
+
+  closeFile() { if (this.state.file) this.update({ file: undefined }); }
 
   clearChanges() { this.update({ changes: [], watchingSince: this.state.snapshot?.readAt }); }
 
@@ -232,7 +252,7 @@ export class StoragePanel {
     if (bundleId !== this.state.bundleId) {
       this.revision++;
       this.selections.set(`${this.state.platform}:${this.state.deviceId}`, bundleId);
-      this.update({ bundleId, snapshot: undefined, changes: [], table: undefined, watchingSince: undefined, busy: null, error: "", status: "" });
+      this.update({ bundleId, snapshot: undefined, changes: [], table: undefined, file: undefined, watchingSince: undefined, busy: null, error: "", status: "" });
     }
     if (bundleId) void this.refresh();
   }

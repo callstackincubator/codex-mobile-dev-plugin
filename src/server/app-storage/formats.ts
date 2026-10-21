@@ -36,6 +36,13 @@ function tokens(xml: string): Token[] {
 }
 
 export function parsePlistXml(xml: string): Record<string, PlistValue> {
+  const top = parsePlistValue(xml);
+  if (typeof top !== "object" || top === null || Array.isArray(top) || top instanceof PlistData || top instanceof PlistDate || typeof top === "bigint") throw new Error("The property list root is not a dictionary.");
+  return top;
+}
+
+// Any property list root, for previews of plist files.
+export function parsePlistValue(xml: string): PlistValue {
   const list = tokens(xml);
   let index = 0;
   const next = () => list[index++];
@@ -87,12 +94,10 @@ export function parsePlistXml(xml: string): Record<string, PlistValue> {
   const root = next();
   if (root === undefined || "text" in root || root.tag !== "plist") throw new Error("Not a property list.");
   if (root.empty) return {};
-  const top = value();
-  if (typeof top !== "object" || top === null || Array.isArray(top) || top instanceof PlistData || top instanceof PlistDate || typeof top === "bigint") throw new Error("The property list root is not a dictionary.");
-  return top;
+  return value();
 }
 
-function plainPlist(value: PlistValue): unknown {
+export function plainPlist(value: PlistValue): unknown {
   if (value instanceof PlistData) return `<${value.bytes.length} bytes>`;
   if (value instanceof PlistDate) return value.iso;
   if (typeof value === "bigint") return value.toString();
@@ -195,6 +200,35 @@ export function parseDataStorePreferences(buffer: Buffer): ParsedEntry[] {
   });
 }
 
+// ---- Proto DataStore and other schema-less protobuf: field numbers become keys, and value types are guessed.
+
+const printable = (bytes: Buffer) => {
+  const text = bytes.toString("utf8");
+  return Buffer.from(text, "utf8").equals(bytes) && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffd]/.test(text) ? text : undefined;
+};
+const message = (bytes: Buffer) => { try { const parsed = fields(bytes); return parsed.length > 0 ? parsed : undefined; } catch { return undefined; } };
+
+// Short text often also parses as protobuf, so text wins over a nested message.
+export function protobufEntries(buffer: Buffer, prefix = ""): ParsedEntry[] {
+  const counts = new Map<number, number>();
+  for (const field of fields(buffer)) counts.set(field.number, (counts.get(field.number) ?? 0) + 1);
+  const seen = new Map<number, number>();
+  return fields(buffer).flatMap(field => {
+    const index = seen.get(field.number) ?? 0;
+    seen.set(field.number, index + 1);
+    const key = `${prefix}${field.number}${(counts.get(field.number) ?? 0) > 1 ? `[${index}]` : ""}`;
+    const entry = (type: EntryType, value: string, bytes: number): ParsedEntry[] => [{ key, type, value, bytes, guessed: true }];
+    if (field.varint !== undefined) return entry("integer", BigInt.asIntN(64, field.varint).toString(), 8);
+    const bytes = field.bytes!;
+    if (field.wire === 5) return entry("number", String(bytes.readFloatLE(0)), 4);
+    if (field.wire === 1) return entry("number", String(bytes.readDoubleLE(0)), 8);
+    const text = printable(bytes);
+    if (text !== undefined) return [{ ...textEntry(key, text, bytes.length), guessed: true }];
+    if (message(bytes)) return protobufEntries(bytes, `${key}.`);
+    return entry("data", bytes.toString("hex"), bytes.length);
+  });
+}
+
 // ---- Classifying files in the data directory.
 
 export type StoreCandidate = { kind: StoreKind; name: string; path: string; files: string[] };
@@ -217,7 +251,8 @@ export function classifyFiles(paths: readonly string[], platform: "ios" | "andro
       stores.push({ kind: "mmkv", name: name.slice(0, -4), path: path.slice(0, -4), files: [path.slice(0, -4), path] });
       continue;
     }
-    if (platform === "ios" && directory === "Library/Preferences" && name.endsWith(".plist")) {
+    // App Group containers keep their own Library/Preferences, under the AppGroup/<id>/ prefix.
+    if (platform === "ios" && /(?:^|\/)Library\/Preferences$/.test(directory) && name.endsWith(".plist")) {
       stores.push({ kind: "user-defaults", name: name.slice(0, -6), path, files: [path] });
       continue;
     }
@@ -233,13 +268,20 @@ export function classifyFiles(paths: readonly string[], platform: "ios" | "andro
       stores.push({ kind: "datastore", name: name.slice(0, -".preferences_pb".length), path, files: [path] });
       continue;
     }
+    if (name.endsWith(".pb") && basename(directory) === "datastore") {
+      stores.push({ kind: "datastore", name: name.slice(0, -3), path, files: [path] });
+      continue;
+    }
     if (name.endsWith(".realm")) {
       const related = paths.filter(file => file !== path && (file.startsWith(`${path}.`) || file.startsWith(`${path}.management/`)));
       stores.push({ kind: "realm", name: name.slice(0, -6), path, files: [path, ...related] });
       continue;
     }
-    const sqliteName = platform === "android" ? directory === "databases" && !sqliteSuffix.test(name) && !name.endsWith(".bak") : /\.(?:db|sqlite3?|sql)$/i.test(name);
-    if ((sqliteName || /\.(?:db|sqlite3?)$/i.test(name)) && !systemPaths.test(path)) {
+    // SwiftData's default.store and custom-named Core Data stores are SQLite too; a -wal or -shm file next to any
+    // file marks it as a database in WAL mode.
+    const sqliteName = platform === "android" ? directory === "databases" && !sqliteSuffix.test(name) && !name.endsWith(".bak") : /\.(?:db|sqlite3?|sql|store)$/i.test(name);
+    const walCompanion = !sqliteSuffix.test(name) && (all.has(`${path}-wal`) || all.has(`${path}-shm`));
+    if ((sqliteName || walCompanion || /\.(?:db|sqlite3?)$/i.test(name)) && !systemPaths.test(path)) {
       stores.push({ kind: "sqlite", name, path, files: [path, ...["-wal", "-shm", "-journal"].map(suffix => path + suffix).filter(file => all.has(file))] });
     }
   }
