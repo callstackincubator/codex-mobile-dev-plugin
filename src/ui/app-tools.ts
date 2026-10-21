@@ -1,8 +1,9 @@
 import { z } from "zod";
-import { appDetailsBatch, appDetailsSchema, appLanguageSchema, appLinksSchema, appPermissionsSchema, installedAppsSchema, platformPermissions } from "../shared/app-control.ts";
-import type { AppDetails, AppPermission, AppPermissionEntry, InstalledApp, PermissionState } from "../shared/app-control.ts";
+import { appLanguageSchema, appLinksSchema, appPermissionsSchema, installedAppsSchema, platformPermissions } from "../shared/app-control.ts";
+import type { AppPermission, AppPermissionEntry, InstalledApp, PermissionState } from "../shared/app-control.ts";
 import { measureUiOperation } from "./telemetry.ts";
 import { elementStores } from "./element-store.ts";
+import { appIcons } from "./app-icons.ts";
 
 export type AppToolAction = "list" | "icons" | "launch" | "stop" | "open_url" | "permission" | "push" | "language";
 export type AppEntry = InstalledApp & { icon?: string };
@@ -53,8 +54,6 @@ export class AppToolsStore {
   private revision = 0;
   // simctl cannot read privacy decisions, so iOS rows show what this panel last applied, keyed by app and permission.
   private applied = new Map<string, PermissionState>();
-  // An entry exists once requested; the server caches extracted icons across panels.
-  private details = new Map<string, AppDetails>();
   call?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.state;
@@ -67,7 +66,6 @@ export class AppToolsStore {
     }
     this.revision++;
     this.applied.clear();
-    this.details.clear();
     this.update({ platform, deviceId, disabled, ...deviceDefaults });
   }
 
@@ -129,7 +127,7 @@ export class AppToolsStore {
     return entries.map(entry => ({ ...entry, state: entry.state ?? this.applied.get(`${bundleId}:${entry.permission}`) ?? null }));
   }
 
-  private withDetails(apps: InstalledApp[]): AppEntry[] { return apps.map(app => ({ ...app, ...this.details.get(app.bundleId) })); }
+  private withDetails(apps: InstalledApp[]): AppEntry[] { return apps.map(app => ({ ...app, ...appIcons.get(this.state.platform, this.state.deviceId, app.bundleId) })); }
 
   private async loadSelected() {
     const bundleId = this.state.bundleId;
@@ -150,24 +148,13 @@ export class AppToolsStore {
     });
   }
 
+  // Icons arrive batch by batch through the shared cache, so devices with many apps show the first ones sooner.
   private async loadDetails() {
-    const bundleIds = this.state.apps.map(app => app.bundleId).filter(bundleId => !this.details.has(bundleId));
-    if (bundleIds.length === 0) return;
-    for (const bundleId of bundleIds) this.details.set(bundleId, {});
     const current = this.current();
-    // Icons arrive batch by batch, so devices with many apps show the first ones sooner.
-    for (let start = 0; start < bundleIds.length; start += appDetailsBatch) {
-      const batch = bundleIds.slice(start, start + appDetailsBatch);
-      try {
-        const data = appDetailsSchema.parse(await this.measure("icons", () => this.tool("mobile_app_icons", { bundleIds: batch })));
-        if (!current()) return;
-        for (const [bundleId, details] of Object.entries(data.apps)) this.details.set(bundleId, details);
-        this.update({ apps: this.withDetails(this.state.apps) });
-      } catch {
-        // Initials remain; the next panel open tries again.
-        if (current()) for (const bundleId of batch) this.details.delete(bundleId);
-      }
-    }
+    await appIcons.load((name, args) => this.tool(name, args), this.state.platform, this.state.deviceId, this.state.apps.map(app => app.bundleId), {
+      measure: work => this.measure("icons", work),
+      onBatch: () => { if (current()) this.update({ apps: this.withDetails(this.state.apps) }); },
+    });
   }
 
   private async run(action: AppToolAction, describe: (app: AppEntry) => string, work: (app: AppEntry, current: () => boolean) => Promise<void>) {

@@ -27,6 +27,13 @@ export function recordPluginUpdate(operation: "check" | "install", outcome: "dis
   Sentry.metrics.gauge("plugin.update.duration", duration, { unit: "millisecond", attributes });
 }
 
+export function recordAppStorageOperation(operation: "read" | "clear" | "reset" | "table", platform: "ios" | "android", outcome: "success" | "failed", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "storage", operation, device_platform: platform, outcome };
+  Sentry.metrics.count("app_storage.operation.samples", 1, { attributes });
+  Sentry.metrics.gauge("app_storage.operation.duration", duration, { unit: "millisecond", attributes });
+}
+
 export function recordTraceSiftOperation(operation: "ready" | "analyze" | "remember" | "restore" | "handoff" | "task" | "payload", outcome: "success" | "failed", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "tracesift", operation, outcome };
@@ -243,7 +250,7 @@ const resourceKinds: Record<string, string> = {
   "android-stream:": "android_video", "ios-video:": "ios_video", "ui:": "ui",
 };
 const allowedContext: Record<string, readonly string[]> = {
-  surface: ["logs", "performance", "simulator", "recording", "comparison"], view: ["panel", "workspace", "recording", "comparison"], layout: ["ios", "android", "both", "none"],
+  surface: ["logs", "performance", "storage", "simulator", "recording", "comparison"], view: ["panel", "workspace", "recording", "comparison"], layout: ["ios", "android", "both", "none"],
   device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"],
 };
 

@@ -135,3 +135,25 @@ test("icons for devices with many apps are requested in batches the server accep
   for (let wait = 0; wait < 10 && batches.length < 3; wait++) await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(batches, [200, 200, 50]);
 });
+
+test("the shared icon cache fetches each app once per device across panels and retries failures", async () => {
+  const { AppIconStore } = await import("../src/ui/app-icons.ts");
+  const icons = new AppIconStore();
+  const requests: unknown[] = [];
+  let fail = true;
+  const call = async (_name: string, args: Record<string, unknown>) => {
+    requests.push([args.deviceId, args.bundleIds]);
+    if (fail && (args.bundleIds as string[]).includes("dev.flaky")) throw new Error("offline");
+    return { apps: { "com.acme": { icon: "data:image/png;base64,AAAA" } } };
+  };
+  await Promise.all([icons.load(call, "ios", "sim-a", ["com.acme", "dev.plain"]), icons.load(call, "ios", "sim-a", ["com.acme"])]);
+  assert.equal(icons.get("ios", "sim-a", "com.acme")?.icon, "data:image/png;base64,AAAA");
+  assert.deepEqual(icons.get("ios", "sim-a", "dev.plain"), {}, "apps without an icon are remembered");
+  await icons.load(call, "ios", "sim-b", ["com.acme"]);
+  assert.deepEqual(requests, [["sim-a", ["com.acme", "dev.plain"]], ["sim-b", ["com.acme"]]], "a second panel asking at the same time does not refetch; another device does");
+  await icons.load(call, "ios", "sim-a", ["dev.flaky"]);
+  assert.equal(icons.get("ios", "sim-a", "dev.flaky"), undefined);
+  fail = false;
+  await icons.load(call, "ios", "sim-a", ["dev.flaky"]);
+  assert.deepEqual(icons.get("ios", "sim-a", "dev.flaky"), {}, "a failed batch is requested again later");
+});
