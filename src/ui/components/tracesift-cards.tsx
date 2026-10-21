@@ -1,16 +1,6 @@
 /**
- * TraceSift's findings, inline in the chat.
- *
- * The same card the TraceSift tab draws: the task's duration divided between
- * the features it entered, as a bar or a treemap, with the drill-down and the
- * detail panel a reader gets there. The analysis response carries the boundary
- * frames whole and the slice arithmetic is ported alongside it, so the two
- * cards are the same drawing of the same numbers rather than two readings that
- * can drift.
- *
- * What differs is where the actions go. Explore opens the owning TraceSift web
- * app in a separate window, while Investigate hands the card to the model in
- * this chat.
+ * TraceSift's findings inline in the chat: the same card the TraceSift tab draws.
+ * Only the actions differ — Explore opens here, Investigate asks the model.
  */
 
 import { useSyncExternalStore } from "react";
@@ -23,17 +13,13 @@ import { reactCommitSlices } from "../../shared/tracesift-contribution.ts";
 import type { ContributionChartKind } from "./tracesift/contribution-chart.tsx";
 import { ReactContribution, ReactFallbackRows } from "./tracesift/react-contribution.tsx";
 import { TaskContribution } from "./tracesift/task-contribution.tsx";
+import { TraceSiftExplorer } from "./tracesift-explorer.tsx";
 
 const percent = (value: number) => `${value.toFixed(1)}%`;
 
 /**
- * The header's one line about the whole recording.
- *
- * A recording of nothing but short work is a real answer, not an empty one, so
- * it says so and the busiest tasks are shown anyway. The profiler's own
- * start-up pause is not carded — there is nothing in it to act on — but it is
- * part of the recording the reader is looking at, so the total is told where it
- * went.
+ * The header's one line about the whole recording. Nothing but short work is a
+ * real answer, so it says so; the uncarded profiler start-up is still counted.
  */
 function cpuSummaryLine(analysis: TraceSiftCpuAnalysis): string {
   const { summary } = analysis;
@@ -63,12 +49,8 @@ function ChartSwitch({ kind, onChange }: { kind: ContributionChartKind; onChange
 }
 
 /**
- * The actions under a card.
- *
- * Investigate leads, because it is the one that uses the thing the reader is
- * already in: it puts the card's hand-off in the chat and the model answers
- * there. Explore and Copy sit to the right as the second and third things
- * anyone wants, in the order the web card puts them.
+ * The actions under a card. Investigate leads: it uses the chat the reader is
+ * already in. Explore and Copy follow, in the order the web card puts them.
  */
 function CardFooter({ cardId, controller, canExplore }: { cardId: string; controller: TraceSiftController; canExplore: boolean }) {
   const state = controller.getSnapshot();
@@ -130,12 +112,8 @@ function CpuCard({ card, rank, controller }: { card: TraceSiftTaskCard; rank: nu
 }
 
 /**
- * A React commit, in the same chrome.
- *
- * A commit does not divide into features the way a task does — there are no
- * boundary frames to make slices out of — so it keeps its measured culprit
- * rows and takes the card's header, figures and footer, which is everything
- * the two families really share.
+ * A React commit in the same chrome. It has no boundary frames to slice, so it
+ * keeps its culprit rows and takes only the card's header, figures and footer.
  */
 function ReactCard({ card, rank, controller }: { card: TraceSiftReactCard; rank: number; controller: TraceSiftController }) {
   const { chartKind } = controller.getSnapshot();
@@ -159,6 +137,10 @@ function ReactCard({ card, rank, controller }: { card: TraceSiftReactCard; rank:
 export function TraceSiftCards({ controller }: { controller: TraceSiftController }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const analysis: TraceSiftAnalysis | undefined = state.analysis;
+
+  // One surface shows one thing: the full explorer takes the frame the cards had,
+  // which also unmounts every contribution chart while megabytes are on screen.
+  if (state.explorer) return <TraceSiftExplorer controller={controller} />;
 
   if (!analysis) return <main className="tracesift-results">
     <p role="status">Analyzing profile with TraceSift…</p>

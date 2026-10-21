@@ -26,6 +26,15 @@ const baseReact = {
   culpritTailCount: 0, culpritTailMs: 0, causes: [], wasted: null, confidence: "ok",
 };
 
+const tree = {
+  id: "0", name: "(root)", frameClass: "root", totalMs: 75, selfMs: 0, invocations: 1,
+  children: [{ id: "1", name: "render", location: "src/Screen.tsx:20", frameClass: "app", totalMs: 60, selfMs: 2, invocations: 2, children: [
+    { id: "2", name: "formatRow", location: "src/rows.ts:8", frameClass: "app", totalMs: 44, selfMs: 44, invocations: 12, children: [] }] }],
+};
+const timeline = { boxes: [{ startMs: 120, durationMs: 60, kind: "app", name: "render", nodeId: "1" }], durationMs: 75, coveredMs: 60, rows: 1, kept: ["app"], omittedBoxCount: 0, omittedBoxMs: 0 };
+/** The full task card `mobile_tracesift_explore_payload` answers with. */
+const taskHandoff = { apiVersion: 1, analysisId: "cpu", totalMs: 180, profileTitle: "CPU", card: { ...baseTask, tree, timeline } };
+
 test("compact TraceSift cards preserve CPU and React evidence", async t => {
   const built = await build({
     stdin: { contents: `
@@ -53,8 +62,14 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   const calls: { name: string; arguments: unknown }[] = [];
   const app = {
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    getHostContext: () => ({ availableDisplayModes: ["inline", "fullscreen"] }),
+    async requestDisplayMode({ mode }: { mode: string }) { return { mode }; },
     async callServerTool(input: { name: string; arguments: unknown }) {
       calls.push(input);
+      if (input.name === "mobile_tracesift_explore_payload") {
+        const text = JSON.stringify(taskHandoff);
+        return { content: [{ type: "text", text }], structuredContent: { apiVersion: 1, kind: "task", encoding: "json", payloadBytes: text.length } };
+      }
       return input.name === "mobile_open_tracesift_explore"
         ? { content: [], structuredContent: { opened: true } }
         : { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF_TEXT" } };
@@ -122,17 +137,97 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   assert.equal(window.document.querySelectorAll(".contribution-band").length, 0);
   assert.ok(window.document.querySelectorAll(".contribution-tile").length > 0);
 
-  // Explore opens the task in TraceSift's own web UI. The full task never
-  // crosses the MCP app bridge and the card stays visible in the chat.
+  // Explore loads the task's full tree and renders TraceSift's explorer in this
+  // frame: the card list is replaced, and the way back is the explorer's own.
   const exploreButton = [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent?.includes("Explore"))!;
   await act(() => exploreButton.click());
   // Only the name and the arguments are ours; the bundle adds a telemetry
   // `_meta` to every tool call, and asserting on it would test Sentry.
-  assert.equal(calls.at(-1)!.name, "mobile_open_tracesift_explore");
+  assert.equal(calls.at(-1)!.name, "mobile_tracesift_explore_payload");
   // The call is built inside the JSDOM realm, so its object does not share
   // a prototype with this one and a strict structural compare cannot pass.
-  assert.deepEqual({ ...calls.at(-1)!.arguments as object }, { analysisId: "cpu", taskIndex: 0, focus: "b1" });
+  assert.deepEqual({ ...calls.at(-1)!.arguments as object }, { analysisId: "cpu", taskIndex: 0 });
+  assert.equal(window.document.querySelector(".hotspot-list"), null);
+  assert.match(window.document.querySelector(".tracesift-explorer")!.textContent!, /Render blocked the main thread/);
+  // The web app's own page wrapper is what insets the view, and its theme tokens
+  // are scoped to the class above it; a renderer that mounts the views bare, or
+  // renames that class, draws an unpadded grey Explore, so both are checked here.
+  assert.ok(window.document.querySelector(".tracesift-explorer > .explore-page"), "the explorer renders the Explore page");
+  // The browser window stays one click away for readers who want the web app.
+  assert.ok([...window.document.querySelectorAll<HTMLElement>("button")].some(button => button.textContent?.includes("Open in browser")));
+
+  // ── Picking frames, across the four views ─────────────────────────────────
+  // Selecting is the explorer's own affordance and the views are TraceSift's, so
+  // what matters is the seam: one click in one view has to be visible in the
+  // others, and a second click has to undo the first.
+  const pickToggle = [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent?.includes("Select frames"))!;
+  flush(() => pickToggle.click());
+  assert.match(window.document.body.textContent!, /Click a frame in the timeline, flame graph, call tree or culprits/);
+
+  const timelineBox = window.document.querySelector<HTMLElement>(".timeline-box")!;
+  assert.ok(timelineBox, "the timeline draws the task's one call");
+  flush(() => timelineBox.click());
+  assert.ok(timelineBox.classList.contains("is-picked"), "the clicked box is ringed");
+  // The count, so four picks spread over two tabs can still be told apart.
+  assert.match(timelineBox.textContent!, /1/);
+  // While picking, the click is the pick: the view the reader is working in does
+  // not re-root itself under their cursor. The selection array is built inside the
+  // JSDOM realm, so it is joined rather than compared as an object.
+  assert.equal(mounted.controller.getSnapshot().explorer?.selected.join(","), "1");
+
+  // The same frame among the culprits, in another tab, without being clicked twice.
+  flush(() => [...window.document.querySelectorAll<HTMLElement>(".explore-tabs button")].find(tab => tab.textContent === "Culprits")!.click());
+  const culpritRow = window.document.querySelector("tr.is-picked")!;
+  assert.ok(culpritRow, "the picked frame is ringed in the culprit table too");
+  assert.match(culpritRow.textContent!, /render/);
+  assert.match(culpritRow.textContent!, /1/);
+
+  // And in the call tree — where the frame sits under the tree's synthetic root,
+  // so it is only visible at all if the row above it opened to show it.
+  flush(() => [...window.document.querySelectorAll<HTMLElement>(".explore-tabs button")].find(tab => tab.textContent === "Call tree")!.click());
+  const treeRow = window.document.querySelector(".explore-tree-row.is-picked")!;
+  assert.ok(treeRow, "the picked frame is ringed in the call tree too");
+  assert.match(treeRow.textContent!, /render/);
+
+  // The flame graph is the fourth view, and the one that needed the most from
+  // the package: its boxes take a node id from the same tree, and while picking
+  // a click must add the frame rather than zoom into it.
+  flush(() => [...window.document.querySelectorAll<HTMLElement>(".explore-tabs button")].find(tab => tab.textContent === "Flame graph")!.click());
+  const pickedFrame = window.document.querySelector('[data-slot="flame-graph-frame"].ring-2.ring-ring')!;
+  assert.ok(pickedFrame, "the picked frame is ringed in the flame graph too");
+  assert.match(pickedFrame.getAttribute("title")!, /render/);
+  // And numbered, because a box in a graph has no row order to be identified by.
+  assert.equal(pickedFrame.querySelector("span[aria-hidden=\"true\"]")?.textContent, "1");
+  // And the note under it says what a click does now, because it no longer zooms.
+  assert.match(window.document.querySelector(".chart-notes")!.textContent!, /add it to your selection/);
+
+  // A second click takes it back out, in every view at once. The tree is
+  // re-queried because the tab switch unmounted the row captured above.
+  flush(() => [...window.document.querySelectorAll<HTMLElement>(".explore-tabs button")].find(tab => tab.textContent === "Call tree")!.click());
+  flush(() => window.document.querySelector<HTMLElement>(".explore-tree-row.is-picked .explore-tree-focus")!.click());
+  assert.equal(mounted.controller.getSnapshot().explorer?.selected.length, 0);
+  assert.equal(window.document.querySelector(".explore-tree-row.is-picked"), null);
+  // Deselecting in one view clears the ring in the others, including the graph.
+  flush(() => [...window.document.querySelectorAll<HTMLElement>(".explore-tabs button")].find(tab => tab.textContent === "Flame graph")!.click());
+  assert.equal(window.document.querySelector('[data-slot="flame-graph-frame"].ring-ring'), null);
+  flush(() => [...window.document.querySelectorAll<HTMLElement>(".explore-tabs button")].find(tab => tab.textContent === "Culprits")!.click());
+  assert.equal(window.document.querySelector("tr.is-picked"), null);
+
+  // Nothing selected is not a question worth sending.
+  const investigateSelected = [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent?.includes("Investigate"))!;
+  assert.equal(investigateSelected.disabled, true);
+  assert.match(investigateSelected.textContent!, /Investigate selected frames/);
+  flush(() => [...window.document.querySelectorAll<HTMLElement>(".explore-tabs button")].find(tab => tab.textContent === "Timeline")!.click());
+  flush(() => window.document.querySelector<HTMLElement>(".timeline-box")!.click());
+  // Once there is something to ask about, the button counts it, so the reader
+  // can see what is going before they send it.
+  assert.equal(investigateSelected.disabled, false);
+  assert.match(investigateSelected.textContent!, /Investigate 1 frame/);
+
+  // Back to the cards, and a half-built set goes with the reading that built it.
+  await act(() => [...window.document.querySelectorAll<HTMLElement>("button")].find(button => button.textContent === "Findings")!.click());
   assert.ok(window.document.querySelector(".hotspot-list"));
+  assert.equal(mounted.controller.getSnapshot().explorer, undefined);
 
   mounted.controller.accept({ content: [], structuredContent: { apiVersion: 1, analysisId: "react", profileType: "react", title: "React", summary: { rootCount: 1, commitCount: 3, totalCommitRenderDurationMs: 50, peakCommitDurationMs: 40, commitsOverBudget: 1, omittedEvidenceCommitCount: 0 }, cards: [baseReact] } });
   await new Promise(resolve => window.setTimeout(resolve, 0));
@@ -149,6 +244,6 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   await mounted.controller.investigate("react-1");
   await mounted.close();
   const encoded = telemetry.join("\n");
-  for (const fragment of ["ui.tracesift.process.mean", "ui.tracesift.handoff.mean", "ui.tracesift.message_ack.mean", "ui.tracesift.investigate", "ui.tracesift.cards", '"surface":{"value":"tracesift"', '"view":{"value":"tracesift"']) assert.ok(encoded.includes(fragment), `Missing telemetry: ${fragment}`);
+  for (const fragment of ["ui.tracesift.process.mean", "ui.tracesift.handoff.mean", "ui.tracesift.message_ack.mean", "ui.tracesift.investigate", "ui.tracesift.cards", "ui.tracesift.payload.mean", "ui.tracesift.explore", "ui.tracesift.pick_on", "ui.tracesift.frame_add", "ui.tracesift.frame_remove", "ui.tracesift.selected_frames", '"tracesift_view":{"value":"explorer"', '"surface":{"value":"tracesift"', '"view":{"value":"tracesift"']) assert.ok(encoded.includes(fragment), `Missing telemetry: ${fragment}`);
   for (const fragment of ["src/Screen.tsx", "List used 30 ms", "private-analysis", "react-1", "PRIVATE_HANDOFF_TEXT"]) assert.equal(encoded.includes(fragment), false, `Private TraceSift data reached telemetry: ${fragment}`);
 });

@@ -5,6 +5,7 @@ import { androidCpuSourceHash } from "./build-android-cpu.mjs";
 import { baguetteTelemetrySourceHash } from "./rebuild-baguette.mjs";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { buildServeEmu } from "./build-serve-emu.mjs";
+import { exploreUILayerCSS } from "./explore-css.mjs";
 import { build } from "esbuild";
 import { sentryEsbuildPlugin } from "@sentry/node/esbuild";
 import SentryCli from "@sentry/cli";
@@ -127,9 +128,13 @@ for (const file of app.outputFiles) await writeFile(file.path, file.contents);
 const cli = new SentryCli();
 await cli.execute(["sourcemaps", "inject", ".sentry/ui"]);
 const js = await readFile(".sentry/ui/app.js", "utf8");
-const css = app.outputFiles.find(file => file.path.endsWith(".css"))?.text ?? "";
+// The Explore sheet ships compiled, so it joins the inlined styles after the
+// plugin's foundation rather than through it.
+const css = `${app.outputFiles.find(file => file.path.endsWith(".css"))?.text ?? ""}\n${await exploreUILayerCSS()}`;
 const template = await readFile("src/ui/index.html", "utf8");
 const configuredTemplate = template.replace('name="mobile-dev-environment" content="development"', `name="mobile-dev-environment" content="${telemetryEnvironment}"`);
+// Inlined sheets must not close their own tag; esbuild escapes the script side.
+if (css.includes("</style")) throw new Error("An inlined stylesheet contains a </style sequence and cannot be folded into app.html.");
 await writeFile("dist/app.html", configuredTemplate
   .replace("<!-- APP_STYLE -->", () => `<style>${css}</style>`)
   .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}\n//# sourceURL=app:///mobile-dev-ui.js\n</script>`));

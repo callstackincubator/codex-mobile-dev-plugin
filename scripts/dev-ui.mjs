@@ -5,6 +5,7 @@ import { readFile, writeFile, rm, mkdir, rename, stat, utimes } from "node:fs/pr
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { exploreUILayerCSS } from "./explore-css.mjs";
 
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const { version } = JSON.parse(await readFile(new URL("../.codex-plugin/plugin.json", import.meta.url), "utf8"));
@@ -46,7 +47,7 @@ if (!running) {
       build.onEnd(async result => {
         if (result.errors.length) return;
         const js = result.outputFiles.find(file => file.path.endsWith(".js")).text;
-        const css = result.outputFiles.find(file => file.path.endsWith(".css"))?.text ?? "";
+        const css = `${result.outputFiles.find(file => file.path.endsWith(".css"))?.text ?? ""}\n${await exploreUILayerCSS()}`;
         const template = await readFile(resolve(projectRoot, "src/ui/index.html"), "utf8");
         const html = template.replace("<!-- APP_STYLE -->", () => `<style>${css}</style>`)
           .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}</script>`);
