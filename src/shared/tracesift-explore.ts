@@ -1,14 +1,8 @@
 import { z } from "zod";
 
 /**
- * The one finding a reader opened, carried whole to the embedded explorer.
- *
- * The card's frame cannot reach the TraceSift service — Codex strips plain-HTTP
- * origins from a widget's CSP — so megabytes of call tree ride the MCP bridge.
- * They travel as a gzip-compressed base64 text item rather than
- * `structuredContent`: the host's decoder and both schema validators walk a
- * structured payload node by node, while a compressed string crosses as one
- * opaque value the iframe inflates and parses once. See `docs/architecture.md`.
+ * One finding, carried whole to the explorer over the MCP bridge as compressed
+ * text — `structuredContent` would be walked node by node by three validators.
  */
 export const traceSiftExploreEnvelopeSchema = z.object({
   apiVersion: z.literal(1),
@@ -24,16 +18,14 @@ export type TraceSiftExploreKind = TraceSiftExploreEnvelope["kind"];
 export const TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES = 64 * 1024;
 
 /**
- * Past this, the explorer gives up before decoding. The service caps its own
- * trees (60k nodes, 5k commits), so exceeding this is a runaway recording the
- * browser window renders without crossing a bridge at all.
+ * Past this the explorer gives up before decoding. The service caps its trees
+ * (60k nodes, 5k commits), so more than this is one for the browser window.
  */
 export const TRACE_SIFT_PAYLOAD_MAX_BYTES = 24 * 1024 * 1024;
 
 /**
- * Past this nesting depth the payload goes to the browser instead.
- * `JSON.stringify` recurses, so a pathological tree overflows the stack before
- * any byte-size guard can see it; real call trees sit in the low hundreds.
+ * Past this depth the payload goes to the browser instead: `JSON.stringify`
+ * recurses, so a runaway tree overflows before the byte guard can see it.
  */
 export const TRACE_SIFT_PAYLOAD_MAX_DEPTH = 1024;
 
@@ -71,9 +63,7 @@ async function decodePayloadText(text: string, encoding: TraceSiftExploreEnvelop
 }
 
 /**
- * The class on the element holding the embedded explorer, and the scope
- * `scripts/explore-css.mjs` folds the Explore stylesheet's theme tokens under.
- * A contract across the build boundary: both sides read it from here, and
- * `tests/tracesift-explore-css.test.ts` fails if the fold stops matching.
+ * The explorer's container class, and the scope `scripts/explore-css.mjs` folds
+ * its theme tokens under. `tracesift-explore-css.test.ts` guards the pair.
  */
 export const TRACE_SIFT_EXPLORE_CLASS = "tracesift-explorer";

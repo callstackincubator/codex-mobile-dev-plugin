@@ -3,16 +3,8 @@ import test from "node:test";
 import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "../src/shared/tracesift-selection.ts";
 
 /**
- * A small task tree, in the shape Explore is handed.
- *
- * `0.1.2` is a dotted sibling path, which is how the package identifies a frame
- * across all four views, and the tests lean on that: nesting, overlap and the
- * path drawn in the tree all fall out of the ids.
- *
- * The figures add up the way a real tree's do — every total is its own self time
- * plus its children's totals, and the self times divide the task's duration —
- * because the hand-off states arithmetic built on exactly that, and a fixture
- * that did not add up would let a wrong claim through.
+ * A small task tree in the shape Explore is handed. `0.1.2` is the dotted sibling
+ * path all four views use, so nesting and overlap fall out of the ids.
  */
 const card: SelectionCard = {
   durationMs: 1000,

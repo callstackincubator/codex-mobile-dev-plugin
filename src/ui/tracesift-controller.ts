@@ -32,15 +32,13 @@ type State = {
     /** Which commit of a React timeline is open, as `<rootId>.<commitIndex>`; the explorer reports switches. */
     commitKey?: string;
     /**
-     * Whether a click on a frame picks it rather than navigating to it. Held here
-     * so the bar above the views can show the count, and so leaving and coming
-     * back does not resurrect a half-built set.
+     * Whether a click picks a frame rather than navigating to it. Held here so
+     * the bar can show the count, and so returning drops a half-built set.
      */
     picking?: boolean;
     /**
-     * The frames or components picked, in the order chosen. One field for both
-     * kinds: a task frame is a `TaskTreeNode.id`, a React component a
-     * `reactNodeKey` (`<rootId>.<commitIndex>.<fiberId>`).
+     * The frames or components picked, in order. A task frame is a
+     * `TaskTreeNode.id`, a React one `<rootId>.<commitIndex>.<fiberId>`.
      */
     selected?: string[];
   };
@@ -257,9 +255,8 @@ export class TraceSiftController {
   };
 
   /**
-   * Open the full explorer for one card, in this frame. The card's chart band
-   * carries the node to focus, the same drill-down the web page does with
-   * `?focus=`. The tree arrives over MCP; the button stays busy while it crosses.
+   * Open the full explorer for one card. The chart band carries the node to
+   * focus; the tree arrives over MCP, and the button stays busy while it does.
    */
   openExplore = async (cardId: string, focus = "") => {
     const { analysis } = this.state;
@@ -346,8 +343,7 @@ export class TraceSiftController {
 
   /**
    * Switch between picking frames and navigating them. Turning it off empties the
-   * set: the switch is the only way to say "done with these", so the state goes
-   * with the affordance that built it rather than lingering unseen.
+   * set, so picks never linger behind an affordance the reader has dismissed.
    */
   setPicking = (picking: boolean) => {
     const explorer = this.state.explorer;
@@ -381,9 +377,8 @@ export class TraceSiftController {
   };
 
   /**
-   * The hand-off for a set of picked task frames, or the reason there is none.
-   * Split per recording kind: a CPU profile is sampled and a React one is not, so
-   * one builder taking a flag would have had to hedge every figure it printed.
+   * The hand-off for picked task frames, or why there is none. Split per kind: a
+   * CPU profile is sampled and a React one is not.
    */
   private taskSelectionHandoff(payload: unknown, selected: readonly string[], profileTitle?: string) {
     const handoff = payload as { card?: unknown } | null;
@@ -431,9 +426,8 @@ export class TraceSiftController {
   }
 
   /**
-   * Ask the chat about the frames or components picked inside the explorer.
-   * Unlike Investigate this needs no service call: the picks exist only in this
-   * frame and the whole tree is already here, so the hand-off is written here.
+   * Ask the chat about the picks. Unlike Investigate this needs no service call:
+   * the picks and the whole tree are already in this frame.
    */
   investigateSelected = async () => {
     const { analysis, canInvestigate, busyCard, explorer } = this.state;

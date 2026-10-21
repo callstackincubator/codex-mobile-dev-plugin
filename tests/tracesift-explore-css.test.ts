@@ -4,13 +4,8 @@ import { exploreUILayerCSS } from "../scripts/explore-css.mjs";
 import { TRACE_SIFT_EXPLORE_CLASS } from "../src/shared/tracesift-explore.ts";
 
 /**
- * The contract between the folded Explore stylesheet and the plugin's renderer.
- *
- * The package's theme tokens reach the explorer only because the build rewrites
- * their `:root` and `.dark` blocks onto the explorer's class. When the two
- * disagreed, every TraceSift rule reading `var(--primary)` or `var(--success)`
- * fell back to the plugin's card theme, the graphs drew in grey, and no build
- * step noticed. These are the checks that were missing.
+ * The contract between the folded Explore stylesheet and the renderer. When the
+ * class and the fold disagreed, the graphs drew grey and no build step noticed.
  */
 test("the Explore stylesheet's tokens are scoped to the class the explorer renders", async () => {
   const sheet = await exploreUILayerCSS();

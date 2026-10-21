@@ -1,14 +1,6 @@
 /**
- * The evidence behind frames a reader picked inside Explore.
- *
- * The card's Investigate asks about a whole task and the service writes that
- * hand-off. This is the other question — "what do you make of these four frames"
- * — which only the view can answer, so it is written here rather than fetched.
- *
- * It keeps the rules the service's hand-offs keep: everything measured and
- * nothing concluded, every figure labelled with what it counts, unattributable
- * time named rather than folded into a total, and caveats travelling with the
- * number they qualify.
+ * Evidence behind frames picked inside Explore, written here because only the
+ * view can answer it. Measured not concluded, every figure labelled.
  */
 
 import { formatMs } from "./tracesift-labels.ts";
@@ -38,12 +30,8 @@ export interface SelectionCard {
 
 export interface SelectedFrame {
   /**
-   * Which pick this is, counting from one, matching the number the views draw
-   * beside it.
-   *
-   * Carried rather than derived from a position in the result, because a pick
-   * that turns out not to name a frame is dropped from the list and must not
-   * renumber the ones after it: the reader counted these off the screen.
+   * Which pick this is, matching the number the views draw. Carried, not derived:
+   * a dropped pick must not renumber the ones counted off the screen.
    */
   pick: number;
   nodeId: string;
@@ -56,12 +44,8 @@ export interface SelectedFrame {
   /** Root to this frame, itself last, names only. */
   path: string[];
   /**
-   * The task's own culprit row for this frame, when it has one.
-   *
-   * Its figures are measured across every call site of the frame, while the
-   * figures above it are this one node's, so the two are never the same number
-   * and the prompt says which is which rather than printing one frame's cost
-   * twice.
+   * The task's culprit row for this frame, measured across every call site while
+   * the figures above are this node's alone. The prompt says which is which.
    */
   culprit?: { selfMs: number; invocations: number; longestCallMs?: number };
 }
@@ -72,11 +56,8 @@ export interface FrameSelectionEvidence {
   /** Picked ids the tree in hand holds no node for. */
   unresolved: string[];
   /**
-   * Picks that contain another pick, as `[outerId, innerId]` pairs.
-   *
-   * Nested picks are not a mistake — a reader often wants both a function and
-   * the call inside it — but their totals overlap, so the set's cost cannot be
-   * stated as a sum until they are named.
+   * Picks containing another pick. Not a mistake, but their totals overlap, so
+   * the set's cost cannot be stated as a sum until the pairs are named.
    */
   overlaps: [string, string][];
   /** Self time across the picks, counted once per frame even when one called another. */
@@ -84,14 +65,8 @@ export interface FrameSelectionEvidence {
   /** How much of the task that is, 0-100. */
   selfShare: number;
   /**
-   * Self time across every frame in the tree, which is the whole the picks and
-   * the remainder divide.
-   *
-   * Measured rather than assumed equal to `durationMs`: a frame's self time is
-   * its own plus the collection and deoptimisation it caused, so the frames of a
-   * task do partition its measured time — but rounding, and any recording that
-   * left the tree a few tenths short, are exactly the kind of thing a stated
-   * subtraction should not have to rely on.
+   * Self time across the whole tree, which the picks and the remainder divide.
+   * Measured, not assumed equal to `durationMs`, which rounding can leave short.
    */
   treeSelfMs: number;
 }
@@ -164,13 +139,8 @@ export function frameSelectionEvidence(card: SelectionCard, selectedNodeIds: rea
       if (inner.nodeId.startsWith(`${outer.nodeId}.`)) overlaps.push([outer.nodeId, inner.nodeId]);
     }
   }
-  // Self time is what a frame burned in its own body, so it does not double up
-  // across a nested pair the way their totals do — every frame charges only
-  // itself. That is also why the rest of the task falls out by subtraction: a
-  // frame's self time is its own plus the collection and deoptimisation it
-  // caused, which is how the frames of a task divide its measured time between
-  // them. Measured over the tree rather than read off `durationMs`, so the
-  // remainder is the difference of two figures in this document.
+  // Self time charges only its own frame, so unlike totals it never double-counts
+  // a nested pair — which is why the remainder falls out by subtraction.
   const selfMsTogether = rounded(frames.reduce((sum, frame) => sum + frame.selfMs, 0));
   let treeSelfMs = 0;
   for (const located of index.values()) treeSelfMs += located.node.selfMs;
@@ -198,14 +168,7 @@ const FOLD_WORDS: Record<string, string> = {
 
 /**
  * Which frames the tree prints rather than folds. Ported from Explore's
- * `isShownFrame`/`SHOWN_CLASSES` rather than imported, because this file sits on
- * the shared side of the build where the package's React peer cannot follow; a
- * cut differing from the views would describe a stack the reader never saw.
- *
- * `native` is dropped as a class and kept case by case: `intlDateTimeFormatFormat`
- * is a cost the product controls and is often the whole finding. The
- * approximation below folds engine-state names and unnamed built-ins, and
- * otherwise errs toward printing a frame.
+ * `isShownFrame` — this file cannot carry the package's React peer.
  */
 const KEPT_CLASSES = new Set(["app", "library", "anonymous"]);
 
@@ -241,11 +204,8 @@ interface TreeRow {
 }
 
 /**
- * The frames joining the task to every selection, and the heaviest frames inside
- * each, as one tree. Merged rather than one stack per pick: four picks under one
- * render share the frames above them, and four copies would bury the branch
- * point. Shape matches the service's own hand-offs (`├─`, `←`, `… (N framework
- * frames)`), so a reader sees one kind of tree rather than two.
+ * The frames joining the task to every pick, as one tree rather than a stack
+ * each: copies would bury the branch point. Shape matches the service's own.
  */
 function selectionsTree(card: SelectionCard, frames: readonly SelectedFrame[]): string[] {
   const byId = new Map<string, { node: SelectionTree; parent: SelectionTree | null }>();

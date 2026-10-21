@@ -7,15 +7,8 @@ import { TRACE_SIFT_EXPLORE_CLASS } from "../src/shared/tracesift-explore.ts";
 const SCOPE = `.${TRACE_SIFT_EXPLORE_CLASS}`;
 
 /**
- * The Explore stylesheet, as the TraceSift package ships it already compiled, so
- * this build never has to run Tailwind over a dependency's sources.
- *
- * It is folded in after the plugin's own sheet, and it opens by writing the
- * `@rozenite/ui` theme tokens to `:root` and `.dark` — which would recolor the
- * plugin's cards behind the explorer. Both token blocks are therefore scoped to
- * the explorer's container; descendants inherit custom properties, so the
- * package's rules still resolve. Its dark *utilities* already compile to
- * `:where(.dark, .dark *)` and follow the class on that container.
+ * The package's precompiled Explore stylesheet, folded in after the plugin's own.
+ * Its `:root`/`.dark` tokens are rescoped so they cannot recolor the cards.
  */
 export async function exploreUILayerCSS() {
   let url;

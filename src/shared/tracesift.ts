@@ -26,10 +26,8 @@ const measuredFrameSchema = z.object({
 });
 const boundaryCulpritSchema = measuredFrameSchema.extend({ callers: z.array(z.string()) });
 /**
- * A feature of the user's own that the task entered, with everything the
- * contribution chart divides it by. The analyze response carries these whole:
- * the slices, the legend and the drill-down are all computed from them in the
- * card, exactly as the web app computes them, so the two cannot drift.
+ * A feature of the user's own that the task entered. Carried whole, so the card
+ * computes slices, legend and drill-down exactly as the web app does.
  */
 const boundaryFrameSchema = z.object({
   name: z.string(), location: z.string().optional(), nodeId: z.string(),
@@ -94,9 +92,8 @@ export const traceSiftRestoreSchema = z.discriminatedUnion("restored", [
 export const traceSiftHandoffSchema = z.object({ apiVersion: z.literal(1), handoff: z.string().min(1).max(1_000_000) });
 
 /**
- * The full task card the server hands the embedded explorer. Its bulk fields
- * stay `unknown`: megabytes the server never reads, only the explorer draws.
- * Shapes match `TaskHandoff`/`ReactExploreHandoff` in @callstack/tracesift-explore.
+ * The full card handed to the explorer. Bulk fields stay `unknown`: megabytes
+ * only the explorer draws. Shapes match the package's own handoff types.
  */
 export type TraceSiftTaskHandoff = { analysisId: string; profileTitle: string; totalMs: number; card: Record<string, unknown> };
 /** Every commit timeline of one React analysis, plus the cards that label them. */

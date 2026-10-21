@@ -270,9 +270,8 @@ export class TraceSiftClient {
   }
 
   /**
-   * Let the TraceSift CLI open its own loopback URL. The persisted compact
-   * analysis carries the measured card and function ids; the full tree and
-   * timeline stay in the already-running TraceSift service.
+   * Let the TraceSift CLI open its own loopback URL. The tree and timeline stay
+   * in the running service; the persisted analysis carries only card ids.
    */
   async openExplore(analysisId: string, taskIndex: number, focus?: string, signal?: AbortSignal) {
     await this.service(signal);
@@ -317,8 +316,7 @@ export class TraceSiftClient {
 
   /**
    * One task with its call tree and timeline, which `/analyze` never ships.
-   * Checked at its seams only: the card runs to megabytes and the explorer that
-   * draws it parses the rest.
+   * Checked at its seams only; the explorer that draws it parses the rest.
    */
   async exploreTask(analysisId: string, taskIndex: number, signal?: AbortSignal): Promise<TraceSiftTaskHandoff> {
     const body = await this.request(`/api/integration/v1/task?analysisId=${encodeURIComponent(analysisId)}&taskIndex=${taskIndex}`, { method: "GET" }, signal, EXPLORE_UNSUPPORTED);

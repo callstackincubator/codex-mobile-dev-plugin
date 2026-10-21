@@ -8,14 +8,8 @@ import {
 } from "../src/shared/tracesift-react-selection.ts";
 
 /**
- * A small recording, in the shape Explore is handed.
- *
- * Two commits, so the thing this feature exists for is covered: a pick names its
- * commit, and a reader stepping through a cascade keeps the ones they made
- * behind them. The figures add up the way React's do — every component's own
- * time plus the reconciler's own walk is the commit's duration — because the
- * hand-off states arithmetic built on exactly that, and a fixture that did not
- * add up would let a wrong claim through.
+ * A small recording in the shape Explore is handed; two commits, since a pick
+ * names its commit. Figures add up as React's do, or the prompt's claims would.
  */
 const node = (
   id: number,

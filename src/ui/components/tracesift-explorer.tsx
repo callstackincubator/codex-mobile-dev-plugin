@@ -1,7 +1,6 @@
 /**
- * The full Explore view, inside the card's own frame. Renders the same
- * `@callstack/tracesift-explore` components the TraceSift web app does; the data
- * arrives through MCP because this frame cannot reach the service.
+ * The full Explore view inside the card's frame, drawn from the same package the
+ * web app uses. Its data arrives over MCP: this frame cannot reach the service.
  */
 
 import { ArrowLeftIcon, ExternalLinkIcon, MessageCircleIcon, MousePointerClickIcon, XIcon } from "lucide-react";

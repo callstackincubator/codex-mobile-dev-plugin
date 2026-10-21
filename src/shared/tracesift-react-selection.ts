@@ -1,13 +1,6 @@
 /**
- * The evidence behind components a reader picked inside a React Explore. The CPU
- * side is `tracesift-selection.ts`, written in the panel for the same reasons.
- *
- * What differs is the measurement, and most caveats follow from it. React's
- * profiler is not sampled: `selfDuration` and `actualDuration` are recorded per
- * fiber per commit, so the figures are exact for the render phase and say
- * nothing about effects, the commit phase, or the time between two commits.
- * Carrying the CPU prompt's sampling language over would describe a measurement
- * this recording never made.
+ * Evidence behind components picked in a React Explore (`tracesift-selection.ts`
+ * is the CPU side). Unsampled, so exact for renders and silent about the rest.
  */
 
 import { formatReactMs, shortLocationLabel } from "./tracesift-labels.ts";
@@ -54,10 +47,8 @@ export interface ReactSelectionRecording {
 
 export interface SelectedComponent {
   /**
-   * Which pick this is, counting from one, matching the number the views draw
-   * beside it. Carried rather than derived, for the reason the CPU side carries
-   * it: a pick the recording no longer holds is dropped from the list and must
-   * not renumber the ones the reader counted off the screen.
+   * Which pick this is, matching the number the views draw. Carried, not derived:
+   * a dropped pick must not renumber the ones counted off the screen.
    */
   pick: number;
   key: string;
@@ -103,12 +94,8 @@ export interface ReactSelectionEvidence {
   /** Picked keys the recording in hand holds no component for. */
   unresolved: string[];
   /**
-   * Picks that rendered another pick, as `[ancestorKey, descendantKey]` pairs
-   * within one commit.
-   *
-   * Only `actualMs` double-counts across such a pair; `selfMs` never does. The
-   * pair is named so a reader of the prompt cannot add two inclusive figures
-   * that count the same milliseconds.
+   * Picks that rendered another pick, within one commit. Named because `actualMs`
+   * double-counts across such a pair (`selfMs` never does).
    */
   overlaps: [string, string][];
   /** Own time across every pick, in every commit, counted once per component. */
@@ -194,11 +181,8 @@ export function reactSelectionEvidence(
   }
   components.sort((a, b) => a.pick - b.pick);
 
-  // Nesting is read off the commit's own tree rather than off the ids, because a
-  // fiber id says nothing about where a fiber sits: unlike a task frame's dotted
-  // path it is just the number React handed out. Two picks in different commits
-  // never overlap, whatever they are called — they are separate renders at
-  // separate times.
+  // Nesting is read off the commit's tree, not the ids: a fiber id is just the
+  // number React handed out. Picks in different commits never overlap.
   const overlaps: [string, string][] = [];
   for (const inner of components) {
     const index = indexes.get(`${inner.rootId}.${inner.commitIndex}`);
@@ -276,12 +260,8 @@ function causeText(pick: SelectedComponent): string {
 }
 
 /**
- * The hand-off for a set of picked components.
- *
- * Numbered in the order the reader chose them, matching the number each carries
- * on screen, so "the third one" means the same thing in both places. Grouped by
- * commit underneath that, because a commit is the unit every figure here is a
- * share of and two picks in two commits are two renders rather than one finding.
+ * The hand-off for a set of picked components, numbered in the order chosen and
+ * grouped by commit — the unit every figure here is a share of.
  */
 export function buildReactSelectionPrompt(input: {
   recording: ReactSelectionRecording;

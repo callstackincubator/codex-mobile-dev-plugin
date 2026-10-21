@@ -7,10 +7,8 @@ import { registerTraceSiftTools } from "../src/server/tracesift-tools.ts";
 import type { TraceSiftClient } from "../src/server/tracesift-client.ts";
 
 /**
- * The Explore payload crosses the same boundary the card's frame will cross: the
- * SDK validates the tool's envelope on both sides and walks the content items.
- * A deep tree rides along here so a regression in either validator shows up as a
- * failing test rather than as an explorer that never opens.
+ * The payload crosses the boundary the card's frame will: the SDK validates the
+ * envelope on both sides. A deep tree rides along to catch either validator.
  */
 function deepTree(depth: number) {
   let node: Record<string, unknown> = { id: `n${depth}`, name: "leaf", frameClass: "app", totalMs: 1, selfMs: 1, invocations: 1, children: [] };
