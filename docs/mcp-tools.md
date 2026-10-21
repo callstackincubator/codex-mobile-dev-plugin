@@ -56,6 +56,7 @@
 | `mobile_appflow_manual_stop` | Save the active manual path recording (app only) |
 | `mobile_appflow_manual_cancel` | Discard the active manual path recording (app only) |
 | `mobile_appflow_manual_replay` | Replay a saved path to one screen (app only) |
+| `mobile_appflow_runtime_replay` | Navigate to one screen through the running app's navigator, no recording needed (app only) |
 | `mobile_appflow_next_decision` | Long-poll for the next active-agent sweep decision (model only) |
 | `mobile_appflow_submit_decision` | Submit one role-valid JSON decision and wait briefly for the next (model only) |
 | `mobile_appflow_screenshot` | Read an authorized App Flow PNG (app only) |

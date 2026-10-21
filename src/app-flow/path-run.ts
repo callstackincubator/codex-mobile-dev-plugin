@@ -114,7 +114,7 @@ export async function runPathToReach(
  * failed one. The return value is deliberately ignored: expiring means "this is the app's own
  * screen, press and find out", which is exactly today's behaviour.
  */
-async function waitForReplayableFrame(ctx: CaptureContext, device: CaptureDevice): Promise<void> {
+export async function waitForReplayableFrame(ctx: CaptureContext, device: CaptureDevice): Promise<void> {
   await waitForAppReady(ctx, device, ctx.signal, undefined, {
     minInteractiveElements: PROBE_FRAME_ELEMENT_FLOOR,
     minInteractiveElementsGraceMs: SUBSTANTIVE_FRAME_GRACE_MS

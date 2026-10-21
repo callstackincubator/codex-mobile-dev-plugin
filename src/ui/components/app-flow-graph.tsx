@@ -105,21 +105,42 @@ function ScreenNode({ data }: NodeProps) {
 function NodeActions({ node }: { node: AppFlowNode }) {
   const graph = useContext(GraphContext)!;
   const recording = useSyncExternalStore(graph.panel.recording.subscribe, graph.panel.recording.getSnapshot);
-  const [replaying, setReplaying] = useState(false); const [replayError, setReplayError] = useState<string | null>(null);
+  /**
+   * Which variant is in flight, so only one button shows a spinner and both are disabled.
+   *
+   * `"runtime"` dispatches through the app's own navigator and needs no recording, so it is
+   * offered on every screen node; `"manual"` re-walks a path somebody recorded and only appears
+   * once one exists. They are two buttons rather than one with a fallback deliberately: each
+   * reports its own reason for failing, and a button that silently tried the other mechanism
+   * would make "runtime replay works on this screen" impossible to tell from "it did not".
+   */
+  const [replaying, setReplaying] = useState<"runtime" | "manual" | null>(null); const [replayError, setReplayError] = useState<string | null>(null);
   if (!graph.projectPath || node.origin === "chrome") return null;
   const active = recording.nodeId === node.id; const otherRunning = recording.nodeId !== null && !active;
   const replayable = node.capture?.replayable ?? node.capture?.status === "ok"; const inferred = node.capture?.pathVerified === false;
   const selectors = node.capture?.pathContentSelectors ?? [];
+  const busy = replaying !== null || recording.nodeId !== null;
+  const run = (variant: "runtime" | "manual") => (event: { stopPropagation: () => void }) => {
+    event.stopPropagation(); setReplayError(null); setReplaying(variant);
+    void (variant === "runtime" ? graph.panel.replayRuntime(node.id) : graph.panel.replay(node.id))
+      .catch(error => setReplayError(error instanceof Error ? error.message : "Replay failed."))
+      .finally(() => setReplaying(null));
+  };
+  const params = node.params ?? [];
   return <div className="mt-0.5 flex flex-col gap-1"><div className="flex items-center gap-1.5">
     <button type="button" className={`nodrag nopan flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium disabled:opacity-35 ${active ? "bg-rose-500 text-white" : "bg-muted text-foreground hover:bg-muted/70"}`}
-      disabled={otherRunning || replaying} onClick={event => { event.stopPropagation(); void (active ? graph.panel.recording.stop(graph.projectPath!) : graph.panel.recording.start(graph.projectPath!, node.id)); }}>
+      disabled={otherRunning || replaying !== null} onClick={event => { event.stopPropagation(); void (active ? graph.panel.recording.stop(graph.projectPath!) : graph.panel.recording.start(graph.projectPath!, node.id)); }}>
       <span className={`h-1.5 w-1.5 rounded-full ${active ? "animate-pulse bg-white" : "bg-rose-400"}`} />{active ? "Stop" : "Record path"}</button>
-    {replayable && <button type="button" title={`${inferred ? "Walk this screen’s inferred path" : "Launch the app and walk this screen’s recorded path"}${selectors.length ? `. Depends on visible text: ${selectors.join(", ")}` : ""}`}
-      className={`nodrag nopan flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-medium disabled:opacity-35 ${inferred ? "border-amber-400/40 text-amber-600" : "border-border"}`}
-      disabled={recording.nodeId !== null || replaying} onClick={event => { event.stopPropagation(); setReplayError(null); setReplaying(true);
-        void graph.panel.replay(node.id).catch(error => setReplayError(error instanceof Error ? error.message : "Replay failed.")).finally(() => setReplaying(false)); }}>
-      <span aria-hidden>▶</span>{replaying ? "Replaying…" : inferred ? "Try inferred" : "Replay"}</button>}
-  </div>{replayError && <div className="text-[9px] leading-tight text-amber-600">{replayError}</div>}</div>;
+    <button type="button" title={`Launch the app and navigate straight to this screen through its own navigator${params.length ? `, using the last observed ${params.map(key => `:${key}`).join(", ")}` : ""}. Needs a running dev server.`}
+      className="nodrag nopan flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border px-2 py-1 text-[10px] font-medium disabled:opacity-35"
+      disabled={busy} onClick={run("runtime")}>
+      <span aria-hidden>▶</span>{replaying === "runtime" ? "Navigating…" : "Replay"}</button>
+  </div>
+  {replayable && <button type="button" title={`${inferred ? "Walk this screen’s inferred path" : "Launch the app and walk this screen’s recorded path"}${selectors.length ? `. Depends on visible text: ${selectors.join(", ")}` : ""}`}
+    className={`nodrag nopan flex items-center justify-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-medium disabled:opacity-35 ${inferred ? "border-amber-400/40 text-amber-600" : "border-border"}`}
+    disabled={busy} onClick={run("manual")}>
+    <span aria-hidden>↺</span>{replaying === "manual" ? "Replaying…" : inferred ? "Try inferred path" : "Replay recording"}</button>}
+  {replayError && <div className="text-[9px] leading-tight text-amber-600">{replayError}</div>}</div>;
 }
 
 const BAND_COPY: Record<Exclude<NodePlacement, "connected">, { title: string; detail: string }> = {

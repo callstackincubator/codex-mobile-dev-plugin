@@ -13,6 +13,7 @@ function fixture(canMessage = true, projectList: unknown[] = []) {
   let bufferedEvents: Array<{ seq: number; runId?: string; event: unknown }> = [];
   let currentResult: unknown = null;
   let currentStatus: Record<string, unknown> = { exists: false, state: "idle" };
+  let replayReply: Record<string, unknown> = { ok: true };
   const app = {
     getHostCapabilities() { return canMessage ? { message: { text: {} } } : {}; },
     setNotificationHandler(_schema: unknown, handler: typeof notification) { notification = handler; },
@@ -28,6 +29,9 @@ function fixture(canMessage = true, projectList: unknown[] = []) {
       if (input.name === "mobile_appflow_projects") return { content: [], structuredContent: { projects } };
       if (input.name === "mobile_appflow_result") return { content: [], structuredContent: { projectId: "project-1", result: currentResult } };
       if (input.name === "mobile_appflow_choose_project") return { content: [], structuredContent: nextProject ? { project: nextProject } : {} };
+      if (input.name === "mobile_appflow_runtime_replay" || input.name === "mobile_appflow_manual_replay") {
+        return { content: [], structuredContent: replayReply };
+      }
       if (input.name === "mobile_appflow_events") {
         const since = Number(input.arguments?.since ?? 0);
         return { content: [], structuredContent: { result: bufferedEvents.filter(entry => entry.seq > since) } };
@@ -43,6 +47,7 @@ function fixture(canMessage = true, projectList: unknown[] = []) {
     events(value: Array<{ seq: number; runId?: string; event: unknown }>) { bufferedEvents = value; },
     returnsResult(value: unknown) { currentResult = value; },
     returnsStatus(value: Record<string, unknown>) { currentStatus = value; },
+    returnsReplay(value: Record<string, unknown>) { replayReply = value; },
   };
 }
 const settle = (ms = 60) => new Promise(resolve => setTimeout(resolve, ms));
@@ -344,6 +349,29 @@ test("recording events reach the panel through the poll and stop it when saved",
   const pollsAfter = host.calls.filter(call => call.name === "mobile_appflow_events").length;
   await settle(120);
   assert.equal(host.calls.filter(call => call.name === "mobile_appflow_events").length, pollsAfter, "a finished recording ends its polling");
+});
+
+test("runtime replay carries the node to the server and reports a refusal instead of claiming success", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/demo");
+
+  await panel.replayRuntime("HomeTab/Profile");
+  const sent = host.calls.at(-1);
+  assert.equal(sent?.name, "mobile_appflow_runtime_replay");
+  assert.deepEqual(sent?.arguments, { projectPath: "/projects/demo", nodeId: "HomeTab/Profile" });
+
+  // A refused replay comes back as an ordinary result carrying `{ ok: false, error }` — only a
+  // thrown tool call sets `isError` — so a panel that did not read `ok` would light the node green
+  // for a dispatch the runtime declined. The reason has to reach the button verbatim.
+  host.returnsReplay({ ok: false, error: "Route HomeTab > Profile is not registered in the running navigator." });
+  await assert.rejects(() => panel.replayRuntime("HomeTab/Profile"), /not registered in the running navigator/);
+});
+
+test("the recorded-path replay reports its own refusal for the same reason", async t => {
+  const host = fixture(); const panel = new AppFlowPanel(host.app); t.after(() => panel.dispose());
+  panel.setAvailable(true); await panel.selectProject("/projects/demo");
+  host.returnsReplay({ ok: false, error: "This screen has no recorded path to replay yet." });
+  await assert.rejects(() => panel.replay("HomeTab/Profile"), /no recorded path/);
 });
 
 test("the Fast-mode banner tells the user to sign in before the sweep, since nothing else will ask", () => {

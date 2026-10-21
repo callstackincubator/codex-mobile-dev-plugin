@@ -355,3 +355,29 @@ durations only: the harvested destinations themselves — route names, URL paths
 and parameter values — are never attached, matching the parameter store's own
 refusal to log values, and the per-screen detail stays in the local sweep log.
 No new data leaves the machine.
+
+A screen node now offers a second replay variant, runtime replay, which puts the
+app on that screen by dispatching through the app's own navigator with its parsed
+route and the parameter values previous sweeps observed, instead of re-walking a
+recorded path. It reuses deterministic Fast's own connection and render port, so
+its handshake, its `navigate`, `readiness` and `nav-state` commands, its settle
+and its navigate outcome are billed to the existing
+`app_flow.runtime.{connect,command,settle,verify,navigate,state}` series with
+their existing names, units and attributes — a replay's runtime cost is therefore
+directly comparable with a sweep's, which is the point of sharing the transport
+rather than writing a second one. Two names are new:
+`app_flow.runtime_replay`, a bounded count per replay, and
+`app_flow.runtime_replay.duration`, one millisecond measurement per replay
+covering device preparation, the handshake, the dispatch and the settle. Both
+carry a single closed-set `outcome`: `ok`, `no-map` and `no-node` (a panel
+pointing at a map that has been rebuilt or cleared), `unresolved-params` (the
+route needs a parameter no sweep has ever observed a value for, which is refused
+rather than dispatched with a guessed value), `unavailable` (no reachable
+development runtime), `refused` (a reachable runtime that declined the route) and
+`failed`. The panel side adds `ui.app_flow.runtime_replay`, its own round-trip
+duration, and a count of the same name carrying the same closed-set outcome. Node
+ids, route names, URL paths, parameter names and parameter values are never
+attached to any of them, matching the parameter store's own refusal to log
+values; the route and the reason a dispatch was refused appear only in the local
+console line and in the error shown on the node, neither of which leaves the
+machine. No new data is collected.

@@ -62,12 +62,13 @@ import { baselineLaunchCommands, walkCommands, walkStepCommand } from './walk-co
 import { contentMatchedSelectors, minimizeWalkCommands } from './path-minimize.ts'
 import { isPathVerified } from './path-provenance.ts'
 import { runPathToReach } from './path-run.ts'
-import type { RenderTransport } from './reach/adapters.ts'
-import type { ReachMetricsPort, RenderAvailability } from './reach/ports.ts'
+import type { ReachMetricsPort } from './reach/ports.ts'
 import { createReachPorts } from './reach/adapters.ts'
-import { CdpConnection, createTargetResolver } from './cdp/connection.ts'
-import { listMetroTargets, type MetroCdpTarget } from './cdp/discovery.ts'
-import type { LinksReply, NavigateReply, NavStateReply, ReadinessReply } from './cdp/agent-runtime.ts'
+import {
+  createAppRuntimeTransport,
+  type AppRuntimeTransport
+} from './cdp/app-runtime-transport.ts'
+import type { LinksReply } from './cdp/agent-runtime.ts'
 import { LINK_CANDIDATE_CAP } from './cdp/agent-runtime.ts'
 import { agentSource } from './cdp/runtime-source.ts'
 import { ExpectedOperationError } from '../shared/error-reporting.ts'
@@ -722,25 +723,6 @@ function pickSampleParams(
   return Object.fromEntries(node.params.map((key) => [key, resolved[key] ?? '1']))
 }
 
-/**
- * Turns whatever the Fast handshake threw into one sentence a person can act on.
- *
- * It is carried on `RenderAvailability` into the rung's skip note and the local run log, so it is
- * scrubbed the way every other product string here is: absolute paths are replaced (an error from
- * a spawned tool can carry the project's location), and the message is bounded so a stack-shaped
- * `Error.message` cannot turn one skip note into a page. Nothing here reaches telemetry — the
- * `app_flow.runtime.connect` timing already carries the `outcome` attribute and nothing more.
- */
-function describeTransportFailure(error: unknown): string {
-  const raw = (error instanceof Error ? error.message : String(error)).trim()
-  const scrubbed = raw
-    .replace(/(?:\/[\w.@~-]+){2,}/g, '<path>')
-    .replace(/\s+/g, ' ')
-    .trim()
-  if (!scrubbed) return 'The runtime handshake failed without a message.'
-  return scrubbed.length > 200 ? `${scrubbed.slice(0, 197)}...` : scrubbed
-}
-
 function captureContext(
   projectPath: string,
   projectId: string,
@@ -1088,7 +1070,7 @@ export async function buildAppFlow(
     const bootCtx = captureContext(projectPath, projectId, parsed, signal)
     const reusedDevice = options.launchedDevice
     let device: CaptureDevice
-    let fastRuntime: CdpConnection | null = null
+    let fastRuntime: AppRuntimeTransport | null = null
     /**
      * The sweep's forced checkpoint flush, published out of the `try` below so the `finally` can
      * reach it — `try` and `finally` are separate blocks, and the sweep's state all lives in the
@@ -1498,23 +1480,6 @@ export async function buildAppFlow(
         }`
       )
 
-      /** One persistent Metro/CDP runtime for deterministic Fast navigation and readiness. */
-      let fastTarget: MetroCdpTarget | null = null
-      let fastUnavailable = false
-      /**
-       * Why the handshake failed, kept beside the latch so every later node is told the same
-       * thing the first one was. Two failures used to be indistinguishable here — no Metro
-       * runtime to attach to, and a runtime that refused the agent — and a sweep that skipped all
-       * nine of its nodes never said which. See `RenderAvailability`.
-       */
-      let fastUnavailableReason = ''
-      const runtimeMetric = (
-        name: string,
-        started: number,
-        attributes: Record<string, string> = {}
-      ): void => {
-        recordRuntimeTiming(name, performance.now() - started, attributes)
-      }
       /**
        * The reach path's own meters, handed to the ports as a sink so `reach/` keeps its distance
        * from the Sentry SDK (`ReachMetricsPort`). Same helper as the three `app_flow.runtime.*`
@@ -1536,93 +1501,29 @@ export async function buildAppFlow(
           recordRuntimeTiming('app_flow.runtime.verify', durationMs, { path, verdict })
         }
       }
-      const renderTransport: RenderTransport = {
-        async ready(): Promise<RenderAvailability> {
-          if (fastRuntime?.state === 'ready') return { ok: true }
-          if (fastUnavailable) return { ok: false, reason: fastUnavailableReason }
-          const started = performance.now()
-          try {
-            const targets = await listMetroTargets(device.metroPort, { signal })
-            const normalize = (value: string | null | undefined): string =>
-              (value ?? '').toLowerCase().replace(/[^a-z\d]/g, '')
-            const app = normalize(parsed.appName)
-            const candidates = targets.filter((target) => target.supportsMultipleDebuggers)
-            const deviceCandidates = candidates.filter(
-              (target) =>
-                target.deviceId === device.deviceId ||
-                (!!target.deviceName && normalize(target.deviceName) === normalize(device.deviceName))
-            )
-            fastTarget =
-              deviceCandidates.find(
-                (target) =>
-                  (!app || normalize(target.title) === app || normalize(target.appId) === app)
-              ) ??
-              (deviceCandidates.length === 1 ? deviceCandidates[0]! : null)
-            if (!fastTarget) throw new Error('No unambiguous Metro runtime supports Fast capture.')
-            fastRuntime = new CdpConnection({
-              resolveTarget: createTargetResolver(device.metroPort, fastTarget),
-              sessionId: `fast-${projectId}`,
-              log: (message) => console.log(`[app-flow] fast runtime — ${message}`),
-              onStateChange: (state) => {
-                recordRuntimeCount('app_flow.runtime.state', { state })
-              }
-            })
-            await fastRuntime.connect()
-            paramStore.navState = 'ready'
-            return { ok: true }
-          } catch (error) {
-            fastUnavailable = true
-            fastUnavailableReason = describeTransportFailure(error)
-            paramStore.navState = 'unavailable'
-            console.log(`[app-flow] fast runtime unavailable — ${fastUnavailableReason}`)
-            return { ok: false, reason: fastUnavailableReason }
-          } finally {
-            runtimeMetric('app_flow.runtime.connect', started, {
-              outcome: fastRuntime?.state === 'ready' ? 'ready' : 'unavailable'
-            })
-          }
-        },
-        async navigate(route, params, expoPath, candidates): Promise<NavigateReply> {
-          const started = performance.now()
-          try {
-            const result = await fastRuntime!.invoke<NavigateReply>(
-              { type: 'navigate', route, params, expoPath, candidates },
-              5_000
-            )
-            return result
-          } finally {
-            runtimeMetric('app_flow.runtime.command', started, { operation: 'navigate' })
-          }
-        },
-        async readiness(route, params): Promise<ReadinessReply> {
-          const started = performance.now()
-          try {
-            return await fastRuntime!.invoke<ReadinessReply>(
-              { type: 'readiness', route, expectedParams: params },
-              5_000
-            )
-          } finally {
-            runtimeMetric('app_flow.runtime.command', started, { operation: 'readiness' })
-          }
-        },
-        // Same `runtimeMetric('app_flow.runtime.command', …)` wrapper, name, unit and attribute
-        // shape as its two siblings above, deliberately: the whole point of reading nav-state here
-        // is that it replaces a CLI subprocess, and the only way that saving stays legible across
-        // releases is if the fast read is billed to the same meter under a new `operation`.
-        async navState(): Promise<NavRoute[] | null> {
-          const started = performance.now()
-          try {
-            const reply = await fastRuntime!.invoke<NavStateReply>({ type: 'nav-state' }, 5_000)
-            return reply?.routes ?? null
-          } finally {
-            runtimeMetric('app_flow.runtime.command', started, { operation: 'nav-state' })
-          }
-        },
-        async close(): Promise<void> {
-          await fastRuntime?.close()
-          fastRuntime = null
+      /**
+       * One persistent Metro/CDP runtime for deterministic Fast navigation and readiness.
+       *
+       * The handshake, the failure latch and the three `app_flow.runtime.*` meters moved to
+       * `cdp/app-runtime-transport.ts` when runtime replay gained a second caller for exactly
+       * this connection; the sweep's behaviour is unchanged. `fastRuntime` is still the handle
+       * the rest of this function reaches for — `state`, `invoke` and `close` delegate to the one
+       * connection underneath, and `connection` is what the UI-state session is handed.
+       */
+      fastRuntime = createAppRuntimeTransport({
+        metroPort: device.metroPort,
+        deviceId: device.deviceId,
+        deviceName: device.deviceName,
+        appName: parsed.appName,
+        sessionId: `fast-${projectId}`,
+        signal,
+        // Set from the transport rather than inline so one failed handshake is not retried for
+        // every later node — the sweep's `navState === 'unknown'` fallback reads this.
+        onAvailability: (availability) => {
+          paramStore.navState = availability
         }
-      }
+      })
+      const renderTransport = fastRuntime.transport
 
       /**
        * The per-run log file — Fast only, and best-effort.
@@ -1703,7 +1604,7 @@ export async function buildAppFlow(
             onScreen: (screenNode, log) => sweepLog?.node(screenNode.id).uiStates(log),
             open: async () => {
               const ready = await renderTransport.ready()
-              const runtime = fastRuntime
+              const runtime = fastRuntime?.connection
               if (!ready.ok || !runtime) {
                 // A benign state of the surface (Metro down, an app that refused the agent), so the
                 // reporter counts it rather than filing an exception.
@@ -2051,7 +1952,6 @@ export async function buildAppFlow(
             resolveNodeParams(other, parsed.edges, paramStore).unresolved.length > 0
         )
         if (!blocked) return
-        const started = performance.now()
         try {
           const reply = await fastRuntime.invoke<LinksReply>(
             { type: 'links', max: LINK_CANDIDATE_CAP },
@@ -2080,8 +1980,6 @@ export async function buildAppFlow(
           console.log(
             `[app-flow] links — read failed, not retrying — ${error instanceof Error ? error.message : String(error)}`
           )
-        } finally {
-          runtimeMetric('app_flow.runtime.command', started, { operation: 'links' })
         }
       }
 

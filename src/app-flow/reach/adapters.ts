@@ -561,6 +561,36 @@ export function createReachPorts(options: CreateReachPortsOptions): ReachPorts {
 }
 
 /**
+ * The render port on its own, for a caller that wants the navigator dispatch without a sweep.
+ *
+ * Runtime replay is that caller: it puts the app on one named screen and stops, so it has no
+ * ladder, no judge, no auth gate and no `runAgent` to hand `createReachPorts`. It gets the very
+ * same port the render rung uses — the same route-name derivation, the same navigator candidates,
+ * the same settle loop and the same `app_flow.runtime.*` meters — because a replay that resolved
+ * a route differently from the sweep that recorded it would be answering a different question.
+ *
+ * The one difference is the poll timer: `createReachPorts` bills each readiness poll to the
+ * sweep's phase ledger, and a replay has no ledger to bill. The poll runs unmeasured rather than
+ * against a ledger invented for it; the settle's own bounded aggregate is unaffected.
+ */
+export function createRenderPortForTransport(options: {
+  transport: RenderTransport
+  /** The parser identified this project as Expo Router, whose runtime opens pathnames. */
+  expoRouter?: boolean
+  settleDeadlinesMs?: readonly number[]
+  metrics?: ReachMetricsPort | null
+}): RenderPort {
+  return createRenderPort(
+    options.transport,
+    navigatorSegments,
+    options.expoRouter === true,
+    options.settleDeadlinesMs?.length ? options.settleDeadlinesMs : SETTLE_DEADLINES_MS,
+    (work) => work(),
+    options.metrics ?? null
+  )
+}
+
+/**
  * The navigator route names for a node, outermost first.
  *
  * Node ids are the parser's own spelling of the route's position in the navigator tree, so

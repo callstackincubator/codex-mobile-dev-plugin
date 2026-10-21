@@ -241,6 +241,16 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost, proje
     return dataResult(await host.services.manualReplay(projectPath, nodeId));
   }));
 
+  registerAppTool(server, "mobile_appflow_runtime_replay", {
+    title: "Replay an App Flow screen at runtime",
+    description:
+      "Navigate to a screen through the running app's own navigator, using its parsed route and the parameter values previous sweeps observed, and leave the app there. Needs no recorded path; needs a reachable development runtime (Metro). Fails with the reason when the runtime cannot be reached or declines the route.",
+    inputSchema: { projectPath, nodeId: z.string().min(1).max(256) }, annotations: write, _meta: appVisibility,
+  }, safe(async ({ projectPath, nodeId }: { projectPath: string; nodeId: string }) => {
+    if (!host.services.runtimeReplay) throw new Error("Runtime replay is not available.");
+    return dataResult(await host.services.runtimeReplay(projectPath, nodeId));
+  }));
+
   registerAppTool(server, "mobile_appflow_events", {
     title: "Poll App Flow events",
     description:

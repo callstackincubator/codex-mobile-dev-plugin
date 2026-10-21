@@ -10,6 +10,7 @@ import { getAppFlowBuilders, getLaunchedApps } from '../index.ts'
 import { getProjectId, readAgentDeviceScreens } from '../storage.ts'
 import { manualCaptureContext } from './context.ts'
 import { runPathToReach } from '../path-run.ts'
+import { runtimeReplay } from '../runtime-replay.ts'
 import { ManualSession, type PreparedManualDevice } from './session.ts'
 import { configureAppFlowHost, type AppFlowHostPorts } from '../host.ts'
 
@@ -144,6 +145,17 @@ export function createManualRecordingService(host: AppFlowHostPorts): {
     projectPath: string,
     nodeId: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>
+  /**
+   * The other replay variant — see `runtime-replay.ts`. It lives on this service rather than on one
+   * of its own because what a replay actually needs from here is the device ladder: the app the
+   * user launched, then a device a previous recording or replay parked, then a boot. Giving runtime
+   * replay a second pool would mean two simulators and two Metro processes for one project, which
+   * is the thing `prepareDevice` exists to avoid.
+   */
+  replayRuntime: (
+    projectPath: string,
+    nodeId: string
+  ) => Promise<{ ok: true; detail: string } | { ok: false; error: string }>
 } {
   configureAppFlowHost(host)
   return {
@@ -291,6 +303,38 @@ export function createManualRecordingService(host: AppFlowHostPorts): {
           error: error instanceof Error ? error.message : 'Could not replay this screen.'
         }
       }
+    },
+
+    /**
+     * Navigates to a screen through the app's own runtime, with no recording involved.
+     *
+     * Same guards and the same device ladder as `replay` above, for the same reasons — a sweep and
+     * this would fight over one simulator, and a recording in progress owns the device outright.
+     * Everything past the device is `runtime-replay.ts`; this is the part that has to live beside
+     * the pool.
+     */
+    replayRuntime: async (projectPath: string, nodeId: string) => {
+      const projectId = getProjectId(projectPath)
+      if (getAppFlowBuilders().get(projectId)?.isRunning()) {
+        return { ok: false as const, error: 'An App Flow build is already running for this project.' }
+      }
+      if (sessions.has(projectId)) {
+        return { ok: false as const, error: 'A recording is in progress for this project.' }
+      }
+
+      console.log(`[app-flow:runtime-replay] ${nodeId} for ${projectPath} (${projectId})`)
+      return await runtimeReplay(projectId, nodeId, {
+        prepare: async () => {
+          const prepared = await prepareDevice(projectId)
+          const ctx = prepared?.ctx ?? (await manualCaptureContext(projectPath, projectId))
+          const device = prepared?.device ?? (await bootDevice(ctx))
+          // Parked before the dispatch, not after: if it throws, the device is still up and still
+          // owns a Metro process, and the next start is the only thing that will ever clean it up.
+          // A device the user launched is not ours to park — `launchApp` already holds it.
+          if (prepared?.source !== 'launched') parkWarmDevice(projectId, device, ctx)
+          return { ctx, device }
+        }
+      })
     }
   }
 }

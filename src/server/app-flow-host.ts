@@ -436,6 +436,8 @@ export interface AppFlowHostServices {
   manualStop(projectPath: string): Promise<unknown>;
   manualCancel(projectPath: string): Promise<unknown>;
   manualReplay?(projectPath: string, nodeId: string): Promise<unknown>;
+  /** The runtime replay variant — navigates by route and params instead of replaying a recording. */
+  runtimeReplay?(projectPath: string, nodeId: string): Promise<unknown>;
   screenshot(projectId: string, path: string): Promise<Buffer>;
   /** Replays buffered events for one run or manual session whose seq is newer than `since`. */
   poll(query: { runId?: string; projectPath?: string }, since: number): Promise<Array<{ seq: number; runId?: string; event: unknown }>>;
@@ -904,6 +906,7 @@ export async function createAppFlowHost(options: {
     manualStop: selectedProjectPath => manual.stop(selectedProjectPath),
     manualCancel: selectedProjectPath => manual.cancel(selectedProjectPath),
     manualReplay: (selectedProjectPath, nodeId) => manual.replay(selectedProjectPath, nodeId),
+    runtimeReplay: (selectedProjectPath, nodeId) => manual.replayRuntime(selectedProjectPath, nodeId),
     async poll(query, since) {
       const key = query.runId
         ? query.runId

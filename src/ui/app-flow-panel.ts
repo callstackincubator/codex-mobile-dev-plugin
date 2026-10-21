@@ -408,7 +408,40 @@ export class AppFlowPanel {
   async replay(nodeId: string) {
     const projectPath = this.snapshot.projectPath;
     // A cold device walks the path in minutes; the panel just waits for the outcome.
-    await this.call("mobile_appflow_manual_replay", { projectPath, nodeId }, 300_000);
+    const response = await this.call("mobile_appflow_manual_replay", { projectPath, nodeId }, 300_000);
+    // A refused replay comes back as an ordinary result carrying `{ ok: false, error }` — only a
+    // thrown tool call sets `isError` — so the reason has to be read out here or the button
+    // reports success for a path that never ran.
+    const data = object(response.structuredContent) ?? {};
+    if (data.ok !== true) throw new Error(typeof data.error === "string" ? data.error : "Replay failed.");
+  }
+
+  /**
+   * The runtime replay variant: navigate by route and params instead of walking a recording.
+   *
+   * Same shape as `replay` — awaited, with the error surfaced on the node — but it is the variant
+   * that needs no recorded path, so the panel offers it on every screen. The server decides
+   * whether the app's runtime can actually be reached and says why when it cannot
+   * (`runtime-replay.ts`); nothing here second-guesses that.
+   *
+   * Measured because this is a user-visible operation whose cost is the thing most likely to make
+   * it feel broken: the device may be cold. `ui.app_flow.runtime_replay` is the panel's own
+   * round-trip, complementing the server-side `app_flow.runtime_replay.duration`, and the count
+   * carries only a closed-set outcome — never the route, the node or any parameter value.
+   */
+  async replayRuntime(nodeId: string) {
+    const projectPath = this.snapshot.projectPath;
+    const startedAt = performance.now();
+    let outcome = "failed";
+    try {
+      const response = await this.call("mobile_appflow_runtime_replay", { projectPath, nodeId }, 300_000);
+      const data = object(response.structuredContent) ?? {};
+      outcome = data.ok === true ? "ok" : "refused";
+      if (data.ok !== true) throw new Error(typeof data.error === "string" ? data.error : "Runtime replay failed.");
+    } finally {
+      countUiEvent("ui.app_flow.runtime_replay", 1, { ...getUiTelemetryAttributes(), outcome });
+      recordUiTiming("ui.app_flow.runtime_replay", performance.now() - startedAt);
+    }
   }
   async refreshStatus() {
     // The active sweep may be owned by the MCP process serving Codex's tool calls, so always use

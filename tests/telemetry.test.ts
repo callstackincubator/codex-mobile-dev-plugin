@@ -839,6 +839,43 @@ test("app flow runtime metrics report settle, verify and navigate with bounded a
   assert.equal(JSON.stringify(envelopes), before, "Opt-out silences every app-flow runtime metric.");
 });
 
+test("runtime replay reports a closed outcome and carries no route, node or parameter", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  t.after(() => { delete process.env.MOBILE_DEV_TELEMETRY; });
+
+  // The two names runtime replay adds. Everything else it spends — the handshake, the dispatch,
+  // the settle — is billed to the Fast series above, which is what keeps a replay's runtime cost
+  // comparable with a sweep's instead of arriving under names of its own.
+  recordRuntimeCount("app_flow.runtime_replay", { outcome: "unresolved-params" });
+  recordRuntimeTiming("app_flow.runtime_replay.duration", 4_210, { outcome: "ok" });
+  await Sentry.flush();
+  const emitted = JSON.stringify(envelopes);
+  contains(emitted, "app_flow.runtime_replay");
+  contains(emitted, "app_flow.runtime_replay.duration");
+  contains(emitted, "millisecond");
+  contains(emitted, '"surface":{"value":"app-flow"');
+  contains(emitted, '"outcome":{"value":"unresolved-params"');
+  contains(emitted, '"outcome":{"value":"ok"');
+  // What a replay knows and must never send: the screen it was asked for, the route it dispatched
+  // and the parameter value it dispatched with. The param store refuses to log values for the
+  // same reason, and the dispatch reason stays in the local console line and on the node.
+  contains(emitted, "HomeTab/Profile", false);
+  contains(emitted, "/user/", false);
+  contains(emitted, "alice.test", false);
+
+  const before = JSON.stringify(envelopes);
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  recordRuntimeCount("app_flow.runtime_replay", { outcome: "refused" });
+  recordRuntimeTiming("app_flow.runtime_replay.duration", 90, { outcome: "refused" });
+  await Sentry.flush();
+  assert.equal(JSON.stringify(envelopes), before, "Opt-out silences runtime replay too.");
+});
+
 test("explore-ui presentation metrics carry a closed outcome/kind pair and honor opt-out", async t => {
   const envelopes: Envelope[] = [];
   Sentry.init({
