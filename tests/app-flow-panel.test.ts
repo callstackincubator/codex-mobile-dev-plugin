@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { AppFlowNode } from "../src/shared/app-flow.ts";
-import { FAST_MODE_AUTH_NOTICE, featureGateNotice } from "../src/shared/app-flow.ts";
+import { featureGateNotice } from "../src/shared/app-flow.ts";
 import { captureStatus, isResumable, routeBadge, type CaptureTally } from "../src/ui/components/app-flow-layout.ts";
 import { AppFlowPanel } from "../src/ui/app-flow-panel.ts";
 
@@ -374,13 +374,6 @@ test("the recorded-path replay reports its own refusal for the same reason", asy
   panel.setAvailable(true); await panel.selectProject("/projects/demo");
   host.returnsReplay({ ok: false, error: "This screen has no recorded path to replay yet." });
   await assert.rejects(() => panel.replay("HomeTab/Profile"), /no recorded path/);
-});
-
-test("the Fast-mode banner tells the user to sign in before the sweep, since nothing else will ask", () => {
-  // Fast has no model-backed auth gate behind it, so this copy is the whole warning.
-  assert.match(FAST_MODE_AUTH_NOTICE, /Fast mode does not check/i);
-  assert.match(FAST_MODE_AUTH_NOTICE, /signing in/i);
-  assert.match(FAST_MODE_AUTH_NOTICE, /start the sweep/i);
 });
 
 test("every guarded route is labelled Feature Gated, whatever that run happened to render", () => {

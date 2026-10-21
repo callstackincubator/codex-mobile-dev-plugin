@@ -1,11 +1,11 @@
-import { createHash } from 'node:crypto'
 import { relative } from 'node:path'
 import ts from 'typescript'
 import type { AppFlowSourceView, AppFlowStateSite } from '../shared/app-flow.ts'
-import type { AppFlowSourceUnit, AppFlowSymbolResolver } from './source-units.ts'
+import { fnName, jsxAttributes, ownerFn, sourceHash, unwrap } from './source-units.ts'
+import type { AppFlowFn, AppFlowSourceUnit, AppFlowSymbolResolver } from './source-units.ts'
 
 type Unit = AppFlowSourceUnit
-type Fn = ts.FunctionLikeDeclaration & { body: ts.ConciseBody }
+type Fn = AppFlowFn
 type Origin = { site: AppFlowStateSite; path: string[] }
 type Value = Origin | { origins: Origin[] } | { [field: string]: Value } | undefined
 
@@ -28,23 +28,15 @@ const field = (v: Value, key: string): Value => {
   if (sources.length) return sources.map(s => ({ site: s.site, path: [...s.path, key] })).reduce<Value>((a, b) => merge(a, b), undefined)
   return v ? (v as Record<string, Value>)[key] : undefined
 }
-const hash = (v: unknown) => createHash('sha256').update(JSON.stringify(v)).digest('hex').slice(0, 20)
-const unwrap = (n: ts.Node): ts.Node => {
-  while (ts.isParenthesizedExpression(n) || ts.isAsExpression(n) || ts.isSatisfiesExpression(n) || ts.isTypeAssertionExpression(n)) n = n.expression
-  return n
-}
-const owner = (n: ts.Node): Fn | undefined => { for (let p = n.parent; p; p = p.parent) if (ts.isFunctionLike(p) && 'body' in p && p.body) return p as Fn }
-const name = (fn: Fn) => {
-  if (fn.name && ts.isIdentifier(fn.name)) return fn.name.text
-  for (let p: ts.Node = fn, i = 0; p.parent && i < 5; p = p.parent, i++) if (ts.isVariableDeclaration(p.parent) && ts.isIdentifier(p.parent.name)) return p.parent.name.text
-  return 'default'
-}
+const hash = sourceHash
+const owner = ownerFn
+const name = (fn: Fn) => fnName(fn, { stopAtNestedFunction: false })
 const defaultExport = (fn: Fn) => {
   if (fn.modifiers?.some(m => m.kind === ts.SyntaxKind.DefaultKeyword)) return true
   for (let p: ts.Node = fn; p.parent && !ts.isFunctionLike(p.parent) && !ts.isBlock(p.parent); p = p.parent) if (ts.isExportAssignment(p.parent)) return true
   return false
 }
-const attrs = (n: ts.JsxOpeningLikeElement) => n.attributes.properties.filter(ts.isJsxAttribute)
+const attrs = jsxAttributes
 const expr = (n: ts.JsxAttribute) => n.initializer && ts.isJsxExpression(n.initializer) ? n.initializer.expression : n.initializer
 const walk = (n: ts.Node, visit: (n: ts.Node) => void) => { visit(n); ts.forEachChild(n, c => walk(c, visit)) }
 
@@ -96,7 +88,7 @@ export function scanSourceViews(units: Map<string, Unit>, root: string, symbol: 
       const call = unwrap(n.initializer), fn = owner(n)
       if (!fn || !ts.isCallExpression(call) || !/^react#use(?:State|Reducer)$/.test(symbol(unit, call.expression.getText()))) continue
       const value = n.name.elements[0], loc = location(unit, call)
-      const site: AppFlowStateSite = { id: createHash('sha256').update(`${relative(root, unit.file)}:${call.pos}`).digest('hex').slice(0, 20), file: relative(root, unit.file), ...loc, owner: name(fn), paths: [], hook: symbol(unit, call.expression.getText()).endsWith('useReducer') ? 'useReducer' : 'useState', valueName: value && ts.isBindingElement(value) && ts.isIdentifier(value.name) ? value.name.text : undefined }
+      const site: AppFlowStateSite = { id: sourceHash(`${relative(root, unit.file)}:${call.pos}`), file: relative(root, unit.file), ...loc, owner: name(fn), paths: [], hook: symbol(unit, call.expression.getText()).endsWith('useReducer') ? 'useReducer' : 'useState', valueName: value && ts.isBindingElement(value) && ts.isIdentifier(value.name) ? value.name.text : undefined }
       states.push(site)
       const v = { 0: { site, path: [] } }
       stateCalls.set(call, v)
@@ -108,7 +100,7 @@ export function scanSourceViews(units: Map<string, Unit>, root: string, symbol: 
       const fn = owner(n)
       if (!fn) continue
       const loc = location(unit, n)
-      const site: AppFlowStateSite = { id: createHash('sha256').update(`${relative(root, unit.file)}:${n.pos}`).digest('hex').slice(0, 20), file: relative(root, unit.file), ...loc, owner: name(fn), paths: [], hook: symbol(unit, n.expression.getText()).endsWith('useReducer') ? 'useReducer' : 'useState' }
+      const site: AppFlowStateSite = { id: sourceHash(`${relative(root, unit.file)}:${n.pos}`), file: relative(root, unit.file), ...loc, owner: name(fn), paths: [], hook: symbol(unit, n.expression.getText()).endsWith('useReducer') ? 'useReducer' : 'useState' }
       states.push(site)
       stateCalls.set(n, { 0: { site, path: [] } })
       calls.set(site.id, { unit, call: n })

@@ -15,6 +15,7 @@ import { destinationGuardSelector } from '../../ad-script.ts'
 import type { ReachPorts } from '../ports.ts'
 import type { ReachAttempt } from '../types.ts'
 import { diagnosticFramePath, verifyWithDiagnostic } from './verify-with-diagnostic.ts'
+import { checkSignal } from '../../cancel.ts'
 
 export interface SavedReplayInput {
   node: AppFlowNode
@@ -26,10 +27,6 @@ export interface SavedReplayInput {
   remaining: number
   scratchPath: (key: string) => string
   signal?: AbortSignal
-}
-
-function checkSignal(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw new Error('Cancelled')
 }
 
 export async function savedReplayStrategy(

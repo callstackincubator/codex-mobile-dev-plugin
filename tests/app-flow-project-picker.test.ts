@@ -1,35 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { build } from "esbuild";
-import { JSDOM } from "jsdom";
-import { mkdtemp, rm } from "node:fs/promises";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { renderEnvironment } from "./jsdom-env.ts";
 
 test("the project selector lists saved projects and reaches both selection paths", async t => {
-  const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
-  const previous = new Map<string, PropertyDescriptor | undefined>();
-  const globals = {
-    window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
-    HTMLElement: dom.window.HTMLElement, HTMLInputElement: dom.window.HTMLInputElement, Node: dom.window.Node,
-    Event: dom.window.Event, CustomEvent: dom.window.CustomEvent, NodeFilter: dom.window.NodeFilter,
-    Element: dom.window.Element, DocumentFragment: dom.window.DocumentFragment, MutationObserver: dom.window.MutationObserver,
-    getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
-    requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window), cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window),
-    ResizeObserver: class { observe() {} unobserve() {} disconnect() {} }, IS_REACT_ACT_ENVIRONMENT: true,
-  };
-  for (const [key, value] of Object.entries(globals)) {
-    previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
-    Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
-  }
-  const directory = await mkdtemp(resolve("node_modules/.mobile-dev-project-picker-test-"));
-  const output = resolve(directory, "picker.mjs");
-  await build({
-    stdin: { contents: 'export { AppFlowProjectPicker } from "./src/ui/components/app-flow-project-picker.tsx";', resolveDir: process.cwd(), loader: "ts" },
-    outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
-    external: ["react", "react/*", "react-dom", "react-dom/*", "radix-ui", "lucide-react", "@base-ui/react/*"],
+  const { module: { AppFlowProjectPicker }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { AppFlowProjectPicker } from "./src/ui/components/app-flow-project-picker.tsx";', slug: "project-picker",
   });
-  const { AppFlowProjectPicker } = await import(pathToFileURL(output).href);
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
 
@@ -48,12 +24,9 @@ test("the project selector lists saved projects and reaches both selection paths
   await act(async () => { root.render(createElement(AppFlowProjectPicker, { panel })); });
   // React and Radix both need the live window while unmounting, so this runs before the globals
   // node:test would otherwise restore.
-  t.after(async () => {
+  onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
-    dom.window.close();
-    for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); }
-    await rm(directory, { recursive: true, force: true });
   });
   // React reads the store during the notification, so the new value is set inside act as well.
   const emit = async (fields: Record<string, unknown>) => await act(async () => {

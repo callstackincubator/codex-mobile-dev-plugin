@@ -21,22 +21,16 @@ export type ExplorationMode = 'auto' | 'fast' | 'thorough'
 /**
  * Whether a *deep link*'s arrival is confirmed by the vision judge.
  *
- * Every deep link opened today costs a screenshot plus a model call (~3.5s on the reference sweep)
- * to answer a question the URL mostly already answered: the app either routed to the URL or it
- * did not. `off` skips that call and takes the open at its word, with one exception the sweep
- * cannot do without — the build's own not-found route, which a registered-but-gated screen
- * resolves to and which drives the ancestor-prefix fallback, the exploration hint and the
- * deep-link breaker's 404 exemption. With the judge off that case is detected structurally from
- * the accessibility snapshot instead (`reach/not-found-signal.ts`).
+ * - `on` — the default: a screenshot plus a model call per open.
+ * - `off` — takes the open at its word. Faster and cheaper, at the cost of not catching an open
+ *   that resolved to a *different* real screen than the one asked for, which only the judge sees.
  *
- * - `on` — the default, and exactly what every sweep did before this setting existed.
- * - `off` — no model call per deep link. Faster and cheaper, at the cost of not catching an open
- *   that resolved to a *different* real screen than the one asked for, which only the judge can
- *   see.
+ * The one case `off` cannot do without — the build's own not-found route, which drives the
+ * ancestor-prefix fallback, the exploration hint and the breaker's 404 exemption — is detected
+ * structurally from the accessibility snapshot instead (`reach/not-found-signal.ts`).
  *
- * Scoped to deep links on purpose. Exploration's arrival checks are not an optimisation of the
- * same kind: a walk has no "the URL resolved" to fall back on, so removing the judge there would
- * remove the sweep's only evidence that it arrived anywhere at all.
+ * Scoped to deep links on purpose: a walk has no "the URL resolved" to fall back on, so removing
+ * the judge there would remove the sweep's only evidence that it arrived anywhere at all.
  */
 export type DeepLinkJudgeMode = 'on' | 'off'
 
@@ -216,11 +210,9 @@ export interface AppFlowCapture {
    * `buildAgentDeviceScreens` stores as its `pathToReach`, kept on the capture as well so the
    * sweep can seed the next walk off it without re-reading the screens map.
    *
-   * This is what replaced the `.ad` script the sweep used to record. A recording forced a cold
-   * `open --relaunch` before every walk — not to put the walk on a known screen, which a soft
-   * re-root does, but so the recorded script's first line would be one — and on the 2026-10-13
-   * sweep that cost ~173s of 683s and produced one script out of seven explorations. The explorer
-   * already knew every step it took; this is that knowledge written down. See `walk-commands.ts`.
+   * Replaces the recorded `.ad` script, which forced a cold `open --relaunch` before every walk
+   * just so its first line would be one. The explorer already knows every step it took; this is
+   * that knowledge written down. See `walk-commands.ts`.
    *
    * Always standalone: the list opens with its own launch line (`baselineLaunchCommands`), so a
    * consumer can run it against any device state and a later walk can seed from it directly.
@@ -238,12 +230,10 @@ export interface AppFlowCapture {
    * a path `buildChromePathToReach` reconstructed from a reveal/trigger pair observed on some other
    * screen.
    *
-   * It exists because the two became indistinguishable when `pathToReach` turned into the Replay
-   * button's only gate. On the 2026-10-13 sweep `ModerationInbox` is `captureMethod: 'unreached'`
-   * with a note saying this build renders `<NotFoundScreen/>` for it, and it still carries
-   * `[boot, open, press 'label="Inbox zero!"']` and `replayable: true` — a guess, presented exactly
-   * like `My-Profile`'s walked path. The path is kept (it is the only lead to that screen there is);
-   * it now says what it is.
+   * It exists because the two became indistinguishable once `pathToReach` was the Replay button's
+   * only gate: an unreached screen could still carry a reconstructed path and present it exactly
+   * like a walked one. The path is kept — it is the only lead to that screen there is — but it now
+   * says what it is.
    *
    * Written by `buildAgentDeviceScreens` and stamped on by `withReplayableCaptures`, from the
    * screens map's own entry rather than a second guess at it. Absent on documents written before

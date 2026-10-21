@@ -545,16 +545,15 @@ export function createReachPorts(options: CreateReachPortsOptions): ReachPorts {
     // port's absence instead of on a port that always answers no.
     ...(renderTransport
       ? {
-          render: createRenderPort(
-            renderTransport,
-            navigatorSegments,
-            options.expoRouter === true,
-            options.settleDeadlinesMs?.length ? options.settleDeadlinesMs : SETTLE_DEADLINES_MS,
+          render: createRenderPortForTransport({
+            transport: renderTransport,
+            expoRouter: options.expoRouter === true,
+            ...(options.settleDeadlinesMs ? { settleDeadlinesMs: options.settleDeadlinesMs } : {}),
+            metrics: options.metrics ?? null,
             // `ctx` is always present in the sweep; guarded so the port stays constructible from a
             // test that supplies only a transport.
-            (work) => (ctx ? measurePhase(ctx, 'settle-poll', work) : work()),
-            options.metrics ?? null
-          )
+            measurePoll: (work) => (ctx ? measurePhase(ctx, 'settle-poll', work) : work())
+          })
         }
       : {})
   }
@@ -569,9 +568,9 @@ export function createReachPorts(options: CreateReachPortsOptions): ReachPorts {
  * the same settle loop and the same `app_flow.runtime.*` meters — because a replay that resolved
  * a route differently from the sweep that recorded it would be answering a different question.
  *
- * The one difference is the poll timer: `createReachPorts` bills each readiness poll to the
- * sweep's phase ledger, and a replay has no ledger to bill. The poll runs unmeasured rather than
- * against a ledger invented for it; the settle's own bounded aggregate is unaffected.
+ * The one difference is the poll timer: the sweep passes `measurePoll` to bill each readiness poll
+ * to its phase ledger, and a replay has no ledger to bill, so the poll runs unmeasured rather than
+ * against a ledger invented for it. The settle's own bounded aggregate is unaffected.
  */
 export function createRenderPortForTransport(options: {
   transport: RenderTransport
@@ -579,13 +578,15 @@ export function createRenderPortForTransport(options: {
   expoRouter?: boolean
   settleDeadlinesMs?: readonly number[]
   metrics?: ReachMetricsPort | null
+  /** Wraps each readiness poll, for a caller with a phase ledger to bill it to. */
+  measurePoll?: <T>(work: () => Promise<T>) => Promise<T>
 }): RenderPort {
   return createRenderPort(
     options.transport,
     navigatorSegments,
     options.expoRouter === true,
     options.settleDeadlinesMs?.length ? options.settleDeadlinesMs : SETTLE_DEADLINES_MS,
-    (work) => work(),
+    options.measurePoll ?? ((work) => work()),
     options.metrics ?? null
   )
 }

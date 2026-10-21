@@ -1,10 +1,6 @@
 /**
- * Validation and defaulting for an App Flow start request.
- *
- * Lives beside the service rather than inline in `ipc.ts` for the same reason
- * `manual/validate.ts` does: the handler needs Electron, but the rules ("which literals are
- * legal, what an absent option means") are the part worth unit-testing, and they are pure.
- * The directory-allowlist check stays in the handler because it needs the workspace store.
+ * Validation and defaulting for an App Flow start request. Pure, so the rules are unit-testable;
+ * the directory-allowlist check stays in the handler because it needs the workspace store.
  */
 import type {
   AppFlowBuildMode,

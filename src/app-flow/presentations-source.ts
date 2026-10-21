@@ -1,11 +1,11 @@
-import { createHash } from 'node:crypto'
 import { relative } from 'node:path'
 import ts from 'typescript'
 import type { AppFlowOpeningData, AppFlowPresentationAction, AppFlowPresentations, AppFlowStateSite, AppFlowUiCondition } from '../shared/app-flow.ts'
-import type { AppFlowSourceUnit, AppFlowSymbolResolver } from './source-units.ts'
+import { fnName, jsxAttributes, ownerFn, sourceHash, unwrap } from './source-units.ts'
+import type { AppFlowFn, AppFlowSourceUnit, AppFlowSymbolResolver } from './source-units.ts'
 
 type Unit = AppFlowSourceUnit
-type Fn = ts.FunctionLikeDeclaration & { body: ts.ConciseBody }
+type Fn = AppFlowFn
 type State = { site: AppFlowStateSite; value: string; setter: string; setterNode: ts.Identifier; fn: Fn; unit: Unit }
 type Transition = { state: State; path: string[]; value: unknown }
 
@@ -25,27 +25,13 @@ const bad = /token|password|secret|authorization|cookie|credential|authenticated
  */
 const destructiveHandler = /\b(?:on(?:Save|Discard|Delete|Submit)|(?:save|discard|delete|submit|mutate|signOut|logout)[A-Z]?\w*)\s*\(/i
 
-const unwrap = (node: ts.Node): ts.Node => {
-  while (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isTypeAssertionExpression(node)) node = node.expression
-  return node
-}
-const key = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 20)
-const attributes = (node: ts.JsxOpeningLikeElement) => node.attributes.properties.filter(ts.isJsxAttribute)
+const key = sourceHash
+const attributes = jsxAttributes
 const expression = (node: ts.JsxAttribute) => node.initializer && ts.isJsxExpression(node.initializer) ? node.initializer.expression : undefined
 const head = (node: ts.Node) => node.getText().replace(/\?\./g, '.').split('.')[0]
 const method = (node: ts.Node) => ts.isPropertyAccessExpression(node) ? node.name.text : ts.isIdentifier(node) ? node.text : ''
-function owner(node: ts.Node): Fn | undefined {
-  for (let parent = node.parent; parent; parent = parent.parent) if (ts.isFunctionLike(parent) && 'body' in parent && parent.body) return parent as Fn
-}
-function functionName(fn: Fn): string {
-  if (fn.name && ts.isIdentifier(fn.name)) return fn.name.text
-  let parent: ts.Node = fn
-  for (let i = 0; parent.parent && i < 4; i++, parent = parent.parent) {
-    if (ts.isFunctionLike(parent.parent)) break
-    if (ts.isVariableDeclaration(parent.parent) && ts.isIdentifier(parent.parent.name)) return parent.parent.name.text
-  }
-  return 'default'
-}
+const owner = ownerFn
+const functionName = (fn: Fn): string => fnName(fn, { depth: 4 })
 
 /**
  * The decisive test for "does this condition gate a presentation". It is not a

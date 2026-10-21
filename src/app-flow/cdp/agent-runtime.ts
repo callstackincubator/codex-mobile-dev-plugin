@@ -7,104 +7,70 @@
    patch wrappers forward whatever the app passed, of any arity, with its own receiver. */
 /**
  * The in-app agent: the code that runs inside the app under test's JS runtime, as real typed
- * source.
- *
- * Until now every expression we evaluated in the app was a template-string constant
- * (`COLLECT_ROOTS_JS`, `FIND_NAVIGATOR_JS`, `NAV_STATE_EXPR`, `readinessExpr`). Those cannot be
- * type-checked, linted, or unit-tested, and the cost of that was paid for in real bugs: the
- * `hidden()` style-array prune in `runtime-render.ts` was found by running against a live app
- * because no test could reach it. Here the same logic is ordinary exported functions. They are
- * tested directly against a hand-built fake fiber tree (`agent-runtime.test.ts`), and at runtime
- * `runtime-source.ts` injects them by calling `fn.toString()` on each.
+ * source. `runtime-source.ts` injects it by calling `fn.toString()` on each function, so the
+ * functions are unit-testable here rather than being opaque template-string constants.
  *
  * ## SYNTAX RULES -- read before "modernising" anything in this file
  *
- * The source below is evaluated by Hermes' **debugger** evaluator (`Runtime.evaluate`), which does
- * not lower code the way the app's bundler does. Nothing transforms these functions on the way out
- * either: `runtime-source.ts` injects `fn.toString()` verbatim. (It briefly ran an esbuild
- * `target: 'es2015'` pass, mirroring the reference's build step, but esbuild's JavaScript API
- * cannot run from the bundled `dist/server.mjs`, so the packaged plugin failed on first connect.
- * See the header of `runtime-source.ts`.) **What you write here is what Hermes gets.**
- *
- * The ban list is still narrower than the old hand-written one, because the evidence is: the
- * reference's packaged artefact ships `class`, `for...of`, template literals, spread and optional
- * chaining to the same Hermes debugger evaluator through the same `Runtime.evaluate` call, and
- * performs no syntax scan on them at all. Inside every function in `AGENT_FUNCTIONS`:
+ * The source below reaches Hermes' debugger evaluator (`Runtime.evaluate`) verbatim: nothing
+ * lowers it on the way out. **What you write here is what Hermes gets.** Inside every function in
+ * `AGENT_FUNCTIONS`:
  *
  * - **ES2015 and below is fine**: `class`, `for...of`, template literals, spread/rest,
  *   destructuring, default parameters, arrow functions, `let`/`const`, `Set` and `Map`.
  * - **Optional chaining (`?.`) is fine** — the reference ships it raw to the same evaluator.
- * - **No `async` / `await`, and so no promises-as-control-flow.** Without a lowering pass these
- *   reach Hermes exactly as written, and this agent has no await-based path that would justify
- *   finding out how its debugger evaluator handles them.
- * - **No nullish coalescing (`??`).** Banned for the same reason; write the explicit null check,
- *   which is clearer about which falsy values you meant anyway.
+ * - **No `async` / `await`, and so no promises-as-control-flow**, and **no nullish coalescing
+ *   (`??`)**: unlowered, these reach Hermes as written, and nothing here needs them.
  *
- * `runtime-source.ts` scans the assembled source for `async`, `await` and `??` and refuses to build
- * if any appears. That scan is textual and cannot tell a comment from code, so do not spell those
- * tokens out inside a function body — and note that comments now ride along into the injected
- * text, where the esbuild pass used to strip them.
+ * `runtime-source.ts` refuses to build if it finds those tokens. The scan is textual and cannot
+ * tell a comment from code, so do not spell them out inside a function body — comments ride along
+ * into the injected text.
  *
  * ## Other rules that follow from "this is toString()'d"
  *
  * - **A function may reference only other `AGENT_FUNCTIONS` and the app's globals.** It is
- *   re-created in a fresh scope in the app, so a module constant (`WALK_BUDGET`) or an imported
- *   helper does not exist there and fails as a `ReferenceError` on first use. Configuration crosses
- *   the boundary as an argument (`AgentLimits`), and the test suite evaluates the assembled,
- *   lowered source in an empty `node:vm` context and calls every function there, so such a
- *   reference surfaces as a `ReferenceError` in the test run instead of against a device.
- * - **Names are load-bearing.** Functions call each other by their declared name, so a bundler that
- *   renames a top-level declaration (to dodge a collision) would silently break the call. Every
- *   name carries an `agent` prefix to make a collision unlikely, and `runtime-source.ts` checks
+ *   re-created in a fresh scope in the app, so a module constant or imported helper does not exist
+ *   there and fails as a `ReferenceError` on first use. Configuration crosses the boundary as an
+ *   argument (`AgentLimits`); the test suite evaluates the assembled source in an empty `node:vm`
+ *   context and calls every function, so such a reference surfaces in the test run instead.
+ * - **Names are load-bearing.** Functions call each other by declared name, so a rename would
+ *   silently break the call. Every name carries an `agent` prefix, and `runtime-source.ts` checks
  *   `fn.name` against the registry and throws rather than inject a renamed function.
  * - **No recursion by name, no closures over module state.** The helpers that would naturally
  *   recurse (`agentStyleFlags`, `agentComponentName`) are iterative.
  *
  * ## One navigator search, shared
  *
- * `runtime-navigator.ts` explains that the reader and the writer must share a single search so they
- * can never disagree about which navigator is real. That property is kept here by construction:
- * `agentFindNavigator` is the only place a navigator is found, and `nav-state` and `readiness`
- * (and, later, a navigate command) all call it. Until the old string path is retired there are
- * still two copies of that search in the repo; `agent-runtime.test.ts` runs both against the same
- * fake tree so they cannot drift apart unnoticed.
+ * The reader and the writer must share a single search so they can never disagree about which
+ * navigator is real: `agentFindNavigator` is the only place a navigator is found, and `nav-state`
+ * and `readiness` both call it. The old string path in `runtime-navigator.ts` is still in use by
+ * `nav-state.ts`; `agent-runtime.test.ts` runs both against the same fake tree so they cannot
+ * drift apart unnoticed.
  *
  * ## The lease
  *
- * `agentInstall` arms a watchdog that is refreshed by every command. If the host stops talking for
- * `leaseMs` (a crashed Electron process, a dropped socket nobody noticed) the watchdog calls
- * `restore()` and deletes the agent global, so a dead harness cannot leave the app permanently
- * instrumented. This is the safety property the rest of the transport exists to serve, so it is
- * deliberately fail-closed: with no working timer the install refuses rather than run without a
- * watchdog, and a failure to re-arm the timer restores immediately instead of continuing.
+ * `agentInstall` arms a watchdog refreshed by every command. If the host stops talking for
+ * `leaseMs` the watchdog calls `restore()` and deletes the agent global, so a dead harness cannot
+ * leave the app permanently instrumented. It is deliberately fail-closed: with no working timer
+ * the install refuses, and a failure to re-arm restores immediately.
  *
- * `restore()` runs the `undo` list in reverse order, and every entry is isolated so one failing undo
- * cannot strand the others or the global. Since readiness moved into the app (below) the list is no
- * longer empty: it holds the reversal of every patch the agent applies to the app's own globals,
- * which is exactly why the lease exists. If the host dies, the 10s watchdog un-patches `fetch`,
- * `XMLHttpRequest.prototype.send` and the DevTools hook before it deletes the agent.
+ * `restore()` runs the `undo` list in reverse, each entry isolated so one failing undo cannot
+ * strand the others. The list holds the reversal of every patch the agent applies to the app's
+ * globals — `fetch`, `XMLHttpRequest.prototype.send` and the DevTools hook.
  *
  * ## Readiness lives in the app
  *
- * The old settle loop sampled a stateless snapshot from Node and called the screen settled after two
- * identical samples (`runtime-render.ts`, `reach/adapters.ts`). That was sound only because a CLI
- * evaluation cost ~570ms: two samples were >500ms apart, six times the 80ms quiet window the
- * reference implementation waits for, with frames certainly painted in between. The socket transport
- * measured **13.8ms median round-trip (11.7-23.5ms over 20 samples)** against a real device: two
- * polls are now less than one 60Hz frame apart, and two identical samples prove neither a quiet
- * window nor a painted frame. Keeping that heuristic would make the render rung confidently wrong,
- * which is worse than slow. So the decision moves to where the evidence is:
+ * Two identical snapshots sampled from Node cannot prove a quiet window or a painted frame once
+ * the round trip is faster than a frame, so the verdict is decided where the evidence is:
  *
  * - **React commits** are timestamped by chaining `__REACT_DEVTOOLS_GLOBAL_HOOK__.onCommitFiberRoot`.
  * - **In-flight network** is counted by wrapping `fetch` and `XMLHttpRequest.prototype.send`.
  * - **A quiet window** is the time since the last commit and the last network completion, compared
- *   by the agent against thresholds the host passes in (`quietMs`, `idleMs`).
- * - **A paint check** is two nested `requestAnimationFrame` callbacks, with no commit in between.
+ *   against thresholds the host passes in (`quietMs`, `idleMs`).
+ * - **A paint check** is two nested `requestAnimationFrame` callbacks with no commit in between.
  *
- * The reply carries the verdict plus the evidence behind it, and `confident`/`missing` say which
- * signals could not be installed, so a verdict that rests on fewer signals is distinguishable from
- * one that does not. What no longer has parity with the old string path is listed on
- * `agentReadiness`'s sibling `agentVerdict`.
+ * The reply carries the verdict plus its evidence, and `confident`/`missing` say which signals
+ * could not be installed, so a verdict resting on fewer signals is distinguishable.
  *
  * ## Patching the app is the risky part
  *
@@ -116,7 +82,6 @@
  */
 
 import type { NavRoute } from '../nav-state.ts'
-import type { ReadinessSnapshot } from '../runtime-render.ts'
 
 /** Node ceiling for the fiber walk. Generous by design; the deadline below is the real bound. */
 export const WALK_BUDGET = 60_000
@@ -262,6 +227,27 @@ export type NavigateReply =
         | 'threw'
       detail?: string
     }
+/**
+ * One snapshot of how settled a screen is. Every field is computed fresh from the current tree.
+ */
+export interface ReadinessSnapshot {
+  /** The focused route path the app is actually on, innermost name last. */
+  active: string[]
+  /** The target's screen fiber exists and is focused. */
+  found: boolean
+  /** Count of host nodes under the screen carrying text, an image source, or a label. */
+  content: number
+  /** A visible loading affordance, with a one-word reason when there is one. */
+  loading: string | null
+  /** 32-bit hash of the screen's structure, compared across polls to detect stability. */
+  signature: string
+  /**
+   * Expected parameter keys whose value on the focused route does not match. Non-empty means
+   * `found` is false because of the parameters rather than because the app is on another route.
+   */
+  paramMismatch: string[]
+}
+
 /**
  * `ReadinessSnapshot` as the app computes it, plus the in-app verdict. Unlike the pipe-delimited
  * string it replaces, nothing here has to fit in 200 characters, so `active` is the whole focused
@@ -941,11 +927,8 @@ export function agentComponentName(value: any): string {
 }
 
 /**
- * The `readiness` command: one stateless snapshot of how settled a screen is.
- *
- * Ported from `readinessExpr`; see `runtime-render.ts` for why this decides *when to photograph*
- * rather than *whether we arrived*. This function is still the stateless sample (the result is an
- * object, not an `AIHR1|` string); `agentSettle` adds the stateful evidence around it, and
+ * The `readiness` command: one stateless snapshot of how settled a screen is. It decides *when to
+ * photograph*, not *whether we arrived*; `agentSettle` adds the stateful evidence around it and
  * `agentVerdict` folds the two together.
  *
  * Two traversal details were each found by measurement and are kept exactly:
@@ -1376,14 +1359,8 @@ export function agentCreateSignals(root: any, undo: Array<() => void>, release: 
  * - `settled` = found, no loading affordance, quiet, and not `painted === false`. `painted` null
  *   (no `requestAnimationFrame`) does not block; it is listed as missing like any other.
  *
- * ## What no longer has parity with the old `readinessExpr` path, and why that is correct
- *
- * The structure signature, `hidden()` pruning, focused-screen identification, `content`, `loading`,
- * `active` (apart from path length) and `paramMismatch` are the same code in the same order and are
- * still asserted equal. `settled`, `quiet`, `painted`, the timings and `missing` have no
- * counterpart: the old path inferred quiet from two identical samples ~570ms apart, which is
- * meaningless at 14ms. A snapshot that is identical twice in a row is no longer treated as evidence
- * of anything; the app's own commit and request clocks are.
+ * A snapshot identical twice in a row is deliberately not treated as evidence of anything; the
+ * app's own commit and request clocks are.
  */
 export function agentVerdict(
   snapshot: any,

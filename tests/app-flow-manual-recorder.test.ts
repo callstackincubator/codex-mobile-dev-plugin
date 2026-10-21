@@ -1,10 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { build } from "esbuild";
-import { JSDOM } from "jsdom";
-import { mkdtemp, rm } from "node:fs/promises";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { renderEnvironment } from "./jsdom-env.ts";
 import { AppFlowRecordingStore } from "../src/ui/app-flow-recording.ts";
 import { layoutWireframe } from "../src/ui/components/manual-wireframe.ts";
 
@@ -54,32 +50,9 @@ test("a second interaction is refused while one is in flight, and the one in fli
 
 /** The panel itself: the lock, the named wait, and the list view onto a dense screen. */
 test("the recorder panel locks its controls while the device is busy and lists every element", async t => {
-  const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
-  const previous = new Map<string, PropertyDescriptor | undefined>();
-  const globals = {
-    window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
-    HTMLElement: dom.window.HTMLElement, HTMLInputElement: dom.window.HTMLInputElement, Node: dom.window.Node,
-    Event: dom.window.Event, CustomEvent: dom.window.CustomEvent, NodeFilter: dom.window.NodeFilter,
-    Element: dom.window.Element, DocumentFragment: dom.window.DocumentFragment, MutationObserver: dom.window.MutationObserver,
-    localStorage: dom.window.localStorage, getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
-    requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window), cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window),
-    ResizeObserver: class { observe() {} unobserve() {} disconnect() {} },
-    IS_REACT_ACT_ENVIRONMENT: true,
-  };
-  for (const [key, value] of Object.entries(globals)) {
-    previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
-    Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
-  }
-  const directory = await mkdtemp(resolve("node_modules/.mobile-dev-manual-recorder-test-"));
-  let cleanup = async () => {};
-  t.after(async () => { await cleanup(); dom.window.close(); for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); } await rm(directory, { recursive: true, force: true }); });
-  const output = resolve(directory, "manual-recorder-panel.mjs");
-  await build({
-    stdin: { contents: 'export { ManualRecorderPanel } from "./src/ui/components/manual-recorder-panel.tsx";', resolveDir: process.cwd(), loader: "ts" },
-    outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
-    external: ["react", "react/*", "react-dom", "react-dom/*", "radix-ui", "lucide-react", "@base-ui/react/*"],
+  const { module: { ManualRecorderPanel }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { ManualRecorderPanel } from "./src/ui/components/manual-recorder-panel.tsx";', slug: "manual-recorder",
   });
-  const { ManualRecorderPanel } = await import(pathToFileURL(output).href);
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
 
@@ -98,7 +71,7 @@ test("the recorder panel locks its controls while the device is busy and lists e
     stop: async () => {}, cancel: async () => {}, dismiss: () => {}, clearError: () => {},
   };
   const root = createRoot(dom.window.document.getElementById("root")!);
-  cleanup = async () => { await act(async () => { root.unmount(); }); };
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
   await act(async () => { root.render(createElement(ManualRecorderPanel, { projectPath: "/tmp/project", title: "Moderation", store })); });
 
   const panel = dom.window.document.querySelector('[role="dialog"]')!;

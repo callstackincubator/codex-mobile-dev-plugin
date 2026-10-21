@@ -794,7 +794,7 @@ function normalizeRoutePath(path: string): string {
 }
 
 function joinRoutePath(prefix: string, segment: string): string {
-  const value = `${prefix.replace(/\/$/, '')}/${segment.replace(/^\//, '')}`.replace(/\/+/, '/')
+  const value = `${prefix.replace(/\/$/, '')}/${segment.replace(/^\//, '')}`.replace(/\/+/g, '/')
   return value.startsWith('/') ? value : `/${value}`
 }
 

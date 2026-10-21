@@ -698,7 +698,9 @@ export class CdpConnection {
       await this.openLink()
       this.setState('ready')
     } catch (error) {
-      this.setState('idle')
+      // `close()` may have landed while `openLink` was in flight; 'closed' is terminal, so a
+      // failed first attempt must not reopen the connection for another `connect()`.
+      if ((this.currentState as ConnectionState) !== 'closed') this.setState('idle')
       throw error
     }
   }

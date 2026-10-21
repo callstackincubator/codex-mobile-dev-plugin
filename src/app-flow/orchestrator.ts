@@ -213,6 +213,7 @@ import {
   pickMetroCdpTarget,
   shellQuote
 } from '../server/app-flow-deps/profiling/cdp.ts'
+import { checkSignal } from './cancel.ts'
 
 export type AppFlowPhase = 'parse' | 'boot' | 'capture' | 'classify' | 'render'
 
@@ -262,13 +263,9 @@ async function computeFastSourceHash(
 // comment on `DeepLinkBreakerState`.
 
 /**
- * How many opportunistic arrival checks a single exploration walk toward one target may spend on
- * *other* pending screens it happens to pass through. Every one of them is a real vision call
- * charged against that walk's own five-minute budget, and shared hub screens (Settings, Profile,
- * Moderation) turn up on nearly every walk in a sweep like social-app's — an unbounded cap would
- * let confirming screens seen many times over eat the budget the walk needs for its actual target.
- * Two is enough to catch most of what a five-minute walk passes through without meaningfully
- * competing with the target's own decisions for that budget.
+ * How many opportunistic arrival checks one walk may spend on screens other than its target. Each
+ * is a vision call against that walk's own budget, and hub screens recur on nearly every walk, so
+ * the cap keeps re-confirmation from crowding out the target's own decisions.
  */
 const OPPORTUNISTIC_VERIFY_LIMIT = 2
 
@@ -280,35 +277,19 @@ const OPPORTUNISTIC_VERIFY_LIMIT = 2
 const OPPORTUNISTIC_MIN_REMAINING_MS = 60_000
 
 /**
- * How many nodes the sweep will mint for screens the parser never registered a route for at all
- * (plan Step 4a). Every mint costs a model call (`RUNTIME_SCREEN_SYSTEM_PROMPT`) on top of whatever
- * opportunistic budget it shares with known-node capture, but the real reason for a hard ceiling is
- * that a bad affirmative — a modal or a partially-loaded frame the judge misjudged as distinct — is
- * only ever caught by a human looking at the graph afterward. Ten is generous for a build the parser
- * genuinely missed a handful of screens in, without letting a systematically wrong judge answer
- * flood the graph with junk nodes for the rest of an 80-screen sweep.
+ * How many nodes the sweep will mint for screens the parser registered no route for. Each mint
+ * costs a model call, and a bad affirmative (a modal or half-loaded frame judged distinct) is only
+ * ever caught by a human reading the graph, so a wrong judge cannot flood it past this ceiling.
  */
 const RUNTIME_NODE_SWEEP_CAP = 10
 
 /**
- * How long the adopt path re-confirms the pre-launched app before deciding it is not ready and
- * soft re-rooting it.
+ * How long the adopt path re-confirms the pre-launched app before soft re-rooting it.
  *
- * Shorter than the 90s `APP_READY_TIMEOUT_MS` the fresh-boot branch takes because this is not a
- * cold start and must not be budgeted like one: `index.ts`'s Launch already ran `waitForAppReady`
- * to completion and only stored the device once it returned, so the bundle is built, Metro is
- * warm, and the app was on a settled screen before the Start button was even enabled. On the
- * 2026-10-09 social-app run that settle landed at t=43.9s and Start came at t=64.2s — twenty
- * seconds in which the only things that can go wrong are the user backgrounding the app, the
- * simulator sleeping, or the agent-device session dropping, and a warm app re-settles in about
- * two reads.
- *
- * Fifteen seconds therefore buys headroom for a slow accessibility read or a screen the user left
- * mid-transition, and nothing else. Spending the full 90s here would be strictly worse than the
- * bug being fixed in the dead-app case, since the recovery that follows is cheap and the wait
- * that precedes it is not: the floored wait only returns early on failed reads, so a backgrounded
- * app that answers slowly would otherwise hold the sweep for a minute and a half before anyone
- * tried the one thing that fixes it.
+ * Deliberately far shorter than the fresh-boot `APP_READY_TIMEOUT_MS`: Launch already ran
+ * `waitForAppReady` to completion, so the bundle is built and the app re-settles in about two
+ * reads. This only buys headroom for a slow read or a screen left mid-transition — the recovery
+ * that follows is cheap, so waiting a cold-start budget here is strictly worse.
  */
 const ADOPTED_APP_READY_BUDGET_MS = 15_000
 
@@ -371,10 +352,6 @@ export interface AppFlowBuildResult {
 export interface AppFlowBuildError {
   ok: false
   error: string
-}
-
-function checkSignal(signal?: AbortSignal): void {
-  if (signal?.aborted) throw new Error('Cancelled')
 }
 
 function emit(
@@ -805,6 +782,18 @@ export async function buildAppFlow(
   /** Duplicates `hedge` issued this sweep. See `logAgentTokenSummary`'s `hedges` parameter. */
   let hedges = 0
 
+  /**
+   * One agent call's bookkeeping: the role tally, the running token total and the log line, in the
+   * one place both the one-shot `runAgent` and a long-lived session's `prompt` reach for, so
+   * `logAgentTokenSummary` reads identically whichever produced the call.
+   */
+  const recordAgentCall = (label: string, startedAt: number, used: TokenUsage): void => {
+    const role = label.split(' ')[0]
+    const tally = tallies.get(role) ?? { calls: 0, tokens: emptyTokenUsage() }
+    tallies.set(role, { calls: tally.calls + 1, tokens: addTokenUsage(tally.tokens, used) })
+    logAgentTokens(label, used, Date.now() - startedAt, tokens, timing)
+  }
+
   const runAgent = async (
     agentOptions: SubAgentOptions,
     label: string
@@ -839,31 +828,18 @@ export async function buildAppFlow(
           `[app-flow] hedge ${label} — ${outcome.winner === 0 ? 'the original' : 'the duplicate'} answered first after ${((Date.now() - startedAt) / 1000).toFixed(1)}s`
         )
     } catch (error) {
-      const used = tokenUsageSince(tokensBefore, tokens)
-      const role = label.split(' ')[0]
-      const tally = tallies.get(role) ?? { calls: 0, tokens: emptyTokenUsage() }
-      tallies.set(role, { calls: tally.calls + 1, tokens: addTokenUsage(tally.tokens, used) })
-      logAgentTokens(label, used, Date.now() - startedAt, tokens, timing)
+      recordAgentCall(label, startedAt, tokenUsageSince(tokensBefore, tokens))
       logAgentFailure(label, error, Date.now() - startedAt)
       throw error
     }
     tokens = addTokenUsage(tokens, result.tokens)
-    const role = label.split(' ')[0]
-    const tally = tallies.get(role) ?? { calls: 0, tokens: emptyTokenUsage() }
-    tallies.set(role, {
-      calls: tally.calls + 1,
-      tokens: addTokenUsage(tally.tokens, result.tokens)
-    })
-    logAgentTokens(label, result.tokens, Date.now() - startedAt, tokens, timing)
+    recordAgentCall(label, startedAt, result.tokens)
     logAgentOutput(label, result)
     return result
   }
 
-  // Step 0's fix for exploration's token cost: one sub-agent session per exploration attempt
-  // instead of a fresh `runSubAgent` call — and its cold session, resent history, and no
-  // prompt-cache reuse — per navigation step. `prompt` mirrors `runAgent`'s tallying (same role
-  // bucket, same running total, same log line) so `logAgentTokenSummary` reads identically whether
-  // a role's calls came from one-shot `runAgent` roles or a long-lived session.
+  // One sub-agent session per exploration attempt, rather than a fresh call — and its cold
+  // session, resent history and lost prompt-cache reuse — per navigation step.
   const runAgentSession = async (
     sessionOptions: SubAgentSessionOptions
   ): Promise<{
@@ -887,22 +863,12 @@ export async function buildAppFlow(
         try {
           result = await hostSession.prompt(callOptions, label)
         } catch (error) {
-          const used = tokenUsageSince(tokensBefore, tokens)
-          const role = label.split(' ')[0]
-          const tally = tallies.get(role) ?? { calls: 0, tokens: emptyTokenUsage() }
-          tallies.set(role, { calls: tally.calls + 1, tokens: addTokenUsage(tally.tokens, used) })
-          logAgentTokens(label, used, Date.now() - startedAt, tokens, timing)
+          recordAgentCall(label, startedAt, tokenUsageSince(tokensBefore, tokens))
           logAgentFailure(label, error, Date.now() - startedAt)
           throw error
         }
         tokens = addTokenUsage(tokens, result.tokens)
-        const role = label.split(' ')[0]
-        const tally = tallies.get(role) ?? { calls: 0, tokens: emptyTokenUsage() }
-        tallies.set(role, {
-          calls: tally.calls + 1,
-          tokens: addTokenUsage(tally.tokens, result.tokens)
-        })
-        logAgentTokens(label, result.tokens, Date.now() - startedAt, tokens, timing)
+        recordAgentCall(label, startedAt, result.tokens)
         logAgentOutput(label, result)
         return result
       },

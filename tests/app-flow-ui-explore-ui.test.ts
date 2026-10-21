@@ -1,37 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { build } from "esbuild";
-import { JSDOM } from "jsdom";
-import { mkdtemp, rm } from "node:fs/promises";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { renderEnvironment } from "./jsdom-env.ts";
 
 test("the sweep row offers a per-project Capture UI states switch instead of a separate UI Explore run", async t => {
-  const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
-  const previous = new Map<string, PropertyDescriptor | undefined>();
-  const globals = {
-    window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
-    HTMLElement: dom.window.HTMLElement, HTMLFormElement: dom.window.HTMLFormElement, HTMLButtonElement: dom.window.HTMLButtonElement, HTMLInputElement: dom.window.HTMLInputElement, Node: dom.window.Node,
-    Event: dom.window.Event, CustomEvent: dom.window.CustomEvent, NodeFilter: dom.window.NodeFilter,
-    Element: dom.window.Element, DocumentFragment: dom.window.DocumentFragment, MutationObserver: dom.window.MutationObserver,
-    localStorage: dom.window.localStorage, getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
-    requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window), cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window),
-    ResizeObserver: class { observe() {} unobserve() {} disconnect() {} }, IS_REACT_ACT_ENVIRONMENT: true,
-  };
-  for (const [key, value] of Object.entries(globals)) {
-    previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
-    Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
-  }
-  const directory = await mkdtemp(resolve("node_modules/.mobile-dev-ui-explore-test-"));
-  let cleanup = async () => {};
-  t.after(async () => { await cleanup(); await new Promise(done => setTimeout(done, 50)); dom.window.close(); for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); } await rm(directory, { recursive: true, force: true }); });
-  const output = resolve(directory, "app-flow-view.mjs");
-  await build({
-    stdin: { contents: 'export { AppFlowView, progressTally } from "./src/ui/components/app-flow-view.tsx";', resolveDir: process.cwd(), loader: "ts" },
-    outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
-    external: ["react", "react/*", "react-dom", "react-dom/*", "radix-ui", "lucide-react", "@base-ui/react/*", "@xyflow/react"],
+  const { module: { AppFlowView, progressTally }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { AppFlowView, progressTally } from "./src/ui/components/app-flow-view.tsx";', slug: "ui-explore", settleMs: 50,
   });
-  const { AppFlowView, progressTally } = await import(pathToFileURL(output).href);
   const { act, createElement } = await import("react");
   const { createRoot } = await import("react-dom/client");
 
@@ -70,7 +44,7 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
   const storage = dom.window.localStorage;
   const key = "app-flow-capture-ui-states:/projects/demo";
   const root = createRoot(document.getElementById("root")!);
-  cleanup = async () => { await act(async () => { root.unmount(); }); };
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
   const labelled = (name: string) => document.querySelector(`[aria-label="${name}"]`) as HTMLElement | null;
   const startButton = () => Array.from(document.querySelectorAll("button")).find(entry => entry.textContent === "Start") as HTMLButtonElement;
 
@@ -85,7 +59,7 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
   await act(async () => { root.unmount(); });
   storage.setItem("app-flow-mode:/projects/demo", "screen-ui-and-structure");
   const second = createRoot(document.getElementById("root")!);
-  cleanup = async () => { await act(async () => { second.unmount(); }); };
+  onTeardown(async () => { await act(async () => { second.unmount(); }); });
   await act(async () => { second.render(createElement(AppFlowView, { panel })); });
   // The sweep options live in a popover: nothing is rendered until its trigger (which summarizes them) is opened.
   const trigger = () => Array.from(document.querySelectorAll("button")).find(entry => /screens?$/.test(entry.textContent ?? "") && entry.getAttribute("aria-haspopup") === "dialog") as HTMLButtonElement;
@@ -203,7 +177,7 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
   // A fresh mount of the same project restores it; another project does not inherit it.
   await act(async () => { second.unmount(); });
   const third = createRoot(document.getElementById("root")!);
-  cleanup = async () => { await act(async () => { third.unmount(); }); };
+  onTeardown(async () => { await act(async () => { third.unmount(); }); });
   await act(async () => { third.render(createElement(AppFlowView, { panel })); });
   await act(async () => { trigger().click(); });
   assert.equal(toggle().getAttribute("aria-checked"), "true", "restored from localStorage");

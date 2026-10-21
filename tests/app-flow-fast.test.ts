@@ -75,11 +75,9 @@ test('exploration modes select the exact approved pipelines', () => {
   assert.deepEqual(names('thorough'), ['probe', 'saved', 'deep-link', 'explore'])
 })
 
-test('the packaged Fast agent contains structured navigation and keeps its integrity guard', () => {
-  const source = agentSource()
-  assert.match(source, /function agentNavigate/)
-  // esbuild's transform normalises string quotes, so match either form.
-  assert.match(source, /type === ["']navigate["']/)
+test('the packaged Fast agent dispatches the navigate command', () => {
+  // Quotes may be normalised on the way into the bundle, so match either form.
+  assert.match(agentSource(), /type === ["']navigate["']/)
 })
 
 test('Fast dispatches a nested route through the mounted navigator', () => {
@@ -1156,23 +1154,18 @@ test('the assembled agent evaluates in an empty node:vm context with no free mod
   }
 })
 
-test('the packaged Fast agent carries the link harvest and its integrity guard counts it', () => {
-  const source = agentSource()
-  assert.match(source, /function agentCollectLinks/)
-  assert.match(source, /type === ["']links["']/)
-  assert.equal(Object.keys(AGENT_FUNCTIONS).length, EXPECTED_AGENT_FUNCTION_COUNT)
+test('the packaged Fast agent dispatches the link harvest', () => {
+  assert.match(agentSource(), /type === ["']links["']/)
 })
 
 /* ------------------------------------------------------------ presentations runtime */
 
-test('the packaged agent carries the presentation commands and counts their functions', () => {
+test('the packaged agent dispatches every presentation command', () => {
   const source = agentSource()
-  assert.match(source, /function agentProject/)
-  assert.match(source, /function agentRestorePresentations/)
-  assert.match(source, /type === ["']presentation-setup["']/)
-  assert.match(source, /type === ["']presentations["']/)
-  assert.match(source, /type === ["']presentation-open["']/)
-  assert.match(source, /type === ["']presentation-rollback["']/)
+  for (const command of ['presentation-setup', 'presentations', 'presentation-open', 'presentation-rollback'])
+    assert.match(source, new RegExp(`type === ["']${command}["']`))
+  // The registry count is the one guard nothing else re-derives; `assertAgentSourceIntegrity`
+  // enforces it at build time, so this is the test-side canary for a forgotten registration.
   assert.equal(Object.keys(AGENT_FUNCTIONS).length, EXPECTED_AGENT_FUNCTION_COUNT)
 })
 

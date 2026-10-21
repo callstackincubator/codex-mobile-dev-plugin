@@ -1,25 +1,18 @@
 /**
- * The deep-link strategy — plan landing-order item 4. Moved out of the `tryDeepLink` closure in
- * `orchestrator.ts`, minus one deliberately-kept entanglement: when a param-free prefix lands on a
- * real screen rather than the build's own not-found route (Step 3f), the original closure called
- * `exploreFrom` directly for a bounded last hop. `exploreFrom` has not moved out of `orchestrator.ts`
- * yet (that is landing-order item 5), so this strategy cannot call it without reaching back into
- * orchestrator-local state — and even once item 5 lands, a strategy calling directly into another
- * strategy would defeat the ladder's whole point of an explicit, injectable order. Instead this
- * strategy reports the landing as a `deep-link-partial-landed` effect and returns `ok: false` with
- * no `failure`, so the ladder falls through to the next strategy; the exploration strategy is what
- * reads that effect off `priorAttempts` and tries the bounded hop first, before its own normal seed
- * selection — see that strategy's doc comment once it lands. This is exactly why `effects` exists
- * as data rather than a callback: it lets two strategies cooperate on one plan step without either
- * one calling the other directly.
+ * The deep-link strategy, lifted out of `tryDeepLink` in `orchestrator.ts`.
  *
- * The circuit breaker itself is `deep-link-policy.ts`'s pure `DeepLinkBreakerState` — this module
- * only decides *when* to register a failure or a success against it, mirroring exactly which of
- * `tryDeepLink`'s branches used to call `registerDeepLinkFailure`/reset the counter. Re-probing the
- * known-good route when the breaker's decision says `reprobe` is not something this strategy can do
- * itself without knowing which node is the probe route and how the caller wants it re-checked, so
- * that one device call stays an injected callback (`reprobe`) rather than something this module
- * invents its own device sequence for.
+ * One entanglement is deliberately not reproduced: when a param-free prefix lands on a real screen
+ * rather than the build's not-found route, the original closure called `exploreFrom` for a bounded
+ * last hop. A strategy calling directly into another strategy would defeat the ladder's explicit,
+ * injectable order, so this one reports the landing as a `deep-link-partial-landed` effect and
+ * returns `ok: false` with no `failure`; the exploration strategy reads that effect off
+ * `priorAttempts` and tries the bounded hop before its own seed selection. That is why `effects`
+ * is data rather than a callback — two strategies cooperate without either calling the other.
+ *
+ * The circuit breaker itself is `deep-link-policy.ts`'s pure `DeepLinkBreakerState`; this module
+ * only decides *when* to register a failure or a success against it. Re-probing the known-good
+ * route stays an injected callback (`reprobe`), since this module cannot know which node is the
+ * probe route or how the caller wants it re-checked.
  *
  * No device or Electron import here — see `reach/types.ts`'s doc comment. Only `adapters.ts` may
  * import `capture.ts`/`storage.ts` values.
@@ -47,6 +40,7 @@ import { detectNotFoundScreen, type NotFoundEvidence } from '../not-found-signal
 import type { ReachPorts } from '../ports.ts'
 import type { ArrivalVerdict, ReachAttempt, ReachEffect } from '../types.ts'
 import { diagnosticFramePath, verifyWithDiagnostic } from './verify-with-diagnostic.ts'
+import { checkSignal } from '../../cancel.ts'
 
 /**
  * The subset of the sweep's nodes the ancestor lookup needs — same shape `findRouteAncestor` takes,
@@ -120,10 +114,6 @@ export interface DeepLinkInput {
   notFoundEvidence?: NotFoundEvidence
 }
 
-function checkSignal(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw new Error('Cancelled')
-}
-
 /** Builds a failed, device-untouched attempt — the shape shared by every short-circuit below. */
 function skip(reason: string, effects: ReachEffect[] = []): ReachAttempt {
   return {
@@ -137,62 +127,32 @@ function skip(reason: string, effects: ReachEffect[] = []): ReachAttempt {
 }
 
 /**
- * Whether a truncated deep-link prefix is itself a screen the app declares.
- *
- * Compared against the same node list the ancestor lookup already uses, so this costs nothing and
- * needs no new input. Trailing slashes are ignored because a route's `urlPath` and a prefix built
- * by cutting segments off one can disagree about them, and `node` itself is excluded so a route
- * can never be judged a known prefix of itself.
- */
-/**
  * How long the straddle retry waits for the late screen before re-shooting it.
  *
- * Sized from the gap the reference sweep actually showed between the wrong frame and the right
- * one: ProfileFollowers settled (wrongly) at t=241.663 and the real 9-control screen was read at
- * t=242.574, PostLikedBy settled at t=460.369 and the real screen read at t=461.150 — both inside
- * a second. 1.5s covers those with margin and is a ceiling, not a cost: `waitForRoute` returns the
- * moment two reads agree, which on this device is ~0.4s.
- *
- * Short on purpose. This is a second wait on a screen the app has already routed to, and the thing
- * it is insuring against — a capture that photographs the previous screen — is already paid for by
- * the time we get here; spending a full settle timeout again would turn a ~1s repair into the kind
- * of per-node cost the whole deep-link rung exists to avoid.
+ * A ceiling, not a cost: `waitForRoute` returns the moment two reads agree. Short on purpose —
+ * this is a second wait on a screen the app has already routed to, so a full settle timeout would
+ * turn a ~1s repair into the per-node cost the deep-link rung exists to avoid.
  */
 const FRAME_RESETTLE_TIMEOUT_MS = 1_500
 
 /**
  * Whether this route is one the arrival judge is kept for even when the sweep switched it off.
  *
- * **The decision this encodes.** `deepLinkJudgeMode: 'off'` means "do not spend a model call
- * confirming a deep link; the screen's own controls will tell us if the build rendered its 404".
- * That is a sound trade for `/settings` or `/lists` — a route with a fixed URL either resolves or
- * renders the fallback, and `not-found-signal.ts` reads which. It is a much worse trade for a
- * detail screen addressed by a param, and `session_2026-10-13_14-33-40.log` priced the difference:
- * seven of the eight captures that stored a screenshot of one screen with the control list of
- * another were param routes (ProfileFollowers, ProfileFollows, ProfileKnownFollowers, PostLikedBy,
- * PostRepostedBy, PostQuotes, Profile). Those are the network-backed screens — the frame arrives
- * when the request does — and they are also the ones whose neighbours look most alike, so a wrong
- * capture there is the least likely to be noticed by anything downstream.
+ * `deepLinkJudgeMode: 'off'` trades a model call for the screen's own 404 controls, which is sound
+ * for a fixed URL but not for a param-addressed detail screen: those are network-backed, so the
+ * frame arrives when the request does, and their neighbours look most alike — most of the captures
+ * that stored one screen's screenshot beside another's control list were param routes.
  *
- * **"Has params" means the route *declares* them, not that this open substituted one.** Two
- * reasons, both evidential. First, the risk is a property of the route, not of this attempt: a
- * screen whose content is fetched for a param is late-rendering whether the sweep resolved a value
- * for it from nav-state or fell back to a param-free prefix — and the partial case is if anything
- * worse off, since the URL it opens belongs to some *other* screen and the judge is the only thing
- * that can say which one it landed on. Second, declared params are knowable before the device is
- * touched and are identical on every run, while "a value was substituted" depends on whether
- * nav-state happened to yield one this time; deciding judge mode on that would make two runs of
- * the same sweep on the same build spend different money and produce differently-trustworthy
- * captures, which is not a property anyone can reason about.
+ * "Has params" means the route *declares* them, not that this open substituted one. The risk is a
+ * property of the route, and declared params are identical on every run, whereas "a value was
+ * substituted" depends on what nav-state yielded this time — deciding judge mode on that would
+ * make two runs of the same sweep spend differently and produce differently-trustworthy captures.
  *
- * Note what this does *not* cover. NotificationSettings has no params at all and straddled anyway
- * (16 controls at the settle, 33 at the verify) — the judge is not what saves it, the frame-timing
- * fix is. This narrows the judge-free mode to the routes the evidence says are safe for it; it is
- * not a second line of defence against the straddle.
+ * This narrows judge-free mode to the routes that are safe for it; it is not a second line of
+ * defence against the straddle, which the frame-timing wait handles.
  *
- * Both forms the parser can produce are accepted: `params` (the declared list) and the `:name` /
- * `[id]` segments in `urlPath`, since a runtime-minted or hand-edited node can carry one without
- * the other.
+ * Both forms the parser can produce are accepted: `params` and the `:name` / `[id]` segments in
+ * `urlPath`, since a runtime-minted or hand-edited node can carry one without the other.
  */
 export function routeDeclaresParams(node: {
   params?: readonly string[]
@@ -207,6 +167,14 @@ export function routeDeclaresParams(node: {
     )
 }
 
+/**
+ * Whether a truncated deep-link prefix is itself a screen the app declares.
+ *
+ * Compared against the same node list the ancestor lookup already uses, so this costs nothing and
+ * needs no new input. Trailing slashes are ignored because a route's `urlPath` and a prefix built
+ * by cutting segments off one can disagree about them, and `node` itself is excluded so a route
+ * can never be judged a known prefix of itself.
+ */
 function isKnownRoutePrefix(
   prefix: string,
   nodes: readonly DeepLinkAncestorNode[],

@@ -100,10 +100,6 @@ export function schemeApprovalKey(scheme: string): string {
   return `${APPROVAL_KEY_PREFIX}${scheme}`
 }
 
-export function isOpenInAppPrompt(payload: unknown): boolean {
-  return OPEN_IN_PROMPT_RE.test(collectPromptText(payload))
-}
-
 function collectPromptText(payload: unknown): string {
   if (payload == null) return ''
   if (typeof payload === 'string') return payload

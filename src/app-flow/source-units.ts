@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { dirname, join, resolve } from 'node:path'
 import ts from 'typescript'
 
@@ -15,6 +16,61 @@ export interface AppFlowSourceUnit {
   ast: ts.SourceFile
   imports: Map<string, { module: string; name: string }>
   constants: Map<string, ts.Expression>
+}
+
+/** A function-like node that actually has a body, which is all either source scan cares about. */
+export type AppFlowFn = ts.FunctionLikeDeclaration & { body: ts.ConciseBody }
+
+/** Strips the wrappers that carry no meaning for the scans: parens, `as`, `satisfies`, `<T>x`. */
+export function unwrap(node: ts.Node): ts.Node {
+  while (
+    ts.isParenthesizedExpression(node) ||
+    ts.isAsExpression(node) ||
+    ts.isSatisfiesExpression(node) ||
+    ts.isTypeAssertionExpression(node)
+  )
+    node = node.expression
+  return node
+}
+
+/** Short, stable content hash used as a record key in both scans. */
+export function sourceHash(value: unknown): string {
+  return createHash('sha256')
+    .update(typeof value === 'string' ? value : JSON.stringify(value))
+    .digest('hex')
+    .slice(0, 20)
+}
+
+/** The nearest enclosing function with a body. */
+export function ownerFn(node: ts.Node): AppFlowFn | undefined {
+  for (let parent = node.parent; parent; parent = parent.parent)
+    if (ts.isFunctionLike(parent) && 'body' in parent && parent.body) return parent as AppFlowFn
+  return undefined
+}
+
+/**
+ * A function's own name, else the variable it is assigned to, else `default`.
+ *
+ * `stopAtNestedFunction` keeps the climb from leaving the function and borrowing an enclosing
+ * declaration's name; the view scan opts out because it treats the enclosing name as the owner.
+ */
+export function fnName(
+  fn: AppFlowFn,
+  { depth = 5, stopAtNestedFunction = true }: { depth?: number; stopAtNestedFunction?: boolean } = {}
+): string {
+  if (fn.name && ts.isIdentifier(fn.name)) return fn.name.text
+  let parent: ts.Node = fn
+  for (let i = 0; parent.parent && i < depth; i++, parent = parent.parent) {
+    if (stopAtNestedFunction && ts.isFunctionLike(parent.parent)) break
+    if (ts.isVariableDeclaration(parent.parent) && ts.isIdentifier(parent.parent.name))
+      return parent.parent.name.text
+  }
+  return 'default'
+}
+
+/** The JSX attributes of an opening element, dropping spreads. */
+export function jsxAttributes(node: ts.JsxOpeningLikeElement): ts.JsxAttribute[] {
+  return node.attributes.properties.filter(ts.isJsxAttribute)
 }
 
 const extensions = ['.tsx', '.ts', '.jsx', '.js']

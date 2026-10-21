@@ -1,9 +1,11 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { existsSync } from 'node:fs'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, join } from 'node:path'
 import type { AppFlowNode, AppFlowPressable, AppFlowStep, ExplorationMode } from '../shared/app-flow.ts'
+import { errorMessage } from '../shared/protocol.ts'
 import {
   acceptOpenInAppPrompt,
   isUrlSchemePreapproved,
@@ -599,10 +601,6 @@ function nativeDeviceArgs(script: string, deviceId?: string): string[] {
   return [reactNativeCli ? '--udid' : '--device', deviceId]
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 function attachAbort(child: ChildProcess, signal?: AbortSignal): () => void {
   const abort = (): void => {
     if (child.pid) child.kill('SIGTERM')
@@ -1014,10 +1012,6 @@ async function ensureExpoGoInstalled(
     launchTarget: result.app || result.appId || EXPO_GO_APP_NAME,
     installPath: appPath
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 /**

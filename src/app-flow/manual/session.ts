@@ -56,6 +56,7 @@ import { fillCommand, isPortable, pressCommand, pressPointCommand, scrollCommand
 import { recordRuntimeCount, recordRuntimeTiming } from '../runtime-telemetry.ts'
 import { contentMatchedSelectors } from '../path-minimize.ts'
 import { destinationLocator, locatorFor, rectCenter } from './locators.ts'
+import { errorMessage } from '../../shared/protocol.ts'
 
 /**
  * How long the wireframe rests between refreshes while the user is deciding what to tap.
@@ -72,10 +73,6 @@ const SNAPSHOT_REST_MS = 1_000
 
 function log(step: string, detail?: string): void {
   console.log(detail ? `[app-flow:manual] ${step} — ${detail}` : `[app-flow:manual] ${step}`)
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 /**
