@@ -74,7 +74,7 @@ export function registerAppStorageTools(server: McpServer, commands: Commands = 
       limit: z.number().int().min(1).max(storageLimits.maxTableRows).optional(),
     },
     annotations: readOnly,
-    // Panel-only: the shared model tool budget is full.
+    // Panel-only: it backs the panel's table grid; the model sees each table's size and columns in mobile_app_storage.
     _meta: { ui: { visibility: ["app"] } },
   }, input => run("table", input, container => readTable(container, input.store, input.table, {
     offset: input.offset ?? 0, limit: input.limit ?? storageLimits.tableRows, valueLength: storageLimits.tableValueLength, run: commands.run,
@@ -85,7 +85,7 @@ export function registerAppStorageTools(server: McpServer, commands: Commands = 
     description: "Stop the app, then delete one store from mobile_app_storage, or all of the app's saved data when store is omitted. The app stays installed and is not relaunched.",
     inputSchema: { ...appTargetShape, bundleId, store: storeIdSchema.optional().describe("Store ID to clear. Omit to reset all app data.") },
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-    // Panel-only: the shared model tool budget is full, and clearing is a confirmed panel action.
+    // Panel-only: deleting app data is a confirmed panel action.
     _meta: { ui: { visibility: ["app"] } },
   }, input => run(input.store ? "clear" : "reset", input, async (container, driver) => {
     // A running app keeps values in memory and would write them back.

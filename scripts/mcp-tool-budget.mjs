@@ -1,11 +1,18 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-// Codex's schema subset and plugin limits as of 2026-10-01:
+// Codex's schema subset and tool limits, checked against rust-v0.163.0 (2026-10-21):
 // https://github.com/openai/codex/blob/main/codex-rs/tools/src/json_schema/types.rs
 // https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_exposure.rs
+// Every MCP tool's input schema is compacted past 5,000 bytes (tool_input_schema_max_bytes).
+// Only Agent Plugins, whose manifest is plugin.json at the plugin root, also have per-tool (8,000) and
+// combined (64,000) byte limits; tools past them are hidden from the model. Plugins with
+// .codex-plugin/plugin.json, such as this one, use the legacy format and have neither limit.
+const schemaCompactBytes = 5000;
+const agentToolBytes = 8000;
+const agentTotalBytes = 64000;
 const schemaKeys = ["$ref", "type", "description", "encrypted", "enum", "items", "minItems", "properties", "required", "additionalProperties", "anyOf", "oneOf", "allOf", "$defs", "definitions"];
 function object(value) { return value !== null && typeof value === "object" && Array.isArray(value) === false; }
 function normalizeSchema(schema) {
@@ -57,6 +64,7 @@ const plugin = resolve(process.argv[2] ?? "release/marketplace/plugins/mobile-de
 const manifestPath = join(plugin, ".mcp.json");
 const manifestText = await readFile(manifestPath, "utf8");
 const manifest = JSON.parse(manifestText);
+const agentPlugin = await access(join(plugin, "plugin.json")).then(() => true, () => false);
 let total = 0;
 let count = 0;
 const oversized = [];
@@ -82,7 +90,7 @@ for (const [name, config] of Object.entries(manifest.mcpServers)) {
         const spec = { type: "namespace", name: namespace, description, tools: [{ type: "function", name: tool.name.replaceAll("-", "_"), description: truncate(text, 1000), strict: false, parameters }] };
         const bytes = jsonBytes(spec);
         const schemaBytes = jsonBytes(parameters);
-        if (schemaBytes > 5000 || bytes > 8000) oversized.push({ server: name, tool: tool.name, schemaBytes, specBytes: bytes });
+        if (schemaBytes > schemaCompactBytes || (agentPlugin && bytes > agentToolBytes)) oversized.push({ server: name, tool: tool.name, schemaBytes, specBytes: bytes });
         serverBytes += bytes;
         serverCount++;
       }
@@ -95,7 +103,13 @@ for (const [name, config] of Object.entries(manifest.mcpServers)) {
   } finally { await client.close(); await transport.close(); }
 }
 const formattedTotal = total.toLocaleString("en-US");
-console.log(`Combined: ${count} tools, ${formattedTotal} / 64,000 estimated bytes`);
-console.log("Estimate includes namespace overhead and the plugin attribution. It preserves schemas before Codex's lossy size compaction; other enabled plugins also use the shared budget.");
-if (total > 64000) console.log("Over the shared budget. Splitting these tools across more enabled servers does not reduce this total.");
-if (oversized.length > 0) console.table(oversized);
+console.log(`Combined: ${count} model-visible tools, ${formattedTotal} estimated bytes, including namespace overhead and the plugin attribution.`);
+if (agentPlugin) {
+  console.log(`Agent Plugin manifest: the combined limit is ${agentTotalBytes.toLocaleString("en-US")} bytes and each tool's is ${agentToolBytes.toLocaleString("en-US")}; tools past them are hidden from the model.`);
+  if (total > agentTotalBytes) console.log("Over the Agent Plugin limit. Some tools will be hidden from the model.");
+} else console.log("Legacy .codex-plugin manifest: Codex has no combined or per-tool size limit for these tools.");
+if (oversized.length > 0) {
+  console.log(`Input schemas over ${schemaCompactBytes.toLocaleString("en-US")} bytes are compacted, dropping descriptions${agentPlugin ? "; specs over the per-tool limit are hidden" : ""}:`);
+  console.table(oversized);
+}
+if (oversized.length > 0 || (agentPlugin && total > agentTotalBytes)) process.exitCode = 1;
