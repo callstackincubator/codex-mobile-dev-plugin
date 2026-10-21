@@ -22,7 +22,7 @@ const card = {
   subtreeFunctionCount: 1, confidence: "ok",
 };
 
-async function fixture(mode = 0o600, healthInstance = instance) {
+async function fixture(mode = 0o600, healthInstance = instance, exploreRoutes = true) {
   const home = await mkdtemp(join(tmpdir(), "mobile-dev-tracesift-"));
   let currentHealthInstance = healthInstance;
   const requests: Array<{ path: string; authorization?: string; body?: string }> = [];
@@ -33,14 +33,14 @@ async function fixture(mode = 0o600, healthInstance = instance) {
     if (request.headers.authorization !== `Bearer ${token}`) { response.writeHead(401).end('{"error":"Unauthorized"}'); return; }
     if (path.endsWith("/health")) response.end(JSON.stringify({ apiVersion: 1, instance: currentHealthInstance }));
     else if (path.endsWith("/analyze")) response.end(JSON.stringify({ apiVersion: 1, analysisId: "analysis-1", profileType: "cpu", title: "Profile", summary: { totalMs: 200, callCountIsExact: true, profileFunctions: { private: "removed" } }, cards: [card] }));
-    else if (path.endsWith("/task")) {
+    else if (path.endsWith("/task") && exploreRoutes) {
       const query = new URL(request.url!, "http://localhost").searchParams;
       requests.at(-1)!.body = query.toString();
       response.end(JSON.stringify({ apiVersion: 1, analysisId: "analysis-1", totalMs: 200, title: "Profile",
         card: { ...card, tree: { id: "n0", name: "render", frameClass: "app", totalMs: 60, selfMs: 2, invocations: 2, children: [] },
           timeline: { boxes: [], durationMs: 80, coveredMs: 60, rows: 1, kept: ["app"], omittedBoxCount: 0, omittedBoxMs: 0 } } }));
     }
-    else if (path.endsWith("/react-explore")) response.end(JSON.stringify({ apiVersion: 1, analysisId: "analysis-1", title: "Profile", explore: { commits: [{ index: 0 }] }, cards: [{ id: "react-commit-1-0" }] }));
+    else if (path.endsWith("/react-explore") && exploreRoutes) response.end(JSON.stringify({ apiVersion: 1, analysisId: "analysis-1", title: "Profile", explore: { commits: [{ index: 0 }] }, cards: [{ id: "react-commit-1-0" }] }));
     else if (path.endsWith("/handoff")) { let body = ""; for await (const chunk of request) body += chunk; requests.at(-1)!.body = body; response.end(JSON.stringify({ apiVersion: 1, handoff: "Investigate render using the measured stack." })); }
     else response.writeHead(404).end('{}');
   });
@@ -198,4 +198,18 @@ test("TraceSift startup loser waits for the winning service descriptor", async t
   setTimeout(() => fake.setHealthInstance(instance), 300);
   const result = await client.analyze(profile, "auto");
   assert.equal(result.analysisId, "analysis-1");
+});
+
+test("TraceSift client names a service too old for the Explore endpoints", async t => {
+  // Health only proves integration API v1, which predates `/task` and
+  // `/react-explore`, so the 404 has to read as an update prompt rather than as
+  // the generic request failure a reader cannot act on.
+  const fake = await fixture(0o600, instance, false); t.after(fake.close);
+  const profile = join(fake.home, "profile.json"); await writeFile(profile, "{}");
+  const client = new TraceSiftClient("missing-tracesift", fake.home); t.after(() => client.close());
+  await client.analyze(profile, "auto");
+  for (const explore of [client.exploreTask("analysis-1", 0), client.exploreReact("analysis-1")]) {
+    await assert.rejects(explore, (error: unknown) =>
+      error instanceof TraceSiftError && error.kind === "version" && /Update TraceSift/.test(error.message));
+  }
 });

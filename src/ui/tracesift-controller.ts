@@ -21,11 +21,7 @@ type State = {
   handoffCard?: string;
   copiedCard?: string;
   openingExploreCard?: string;
-  /**
-   * The finding whose full explorer is on screen, or nothing while the reader is
-   * in the cards list. Its payload arrived through MCP because the card's frame
-   * cannot reach the TraceSift service itself.
-   */
+  /** The finding whose full explorer is on screen, or nothing while in the cards list. */
   explorer?: {
     cardId: string;
     kind: "task" | "react";
@@ -37,19 +33,14 @@ type State = {
     commitKey?: string;
     /**
      * Whether a click on a frame picks it rather than navigating to it. Held here
-     * rather than inside the explorer so the bar above the views can show the
-     * count, and so leaving and coming back does not resurrect a half-built set.
+     * so the bar above the views can show the count, and so leaving and coming
+     * back does not resurrect a half-built set.
      */
     picking?: boolean;
     /**
-     * The frames or components the reader has picked, in the order they chose
-     * them.
-     *
-     * One field for both kinds because the state is the same shape either way
-     * and the ids come from whichever views are on screen: a task frame is a
-     * `TaskTreeNode.id`, the identity all four task views share, and a React
-     * component is a `reactNodeKey`, `<rootId>.<commitIndex>.<fiberId>`, which
-     * names the commit so a pick outlives the commit picker.
+     * The frames or components picked, in the order chosen. One field for both
+     * kinds: a task frame is a `TaskTreeNode.id`, a React component a
+     * `reactNodeKey` (`<rootId>.<commitIndex>.<fiberId>`).
      */
     selected?: string[];
   };
@@ -98,9 +89,8 @@ export class TraceSiftController {
   }
   hostChanged() {
     const capabilities = this.app.getHostCapabilities();
-    // TraceSift's components read their theme from a `.dark` ancestor rather than
-    // the document attribute the rest of this frame uses, so the controller keeps
-    // the host's own answer for them to turn into a class.
+    // TraceSift's components read their theme from a `.dark` ancestor, not the
+    // document attribute the rest of this frame uses.
     this.update({
       canInvestigate: Boolean(capabilities?.serverTools && capabilities?.message?.text),
       dark: this.app.getHostContext()?.theme === "dark",
@@ -121,17 +111,12 @@ export class TraceSiftController {
     setUiGauge("ui.tracesift.cards", analysis.cards.length);
     recordUiTiming("ui.tracesift.process", performance.now() - startedAt);
     this.update({ analysis, error: "", busyCard: undefined, copiedCard: undefined, handoffCard: undefined, openingExploreCard: undefined, explorer: undefined });
-    // Which kind of recording is open, so the explorer's own timings can be told
-    // apart: a CPU task's call tree and a React recording's commits are
-    // different amounts of work through the same code. Two values, set with the
-    // analysis and never derived from anything about the device or the profile
-    // itself. Setting it flushes the measurements taken under the last one, so
-    // one recording's work is never attributed to another's.
+    // Which kind of recording is open, so a CPU call tree and a React commit set
+    // are told apart. Setting it flushes the last context's measurements.
     setUiTelemetryContext({ tracesift_view: "cards", tracesift_profile: analysis.profileType });
-    // A new analysis drops the explorer along with the picks it held. The gauge
-    // has to follow the state and not the navigation: staying on the cards means
-    // `tracesift_view` never changes, so nothing else would clear it and a fresh
-    // reading would be reported as still holding the last one's selection.
+    // A new analysis drops the explorer and its picks. The gauge follows the
+    // state, not the navigation: `tracesift_view` does not change here, so
+    // nothing else would clear the last reading's count.
     setUiGauge("ui.tracesift.selected_frames", 0);
     markUiSurfaceReady(this.readyAt);
     if (remember && this.viewId !== undefined) void this.remember(this.viewId, analysis.analysisId);
@@ -208,10 +193,8 @@ export class TraceSiftController {
     }
   };
   /**
-   * One hand-off to the active chat, and the taxonomy of the ways that fails.
-   *
-   * A timeout is not a failure to retry: the message may well have landed, and
-   * sending an investigation twice reads as two findings.
+   * One hand-off to the active chat. A timeout is not a failure to retry: the
+   * message may well have landed, and sending twice reads as two findings.
    */
   private async sendHandoff(text: string, event: string) {
     let sending = false;
@@ -242,8 +225,8 @@ export class TraceSiftController {
     if (!analysis || !canInvestigate || busyCard || this.disposed || !analysis.cards.some(card => card.id === cardId)) return;
     this.update({ busyCard: cardId, error: "" });
     try {
-      // Fetching the hand-off and delivering it fail differently: the first is
-      // this plugin or the TraceSift service, the second is the host's composer.
+      // Fetching the hand-off and delivering it fail differently: the service
+      // versus the host's composer.
       let handoff: string;
       try { handoff = await this.handoff(cardId); }
       catch (error) {
@@ -257,11 +240,7 @@ export class TraceSiftController {
   };
   setChartKind = (chartKind: ContributionChartKind) => { this.update({ chartKind }); };
 
-  /**
-   * The card's hand-off on the clipboard, which is the same text Investigate
-   * sends. A reader who wants to paste it into another tool, or read it before
-   * committing a turn to it, has no other way to get at it.
-   */
+  /** The card's hand-off on the clipboard — the same text Investigate sends. */
   copyHandoff = async (cardId: string) => {
     if (this.state.handoffCard || this.disposed) return;
     this.update({ handoffCard: cardId, copiedCard: undefined, error: "" });
@@ -270,8 +249,6 @@ export class TraceSiftController {
       await navigator.clipboard.writeText(handoff);
       countUiEvent("ui.tracesift.copy_handoff");
       this.update({ copiedCard: cardId });
-      // Long enough to read, short enough that the button is back to itself
-      // before anyone reaches for it again.
       this.copiedTimer = setTimeout(() => this.update({ copiedCard: undefined }), 2000);
     } catch (error) {
       countUiEvent("ui.tracesift.copy_failed");
@@ -280,12 +257,9 @@ export class TraceSiftController {
   };
 
   /**
-   * Open the full explorer for one card, in this frame.
-   *
-   * The card's own chart band carries the node to focus, which is the same
-   * drill-down the web page does with `?focus=`. The tree arrives over MCP
-   * because this frame cannot reach the TraceSift service; a reader sees the
-   * button as busy while several megabytes cross, so the wait is told.
+   * Open the full explorer for one card, in this frame. The card's chart band
+   * carries the node to focus, the same drill-down the web page does with
+   * `?focus=`. The tree arrives over MCP; the button stays busy while it crosses.
    */
   openExplore = async (cardId: string, focus = "") => {
     const { analysis } = this.state;
@@ -306,6 +280,13 @@ export class TraceSiftController {
       if (!envelope.success) throw new Error("TraceSift did not return the data this explorer needs.");
       if (envelope.data.payloadBytes > TRACE_SIFT_PAYLOAD_MAX_BYTES) throw new Error("This finding is larger than the panel can open. Use Open in browser for it.");
       const payload = await decodeTraceSiftExplorePayload(result, envelope.data);
+      // Megabytes take a while, and `accept` may have replaced the analysis
+      // meanwhile. Installing this payload then would show the new reading a
+      // card id it does not have, holding the old tree behind an error.
+      if (this.disposed || this.state.analysis?.analysisId !== analysis.analysisId) {
+        this.update({ openingExploreCard: undefined });
+        return;
+      }
       const kind: TraceSiftExploreKind = envelope.data.kind;
       // The context names the work: switched before the timings are recorded, so
       // the fetch is attributed to the explorer rather than flushed to the cards.
@@ -315,7 +296,7 @@ export class TraceSiftController {
       this.explorerReadyAt = startedAt;
       // A wide view is the explorer's own shape; the cards stay inline. The host
       // decides, and the explorer is usable inline if it declines.
-      void this.requestFullscreen();
+      void this.requestDisplayMode("fullscreen");
       this.update({
         openingExploreCard: undefined,
         explorer: {
@@ -337,17 +318,16 @@ export class TraceSiftController {
   closeExplore = () => {
     if (this.disposed || !this.state.explorer) return;
     this.update({ explorer: undefined });
+    // The cards are an inline surface; opening the explorer asked for fullscreen,
+    // so returning has to hand the width back.
+    void this.requestDisplayMode("inline");
     setUiTelemetryContext({ tracesift_view: "cards" });
     // A picked set belongs to the reading that built it. Left standing, the last
     // count would keep being reported against the card list that replaced it.
     setUiGauge("ui.tracesift.selected_frames", 0);
   };
 
-  /**
-   * The node the reader drilled into inside the explorer. It is held here rather
-   * than left to the explorer alone so returning to the cards and reopening does
-   * not resurrect a focus from a previous reading.
-   */
+  /** The node drilled into, held here so reopening does not resurrect an old focus. */
   setExploreFocus = (focus?: string) => {
     const next = focus || undefined;
     const explorer = this.state.explorer;
@@ -365,16 +345,9 @@ export class TraceSiftController {
   };
 
   /**
-   * Switch between picking frames and navigating them.
-   *
-   * Turning it off with picks still standing empties the set. The reader has one
-   * way to say "I am done with these" — this switch — and they have already used
-   * it, so the state has to go with the affordance that built it. Leaving picks
-   * behind showed a bar explaining how to add frames while four frames stayed
-   * ringed, which reads as a mode still on, and then sent a set whose number the
-   * reader could no longer see. A reader who means to keep them clicks the switch
-   * back on; a reader who means to navigate is not asked to keep a set they just
-   * switched off.
+   * Switch between picking frames and navigating them. Turning it off empties the
+   * set: the switch is the only way to say "done with these", so the state goes
+   * with the affordance that built it rather than lingering unseen.
    */
   setPicking = (picking: boolean) => {
     const explorer = this.state.explorer;
@@ -387,10 +360,7 @@ export class TraceSiftController {
     }
   };
 
-  /**
-   * A frame was clicked while picking. Adding and removing run through here in
-   * both directions, so the second click on a frame takes it back out.
-   */
+  /** A frame clicked while picking; a second click on it takes it back out. */
   toggleSelectedFrame = (nodeId: string) => {
     const explorer = this.state.explorer;
     if (this.disposed || !explorer || !explorer.picking) return;
@@ -412,11 +382,8 @@ export class TraceSiftController {
 
   /**
    * The hand-off for a set of picked task frames, or the reason there is none.
-   *
-   * Separated from `investigateSelected` so the two kinds of recording each own
-   * their own arithmetic and their own words. They measure different things —
-   * a CPU profile is sampled and a React profile is not — and a single builder
-   * taking a flag would have had to hedge every figure it printed.
+   * Split per recording kind: a CPU profile is sampled and a React one is not, so
+   * one builder taking a flag would have had to hedge every figure it printed.
    */
   private taskSelectionHandoff(payload: unknown, selected: readonly string[], profileTitle?: string) {
     const handoff = payload as { card?: unknown } | null;
@@ -428,9 +395,8 @@ export class TraceSiftController {
     if (evidence.frames.length === 0) {
       return {
         empty: selected.length
-          // The ids came from the views, so a tree that holds none of them is a
-          // payload that stopped matching what is on screen — worth telling
-          // apart from a reader who has not clicked anything yet.
+          // A tree holding none of the picked ids stopped matching what is on
+          // screen — not the same as nothing having been clicked yet.
           ? "None of the selected frames are in this task's call tree, so they cannot be described. Reopen Explore and try again."
           : "Nothing is selected yet. Turn on Select frames, then click the frames you want asked about.",
       };
@@ -449,8 +415,8 @@ export class TraceSiftController {
     if (evidence.components.length === 0) {
       return {
         empty: selected.length
-          // A pick names its commit, so a recording holding none of them is one
-          // that stopped matching the view the reader clicked in.
+          // A pick names its commit, so a recording holding none of them stopped
+          // matching the view the reader clicked in.
           ? "None of the selected components are in this recording's commits, so they cannot be described. Reopen Explore and try again."
           : "Nothing is selected yet. Turn on Select components, then click the components you want asked about.",
       };
@@ -466,11 +432,8 @@ export class TraceSiftController {
 
   /**
    * Ask the chat about the frames or components picked inside the explorer.
-   *
-   * Unlike Investigate, this needs neither the service nor a version of it new
-   * enough to know the question: the picks only exist in this frame and the
-   * whole call tree or recording is already here, so the hand-off is written
-   * here from the same figures the reader was looking at.
+   * Unlike Investigate this needs no service call: the picks exist only in this
+   * frame and the whole tree is already here, so the hand-off is written here.
    */
   investigateSelected = async () => {
     const { analysis, canInvestigate, busyCard, explorer } = this.state;
@@ -479,9 +442,8 @@ export class TraceSiftController {
     if (!card || !explorer) return;
 
     this.update({ busyCard: card.id, error: "" });
-    // Set once the text is on its way to the host: a delivery failure is already
-    // counted and captured by `sendHandoff`, which knows the difference between a
-    // timeout, a missing composer and a refusal.
+    // Set once the text is on its way: `sendHandoff` already counts and captures
+    // delivery failures, and tells a timeout from a missing composer.
     let sending = false;
     try {
       const selected = explorer.selected ?? [];
@@ -508,10 +470,7 @@ export class TraceSiftController {
     } finally { this.update({ busyCard: undefined }); }
   };
 
-  /**
-   * The old path: hand the selection to `tracesift explore` and let the CLI open
-   * the web app in a browser window. Kept while the embedded explorer is new.
-   */
+  /** The old path: `tracesift explore` opens the web app in a browser window. */
   openExploreInBrowser = async (cardId: string) => {
     const { analysis } = this.state;
     if (!analysis || this.disposed || this.state.openingExploreCard) return;
@@ -536,11 +495,11 @@ export class TraceSiftController {
     } finally { this.update({ openingExploreCard: undefined }); }
   };
 
-  private async requestFullscreen() {
+  private async requestDisplayMode(mode: "fullscreen" | "inline") {
     try {
       const modes = this.app.getHostContext()?.availableDisplayModes;
-      if (modes && !modes.includes("fullscreen")) return;
-      await this.app.requestDisplayMode({ mode: "fullscreen" });
+      if (modes && !modes.includes(mode)) return;
+      await this.app.requestDisplayMode({ mode });
     } catch {
       // A host without display modes keeps the explorer inline, which is a
       // narrower reading of the same data, not a broken one.

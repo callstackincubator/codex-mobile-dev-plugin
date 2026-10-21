@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolve } from "node:path";
 import { build } from "esbuild";
-import { sharedNodeModules } from "../scripts/shared-node-modules.mjs";
 import { JSDOM } from "jsdom";
 
 const baseTask = {
@@ -52,11 +50,6 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
         return { controller, root, flushSync, async close() { controller.dispose(); root.unmount(); await stopUiTelemetry(); } };
       }`, resolveDir: process.cwd(), loader: "tsx" },
     bundle: true, write: false, format: "iife", globalName: "TraceSiftCardTest", platform: "browser", jsx: "automatic",
-    // Same React pin and shared-module plugin as scripts/build.mjs: the linked
-    // Explore package resolves to the TraceSift checkout, which keeps its own
-    // copies of the libraries a single page must not bundle twice.
-    alias: { react: resolve(process.cwd(), "node_modules/react"), "react-dom": resolve(process.cwd(), "node_modules/react-dom") },
-    plugins: [sharedNodeModules(process.cwd())],
     define: { "process.env.NODE_ENV": '"production"' },
   });
   const dom = new JSDOM('<html data-view="tracesift"><head><meta name="mobile-dev-environment" content="development"><meta name="mobile-dev-user-id" content="anon_0123456789abcdef0123456789abcdef"><meta name="mobile-dev-session-id" content="run_1234567890abcdef1234567890abcdef"></head><body><div id="root"></div></body></html>', { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });

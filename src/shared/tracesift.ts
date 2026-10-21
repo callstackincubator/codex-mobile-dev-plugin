@@ -94,12 +94,9 @@ export const traceSiftRestoreSchema = z.discriminatedUnion("restored", [
 export const traceSiftHandoffSchema = z.object({ apiVersion: z.literal(1), handoff: z.string().min(1).max(1_000_000) });
 
 /**
- * The full task card the server hands the embedded explorer, tree and timeline
- * included. Its two bulk fields stay `unknown`: they are megabytes of nodes the
- * card never reads, only the explorer draws, and re-validating them on the
- * server would double the wait before a reader sees the first frame. The shapes
- * match `TaskHandoff` and `ReactExploreHandoff` from `@callstack/tracesift-
- * explore`, which is what the explorer renders from.
+ * The full task card the server hands the embedded explorer. Its bulk fields
+ * stay `unknown`: megabytes the server never reads, only the explorer draws.
+ * Shapes match `TaskHandoff`/`ReactExploreHandoff` in @callstack/tracesift-explore.
  */
 export type TraceSiftTaskHandoff = { analysisId: string; profileTitle: string; totalMs: number; card: Record<string, unknown> };
 /** Every commit timeline of one React analysis, plus the cards that label them. */

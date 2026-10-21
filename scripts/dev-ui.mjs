@@ -6,7 +6,6 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { exploreUILayerCSS } from "./explore-css.mjs";
-import { sharedNodeModules } from "./shared-node-modules.mjs";
 
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const { version } = JSON.parse(await readFile(new URL("../.codex-plugin/plugin.json", import.meta.url), "utf8"));
@@ -32,13 +31,11 @@ if (!running) {
   const builder = await context({
     absWorkingDir: projectRoot,
     entryPoints: ["src/ui/app.tsx"], jsx: "automatic",
-    // Same pin as the production build: the linked Explore package must share this React.
-    alias: { react: resolve(projectRoot, "node_modules/react"), "react-dom": resolve(projectRoot, "node_modules/react-dom") },
     define: { "process.env.NODE_ENV": '"production"' },
     loader: { ".woff2": "dataurl", ".woff": "dataurl" },
     bundle: true, write: false, format: "iife", platform: "browser",
     outfile: "app.js", target: "chrome120", minify: true, legalComments: "eof",
-    plugins: [sharedNodeModules(projectRoot), { name: "live-ui", setup(build) {
+    plugins: [{ name: "live-ui", setup(build) {
       build.onLoad({ filter: /theme\.css$/ }, async ({ path }) => {
         const dependencies = [];
         const compiler = await compile(await readFile(path, "utf8"), { base: dirname(path), onDependency(file) { dependencies.push(file); } });

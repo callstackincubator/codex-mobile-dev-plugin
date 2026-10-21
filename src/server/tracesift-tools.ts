@@ -6,10 +6,12 @@ import { errorMessage } from "../shared/protocol.ts";
 import { TRACESIFT_URI, traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftProfileInputSchema, traceSiftReactCardSchema, traceSiftTaskCardSchema } from "../shared/tracesift.ts";
 import { gzip as gzipCallback } from "node:zlib";
 import { promisify } from "node:util";
-import { TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema } from "../shared/tracesift-explore.ts";
+import { TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, traceSiftPayloadTooDeep } from "../shared/tracesift-explore.ts";
 import { captureServerError, recordTraceSiftOperation, recordTraceSiftPayload } from "./telemetry.ts";
 import type { TraceSiftClient } from "./tracesift-client.ts";
 import { TraceSiftError } from "./tracesift-client.ts";
+
+const TOO_LARGE = "This finding is larger than the panel can open. Use Open in browser for it.";
 
 // Async on purpose: compressing a megabyte tree on the main thread would stall
 // every other tool call sharing this process.
@@ -130,12 +132,14 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
   }, async ({ analysisId, taskIndex }, context) => {
     const startedAt = performance.now();
     try {
-      const raw = taskIndex === undefined
-        ? { kind: "react" as const, json: JSON.stringify(await client.exploreReact(analysisId, context.signal)) }
-        : { kind: "task" as const, json: JSON.stringify(await client.exploreTask(analysisId, taskIndex, context.signal)) };
-      if (raw.json.length > TRACE_SIFT_PAYLOAD_MAX_BYTES) {
-        throw new TraceSiftError("This finding is larger than the panel can open. Use Open in browser for it.", "response");
-      }
+      const handoff = taskIndex === undefined
+        ? { kind: "react" as const, value: await client.exploreReact(analysisId, context.signal) as unknown }
+        : { kind: "task" as const, value: await client.exploreTask(analysisId, taskIndex, context.signal) as unknown };
+      // Depth first, and iteratively: `JSON.stringify` recurses, so a runaway
+      // tree would overflow the stack before the byte guard below could see it.
+      if (traceSiftPayloadTooDeep(handoff.value)) throw new TraceSiftError(TOO_LARGE, "response");
+      const raw = { kind: handoff.kind, json: JSON.stringify(handoff.value) };
+      if (raw.json.length > TRACE_SIFT_PAYLOAD_MAX_BYTES) throw new TraceSiftError(TOO_LARGE, "response");
       // Small payloads cross as plain JSON; anything worth compressing does, so
       // the bridge carries a string the host's structured decoder never walks.
       const compressed = raw.json.length > TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES;
@@ -148,8 +152,6 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
           payloadBytes: raw.json.length,
         },
       };
-      // The operation behind the embedded explorer's own fetch; `task` stays the
-      // name of the CLI browser path this one replaces.
       recordTraceSiftOperation("payload", "success", performance.now() - startedAt);
       recordTraceSiftPayload(result.structuredContent.kind, result.structuredContent.payloadBytes);
       return result;

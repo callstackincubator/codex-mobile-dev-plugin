@@ -1,25 +1,13 @@
 /**
- * The evidence behind components a reader picked inside a React Explore.
+ * The evidence behind components a reader picked inside a React Explore. The CPU
+ * side is `tracesift-selection.ts`, written in the panel for the same reasons.
  *
- * The CPU side of this is `tracesift-selection.ts`, and the reasons it is
- * written in the panel rather than fetched hold here too: the picks only exist
- * in this frame, the whole recording is already in it, and a round trip to an
- * older installed TraceSift could not answer a question it does not know.
- *
- * What is different is the measurement, and nearly every caveat follows from it.
- * A CPU profile is samples, so a frame's own time is an estimate and a frame
- * that never sat on top of the stack can read as zero. React's profiler is not
- * sampled: `selfDuration` and `actualDuration` are recorded per fiber per
- * commit, so the figures here are exact for the render phase and say nothing at
- * all about anything outside it — the effects, the commit phase, and every
- * millisecond between two commits are simply not in this document. Carrying the
- * CPU prompt's sampling language over would have described a measurement this
- * recording did not make.
- *
- * The rules are otherwise the service's own: everything measured, nothing
- * concluded; a figure labelled with what it counts; unattributed time named
- * rather than folded into a total; and the caveats that decide how a number
- * should be read travelling with the number.
+ * What differs is the measurement, and most caveats follow from it. React's
+ * profiler is not sampled: `selfDuration` and `actualDuration` are recorded per
+ * fiber per commit, so the figures are exact for the render phase and say
+ * nothing about effects, the commit phase, or the time between two commits.
+ * Carrying the CPU prompt's sampling language over would describe a measurement
+ * this recording never made.
  */
 
 import { formatReactMs, shortLocationLabel } from "./tracesift-labels.ts";

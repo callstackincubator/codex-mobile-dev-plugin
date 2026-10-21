@@ -1,22 +1,14 @@
 /**
  * The evidence behind frames a reader picked inside Explore.
  *
- * The card's Investigate button asks about a whole task, and TraceSift's own
- * service writes that hand-off. This is the other question: not "what is wrong
- * with this task" but "what do you make of these four frames I have my eye on",
- * which only the reader can ask and only the view can answer — the picks live in
- * the panel, and the whole call tree is already in this frame.
+ * The card's Investigate asks about a whole task and the service writes that
+ * hand-off. This is the other question — "what do you make of these four frames"
+ * — which only the view can answer, so it is written here rather than fetched.
  *
- * So this is written here rather than fetched, for the same reason the slice
- * arithmetic is: a round trip to the service could not know what was clicked
- * anyway, and an older installed TraceSift would not know the question.
- *
- * The rules are the ones the service's own hand-offs keep. Everything measured,
- * nothing concluded; a figure is labelled with what it counts; time that cannot
- * be attributed is named rather than folded into a total; and the caveats that
- * decide how a number should be read travel with the number. A model reads this
- * as evidence about a profile it did not record, so the one thing it must not
- * have to guess is how the figures add up.
+ * It keeps the rules the service's hand-offs keep: everything measured and
+ * nothing concluded, every figure labelled with what it counts, unattributable
+ * time named rather than folded into a total, and caveats travelling with the
+ * number they qualify.
  */
 
 import { formatMs } from "./tracesift-labels.ts";
@@ -205,22 +197,15 @@ const FOLD_WORDS: Record<string, string> = {
 };
 
 /**
- * Which frames the tree prints rather than folds.
+ * Which frames the tree prints rather than folds. Ported from Explore's
+ * `isShownFrame`/`SHOWN_CLASSES` rather than imported, because this file sits on
+ * the shared side of the build where the package's React peer cannot follow; a
+ * cut differing from the views would describe a stack the reader never saw.
  *
- * Ported from Explore's `isShownFrame`/`SHOWN_CLASSES` — the same cut the
- * timeline, the focused call tree and the flame graph draw by — because this
- * describes what the reader was looking at when they clicked, and a fold that
- * kept a frame the view had collapsed (or the other way round) would describe
- * some other stack. It lives here rather than as an import for the reason the
- * label and slice helpers do: this file sits on the shared side of the build,
- * where the Explore package's React peer dependency cannot come along.
- *
- * `native` is dropped as a class and kept as an exception, which is the part
- * that carries weight: `intlDateTimeFormatFormat` is a call the product made at
- * a cost it controls, and it is frequently the whole finding. The bar the package
- * holds it to is the one a card title clears; the approximation below keeps
- * engine-state names and an unnamed built-in folded, which is the half that
- * matters for a tree, and errs toward printing a frame rather than hiding one.
+ * `native` is dropped as a class and kept case by case: `intlDateTimeFormatFormat`
+ * is a cost the product controls and is often the whole finding. The
+ * approximation below folds engine-state names and unnamed built-ins, and
+ * otherwise errs toward printing a frame.
  */
 const KEPT_CLASSES = new Set(["app", "library", "anonymous"]);
 
@@ -257,17 +242,10 @@ interface TreeRow {
 
 /**
  * The frames joining the task to every selection, and the heaviest frames inside
- * each of them, as one tree.
- *
- * Same reason the service's hand-off merges rather than printing a stack per
- * frame: four picks under one render share the dozen frames above them, and four
- * stacks would be four copies of one chain, burying the branch point that is the
- * actually useful fact. Folding says which runs of frames between the picks were
- * dropped rather than leaving a jump unexplained.
- *
- * The shape is shared with TraceSift's own hand-offs — `├─`, `←`, and `… (N
- * framework frames)` for a folded run — so a reader who has copied a card sees
- * one kind of tree rather than two.
+ * each, as one tree. Merged rather than one stack per pick: four picks under one
+ * render share the frames above them, and four copies would bury the branch
+ * point. Shape matches the service's own hand-offs (`├─`, `←`, `… (N framework
+ * frames)`), so a reader sees one kind of tree rather than two.
  */
 function selectionsTree(card: SelectionCard, frames: readonly SelectedFrame[]): string[] {
   const byId = new Map<string, { node: SelectionTree; parent: SelectionTree | null }>();
@@ -358,20 +336,14 @@ function drawRow(row: TreeRow, prefix: string, isLast: boolean, isRoot: boolean)
 }
 
 /**
- * A share, as the hand-off writes it.
- *
- * One decimal throughout: rounding to a whole percent makes 99.6 read as
- * "100% of the recording", and two frames at 70.4% and 69.5% read as the same
- * figure. The cost of the extra digit is nothing next to a stated equality that
- * the measurement does not support.
+ * A share, as the hand-off writes it. One decimal throughout: a whole percent
+ * makes 99.6 read as "100% of the recording", and 70.4 and 69.5 read as equal.
  */
 const percentText = (value: number) => `${value.toFixed(1)}%`;
 
 /**
- * The hand-off for a set of picked frames.
- *
- * Numbered in the order the reader chose them, matching the number each one
- * carries on screen, so "the third one" means the same thing in both places.
+ * The hand-off for a set of picked frames, numbered in the order chosen so "the
+ * third one" means the same thing here and on screen.
  */
 export function buildSelectionPrompt(input: {
   card: SelectionCard;

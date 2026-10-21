@@ -286,6 +286,51 @@ test("TraceSift returns from the explorer to the cards and drops the payload", a
   controller.dispose();
 });
 
+test("TraceSift hands the width back to the cards when the explorer closes", async () => {
+  const modes: string[] = [];
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    getHostContext: () => hostContext,
+    async requestDisplayMode({ mode }: { mode: string }) { modes.push(mode); return { mode }; },
+    async callServerTool() { return payloadResult("task", { apiVersion: 1, card: {} }); },
+    async sendMessage() { return {}; },
+  };
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
+  await controller.openExplore("task-0");
+  controller.closeExplore();
+  // Without the second request the card list would keep the fullscreen the
+  // explorer asked for, on a surface meant to stay inline.
+  await Promise.resolve();
+  assert.deepEqual(modes, ["fullscreen", "inline"]);
+  controller.dispose();
+});
+
+test("TraceSift drops an explorer payload whose analysis was replaced while it loaded", async () => {
+  let release: (() => void) | undefined;
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    getHostContext: () => hostContext,
+    async requestDisplayMode({ mode }: { mode: string }) { return { mode }; },
+    async callServerTool() {
+      await new Promise<void>(resolve => { release = resolve; });
+      return payloadResult("task", { apiVersion: 1, card: {} });
+    },
+    async sendMessage() { return {}; },
+  };
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
+  const opening = controller.openExplore("task-0");
+  // A second reading lands while the first one's megabytes are still crossing.
+  controller.accept({ content: [], structuredContent: { ...cpuAnalysis, analysisId: "second-analysis" } });
+  release?.();
+  await opening;
+  assert.equal(controller.getSnapshot().explorer, undefined);
+  assert.equal(controller.getSnapshot().openingExploreCard, undefined);
+  assert.equal(controller.getSnapshot().analysis?.analysisId, "second-analysis");
+  controller.dispose();
+});
+
 test("TraceSift keeps the browser window as an explicit alternative", async () => {
   const calls: unknown[] = [];
   const app = {

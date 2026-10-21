@@ -134,12 +134,11 @@ plugin folds the package's one compiled stylesheet into its single HTML bundle,
 after the plugin's own Tailwind layer, so neither build compiles the other's
 sources. That sheet opens by writing its theme tokens to `:root` and `.dark`,
 which would recolor the plugin's cards behind the explorer, so the fold scopes
-both token blocks to `.tracesift-explore` — descendants inherit the custom
+both token blocks to `.tracesift-explorer` — descendants inherit the custom
 properties, and a block that no longer has the shape the fold expects fails the
-build rather than leaking globally. During development the package is wired in
-with a local `file:` link; the build then resolves its imports from this
-project's install whenever the versions agree, so the bundle never carries a
-second React or a duplicated copy of a shared library.
+build rather than leaking globally. The package is an ordinary npm dependency,
+so its React and `@rozenite/ui` peers resolve to this project's own copies and
+the bundle never carries a second React.
 
 ### Picking frames to investigate
 

@@ -1,11 +1,7 @@
 /**
- * The full Explore view, inside the card's own frame.
- *
- * TraceSift's web app and this plugin render the same components from
- * `@callstack/tracesift-explore`, so a reader who drills into a card sees the
- * call tree, timeline and commit strip the web app draws rather than a summary
- * of them. The data arrives through MCP because the card's frame is not allowed
- * to reach the TraceSift service itself.
+ * The full Explore view, inside the card's own frame. Renders the same
+ * `@callstack/tracesift-explore` components the TraceSift web app does; the data
+ * arrives through MCP because this frame cannot reach the service.
  */
 
 import { ArrowLeftIcon, ExternalLinkIcon, MessageCircleIcon, MousePointerClickIcon, XIcon } from "lucide-react";
@@ -20,17 +16,12 @@ export function TraceSiftExplorer({ controller }: { controller: TraceSiftControl
   const explorer = state.explorer;
   if (!explorer) return null;
   const card = state.analysis?.cards.find(entry => entry.id === explorer.cardId);
-  // A payload whose card is gone is a stale view rather than a reader error, and
-  // drawing half a tree would be worse than saying so.
+  // A payload whose card is gone is a stale view, not a reader error.
   if (card === undefined) return <p className="tracesift-error" role="alert">This TraceSift finding is no longer available.</p>;
-  // The payload is already in hand before this renders, so the load the web app
-  // waits for is always the ready one; the kind decides which of the two is fed.
+  // The payload is in hand before this renders, so the load is always ready.
   const task: ExploreLoad<TaskHandoff> | null = explorer.kind === "task" ? { state: "ready", handoff: explorer.payload as TaskHandoff } : null;
   const react: ExploreLoad<ReactExploreHandoff> | null = explorer.kind === "react" ? { state: "ready", handoff: explorer.payload as ReactExploreHandoff } : null;
-  // What a pick is called, which is the only thing that differs between the two
-  // recordings here: a CPU profile is read in frames and a React profile in
-  // components, and a bar that said "frames" over a commit would be describing
-  // something the reader cannot see.
+  // What a pick is called: a CPU profile is read in frames, a React one in components.
   const picks = explorer.kind === "react"
     ? { one: "component", many: "components", where: "the render tree or the components table" }
     : { one: "frame", many: "frames", where: "the timeline, flame graph, call tree or culprits" };
@@ -73,12 +64,8 @@ export function TraceSiftExplorer({ controller }: { controller: TraceSiftControl
     {explorer.picking && <div className="tracesift-pick-bar" role="status">
       <span>
         {count
-          // Not "everywhere": a picked frame can still be hidden by a view — a box
-          // too narrow to draw, a row the "Your code only" cut drops — and a
-          // promise the drawing cannot always keep is one a reader will believe is
-          // broken rather than one they will read as approximate. On a recording
-          // the same holds across commits: a pick is kept while the reader walks
-          // a cascade, and only the commit on screen can draw it.
+          // Not "everywhere": a view can still hide a picked frame (a box too
+          // narrow to draw, a row the "Your code only" cut drops).
           ? <>{count} {noun} selected — numbered in the order you picked, and ringed in every view showing {count === 1 ? "it" : "them"}{explorer.kind === "react" ? ", in every commit you picked in" : ""}.</>
           : `Click a ${picks.one} in ${picks.where} to add it. Click it again to take it out.`}
       </span>
@@ -87,10 +74,8 @@ export function TraceSiftExplorer({ controller }: { controller: TraceSiftControl
       </Button>}
     </div>}
     {state.error && <p className="tracesift-error" role="alert">{state.error}</p>}
-    {/* `ExploreView` is the page the web app's `/explore` route mounts, so the
-        reader gets the same padding, the same width, and the same copy explaining
-        a view that failed to load rather than a plugin-side guess at them. No
-        `onClose`: this frame's way back is the bar above, not a Close button. */}
+    {/* The page the web app's `/explore` route mounts, so the padding, width and
+        failure copy are its own. No `onClose`: the way back is the bar above. */}
     <ExploreView
       task={task}
       react={react}

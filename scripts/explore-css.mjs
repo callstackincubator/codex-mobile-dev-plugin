@@ -3,31 +3,19 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TRACE_SIFT_EXPLORE_CLASS } from "../src/shared/tracesift-explore.ts";
 
-/**
- * The class the explorer renders, from the same constant the component uses.
- * Spelling it out here is what let this fold and the renderer drift apart once.
- */
+/** The class the explorer renders, from the same constant the component uses. */
 const SCOPE = `.${TRACE_SIFT_EXPLORE_CLASS}`;
 
 /**
- * The Explore stylesheet, as the TraceSift package ships it.
+ * The Explore stylesheet, as the TraceSift package ships it already compiled, so
+ * this build never has to run Tailwind over a dependency's sources.
  *
- * `@callstack/tracesift-explore` compiles its own Tailwind v4 layer (the
- * `@rozenite/ui` theme tokens plus the explore rules) into one plain stylesheet,
- * so this build never needs Tailwind to understand a dependency's sources: the
- * package's class names are already resolved, and the plugin's own `theme.css`
- * pass stays exactly as it was.
- *
- * The sheet is folded in after the plugin's own, so the whole page would take
- * its order of the cascade — and it opens by writing the `@rozenite/ui` theme
- * tokens to `:root` (and their dark counterparts to `.dark`), which would
- * recolor the plugin's own cards behind the explorer. Both token blocks are
- * therefore scoped to the explorer's container: descendants inherit custom
- * properties, so every rule the package's components rely on still resolves,
- * and the plugin's UI outside keeps its own theme. The package's dark
- * *utilities* already compile to `:where(.dark, .dark *)`, so they follow a
- * `.dark` class on that container rather than the document, which is exactly
- * how the plugin reports the host's theme.
+ * It is folded in after the plugin's own sheet, and it opens by writing the
+ * `@rozenite/ui` theme tokens to `:root` and `.dark` — which would recolor the
+ * plugin's cards behind the explorer. Both token blocks are therefore scoped to
+ * the explorer's container; descendants inherit custom properties, so the
+ * package's rules still resolve. Its dark *utilities* already compile to
+ * `:where(.dark, .dark *)` and follow the class on that container.
  */
 export async function exploreUILayerCSS() {
   let url;
@@ -36,9 +24,8 @@ export async function exploreUILayerCSS() {
   const file = fileURLToPath(url);
   const sheet = await readFile(resolve(dirname(file), JSON.parse(await readFile(file, "utf8")).exports["./styles.css"]), "utf8");
   // A rule that sets a custom property is a token block; any other `:root` or
-  // `.dark` rule (Tailwind's own `:root,:host` scale, a reset, a scrollbar
-  // color) stays where the package put it. The lookbehind keeps the preceding
-  // delimiter unconsumed, so two token blocks written back to back both match.
+  // `.dark` rule stays where the package put it. The lookbehind leaves the
+  // preceding delimiter unconsumed so adjacent blocks both match.
   const tokenBlock = /((?<=^)|(?<=[,{}]))((?::root|\.dark)(?:,(?::root|\.dark))*)\{([^{}]*)\}/g;
   const scoped = sheet.replace(tokenBlock, (whole, _lead, selectors, body) => {
     if (!body.includes("--")) return whole;

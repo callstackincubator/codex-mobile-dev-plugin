@@ -6,12 +6,14 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
-import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "../shared/tracesift.ts";
+import { traceSiftAnalysisSchema, traceSiftHandoffSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftReactHandoff, type TraceSiftTaskHandoff } from "../shared/tracesift.ts";
 import { ExpectedOperationError } from "../shared/error-reporting.ts";
 
 const STARTUP_TIMEOUT_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 10 * 60_000;
 const EXPLORE_TIMEOUT_MS = 15_000;
+/** Health only proves integration API v1, which predates the Explore endpoints. */
+const EXPLORE_UNSUPPORTED = "This TraceSift service cannot open findings in the panel. Update TraceSift and restart it, or use Open in browser.";
 type Descriptor = { version: string; apiVersion: 1; pid: number; childPid: number; instance: string; baseUrl: string; token: string; startedAt: number };
 
 export class TraceSiftError extends ExpectedOperationError {
@@ -205,7 +207,7 @@ export class TraceSiftClient {
     return this.restoreReference(this.inputPath(path, profileType));
   }
 
-  private async request(path: string, init: RequestInit, signal?: AbortSignal): Promise<unknown> {
+  private async request(path: string, init: RequestInit, signal?: AbortSignal, unsupported?: string): Promise<unknown> {
     let descriptor = await this.service(signal);
     const send = (requestSignal: AbortSignal) => fetch(new URL(path, descriptor.baseUrl), {
       ...init, headers: { ...init.headers, Authorization: `Bearer ${descriptor.token}` },
@@ -230,8 +232,17 @@ export class TraceSiftClient {
       }
     }
     let body: unknown;
+    let unreadable = false;
     try { body = await response.json(); }
-    catch { throw new Error("TraceSift returned an invalid response."); }
+    catch { unreadable = true; }
+    // A route this service does not have is a service older than the feature.
+    // The service answers its own 404s with a message naming the failure (an
+    // expired analysis, say); an absent route names nothing, or is not JSON at all.
+    if (unsupported !== undefined && !response.ok && (response.status === 404 || response.status === 405 || response.status === 501)
+      && (unreadable || !(typeof body === "object" && body !== null && typeof (body as { error?: unknown }).error === "string"))) {
+      throw new TraceSiftError(unsupported, "version");
+    }
+    if (unreadable) throw new Error("TraceSift returned an invalid response.");
     if (!response.ok) throw responseError(response.status, body);
     return body;
   }
@@ -306,13 +317,11 @@ export class TraceSiftClient {
 
   /**
    * One task with its call tree and timeline, which `/analyze` never ships.
-   *
-   * The full card runs to megabytes, so it is checked only at its seams here and
-   * parsed by the explorer that draws it; re-validating every node on the way
-   * through would cost the reader a second wait for nothing.
+   * Checked at its seams only: the card runs to megabytes and the explorer that
+   * draws it parses the rest.
    */
   async exploreTask(analysisId: string, taskIndex: number, signal?: AbortSignal): Promise<TraceSiftTaskHandoff> {
-    const body = await this.request(`/api/integration/v1/task?analysisId=${encodeURIComponent(analysisId)}&taskIndex=${taskIndex}`, { method: "GET" }, signal);
+    const body = await this.request(`/api/integration/v1/task?analysisId=${encodeURIComponent(analysisId)}&taskIndex=${taskIndex}`, { method: "GET" }, signal, EXPLORE_UNSUPPORTED);
     if (typeof body !== "object" || body === null) throw new Error("TraceSift returned an invalid task response.");
     const value = body as Record<string, unknown>;
     if (value.apiVersion !== 1 || typeof value.analysisId !== "string"
@@ -320,15 +329,13 @@ export class TraceSiftClient {
       || typeof value.card !== "object" || value.card === null || typeof (value.card as Record<string, unknown>).tree !== "object"
       || (value.card as Record<string, unknown>).tree === null || typeof (value.card as Record<string, unknown>).timeline !== "object"
       || (value.card as Record<string, unknown>).timeline === null) throw new Error("TraceSift returned an invalid task response.");
-    // The service names the profile `title`; the explorer's hand-off names it
-    // `profileTitle`, so the seam is crossed here and the payload that reaches
-    // the frame is exactly the shape the components are drawn from.
-    return { analysisId: value.analysisId, profileTitle: value.title, totalMs: value.totalMs, card: value.card };
+    // The service names the profile `title`, the explorer's hand-off `profileTitle`.
+    return { analysisId: value.analysisId, profileTitle: value.title, totalMs: value.totalMs, card: value.card as Record<string, unknown> };
   }
 
   /** Every commit timeline of one React analysis, which the explorer switches between itself. */
   async exploreReact(analysisId: string, signal?: AbortSignal): Promise<TraceSiftReactHandoff> {
-    const body = await this.request(`/api/integration/v1/react-explore?analysisId=${encodeURIComponent(analysisId)}`, { method: "GET" }, signal);
+    const body = await this.request(`/api/integration/v1/react-explore?analysisId=${encodeURIComponent(analysisId)}`, { method: "GET" }, signal, EXPLORE_UNSUPPORTED);
     if (typeof body !== "object" || body === null) throw new Error("TraceSift returned an invalid commit timeline response.");
     const value = body as Record<string, unknown>;
     if (value.apiVersion !== 1 || typeof value.analysisId !== "string" || typeof value.title !== "string"
