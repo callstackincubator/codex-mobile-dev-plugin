@@ -213,7 +213,7 @@ another; each caller keeps its own timing name (`ui.app_tools.icons`, `ui.storag
 Results that finish after a surface or device change are not recorded. Recent URLs
 and the last picked app stay in the panel's local storage and are never sent.
 
-The Storage tool (`mobile_app_storage`, `mobile_clear_app_storage`) uses the `storage`
+The Storage tool (`mobile_app_storage`, `mobile_app_storage_table`, `mobile_clear_app_storage`) uses the `storage`
 surface. The server records `app_storage.operation.duration` in milliseconds and
 `app_storage.operation.samples` per operation (`read`, `clear`, `reset`, `table`) with the device
 platform and a success or failure outcome. The duration covers listing the data
