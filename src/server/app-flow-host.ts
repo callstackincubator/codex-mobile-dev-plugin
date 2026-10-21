@@ -469,7 +469,7 @@ export class AppFlowHost {
        deterministic end to end — which is what lets a Fast sweep start from the panel directly,
        with no chat round trip. */
     const explorationMode = typeof input.explorationMode === "string" ? input.explorationMode as ExplorationMode : undefined;
-    const decisions = requiresDecisionProvider(mode, explorationMode)
+    const decisions = requiresDecisionProvider(mode, explorationMode, input.judgeUnclearScreens === true)
       ? new CodexAppFlowDecisionProvider(runId, projectPath, {
           onSuspended: () => { void this.services.pause(runId); },
         })

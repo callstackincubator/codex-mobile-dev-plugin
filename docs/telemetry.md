@@ -341,6 +341,8 @@ existing centralized Sentry initialization, environment and telemetry opt-out.
 Native rebuilds retain matching Baguette dSYMs, and release uploads continue to
 upload those symbols with the plugin release.
 
+A Fast screen sweep now runs with no decision provider unless the panel's per-project "Judge unclear screens with AI" switch is on, so the judge path described above is reachable in Fast only when that switch asked for it; with it off, a screen whose runtime evidence is incomplete is recorded unreached instead of being sent to the judge, and `app_flow.runtime.verify` emits no `judge` arrivals for that run. The series, its unit and its attributes are unchanged — the runtime/judge split simply shifts further towards `runtime` for Fast runs started with the switch off. The panel adds one UI count beside `ui.app_flow.capture_ui_states_start` and with the same shape, `ui.app_flow.judge_unclear_screens_start`, once per user-started run that has the switch on, so how often Fast pays for the decision loop is visible; it carries nothing beyond the shared surface attributes — no project path, screen, route or verdict. A Fast run with the switch off is also started straight from the panel rather than through a chat message, so it records `ui.app_flow.start` where a chat-started sweep records none; that is the existing split between the two start paths, not a new measurement.
+
 Since 0.1.141, deterministic Fast harvests route parameters from the link
 elements in the app's React tree, one read per captured screen while any
 uncaptured route still has an unresolved parameter. The read is billed to the

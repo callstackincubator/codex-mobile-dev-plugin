@@ -122,6 +122,19 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
   await act(async () => { startButton().click(); });
   assert.equal((starts.at(-1) as { screenLimit?: number }).screenLimit, 0);
   assert.equal(agentStarts.at(-1), false, "Fast needs no decision loop, so it starts without asking Codex");
+  assert.equal((starts.at(-1) as { judgeUnclearScreens?: boolean }).judgeUnclearScreens, false, "and says so on the request");
+
+  // The judge switch is the one thing that puts a model role back in Fast, so it puts the decision
+  // loop — and with it the chat start — back too. It persists per project like the others.
+  const judge = () => labelled("Judge unclear screens with AI") as HTMLButtonElement;
+  assert.equal(judge().getAttribute("aria-checked"), "false", "off by default: Fast's premise is no model calls");
+  await act(async () => { judge().click(); });
+  assert.equal(storage.getItem("app-flow-judge-unclear:/projects/demo"), "on");
+  await act(async () => { startButton().click(); });
+  assert.equal((starts.at(-1) as { judgeUnclearScreens?: boolean }).judgeUnclearScreens, true);
+  assert.equal(agentStarts.at(-1), true, "someone has to service the judge call it may queue");
+  await act(async () => { judge().click(); });
+  assert.equal(storage.getItem("app-flow-judge-unclear:/projects/demo"), "off");
 
   // Off is sent as an explicit false on the one start request the sweep already makes.
   await act(async () => { startButton().click(); });
@@ -132,7 +145,7 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
   assert.equal(toggle().getAttribute("aria-checked"), "true");
   assert.equal(storage.getItem(key), "on");
   await act(async () => { startButton().click(); });
-  assert.deepEqual(starts.at(-1), { mode: "screen-ui-and-structure", screenLimit: 0, explorationMode: "fast", deepLinkJudgeMode: "off", captureUiStates: true });
+  assert.deepEqual(starts.at(-1), { mode: "screen-ui-and-structure", screenLimit: 0, explorationMode: "fast", deepLinkJudgeMode: "off", captureUiStates: true, judgeUnclearScreens: false });
 
   // Existing results can be cleared, but never while a run is active.
   snapshot = { ...snapshot, result: { manifest: { formatVersion: 4, durationMs: 1 }, nodes: [], edges: [] } };
@@ -172,6 +185,11 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
   // so telling the user to start it from chat would be inventing a requirement it does not have.
   assert.equal(alerts.some(alert => /Start this flow from chat/.test(alert.textContent ?? "")), false);
   assert.equal(startButton().disabled, false, "and the button stays live");
+
+  // The switch is not offered where nobody can answer it: a queued judge call with no agent
+  // listening is a sweep that waits forever, which is worse than the uncertain verdict it replaces.
+  assert.equal(judge().disabled, true, "no chat, no judge");
+  assert.match(document.getElementById("app-flow-judge-unclear-help")?.textContent ?? "", /Needs a host that can message Codex/);
 
   // Deep Link + Fast is model-driven end to end, so on that host it is still a chat start.
   storage.setItem("app-flow-exploration:/projects/warnings", "auto");

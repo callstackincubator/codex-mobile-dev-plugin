@@ -100,7 +100,7 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost, proje
   registerAppTool(server, "mobile_appflow_start", {
     title: "Start App Flow",
     description:
-      "Start a non-blocking App Flow build. For screen-ui-and-structure mode, immediately service mobile_appflow_next_decision and mobile_appflow_submit_decision until completion, suspension, cancellation, or a human-action gate.",
+      "Start a non-blocking App Flow build. When the result carries instructions, immediately service mobile_appflow_next_decision and mobile_appflow_submit_decision until completion, suspension, cancellation, or a human-action gate. A fast screen sweep without judgeUnclearScreens runs deterministically and has no decision loop to service.",
     inputSchema: {
       projectPath,
       mode: z.enum(["structure-only", "screen-ui-and-structure"]).default("structure-only"),
@@ -108,6 +108,7 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost, proje
       explorationMode: z.enum(["auto", "fast", "thorough"]).optional(),
       deepLinkJudgeMode: z.enum(["on", "off"]).optional(),
       captureUiStates: z.boolean().optional(),
+      judgeUnclearScreens: z.boolean().optional(),
     },
     annotations: write,
     _meta: sharedVisibility,

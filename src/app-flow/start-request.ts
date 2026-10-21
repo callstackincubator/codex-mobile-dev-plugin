@@ -18,17 +18,22 @@ import type {
  * `deepLinkJudgeMode` defaults to `on`: skipping the judge changes what a sweep can tell about an
  * open, so an existing run keeps behaving exactly as it did until someone asks for the cheaper one.
  * `captureUiStates` defaults to off for the same reason: it adds device work to every screen.
+ * `judgeUnclearScreens` defaults to off because it is what makes a Fast sweep need the decision
+ * loop at all: defaulting it on would quietly hand every Fast run back the chat round trip the
+ * mode exists to avoid.
  */
 export const APP_FLOW_START_DEFAULTS = {
   mode: 'structure-only',
   explorationMode: 'auto',
   deepLinkJudgeMode: 'on',
-  captureUiStates: false
+  captureUiStates: false,
+  judgeUnclearScreens: false
 } as const satisfies {
   mode: AppFlowBuildMode
   explorationMode: ExplorationMode
   deepLinkJudgeMode: DeepLinkJudgeMode
   captureUiStates: boolean
+  judgeUnclearScreens: boolean
 }
 
 /**
@@ -58,7 +63,8 @@ export function resolveAppFlowStart(input: StartAppFlowInput): ResolvedAppFlowSt
     screenLimit: normalizeAppFlowScreenLimit(input.screenLimit),
     explorationMode: input.explorationMode ?? APP_FLOW_START_DEFAULTS.explorationMode,
     deepLinkJudgeMode: input.deepLinkJudgeMode ?? APP_FLOW_START_DEFAULTS.deepLinkJudgeMode,
-    captureUiStates: input.captureUiStates ?? APP_FLOW_START_DEFAULTS.captureUiStates
+    captureUiStates: input.captureUiStates ?? APP_FLOW_START_DEFAULTS.captureUiStates,
+    judgeUnclearScreens: input.judgeUnclearScreens ?? APP_FLOW_START_DEFAULTS.judgeUnclearScreens
   }
 }
 
@@ -71,6 +77,13 @@ export function resolveAppFlowStart(input: StartAppFlowInput): ResolvedAppFlowSt
  * — which the orchestrator degrades to an `uncertain` verdict rather than a failed sweep. Auto and
  * thorough are model-driven end to end and a provider is not optional for them.
  *
+ * `judgeUnclearScreens` is the one thing that changes that answer for Fast, and it is why this
+ * takes the whole request rather than the mode pair: asking for the judge *is* asking for the
+ * decision loop, so a Fast run with it on needs a provider exactly as auto does. The caller that
+ * offers the switch is responsible for not offering it where nobody can service the loop — a
+ * queued decision with no agent listening is a sweep that waits forever, which is worse than the
+ * `uncertain` verdict the switch was meant to improve on.
+ *
  * Here rather than inline at the two call sites (`buildAppFlow`'s throw and the service's start
  * refusal) because those two must agree — a sweep the service accepts and the orchestrator then
  * throws out is a spinner that never resolves — and because this file is the one place in the
@@ -78,10 +91,12 @@ export function resolveAppFlowStart(input: StartAppFlowInput): ResolvedAppFlowSt
  */
 export function requiresDecisionProvider(
   mode: AppFlowBuildMode | undefined,
-  explorationMode: ExplorationMode | undefined
+  explorationMode: ExplorationMode | undefined,
+  judgeUnclearScreens?: boolean
 ): boolean {
   if ((mode ?? APP_FLOW_START_DEFAULTS.mode) !== 'screen-ui-and-structure') return false
-  return (explorationMode ?? APP_FLOW_START_DEFAULTS.explorationMode) !== 'fast'
+  if ((explorationMode ?? APP_FLOW_START_DEFAULTS.explorationMode) !== 'fast') return true
+  return judgeUnclearScreens ?? APP_FLOW_START_DEFAULTS.judgeUnclearScreens
 }
 
 export type ParsedAppFlowStart =
@@ -100,7 +115,8 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
     screenLimit,
     explorationMode,
     deepLinkJudgeMode,
-    captureUiStates
+    captureUiStates,
+    judgeUnclearScreens
   } = raw as Record<string, unknown>
   if (typeof projectPath !== 'string' || projectPath.length > 4096)
     return { ok: false, error: 'Invalid project path.' }
@@ -119,6 +135,8 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
     return { ok: false, error: 'Invalid deep-link judge mode.' }
   if (captureUiStates !== undefined && typeof captureUiStates !== 'boolean')
     return { ok: false, error: 'Capture UI states must be true or false.' }
+  if (judgeUnclearScreens !== undefined && typeof judgeUnclearScreens !== 'boolean')
+    return { ok: false, error: 'Judge unclear screens must be true or false.' }
   return {
     ok: true,
     input: {
@@ -127,7 +145,8 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
       screenLimit: screenLimit as number | undefined,
       explorationMode,
       deepLinkJudgeMode,
-      captureUiStates
+      captureUiStates,
+      judgeUnclearScreens: judgeUnclearScreens as boolean | undefined
     }
   }
 }

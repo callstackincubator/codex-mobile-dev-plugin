@@ -275,7 +275,15 @@ export class AppFlowPanel {
    * the count the removed UI Explore button made, and like it carries no project path, state name
    * or capture content: the event name is the whole payload beyond the shared surface attributes.
    */
-  private countUiStateOption(options: StartOptions) { if (options.captureUiStates === true) countUiEvent("ui.app_flow.capture_ui_states_start"); }
+  private countUiStateOption(options: StartOptions) {
+    if (options.captureUiStates === true) countUiEvent("ui.app_flow.capture_ui_states_start");
+    /* Same shape and same reason as the line above: one bounded count per user-started run that
+       asked for the Fast arrival judge, carrying no project path or screen content beyond the
+       shared surface attributes. It is what says how often a Fast sweep is paying for the decision
+       loop it can otherwise do without — the thing that decides whether the switch earns its
+       place, and the only way to tell a deterministic Fast run from a judged one after the fact. */
+    if (options.judgeUnclearScreens === true) countUiEvent("ui.app_flow.judge_unclear_screens_start");
+  }
 
   async start(options: StartOptions) {
     const projectPath = this.snapshot.projectPath.trim();

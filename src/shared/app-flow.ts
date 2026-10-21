@@ -59,6 +59,21 @@ export interface StartAppFlowInput {
    * (`screen-ui-and-structure`) reads it; a structure-only build has no device to open them on.
    */
   captureUiStates?: boolean
+  /**
+   * Fast only: let the arrival judge settle a screen the app's own readiness snapshot could not
+   * vouch for. Omitted means off.
+   *
+   * Fast navigates deterministically through the running app's navigator, and the dispatch reply
+   * plus the readiness poll normally say outright which screen is focused. When they do not —
+   * route not focused, parameters mismatched, no content — the rung has nothing left to go on, and
+   * off it records the node unreached rather than photographing a screen nothing verified. On, it
+   * asks the judge for that one call, which is the only model role a Fast sweep can reach.
+   *
+   * It is not a navigation setting: nothing here lets a model choose a route, and the ladder is
+   * still the render rung alone. It does mean the run needs someone servicing the decision loop,
+   * so a host that cannot reach the agent must not offer it.
+   */
+  judgeUnclearScreens?: boolean
 }
 export type AppFlowSweepStatus =
   'not-requested' | 'running' | 'awaiting-user' | 'completed' | 'paused' | 'stopped' | 'failed'

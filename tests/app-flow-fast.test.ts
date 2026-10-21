@@ -372,8 +372,42 @@ test('App Flow start no longer exposes a render transport switch', () => {
     screenLimit: undefined,
     explorationMode: 'fast',
     deepLinkJudgeMode: 'on',
-    captureUiStates: false
+    captureUiStates: false,
+    judgeUnclearScreens: false
   })
+})
+
+test('the judge switch is what makes a Fast sweep need a decision provider', () => {
+  // Fast is the only mode where this is a question. Its ladder is the render rung alone and its
+  // auth gate is skipped, so with the switch off nothing can ask a model anything and the sweep
+  // runs with no provider at all; with it on, the arrival judge becomes reachable again.
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast'), false)
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast', false), false)
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast', true), true)
+
+  // Every other mode is model-driven end to end, so the switch changes nothing for them.
+  for (const mode of ['auto', 'thorough', undefined] as const)
+    for (const judge of [undefined, false, true])
+      assert.equal(requiresDecisionProvider('screen-ui-and-structure', mode, judge), true)
+
+  // A structure-only build has no device and asks nothing, whatever rides along.
+  assert.equal(requiresDecisionProvider('structure-only', 'auto', true), false)
+  assert.equal(requiresDecisionProvider(undefined, undefined, true), false)
+})
+
+test('the judge switch survives the start boundary as a boolean, or is rejected', () => {
+  const parsed = parseAppFlowStartRequest({
+    projectPath: '/project',
+    mode: 'screen-ui-and-structure',
+    explorationMode: 'fast',
+    judgeUnclearScreens: true
+  })
+  assert.equal(parsed.ok, true)
+  if (!parsed.ok) return
+  assert.equal(resolveAppFlowStart(parsed.input).judgeUnclearScreens, true)
+
+  const bad = parseAppFlowStartRequest({ projectPath: '/project', judgeUnclearScreens: 'yes' })
+  assert.equal(bad.ok, false)
 })
 
 test('App Flow start accepts zero as all screens and resolves it to the uncapped engine value', () => {

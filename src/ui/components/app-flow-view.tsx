@@ -59,6 +59,8 @@ const CAPTURE_MODE_OPTIONS: { value: AppFlowBuildMode; label: string }[] = [
 
 /** Per-project localStorage key for the "Capture UI states" switch. Stored as "on"/"off"; absent means off. */
 const CAPTURE_UI_STATES_KEY = "app-flow-capture-ui-states";
+/** Per-project localStorage key for the Fast-only "Judge unclear screens with AI" switch. Same "on"/"off" encoding. */
+const JUDGE_UNCLEAR_KEY = "app-flow-judge-unclear";
 function duration(milliseconds: number) { if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`; const seconds = Math.round(milliseconds / 1000); return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`; }
 
 export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
@@ -67,6 +69,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   const [exploration, setExploration] = useState<ExplorationMode>("fast");
   const [screenLimit, setScreenLimit] = useState("10");
   const [captureUiStates, setCaptureUiStates] = useState(false);
+  const [judgeUnclear, setJudgeUnclear] = useState(false);
   /**
    * Which canvas the body shows. Two graphs rather than one: a UI state is not somewhere a user
    * navigates to, so it has no place in the navigation map — see `AppFlowUiState`.
@@ -78,6 +81,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
     const nextExploration = stored(`app-flow-exploration:${projectPath}`, "fast"); setExploration(nextExploration === "auto" || nextExploration === "thorough" ? nextExploration : "fast");
     const limit = stored(`app-flow-screen-limit:${projectPath}`, "10"); setScreenLimit(/^\d+$/.test(limit) ? limit : "10");
     setCaptureUiStates(stored(`${CAPTURE_UI_STATES_KEY}:${projectPath}`, "off") === "on");
+    setJudgeUnclear(stored(`${JUDGE_UNCLEAR_KEY}:${projectPath}`, "off") === "on");
   }, [state.projectPath]);
   const isRunning = state.state === "running" || state.state === "needs-user-action";
   const sweepStatus = state.result?.manifest.sweepStatus;
@@ -91,17 +95,24 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   const uiStates = useMemo(() => uiStateCount(state.result?.nodes ?? []), [state.result]);
   // The count rides on the option label so the picker says how much the other canvas holds.
   const viewOptions = useMemo(() => VIEW_OPTIONS.map(option => option.value === "ui-states" && uiStates > 0 ? { ...option, label: `${option.label} · ${uiStates}` } : option), [uiStates]);
-  const needsAgentStart = mode === "screen-ui-and-structure" && exploration !== "fast";
+  /* The switch is only honoured where someone can service the decision loop. A host that cannot
+     send a chat message has no agent to answer a queued judge call, and a sweep waiting on an
+     answer that never comes is worse than the `uncertain` verdict the switch was meant to improve
+     on — so there it reads as off rather than being sent and silently hanging. */
+  const canJudgeUnclear = judgeUnclear && panel.canSendAgentStart;
+  /* Fast asks no model anything, so the server starts it with no decision provider and there is no
+     `next_decision` loop for Codex to service: it starts straight from the panel like a
+     structure-only build, with none of the chat round trip's ways to fail. Switching the judge on
+     is what puts that loop back, so it puts the chat start back with it. Every other mode is
+     model-driven end to end and always needs Codex. */
+  const needsAgentStart = mode === "screen-ui-and-structure" && (exploration !== "fast" || canJudgeUnclear);
   const start = () => {
     if (!state.projectPath) return;
     write(`app-flow-mode:${state.projectPath}`, mode);
     const options = { mode, ...(mode === "screen-ui-and-structure" ? { screenLimit: screenLimit ? Number(screenLimit) : undefined, explorationMode: exploration,
       /* Always the screen-signal path: the judge is no longer a UI choice, so a sweep is deterministic. */
-      deepLinkJudgeMode: "off" as const, captureUiStates } : {}) };
-    /* Fast asks no model anything, so the server starts it with no decision provider and there is
-       no `next_decision` loop for Codex to service. Routing it through the chat round trip only
-       added a step that can fail or be declined, so it starts straight from the panel like a
-       structure-only build. Every other sweep is model-driven end to end and still needs Codex. */
+      deepLinkJudgeMode: "off" as const, captureUiStates,
+      ...(exploration === "fast" ? { judgeUnclearScreens: canJudgeUnclear } : {}) } : {}) };
     if (needsAgentStart) void panel.requestAgentStart(options); else void panel.start(options);
   };
   const empty = !state.result && !isRunning;
@@ -128,6 +139,15 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
               <Input className="w-20" aria-label="Maximum screens to explore" aria-describedby="app-flow-screen-limit-help" type="number" min={0} value={screenLimit} disabled={isRunning}
                 placeholder="All" onChange={event => { const value = event.target.value; if (value && Number(value) < 0) return; setScreenLimit(value); if (state.projectPath) write(`app-flow-screen-limit:${state.projectPath}`, value); }} /> screens</label>
               <p id="app-flow-screen-limit-help" className="text-xs text-muted-foreground">0 explores all screens</p></div>
+            {/* Fast-only: it is the one mode that can finish without asking a model anything, so it is
+                the one mode where this is a choice. Auto and thorough judge arrivals either way. */}
+            {exploration === "fast" && <div className="space-y-1.5"><label className="flex items-center justify-between gap-3">Judge unclear screens with AI
+              <Switch aria-label="Judge unclear screens with AI" aria-describedby="app-flow-judge-unclear-help" checked={judgeUnclear}
+                disabled={isRunning || !panel.canSendAgentStart}
+                onCheckedChange={value => { setJudgeUnclear(value); if (state.projectPath) write(`${JUDGE_UNCLEAR_KEY}:${state.projectPath}`, value ? "on" : "off"); }} /></label>
+              <p id="app-flow-judge-unclear-help" className="text-xs text-muted-foreground">{panel.canSendAgentStart
+                ? "Ask Codex to confirm arrival when the app\u2019s own readiness check cannot. Off, those screens are left uncaptured. It does not let the model choose routes, and it starts the sweep from chat."
+                : "Needs a host that can message Codex. Without one, unclear screens are left uncaptured."}</p></div>}
             {/* Sweep-only: the states are opened while the sweep stands on each screen, so there is no
                 run without a sweep to switch this on for. */}
             <div className="space-y-1.5"><label className="flex items-center justify-between gap-3">Capture UI states

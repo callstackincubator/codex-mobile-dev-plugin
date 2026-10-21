@@ -228,6 +228,23 @@ describe("AppFlowHost.start", () => {
     assert.equal(answer.instructions, undefined, "no decision loop means no instructions to service one");
   });
 
+  it("gives a Fast sweep its provider back when the judge switch asks for one", async () => {
+    // The switch is the one thing that puts a model role back in Fast: the arrival judge on a
+    // screen the runtime snapshot could not vouch for. Asking for it is asking for the decision
+    // loop, so the run needs a provider exactly as auto does — and the instructions have to say so,
+    // or nobody services the judge call and the sweep waits forever.
+    const { started, host: subject } = host();
+    const answer = await subject.start({ projectPath: "/projects/demo", mode: "screen-ui-and-structure", explorationMode: "fast", judgeUnclearScreens: true });
+    assert.equal(started.at(-1)!.hasDecisions, true);
+    assert.match(answer.instructions ?? "", /mobile_appflow_next_decision/);
+  });
+
+  it("treats an explicit false and a missing switch the same", async () => {
+    const { started, host: subject } = host();
+    await subject.start({ projectPath: "/projects/demo", mode: "screen-ui-and-structure", explorationMode: "fast", judgeUnclearScreens: false });
+    assert.equal(started.at(-1)!.hasDecisions, false);
+  });
+
   it("still gives every model-driven sweep its provider", async () => {
     const { started, host: subject } = host();
     for (const explorationMode of ["auto", "thorough", undefined]) {

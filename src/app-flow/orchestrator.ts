@@ -348,6 +348,8 @@ export interface AppFlowBuildOptions {
    * fails the sweep; see `createSweepUiStateCapturer`.
    */
   captureUiStates?: boolean
+  /** Fast only: ask the arrival judge about a screen the runtime snapshot could not vouch for. */
+  judgeUnclearScreens?: boolean
   /** An app the user already launched. The sweep adopts it instead of building and booting again. */
   launchedDevice?: CaptureDevice
   onEvent(event: AppFlowProgressEvent): void
@@ -1059,7 +1061,10 @@ export async function buildAppFlow(
     // evidence was incomplete — which is why the judge port is replaced with a non-asking one just
     // below rather than left to throw mid-sweep. A Fast sweep with no provider is therefore a
     // complete, if slightly weaker, sweep.
-    if (!options.decisionProvider && requiresDecisionProvider(mode, options.explorationMode)) {
+    if (
+      !options.decisionProvider &&
+      requiresDecisionProvider(mode, options.explorationMode, options.judgeUnclearScreens)
+    ) {
       throw new Error('A decision provider is required for a screen sweep.')
     }
 
@@ -4662,6 +4667,8 @@ export class AppFlowBuilder extends EventEmitter {
     explorationMode?: ExplorationMode
     deepLinkJudgeMode?: DeepLinkJudgeMode
     captureUiStates?: boolean
+  /** Fast only: ask the arrival judge about a screen the runtime snapshot could not vouch for. */
+  judgeUnclearScreens?: boolean
     launchedDevice?: CaptureDevice
   }): Promise<void> {
     if (this.running) throw new Error('Build already in progress')
