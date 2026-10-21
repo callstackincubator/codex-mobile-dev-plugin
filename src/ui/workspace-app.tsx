@@ -20,6 +20,7 @@ import { ErrorBoundary, captureUiError, startUiTelemetry, stopUiTelemetry, setUi
 import { PLUGIN_VERSION } from "../shared/version.ts";
 import { RecordingController } from "./recording-controller.ts";
 import { PluginUpdateController } from "./plugin-updates.ts";
+import { AppFlowPanel } from "./app-flow-panel.ts";
 
 const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, {}, { autoResize: false });
 startUiTelemetry(app);
@@ -30,10 +31,11 @@ const performancePanel = new PerformancePanel(app, deviceApps);
 const logsPanel = new LogsPanel(app, panelContext, deviceApps);
 const recordingController = new RecordingController(app, extensions);
 const updates = new PluginUpdateController(app);
+const appFlowPanel = new AppFlowPanel(app);
 const reactRoot = createRoot(document.getElementById("root")!);
 function renderWorkspace(automaticLayout?: DeviceLayout) {
   const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-    <Workspace performance={performancePanel} logs={logsPanel} recordingController={recordingController} updates={updates} automaticLayout={automaticLayout} onLayout={changeLayout} />
+    <Workspace performance={performancePanel} logs={logsPanel} appFlow={appFlowPanel} recordingController={recordingController} updates={updates} automaticLayout={automaticLayout} onLayout={changeLayout} />
   </ErrorBoundary>;
   reactRoot.render(workspace);
 }
@@ -96,7 +98,7 @@ function disposeUI() {
     deviceApps.dispose();
     recordingController.dispose();
     updates.dispose();
-    await Promise.allSettled([...panels.map(panel => panel.dispose()), logsPanel.dispose(), performancePanel.dispose()]);
+    await Promise.allSettled([...panels.map(panel => panel.dispose()), logsPanel.dispose(), performancePanel.dispose(), appFlowPanel.dispose()]);
     reactRoot.unmount();
     await stopUiTelemetry();
   })();
@@ -164,6 +166,7 @@ void (async () => {
     const available = !!capabilities?.serverTools && !!capabilities?.serverResources;
     logsPanel.setAvailable(available);
     performancePanel.setAvailable(available);
+    appFlowPanel.setAvailable(available);
     deviceApps.setAvailable(available);
     updates.setAvailable(available);
     for (const panel of panels) if (!available) panel.notice("This host cannot call the plugin's simulator tools.");

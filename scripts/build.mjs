@@ -138,7 +138,7 @@ const server = await build({
   format: "esm", platform: "node", target: "node22", minify: false, legalComments: "eof", metafile: true,
   sourcemap: "external",
   plugins: [sentryEsbuildPlugin({ project: "codex-mobile-dev-server", telemetry: false, sourcemaps: { disable: true }, release: { inject: false, create: false, finalize: false } })],
-  banner: { js: "import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);" },
+  banner: { js: "import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevDirname(__filename);" },
 });
 await mkdir(".sentry/server", { recursive: true });
 for (const name of ["server.mjs", "agent-device-server.mjs", "ios-mirror-service.mjs"]) {

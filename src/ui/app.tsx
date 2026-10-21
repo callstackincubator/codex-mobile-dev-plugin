@@ -1,5 +1,6 @@
 import "@openai/mcp-extensions/app/styles.css";
 import "@fontsource-variable/inter";
+import "@xyflow/react/dist/style.css";
 import "./theme.css";
 import "./style.css";
 import { startRecordingApp } from "./recording-app.tsx";

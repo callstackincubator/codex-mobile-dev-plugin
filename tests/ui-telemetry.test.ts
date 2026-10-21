@@ -434,6 +434,9 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   assert.equal(mirrorContext.surface, "simulator");
   assert.equal(mirrorContext.device_platform, "ios");
   assert.equal(mirrorContext.device_kind, "physical");
+  api.setUiSurface("app-flow");
+  api.recordUiTiming("ui.app_flow.graph_process", 4);
+  api.setUiSurface("simulator");
   Object.defineProperty(window.document, "visibilityState", { configurable: true, value: "hidden" });
   const visibilityChange = new window.Event("visibilitychange");
   window.document.dispatchEvent(visibilityChange);
@@ -508,6 +511,8 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   contains(encoded, '"surface":{"value":"performance"');
   contains(encoded, '"surface":{"value":"simulator"');
   contains(encoded, '"surface":{"value":"recording"');
+  contains(encoded, '"surface":{"value":"app-flow"');
+  contains(encoded, "ui.app_flow.graph_process.mean");
   contains(encoded, "ui.frame_interval.mean");
   contains(encoded, "UI failure");
   contains(encoded, '"action":{"value":"mobile_ios_mirror_session"');

@@ -48,6 +48,9 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { panelTargetSchema } from "../shared/panel-target.ts";
 import type { PanelTarget } from "../shared/panel-target.ts";
+import { createAppFlowHost, APP_FLOW_DIRECTORY } from "./app-flow-host.ts";
+import { AppFlowProjectChoices } from "./app-flow-projects.ts";
+import { registerAppFlowTools } from "./app-flow-tools.ts";
 
 export const APP_URI = `ui://mobile-dev/${PLUGIN_VERSION}/simulator.html`;
 export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
@@ -96,6 +99,9 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
     instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill for device control, logs, profiles, and performance workflows.",
+    // App Flow progress arrives as logging notifications. Without this capability the SDK rejects
+    // every sendLoggingMessage, so the app-flow event channel would fail silently.
+    capabilities: { logging: {} },
   });
   instrumentMcpServer(server);
   const updates = new PluginUpdates();
@@ -123,6 +129,9 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   });
   const closeDeviceSettings = registerDeviceSettingsTools(server, baguette, android);
   registerAppControlTools(server);
+  const appFlow = await createAppFlowHost();
+  const appFlowProjects = new AppFlowProjectChoices(APP_FLOW_DIRECTORY);
+  const closeAppFlow = registerAppFlowTools(server, appFlow, appFlowProjects);
 
   const automaticRepairs = new Map<string, { attemptedAt: number; pending: Promise<{ inputStatus: InputStatus; inputRepairMessage: string }> }>();
   async function panelInputStatus(udid: string) {
@@ -431,7 +440,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
       const deviceSettingsClosed = closeDeviceSettings();
       await recordings.close();
       closeInspection(); closeAndroid(); streams.close();
-      try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror(), deviceSettingsClosed, traceSift.close()]); }
+      try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror(), deviceSettingsClosed, traceSift.close(), closeAppFlow()]); }
       finally { baguette.dispose(); await server.close(); }
     },
   };
