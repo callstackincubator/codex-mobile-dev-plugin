@@ -2,6 +2,7 @@ import { z } from "zod";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { captureServerError, recordAppStorageOperation } from "../telemetry.ts";
+import type { AppStorageOperation } from "../telemetry.ts";
 import { errorMessage } from "../../shared/protocol.ts";
 import { expectedOutcome } from "../../shared/error-reporting.ts";
 import { appTargetShape, bundleIdSchema } from "../../shared/app-control.ts";
@@ -17,7 +18,6 @@ import { clearStore, readStorage, readTable } from "./reader.ts";
 import { previewFile } from "./preview.ts";
 
 type Target = { platform: "ios" | "android"; deviceId: string };
-type Operation = "read" | "clear" | "reset" | "table" | "file";
 export type ContainerFactory = (target: Target, bundleId: string) => Promise<AppContainer>;
 
 export function createContainers(commands: Commands = systemCommands): ContainerFactory {
@@ -32,7 +32,7 @@ const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: fa
 
 export function registerAppStorageTools(server: McpServer, commands: Commands = systemCommands, driverFor: DriverFactory = createDrivers(commands), containerFor: ContainerFactory = createContainers(commands)) {
   // Every operation opens the app's container on a validated device and reports one timing.
-  async function run(operation: Operation, { platform, deviceId, bundleId }: Target & { bundleId: string }, work: (container: AppContainer, driver: AppDriver) => Promise<Record<string, unknown>>) {
+  async function run(operation: AppStorageOperation, { platform, deviceId, bundleId }: Target & { bundleId: string }, work: (container: AppContainer, driver: AppDriver) => Promise<Record<string, unknown>>) {
     const startedAt = performance.now();
     try {
       // Resolving the driver validates the device ID before any command runs.

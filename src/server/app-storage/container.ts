@@ -30,7 +30,7 @@ function safePath(path: string) {
 }
 
 // Paths under this prefix live in one of the app's App Group containers, shared with its widgets and extensions.
-export const appGroupPrefix = "AppGroup/";
+const appGroupPrefix = "AppGroup/";
 const preferencesPlist = /(?:^|\/)Library\/Preferences\/[^/]+\.plist$/;
 const containerMetadata = ".com.apple.mobile_container_manager.metadata.plist";
 

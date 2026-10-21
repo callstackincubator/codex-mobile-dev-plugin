@@ -27,7 +27,8 @@ export function recordPluginUpdate(operation: "check" | "install", outcome: "dis
   Sentry.metrics.gauge("plugin.update.duration", duration, { unit: "millisecond", attributes });
 }
 
-export function recordAppStorageOperation(operation: "read" | "clear" | "reset" | "table" | "file", platform: "ios" | "android", outcome: "success" | "failed", duration: number) {
+export type AppStorageOperation = "read" | "clear" | "reset" | "table" | "file";
+export function recordAppStorageOperation(operation: AppStorageOperation, platform: "ios" | "android", outcome: "success" | "failed", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "storage", operation, device_platform: platform, outcome };
   Sentry.metrics.count("app_storage.operation.samples", 1, { attributes });

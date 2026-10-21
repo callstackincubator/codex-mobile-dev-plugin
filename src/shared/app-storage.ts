@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 // Storage the panel recognizes from files in the app's data directory, without code in the app.
-export const storeKinds = ["mmkv", "async-storage", "user-defaults", "shared-preferences", "datastore", "sqlite", "realm"] as const;
+export const storeKinds = ["mmkv", "async-storage", "user-defaults", "shared-preferences", "datastore", "proto-datastore", "sqlite", "realm"] as const;
 export type StoreKind = typeof storeKinds[number];
 export const storeKindLabels: Record<StoreKind, string> = {
   "mmkv": "MMKV", "async-storage": "AsyncStorage", "user-defaults": "UserDefaults", "shared-preferences": "SharedPreferences",
-  "datastore": "DataStore", "sqlite": "SQLite", "realm": "Realm",
+  "datastore": "DataStore", "proto-datastore": "Proto DataStore", "sqlite": "SQLite", "realm": "Realm",
 };
 
 export const entryTypes = ["string", "json", "number", "integer", "boolean", "date", "data", "array", "object", "null", "table"] as const;
@@ -69,8 +69,9 @@ export const storageTableSchema = z.object({
 });
 export type StorageTable = z.infer<typeof storageTableSchema>;
 
-// One file's contents. json, plist, and archive (NSKeyedArchiver) arrive as JSON text; binary as hex of its first bytes.
-export const filePreviewFormats = ["json", "plist", "archive", "text", "binary"] as const;
+// One file's contents. json, plist, and archive (NSKeyedArchiver) arrive as JSON text, binary as hex of its first
+// bytes, and too-large files without content.
+export const filePreviewFormats = ["json", "plist", "archive", "text", "binary", "too-large"] as const;
 export const storageFileSchema = z.object({
   path: z.string(),
   bytes: z.number().int().nonnegative(),
@@ -79,3 +80,6 @@ export const storageFileSchema = z.object({
   truncated: z.boolean(),
 });
 export type StorageFilePreview = z.infer<typeof storageFileSchema>;
+
+// Apple frameworks (Core Data, SwiftData, NSDate) count seconds from 2001-01-01.
+export const appleDate = (seconds: number) => new Date((seconds + 978307200) * 1000).toISOString();

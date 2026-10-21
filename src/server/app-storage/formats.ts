@@ -1,5 +1,5 @@
 import type { EntryType, StoreKind } from "../../shared/app-storage.ts";
-import { jsonType, readVarint } from "./mmkv.ts";
+import { jsonType, readVarint, utf8Text } from "./encoding.ts";
 
 export type ParsedEntry = { key: string; type: EntryType; value: string; bytes: number; guessed?: boolean };
 
@@ -202,10 +202,6 @@ export function parseDataStorePreferences(buffer: Buffer): ParsedEntry[] {
 
 // ---- Proto DataStore and other schema-less protobuf: field numbers become keys, and value types are guessed.
 
-const printable = (bytes: Buffer) => {
-  const text = bytes.toString("utf8");
-  return Buffer.from(text, "utf8").equals(bytes) && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffd]/.test(text) ? text : undefined;
-};
 const message = (bytes: Buffer) => { try { const parsed = fields(bytes); return parsed.length > 0 ? parsed : undefined; } catch { return undefined; } };
 
 // Short text often also parses as protobuf, so text wins over a nested message.
@@ -222,7 +218,7 @@ export function protobufEntries(buffer: Buffer, prefix = ""): ParsedEntry[] {
     const bytes = field.bytes!;
     if (field.wire === 5) return entry("number", String(bytes.readFloatLE(0)), 4);
     if (field.wire === 1) return entry("number", String(bytes.readDoubleLE(0)), 8);
-    const text = printable(bytes);
+    const text = utf8Text(bytes);
     if (text !== undefined) return [{ ...textEntry(key, text, bytes.length), guessed: true }];
     if (message(bytes)) return protobufEntries(bytes, `${key}.`);
     return entry("data", bytes.toString("hex"), bytes.length);
@@ -269,7 +265,7 @@ export function classifyFiles(paths: readonly string[], platform: "ios" | "andro
       continue;
     }
     if (name.endsWith(".pb") && basename(directory) === "datastore") {
-      stores.push({ kind: "datastore", name: name.slice(0, -3), path, files: [path] });
+      stores.push({ kind: "proto-datastore", name: name.slice(0, -3), path, files: [path] });
       continue;
     }
     if (name.endsWith(".realm")) {
@@ -277,11 +273,12 @@ export function classifyFiles(paths: readonly string[], platform: "ios" | "andro
       stores.push({ kind: "realm", name: name.slice(0, -6), path, files: [path, ...related] });
       continue;
     }
-    // SwiftData's default.store and custom-named Core Data stores are SQLite too; a -wal or -shm file next to any
-    // file marks it as a database in WAL mode.
-    const sqliteName = platform === "android" ? directory === "databases" && !sqliteSuffix.test(name) && !name.endsWith(".bak") : /\.(?:db|sqlite3?|sql|store)$/i.test(name);
-    const walCompanion = !sqliteSuffix.test(name) && (all.has(`${path}-wal`) || all.has(`${path}-shm`));
-    if ((sqliteName || walCompanion || /\.(?:db|sqlite3?)$/i.test(name)) && !systemPaths.test(path)) {
+    // Android keeps databases under databases/ without fixed extensions. On iOS, SwiftData uses default.store, and a
+    // -wal or -shm file beside any file marks a database in WAL mode, such as a Core Data store with a custom name.
+    const sqlite = !sqliteSuffix.test(name) && (
+      (platform === "android" ? (directory === "databases" && !name.endsWith(".bak")) || /\.(?:db|sqlite3?)$/i.test(name) : /\.(?:db|sqlite3?|sql|store)$/i.test(name))
+      || all.has(`${path}-wal`) || all.has(`${path}-shm`));
+    if (sqlite && !systemPaths.test(path)) {
       stores.push({ kind: "sqlite", name, path, files: [path, ...["-wal", "-shm", "-journal"].map(suffix => path + suffix).filter(file => all.has(file))] });
     }
   }

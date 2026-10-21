@@ -1,7 +1,7 @@
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, CopyIcon, DatabaseIcon, LockIcon, PuzzleIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { storageLimits, storeKindLabels, storeKinds } from "../../shared/app-storage.ts";
+import { appleDate, storageLimits, storeKindLabels, storeKinds } from "../../shared/app-storage.ts";
 import type { StorageEntry, StorageFilePreview, StorageSnapshot, StorageStore } from "../../shared/app-storage.ts";
 import { isWorking } from "../storage-panel.ts";
 import type { StorageFileView, StoragePanel, StorageTableView } from "../storage-panel.ts";
@@ -19,7 +19,7 @@ const entryId = (store: StorageStore, key: string) => `${store.id}\u0000${key}`;
 
 // The header above a store or the file list. Opening a table or file swaps the icon for a back button of the
 // same size and adds the item's name to the title.
-function DetailHeader({ icon, title, child, subtitle, path, back, loading, children }: { icon: ReactNode; title: string; child?: string; subtitle: string; path: string; back?: { label: string; onBack: () => void }; loading?: boolean; children?: ReactNode }) {
+function DetailHeader({ icon, title, child, subtitle, path, back, loading, children }: { icon?: ReactNode; title: string; child?: string; subtitle: string; path?: string; back?: { label: string; onBack: () => void }; loading?: boolean; children?: ReactNode }) {
   return <div className="flex items-center gap-3 border-b px-4 py-3 font-sans">
     {back ? <Button variant="outline" size="icon-sm" className="shrink-0" aria-label={back.label} title={back.label} onClick={back.onBack}><ChevronLeftIcon className="size-4" /></Button> : icon}
     <div className="min-w-0 flex-1">
@@ -34,21 +34,23 @@ function DetailHeader({ icon, title, child, subtitle, path, back, loading, child
 }
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
-const formatLabels: Record<StorageFilePreview["format"], string> = { json: "JSON", plist: "Property list", archive: "NSKeyedArchiver archive", text: "Text", binary: "Binary" };
+const formatLabels: Record<StorageFilePreview["format"], string> = { json: "JSON", plist: "Property list", archive: "NSKeyedArchiver archive", text: "Text", binary: "Binary", "too-large": "Too large to preview" };
+const parseJsonText = (text: string): unknown => { try { return JSON.parse(text); } catch { return undefined; } };
 
 // A file's contents: structured formats as a JSON tree, text as is, and other bytes as hex.
 function FilePreview({ file }: { file: StorageFileView }) {
   const data = file.data;
   let body: ReactNode = null;
-  if (data && data.format === "binary") {
-    body = data.content ? <pre className="font-mono break-all whitespace-pre-wrap text-muted-foreground">{data.content.replace(/(..)(?!$)/g, "$1 ")}</pre> : null;
-  } else if (data) {
-    const parsed = data.format === "text" ? undefined : (() => { try { return JSON.parse(data.content) as unknown; } catch { return undefined; } })();
+  let note = "";
+  if (data?.format === "binary") {
+    body = <pre className="font-mono break-all whitespace-pre-wrap text-muted-foreground">{data.content.replace(/(..)(?!$)/g, "$1 ")}</pre>;
+    if (data.truncated) note = `Showing the first ${formatBytes(data.content.length / 2)} as hex.`;
+  } else if (data && data.format !== "too-large") {
+    // Structured formats arrive as JSON text; a cut-short one no longer parses and shows as text.
+    const parsed = data.format === "text" ? undefined : parseJsonText(data.content);
     body = parsed !== undefined ? <JsonTree value={parsed} /> : <pre className="font-mono break-all whitespace-pre-wrap">{data.content}</pre>;
+    if (data.truncated) note = "Cut short; the file is longer.";
   }
-  const note = !data ? "" : data.format === "binary" && !data.content ? `Too large to preview (${formatBytes(data.bytes)}).`
-    : data.format === "binary" && data.truncated ? `Showing the first ${formatBytes(data.content.length / 2)} as hex.`
-    : data.truncated ? "Cut short; the file is longer." : "";
   return <div className="flex min-h-0 flex-1 flex-col">
     {file.error && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription className="text-xs">{file.error}</AlertDescription></Alert>}
     {note && <p className="border-b px-4 py-1.5 font-sans text-[11px] text-muted-foreground">{note}</p>}
@@ -75,13 +77,13 @@ function FilesView({ panel, snapshot, file }: { panel: StoragePanel; snapshot: S
     const listed = snapshot.files.find(item => item.path === file.path);
     const subtitle = file.data ? `${formatLabels[file.data.format]} · ${formatBytes(file.data.bytes)}` : listed ? formatBytes(listed.bytes) : "Loading…";
     return <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <DetailHeader icon={null} title="Files" child={file.path.slice(file.path.lastIndexOf("/") + 1)} subtitle={subtitle} path={file.path} back={{ label: "Back to files", onBack: () => panel.closeFile() }} loading={file.loading} />
+      <DetailHeader title="Files" child={file.path.slice(file.path.lastIndexOf("/") + 1)} subtitle={subtitle} path={file.path} back={{ label: "Back to files", onBack: () => panel.closeDetail() }} loading={file.loading} />
       <FilePreview file={file} />
     </div>;
   }
   const breakdown = containerBreakdown(snapshot);
   return <div className="min-h-0 flex-1 overflow-auto font-mono text-xs" role="table" aria-label="Largest files">
-    <DetailHeader icon={<FilesIcon size="lg" />} title="Files" subtitle={`${plural(snapshot.fileCount, "file")} · ${formatBytes(snapshot.totalBytes)} in the app's data directory`} path="" />
+    <DetailHeader icon={<FilesIcon size="lg" />} title="Files" subtitle={`${plural(snapshot.fileCount, "file")} · ${formatBytes(snapshot.totalBytes)} in the app's data directory`} />
     <div className="border-b px-4 py-3 font-sans" aria-label="Size by kind">
       <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">{breakdown.map(([label, bytes, tone]) => <span key={label} className={tone} style={{ width: `${snapshot.totalBytes ? bytes / snapshot.totalBytes * 100 : 0}%` }} />)}</div>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -117,9 +119,8 @@ function SearchResults({ groups, query, title, expansion }: { groups: { store: S
   </div>;
 }
 
-// Core Data and SwiftData store dates in TIMESTAMP columns as seconds since 2001-01-01.
-const appleDate = (type: string, cell: string | number) => typeof cell === "number" && /^timestamp$/i.test(type)
-  ? new Date((cell + 978307200) * 1000).toISOString() : undefined;
+// Core Data and SwiftData keep dates in TIMESTAMP columns as seconds since 2001-01-01.
+const timestamp = (type: string, cell: string | number) => typeof cell === "number" && /^timestamp$/i.test(type) ? appleDate(cell) : undefined;
 
 // One page of a SQLite table as a grid. Long cells are cut short and show in full on hover.
 function TableGrid({ table }: { table: StorageTableView }) {
@@ -135,7 +136,7 @@ function TableGrid({ table }: { table: StorageTableView }) {
         </thead>
         <tbody>{data.rows.map((row, index) => <tr key={data.offset + index} className="hover:bg-muted/50">
           {row.map((cell, column) => {
-            const date = cell === null ? undefined : appleDate(data.columns[column].type, cell);
+            const date = cell === null ? undefined : timestamp(data.columns[column].type, cell);
             const tone = date ? "" : typeof cell === "number" ? "text-blue-600 tabular-nums dark:text-blue-400" : cell === null || /^x'/.test(cell) ? "text-muted-foreground" : "";
             return <td key={column} title={cell === null ? "NULL" : date ? `${date} (${cell} seconds since 2001)` : String(cell)} className={`max-w-80 truncate border-b px-3 py-1.5 whitespace-nowrap ${tone}`}>
               {cell === null ? <span className="italic">NULL</span> : date ?? String(cell)}
@@ -169,7 +170,7 @@ function StoreDetail({ panel, store, title, table, busy, expansion }: { panel: S
     : `${storeKindLabels[store.kind]} · ${plural(store.entryCount, store.kind === "sqlite" ? "table" : "key")} · ${formatBytes(store.bytes)}`;
   return <div className="flex min-h-0 min-w-0 flex-1 flex-col">
     <DetailHeader icon={<KindIcon kind={store.kind} size="lg" />} title={title} child={table?.name} subtitle={subtitle} path={store.path}
-      back={table && { label: "Back to tables", onBack: () => panel.closeTable() }} loading={table?.loading}>
+      back={table && { label: "Back to tables", onBack: () => panel.closeDetail() }} loading={table?.loading}>
         {table && <TablePager panel={panel} store={store} table={table} />}
         {store.status === "ok" && store.kind !== "sqlite" && <Button variant="outline" size="xs" onClick={() => expansion.copy(storeJson(store))}><CopyIcon />Copy as JSON</Button>}
         <ConfirmButton title={`Clear ${title}`} action="Clear" disabled={busy} description={`Stops the app and deletes ${store.path}. The app is not relaunched.`} onConfirm={() => void panel.clear(store.id)}
@@ -201,7 +202,7 @@ export function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePan
   const store = snapshot.stores.find(item => item.id === selected) ?? (selected === FILES ? undefined : own[0] ?? sdks[0]);
   const expansion: Expansion = { expanded, copy, toggle: (item, key) => setExpanded(expanded === entryId(item, key) ? undefined : entryId(item, key)) };
   const visible = (item: StorageStore) => !query || (matches.get(item.id)?.length ?? 0) > 0;
-  const select = (id: string) => { setSelected(id); setExpanded(undefined); panel.closeTable(); panel.closeFile(); };
+  const select = (id: string) => { setSelected(id); setExpanded(undefined); panel.closeDetail(); };
 
   const storeRow = (item: StorageStore) => <SidebarRow key={item.id} icon={<KindIcon kind={item.kind} size="md" className="mt-0.5" />} title={title(item)} subtitle={storeKindLabels[item.kind]} tooltip={item.path}
     selected={!query && store?.id === item.id} onSelect={() => select(item.id)}
@@ -233,7 +234,7 @@ export function BrowseView({ panel, snapshot, query, copy }: { panel: StoragePan
   </div>;
 
   const main = query ? <SearchResults groups={[...own, ...sdks].map(item => ({ store: item, entries: matches.get(item.id) ?? [] })).filter(group => group.entries.length > 0)} query={query} title={title} expansion={expansion} />
-    : store ? <StoreDetail panel={panel} store={store} title={title(store)} table={state.table?.storeId === store.id ? state.table : undefined} busy={isWorking(state)} expansion={expansion} />
-    : <FilesView panel={panel} snapshot={snapshot} file={state.file} />;
+    : store ? <StoreDetail panel={panel} store={store} title={title(store)} table={state.detail?.kind === "table" && state.detail.storeId === store.id ? state.detail : undefined} busy={isWorking(state)} expansion={expansion} />
+    : <FilesView panel={panel} snapshot={snapshot} file={state.detail?.kind === "file" ? state.detail : undefined} />;
   return <div className="flex min-h-0 flex-1">{sidebar}<div className="flex min-h-0 min-w-0 flex-1 flex-col">{picker}{main}</div></div>;
 }
