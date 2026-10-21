@@ -1,14 +1,15 @@
 import type { StorageEntry, StorageStore } from "../shared/app-storage.ts";
 
 // Stores written by analytics, crash, and attribution SDKs rather than the app's own code.
-const sdkStore = /^(?:APM|FIR|GUL|GDT|com\.(?:google|firebase|crashlytics|facebook|appsflyer|braze|segment|amplitude|mixpanel|onesignal|sentry|datadog|branch)|google[-_]|io\.branch|WebViewChromium|AppsFlyer|Branch|io\.sentry|com\.apple\.)/i;
+const sdkStore = /^(?:APM|FIR|GUL|GDT|com\.(?:google|firebase|crashlytics|facebook|appsflyer|braze|segment|amplitude|mixpanel|onesignal|sentry|datadog|branch)|google[-_]|io\.branch|WebViewChromium|AppsFlyer|Branch|io\.sentry|com\.apple\.|expo\.modules\.)/i;
 export const isSdkStore = (store: Pick<StorageStore, "name" | "path">) => sdkStore.test(store.name) || /\/(?:Google|com\.crashlytics|io\.sentry|com\.firebase)\//.test(store.path);
 
-// The app's own preferences domain and MMKV's default instance get plain names.
+// The app's own preferences domain, MMKV's default instance, and AsyncStorage's Android database get plain names.
 export function storeTitle(store: Pick<StorageStore, "kind" | "name">, bundleId: string) {
   if (store.kind === "user-defaults" && store.name === bundleId) return "Standard defaults";
   if (store.kind === "shared-preferences" && store.name === `${bundleId}_preferences`) return "Default preferences";
   if (store.kind === "mmkv" && store.name === "mmkv.default") return "Default instance";
+  if (store.kind === "async-storage" && store.name === "RKStorage") return "default";
   return store.name;
 }
 

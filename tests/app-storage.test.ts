@@ -302,3 +302,10 @@ test("XML parsers skip comments, declarations, and doctypes, including ones that
     <!-- <string name="hidden">no</string> --><string name="kept">yes</string><!<!---->--><boolean name="on" value="true" /></map>`;
   assert.deepEqual(parseSharedPreferences(prefs).map(entry => [entry.key, entry.value]), [["kept", "yes"], ["on", "true"]]);
 });
+
+test("Expo's internal preferences count as SDK data and AsyncStorage's Android database is titled like iOS", async () => {
+  const { isSdkStore, storeTitle } = await import("../src/ui/storage-labels.ts");
+  assert.equal(isSdkStore({ name: "expo.modules.kotlin.PersistentDataManager", path: "shared_prefs/expo.modules.kotlin.PersistentDataManager.xml" }), true);
+  assert.equal(isSdkStore({ name: "dev.mobile.storagetest_preferences", path: "shared_prefs/dev.mobile.storagetest_preferences.xml" }), false);
+  assert.equal(storeTitle({ kind: "async-storage", name: "RKStorage" }, "dev.mobile.storagetest"), "default");
+});

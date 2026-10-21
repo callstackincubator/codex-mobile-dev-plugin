@@ -17,20 +17,21 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Tabs, TabsList, TabsTrigger } from "./ui/base-tabs";
 
 // Installed apps with their icons: one line in the trigger, name over bundle ID in the list.
+// Android lists apps by package name; their labels arrive with the icons.
 function AppPicker({ panel, state }: { panel: StoragePanel; state: StorageState }) {
   useSyncExternalStore(appIcons.subscribe, appIcons.getSnapshot);
-  const icon = (bundleId: string) => appIcons.get(state.platform, state.deviceId, bundleId)?.icon;
-  return <Select items={state.apps.map(app => ({ value: app.bundleId, label: app.name }))} value={state.bundleId || null} disabled={!state.available || state.unsupported !== ""} onValueChange={value => { if (value) panel.selectApp(value); }}>
+  const apps = state.apps.map(app => ({ ...app, ...appIcons.get(state.platform, state.deviceId, app.bundleId) }));
+  return <Select items={apps.map(app => ({ value: app.bundleId, label: app.name }))} value={state.bundleId || null} disabled={!state.available || state.unsupported !== ""} onValueChange={value => { if (value) panel.selectApp(value); }}>
     <SelectTrigger id="storage-app" size="sm" aria-label="App" className="w-64 min-w-28 shrink">
       <SelectValue>{(value: string | null) => {
-        const app = state.apps.find(item => item.bundleId === value);
+        const app = apps.find(item => item.bundleId === value);
         if (!app) return value ? <span className="truncate">{value}</span> : <span className="text-muted-foreground">{state.busy === "apps" ? "Loading apps…" : "Choose an app"}</span>;
-        return <><AppAvatar name={app.name} icon={icon(app.bundleId)} size="xs" /><span className="max-w-40 shrink-0 truncate">{app.name}</span>{app.name !== app.bundleId && <span className="min-w-0 truncate text-xs text-muted-foreground">{app.bundleId}</span>}</>;
+        return <><AppAvatar name={app.name} icon={app.icon} size="xs" /><span className="max-w-40 shrink-0 truncate">{app.name}</span>{app.name !== app.bundleId && <span className="min-w-0 truncate text-xs text-muted-foreground">{app.bundleId}</span>}</>;
       }}</SelectValue>
     </SelectTrigger>
     <SelectContent align="start" alignItemWithTrigger={false} className="w-auto max-w-[min(30rem,calc(100vw-16px))] min-w-(--anchor-width)"><SelectGroup>
-      {state.apps.map(app => <SelectItem key={app.bundleId} value={app.bundleId} className="py-1.5">
-        <AppAvatar name={app.name} icon={icon(app.bundleId)} size="sm" className="mt-0.5 self-start" />
+      {apps.map(app => <SelectItem key={app.bundleId} value={app.bundleId} className="py-1.5">
+        <AppAvatar name={app.name} icon={app.icon} size="sm" className="mt-0.5 self-start" />
         <span className="flex min-w-0 flex-col">
           <span className="truncate leading-5">{app.name}</span>
           {app.name !== app.bundleId && <span className="truncate text-xs leading-4 text-muted-foreground">{app.bundleId}</span>}
