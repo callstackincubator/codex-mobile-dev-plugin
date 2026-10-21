@@ -70,6 +70,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
   const [screenLimit, setScreenLimit] = useState("10");
   const [captureUiStates, setCaptureUiStates] = useState(false);
   const [judgeUnclear, setJudgeUnclear] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   /**
    * Which canvas the body shows. Two graphs rather than one: a UI state is not somewhere a user
    * navigates to, so it has no place in the navigation map — see `AppFlowUiState`.
@@ -100,6 +101,10 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
      answer that never comes is worse than the `uncertain` verdict the switch was meant to improve
      on — so there it reads as off rather than being sent and silently hanging. */
   const canJudgeUnclear = judgeUnclear && panel.canSendAgentStart;
+  /* Same shape as `canJudgeUnclear`: the stored per-project preference survives a mode change, so a
+     project switched to Deep Link + Explore must not keep sending the option the mode cannot run.
+     The preference itself is left alone — switching back to Fast restores what the user chose. */
+  const canCaptureUiStates = captureUiStates && exploration !== "thorough";
   /* Fast asks no model anything, so the server starts it with no decision provider and there is no
      `next_decision` loop for Codex to service: it starts straight from the panel like a
      structure-only build, with none of the chat round trip's ways to fail. Switching the judge on
@@ -111,7 +116,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
     write(`app-flow-mode:${state.projectPath}`, mode);
     const options = { mode, ...(mode === "screen-ui-and-structure" ? { screenLimit: screenLimit ? Number(screenLimit) : undefined, explorationMode: exploration,
       /* Always the screen-signal path: the judge is no longer a UI choice, so a sweep is deterministic. */
-      deepLinkJudgeMode: "off" as const, captureUiStates,
+      deepLinkJudgeMode: "off" as const, captureUiStates: canCaptureUiStates,
       ...(exploration === "fast" ? { judgeUnclearScreens: canJudgeUnclear } : {}) } : {}) };
     if (needsAgentStart) void panel.requestAgentStart(options); else void panel.start(options);
   };
@@ -149,14 +154,34 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
                 ? "Ask Codex to confirm arrival when the app\u2019s own readiness check cannot. Off, those screens are left uncaptured. It does not let the model choose routes, and it starts the sweep from chat."
                 : "Needs a host that can message Codex. Without one, unclear screens are left uncaptured."}</p></div>}
             {/* Sweep-only: the states are opened while the sweep stands on each screen, so there is no
-                run without a sweep to switch this on for. */}
+                run without a sweep to switch this on for. Not offered with Deep Link + Explore: that
+                mode already spends a model-driven walk per screen, and opening every sheet and modal
+                on top of it turns a slow sweep into one that does not finish. */}
             <div className="space-y-1.5"><label className="flex items-center justify-between gap-3">Capture UI states
-              <Switch aria-label="Capture UI states" aria-describedby="app-flow-capture-ui-states-help" checked={captureUiStates} disabled={isRunning}
+              <Switch aria-label="Capture UI states" aria-describedby="app-flow-capture-ui-states-help" checked={canCaptureUiStates} disabled={isRunning || exploration === "thorough"}
                 onCheckedChange={value => { setCaptureUiStates(value); if (state.projectPath) write(`${CAPTURE_UI_STATES_KEY}:${state.projectPath}`, value ? "on" : "off"); }} /></label>
-              <p id="app-flow-capture-ui-states-help" className="text-xs text-muted-foreground">Also open each screen’s sheets, modals and dialogs while the sweep is on it, and capture them</p></div>
+              <p id="app-flow-capture-ui-states-help" className="text-xs text-muted-foreground">{exploration === "thorough"
+                ? "Not available with Deep Link + Explore — that mode already walks each screen by hand. Switch to Fast or Deep Link + Fast to capture UI states."
+                : "Also open each screen’s sheets, modals and dialogs while the sweep is on it, and capture them"}</p></div>
           </PopoverContent>
         </Popover>}
-        {state.result && <Button variant="destructive" size="sm" onClick={() => void panel.clear()} disabled={isRunning}>Clear app flow</Button>}
+        {/* Clearing deletes the whole stored flow — every capture, every recorded path — and the
+            only way back is another sweep. It sat one misplaced click away from Regenerate, so it
+            asks first; the confirm button is the destructive one, and dismissing is the default. */}
+        {state.result && <Popover open={confirmClear} onOpenChange={setConfirmClear}>
+          <PopoverTrigger asChild>
+            <Button variant="destructive" size="sm" disabled={isRunning}>Clear app flow</Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" aria-label="Confirm clearing the app flow" className="w-[300px] max-w-[calc(100vw-16px)] space-y-3 p-4 text-sm">
+            <div><div className="font-medium">Clear this app flow?</div>
+              <p className="mt-1 text-xs text-muted-foreground">{tally
+                ? `${tally.captured} captured screen${tally.captured === 1 ? "" : "s"} and every recorded path are deleted.`
+                : "The stored flow and every recorded path are deleted."}</p></div>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setConfirmClear(false)}>Cancel</Button>
+              <Button variant="destructive" size="sm" onClick={() => { setConfirmClear(false); void panel.clear(); }}>Clear app flow</Button></div>
+          </PopoverContent>
+        </Popover>}
         {isRunning ? <><Button variant="secondary" size="sm" onClick={() => void panel.pause()} disabled={!state.runId}><Pause />Pause</Button>
           <Button variant="secondary" size="sm" onClick={() => void panel.cancel()} disabled={!state.runId}>Cancel</Button></>
           : <><Button variant="secondary" size="sm" onClick={() => void panel.launchApp()} disabled={!state.projectPath || state.launching}>

@@ -85,15 +85,47 @@ test("the UI-states graph draws each captured state as a child of its screen, an
     return Array.from(list.querySelectorAll('[role="option"]')) as HTMLElement[];
   };
   const closeOptions = async (label: string) => { await act(async () => { trigger(label)!.click(); }); await act(async () => { await Promise.resolve(); }); };
-  assert.equal(trigger("Jump to screen"), null, "this canvas jumps to UI states, not screens");
   assert.deepEqual((await openOptions("App Flow view")).map(option => option.textContent), ["Flow graph", "UI states"],
     "the canvas switch sits above the jump picker");
   await closeOptions("App Flow view");
 
-  const states = await openOptions("Jump to UI state");
-  assert.deepEqual(states.map(option => option.textContent), ["Jump to…", "Home — Cart Sheet", "Home — Error Dialog (not captured)"]);
-  await act(async () => { states[1].click(); });
+  /* The jump pickers are no longer selects: the trigger opens a popover holding a search box over
+     the list, so a flow with hundreds of near-identical route names can be narrowed by typing. */
+  const jumpTrigger = (label: string) => Array.from(dom.window.document.querySelectorAll("button")).find(entry => entry.getAttribute("aria-label") === label) as HTMLButtonElement | undefined;
+  // Scoped to this picker's own listbox: the canvas switch above is a select, and its options are
+  // still in the document when its popup has been opened.
+  const jumpList = (label: string) => dom.window.document.querySelector(`[aria-label="${label} options"]`)!;
+  const jumpOptions = (label: string) => Array.from(jumpList(label).querySelectorAll('[role="option"]')) as HTMLElement[];
+  const openJump = async (label: string) => {
+    // The popover dismisses on an outside click, so a click meant to open it can land as the
+    // dismissal of a list left open earlier. Opening is therefore "click until the list is there".
+    for (let attempt = 0; attempt < 2 && !dom.window.document.querySelector(`[aria-label="${label} options"]`); attempt += 1) {
+      await act(async () => { jumpTrigger(label)!.click(); });
+      await act(async () => { await Promise.resolve(); });
+    }
+    return jumpOptions(label);
+  };
+  const search = (label: string) => dom.window.document.querySelector(`[aria-label="${label} search"]`) as HTMLInputElement;
+  const type = async (label: string, text: string) => {
+    const field = search(label);
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => { setter.call(field, text); field.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
+  };
+  assert.equal(jumpTrigger("Jump to screen"), undefined, "this canvas jumps to UI states, not screens");
+  const states = await openJump("Jump to UI state");
+  assert.deepEqual(states.map(option => option.textContent), ["Home — Cart Sheet", "Home — Error Dialog (not captured)"]);
+
+  // "Captured only" drops the states the pass found in source and could not open. It filters the
+  // list, not the canvas: the uncaptured state keeps its card, it is just not a jump target.
+  const capturedOnly = () => dom.window.document.querySelector('[aria-label="Show captured routes only"]') as HTMLButtonElement;
+  await act(async () => { capturedOnly().click(); });
+  assert.equal(capturedOnly().getAttribute("aria-pressed"), "true");
+  assert.deepEqual((await openJump("Jump to UI state")).map(option => option.textContent), ["Home — Cart Sheet"]);
+  await act(async () => { capturedOnly().click(); });
+
+  const reopened = await openJump("Jump to UI state");
+  await act(async () => { reopened[0].click(); });
   await act(async () => { await Promise.resolve(); });
-  assert.match(trigger("Jump to UI state")!.textContent!, /Home — Cart Sheet/,
+  assert.match(jumpTrigger("Jump to UI state")!.textContent!, /Home — Cart Sheet/,
     "the picker keeps the chosen state, so the canvas says what it is showing");
 });

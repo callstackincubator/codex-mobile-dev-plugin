@@ -302,7 +302,12 @@ export function layoutUiStates(nodes: AppFlowNode[]): UiStateTopology {
   return { placements, edges };
 }
 
-export interface ScreenOption { id: string; label: string }
+export interface ScreenOption {
+  id: string;
+  label: string;
+  /** Whether this screen has a screenshot — what the picker's "Captured only" filter keeps. */
+  captured: boolean;
+}
 export interface UiStateOption {
   /** The UI-states graph's node id for this variant. */
   id: string;
@@ -321,7 +326,7 @@ export interface UiStateOption {
  */
 export function screenOptions(nodes: AppFlowNode[]): ScreenOption[] {
   return nodes.filter(node => node.origin !== "chrome")
-    .map(node => ({ id: node.id, label: nodeTitle(node) }))
+    .map(node => ({ id: node.id, label: nodeTitle(node), captured: node.capture?.screenshot != null }))
     .sort((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id));
 }
 

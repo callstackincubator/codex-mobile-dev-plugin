@@ -120,8 +120,39 @@ test("captured UI states ride on their screen's node, collapsed until asked for"
     return Array.from(list.querySelectorAll('[role="option"]')) as HTMLElement[];
   };
   const closeOptions = async (label: string) => { await act(async () => { trigger(label)!.click(); }); await act(async () => { await Promise.resolve(); }); };
-  assert.equal(trigger("Jump to UI state"), null, "no UI-state jump on the flow canvas");
+  /* The jump pickers are no longer selects: the trigger opens a popover holding a search box over
+     the list, so a flow with hundreds of near-identical route names can be narrowed by typing. */
+  const jumpTrigger = (label: string) => Array.from(dom.window.document.querySelectorAll("button")).find(entry => entry.getAttribute("aria-label") === label) as HTMLButtonElement | undefined;
+  // Scoped to this picker's own listbox: the canvas switch above is a select, and its options are
+  // still in the document when its popup has been opened.
+  const jumpList = (label: string) => dom.window.document.querySelector(`[aria-label="${label} options"]`)!;
+  const jumpOptions = (label: string) => Array.from(jumpList(label).querySelectorAll('[role="option"]')) as HTMLElement[];
+  const openJump = async (label: string) => {
+    // The popover dismisses on an outside click, so a click meant to open it can land as the
+    // dismissal of a list left open earlier. Opening is therefore "click until the list is there".
+    for (let attempt = 0; attempt < 2 && !dom.window.document.querySelector(`[aria-label="${label} options"]`); attempt += 1) {
+      await act(async () => { jumpTrigger(label)!.click(); });
+      await act(async () => { await Promise.resolve(); });
+    }
+    return jumpOptions(label);
+  };
+  const search = (label: string) => dom.window.document.querySelector(`[aria-label="${label} search"]`) as HTMLInputElement;
+  const type = async (label: string, text: string) => {
+    const field = search(label);
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => { setter.call(field, text); field.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
+  };
+  assert.equal(jumpTrigger("Jump to UI state"), undefined, "no UI-state jump on the flow canvas");
   assert.deepEqual((await openOptions("App Flow view")).map(option => option.textContent), ["Flow graph", "UI states"]);
   await closeOptions("App Flow view");
-  assert.deepEqual((await openOptions("Jump to screen")).map(option => option.textContent), ["Jump to…", "About", "Home"]);
+  assert.deepEqual((await openJump("Jump to screen")).map(option => option.textContent), ["About", "Home"]);
+
+  // Typing narrows the list instead of scrolling it.
+  await type("Jump to screen", "ho");
+  assert.deepEqual(jumpOptions("Jump to screen").map(option => option.textContent), ["Home"]);
+  await type("Jump to screen", "zzz");
+  assert.deepEqual(jumpOptions("Jump to screen"), []);
+  assert.match(dom.window.document.body.textContent ?? "", /No screens match/);
+  // Left open, the portalled layer tears down after the DOM is gone and its cleanup throws.
+  await act(async () => { jumpTrigger("Jump to screen")!.click(); });
 });

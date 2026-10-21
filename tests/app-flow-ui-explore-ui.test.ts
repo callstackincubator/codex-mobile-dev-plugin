@@ -147,14 +147,53 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
   await act(async () => { startButton().click(); });
   assert.deepEqual(starts.at(-1), { mode: "screen-ui-and-structure", screenLimit: 0, explorationMode: "fast", deepLinkJudgeMode: "off", captureUiStates: true, judgeUnclearScreens: false });
 
+  /* Deep Link + Explore already spends a model-driven walk per screen, so the states pass is not
+     offered on top of it. The stored preference is left alone — it is the *sent* value that drops,
+     so a project switched to that mode and back keeps what the user chose. */
+  const reach = () => labelled("App Flow exploration mode") as HTMLElement;
+  await act(async () => { reach().click(); });
+  await act(async () => { await Promise.resolve(); });
+  const reachOption = (text: string) => Array.from(document.querySelectorAll('[role="option"]')).find(option => option.textContent === text) as HTMLElement;
+  await act(async () => { reachOption("Deep Link + Explore").click(); });
+  await act(async () => { await Promise.resolve(); });
+  assert.equal(toggle().disabled, true, "the switch is not offered for Deep Link + Explore");
+  assert.equal(toggle().getAttribute("aria-checked"), "false", "and reads off while it cannot run");
+  assert.equal(storage.getItem(key), "on", "but the project's own preference is untouched");
+  assert.match(document.getElementById("app-flow-capture-ui-states-help")?.textContent ?? "", /Not available with Deep Link \+ Explore/);
+  await act(async () => { startButton().click(); });
+  assert.equal((starts.at(-1) as { captureUiStates?: boolean }).captureUiStates, false, "so the run cannot ask for it");
+
+  // Back on a mode that can run it, the stored preference comes back.
+  await act(async () => { reach().click(); });
+  await act(async () => { await Promise.resolve(); });
+  await act(async () => { reachOption("Fast").click(); });
+  await act(async () => { await Promise.resolve(); });
+  assert.equal(toggle().disabled, false);
+  assert.equal(toggle().getAttribute("aria-checked"), "true");
+
   // Existing results can be cleared, but never while a run is active.
   snapshot = { ...snapshot, result: { manifest: { formatVersion: 4, durationMs: 1 }, nodes: [], edges: [] } };
   await act(async () => { for (const listener of listeners) listener(); });
-  const clearButton = () => Array.from(document.querySelectorAll("button")).find(entry => entry.textContent === "Clear app flow") as HTMLButtonElement;
+  const clearButtons = () => Array.from(document.querySelectorAll("button")).filter(entry => entry.textContent === "Clear app flow") as HTMLButtonElement[];
+  const clearButton = () => clearButtons()[0]!;
   assert.ok(clearButton(), "a result exposes the clear action");
   assert.equal(clearButton().disabled, false);
+
+  // Clearing deletes every capture and recorded path, so the trigger asks before it does anything.
   await act(async () => { clearButton().click(); });
-  assert.equal(clears, 1);
+  assert.equal(clears, 0, "the trigger opens the confirmation rather than clearing");
+  const confirmation = () => document.querySelector('[aria-label="Confirm clearing the app flow"]');
+  assert.ok(confirmation(), "the confirmation is on screen");
+  const cancel = () => Array.from(document.querySelectorAll("button")).find(entry => entry.textContent === "Cancel") as HTMLButtonElement;
+  await act(async () => { cancel().click(); });
+  assert.equal(clears, 0, "dismissing leaves the flow alone");
+  assert.equal(confirmation(), null);
+
+  await act(async () => { clearButton().click(); });
+  // The confirm button carries the same words as the trigger; it is the second one on screen.
+  await act(async () => { clearButtons().at(-1)!.click(); });
+  assert.equal(clears, 1, "confirming clears");
+  assert.equal(confirmation(), null, "and closes the confirmation");
   snapshot = { ...snapshot, state: "running", runId: "run-1" };
   await act(async () => { for (const listener of listeners) listener(); });
   assert.equal(clearButton().disabled, true, "the clear action is disabled during a run");
