@@ -97,6 +97,124 @@ return an explicit error. Codex owns layout and button labels, so the native for
 does not reproduce custom footer buttons from a design mockup. Thumbnails are
 illustrations, not captured app screens.
 
+## Embedded TraceSift explorer
+
+Pressing **Explore** on a card opens TraceSift's full explorer in the card's own
+frame rather than a browser window. The renderer is not a copy: both TraceSift's
+web page and this plugin import the same components from
+`@callstack/tracesift-explore`, so a drill-down cannot drift from the app that
+produced the numbers.
+
+The card's frame cannot reach the TraceSift service — Codex strips plain HTTP
+origins from widget CSP — so its data rides MCP like everything else here.
+`mobile_tracesift_explore_payload` fetches `/api/integration/v1/task` or
+`/api/integration/v1/react-explore` with the service bearer token and returns the
+payload as one text item plus a small `structuredContent` envelope
+(`apiVersion`, `kind`, `encoding`, `payloadBytes`). A full task card carries its
+whole call tree and timeline, which runs to megabytes, so past 64 KiB the text is
+gzip-compressed base64; a measured 25 MB tree crosses in about 8 ms at a fifth
+of its JSON size. Below that threshold it stays plain JSON. Keeping the tree out
+of structured content avoids the deep-structured-payload failure documented
+above: the SDK and host validate only the envelope, and the iframe inflates and
+parses the payload once into the shapes the explorer draws. Payloads above
+24 MiB are refused before decoding and point at the browser window; the service
+already caps its trees at 60k nodes and 5k commits. Payload size is reported as
+`tracesift.explore.payload_bytes`, which is where an oversized tree shows up
+before a reader reports a spinner.
+
+The same rule applies to the payload's age: it is fetched from the live service,
+so an expired analysis answers with the existing "run it again" error instead of
+a half-drawn tree. **Open in browser** keeps the previous path, which hands the
+selection to `tracesift explore`.
+
+Version skew favours the reader's installed service: payloads are additive-only
+within integration API v1, the explorers ignore fields they do not know, and an
+older service that cannot answer the endpoint fails with an update message. The
+plugin folds the package's one compiled stylesheet into its single HTML bundle,
+after the plugin's own Tailwind layer, so neither build compiles the other's
+sources. That sheet opens by writing its theme tokens to `:root` and `.dark`,
+which would recolor the plugin's cards behind the explorer, so the fold scopes
+both token blocks to `.tracesift-explorer` — descendants inherit the custom
+properties, and a block that no longer has the shape the fold expects fails the
+build rather than leaking globally. The package is an ordinary npm dependency,
+so its React and `@rozenite/ui` peers resolve to this project's own copies and
+the bundle never carries a second React.
+
+### Picking frames to investigate
+
+**Select frames** in the explorer's bar switches its four task views from
+navigating to collecting: a click adds a frame to a set instead of refocusing the
+timeline, call tree and culprits or zooming the flame graph, and a second click
+takes it back out. One set is shared by all four views because all four already
+address a frame the same way — a `TaskTreeNode.id`, the dotted sibling path over
+the merged call tree, which a timeline box carries as `nodeId`, a culprit row as
+`nodeId`, and a flame box as its graph key. The package owns the drawing
+(`FrameSelection`, in `frame-selection.tsx`) and the plugin owns the state
+(`explorer.selected`, in `TraceSiftController`), so the web app and the panel
+still render one explorer and only the panel offers the question.
+
+Selection is deliberately not a second focus. Focus says where a view is standing
+and stays exactly one frame; a selection is a set the reader is assembling and
+survives moving the focus, which is what lets someone pick four frames on the
+timeline and still see all four ringed after opening one in the call tree.
+
+A pick rings the *frame*, not one drawing of it. The timeline draws one box per
+call and the merged tree one node per call site, so a function that ran eight
+times is eight boxes against the clock and one row elsewhere; the package rings
+every box of the picked function wherever it appears, and clicking any of those is
+the second click on the pick that exists rather than a new one. Turning **Select
+frames** back off empties the set — the bar that explains picking goes with the
+mode, so the picks go with it, and a send never carries a set whose count the
+reader can no longer see.
+
+**Investigate selected** writes its own hand-off, in `src/shared/tracesift-selection.ts`
+rather than through `mobile_get_tracesift_handoff`. The picks exist only in this
+frame and the whole call tree is already in it, so a round trip could not have
+answered the question anyway — and an older installed service is never asked
+something it has never heard. It keeps the conventions of the service's prompts:
+measured evidence and no conclusion, each figure labelled with what it counts, the
+overlap named where one pick contains another (inclusive times are not additive;
+self times are, so the set's own time and the honest remainder are the only
+sums), and the caveats that decide how a number is read. Frames folded by the
+focused views are folded in its tree too, so it describes the stack the reader was
+looking at.
+
+### Picking components out of a React recording
+
+The same switch, over a recording. **Select components** turns the render tree
+and the component table from navigating to collecting, and **Investigate
+selected components** writes its own hand-off from
+`src/shared/tracesift-react-selection.ts`. The state is the one field the task
+side uses, because it is the same shape; what differs is the id, the arithmetic
+and the words.
+
+A pick is a `reactNodeKey` — `<rootId>.<commitIndex>.<fiberId>` — rather than a
+bare fiber id, because a fiber id is unique inside its root and nowhere else.
+Naming the commit is what lets a selection outlive the commit picker: a reader
+works a cascade by stepping through commits, and a per-commit set would empty
+itself under exactly the navigation the reading is made of. Choosing a commit
+stays navigation, the way moving the task focus is.
+
+One pick rings one fiber, which is the opposite of the task side and
+deliberately so. A task's merged tree has one node per call site, so one pick has
+to ring every box drawn of that function; React's tree merges nothing, and two
+renders of a component are two fibers with their own causes, their own changed
+props and their own time. Ringing both because they share a name would claim a
+sameness React did not record. The render tree says so when a pick of the open
+commit is not drawn — collapsed as a pass-through, or below one that was.
+
+The hand-off keeps the same conventions and almost none of the same caveats,
+because the measurement is different. React's profiler is not sampled:
+`selfDuration` and `actualDuration` are recorded per fiber per commit, so the
+figures are exact for the render phase and say nothing about the commit phase,
+the effects, or the time between two commits — which the prompt states rather
+than leaving a reader to assume a recording covers an interaction. Own time is a
+true partition of a commit, so the picks' own times add and the remainder is the
+other components plus the reconciler's own walk; inclusive times overlap every
+ancestor and are never summed. Picks are grouped by the commit that measured
+them, and the same component picked in two commits is named as the repeated
+render it is rather than as one finding listed twice.
+
 ## Sources
 
 The implementation follows [Baguette's HTTP and WebSocket routes](https://github.com/tddworks/baguette/blob/v0.2.1/docs/serve.md) and [gesture protocol](https://github.com/tddworks/baguette/blob/v0.2.1/docs/wire.md). The bundled automation server follows [agent-device's official MCP setup](https://github.com/callstack/agent-device#add-mcp-tools-to-your-agent). Native panel metadata follows [OpenAI's plugin extensions](https://developers.openai.com/plugins/build/extensions). The package uses the [portable plugin format](https://developers.openai.com/plugins/build/plugins).
