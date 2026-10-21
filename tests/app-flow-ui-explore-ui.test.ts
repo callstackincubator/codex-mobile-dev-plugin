@@ -47,6 +47,7 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
     launching: false, agentStartPending: false, pickingProject: false, appLaunched: false,
   };
   const starts: unknown[] = [];
+  const agentStarts: boolean[] = [];
   let canSendAgentStart = true;
   let clears = 0;
   const recordingSnapshot = { nodeId: null, status: null, steps: [] };
@@ -58,7 +59,12 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
     refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
     launchApp: async () => {},
     clear: async () => { clears += 1; },
-    start: async () => {}, requestAgentStart: async (options: unknown) => { starts.push(options); },
+    /* Fast is started straight from the panel — it asks no model anything, so there is no decision
+       loop for Codex to service — while every other sweep still goes through the chat round trip.
+       Both land in `starts` so the assertions below read the request whichever route carried it,
+       and `agentStarts` is what pins which route that was. */
+    start: async (options: unknown) => { starts.push(options); agentStarts.push(false); },
+    requestAgentStart: async (options: unknown) => { starts.push(options); agentStarts.push(true); },
   };
   const document = dom.window.document;
   const storage = dom.window.localStorage;
@@ -115,6 +121,7 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
   await act(async () => { valueSetter.call(screenLimit, "0"); screenLimit.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
   await act(async () => { startButton().click(); });
   assert.equal((starts.at(-1) as { screenLimit?: number }).screenLimit, 0);
+  assert.equal(agentStarts.at(-1), false, "Fast needs no decision loop, so it starts without asking Codex");
 
   // Off is sent as an explicit false on the one start request the sweep already makes.
   await act(async () => { startButton().click(); });
@@ -158,10 +165,24 @@ test("the sweep row offers a per-project Capture UI states switch instead of a s
   storage.setItem("app-flow-exploration:/projects/warnings", "fast");
   await act(async () => { for (const listener of listeners) listener(); });
   const alerts = Array.from(document.querySelectorAll('[role="alert"]'));
-  assert.equal(alerts.length, 2);
+  assert.equal(alerts.length, 1);
   assert.ok(alerts.some(alert => /Sign in before using Fast/.test(alert.textContent ?? "")));
   assert.match(note(), /runtime navigator.*skips deep links/i, "the note follows the stored Fast selection");
-  assert.ok(alerts.some(alert => /Start this flow from chat/.test(alert.textContent ?? "")));
+  // A host that cannot send a chat message can still run Fast: it never needed the chat round trip,
+  // so telling the user to start it from chat would be inventing a requirement it does not have.
+  assert.equal(alerts.some(alert => /Start this flow from chat/.test(alert.textContent ?? "")), false);
+  assert.equal(startButton().disabled, false, "and the button stays live");
+
+  // Deep Link + Fast is model-driven end to end, so on that host it is still a chat start.
+  storage.setItem("app-flow-exploration:/projects/warnings", "auto");
+  snapshot = { ...snapshot, projectPath: "/projects/warnings-auto" };
+  storage.setItem("app-flow-mode:/projects/warnings-auto", "screen-ui-and-structure");
+  storage.setItem("app-flow-exploration:/projects/warnings-auto", "auto");
+  await act(async () => { for (const listener of listeners) listener(); });
+  const autoAlerts = Array.from(document.querySelectorAll('[role="alert"]'));
+  assert.ok(autoAlerts.some(alert => /Start this flow from chat/.test(alert.textContent ?? "")));
+  assert.equal(startButton().disabled, true);
+  canSendAgentStart = true;
 
   snapshot = { ...snapshot, projectPath: "/projects/other" };
   storage.setItem("app-flow-mode:/projects/other", "screen-ui-and-structure");

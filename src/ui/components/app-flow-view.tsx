@@ -5,7 +5,7 @@ import { FAST_MODE_AUTH_NOTICE } from "../../shared/app-flow.ts";
 import type { AppFlowPanel, AppFlowSweepSummary } from "../app-flow-panel.ts";
 import { AppFlowGraph } from "./app-flow-graph.tsx";
 import { ToolbarSelect, type GraphView, type GraphViewOption } from "./app-flow-graph-shared.tsx";
-import { captureTally, uiStateCount } from "./app-flow-layout.ts";
+import { captureTally, isResumable, uiStateCount } from "./app-flow-layout.ts";
 import { AppFlowUiStatesGraph } from "./app-flow-ui-states-graph.tsx";
 import { AppFlowProjectPicker } from "./app-flow-project-picker.tsx";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert.tsx";
@@ -87,16 +87,22 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
      advanced it. The summary keeps driving the live chip and the "Last step:" line below. */
   const tally = useMemo(() => { const nodes = state.result?.nodes ?? []; const counts = captureTally(nodes);
     return counts.total ? counts : null; }, [state.result]);
+  const resumable = isResumable(sweepStatus, tally);
   const uiStates = useMemo(() => uiStateCount(state.result?.nodes ?? []), [state.result]);
   // The count rides on the option label so the picker says how much the other canvas holds.
   const viewOptions = useMemo(() => VIEW_OPTIONS.map(option => option.value === "ui-states" && uiStates > 0 ? { ...option, label: `${option.label} · ${uiStates}` } : option), [uiStates]);
+  const needsAgentStart = mode === "screen-ui-and-structure" && exploration !== "fast";
   const start = () => {
     if (!state.projectPath) return;
     write(`app-flow-mode:${state.projectPath}`, mode);
     const options = { mode, ...(mode === "screen-ui-and-structure" ? { screenLimit: screenLimit ? Number(screenLimit) : undefined, explorationMode: exploration,
       /* Always the screen-signal path: the judge is no longer a UI choice, so a sweep is deterministic. */
       deepLinkJudgeMode: "off" as const, captureUiStates } : {}) };
-    if (mode === "screen-ui-and-structure") void panel.requestAgentStart(options); else void panel.start(options);
+    /* Fast asks no model anything, so the server starts it with no decision provider and there is
+       no `next_decision` loop for Codex to service. Routing it through the chat round trip only
+       added a step that can fail or be declined, so it starts straight from the panel like a
+       structure-only build. Every other sweep is model-driven end to end and still needs Codex. */
+    if (needsAgentStart) void panel.requestAgentStart(options); else void panel.start(options);
   };
   const empty = !state.result && !isRunning;
   return <section className="flex h-full min-h-0 flex-col" aria-label="App Flow">
@@ -135,12 +141,12 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
           <Button variant="secondary" size="sm" onClick={() => void panel.cancel()} disabled={!state.runId}>Cancel</Button></>
           : <><Button variant="secondary" size="sm" onClick={() => void panel.launchApp()} disabled={!state.projectPath || state.launching}>
             {state.launching && <Loader2 className="animate-spin" />}{state.launching ? "Launching…" : "Launch App"}</Button>
-            <Button size="sm" onClick={start} disabled={!state.projectPath || state.launching || state.agentStartPending || (mode === "screen-ui-and-structure" && !panel.canSendAgentStart)}>
-              {state.agentStartPending ? "Asking Codex…" : isPaused ? "Resume" : state.result ? "Regenerate" : "Start"}</Button></>}
+            <Button size="sm" onClick={start} disabled={!state.projectPath || state.launching || state.agentStartPending || (needsAgentStart && !panel.canSendAgentStart)}>
+              {state.agentStartPending ? "Asking Codex…" : isPaused || resumable ? "Resume" : state.result ? "Regenerate" : "Start"}</Button></>}
       </div>
       {/* Fast runs have no auth gate to park on, so the sign-in has to happen before Start/Resume. */}
       {mode === "screen-ui-and-structure" && exploration === "fast" && !isRunning && <AppFlowWarning title="Sign in before using Fast">{FAST_MODE_AUTH_NOTICE}</AppFlowWarning>}
-      {mode === "screen-ui-and-structure" && !panel.canSendAgentStart && <AppFlowWarning title="Start this flow from chat">This host cannot send a follow-up message. Ask Codex in chat to start and service the App Flow decision loop.</AppFlowWarning>}
+      {needsAgentStart && !panel.canSendAgentStart && <AppFlowWarning title="Start this flow from chat">This host cannot send a follow-up message. Ask Codex in chat to start and service the App Flow decision loop.</AppFlowWarning>}
     </header>
     {isRunning && state.progress && <div className="flex items-center gap-3 border-b bg-muted/40 px-4 py-2"><Loader2 className="size-4 animate-spin" />
       <div className="min-w-0 flex-1"><div className="text-sm capitalize">{state.progress.phase}</div><div className="truncate text-xs text-muted-foreground">{state.progress.message}</div></div>
@@ -160,7 +166,7 @@ export function AppFlowView({ panel }: { panel: AppFlowPanel }) {
     <div className="min-h-0 flex-1 overflow-hidden">{!state.projectPath ? <Empty title="Choose a project" detail="Pick the React Native project folder to build or view its flow."
       action={<Button onClick={() => void panel.pickProject()} disabled={state.pickingProject}>{state.pickingProject ? <Loader2 className="animate-spin" /> : null}{state.pickingProject ? "Waiting for the folder…" : "Choose project folder"}</Button>} />
       : empty ? <Empty title="No app flow yet" detail="Build a visual map of every screen and navigation edge in this app." action={<Button onClick={start}
-          disabled={!state.available || state.agentStartPending || (mode === "screen-ui-and-structure" && !panel.canSendAgentStart)}>Start Building App Flow</Button>} />
+          disabled={!state.available || state.agentStartPending || (needsAgentStart && !panel.canSendAgentStart)}>Start Building App Flow</Button>} />
       : state.result && view === "ui-states" ? <AppFlowUiStatesGraph panel={panel} projectId={state.projectId} nodes={state.result.nodes} projectPath={isRunning ? undefined : state.projectPath}
           view={view} viewOptions={viewOptions} onViewChange={setView} />
       : state.result ? <AppFlowGraph panel={panel} projectId={state.projectId} nodes={state.result.nodes} edges={state.result.edges}

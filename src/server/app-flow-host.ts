@@ -6,6 +6,8 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as Sentry from "@sentry/node";
 import type { AppFlowHostEvent, AppFlowHostPorts } from "../app-flow/host.ts";
+import { requiresDecisionProvider } from "../app-flow/start-request.ts";
+import type { ExplorationMode } from "../shared/app-flow.ts";
 import { AppFlowRunStore, type SharedAppFlowRun } from "./app-flow-run-store.ts";
 import { captureServerError } from "./telemetry.ts";
 import { ExpectedOperationError } from "../shared/error-reporting.ts";
@@ -458,7 +460,16 @@ export class AppFlowHost {
     const projectPath = String(input.projectPath ?? "");
     const mode = input.mode === "screen-ui-and-structure" ? "screen-ui-and-structure" : "structure-only";
     const runId = randomUUID();
-    const decisions = mode === "screen-ui-and-structure"
+    /* A sweep only gets a decision provider when some model role can actually be asked something
+       (`requiresDecisionProvider`). Fast navigates through the app's own runtime navigator and
+       skips the auth-gate classifier, so handing it a provider only created a trap: the arrival
+       judge on a node with incomplete runtime evidence would enqueue a decision, and if nobody is
+       servicing `mobile_appflow_next_decision` the sweep blocks on an answer that never comes.
+       Without one the orchestrator installs the `uncertain` judge instead and the run is
+       deterministic end to end — which is what lets a Fast sweep start from the panel directly,
+       with no chat round trip. */
+    const explorationMode = typeof input.explorationMode === "string" ? input.explorationMode as ExplorationMode : undefined;
+    const decisions = requiresDecisionProvider(mode, explorationMode)
       ? new CodexAppFlowDecisionProvider(runId, projectPath, {
           onSuspended: () => { void this.services.pause(runId); },
         })

@@ -5,7 +5,7 @@ import { featureGateNotice } from "../../shared/app-flow.ts";
 import type { AppFlowPanel } from "../app-flow-panel.ts";
 import { recordUiTiming, setUiGauge } from "../telemetry.ts";
 import { GraphContext, GraphFocusPanel, Screenshot, type GraphView, type GraphViewOption } from "./app-flow-graph-shared.tsx";
-import { BAND_COLUMNS, COL_GAP, NODE_HEIGHT, NODE_WIDTH, STRUCTURE_NODE_HEIGHT, displayableUiStates, layoutTopology, nodeTitle, screenOptions, uiStateCount, type NodePlacement, type ResolvedEdge } from "./app-flow-layout.ts";
+import { BAND_COLUMNS, COL_GAP, NODE_HEIGHT, NODE_WIDTH, STRUCTURE_NODE_HEIGHT, captureStatus, displayableUiStates, layoutTopology, nodeTitle, routeBadge, screenOptions, uiStateCount, type CaptureTone, type NodePlacement, type ResolvedEdge } from "./app-flow-layout.ts";
 import { ManualRecorderPanel } from "./manual-recorder-panel.tsx";
 
 type Props = { nodes: AppFlowNode[]; edges: AppFlowEdge[]; runtimeEdges?: AppFlowEdge[]; entryScreenIds?: string[]; projectPath?: string; projectId: string; panel: AppFlowPanel;
@@ -15,22 +15,6 @@ const FIT_VIEW_OPTIONS = { padding: 0.12, minZoom: 0.7, maxZoom: 1 };
 
 function isUpwardHref(raw: string) { return raw.split(/[?#]/)[0].split("/").includes(".."); }
 function resolvedEdges(edges: AppFlowEdge[]): ResolvedEdge[] { return edges.filter((edge): edge is ResolvedEdge => Boolean(edge.to) && !isUpwardHref(edge.raw)); }
-type CaptureTone = "good" | "warn" | "muted";
-export function captureStatus(node: AppFlowNode): { label: string; tone: CaptureTone } | null {
-  if (node.origin === "chrome") return null;
-  const capture = node.capture;
-  if (capture?.stale) return { label: "Previous capture", tone: "warn" };
-  if (capture?.status === "unavailable") return { label: "Not in this build", tone: "muted" };
-  if (capture?.replayVerified) return { label: "Verified replay", tone: "good" };
-  if (capture?.pathCommands?.length) return { label: "Recorded path", tone: "good" };
-  if (capture?.pathVerified === false && capture.replayable) return { label: "Inferred path", tone: "warn" };
-  if (capture?.captureMethod === "deep-link") return { label: "Deep-link fallback", tone: "warn" };
-  if (capture?.captureMethod === "rendered") return { label: "Rendered", tone: "warn" };
-  if (capture?.captureMethod === "opportunistic") return { label: "Opportunistic", tone: "warn" };
-  if (!capture && node.deepLinkRejection) return { label: `Deep link rejected: ${node.deepLinkRejection.reason}`, tone: "muted" };
-  if (capture?.note) return { label: capture.note, tone: "muted" };
-  return { label: "Replay unavailable", tone: "muted" };
-}
 const TONE_DOT: Record<CaptureTone, string> = { good: "bg-emerald-400", warn: "bg-amber-400", muted: "bg-slate-500" };
 const TONE_TEXT: Record<CaptureTone, string> = { good: "text-emerald-600 dark:text-emerald-300/90", warn: "text-amber-600 dark:text-amber-300/90", muted: "text-muted-foreground" };
 
@@ -76,6 +60,7 @@ function ScreenNode({ data }: NodeProps) {
   const node = data.node as AppFlowNode;
   const graph = useContext(GraphContext)!;
   const title = nodeTitle(node); const status = captureStatus(node); const screenshot = node.capture?.screenshot;
+  const route = status?.fromMethod ? null : routeBadge(node);
   const variants = displayableUiStates(node);
   const [variantId, setVariantId] = useState<string | null>(null);
   const shown = variants.find(variant => variant.id === variantId && variant.screenshot != null) ?? null;
@@ -95,6 +80,8 @@ function ScreenNode({ data }: NodeProps) {
           {node.origin === "chrome" ? "Not a screen — nothing to capture" : node.urlPath ?? "In-app navigation only"}</div></div>
         {status && <div className={`flex items-center gap-1.5 text-[10px] ${TONE_TEXT[status.tone]}`} title={node.capture?.note ?? undefined}>
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[status.tone]}`} /><span className="truncate">{status.label}</span></div>}
+        {route && <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground" title={route.detail}>
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" /><span className="truncate">{route.label}</span></div>}
         {gate && <div className="flex items-center gap-1.5 text-[10px] text-violet-600 dark:text-violet-300/90" title={gate.detail}>
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" /><span className="truncate">{gate.label}</span></div>}
         {variants.length > 0 && <UiStateStrip node={node} title={title} variants={variants} selectedId={shown?.id ?? null} onSelect={setVariantId} />}

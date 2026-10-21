@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { App } from "@modelcontextprotocol/ext-apps";
+import type { AppFlowNode } from "../src/shared/app-flow.ts";
 import { FAST_MODE_AUTH_NOTICE, featureGateNotice } from "../src/shared/app-flow.ts";
+import { captureStatus, isResumable, routeBadge, type CaptureTally } from "../src/ui/components/app-flow-layout.ts";
 import { AppFlowPanel } from "../src/ui/app-flow-panel.ts";
 
 function fixture(canMessage = true, projectList: unknown[] = []) {
@@ -545,4 +547,55 @@ test("an app the server already has running is reported launched without a launc
   host.returnsStatus({ exists: true, state: "completed", projectId: "project-1" });
   await panel.refreshStatus();
   assert.equal(panel.getSnapshot().appLaunched, true);
+});
+
+const tally = (captured: number, unableToCapture: number, total: number): CaptureTally =>
+  ({ captured, unableToCapture, total, reasons: [] });
+
+test("a sweep that died partway still offers Resume, because its checkpoint is what the next start reads", () => {
+  // The bug this pins: a run that failed on screen 3 of 40 — "Multiple booted iOS simulators have
+  // the app installed" — flipped the button to Regenerate, which throws away 3 captured screens.
+  assert.equal(isResumable("failed", tally(3, 0, 40)), true);
+  assert.equal(isResumable("stopped", tally(3, 0, 40)), true);
+  assert.equal(isResumable("paused", tally(3, 0, 40)), true);
+});
+
+test("a sweep that tried every screen offers Regenerate, even with screens it could not capture", () => {
+  assert.equal(isResumable("completed", tally(40, 0, 40)), false, "a finished run has nothing to resume");
+  assert.equal(isResumable("completed", tally(38, 2, 40)), false);
+  // A route reached and not captured is not waiting for a resume; counting it as outstanding would
+  // pin a finished run to Resume forever.
+  assert.equal(isResumable("failed", tally(38, 2, 40)), false);
+});
+
+test("a run that died before its first screenshot is a fresh start, not a resume", () => {
+  assert.equal(isResumable("failed", tally(0, 0, 40)), false);
+  assert.equal(isResumable("failed", null), false, "and so is a document with no screens at all");
+});
+
+test("the winning route gets its own badge, so Deep Link + Fast says which half reached the screen", () => {
+  const node = (captureMethod: string) =>
+    ({ id: "Home", capture: { captureMethod } } as unknown as AppFlowNode);
+  assert.equal(routeBadge(node("deep-link"))?.label, "Route: deep link");
+  assert.equal(routeBadge(node("rendered"))?.label, "Route: runtime navigator");
+  assert.equal(routeBadge(node("saved-replay"))?.label, "Route: saved replay");
+  assert.equal(routeBadge(node("manual"))?.label, "Route: manual recording");
+  assert.equal(routeBadge(node("agent-navigation"))?.label, "Route: model walk");
+  assert.equal(routeBadge(node("opportunistic"))?.label, "Route: opportunistic");
+  assert.equal(routeBadge(node("unreached")), null, "a screen nothing reached has no route to name");
+  assert.equal(routeBadge({ id: "Home" } as unknown as AppFlowNode), null, "nor does a document written before the field existed");
+});
+
+test("the replay-trust badge does not hide the route, and does not print it twice either", () => {
+  // `captureStatus` answers how far to trust the replay and its branches sit above the method ones,
+  // so a deep-link win could show "Recorded path" with no way to tell which half of Deep Link +
+  // Fast did the work. The route badge is separate; `fromMethod` is what keeps them from doubling.
+  const deepLinkWalk = { id: "Home", capture: { captureMethod: "deep-link", pathCommands: ["agent-device tap Home"] } } as unknown as AppFlowNode;
+  const status = captureStatus(deepLinkWalk);
+  assert.equal(status?.label, "Recorded path");
+  assert.equal(status?.fromMethod, undefined, "so the route badge still renders beside it");
+  assert.equal(routeBadge(deepLinkWalk)?.label, "Route: deep link");
+
+  const bareDeepLink = { id: "Home", capture: { captureMethod: "deep-link" } } as unknown as AppFlowNode;
+  assert.equal(captureStatus(bareDeepLink)?.fromMethod, true, "this status already names the method");
 });

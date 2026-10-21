@@ -4,9 +4,11 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  AppFlowHost,
   CodexAppFlowDecisionProvider,
   DecisionSuspendedError,
   type AppFlowDecisionRequest,
+  type AppFlowHostServices,
 } from "../src/server/app-flow-host.ts";
 import { getProjectId } from "../src/app-flow/storage.ts";
 import { AppFlowRunStore } from "../src/server/app-flow-run-store.ts";
@@ -198,5 +200,46 @@ describe("clear", () => {
     assert.equal(await readFile(join(dataDir, "app-flows", "projects.json"), "utf8"), registry);
     assert.equal((await host.services.status({ projectPath })).state, "idle");
     await host.services.close?.();
+  });
+});
+
+describe("AppFlowHost.start", () => {
+  function host() {
+    const started: Array<{ input: Record<string, unknown>; hasDecisions: boolean }> = [];
+    const services = {
+      async start(input: Record<string, unknown>, context: { runId: string; decisions?: unknown }) {
+        started.push({ input, hasDecisions: Boolean(context.decisions) });
+      },
+      async pause() {}, async resume() {}, async cancel() {},
+      async status() { return {}; }, async result() { return {}; },
+      async screenshot() { return Buffer.alloc(0); }, async poll() { return []; },
+    } as unknown as AppFlowHostServices;
+    return { started, host: new AppFlowHost(services) };
+  }
+
+  it("gives a Fast sweep no decision provider, so nothing can block on a loop nobody services", async () => {
+    // Fast's ladder is the render rung alone and its auth gate is skipped, so the only model role
+    // left is the arrival judge — which the orchestrator degrades to `uncertain` when there is no
+    // provider. Handing it one instead would queue a decision for an agent that is not listening,
+    // because the panel starts a Fast sweep directly rather than through chat.
+    const { started, host: subject } = host();
+    const answer = await subject.start({ projectPath: "/projects/demo", mode: "screen-ui-and-structure", explorationMode: "fast" });
+    assert.equal(started.at(-1)!.hasDecisions, false);
+    assert.equal(answer.instructions, undefined, "no decision loop means no instructions to service one");
+  });
+
+  it("still gives every model-driven sweep its provider", async () => {
+    const { started, host: subject } = host();
+    for (const explorationMode of ["auto", "thorough", undefined]) {
+      const answer = await subject.start({ projectPath: "/projects/demo", mode: "screen-ui-and-structure", explorationMode });
+      assert.equal(started.at(-1)!.hasDecisions, true, `${explorationMode} is model-driven end to end`);
+      assert.match(answer.instructions ?? "", /mobile_appflow_next_decision/);
+    }
+  });
+
+  it("gives a structure-only build none, whatever exploration mode rides along", async () => {
+    const { started, host: subject } = host();
+    await subject.start({ projectPath: "/projects/demo", mode: "structure-only", explorationMode: "auto" });
+    assert.equal(started.at(-1)!.hasDecisions, false);
   });
 });

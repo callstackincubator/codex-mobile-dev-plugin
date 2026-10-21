@@ -1,5 +1,5 @@
 /** Pure topology layout for the App Flow graph. */
-import type { AppFlowEdge, AppFlowNode, AppFlowUiState } from "../../shared/app-flow.ts";
+import type { AppFlowEdge, AppFlowNode, AppFlowSweepStatus, AppFlowUiState } from "../../shared/app-flow.ts";
 
 export const NODE_WIDTH = 320;
 export const NODE_HEIGHT = 760;
@@ -340,4 +340,61 @@ export function uiStateOptions(nodes: AppFlowNode[]): UiStateOption[] {
     }
   }
   return options;
+}
+
+export type CaptureTone = "good" | "warn" | "muted";
+/**
+ * How the sweep actually got to this screen, as the winning ladder rung recorded it in
+ * `capture.captureMethod`.
+ *
+ * Its own badge rather than another branch in `captureStatus`, because the two answer different
+ * questions and a node has both answers at once: `captureStatus` says how far to trust the
+ * *replay* ("Recorded path", "Inferred path"), and those branches sit above the method ones, so a
+ * `Deep Link + Fast` sweep could win by deep link and still show "Recorded path" — leaving no way
+ * to tell which half of that mode did the work. `fromMethod` marks the statuses that already name
+ * the method so the node does not print it twice.
+ */
+export function routeBadge(node: AppFlowNode): { label: string; detail: string } | null {
+  switch (node.capture?.captureMethod) {
+    case "deep-link": return { label: "Route: deep link", detail: "Reached by opening this screen's URL." };
+    case "rendered": return { label: "Route: runtime navigator", detail: "Reached by dispatching navigation through the app's own navigator — no URL, no model." };
+    case "saved-replay": return { label: "Route: saved replay", detail: "Reached by replaying a previously recorded journey." };
+    case "manual": return { label: "Route: manual recording", detail: "Reached by replaying the journey you recorded by hand." };
+    case "agent-navigation": return { label: "Route: model walk", detail: "Reached by the model exploring the UI." };
+    case "opportunistic": return { label: "Route: opportunistic", detail: "Seen in passing while walking to a different screen, not by a journey to it." };
+    default: return null;
+  }
+}
+export function captureStatus(node: AppFlowNode): { label: string; tone: CaptureTone; fromMethod?: boolean } | null {
+  if (node.origin === "chrome") return null;
+  const capture = node.capture;
+  if (capture?.stale) return { label: "Previous capture", tone: "warn" };
+  if (capture?.status === "unavailable") return { label: "Not in this build", tone: "muted" };
+  if (capture?.replayVerified) return { label: "Verified replay", tone: "good" };
+  if (capture?.pathCommands?.length) return { label: "Recorded path", tone: "good" };
+  if (capture?.pathVerified === false && capture.replayable) return { label: "Inferred path", tone: "warn" };
+  if (capture?.captureMethod === "deep-link") return { label: "Deep-link fallback", tone: "warn", fromMethod: true };
+  if (capture?.captureMethod === "rendered") return { label: "Rendered", tone: "warn", fromMethod: true };
+  if (capture?.captureMethod === "opportunistic") return { label: "Opportunistic", tone: "warn", fromMethod: true };
+  if (!capture && node.deepLinkRejection) return { label: `Deep link rejected: ${node.deepLinkRejection.reason}`, tone: "muted" };
+  if (capture?.note) return { label: capture.note, tone: "muted" };
+  return { label: "Replay unavailable", tone: "muted" };
+}
+
+/**
+ * Whether a run that is no longer going still has screens nobody has tried.
+ *
+ * A sweep that stops or fails partway keeps its checkpoint (`sweep-progress.json`), and the next
+ * start picks the remaining routes up rather than redoing the captured ones — so the button has to
+ * say "Resume". It cannot read that off `sweepStatus`: that is `failed` both for a run that died
+ * before the first screenshot and for one that died after thirty, and the second is the case where
+ * "Regenerate" throws away work the user can see on the canvas. The tally is what tells them apart.
+ *
+ * `unableToCapture` counts toward the tried screens on purpose: a route the sweep reached and could
+ * not capture ("Unresolved route parameters") is not waiting for a resume, and leaving it out would
+ * pin a finished run to "Resume" forever.
+ */
+export function isResumable(sweepStatus: AppFlowSweepStatus | undefined, tally: CaptureTally | null): boolean {
+  if (!tally || sweepStatus === "completed") return false;
+  return tally.captured > 0 && tally.captured + tally.unableToCapture < tally.total;
 }
