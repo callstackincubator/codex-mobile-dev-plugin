@@ -105,7 +105,7 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost, proje
       projectPath,
       mode: z.enum(["structure-only", "screen-ui-and-structure"]).default("structure-only"),
       screenLimit: z.number().int().min(0).max(1000).optional(),
-      explorationMode: z.enum(["auto", "fast", "thorough"]).optional(),
+      explorationMode: z.enum(["auto", "fast", "thorough"]).default("fast"),
       deepLinkJudgeMode: z.enum(["on", "off"]).optional(),
       captureUiStates: z.boolean().optional(),
       judgeUnclearScreens: z.boolean().optional(),

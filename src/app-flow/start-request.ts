@@ -11,6 +11,9 @@ import type {
 
 /**
  * What an absent option means. One table so the service and its test cannot drift apart.
+ * `explorationMode` defaults to `fast`, matching the App Flow panel's own default: an unstated
+ * mode gets the deterministic runtime ladder and no decision loop, so a caller that never asked
+ * for a model is not handed one.
  * `deepLinkJudgeMode` defaults to `on`: skipping the judge changes what a sweep can tell about an
  * open, so an existing run keeps behaving exactly as it did until someone asks for the cheaper one.
  * `captureUiStates` defaults to off for the same reason: it adds device work to every screen.
@@ -20,7 +23,7 @@ import type {
  */
 export const APP_FLOW_START_DEFAULTS = {
   mode: 'structure-only',
-  explorationMode: 'auto',
+  explorationMode: 'fast',
   deepLinkJudgeMode: 'on',
   captureUiStates: false,
   judgeUnclearScreens: false
@@ -71,7 +74,8 @@ export function resolveAppFlowStart(input: StartAppFlowInput): ResolvedAppFlowSt
  * it to: its ladder is the render rung alone and it skips the auth-gate classifier, so the only
  * role still reachable is the arrival judge on a node whose runtime evidence came back incomplete
  * — which the orchestrator degrades to an `uncertain` verdict rather than a failed sweep. Auto and
- * thorough are model-driven end to end and a provider is not optional for them.
+ * thorough are model-driven end to end and a provider is not optional for them. Fast being the
+ * default, an unstated exploration mode needs no provider either.
  *
  * `judgeUnclearScreens` is the one thing that changes that answer for Fast, and it is why this
  * takes the whole request rather than the mode pair: asking for the judge *is* asking for the

@@ -383,8 +383,13 @@ test('the judge switch is what makes a Fast sweep need a decision provider', () 
   assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast', false), false)
   assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast', true), true)
 
+  // An unstated mode is Fast, so it answers the question exactly as Fast does.
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', undefined), false)
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', undefined, false), false)
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', undefined, true), true)
+
   // Every other mode is model-driven end to end, so the switch changes nothing for them.
-  for (const mode of ['auto', 'thorough', undefined] as const)
+  for (const mode of ['auto', 'thorough'] as const)
     for (const judge of [undefined, false, true])
       assert.equal(requiresDecisionProvider('screen-ui-and-structure', mode, judge), true)
 
@@ -622,8 +627,8 @@ test('a Fast sweep starts without a decision provider; every other mode still de
   assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast'), false)
   assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'auto'), true)
   assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'thorough'), true)
-  // The default exploration mode is `auto`, so an unstated one is not Fast.
-  assert.equal(requiresDecisionProvider('screen-ui-and-structure', undefined), true)
+  // The default exploration mode is `fast`, so an unstated one is Fast.
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', undefined), false)
   // A structure build never asked for one in the first place.
   assert.equal(requiresDecisionProvider('structure-only', 'auto'), false)
   assert.equal(requiresDecisionProvider(undefined, 'auto'), false)

@@ -247,7 +247,7 @@ describe("AppFlowHost.start", () => {
 
   it("still gives every model-driven sweep its provider", async () => {
     const { started, host: subject } = host();
-    for (const explorationMode of ["auto", "thorough", undefined]) {
+    for (const explorationMode of ["auto", "thorough"]) {
       const answer = await subject.start({ projectPath: "/projects/demo", mode: "screen-ui-and-structure", explorationMode });
       assert.equal(started.at(-1)!.hasDecisions, true, `${explorationMode} is model-driven end to end`);
       assert.match(answer.instructions ?? "", /mobile_appflow_next_decision/);
