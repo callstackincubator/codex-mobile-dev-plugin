@@ -40,6 +40,16 @@ export function recordUiTiming(name: string, duration: number) {
   window.record(duration);
 }
 
+// Times a panel operation's round trip and counts its failures. Work that finishes after a surface or
+// device change is not attributed to the new context.
+export async function measureUiOperation<T>(timing: string, failure: string, work: () => Promise<T>): Promise<T> {
+  const startedAt = performance.now();
+  const context = attributes;
+  try { return await work(); }
+  catch (error) { if (attributes === context) countUiEvent(failure); throw error; }
+  finally { if (attributes === context) recordUiTiming(timing, performance.now() - startedAt); }
+}
+
 export function setUiGauge(name: string, value: number) {
   if (running && Number.isFinite(value)) gauges.set(name, value);
 }
@@ -59,6 +69,33 @@ function recordVisibleTime(now: number) {
   const seconds = (now - visibleSince) / 1000;
   Sentry.metrics.count("ui.surface.visible_seconds", seconds, { attributes });
   visibleSince = now;
+}
+
+function recordUiMemoryGauge(name: string, bytes: number) {
+  if (Number.isFinite(bytes) === false || bytes < 0) return;
+  Sentry.metrics.gauge(name, bytes, { unit: "byte", attributes });
+}
+
+function sampleUiMemory() {
+  if (running === false || document.visibilityState === "hidden") return;
+  const browserPerformance: Performance & { readonly memory?: {
+    readonly usedJSHeapSize: number;
+    readonly totalJSHeapSize: number;
+    readonly jsHeapSizeLimit: number;
+  } | null } = performance;
+  const memory = browserPerformance.memory;
+  const supported = memory !== undefined && memory !== null;
+  const supportValue = Number(supported);
+  Sentry.metrics.gauge("ui.memory.supported", supportValue, { attributes });
+  if (memory === undefined || memory === null) return;
+  recordUiMemoryGauge("ui.memory.heap_used", memory.usedJSHeapSize);
+  recordUiMemoryGauge("ui.memory.heap_total", memory.totalJSHeapSize);
+  recordUiMemoryGauge("ui.memory.heap_limit", memory.jsHeapSizeLimit);
+}
+
+function collectUiMeasurements() {
+  sampleUiMemory();
+  flushUiMeasurements();
 }
 
 export function flushUiMeasurements() {
@@ -206,15 +243,17 @@ export function startUiTelemetry(app: App) {
   running = enabled;
   if (running === false) return;
   const requestedView = document.documentElement.dataset.view;
-  const view = requestedView === "recording" || requestedView === "workspace" || requestedView === "comparison" ? requestedView : "panel";
-  attributes = { ...attributes, view };
+  const view = requestedView === "recording" || requestedView === "workspace" || requestedView === "comparison" || requestedView === "tracesift" ? requestedView : "panel";
+  if (view === "recording" || view === "comparison" || view === "tracesift") surface = view;
+  attributes = { ...attributes, surface, view };
   Sentry.setTags({ component: "ui", surface, view });
   Sentry.setAttributes(attributes);
   Sentry.metrics.count("ui.panel.opened", 1, { attributes });
   if (document.visibilityState !== "hidden") visibleSince = performance.now();
   document.addEventListener("visibilitychange", visibilityChanged);
   frameId = requestAnimationFrame(observeFrames);
-  timer = setInterval(flushUiMeasurements, TELEMETRY_INTERVAL_MS);
+  sampleUiMemory();
+  timer = setInterval(collectUiMeasurements, TELEMETRY_INTERVAL_MS);
   if (typeof PerformanceObserver !== "undefined") {
     const supported = PerformanceObserver.supportedEntryTypes;
     observer = new PerformanceObserver(list => {

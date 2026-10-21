@@ -6,8 +6,9 @@ import { formatLogContext, logKey } from "../shared/logs.ts";
 import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationMessage } from "../shared/screen-annotations.ts";
 import type { ScreenAnnotation } from "../shared/screen-annotations.ts";
 import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
+import type { EncodedScreenshotAttachment } from "./screenshot-attachment.ts";
 
-export type ScreenshotAttachment = { id: string; data: string; simulator: SimulatorDevice };
+export type ScreenshotAttachment = EncodedScreenshotAttachment & { id: string; simulator: SimulatorDevice };
 
 function composerUnavailable(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
@@ -222,7 +223,10 @@ export class PanelContext {
       const log = this.attached;
       const devices = this.simulators.map(device => {
         const role = device.udid === selected?.udid ? "Active" : "Visible";
-        if (device.kind === "physical" && device.platform === "ios") return `${role} physical iOS device: ${device.name}. UDID: ${device.udid}. State: ${device.state}. Transport: ${device.transportType}. The panel mirrors this device through an interactive HEVC stream with pointer taps and drags. Native unified logs use mobile_logs_session with platform ios, kind physical, and this hardware UDID. They do not require launching the app; ordinary print output is unavailable and private values may be redacted. Physical iOS keyboard input, hardware buttons, screenshots, and agent-device control are not implemented yet.`;
+        if (device.kind === "physical" && device.platform === "ios") {
+          const transport = device.transportType === undefined ? "Transport not reported." : `Transport: ${device.transportType}.`;
+          return `${role} physical iOS device: ${device.name}. UDID: ${device.udid}. State: ${device.state}. ${transport} The panel mirrors this device through an interactive HEVC stream with pointer taps and drags. Native unified logs use mobile_logs_session with platform ios, kind physical, and this hardware UDID. They do not require launching the app; ordinary print output is unavailable and private values may be redacted. Physical iOS keyboard input, hardware buttons, screenshots, and agent-device control are not implemented yet.`;
+        }
         if (device.kind === "physical" && device.platform === "android") return `${role} physical Android device: ${device.name}. Serial: ${device.udid}. State: ${device.state}. Transport: ${device.transportType}. Use this serial with the Mobile Dev Android tools for platform android.`;
         return `${role} ${device.platform === "android" ? "Android" : "iOS"} simulator: ${device.name}. Device ID: ${device.udid}. State: ${device.state}. Use this ${device.platform === "android" ? "serial" : "UDID"} with the Mobile Dev tools for platform ${device.platform ?? "ios"}.`;
       });
@@ -234,7 +238,7 @@ export class PanelContext {
         : "Mobile Dev has no selected simulator." },
       ...(log ? [{ type: "text" as const, text: formatLogContext(log), _meta: { "openai/title": `${log.level}: ${log.message.replace(/\s+/g, " ").trim().slice(0, 70)}` } }] : []),
       ...this.screenshots.map(screenshot => ({
-        type: "image" as const, mimeType: "image/png", data: screenshot.data,
+        type: "image" as const, mimeType: screenshot.mimeType, data: screenshot.data,
         _meta: { "openai/title": `Screenshot of ${screenshot.simulator.name} (${screenshot.simulator.udid})`, "mobile-dev/screenshotId": screenshot.id },
       })),
       ...(this.annotations.length ? [{ type: "text" as const, annotations: { audience: ["assistant" as const] }, text: ANNOTATION_EDIT_GUIDANCE }] : []),

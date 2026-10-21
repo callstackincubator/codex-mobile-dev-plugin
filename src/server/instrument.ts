@@ -1,3 +1,4 @@
+import "./http-runtime.ts";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

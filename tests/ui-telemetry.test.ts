@@ -13,6 +13,167 @@ function contains(text: string, fragment: string, expected = true) {
   assert.equal(included, expected, `Telemetry fragment: ${fragment}`);
 }
 
+test("UI heap collection uses the existing timer, active context and byte units in both environments", async t => {
+  const root = process.cwd();
+  const built = await build({
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts";', resolveDir: root, loader: "ts" },
+    bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
+    define: { "process.env.NODE_ENV": '"production"' },
+  });
+  for (const environment of ["development", "release"]) {
+    const view = environment === "development" ? "recording" : "comparison";
+    const html = `<html data-view="${view}"><head><meta name="mobile-dev-environment" content="${environment}">${identityMeta}</head></html>`;
+    const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
+    t.after(() => dom.window.close());
+    const window = dom.window;
+    let visibility = "visible";
+    let reads = 0;
+    const heap = { usedJSHeapSize: 10, totalJSHeapSize: 20, jsHeapSizeLimit: 100 };
+    Object.defineProperty(window.document, "visibilityState", { get: () => visibility });
+    Object.defineProperty(window.performance, "getEntriesByType", { value: () => [] });
+    Object.defineProperty(window.performance, "getEntries", { value: () => [] });
+    Object.defineProperty(window.performance, "memory", { get: () => { reads++; return heap; } });
+    const collectionTimers = new Map<number, () => void>();
+    const schedule = window.setInterval.bind(window);
+    const cancel = window.clearInterval.bind(window);
+    window.setInterval = (handler, delay, ...args) => {
+      const id = schedule(handler, delay, ...args);
+      if (delay === 30_000 && typeof handler === "function") collectionTimers.set(id, () => handler(...args));
+      return id;
+    };
+    window.clearInterval = id => {
+      collectionTimers.delete(id);
+      cancel(id);
+    };
+    const bodies: string[] = [];
+    window.fetch = async (_url, options) => {
+      const body = String(options?.body ?? "");
+      bodies.push(body);
+      return new Response("", { status: 200 });
+    };
+    window.eval(built.outputFiles[0].text);
+    const api = window.Telemetry;
+    api.startUiTelemetry({ async callServerTool() { return { content: [] }; } });
+    assert.equal(reads, 1);
+    assert.equal(collectionTimers.size, 1);
+    const collect = [...collectionTimers.values()][0];
+    api.setUiSurface("logs");
+    api.setUiTelemetryContext({ device_platform: "ios", device_kind: "simulator" });
+    heap.usedJSHeapSize = 30;
+    heap.totalJSHeapSize = 40;
+    collect();
+    api.setUiSurface("performance");
+    api.setUiTelemetryContext({ device_platform: "android", device_kind: "emulator" });
+    heap.usedJSHeapSize = 50;
+    heap.totalJSHeapSize = 60;
+    collect();
+    assert.equal(reads, 3);
+    visibility = "hidden";
+    const hide = new window.Event("visibilitychange");
+    window.document.dispatchEvent(hide);
+    heap.usedJSHeapSize = 70;
+    collect();
+    assert.equal(reads, 3, "Hidden panels do not read the heap API.");
+    visibility = "visible";
+    const show = new window.Event("visibilitychange");
+    window.document.dispatchEvent(show);
+    collect();
+    assert.equal(reads, 4);
+    await api.stopUiTelemetry();
+    assert.equal(collectionTimers.size, 0);
+    collect();
+    assert.equal(reads, 4, "Stopped telemetry performs no further memory reads.");
+    const captured = bodies.join("\n");
+    const metrics = [];
+    for (const line of captured.split("\n")) {
+      if (line.includes('"items"') === false) continue;
+      const payload = JSON.parse(line);
+      for (const metric of payload.items) {
+        if (metric.name.startsWith("ui.memory.")) metrics.push(metric);
+      }
+    }
+    const used = metrics.filter(metric => metric.name === "ui.memory.heap_used");
+    const usedValues = used.map(metric => metric.value);
+    const usedSurfaces = used.map(metric => metric.attributes.surface.value);
+    assert.deepEqual(usedValues, [10, 30, 50, 70]);
+    assert.deepEqual(usedSurfaces, [view, "logs", "performance", "performance"]);
+    assert.equal(used[1].attributes.device_platform.value, "ios");
+    assert.equal(used[1].attributes.device_kind.value, "simulator");
+    assert.equal(used[2].attributes.device_platform.value, "android");
+    assert.equal(used[2].attributes.device_kind.value, "emulator");
+    const totals = metrics.filter(metric => metric.name === "ui.memory.heap_total");
+    const totalValues = totals.map(metric => metric.value);
+    assert.deepEqual(totalValues, [20, 40, 60, 60]);
+    const limits = metrics.filter(metric => metric.name === "ui.memory.heap_limit");
+    const limitValues = limits.map(metric => metric.value);
+    assert.deepEqual(limitValues, [100, 100, 100, 100]);
+    const support = metrics.filter(metric => metric.name === "ui.memory.supported");
+    const supportValues = support.map(metric => metric.value);
+    assert.deepEqual(supportValues, [1, 1, 1, 1]);
+    for (const metric of metrics) {
+      if (metric.name !== "ui.memory.supported") assert.equal(metric.unit, "byte");
+      assert.equal(metric.attributes["sentry.environment"].value, environment);
+      assert.equal(metric.attributes.component.value, "ui");
+      assert.equal(metric.attributes.view.value, view);
+      assert.equal(metric.attributes["user.id"], undefined);
+      assert.equal(metric.attributes.telemetry_session, undefined);
+    }
+  }
+});
+
+test("UI heap collection handles unavailable APIs, invalid bytes, hidden startup and opt-out", async t => {
+  const root = process.cwd();
+  const built = await build({
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts";', resolveDir: root, loader: "ts" },
+    bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
+    define: { "process.env.NODE_ENV": '"production"' },
+  });
+  const cases = [
+    { name: "unavailable", memory: undefined, hidden: false, off: false, expectedReads: 1 },
+    { name: "null", memory: null, hidden: false, off: false, expectedReads: 1 },
+    { name: "invalid", memory: { usedJSHeapSize: NaN, totalJSHeapSize: -1, jsHeapSizeLimit: Infinity }, hidden: false, off: false, expectedReads: 1 },
+    { name: "hidden", memory: undefined, hidden: true, off: false, expectedReads: 0 },
+    { name: "disabled", memory: undefined, hidden: false, off: true, expectedReads: 0 },
+  ];
+  for (const scenario of cases) {
+    const enabledMeta = scenario.off ? '<meta name="mobile-dev-telemetry" content="off">' : "";
+    const html = `<head><meta name="mobile-dev-environment" content="development">${identityMeta}${enabledMeta}</head>`;
+    const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
+    t.after(() => dom.window.close());
+    const window = dom.window;
+    let reads = 0;
+    const visibility = scenario.hidden ? "hidden" : "visible";
+    Object.defineProperty(window.document, "visibilityState", { value: visibility });
+    Object.defineProperty(window.performance, "getEntriesByType", { value: () => [] });
+    Object.defineProperty(window.performance, "getEntries", { value: () => [] });
+    Object.defineProperty(window.performance, "memory", { get: () => { reads++; return scenario.memory; } });
+    const bodies: string[] = [];
+    window.fetch = async (_url, options) => {
+      const body = String(options?.body ?? "");
+      bodies.push(body);
+      return new Response("", { status: 200 });
+    };
+    window.eval(built.outputFiles[0].text);
+    const api = window.Telemetry;
+    api.startUiTelemetry({ async callServerTool() { return { content: [] }; } });
+    await api.stopUiTelemetry();
+    assert.equal(reads, scenario.expectedReads, scenario.name);
+    const captured = bodies.join("\n");
+    contains(captured, "ui.memory.heap_", false);
+    contains(captured, "ui.memory.supported", scenario.expectedReads === 1);
+    for (const line of captured.split("\n")) {
+      if (line.includes('"items"') === false) continue;
+      const payload = JSON.parse(line);
+      for (const metric of payload.items) {
+        if (metric.name !== "ui.memory.supported") continue;
+        const expectedSupport = scenario.name === "invalid" ? 1 : 0;
+        assert.equal(metric.value, expectedSupport, scenario.name);
+      }
+    }
+    if (scenario.off) assert.equal(bodies.length, 0);
+  }
+});
+
 test("browser errors use the served environment regardless of live-reload markers", async t => {
   const root = process.cwd();
   const built = await build({
@@ -68,7 +229,7 @@ test("browser errors use the served environment regardless of live-reload marker
 test("browser telemetry labels surface measurements, propagates traces, and flushes on teardown", async t => {
   const root = process.cwd();
   const built = await build({
-    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts"; export { LogList } from "./src/ui/log-list.ts"; export { LogsPanel } from "./src/ui/logs-panel.ts"; export { DeviceAppsStore } from "./src/ui/device-apps.ts";', resolveDir: root, loader: "ts" },
+    stdin: { contents: 'export * from "./src/ui/telemetry.ts"; export { RecordingController } from "./src/ui/recording-controller.ts"; export * as Sentry from "@sentry/react"; export { ScreenAnnotationsStore } from "./src/ui/screen-annotations.ts"; export { PanelContext } from "./src/ui/model-context.ts"; export { LogList } from "./src/ui/log-list.ts"; export { LogsPanel } from "./src/ui/logs-panel.ts"; export { DeviceAppsStore } from "./src/ui/device-apps.ts"; export { encodeScreenshotAttachment } from "./src/ui/screenshot-attachment.ts";', resolveDir: root, loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
@@ -216,6 +377,31 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   assert.equal(calls[1], input, "High frequency input stays on the original MCP path.");
   api.setUiSurface("simulator");
   api.recordUiTiming("ui.screenshot.capture", 12);
+  window.Blob = Blob;
+  let encodingFailure = false;
+  let encodingSurfaceChange = false;
+  let closedBitmaps = 0;
+  window.createImageBitmap = async () => ({ width: 1200, height: 2600, close() { closedBitmaps++; } });
+  window.OffscreenCanvas = class {
+    constructor(width, height) { this.width = width; this.height = height; }
+    getContext() { return { fillRect() {}, drawImage() {} }; }
+    async convertToBlob() {
+      if (encodingSurfaceChange) { api.setUiSurface("logs"); now += 999; }
+      else now += encodingFailure ? 25 : 15;
+      if (encodingFailure) throw new window.Error("JPEG encoding failed");
+      const bytes = new Uint8Array([255, 216, 255, 217]);
+      return new Blob([bytes], { type: "image/jpeg" });
+    }
+  };
+  const attachment = await api.encodeScreenshotAttachment("AQID");
+  assert.equal(attachment.mimeType, "image/jpeg");
+  encodingFailure = true;
+  await assert.rejects(api.encodeScreenshotAttachment("AQID"), /JPEG encoding failed/);
+  encodingFailure = false;
+  encodingSurfaceChange = true;
+  await api.encodeScreenshotAttachment("AQID");
+  assert.equal(closedBitmaps, 3);
+  api.setUiSurface("simulator");
   api.countUiEvent("ui.annotations.inspection_truncated");
   await app.callServerTool({ name: "mobile_ios_mirror_capture_screenshot", arguments: { sessionId: "PRIVATE_DEVICE_SESSION", image: "PRIVATE_SCREENSHOT" } });
   const screenshotContext = calls[2]._meta["mobile-dev/telemetry"];
@@ -304,6 +490,22 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   assert.equal(encoded.includes("p95FrameIntervalMs"), false, "Device frame pacing remains local.");
   contains(encoded, "ui.recording.derive.mean");
   contains(encoded, "ui.screenshot.capture.mean");
+  const screenshotMetrics = [];
+  for (const line of encoded.split("\n")) {
+    if (line.includes('"items"') === false) continue;
+    const payload = JSON.parse(line);
+    for (const metric of payload.items) {
+      if (metric.name.startsWith("ui.screenshot.encode.")) screenshotMetrics.push(metric);
+    }
+  }
+  assert.equal(screenshotMetrics.length, 4);
+  const screenshotMean = screenshotMetrics.find(metric => metric.name === "ui.screenshot.encode.mean");
+  assert.equal(screenshotMean.value, 20);
+  assert.equal(screenshotMean.unit, "millisecond");
+  assert.equal(screenshotMean.attributes.surface.value, "simulator");
+  assert.equal(screenshotMean.attributes.device_platform.value, "ios");
+  assert.equal(screenshotMean.attributes.device_kind.value, "physical");
+  contains(encoded, "/9j/2Q==", false);
   contains(encoded, "ui.annotations.inspection_truncated");
   contains(encoded, '"surface":{"value":"logs"');
   contains(encoded, '"surface":{"value":"performance"');

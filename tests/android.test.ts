@@ -249,3 +249,28 @@ test("explicit video reset is scoped to its session and drops delta frames until
   for (const socket of fake.sockets.clients) socket.send(packet());
   assert.equal((await streams.batch(first, waiting.sequence)).packets.length, 1);
 });
+
+test("serve-emu rejections surface their message, or a fixed one when they carry none", async t => {
+  const replies: [number, unknown][] = [
+    [200, { ok: true, value: 1 }],
+    [200, { ok: false, error: "mode must be clean or live" }],
+    [400, { ok: false, error: { code: "invalid_request", message: "bad body" } }],
+    [200, { ok: false, error: "" }],
+    [200, { ok: false }],
+    [500, "not json"],
+  ];
+  const server = createServer((_request, response) => {
+    const [status, body] = replies.shift()!;
+    response.writeHead(status, { "Content-Type": "application/json" }).end(typeof body === "string" ? body : JSON.stringify(body));
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const url = new URL(`http://127.0.0.1:${(server.address() as { port: number }).port}`);
+  const backend = new ServeEmu();
+  assert.deepEqual(await backend.json(url, "/api/x"), { ok: true, value: 1 });
+  await assert.rejects(backend.json(url, "/api/x"), /^Error: mode must be clean or live$/);
+  await assert.rejects(backend.json(url, "/api/x"), /^Error: bad body$/);
+  await assert.rejects(backend.json(url, "/api/x"), /^Error: serve-emu rejected the request\.$/);
+  await assert.rejects(backend.json(url, "/api/x"), /^Error: serve-emu rejected the request\.$/);
+  await assert.rejects(backend.json(url, "/api/x"), /^Error: serve-emu returned HTTP 500 for \/api\/x\.$/);
+});

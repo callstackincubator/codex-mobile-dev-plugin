@@ -4,8 +4,8 @@
 
 | Tool | Action |
 | --- | --- |
-| `mobile_open_simulator` | Open the native panel and start the bundled backend |
-| `mobile_open_workspace` | Open fullscreen with logs on the left and the simulator on the right |
+| `mobile_open_simulator` | Open the native panel, optionally targeting a platform, device kind, or discovered device ID |
+| `mobile_open_workspace` | Open fullscreen with the same optional device targeting |
 | `mobile_list_simulators` | Start the bundled backend if needed and list devices |
 | `mobile_choose_devices` | Ask through the native inline form for one or several verified task targets |
 | `mobile_list_ios_devices` | Discover physical iPhones and iPads with USB/Wi-Fi, pairing state, UDID, and CoreDevice ID |

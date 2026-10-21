@@ -2,6 +2,49 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+Since 0.1.159, remembered physical iOS devices without a reported transport are
+successful discovery results. Discovery failures use `ios.devices.discovery`
+handled-error reporting with the existing scrubbing and outcome metrics. Repeated
+failures report once per continuous category episode; a successful discovery resets
+the episode. Diagnostics identify schema fields without including device values.
+Discovery sampling exclusions, UI timings and surface attribution retain their
+existing boundaries. No new collector or native telemetry is added.
+
+Since 0.1.158, opening device intent is applied before screen connections start.
+Existing MCP operation traces, `ui.video.first_frame`, rendering/input timings,
+and discovery/error measurements remain on the active path with their existing
+boundaries and units. Layout and device context follow the selected target; target
+arguments and device IDs are not added to telemetry. Startup waits for the host's
+opening input or result, and teardown prevents deferred device startup.
+
+Since 0.1.147, server processes select the bundled Undici 8.12.1 HTTP dispatcher
+before telemetry initialization and HTTP requests. This avoids the uncaught macOS
+`setTypeOfService EINVAL` exception in Codex's Node 24.19.0 built-in dispatcher.
+Node's existing `fetch` and Web API globals remain in use. Sentry's outgoing HTTP
+instrumentation, sampled MCP traces, error capture, scrubbing, environments and
+opt-out retain their existing boundaries. Process shutdown flushes telemetry
+before destroying the owned dispatcher and cancelling remaining HTTP requests.
+No socket monkey patch or process-level exception suppression is added.
+
+Since 0.1.143, `ui.memory.heap_used`, `ui.memory.heap_total` and
+`ui.memory.heap_limit` report Chromium's `performance.memory` JavaScript heap
+values in bytes. They sample at UI telemetry startup and on the existing
+30-second collection timer while the panel is visible, using the active surface,
+view, layout and device context in both development and release environments.
+Recording and comparison cards initialize their surface before startup collection.
+`ui.memory.supported` reports 1 when that API is available and 0 otherwise;
+unavailable APIs emit no heap values, and negative or non-finite values are
+discarded. Hidden panels and telemetry opt-out perform no memory reads. Teardown
+clears the existing collection timer. No new timer, Replay, profiling, DOM
+recording or native instrumentation is added.
+
+These are non-standard JavaScript heap estimates, not total renderer RSS or GPU,
+video or image memory. Chromium can share heaps across frames or omit separate
+worker heaps, so surface attributes identify the sampling context rather than
+exclusive ownership of the measured memory. Samples uploaded before a renderer
+crash can show preceding heap growth; an abrupt crash may lose the final buffered
+samples and is not itself reported by this collection.
+
 App Flow uses the `app-flow` UI surface. `ui.app_flow.start` measures the start request, `ui.app_flow.start_to_progress` ends on the first progress event, and `ui.app_flow.graph_process` measures local graph layout/derivation. Fixed complete/error counters record terminal outcomes. `app_flow.decision_wait.duration` measures time parked for the active Codex agent, with a fixed outcome; this time is excluded from the engine's exploration budget. Deterministic Fast additionally records `app_flow.runtime.connect` with a fixed ready/recovered/unavailable outcome (a run that adopts an already-launched app probes its Metro port once before the sweep and records that check on this same series; `recovered` means the dev server had to be restarted first), `app_flow.runtime.command` for the `navigate`, `readiness`, `nav-state` and `links` boundaries, and `app_flow.runtime.state` counts for its persistent CDP connection lifecycle. `nav-state` is a new `operation` on the existing `command` series rather than a new name, so the cost of reading navigator state over the persistent connection stays comparable with the CLI read it replaces. Fast also records `app_flow.runtime.settle` (the readiness poll loop's duration, with a fixed stop reason of settled/stable-not-quiet/timeout/budget/no-answer), `app_flow.runtime.verify` (the arrival check's duration, with a fixed runtime/judge path and the verdict), and `app_flow.runtime.navigate` counts with a fixed exact/nested/refused outcome. These are one measurement per operation: the settle loop's individual polls, which run every 40ms, are deliberately not metered. The per-run Fast log file (`<project>/runs/fast-*.jsonl`) is local diagnostic output only and never feeds telemetry. These measurements describe plugin runtime work, not device rendering or app performance. While a sweep runs, the engine republishes the graph document on a bounded interval and the panel re-reads it on a similar one so captures appear without ending the run; status, decision, and result polling are excluded from MCP trace sampling. Prompts, responses, screenshots, source hashes, runtime fingerprints, project paths, run/request IDs, graph content, device identifiers, route names, params, and token data are never attached to these measurements. UI timing windows flush on surface changes and disposal; provider timers are cleared on submit, cancellation, suspension, and server teardown.
 
 App Flow's UI-state pass opens the UI states a screen's own source proves it can open, photographs each one and rolls the app back. It runs in two places that share one per-screen primitive and therefore one set of series: inside the screen sweep, for each delivered screen, when the panel's per-project "Capture UI states" switch is on (the sweep's start request carries one `captureUiStates` boolean, default off, and the pass reuses the sweep's own CDP connection, device and capture context), and as the standalone `mobile_appflow_explore_ui` tool, which opens its own connection to an already-launched app. Folding it into the sweep moved the measurements with it: they now describe the sweep's active path and carry the same `surface: 'app-flow'` attribution as the rest of the sweep. It records `app_flow.runtime.presentation`, one millisecond measurement per opened presentation with a closed `outcome` (`captured`/`failed`) and `kind` (`state`/`control`/`mount`) pair; `app_flow.runtime.presentation_pass`, one millisecond measurement per screen's pass with a closed `outcome` (`completed`/`failed`/`cancelled`) — a deliberate change of meaning: it previously covered one whole standalone run, and a sweep with the switch on now emits one per delivered screen, covering that screen's binding collection, listing, open/settle/screenshot/rollback of every state and the final unwind, never the sweep's own work around it; and `app_flow.runtime.presentation_unbound`, a single bounded count per screen's pass (the live-binding collection runs per screen, because bindings only exist for what is mounted) of the live bindings Metro's source maps could not resolve onto a source site (attribute `stage`: `configure` is the unplaced total; `no-frames`, `foreign-frames` and `symbolicate-failed` are emitted beside it only when non-zero and say which stage of the join stopped, as counts of records with no readable bundle frame, frames from another server, and failed Metro lookups; the join also matches a stack's bundle URL by port rather than origin, since the device reaches Metro as `127.0.0.1` while the host names it `localhost`, and the first symbolication timeout is 15 seconds and the setup command's 20 seconds, deliberate changes to what the join counts as a failure; the run log's `uiStates.join` carries the same stage counts plus how many records were emitted and how many matches the device attached, and `uiStates.failure` now names the stage a failed pass stopped in — `setup-timeout`, `setup-failed`, `list-timeout`, `list-failed` or `pass-failed` — instead of always `pass-failed`), counted once per screen's pass rather than once per binding; and `app_flow.runtime.presentation_refused`, a bounded count per screen's pass and closed-set `reason` (`unbound`, `not-in-view`, `disabled`, `no-owner`, `ambiguous-owner`, `no-control`, `ambiguous-control`, `not-loaded`, `unsupported`, `no-binding`, `ambiguous-binding`, `ambiguous-callback`, `unmet-condition`, `already-open`, `owner-mismatch`, `already-mounted`, `target`, `empty`, `other`) of presentations the device refused, with a `stage` of `list` or `open`, so a screen that offers nothing can be told apart from one whose controls could not be matched to their source; `presentation_unbound` now also counts opener-JSX records (the entry leg) the source join could not place, not only hook bindings, which is a deliberate widening of what it counts; and `app_flow.runtime.presentation_open_session`, one millisecond measurement per sweep (or run) for scanning the project's static catalog and attaching to the runtime, with a closed `outcome` (`ready`/`unavailable`), so the once-per-project cost is visible apart from the per-screen cost. A failure to capture UI states never fails the sweep; the unexpected ones (a transport failure mid-pass, an unwind that did not reach level 0) go through the server error reporter under the operation `app_flow.capture_ui_states`, while benign ones (no runtime to attach to, no UI states in the source) are counted as expected outcomes, and a failed unwind additionally stops further UI-state capture for the rest of that sweep. State openers are now gated on their opener JSX being live on the focused screen exactly as controls are, so `unbound` now means that an opener's JSX was not bound to a live fiber (previously it also covered a state with no binding, which is the new `no-binding` reason); this is a deliberate change of what the refusal counts mean, and the five new reasons are closed-set. Mount previews now carry the reference's two export guards and a drawn-content check, which add four more closed-set reasons: `owner-mismatch` (the named export is not the named component), `already-mounted` (the app already renders that component, so a second cold copy would show none of the live provider state), `target` (the expected component did not mount) and `empty` (it mounted but nothing under it draws). The last two come from a new `presentation-content` command, billed under `app_flow.runtime.command` like the others, which returns only three numbers and never reads app content. The settle after an open is now bounded at four seconds instead of inheriting the thirty-second route-settle bound: that bound is sized for a deep link resolving a whole route, and a presentation opens over an already-settled screen, so the full thirty seconds was being paid on every screen whose state drew nothing and the blank frame was then photographed anyway. Openers reaching the same destination are listed once, and the run log's `uiStates` record gains `aliased` (those duplicates, included in `candidates`) and `listedKinds` (listed counts by kind). A control's dismissal is now confirmed by the presented content leaving the committed tree rather than by the controller's shape, which never changed and so made every control close run to its four-second deadline and fail. The local run log (never sent anywhere) gains a per-node `uiStates` record of counts and closed-set categories (candidates, refused at list and at open by reason, opened, captured, unplaced records, whether the unwind reached level 0 and how a dismissal was confirmed, and whether that screen latched capture off). Its runtime handshake and its four device commands are billed to the existing `app_flow.runtime.connect` and `app_flow.runtime.command` series — the commands under new `operation` values `presentation-setup`, `presentation-configure`, `presentations`, `presentation-open` and `presentation-rollback` — so the cost of driving the app stays comparable with the Fast reach path beside it rather than arriving under new names. These three `presentation*` names are a deliberate re-addition after the removal recorded below, not a revival of the removed series: the pass they describe opens states by calling the app's own setters over an app that is already on a screen, it taps nothing and asks no model anything, and none of the removed `app_flow.runtime.state_capture` / `app_flow.states.*` names is reused. Dashboards built on those removed names stay silent. Screen names, node ids, route names, recipe ids, component names, source paths, screenshots and device identifiers are never attached to any of these; the per-variant detail stays in the project's own saved flow document, which never leaves the machine. The panel side of that pass adds one UI count, `ui.app_flow.capture_ui_states_start`, once per user-started run that has the "Capture UI states" switch on (it replaces the count the removed "Start UI Explore" button made, and carries nothing beyond the surface attributes), and one UI gauge, `ui.app_flow.ui_states_rendered`: how many captured UI-state rows the rendered graph offers in total, set once per node-set change on the `app-flow` surface. It is a plain count of rows, so no screen, route, node, recipe or component name, source path or screenshot ever rides on it, and it is separate from the "Captured N of M screens" headline, which counts screens. Like the three `presentation*` names above it is a new series under a new meaning, not a revival of the removed `ui.app_flow.states_rendered` / `ui.app_flow.state_viewed` pair: it measures what the graph renders after a pass, not what a removed runtime pass captured, and dashboards built on the removed names stay silent. The captured states now also have a canvas of their own — screens as parent nodes, their states as children — selected from the panel's view picker, and both canvases carry two jump pickers (by screen, by UI state) that move the viewport onto a chosen item. That canvas adds `ui.app_flow.ui_states_graph_process` and `ui.app_flow.ui_states_graph_render`, the same local layout and render boundaries `ui.app_flow.graph_process` and `ui.app_flow.graph_render` measure for the flow graph, and one gauge, `ui.app_flow.ui_state_nodes`, how many state cards it draws, set once per node-set change. The pickers add two fixed counts, `ui.app_flow.focus_screen` and `ui.app_flow.focus_ui_state`, one per jump. All five are plain numbers on the `app-flow` surface: which screen or state was chosen, its route, node, recipe or component name, its source path and its screenshot are never attached, so the counts say the pickers are used without saying what they were pointed at.
@@ -29,6 +72,13 @@ installation failures report a fixed error message. The existing MCP wrapper
 preserves sampled UI/server tracing and action outcomes on the active workspace
 surface. UI counters record successful updates and dismissed banners without
 release details. All collection honors telemetry opt-out.
+
+Since 0.1.146, update commands run from the stable Codex profile directory and
+verify already-installed updates even when the marketplace reports no changed
+roots. Existing installation duration, outcome, handled-error, and MCP tracing
+coverage remains on this path with the same boundaries and units. Execution and
+invalid-response errors use fixed messages without implying a network failure;
+raw CLI errors and output are not sent to telemetry.
 
 Since 0.1.129, discovery command failures retain bounded `discovery_command`, `discovery_cause`,
 `discovery_termination`, and optional `discovery_signal` tags. Failed exception
@@ -154,6 +204,40 @@ so their duration is not attributed to the next surface or device. No bundle IDs
 PIDs, device IDs, app lists, or query output are sent. Existing CPU batch-processing
 coverage and native Baguette crash/resource telemetry are preserved.
 
+Since 0.1.147, app control tools (`mobile_list_apps`, `mobile_launch_app`,
+`mobile_stop_app`, `mobile_install_app`, `mobile_open_url`, `mobile_app_icons`,
+`mobile_app_links`, `mobile_app_permissions`, `mobile_set_app_permission`, and
+`mobile_send_push`) use the existing sampled MCP traces. Unexpected `simctl`, `adb`,
+`aapt2`, or `plutil` failures are reported under `app_control.<action>` with a fixed
+message, because command output can contain bundle IDs, URLs, device serials, and
+local paths. Expected outcomes such as a missing app, an unhandled URL, an
+unrequested permission, or a stopped device count only through
+`server.error.outcome`. Extracted app icons and Android labels stay in the server's
+memory cache and are returned only to the panel.
+
+The device popover's App tab records `ui.app_tools.list`, `.icons`, `.launch`,
+`.stop`, `.open_url`, `.permission`, `.push`, and `.language` round trips in
+milliseconds with bounded aggregate windows, and counts `ui.app_tools.failure`.
+Results that finish after a surface or device change are not recorded. Recent URLs
+and the last picked app stay in the panel's local storage and are never sent.
+
+Since 0.1.152, `mobile_app_language` and `mobile_set_app_language` use the same
+app control coverage under `app_control.language` and `app_control.set_language`.
+Language tags are not sent. The device settings tools report unexpected Baguette or
+serve-emu failures under `device_settings.read` or `device_settings.<setting>` with a
+fixed message. Android throttling runs through a local proxy on the Mac, so its adb
+failures report under `device_settings.network`; throttling a device that already
+uses its own proxy counts only through `server.error.outcome`. When the plugin first
+starts an Android backend, it clears a throttle left by a plugin process that exited;
+unexpected adb failures there report under `device_settings.network_recovery`, and a
+device that went away counts only through `server.error.outcome`. Proxy
+addresses and traffic are not sent. Since 0.1.155, expected device setting and app
+control outcomes reach `server.error.outcome` as documented; earlier releases skipped
+them. The Device tab
+records `ui.device_settings.change` round trips in milliseconds and counts
+`ui.device_settings.failure`, with the same surface and device-change exclusions as
+the App tab. Setting values, throttle presets, and device IDs are not sent.
+
 Saved chart cards use the `recording` surface and view. Existing readiness,
 interaction and frame-pacing coverage is preserved. `ui.recording.process` and
 `ui.recording.derive` measure result validation and chart/summary processing;
@@ -206,6 +290,8 @@ Since 0.1.99, `ui.logs.query_parse` measures query compilation in milliseconds o
 `ui.logs.retention` measures bounded buffer updates in milliseconds. `ui.logs.evicted` counts rows removed locally to meet the shared row and text limits; `ui.logs.dropped` still counts only rows lost from the server buffer. Existing filter timing and row gauges cover the resulting list. These measurements contain no log text or source metadata.
 
 The React UI reports to `codex-mobile-dev-ui` (project `4512181027471440`). The main Node MCP server and the agent-device launcher report to `codex-mobile-dev-server`, distinguished by the `component` attribute. Native helpers report to `codex-mobile-dev-native`: Baguette, physical iOS mirroring, iOS FPS and logs, and Android CPU and FPS collectors. All three projects use release `mobile-dev@<plugin version>`.
+
+TraceSift cards use the `tracesift` surface. `tracesift.operation.duration` measures local service readiness as part of analysis, profile upload and analysis, stable host-view registration when the host supplies it, persisted-analysis restoration from either a host view or replayed tool input, handoff generation, and invoking `tracesift explore` with a persisted compact analysis, in milliseconds; `tracesift.operation.samples` records the bounded operation and success/failure outcome. `ui.tracesift.process` measures result validation, `ui.tracesift.remember` measures the app-to-server registration round trip for a live card, `ui.tracesift.restore` measures the app-to-server restore round trip after a card view is recreated, `ui.tracesift.handoff` measures the app-to-server handoff round trip, and `ui.tracesift.message_ack` ends when the host acknowledges the investigation message. `ui.tracesift.explore` measures the app-to-server round trip through successful CLI browser launch for either a CPU task or a React commit; full Explore data remains in the local TraceSift service. A card-count gauge and bounded counters cover registration successes and failures, restore hits, misses and failures, Investigate actions, Explore openings and failures, hand-off copies and copy failures, handoff failures, composer unavailability, send failures, and unconfirmed delivery. Readiness, shared interaction, visibility, and cleanup measurements use the existing UI aggregation. Profile paths and contents, filenames, card text, frame and file names, task, root, and commit indices, analysis/card/host-view identifiers, handoffs, service URLs, process identifiers, tokens, and TraceSift diagnostics are never added to telemetry; replayed profile inputs are hashed only for local lookup. Expected setup, validation, expiry, cancellation, and version outcomes use existing expected-error classification; unexpected transport and malformed-response failures retain handled server/UI error coverage. These measurements describe plugin and local-service work, not the profiled app's performance.
 
 The environments are `development` and `release`. `npm run build` and `npm run package` default to `development`, including local installed packages. For a public release, run `npm run build:release` followed by `npm run package:release`. Packaging rejects a build from the other environment. The package stores its environment in `dist/telemetry-environment.json`; Node telemetry, native helpers and the served UI use that setting. Live reload does not determine the environment. Set `MOBILE_DEV_ENVIRONMENT=development` or `MOBILE_DEV_ENVIRONMENT=release` in the MCP launch environment to override explicitly, then restart the MCP processes and reopen the panel.
 
@@ -281,9 +367,10 @@ Agent Device telemetry is inactive while its MCP entry is disabled; the active M
 | Native resources | `native.cpu.utilization`, `native.memory.rss` and `native.process.uptime`, sampled every 30 seconds and at startup/shutdown. CPU is a ratio where 1 is one fully occupied core. The iOS mirroring addon shares the Node process, so its resource measurements overlap Node's rather than representing another process. |
 | Native operations | Bounded timing windows for connection, physical iOS input acknowledgement and video packet processing, iOS log processing, Android CPU sampling, and FPS read/processing. Filter by `component`, `runtime_platform` and `surface` to identify the responsible helper. Baguette currently records resources and crashes. |
 | Node responsiveness | Automatic event-loop delay, utilization and process uptime. |
+| UI JavaScript heap | `ui.memory.heap_used`, `ui.memory.heap_total` and `ui.memory.heap_limit` in bytes at startup and every 30 seconds while visible, when Chromium's `performance.memory` is available. `ui.memory.supported` distinguishes unsupported contexts. These estimates do not measure total renderer or GPU memory. |
 | UI responsiveness | Browser tracing captures available web vitals. Custom metrics record visible animation-frame intervals, intervals over 50 ms, Event Timing interaction durations, long tasks and long animation frames where supported. |
 | Product surfaces | Metrics carry `surface=app-flow`, `simulator`, `logs`, `performance`, `recording` or `comparison`, plus view, visible device layout and monitoring state. App Flow readiness/graph work, log filter time, buffered/filtered rows, performance batch processing, canvas draw time and time to first video frame help explain slow surfaces. |
-| Frame capture | `ui.screenshot.capture` measures synchronous canvas PNG encoding and base64 extraction in milliseconds for Select captures and physical iOS screenshots. Screenshot tools retain sampled MCP traces and report handled capture, attachment, and clipboard failures without image content. |
+| Frame capture | `ui.screenshot.capture` measures synchronous canvas PNG encoding and base64 extraction in milliseconds for Select captures and physical iOS screenshots. `ui.screenshot.encode` measures PNG decoding, bounded JPEG encoding, and base64 extraction for chat attachments in milliseconds. Screenshot tools retain sampled MCP traces and report handled capture, attachment, and clipboard failures without image content. |
 | Storage | Every five minutes, the agent-device launcher measures its own session state directory and the shared Apple runner cache in bytes. It skips symlinks and sends only the storage kind and size. |
 | Usage | Surface views and visible time, tool action outcomes, log searches, attachments and send-to-chat actions are counted without their content. |
 

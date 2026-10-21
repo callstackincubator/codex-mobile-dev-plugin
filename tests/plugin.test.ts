@@ -11,11 +11,33 @@ import { OpenAIUiToolMetadataSchema, OpenAIUiResourceMetadataSchema } from "@ope
 import { APP_URI, WORKSPACE_URI } from "../src/server/plugin.ts";
 import { RECORDING_URI } from "../src/shared/recordings.ts";
 import { COMPARISON_URI } from "../src/shared/performance-comparison.ts";
+import { TRACESIFT_URI } from "../src/shared/tracesift.ts";
 import { Baguette } from "../src/server/baguette.ts";
 import { parseBaseUrl } from "../src/shared/protocol.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "./fixtures.ts";
 import { getTelemetryIdentity } from "../src/server/telemetry-identity.ts";
 import manifest from "../.codex-plugin/plugin.json" with { type: "json" };
+
+test("both opening tools accept optional device intent and preserve it in their results", async t => {
+  const fake = await fakeBaguette();
+  const plugin = await createTestPlugin("<html></html>", new Baguette(fake.url), fakeSimulatorInput());
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "opening-target-test", version: "1" });
+  t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
+  await plugin.server.connect(serverTransport);
+  await client.connect(clientTransport);
+  for (const name of ["mobile_open_simulator", "mobile_open_workspace"]) {
+    for (const target of [{}, { platform: "android", kind: "emulator" }, { platform: "ios", kind: "physical", deviceId: "00008110-000A0B1C2D3E4000" }]) {
+      const result = await client.callTool({ name, arguments: target });
+      assert.equal(result.isError, undefined);
+      assert.deepEqual(result.structuredContent?.panelTarget, target);
+    }
+    const invalid = await client.callTool({ name, arguments: { platform: "android", kind: "simulator" } });
+    assert.equal(invalid.isError, true);
+  }
+  const boots = fake.requests.filter(request => request.path.endsWith("/boot"));
+  assert.equal(boots.length, 0);
+});
 
 test("live UI reads use MCP and allow only Sentry browser connections", async t => {
   let revision = "a".repeat(64);
@@ -106,7 +128,7 @@ test("UI surfaces and live reload receive the server's anonymous identity and op
   assert.ok(identity);
   const userMarker = `name="mobile-dev-user-id" content="${identity.userId}"`;
   const sessionMarker = `name="mobile-dev-session-id" content="${identity.sessionId}"`;
-  for (const uri of [APP_URI, WORKSPACE_URI, RECORDING_URI, COMPARISON_URI]) {
+  for (const uri of [APP_URI, WORKSPACE_URI, RECORDING_URI, COMPARISON_URI, TRACESIFT_URI]) {
     const resource = await client.readResource({ uri });
     const content = resource.contents[0].text;
     assert.ok(typeof content === "string");
@@ -143,7 +165,7 @@ test("cached side tabs load the current UI through old resource addresses", asyn
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
   assert.equal(APP_URI, `ui://mobile-dev/${manifest.version}/simulator.html`);
-  const previousPanel = await client.readResource({ uri: "ui://mobile-dev/0.1.52/simulator.html" });
+  const previousPanel = await client.readResource({ uri: "ui://mobile-dev/0.1.147/simulator.html" });
   assert.equal(previousPanel.contents[0].text, html);
   for (const uri of [APP_URI, "ui://mobile-dev/0.1.44/simulator.html", "ui://mobile-dev/0.1.43/simulator.html", "ui://mobile-dev/0.1.42/simulator.html", "ui://mobile-dev/0.1.41/simulator.html", "ui://mobile-dev/0.1.40/simulator.html", "ui://mobile-dev/0.1.39/simulator.html", "ui://mobile-dev/0.1.38/simulator.html", "ui://mobile-dev/0.1.37/simulator.html", "ui://mobile-dev/0.1.36/simulator.html", "ui://mobile-dev/0.1.35/simulator.html", "ui://mobile-dev/0.1.34/simulator.html", "ui://mobile-dev/0.1.33/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html", "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/simulator.html", ...[1, 2, 3, 4, 5, 6].map(version => `ui://mobile-dev/v${version}/simulator.html`)]) {
     const { contents } = await client.readResource({ uri });
@@ -152,7 +174,18 @@ test("cached side tabs load the current UI through old resource addresses", asyn
     assert.equal(contents[0].text, html);
     OpenAIUiResourceMetadataSchema.parse(contents[0]._meta?.["openai/ui"]);
   }
-  await assert.rejects(client.readResource({ uri: "ui://mobile-dev/v999/simulator.html" }), /not found/);
+  for (const uri of ["ui://mobile-dev/0.1.147/workspace.html", "ui://mobile-dev/0.1.24/mcp-stream/workspace.html", "ui://mobile-dev/workspace.html"]) {
+    const { contents } = await client.readResource({ uri });
+    assert.equal(contents[0].uri, uri);
+    assert.equal(contents[0].mimeType, "text/html;profile=mcp-app");
+  }
+  for (const page of ["recording", "comparison"]) {
+    const { contents } = await client.readResource({ uri: `ui://mobile-dev/0.1.147/${page}.html` });
+    assert.equal((contents[0]._meta?.["openai/ui"] as { preferredDisplayMode: string }).preferredDisplayMode, "inline", `a saved ${page} card from an earlier release still loads`);
+  }
+  for (const uri of ["ui://mobile-dev/v999/simulator.html", "ui://mobile-dev/latest/simulator.html", "ui://mobile-dev/0.1.147/other.html"]) {
+    await assert.rejects(client.readResource({ uri }), /not found/);
+  }
 });
 
 test("MCP tools expose native entrypoints and complete the simulator workflow", async t => {
@@ -192,6 +225,15 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   const comparisonResource = await client.readResource({ uri: COMPARISON_URI });
   assert.match(comparisonResource.contents[0].text as string, /data-view="comparison"/);
   assert.deepEqual(comparisonResource.contents[0]._meta, recordingResource.contents[0]._meta);
+  const traceSiftResource = await client.readResource({ uri: TRACESIFT_URI });
+  assert.match(traceSiftResource.contents[0].text as string, /data-view="tracesift"/);
+  assert.deepEqual(traceSiftResource.contents[0]._meta, recordingResource.contents[0]._meta);
+  const analyzeProfile = tools.tools.find(tool => tool.name === "mobile_analyze_profile");
+  assert.deepEqual(analyzeProfile?._meta?.ui, { resourceUri: TRACESIFT_URI, visibility: ["app", "model"] });
+  assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_remember_tracesift_analysis")?._meta?.ui, { visibility: ["app"] });
+  assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_restore_tracesift_analysis")?._meta?.ui, { visibility: ["app"] });
+  assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_restore_tracesift_analysis_by_input")?._meta?.ui, { visibility: ["app"] });
+  assert.deepEqual(tools.tools.find(tool => tool.name === "mobile_get_tracesift_handoff")?._meta?.ui, { visibility: ["app"] });
   assert.match(workspaceResource.contents[0].text as string, /data-view="workspace" data-layout="split"/);
   assert.equal(WORKSPACE_URI, `ui://mobile-dev/${manifest.version}/workspace.html`);
   const previousWorkspace = await client.readResource({ uri: "ui://mobile-dev/0.1.52/workspace.html" });

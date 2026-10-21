@@ -15,6 +15,7 @@ import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@model
 import { OpenAIExtensions } from "@openai/mcp-extensions/server";
 import { z } from "zod";
 import { registerDeviceSettingsTools } from "./device-settings.ts";
+import { registerAppControlTools } from "./app-control/tools.ts";
 import { readBezel } from "./bezel.ts";
 import { ServeEmu } from "./serve-emu.ts";
 import { registerAndroidTools } from "./android-tools.ts";
@@ -32,6 +33,9 @@ import { PerformanceRecordings } from "./performance-recordings.ts";
 import { registerRecordingTools } from "./recording-tools.ts";
 import { RECORDING_URI } from "../shared/recordings.ts";
 import { COMPARISON_URI } from "../shared/performance-comparison.ts";
+import { TRACESIFT_URI } from "../shared/tracesift.ts";
+import { TraceSiftClient } from "./tracesift-client.ts";
+import { registerTraceSiftTools } from "./tracesift-tools.ts";
 import { startStorageMetrics } from "./storage-metrics.ts";
 import { DisplayFpsSessions } from "./fps/sessions.ts";
 import { registerDisplayFpsTools } from "./fps/tools.ts";
@@ -40,56 +44,21 @@ import type { InputStatus, SimulatorInput } from "./simulator-input.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 import { copyPNGToClipboard } from "./clipboard.ts";
 import { errorMessage, inputSchema, streamMessageSchema, udidSchema } from "../shared/protocol.ts";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
+import { panelTargetSchema } from "../shared/panel-target.ts";
+import type { PanelTarget } from "../shared/panel-target.ts";
 import { createAppFlowHost, APP_FLOW_DIRECTORY } from "./app-flow-host.ts";
 import { AppFlowProjectChoices } from "./app-flow-projects.ts";
 import { registerAppFlowTools } from "./app-flow-tools.ts";
 
 export const APP_URI = `ui://mobile-dev/${PLUGIN_VERSION}/simulator.html`;
 export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
-// Codex can retain entrypoint metadata after updating the installed plugin.
-const legacyAppUris = [
-  "ui://mobile-dev/0.1.57/simulator.html",
-  "ui://mobile-dev/0.1.56/simulator.html",
-  "ui://mobile-dev/0.1.52/simulator.html",
-  "ui://mobile-dev/0.1.44/simulator.html",
-  "ui://mobile-dev/0.1.43/simulator.html",
-  "ui://mobile-dev/0.1.42/simulator.html",
-  "ui://mobile-dev/0.1.41/simulator.html",
-  "ui://mobile-dev/0.1.40/simulator.html",
-  "ui://mobile-dev/0.1.39/simulator.html",
-  "ui://mobile-dev/0.1.38/simulator.html",
-  "ui://mobile-dev/0.1.37/simulator.html",
-  "ui://mobile-dev/0.1.36/simulator.html",
-  "ui://mobile-dev/0.1.35/simulator.html",
-  "ui://mobile-dev/0.1.34/simulator.html",
-  "ui://mobile-dev/0.1.33/simulator.html",
-  "ui://mobile-dev/0.1.32/simulator.html",
-  "ui://mobile-dev/0.1.24/mcp-stream/simulator.html",
-  "ui://mobile-dev/0.1.31/simulator.html",
-  "ui://mobile-dev/0.1.30/simulator.html",
-  "ui://mobile-dev/0.1.29/simulator.html", "ui://mobile-dev/0.1.28/simulator.html", "ui://mobile-dev/0.1.27/simulator.html", "ui://mobile-dev/0.1.26/simulator.html", "ui://mobile-dev/0.1.25/simulator.html", "ui://mobile-dev/0.1.24/simulator.html", "ui://mobile-dev/0.1.23/simulator.html", "ui://mobile-dev/0.1.22/simulator.html", "ui://mobile-dev/0.1.21/simulator.html", "ui://mobile-dev/0.1.20/simulator.html", "ui://mobile-dev/0.1.19/simulator.html", "ui://mobile-dev/0.1.18/simulator.html", "ui://mobile-dev/0.1.17/simulator.html", "ui://mobile-dev/0.1.16/simulator.html", "ui://mobile-dev/0.1.15/simulator.html", "ui://mobile-dev/0.1.14/simulator.html", "ui://mobile-dev/0.1.13/simulator.html", "ui://mobile-dev/0.1.12/simulator.html", "ui://mobile-dev/0.1.11/simulator.html", "ui://mobile-dev/simulator.html", ...Array.from({ length: 6 }, (_, index) => `ui://mobile-dev/v${index + 1}/simulator.html`)];
-const legacyWorkspaceUris = [
-  "ui://mobile-dev/0.1.57/workspace.html",
-  "ui://mobile-dev/0.1.56/workspace.html",
-  "ui://mobile-dev/0.1.52/workspace.html",
-  "ui://mobile-dev/0.1.44/workspace.html",
-  "ui://mobile-dev/0.1.43/workspace.html",
-  "ui://mobile-dev/0.1.42/workspace.html",
-  "ui://mobile-dev/0.1.41/workspace.html",
-  "ui://mobile-dev/0.1.40/workspace.html",
-  "ui://mobile-dev/0.1.39/workspace.html",
-  "ui://mobile-dev/0.1.38/workspace.html",
-  "ui://mobile-dev/0.1.37/workspace.html",
-  "ui://mobile-dev/0.1.36/workspace.html",
-  "ui://mobile-dev/0.1.35/workspace.html",
-  "ui://mobile-dev/0.1.34/workspace.html",
-  "ui://mobile-dev/0.1.33/workspace.html",
-  "ui://mobile-dev/0.1.32/workspace.html",
-  "ui://mobile-dev/0.1.24/mcp-stream/workspace.html",
-  "ui://mobile-dev/0.1.31/workspace.html",
-  "ui://mobile-dev/0.1.30/workspace.html",
-  "ui://mobile-dev/0.1.29/workspace.html", "ui://mobile-dev/0.1.28/workspace.html", "ui://mobile-dev/0.1.27/workspace.html", "ui://mobile-dev/0.1.26/workspace.html", "ui://mobile-dev/0.1.25/workspace.html", "ui://mobile-dev/0.1.24/workspace.html", "ui://mobile-dev/0.1.23/workspace.html", "ui://mobile-dev/0.1.22/workspace.html", "ui://mobile-dev/0.1.21/workspace.html", "ui://mobile-dev/0.1.20/workspace.html", "ui://mobile-dev/0.1.19/workspace.html", "ui://mobile-dev/0.1.18/workspace.html", "ui://mobile-dev/0.1.17/workspace.html", "ui://mobile-dev/0.1.16/workspace.html", "ui://mobile-dev/0.1.15/workspace.html", "ui://mobile-dev/0.1.14/workspace.html", "ui://mobile-dev/0.1.13/workspace.html", "ui://mobile-dev/0.1.12/workspace.html", "ui://mobile-dev/0.1.11/workspace.html", "ui://mobile-dev/workspace.html"];
+// Codex keeps the address of side tabs and saved cards opened before a plugin update, so earlier
+// releases' addresses serve the current UI. These older addresses do not fit that pattern.
+const unversionedAppUris = ["ui://mobile-dev/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html"];
+const unversionedWorkspaceUris = ["ui://mobile-dev/workspace.html", "ui://mobile-dev/0.1.24/mcp-stream/workspace.html"];
+const releaseSegment = /^(?:\d+\.\d+\.\d+|v[1-6])$/;
 const sessionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
@@ -99,6 +68,14 @@ const statusOutput = {
   connected: z.boolean(), managed: z.boolean(), baseUrl: z.string(),
   devices: z.array(deviceSchema), error: z.string().optional(),
 };
+
+function registerEarlierReleases(server: McpServer, name: string, page: string, read: (uri: URL) => Promise<ReadResourceResult>) {
+  const template = new ResourceTemplate(`ui://mobile-dev/{release}/${page}.html`, { list: undefined });
+  server.registerResource(name, template, { mimeType: RESOURCE_MIME_TYPE }, (uri, { release }) => {
+    if (typeof release !== "string" || !releaseSegment.test(release)) throw new McpError(ErrorCode.InvalidParams, `Resource ${uri} not found`);
+    return read(uri);
+  });
+}
 
 function result(data: Record<string, unknown>, message: string): CallToolResult {
   return { content: [{ type: "text", text: message }], structuredContent: data };
@@ -121,7 +98,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   const cpu = selectedCpu;
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
-    instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. See the Mobile Dev skill for device control, logs, and performance workflows.",
+    instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill for device control, logs, profiles, and performance workflows.",
     // App Flow progress arrives as logging notifications. Without this capability the SDK rejects
     // every sendLoggingMessage, so the app-flow event channel would fail silently.
     capabilities: { logging: {} },
@@ -141,6 +118,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   const validateCpuDevice = registerCpuTools(server, cpu, baguette);
   const recordings = new PerformanceRecordings(cpu, fps);
   registerRecordingTools(server, recordings, validateCpuDevice, WORKSPACE_URI);
+  const traceSift = new TraceSiftClient();
+  registerTraceSiftTools(server, traceSift);
   const stopRecordingStorageMetrics = startStorageMetrics({ recordings: recordings.store.directory });
   registerDisplayFpsTools(server, fps);
   const closeAndroid = registerAndroidTools(server, android, APP_URI, copyScreenshot, async deviceId => {
@@ -148,7 +127,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     const closeFps = fps.closeDevice(deviceId);
     await Promise.all([closeCpu, closeFps]);
   });
-  registerDeviceSettingsTools(server, baguette, android);
+  const closeDeviceSettings = registerDeviceSettingsTools(server, baguette, android);
+  registerAppControlTools(server);
   const appFlow = await createAppFlowHost();
   const appFlowProjects = new AppFlowProjectChoices(APP_FLOW_DIRECTORY);
   const closeAppFlow = registerAppFlowTools(server, appFlow, appFlowProjects);
@@ -200,7 +180,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     const content = configureUI(resource.html);
     return ({
     contents: [{
-      uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: (uri.href === WORKSPACE_URI || legacyWorkspaceUris.includes(uri.href))
+      uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: uri.href.endsWith("/workspace.html")
         ? content.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
         : content,
       _meta: {
@@ -226,21 +206,25 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   for (const [name, resourceUri, view] of [
     ["mobile-dev-recording", RECORDING_URI, "recording"],
     ["mobile-dev-comparison", COMPARISON_URI, "comparison"],
-  ]) registerAppResource(server, name, resourceUri, {}, async uri => {
-    const resource = typeof html === "string" ? { html } : await html();
-    const configured = configureUI(resource.html);
-    const content = configured.replace('data-view="panel"', `data-view="${view}"`);
-    return { contents: [{ uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: content, _meta: {
-      ui: { prefersBorder: true, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
-      "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] },
-    } }] };
-  });
-  for (const [index, uri] of legacyWorkspaceUris.entries()) {
-    registerAppResource(server, `mobile-dev-workspace-legacy-${index}`, uri, {}, readApp);
+    ["mobile-dev-tracesift", TRACESIFT_URI, "tracesift"],
+  ]) {
+    const readCard = async (uri: URL) => {
+      const resource = typeof html === "string" ? { html } : await html();
+      const configured = configureUI(resource.html);
+      const content = configured.replace('data-view="panel"', `data-view="${view}"`);
+      return { contents: [{ uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: content, _meta: {
+        ui: { prefersBorder: true, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
+        "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] },
+      } }] };
+    };
+    registerAppResource(server, name, resourceUri, {}, readCard);
+    registerEarlierReleases(server, `${name}-earlier`, view, readCard);
   }
-  for (const [index, uri] of legacyAppUris.entries()) {
-    registerAppResource(server, `mobile-dev-simulator-v${index + 1}`, uri, {}, readApp);
+  for (const [index, uri] of [...unversionedAppUris, ...unversionedWorkspaceUris].entries()) {
+    registerAppResource(server, `mobile-dev-unversioned-${index}`, uri, {}, readApp);
   }
+  registerEarlierReleases(server, "mobile-dev-simulator-earlier", "simulator", readApp);
+  registerEarlierReleases(server, "mobile-dev-workspace-earlier", "workspace", readApp);
 
   const frameTemplate = new ResourceTemplate("mobile-frame://{sessionId}/latest{?after}", { list: undefined });
   server.registerResource("simulator-latest-frame", frameTemplate, { mimeType: "image/jpeg" }, async (uri, variables, extra) => {
@@ -263,17 +247,17 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     }
   });
 
-  const openPanel = guarded(async () => {
+  const openPanel = guarded(async (panelTarget: PanelTarget) => {
     let status;
     try { status = await baguette.start(); }
     catch (error) { status = { ...await baguette.status(), error: errorMessage(error) }; }
-    return result(status, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
+    return result({ ...status, panelTarget }, status.connected ? `Found ${status.devices.length} simulators.` : status.error ?? "The bundled simulator backend could not start.");
   });
 
   registerAppTool(server, "mobile_open_workspace", {
     title: "Mobile Dev",
-    description: "Open the fullscreen Mobile Dev workspace when the user asks for fullscreen, with logs and performance tools on the left and iOS and Android devices side by side on the right. For app development beside a chat, prefer mobile_open_simulator. Starts the bundled backend without booting a device.",
-    inputSchema: {}, outputSchema: statusOutput, annotations: write,
+    description: "Open the fullscreen Mobile Dev workspace when the user asks for fullscreen, with logs and performance tools beside the devices. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. For app development beside a chat, prefer mobile_open_simulator. Starts the bundled backend without booting a device.",
+    inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema }, annotations: write,
     _meta: {
       ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
       "openai/ui": { entrypoints: [{ type: "global" }] },
@@ -282,8 +266,8 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   registerAppTool(server, "mobile_open_simulator", {
     title: "Mobile Dev",
-    description: "Open the Mobile Dev simulator beside the chat when building, running, changing, or debugging a local iOS, Android, Expo, React Native, or SwiftUI app. Call before the first device launch unless a panel is already open or the user requests a tool-only workflow. Starts the bundled Baguette backend without booting devices.",
-    inputSchema: {}, outputSchema: statusOutput, annotations: write,
+    description: "Open Mobile Dev beside the chat for local mobile app development, before the first device launch unless a panel is open or the workflow is tool-only. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. Starts the bundled backend without booting devices.",
+    inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema }, annotations: write,
     _meta: {
       ui: { resourceUri: APP_URI, visibility: ["app", "model"] },
       "openai/ui": { entrypoints: [{ type: "thread" }] },
@@ -452,9 +436,11 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     async close() {
       updates.close();
       stopRecordingStorageMetrics();
+      // Clearing Android throttles waits on adb, so it runs alongside the other cleanup.
+      const deviceSettingsClosed = closeDeviceSettings();
       await recordings.close();
       closeInspection(); closeAndroid(); streams.close();
-      try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror(), closeAppFlow()]); }
+      try { await Promise.all([logs.close(), cpu.close(), fps.close(), closeIosMirror(), deviceSettingsClosed, traceSift.close(), closeAppFlow()]); }
       finally { baguette.dispose(); await server.close(); }
     },
   };

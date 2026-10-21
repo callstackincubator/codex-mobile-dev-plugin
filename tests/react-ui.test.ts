@@ -55,9 +55,9 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     await rm(directory, { recursive: true, force: true });
   });
   const output = resolve(directory, "workspace.mjs");
-  await build({ stdin: { contents: 'export { Workspace } from "./src/ui/components/workspace.tsx"; export { getDeviceSettings } from "./src/ui/device-settings.ts"; export { getDevicePicker } from "./src/ui/device-picker.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
+  await build({ stdin: { contents: 'export { Workspace } from "./src/ui/components/workspace.tsx"; export { getDeviceSettings } from "./src/ui/device-settings.ts"; export { getDevicePicker } from "./src/ui/device-picker.ts"; export { getAppTools } from "./src/ui/app-tools.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
     external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels", "@xyflow/react"] });
-  const { Workspace, getDeviceSettings, getDevicePicker } = await import(pathToFileURL(output).href);
+  const { Workspace, getDeviceSettings, getDevicePicker, getAppTools } = await import(pathToFileURL(output).href);
   const { act, createElement, Profiler } = await import("react");
   const { createRoot } = await import("react-dom/client");
   let sentLog: StackedLog | undefined;
@@ -129,6 +129,13 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     const platformLabel = layout === "both" ? "Both" : layout === "none" ? "Platforms" : layout === "ios" ? "iOS" : "Android";
     const triggerText = dom.window.document.getElementById("platform-select")?.textContent ?? "";
     assert.ok(triggerText.startsWith(platformLabel));
+    // The sidebar shows the tools and platform selects in one bar under the simulators.
+    const toolbars = dom.window.document.querySelectorAll('nav[aria-label="Developer tools"]');
+    assert.equal(toolbars.length, 1);
+    const simulators = dom.window.document.getElementById("simulator-panels")!;
+    assert.equal(toolbars[0].previousElementSibling === simulators, layout !== "none");
+    assert.deepEqual([...toolbars[0].querySelectorAll("button")].map(button => button.id), ["tool-select", "platform-select"]);
+    assert.equal(dom.window.document.querySelector('[role="toolbar"] #tool-select'), null);
   }
   layouts.length = 0;
   const picker = dom.window.document.querySelector('[data-element="devices"] [data-slot="select-trigger"]');
@@ -193,6 +200,71 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   assert.equal(iosSettings.getSnapshot().frame, false);
   await act(async () => { settingsButton.click(); });
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
+  const appTools = getAppTools(dom.window.document.querySelector('#ios-panel [data-element="settings"]'));
+  const appCalls: { name: string; args: Record<string, unknown> }[] = [];
+  appTools.call = async (name: string, args: Record<string, unknown>) => {
+    appCalls.push({ name, args });
+    if (name === "mobile_list_apps") return { apps: [{ bundleId: "com.acme.shop", name: "Acme Shop" }, { bundleId: "dev.other", name: "Other" }], foregroundBundleId: "com.acme.shop", runningBundleIds: ["com.acme.shop"] };
+    if (name === "mobile_app_permissions") return { permissions: [{ permission: "location", state: null }, { permission: "photos", state: null }] };
+    if (name === "mobile_set_app_permission") return { permissions: ["location", "photos"].map(permission => ({ permission, state: permission === args.permission ? args.state : null })) };
+    if (name === "mobile_app_links") return { links: ["acme://"] };
+    if (name === "mobile_app_icons") return { apps: { "com.acme.shop": { icon: "data:image/png;base64,iVBORw0KGgo=" } } };
+    if (name === "mobile_app_language") return { language: null };
+    if (name === "mobile_set_app_language") return { language: args.language, launched: args.bundleId };
+    return {};
+  };
+  iosSettings.request = async (change: { setting: string; value: unknown } | undefined) => {
+    if (change) { changes.push(change); return { [change.setting]: change.value }; }
+    return { appearance: "light", contentSize: "large", increaseContrast: false, locationSupported: true, statusBar: "live", network: "normal" };
+  };
+  await act(async () => { appTools.configure("ios", "iphone", false); });
+  await act(async () => { settingsButton.click(); });
+  const toolsPopover = dom.window.document.querySelector('[data-slot="popover-content"][aria-label="Device settings"]')!;
+  assert.ok(toolsPopover.textContent?.includes("Acme Shop"), "the App tab opens on the foreground app");
+  assert.equal(toolsPopover.querySelector('[aria-label="App"] img')?.getAttribute("src"), "data:image/png;base64,iVBORw0KGgo=", "the picker shows the app icon");
+  assert.equal(toolsPopover.textContent?.includes("Increase contrast"), false);
+  await act(async () => { (toolsPopover.querySelector('[aria-label="Relaunch Acme Shop"]') as HTMLButtonElement).click(); });
+  assert.deepEqual(appCalls.find(call => call.name === "mobile_launch_app")?.args, { platform: "ios", deviceId: "iphone", bundleId: "com.acme.shop" });
+  assert.ok(toolsPopover.textContent?.includes("Relaunched Acme Shop."));
+  const permissionsToggle = [...toolsPopover.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.startsWith("Permissions"))!;
+  assert.equal(toolsPopover.querySelector('[aria-labelledby$="-photos"]'), null, "permissions start collapsed");
+  await act(async () => { permissionsToggle.click(); });
+  const denyPhotos = [...toolsPopover.querySelectorAll<HTMLButtonElement>('[aria-labelledby$="-photos"] button')].find(button => button.textContent === "Deny")!;
+  await act(async () => { denyPhotos.click(); });
+  assert.deepEqual(appCalls.at(-1), { name: "mobile_set_app_permission", args: { platform: "ios", deviceId: "iphone", bundleId: "com.acme.shop", permission: "photos", state: "deny" } });
+  assert.equal(denyPhotos.getAttribute("data-state"), "on", "iOS rows keep the state applied from the panel");
+  assert.equal(appTools.getSnapshot().section, "permissions", "the open section is remembered");
+  await act(async () => { permissionsToggle.click(); });
+  assert.ok(permissionsToggle.textContent?.includes("1 denied"), "the collapsed row summarizes applied choices");
+  const urlInput = toolsPopover.querySelector('[aria-label="URL to open"]') as HTMLInputElement;
+  await act(async () => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!.call(urlInput, "myapp://checkout"); urlInput.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
+  await act(async () => { (urlInput.form as HTMLFormElement).requestSubmit(); });
+  assert.deepEqual(appCalls.at(-1), { name: "mobile_open_url", args: { platform: "ios", deviceId: "iphone", url: "myapp://checkout" } });
+  assert.ok(toolsPopover.querySelector('[title="Open myapp://checkout"]'), "opened URLs become recent shortcuts");
+  assert.equal(urlInput.placeholder, "acme://");
+  await act(async () => { (toolsPopover.querySelector('[title="Start a URL with acme://"]') as HTMLButtonElement).click(); });
+  assert.equal(urlInput.value, "acme://", "declared schemes fill the field without opening");
+  assert.equal(appCalls.at(-1)?.name, "mobile_open_url");
+  assert.equal(appCalls.filter(call => call.name === "mobile_open_url").length, 1);
+  const languageToggle = [...toolsPopover.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.startsWith("Language"))!;
+  assert.ok(languageToggle.textContent?.includes("Device language"), "apps start on the device language");
+  await act(async () => { await appTools.setLanguage("de"); });
+  assert.deepEqual(appCalls.at(-1), { name: "mobile_set_app_language", args: { platform: "ios", deviceId: "iphone", bundleId: "com.acme.shop", language: "de" } });
+  assert.ok(languageToggle.textContent?.includes("German"));
+  assert.ok(toolsPopover.textContent?.includes("Relaunched Acme Shop in de."));
+  const deviceTab = [...toolsPopover.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(tab => tab.textContent === "Device")!;
+  await act(async () => { deviceTab.click(); });
+  assert.ok(toolsPopover.textContent?.includes("Increase contrast"));
+  assert.ok(toolsPopover.textContent?.includes("Clean status bar"));
+  assert.ok(toolsPopover.textContent?.includes("Full speedApplies to new app launches."), "the network card describes the normal connection");
+  const slowNetwork = [...toolsPopover.querySelectorAll<HTMLButtonElement>('[aria-label="Network condition"] button')].find(button => button.textContent === "3G")!;
+  await act(async () => { slowNetwork.click(); });
+  assert.deepEqual(changes.at(-1), { setting: "network", value: "3g" });
+  assert.ok(toolsPopover.textContent?.includes("780 kbps · 200 ms"), "the card shows the simulated link");
+  const relaunch = [...toolsPopover.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Relaunch")!;
+  await act(async () => { relaunch.click(); });
+  assert.equal(appCalls.at(-1)?.name, "mobile_launch_app", "iOS throttling offers a relaunch so the app picks it up");
+  await act(async () => { settingsButton.click(); });
   await selectTool("logs");
   const errorMessage = '<script>alert("log")</script>\nCannot read property id of undefined';
   const embeddedStack = "    at recordLike (http://localhost:8081/recordLike.bundle:21:38)\n    at anonymous (App.tsx:268:50)";

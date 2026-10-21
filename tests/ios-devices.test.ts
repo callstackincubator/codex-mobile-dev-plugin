@@ -5,6 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { listIosDevices, registerIosDeviceTools } from "../src/server/ios-devices.ts";
+import { physicalIosDeviceSchema, physicalConnectionLabel } from "../src/shared/ios-devices.ts";
 
 const coreDeviceId = "11111111-1111-4111-8111-111111111111";
 const udid = "00008110-000A0B1C2D3E4000";
@@ -25,6 +26,14 @@ function response(devices: unknown[], jsonVersion = 5) {
   return { stdout: JSON.stringify(payload) };
 }
 
+function unavailableDevice() {
+  const source = device("wired", "unavailable");
+  source.identifier = "22222222-2222-4222-8222-222222222222";
+  source.properties.hardware.udid = "00008110-000A0B1C2D3E4001";
+  Reflect.deleteProperty(source.properties.connection, "transportType");
+  return source;
+}
+
 test("discovery preserves identity and reports USB, Wi-Fi, and disconnected state", async () => {
   for (const [transport, state] of [["wired", "connected"], ["localNetwork", "connected"], ["none", "disconnected"]]) {
     const source = device(transport, state);
@@ -33,6 +42,36 @@ test("discovery preserves identity and reports USB, Wi-Fi, and disconnected stat
     assert.deepEqual(devices, [{ udid, coreDeviceId, name: "Test iPhone", model: "iPhone 17 Pro", productType: "iPhone18,1", state,
       runtime: "iOS 27.0", platform: "ios", kind: "physical", transportType: transport, pairingState: "paired" }]);
   }
+});
+
+test("an unavailable remembered iPhone without a transport does not block connected devices", async () => {
+  const connected = device();
+  const unavailable = unavailableDevice();
+  const payload = response([connected, unavailable]);
+  const devices = await listIosDevices(undefined, async () => payload);
+  assert.equal(devices.length, 2);
+  assert.equal(devices[0].udid, udid);
+  assert.equal(devices[0].transportType, "wired");
+  const remembered = devices[1];
+  assert.equal(remembered.udid, unavailable.properties.hardware.udid);
+  assert.equal(remembered.state, "unavailable");
+  assert.equal(remembered.pairingState, "paired");
+  assert.equal(remembered.transportType, undefined);
+  const encoded = JSON.stringify(remembered);
+  const serialized = JSON.parse(encoded);
+  const transportReported = Object.hasOwn(serialized, "transportType");
+  assert.equal(transportReported, false);
+  const parsed = physicalIosDeviceSchema.safeParse(serialized);
+  assert.equal(parsed.success, true);
+});
+
+test("transport labels distinguish an unreported transport from USB and Wi-Fi", () => {
+  const missing = physicalConnectionLabel(undefined);
+  const wired = physicalConnectionLabel("wired");
+  const wireless = physicalConnectionLabel("localNetwork");
+  assert.equal(missing, "Transport not reported");
+  assert.equal(wired, "USB");
+  assert.equal(wireless, "Wi-Fi");
 });
 
 test("discovery uses bounded devicectl JSON output and requests only physical iOS devices", async () => {
@@ -59,9 +98,20 @@ test("discovery exposes command failures and rejects unsupported or malformed ou
   Reflect.deleteProperty(missingName.properties.state, "name");
   const malformed = response([missingName]);
   const invalid = listIosDevices(undefined, async () => malformed);
-  await assert.rejects(invalid, /unsupported device discovery JSON/);
-  const invalidJson = listIosDevices(undefined, async () => ({ stdout: "not JSON" }));
-  await assert.rejects(invalidJson, SyntaxError);
+  await assert.rejects(invalid, error => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /unsupported device discovery JSON/);
+    assert.match(error.message, /result\.devices\[0\]\.properties\.state\.name/);
+    assert.doesNotMatch(error.message, /requires Xcode/);
+    return true;
+  });
+  const invalidTransport = device();
+  Reflect.set(invalidTransport.properties.connection, "transportType", 42);
+  const invalidTransportPayload = response([invalidTransport]);
+  const rejectedTransport = listIosDevices(undefined, async () => invalidTransportPayload);
+  await assert.rejects(rejectedTransport, /properties\.connection\.transportType/);
+  const invalidJson = listIosDevices(undefined, async () => ({ stdout: "PRIVATE_DEVICE_OUTPUT" }));
+  await assert.rejects(invalidJson, { name: "SyntaxError", message: "devicectl returned invalid device discovery JSON." });
 });
 
 test("discovery cancels its pending command and rejects an already cancelled request", { timeout: 2000 }, async t => {
@@ -98,7 +148,8 @@ test("discovery cancels its pending command and rejects an already cancelled req
 test("physical discovery is a read-only MCP tool and reports failure instead of an empty list", async t => {
   const server = new McpServer({ name: "ios-discovery-test", version: "1" });
   const source = device("localNetwork");
-  const payload = response([source]);
+  const unavailable = unavailableDevice();
+  const payload = response([source, unavailable]);
   const devices = await listIosDevices(undefined, async () => payload);
   let fail = false;
   registerIosDeviceTools(server, async () => {

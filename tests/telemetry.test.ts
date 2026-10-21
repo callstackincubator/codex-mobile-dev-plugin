@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:http";
 import * as Sentry from "@sentry/node";
 import type { Envelope } from "@sentry/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -18,6 +19,8 @@ import { registerDeviceAppsTool } from "../src/server/device-apps/tools.ts";
 import { directoryBytes } from "../src/server/storage-metrics.ts";
 import { SimulatorUnavailableError } from "../src/server/simulator-unavailable.ts";
 import { registerDeviceChoiceTools } from "../src/server/device-choice-tools.ts";
+import { listIosDevices, registerIosDeviceTools } from "../src/server/ios-devices.ts";
+import { createDrivers, registerAppControlTools } from "../src/server/app-control/tools.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { adapterClient } from "./agent-device-fixtures.ts";
 import { recordRuntimeAmount, recordRuntimeCount, recordRuntimeTiming } from "../src/app-flow/runtime-telemetry.ts";
@@ -26,6 +29,47 @@ function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
   assert.equal(included, expected, `Telemetry fragment: ${fragment}`);
 }
+
+test("the bundled HTTP dispatcher preserves Sentry fetch tracing and privacy", async t => {
+  const envelopes: Envelope[] = [];
+  const receivedTraceHeaders: string[] = [];
+  const server = createServer((request, response) => {
+    const header = request.headers["sentry-trace"];
+    if (typeof header === "string") receivedTraceHeaders.push(header);
+    response.end("ok");
+  });
+  server.listen(0, "127.0.0.1");
+  await new Promise<void>(resolve => { server.once("listening", resolve); });
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const url = `http://127.0.0.1:${address.port}/PRIVATE_PATH?token=PRIVATE_TOKEN`;
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, environment: "release",
+    integrations: [Sentry.nativeNodeFetchIntegration()], tracesSampleRate: 1,
+    beforeSend: scrubErrorEvent, beforeSendSpan: scrubSpan,
+    beforeBreadcrumb: () => null,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  const spanOptions = { name: "http.runtime.test", attributes: { component: "server", surface: "simulator" } };
+  await Sentry.startSpan(spanOptions, async () => {
+    const response = await fetch(url);
+    const text = await response.text();
+    assert.equal(text, "ok");
+  });
+  await Sentry.flush();
+  assert.equal(receivedTraceHeaders.length, 1);
+  assert.match(receivedTraceHeaders[0], /^[a-f0-9]{32}-[a-f0-9]{16}-1$/);
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const spans = items.filter(item => item[0].type === "span");
+  const encoded = JSON.stringify(spans);
+  contains(encoded, "http.runtime.test");
+  contains(encoded, "auto.http.node_fetch");
+  contains(encoded, "PRIVATE", false);
+  contains(encoded, "simulator");
+  contains(encoded, "server");
+});
 
 test("UI timing windows retain exact totals, reset, and ignore invalid measurements", () => {
   const window = new MeasurementWindow();
@@ -410,6 +454,67 @@ test("native device picker measures preparation and outcomes without private for
   const items = envelopes.flatMap(envelope => envelope[1]);
   const errors = items.filter(item => item[0].type === "event");
   assert.equal(errors.length, 0, "Expected stale/invalid device responses do not produce issues.");
+});
+
+test("physical iOS discovery accepts an unreported transport and reports malformed responses once without device values", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSend: scrubErrorEvent, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const source = {
+    identifier: "11111111-1111-4111-8111-111111111111",
+    properties: {
+      hardware: { udid: "PRIVATE_DEVICE", marketingName: "iPhone", productType: "iPhone18,1", reality: "physical", platform: "iOS" },
+      state: { name: "PRIVATE_DEVICE_NAME" }, software: { osVersionNumber: { stringValue: "27.0.1" } },
+      connection: { state: "unavailable", pairingState: "paired" },
+    },
+  };
+  const payload = { info: { jsonVersion: 5, outcome: "success" }, result: { devices: [source] } };
+  const server = new McpServer({ name: "ios-discovery-telemetry", version: "1" });
+  instrumentMcpServer(server);
+  registerIosDeviceTools(server, async () => {
+    const stdout = JSON.stringify(payload);
+    const run = async () => ({ stdout });
+    return listIosDevices(undefined, run);
+  });
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  installTracePropagation(serverTransport);
+  t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const request = { name: "mobile_list_ios_devices", arguments: {} };
+  const unavailable = await client.callTool(request);
+  assert.equal(unavailable.isError, undefined);
+  await Sentry.flush();
+  const beforeItems = envelopes.flatMap(envelope => envelope[1]);
+  const beforeEvents = beforeItems.filter(item => item[0].type === "event");
+  assert.equal(beforeEvents.length, 0);
+
+  Reflect.deleteProperty(source.properties.state, "name");
+  const malformed = await client.callTool(request);
+  assert.equal(malformed.isError, true);
+  const repeated = await client.callTool(request);
+  assert.equal(repeated.isError, true);
+  await Sentry.flush();
+  const afterItems = envelopes.flatMap(envelope => envelope[1]);
+  const afterEvents = afterItems.filter(item => item[0].type === "event");
+  assert.equal(afterEvents.length, 1);
+  const encoded = JSON.stringify(envelopes);
+  contains(encoded, "ios.devices.discovery");
+  contains(encoded, "server.error.repeated");
+  contains(encoded, "PRIVATE", false);
+  contains(encoded, source.identifier, false);
+
+  source.properties.state.name = "PRIVATE_DEVICE_NAME";
+  await client.callTool(request);
+  Reflect.deleteProperty(source.properties.state, "name");
+  await client.callTool(request);
+  await Sentry.flush();
+  const recoveredItems = envelopes.flatMap(envelope => envelope[1]);
+  const recoveredEvents = recoveredItems.filter(item => item[0].type === "event");
+  assert.equal(recoveredEvents.length, 2);
 });
 
 test("storage measurements count owned files without following external symlinks", async t => {
@@ -951,4 +1056,39 @@ test("the sweep's in-line UI-state capture emits the same app-flow series, attri
   contains(emitted, "SettingsSheet", false);
   contains(emitted, "HomeTab/Home", false);
   contains(emitted, "home_state_open_1", false);
+});
+
+test("app control reports unexpected command failures without command output and skips expected outcomes", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, environment: "release", beforeSend: scrubErrorEvent,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  const run = async (_file: string, args: string[]) => {
+    const command = args.join(" ");
+    if (command.includes("openurl")) throw Object.assign(new Error(`Command failed: xcrun simctl ${command}`), { code: 1, stderr: "PRIVATE_FAILURE for myapp://PRIVATE_ROUTE", stdout: "" });
+    throw Object.assign(new Error("Command failed"), { code: 4, stderr: "FBSOpenApplicationServiceErrorDomain PRIVATE_BUNDLE", stdout: "" });
+  };
+  const server = new McpServer({ name: "app-control-telemetry", version: "1" });
+  instrumentMcpServer(server);
+  registerAppControlTools(server, createDrivers({ run, readBinary: async () => Buffer.alloc(0), adb: async () => "adb", aapt2: async () => null }));
+  const client = new Client({ name: "test", version: "1" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  t.after(async () => { await client.close(); await server.close(); await Sentry.close(); });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const target = { platform: "ios", deviceId: "B5C969F6-58A4-4C31-AB12-FB9E56D681DE" };
+  const failed = await client.callTool({ name: "mobile_open_url", arguments: { ...target, url: "myapp://PRIVATE_ROUTE" } });
+  assert.equal(failed.isError, true);
+  assert.match(JSON.stringify(failed.content), /PRIVATE_FAILURE/, "the agent still sees the command error");
+  const missing = await client.callTool({ name: "mobile_launch_app", arguments: { ...target, bundleId: "com.private.app" } });
+  assert.equal(missing.isError, true);
+  await Sentry.flush();
+  const events = envelopes.flatMap(envelope => envelope[1]).filter(item => item[0].type === "event").map(item => item[1]);
+  assert.equal(events.length, 1);
+  const encoded = JSON.stringify(events);
+  contains(encoded, "App open_url command failed.");
+  contains(encoded, '"operation":"app_control.open_url"');
+  contains(encoded, "PRIVATE", false);
+  contains(encoded, "B5C969F6", false);
 });

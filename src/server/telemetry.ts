@@ -5,6 +5,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { MeasurementWindow, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY } from "../shared/telemetry.ts";
 import { ExpectedOperationError, expectedOutcome } from "../shared/error-reporting.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
+import { closeHttpRuntime } from "./http-runtime.ts";
 import { definitionDiagnosticTags } from "../shared/simulator-definition-diagnostics.ts";
 import { deviceAppsDiagnosticTags } from "../shared/device-apps-diagnostics.ts";
 import { getDiscoveryCommandDiagnostic } from "../shared/device-apps-command-diagnostics.ts";
@@ -35,6 +36,13 @@ export function recordProjectDialog(outcome: "chosen" | "cancelled" | "failed", 
   const attributes = { component: "server", surface: "app-flow", outcome };
   Sentry.metrics.count("app_flow.project_dialog.samples", 1, { attributes });
   Sentry.metrics.distribution("app_flow.project_dialog.duration", Math.max(0, duration), { unit: "millisecond", attributes });
+}
+
+export function recordTraceSiftOperation(operation: "ready" | "analyze" | "remember" | "restore" | "handoff" | "task", outcome: "success" | "failed", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "tracesift", operation, outcome };
+  Sentry.metrics.count("tracesift.operation.samples", 1, { attributes });
+  Sentry.metrics.gauge("tracesift.operation.duration", duration, { unit: "millisecond", attributes });
 }
 
 export function recordAccessibilityBridgeRestart(outcome: "recovered" | "unavailable" | "failed") {
@@ -303,6 +311,10 @@ export function installTracePropagation(transport: Transport) {
 }
 
 export async function closeServerTelemetry() {
-  await closeNativeTelemetry();
-  await Sentry.close(2000);
+  try {
+    await closeNativeTelemetry();
+    await Sentry.close(2000);
+  } finally {
+    await closeHttpRuntime();
+  }
 }

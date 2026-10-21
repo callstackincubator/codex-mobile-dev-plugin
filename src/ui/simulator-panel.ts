@@ -2,6 +2,7 @@ import { androidNinePatchSkin } from "./android-nine-patch.ts";
 import { androidFrameGeometry, androidChromeScale } from "./android-frame-geometry.ts";
 import { getDevicePicker } from "./device-picker.ts";
 import { getDeviceSettings } from "./device-settings.ts";
+import { getAppTools } from "./app-tools.ts";
 import type { DeviceSettings } from "../shared/device-settings.ts";
 import { bezelGeometrySchema } from "../shared/bezel.ts";
 import type { Bezel } from "../shared/bezel.ts";
@@ -12,6 +13,7 @@ import type { DeviceOption } from "./device-picker.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
 import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { PanelContext } from "./model-context.ts";
+import { encodeScreenshotAttachment } from "./screenshot-attachment.ts";
 import { getScreenAnnotations } from "./screen-annotations.ts";
 import type { ScreenAnnotation } from "../shared/screen-annotations.ts";
 import { accessibilityScreen, screenComponents, screenSize } from "../shared/screen-annotations.ts";
@@ -27,6 +29,8 @@ import type { StreamMessage } from "./stream-input.ts";
 import { IosVideo } from "./ios-video.ts";
 import type { AndroidVideoBatch } from "./android-video.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
+import type { PanelTarget } from "../shared/panel-target.ts";
+import { initialPanelDevice } from "./device-layout.ts";
 
 export function createSimulatorPanel(
   app: App,
@@ -39,6 +43,7 @@ export function createSimulatorPanel(
   const devicePickerElement = element("devices");
   const devices = getDevicePicker(devicePickerElement);
   const settings = getDeviceSettings(element("settings"));
+  const appTools = getAppTools(element("settings"));
   const canvas = element<HTMLCanvasElement>("screen");
   const context = canvas.getContext("2d")!;
   const frame = element("device-frame");
@@ -56,6 +61,7 @@ export function createSimulatorPanel(
   let status: Status | undefined;
   let statusRevision = 0;
   let selected: SimulatorDevice | undefined;
+  let openingTarget: PanelTarget | undefined;
   let physicalDevices: PhysicalIosDevice[] = [];
   let discoveryError = "";
   let listing: Promise<void> | undefined;
@@ -89,8 +95,11 @@ export function createSimulatorPanel(
   }
 
   function controls() {
-    settings.configure(selected?.udid ?? "", busy || !toolsAvailable || selected?.state !== "Booted" || disposed);
+    const deviceToolsUnavailable = busy || !toolsAvailable || selected?.state !== "Booted" || disposed;
+    settings.configure(selected?.udid ?? "", deviceToolsUnavailable);
     settings.prefetch();
+    // App tools use simctl and adb, which do not reach paired iPhones.
+    appTools.configure(platform, selected?.udid ?? "", deviceToolsUnavailable || selected?.kind === "physical" && platform === "ios");
     element<HTMLButtonElement>("start-device").disabled = busy || !toolsAvailable || !selected || selected.kind === "physical" || selected.state === "Booted" || disposed;
     const hasDevices = status?.devices.length || physicalDevices.length;
     devices.disabled = busy || !toolsAvailable || !hasDevices || disposed;
@@ -283,6 +292,10 @@ export function createSimulatorPanel(
     return (result.structuredContent as { settings: Partial<DeviceSettings> }).settings;
   };
   settings.setFrame = visible => { showFrame = visible; setBezel(sourceBezel); fitScreen(); };
+  appTools.call = async (name, args) => {
+    if (!selected || disposed) throw new Error("Select a running device first.");
+    return (await call(name, args, { timeout: 60000 })).structuredContent;
+  };
 
   async function action(callback: () => Promise<void>) {
     if (busy || disposed) return;
@@ -423,6 +436,8 @@ export function createSimulatorPanel(
         ? "Unlock the device and allow USB debugging, or pair it for wireless debugging."
         : "Reconnect the device and check that ADB debugging is enabled.";
       empty(`${selected.name} · ${selected.state}`, description);
+    } else if (selected === undefined && (openingTarget?.platform !== undefined || openingTarget?.kind !== undefined || openingTarget?.deviceId !== undefined)) {
+      empty("Requested device unavailable.", "The requested device could not be found. Connect it or choose another device from the picker.");
     } else if (!reconnect.active && !stoppedDisplay) empty(selected ? "Select a device to open its screen." : (platform === "android" ? "No Android devices. Create an AVD in Android Studio or connect a device." : "No iOS devices. Connect an iPhone or add a simulator in Xcode."));
     controls();
   }
@@ -431,11 +446,20 @@ export function createSimulatorPanel(
     statusRevision++;
     status = next;
     const available = [...physicalDevices, ...next.devices];
+    if (platform === "android" && openingTarget?.deviceId?.startsWith("avd:")) {
+      const avdName = openingTarget.deviceId.slice(4);
+      const booted = next.devices.find(device => device.kind !== "physical" && device.name === avdName && device.state === "Booted");
+      if (booted !== undefined) openingTarget = { ...openingTarget, deviceId: booted.udid };
+    } else if (platform === "android" && selected && openingTarget?.deviceId === selected.udid && selected.kind !== "physical") {
+      const stoppedId = `avd:${selected.name}`;
+      const stopped = next.devices.find(device => device.udid === stoppedId && device.state === "Shutdown");
+      if (stopped !== undefined) openingTarget = { ...openingTarget, deviceId: stopped.udid };
+    }
     const oldDevice = available.find(device => device.udid === previous);
+    const nextDevice = initialPanelDevice(available, platform, previous, openingTarget);
     const physicalIos = oldDevice?.kind === "physical" && oldDevice.platform === "ios";
     const availableForMirroring = physicalIos ? oldDevice.state === "connected" : next.connected && oldDevice?.state === "Booted";
     if (reconnect.active && availableForMirroring === false) void disconnect();
-    const running = next.devices.find(device => device.state === "Booted");
     const physicalOptions: DeviceOption[] = physicalDevices.map(device => {
       const connection = physicalConnectionLabel(device.transportType);
       const kind = /ipad/i.test(device.model) ? "tablet" : "phone";
@@ -464,7 +488,7 @@ export function createSimulatorPanel(
     });
     devices.update({
       items: [...physicalOptions, ...androidPhysicalOptions, ...simulatorOptions],
-      value: previous && oldDevice ? previous : running?.udid ?? physicalDevices[0]?.udid ?? "",
+      value: nextDevice?.udid ?? "",
       placeholder: available.length ? "Select a device" : next.connected ? "No devices" : "Devices unavailable",
     });
     selectDevice();
@@ -743,6 +767,7 @@ export function createSimulatorPanel(
     discoveryError = errors.join(" · ");
     renderStatus(next);
     notice();
+    if (!busy && !reconnect.active) await connect();
   }
 
   function scheduleDiscovery() {
@@ -876,7 +901,10 @@ export function createSimulatorPanel(
       event.preventDefault(); send({ type: "key", code: event.code, modifiers: event.shiftKey ? ["shift"] : [] });
     }
   });
-  devicePickerElement.addEventListener("change", () => { void action(async () => { await disconnect(); selectDevice(); await start(); }); });
+  devicePickerElement.addEventListener("change", () => {
+    openingTarget = undefined;
+    void action(async () => { await disconnect(); selectDevice(); await start(); });
+  });
   element("start-device").addEventListener("click", () => { void action(start); });
   root.querySelectorAll<HTMLButtonElement>("[data-button]").forEach(button => {
     button.addEventListener("click", () => { send({ type: "button", button: button.dataset.button === "home" ? "home" : "app-switcher" }); });
@@ -900,7 +928,10 @@ export function createSimulatorPanel(
       const result = await call(tool, parameters, { timeout: 30000 });
       const image = result.content.find(item => item.type === "image" && item.mimeType === "image/png");
       if (!image || image.type !== "image") throw new Error("The plugin did not return a PNG screenshot.");
-      try { await panelContext.attachScreenshot({ id: crypto.randomUUID(), data: image.data, simulator }); }
+      try {
+        const attachment = await encodeScreenshotAttachment(image.data);
+        await panelContext.attachScreenshot({ id: crypto.randomUUID(), ...attachment, simulator });
+      }
       catch (error) {
         captureUiError(error, "screenshot.attach");
         screenshotAttachmentError = "The screenshot could not be attached to chat.";
@@ -937,6 +968,10 @@ export function createSimulatorPanel(
     notice,
     empty,
     resume,
+    setOpeningTarget(target: PanelTarget | undefined) {
+      openingTarget = target;
+      if (status !== undefined) renderStatus(status);
+    },
     load: () => action(async () => { await listDevices(); scheduleDiscovery(); await connect(); }),
     acceptStatus(next: Status) { renderStatus(next); if (toolsAvailable && !reconnect.active) void resume(); },
     setAvailable(value: boolean) { toolsAvailable = value; controls(); },
@@ -947,6 +982,7 @@ export function createSimulatorPanel(
       devices.stop = undefined;
       devices.refresh = undefined;
       settings.dispose();
+      appTools.dispose();
       stopObservingAnnotations();
       annotations.dispose();
       toolsAvailable = false;

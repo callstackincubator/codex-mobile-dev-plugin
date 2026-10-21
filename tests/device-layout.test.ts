@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeDeviceLayout } from "../src/ui/device-layout.ts";
+import { activeDeviceLayout, initialPanelDevice } from "../src/ui/device-layout.ts";
+import { panelTargetSchema } from "../src/shared/panel-target.ts";
 import type { SimulatorDevice } from "../src/shared/protocol.ts";
+import type { PanelTarget } from "../src/shared/panel-target.ts";
 
 const iosSimulator: SimulatorDevice = { udid: "ios", name: "iPhone", state: "Booted", runtime: "iOS", platform: "ios", kind: "simulator" };
 const androidEmulator: SimulatorDevice = { udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android", kind: "emulator" };
@@ -31,5 +33,43 @@ test("stopped, disconnected, offline, and unauthorized devices do not activate a
       assert.equal(activeDeviceLayout(iosPhone, android), "ios");
       assert.equal(activeDeviceLayout(ios, android), "none");
     }
+  }
+});
+
+test("opening targets validate platform and kind without filling in undecided choices", () => {
+  const automatic = panelTargetSchema.parse({});
+  assert.deepEqual(automatic, {});
+  for (const target of [{ platform: "ios", kind: "emulator" }, { platform: "android", kind: "simulator" }, { deviceId: "../../phone" }]) {
+    const parsed = panelTargetSchema.safeParse(target);
+    assert.equal(parsed.success, false);
+  }
+  const physical = panelTargetSchema.parse({ kind: "physical" });
+  assert.deepEqual(physical, { kind: "physical" });
+  const networkDeviceId = "[fe80::1234%en0]:5555";
+  const networkTarget = panelTargetSchema.parse({ platform: "android", kind: "physical", deviceId: networkDeviceId });
+  assert.equal(networkTarget.deviceId, networkDeviceId);
+});
+
+test("opening constraints override an incompatible previous device and never select another kind or ID", () => {
+  const ios = [iosPhone, iosSimulator];
+  const android = [androidPhone, androidEmulator];
+  const stopped = { ...androidEmulator, state: "Shutdown" };
+  const ipad = { ...iosSimulator, udid: "ipad", state: "Shutdown" };
+  const cases: Array<{ devices: SimulatorDevice[]; platform: "ios" | "android"; previous?: string; target?: PanelTarget; expected?: SimulatorDevice }> = [
+    { devices: ios, platform: "ios", previous: iosSimulator.udid, target: { kind: "physical" }, expected: iosPhone },
+    { devices: android, platform: "android", previous: androidPhone.udid, target: { kind: "emulator" }, expected: androidEmulator },
+    { devices: ios, platform: "ios", target: { platform: "android" } },
+    { devices: android, platform: "android", target: { kind: "simulator" } },
+    { devices: ios, platform: "ios", target: { deviceId: "missing" } },
+    { devices: [iosSimulator], platform: "ios", target: { kind: "physical" } },
+    { devices: [stopped], platform: "android", target: { kind: "emulator" }, expected: stopped },
+    { devices: [stopped], platform: "android" },
+    { devices: ios, platform: "ios", expected: iosSimulator },
+    { devices: ios, platform: "ios", previous: iosPhone.udid, expected: iosPhone },
+    { devices: [...ios, ipad], platform: "ios", previous: iosSimulator.udid, target: { deviceId: "ipad" }, expected: ipad },
+  ];
+  for (const item of cases) {
+    const selected = initialPanelDevice(item.devices, item.platform, item.previous, item.target);
+    assert.equal(selected, item.expected);
   }
 });

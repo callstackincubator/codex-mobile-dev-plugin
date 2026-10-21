@@ -12,6 +12,8 @@ import type { PhysicalAndroidDevice } from "../src/shared/android-devices.ts";
 import type { SimulatorDevice } from "../src/shared/protocol.ts";
 import type { ScreenAnnotation } from "../src/shared/screen-annotations.ts";
 import type { ScreenshotAttachment } from "../src/ui/model-context.ts";
+import { WorkspaceDevices } from "../src/ui/workspace-devices.ts";
+import type { DeviceLayout } from "../src/ui/device-layout.ts";
 
 const physicalBezel = { rect: { x: 27, y: 18, width: 400, height: 872 }, viewport: { width: 454, height: 908 }, clipRadius: 62, image: "data:image/png;base64,AQID", mask: "data:image/png;base64,BAUG" };
 
@@ -61,6 +63,7 @@ function fixture(t: TestContext) {
   const attachedAnnotations: ScreenAnnotation[] = [];
   let screenshotCopied = true;
   let screenshotAttachmentError = "";
+  let screenshotEncodingError = "";
   let sessionNumber = 0;
   let delayedOpen: Promise<void> | undefined;
   let blockedIos = false;
@@ -105,6 +108,17 @@ function fixture(t: TestContext) {
     VideoDecoder: Decoder, EncodedVideoChunk: class {},
     requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
     cancelAnimationFrame: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
+    OffscreenCanvas: class {
+      width: number;
+      height: number;
+      constructor(width: number, height: number) { this.width = width; this.height = height; }
+      getContext() { return { fillStyle: "", fillRect() {}, drawImage() {} }; }
+      async convertToBlob() {
+        if (screenshotEncodingError) throw new Error(screenshotEncodingError);
+        const bytes = new Uint8Array([255, 216, 255, 217]);
+        return new Blob([bytes], { type: "image/jpeg" });
+      }
+    },
     createImageBitmap: async () => ({ width: 390, height: 844, close() {} }),
   };
   const restore: (() => void)[] = [];
@@ -231,6 +245,7 @@ function fixture(t: TestContext) {
     missTiming() { observeFrames = false; }, invalidFrame() { invalidFrame = true; },
     failPhysicalCapture(message: string) { physicalCaptureError = message; },
     busyPhysicalInput() { physicalInputBusy = true; },
+    failScreenshotEncoding(message: string) { screenshotEncodingError = message; },
     failScreenshotAttachment(message: string) { screenshotAttachmentError = message; },
   };
 }
@@ -245,6 +260,155 @@ const androidPhone: PhysicalAndroidDevice = {
   udid: "phone-serial", name: "Pixel 9", model: "Pixel 9", state: "Booted", runtime: "Android",
   platform: "android", kind: "physical", transportType: "wired",
 };
+
+for (const inputFirst of [false, true]) test(`Android opening intent is applied before streams start, input first: ${inputFirst}`, async t => {
+  const f = fixture(t);
+  f.setAndroidDevices([androidPhone, { udid: "emulator-5554", name: "Pixel AVD", state: "Booted", runtime: "Android", platform: "android", kind: "emulator" }]);
+  const layouts: DeviceLayout[] = [];
+  const workspace = new WorkspaceDevices([f.ios.panel, f.android.panel], layout => { layouts.push(layout); });
+  t.after(() => workspace.dispose());
+  const target = { platform: "android", kind: "emulator" } as const;
+  if (inputFirst) await workspace.open(target);
+  else await workspace.setAvailable(true);
+  assert.equal(f.calls.length, 0, "Discovery waits for both the host and the opening intent.");
+  if (inputFirst) await workspace.setAvailable(true);
+  else await workspace.open(target);
+  assert.equal(f.ios.panel.selected, undefined);
+  assert.equal(f.android.panel.selected?.udid, "emulator-5554");
+  const streams = f.calls.filter(call => call.name.endsWith("_stream_session") || call.name === "mobile_ios_mirror_session");
+  assert.equal(streams.length, 1);
+  assert.equal(streams[0].name, "mobile_android_stream_session");
+  assert.deepEqual(streams[0].arguments, { deviceId: "emulator-5554" });
+  assert.deepEqual(layouts, ["android", "android"]);
+});
+
+for (const platform of ["ios", "android"] as const) test(`${platform} physical opening intent selects the phone before any simulator`, async t => {
+  const f = fixture(t);
+  f.setPhysicalDevices([physicalPhone]);
+  f.setAndroidDevices([{ udid: "emulator-5554", name: "Pixel AVD", state: "Booted", runtime: "Android", kind: "emulator" }, androidPhone]);
+  const layouts: DeviceLayout[] = [];
+  const workspace = new WorkspaceDevices([f.ios.panel, f.android.panel], layout => { layouts.push(layout); });
+  t.after(() => workspace.dispose());
+  await workspace.setAvailable(true);
+  await workspace.open({ platform, kind: "physical" });
+  const panel = platform === "ios" ? f.ios.panel : f.android.panel;
+  assert.equal(panel.selected?.kind, "physical");
+  const streams = f.calls.filter(call => call.name.endsWith("_stream_session") || call.name === "mobile_ios_mirror_session");
+  assert.equal(streams.length, 1);
+  assert.equal(streams[0].name, platform === "ios" ? "mobile_ios_mirror_session" : "mobile_android_stream_session");
+  const layout = layouts.at(-1);
+  assert.equal(layout, platform);
+});
+
+test("missing exact target remains unselected through refreshes, then connects when it arrives", async t => {
+  const f = fixture(t);
+  f.ios.panel.setOpeningTarget({ platform: "ios", kind: "physical", deviceId: physicalPhone.udid });
+  await f.ios.panel.load();
+  assert.equal(f.ios.panel.selected, undefined);
+  const emptyState = f.ios.element("empty");
+  assert.equal(emptyState.textContent, "Requested device unavailable.");
+  const pickerElement = f.ios.element("devices");
+  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  await picker.refresh?.();
+  const initialStreams = f.calls.filter(call => call.name === "mobile_stream_session" || call.name === "mobile_ios_mirror_session");
+  assert.equal(initialStreams.length, 0);
+  f.setPhysicalDevices([physicalPhone]);
+  await picker.refresh?.();
+  await waitFor(() => f.calls.some(call => call.name === "mobile_ios_mirror_session"));
+  assert.equal(f.ios.panel.selected?.udid, physicalPhone.udid);
+  f.setPhysicalDevices([]);
+  await picker.refresh?.();
+  assert.equal(f.ios.panel.selected, undefined, "Disconnecting the requested phone does not select a simulator.");
+  picker.value = "iphone-1";
+  dispatch(pickerElement, "change");
+  await waitFor(() => f.calls.some(call => call.name === "mobile_stream_session"));
+  await picker.refresh?.();
+  assert.equal(f.ios.panel.selected?.udid, "iphone-1", "The user's later device choice replaces the opening constraint.");
+});
+
+test("automatic opening retains iOS precedence and later manual layout survives duplicate results", async t => {
+  const f = fixture(t);
+  const layouts: DeviceLayout[] = [];
+  const workspace = new WorkspaceDevices([f.ios.panel, f.android.panel], layout => { layouts.push(layout); });
+  t.after(() => workspace.dispose());
+  await workspace.open({});
+  await workspace.setAvailable(true);
+  const automaticLayout = layouts.at(-1);
+  assert.equal(automaticLayout, "ios");
+  workspace.selectLayout();
+  layouts.push("android");
+  const count = f.calls.length;
+  await workspace.open({ platform: "ios" });
+  assert.equal(f.calls.length, count);
+  const manualLayout = layouts.at(-1);
+  assert.equal(manualLayout, "android");
+});
+
+test("targeted stopped AVD opens without booting and tracks its running serial after boot", async t => {
+  const f = fixture(t);
+  f.setAndroidDevices([{ udid: "avd:Pixel", name: "Pixel", state: "Shutdown", runtime: "Android", platform: "android", kind: "emulator" }]);
+  f.android.panel.setOpeningTarget({ platform: "android", kind: "emulator", deviceId: "avd:Pixel" });
+  await f.android.panel.load();
+  assert.equal(f.android.panel.selected?.state, "Shutdown");
+  const startButton = f.android.element("start-device");
+  assert.equal(startButton.disabled, false);
+  const lifecycle = f.calls.filter(call => call.name.startsWith("mobile_boot"));
+  assert.equal(lifecycle.length, 0);
+  const pickerElement = f.android.element("devices");
+  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  f.setAndroidDevices([]);
+  await picker.refresh?.();
+  assert.equal(f.android.panel.selected, undefined);
+  f.setAndroidDevices([{ udid: "emulator-5554", name: "Pixel", state: "Booted", runtime: "Android", platform: "android", kind: "emulator" }]);
+  await picker.refresh?.();
+  assert.equal(f.android.panel.selected?.udid, "emulator-5554");
+  await picker.refresh?.();
+  assert.equal(f.android.panel.selected?.udid, "emulator-5554");
+});
+
+test("a platform chosen during discovery is not overwritten when startup finishes", async t => {
+  const f = fixture(t);
+  let finishDiscovery: () => void = () => {};
+  const discovery = new Promise<void>(resolve => { finishDiscovery = resolve; });
+  f.delayDiscovery(discovery);
+  const layouts: DeviceLayout[] = [];
+  const workspace = new WorkspaceDevices([f.ios.panel, f.android.panel], layout => { layouts.push(layout); });
+  t.after(() => workspace.dispose());
+  await workspace.setAvailable(true);
+  const opening = workspace.open({ platform: "android" });
+  workspace.selectLayout();
+  layouts.push("ios");
+  finishDiscovery();
+  await opening;
+  const layout = layouts.at(-1);
+  assert.equal(layout, "ios");
+});
+
+test("an exact Android target keeps the same AVD selected through Stop and Start", async t => {
+  const f = fixture(t);
+  f.android.panel.setOpeningTarget({ platform: "android", kind: "emulator", deviceId: "emulator-5554" });
+  await f.android.panel.load();
+  const pickerElement = f.android.element("devices");
+  const picker = getDevicePicker(pickerElement as unknown as HTMLElement);
+  await picker.stopDevice("emulator-5554");
+  assert.equal(f.android.panel.selected?.udid, "avd:Pixel");
+  const startButton = f.android.element("start-device");
+  assert.equal(startButton.disabled, false);
+  dispatch(startButton, "click");
+  await waitFor(() => f.android.panel.selected?.state === "Booted" && startButton.disabled);
+  await picker.refresh?.();
+  assert.equal(f.android.panel.selected?.udid, "emulator-5554");
+});
+
+test("disposing the workspace before host readiness does not start device work", async t => {
+  const f = fixture(t);
+  const layouts: DeviceLayout[] = [];
+  const workspace = new WorkspaceDevices([f.ios.panel, f.android.panel], layout => { layouts.push(layout); });
+  await workspace.open({ platform: "android" });
+  workspace.dispose();
+  await workspace.setAvailable(true);
+  assert.equal(f.calls.length, 0);
+});
 
 test("physical Android devices appear above emulators and stream without emulator lifecycle calls", async t => {
   const f = fixture(t);
@@ -450,7 +614,9 @@ test("physical iOS devices mirror above simulators and route touches to their ow
   assert.equal(resumedMirrors.length, 2);
   assert.equal(buttonsStillDisabled, true);
   assert.equal(screenshot.disabled, false);
-  f.setPhysicalDevices([{ ...physicalPhone, state: "disconnected", transportType: "none" }]);
+  const unavailablePhone = { ...physicalPhone, state: "unavailable" };
+  Reflect.deleteProperty(unavailablePhone, "transportType");
+  f.setPhysicalDevices([unavailablePhone]);
   await picker.refresh?.();
   const disconnectedState = picker.getSnapshot();
   const phonePresent = disconnectedState.items.some(item => item.value === physicalPhone.udid);
@@ -549,7 +715,29 @@ test("screenshot attachment failures remain visible until the next action on bot
     dispatch(screenshot, "click");
     await waitFor(() => f.screenshots.length === attached + 1 && screenshot.disabled === false);
     assert.equal(notice.hidden, true);
+    assert.equal(f.screenshots.at(-1)?.mimeType, "image/jpeg");
+    assert.equal(f.screenshots.at(-1)?.data, "/9j/2Q==");
   }
+});
+
+test("JPEG encoding failures keep chat empty, show a notice and allow another screenshot", async t => {
+  const f = fixture(t);
+  await f.ios.panel.load();
+  const screenshot = f.ios.element("screenshot");
+  await waitFor(() => screenshot.disabled === false);
+  f.failScreenshotEncoding("JPEG encoder failed");
+  dispatch(screenshot, "click");
+  const notice = f.ios.element("notice");
+  await waitFor(() => notice.hidden === false && screenshot.disabled === false);
+  assert.equal(f.screenshots.length, 0);
+  assert.match(f.ios.element("notice-message").textContent, /screenshot.*not.*attached.*chat/i);
+  const capture = f.calls.find(call => call.name === "mobile_capture_screenshot");
+  assert.ok(capture, "The original PNG is captured for the clipboard before JPEG encoding.");
+  f.failScreenshotEncoding("");
+  dispatch(screenshot, "click");
+  await waitFor(() => f.screenshots.length === 1 && screenshot.disabled === false);
+  assert.equal(notice.hidden, true);
+  assert.equal(f.screenshots[0].mimeType, "image/jpeg");
 });
 
 test("physical iOS screenshots capture the displayed frame without a simulator backend", async t => {
@@ -565,7 +753,8 @@ test("physical iOS screenshots capture the displayed frame without a simulator b
   const captured = f.calls.find(call => call.name === "mobile_ios_mirror_capture_screenshot");
   assert.match(captured?.arguments.sessionId as string, /^physical-/);
   assert.equal(captured?.arguments.image, "AA==");
-  assert.equal(f.screenshots[0].data, captured?.arguments.image);
+  assert.equal(f.screenshots[0].data, "/9j/2Q==");
+  assert.equal(f.screenshots[0].mimeType, "image/jpeg");
   assert.equal(f.screenshots[0].simulator.udid, physicalPhone.udid);
   await waitFor(() => screenshot.disabled === false);
   f.failClipboard();

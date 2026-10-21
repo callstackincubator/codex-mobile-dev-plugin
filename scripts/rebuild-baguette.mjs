@@ -1,6 +1,7 @@
 import { addForegroundTimeoutDiagnostics } from "./baguette-foreground-diagnostics.mjs";
 import { addDefinitionDiagnostics } from "./baguette-definition-diagnostics.mjs";
 import { removeBaguetteToolchainRpaths } from "./baguette-rpaths.mjs";
+import { addScreenLifecycle } from "./baguette-screen-lifecycle.mjs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
@@ -23,7 +24,9 @@ export async function baguetteTelemetrySourceHash() {
   hash.update(foregroundScript);
   const rpathScript = await readFile("scripts/baguette-rpaths.mjs");
   hash.update(rpathScript);
-  for (const file of ["ForegroundCommand.swift", "ForegroundFailure.swift", "foreground-method.swift", "DefinitionDiagnostics.swift", "DefinitionDiagnosticsTests.swift"]) {
+  const screenScript = await readFile("scripts/baguette-screen-lifecycle.mjs");
+  hash.update(screenScript);
+  for (const file of ["ForegroundCommand.swift", "ForegroundFailure.swift", "foreground-method.swift", "DefinitionDiagnostics.swift", "DefinitionDiagnosticsTests.swift", "ScreenLifecycleTests.swift"]) {
     const contents = await readFile(`native/baguette/${file}`);
     hash.update(contents);
   }
@@ -113,6 +116,7 @@ export async function rebuildBaguette(sourceDirectory) {
     await addBaguetteTelemetry(source, sdk);
     await addForegroundDetection(source);
     await addDefinitionDiagnostics(source, release);
+    await addScreenLifecycle(source);
     console.log(`Rebuilding Baguette ${release.version} with ${swift.trim().split("\n")[0]}…`);
     try {
       await execute("xcrun", ["swift", "build", "-c", "release", "--product", "Baguette"], {

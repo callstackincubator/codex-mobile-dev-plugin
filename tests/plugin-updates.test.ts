@@ -37,7 +37,7 @@ async function installedManifest(directory: string, version: string) {
   await writeFile(path, text);
 }
 
-function cliFixture(directory: string, calls: string[][], options: { source?: string; errors?: unknown[]; version?: string } = {}): RunCodex {
+function cliFixture(directory: string, calls: string[][], options: { source?: string; errors?: unknown[]; version?: string; refreshed?: boolean; selected?: boolean } = {}): RunCodex {
   const root = join(directory, ".tmp/marketplaces/mobile-dev");
   return async args => {
     calls.push(args);
@@ -47,7 +47,11 @@ function cliFixture(directory: string, calls: string[][], options: { source?: st
     if (args[2] === "upgrade") {
       const version = options.version ?? "0.1.132";
       await installedManifest(directory, version);
-      return { selectedMarketplaces: ["mobile-dev"], upgradedRoots: [root], errors: options.errors ?? [] };
+      const selected = options.selected ?? true;
+      const refreshed = options.refreshed ?? true;
+      const selectedMarketplaces = selected ? ["mobile-dev"] : [];
+      const upgradedRoots = refreshed ? [root] : [];
+      return { selectedMarketplaces, upgradedRoots, errors: options.errors ?? [] };
     }
     return { installed: [{ pluginId: "mobile-dev@mobile-dev", installed: true, version: options.version ?? "0.1.132" }] };
   };
@@ -148,8 +152,25 @@ test("installation is deduplicated, verifies cache files, and retains the restar
   assert.equal(includesProfile, false);
 });
 
-test("wrong marketplaces, JSON upgrade errors, and stale installs never report success", async t => {
-  for (const options of [{ source: "https://github.com/other/repo" }, { errors: ["failed"] }, { version: "0.1.131" }]) {
+test("an unchanged marketplace still verifies the installed version and reports a restart notice", async t => {
+  const directory = await profile(t);
+  const calls: string[][] = [];
+  const run = cliFixture(directory, calls, { refreshed: false });
+  const options = { enabled: true, profile: directory, currentVersion: "0.1.131", fetch: releaseFetch(), run };
+  const updates = new PluginUpdates(options);
+  const installed = await updates.install();
+  assert.equal(installed.status, "updated");
+  assert.equal(installed.latestVersion, "0.1.132");
+  const lastCall = calls.at(-1);
+  assert.deepEqual(lastCall, ["plugin", "list", "--json"]);
+  const anotherChat = new PluginUpdates(options);
+  const notice = await anotherChat.check();
+  assert.equal(notice.status, "updated");
+});
+
+test("wrong marketplaces, JSON upgrade errors, unselected marketplaces, and stale installs never report success", async t => {
+  for (const options of [{ source: "https://github.com/other/repo" }, { errors: ["failed"] }, { selected: false },
+    { version: "0.1.131" }, { refreshed: false, version: "0.1.131" }]) {
     const directory = await profile(t);
     const calls: string[][] = [];
     const run = cliFixture(directory, calls, options);
