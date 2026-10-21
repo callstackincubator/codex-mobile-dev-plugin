@@ -22,13 +22,15 @@ function unescapeXml(text: string) {
   });
 }
 
+// Declarations, processing instructions, and comments match first and are skipped in the same pass.
+const xmlNoise = String.raw`<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>`;
+
 type Token = { tag: string; close: boolean; empty: boolean } | { text: string };
 function tokens(xml: string): Token[] {
-  const body = xml.replace(/<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>/g, "");
   const result: Token[] = [];
-  for (const match of body.matchAll(/<(\/?)([A-Za-z]+)(?:\s[^>]*?)?(\/?)>|([^<]+)/g)) {
+  for (const match of xml.matchAll(new RegExp(String.raw`${xmlNoise}|<(\/?)([A-Za-z]+)(?:\s[^>]*?)?(\/?)>|([^<]+)`, "g"))) {
     if (match[4] !== undefined) result.push({ text: match[4] });
-    else result.push({ tag: match[2], close: match[1] === "/", empty: match[3] === "/" });
+    else if (match[2] !== undefined) result.push({ tag: match[2], close: match[1] === "/", empty: match[3] === "/" });
   }
   return result;
 }
@@ -116,10 +118,10 @@ export function plistEntries(dict: Record<string, PlistValue>): ParsedEntry[] {
 
 export function parseSharedPreferences(xml: string): ParsedEntry[] {
   const entries: ParsedEntry[] = [];
-  const body = xml.replace(/<\?[\s\S]*?\?>|<!--[\s\S]*?-->/g, "");
-  const element = /<(string|boolean|int|long|float|null|set)\s+name="([^"]*)"(?:\s+value="([^"]*)")?\s*(?:\/>|>([\s\S]*?)<\/\1>)/g;
-  for (const match of body.matchAll(element)) {
+  const element = new RegExp(String.raw`${xmlNoise}|<(string|boolean|int|long|float|null|set)\s+name="([^"]*)"(?:\s+value="([^"]*)")?\s*(?:\/>|>([\s\S]*?)<\/\1>)`, "g");
+  for (const match of xml.matchAll(element)) {
     const [, tag, rawName, rawValue, content = ""] = match;
+    if (tag === undefined) continue;
     const key = unescapeXml(rawName);
     if (tag === "string") entries.push(textEntry(key, unescapeXml(content)));
     else if (tag === "set") {

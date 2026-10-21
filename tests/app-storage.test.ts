@@ -292,3 +292,13 @@ test("database tables are read page by page with blobs as hex, and unknown table
     assert.equal(execFileSync("/usr/bin/sqlite3", [file, "SELECT count(*) FROM items"], { encoding: "utf8" }).trim(), "250");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test("XML parsers skip comments, declarations, and doctypes, including ones that hide elements", async () => {
+  const { parsePlistXml, parseSharedPreferences } = await import("../src/server/app-storage/formats.ts");
+  const plist = `<?xml version="1.0"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "x"><plist><dict>
+    <!-- <key>hidden</key><string>no</string> --><key>kept</key><!-- between --><string>yes</string></dict></plist>`;
+  assert.deepEqual(parsePlistXml(plist), { kept: "yes" });
+  const prefs = `<?xml version='1.0' encoding='utf-8' standalone='yes' ?><map>
+    <!-- <string name="hidden">no</string> --><string name="kept">yes</string><!<!---->--><boolean name="on" value="true" /></map>`;
+  assert.deepEqual(parseSharedPreferences(prefs).map(entry => [entry.key, entry.value]), [["kept", "yes"], ["on", "true"]]);
+});
