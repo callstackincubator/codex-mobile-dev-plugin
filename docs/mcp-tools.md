@@ -43,3 +43,17 @@
 | `mobile_display_fps_close` | Stop FPS collection and release the tracing connection |
 
 When reactivated, the `agent-device` MCP server exposes the pinned runtime's official operations through compact, validated schemas, including `open`, `snapshot`, `press`, `fill`, `type`, `scroll`, `wait`, `find`, `get`, `is`, `close`, and debugging tools. Their input schemas describe each command. The source [control skill](../skills/agent-device/SKILL.md), currently excluded from the package, explains session ordering and links to the version-matched guide.
+
+
+## TraceSift annotations
+
+Analysis writes compact results and replaces the latest reference for the input
+profile. Remember writes/replaces the reference for a host view. Both declare
+`readOnlyHint: false` and `destructiveHint: true` because a previous association
+can be overwritten, even though the input profile is not edited.
+
+Explore, Explore payload, and investigation handoff declare `readOnlyHint: false`
+and `destructiveHint: false`: they can start a local background service, and
+browser Explore also launches the explorer. The two restore tools only read local
+files and remain read-only. All seven use `openWorldHint: false`; operations are
+confined to local files and the authenticated loopback TraceSift service.

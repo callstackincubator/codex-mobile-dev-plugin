@@ -145,3 +145,25 @@ test("the Explore payload tool refuses a tree too deep to serialize", async () =
   assert.match((result.content as { text: string }[])[0]!.text, /larger than the panel can open/);
   await close();
 });
+
+
+test("published TraceSift annotations distinguish saved references, service startup, and file-only restores", async t => {
+  const { mcp, close } = await connect({});
+  t.after(close);
+  const { tools } = await mcp.listTools();
+  const expected = {
+    mobile_analyze_profile: [false, true],
+    mobile_remember_tracesift_analysis: [false, true],
+    mobile_restore_tracesift_analysis: [true, false],
+    mobile_restore_tracesift_analysis_by_input: [true, false],
+    mobile_open_tracesift_explore: [false, false],
+    mobile_tracesift_explore_payload: [false, false],
+    mobile_get_tracesift_handoff: [false, false],
+  };
+  assert.equal(tools.length, Object.keys(expected).length);
+  for (const [name, [readOnlyHint, destructiveHint]] of Object.entries(expected)) {
+    const tool = tools.find(tool => tool.name === name);
+    assert.ok(tool, `Missing ${name}`);
+    assert.deepEqual(tool.annotations, { readOnlyHint, destructiveHint, openWorldHint: false }, name);
+  }
+});
