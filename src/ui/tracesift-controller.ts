@@ -2,7 +2,7 @@ import type { App } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { OpenAIMessageParams } from "@openai/mcp-extensions/app";
 import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "../shared/tracesift.ts";
-import { decodeTraceSiftExplorePayload, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, type TraceSiftExploreKind } from "../shared/tracesift-explore.ts";
+import { decodeTraceSiftExplorePayload, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, TRACE_SIFT_PAYLOAD_TOO_LARGE, traceSiftPayloadRefused, type TraceSiftExploreKind } from "../shared/tracesift-explore.ts";
 import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "../shared/tracesift-selection.ts";
 import { buildReactSelectionPrompt, reactSelectionEvidence, type ReactSelectionRecording } from "../shared/tracesift-react-selection.ts";
 import type { ContributionChartKind } from "./components/tracesift/contribution-chart.tsx";
@@ -15,6 +15,8 @@ type State = {
   dark: boolean;
   busyCard?: string;
   error: string;
+  /** Said when a finding was handed to the browser window instead of this panel. */
+  notice: string;
   /** Which drawing every card on this analysis carries; one switch, as on the web. */
   chartKind: ContributionChartKind;
   /** The card whose hand-off is being fetched, and the one just copied. */
@@ -50,7 +52,7 @@ function composerUnavailable(error: unknown) {
 }
 
 export class TraceSiftController {
-  private state: State = { canInvestigate: false, dark: false, error: "", chartKind: "bar" };
+  private state: State = { canInvestigate: false, dark: false, error: "", notice: "", chartKind: "bar" };
   private listeners = new Set<() => void>();
   private disposed = false;
   private readonly readyAt = performance.now();
@@ -263,7 +265,7 @@ export class TraceSiftController {
     if (!analysis || this.disposed || this.state.openingExploreCard || this.state.explorer) return;
     const card = analysis.cards.find(entry => entry.id === cardId);
     if (!card) return;
-    this.update({ openingExploreCard: cardId, error: "" });
+    this.update({ openingExploreCard: cardId, error: "", notice: "" });
     const startedAt = performance.now();
     try {
       const result = await this.app.callServerTool({
@@ -275,7 +277,7 @@ export class TraceSiftController {
       if (result.isError) throw new Error(result.content.filter(item => item.type === "text" && "text" in item).map(item => item.text).join("\n") || "TraceSift could not open this task.");
       const envelope = traceSiftExploreEnvelopeSchema.safeParse(result.structuredContent);
       if (!envelope.success) throw new Error("TraceSift did not return the data this explorer needs.");
-      if (envelope.data.payloadBytes > TRACE_SIFT_PAYLOAD_MAX_BYTES) throw new Error("This finding is larger than the panel can open. Use Open in browser for it.");
+      if (envelope.data.payloadBytes > TRACE_SIFT_PAYLOAD_MAX_BYTES) throw new Error(TRACE_SIFT_PAYLOAD_TOO_LARGE);
       const payload = await decodeTraceSiftExplorePayload(result, envelope.data);
       // Megabytes take a while, and `accept` may have replaced the analysis
       // meanwhile. Installing this payload then would show the new reading a
@@ -305,9 +307,20 @@ export class TraceSiftController {
       countUiEvent("ui.tracesift.explore");
       markUiSurfaceReady(this.explorerReadyAt);
     } catch (error) {
+      const message = error instanceof Error ? error.message : "That task could not be opened.";
+      // A finding too big for the bridge is not a failure the reader has to act
+      // on: the browser window renders the same data without crossing one, so
+      // Explore takes them there and says where it went.
+      if (traceSiftPayloadRefused(message)) {
+        countUiEvent("ui.tracesift.explore_too_large");
+        this.update({ openingExploreCard: undefined });
+        await this.openExploreInBrowser(cardId, focus);
+        if (!this.disposed && !this.state.error) this.update({ notice: `${TRACE_SIFT_PAYLOAD_TOO_LARGE} Opened it in your browser instead.` });
+        return;
+      }
       countUiEvent("ui.tracesift.explore_failed");
       captureUiError(error, "tracesift.explore");
-      this.update({ openingExploreCard: undefined, error: error instanceof Error ? error.message : "That task could not be opened." });
+      this.update({ openingExploreCard: undefined, error: message });
     }
   };
 
@@ -465,18 +478,18 @@ export class TraceSiftController {
   };
 
   /** The old path: `tracesift explore` opens the web app in a browser window. */
-  openExploreInBrowser = async (cardId: string) => {
+  openExploreInBrowser = async (cardId: string, focus = "") => {
     const { analysis } = this.state;
     if (!analysis || this.disposed || this.state.openingExploreCard) return;
     const card = analysis.cards.find(entry => entry.id === cardId);
     if (!card) return;
-    this.update({ openingExploreCard: cardId, error: "" });
+    this.update({ openingExploreCard: cardId, error: "", notice: "" });
     const startedAt = performance.now();
     try {
       const result = await this.app.callServerTool({
         name: "mobile_open_tracesift_explore",
         arguments: analysis.profileType === "cpu"
-          ? { analysisId: analysis.analysisId, taskIndex: card.taskIndex }
+          ? { analysisId: analysis.analysisId, taskIndex: card.taskIndex, ...(focus ? { focus } : {}) }
           : { analysisId: analysis.analysisId, rootId: card.rootId, commitIndex: card.commitIndex },
       });
       if (result.isError) throw new Error(result.content.filter(item => item.type === "text" && "text" in item).map(item => item.text).join("\n") || "TraceSift could not open this task.");

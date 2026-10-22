@@ -238,6 +238,34 @@ test("TraceSift Explore opens one React analysis and remembers which commit the 
   controller.dispose();
 });
 
+test("TraceSift Explore sends a finding too large for the panel to the browser window", async () => {
+  const calls: { name: string; arguments: unknown }[] = [];
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
+    getHostContext: () => ({ theme: "light", availableDisplayModes: ["inline"] }),
+    async callServerTool(input: { name: string; arguments: unknown }) {
+      calls.push(input);
+      if (input.name === "mobile_tracesift_explore_payload") {
+        return { isError: true, content: [{ type: "text", text: "This finding is larger than the panel can open." }] };
+      }
+      return { content: [], structuredContent: { opened: true } };
+    },
+    async sendMessage() { return {}; },
+  };
+  const controller = new TraceSiftController(app as never);
+  controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
+  await controller.openExplore("task-0", "n0");
+  // The refusal is answered by the path that needs no bridge, and the node the
+  // reader clicked travels with it so the browser opens on the same frame.
+  assert.deepEqual(calls.map(call => call.name), ["mobile_tracesift_explore_payload", "mobile_open_tracesift_explore"]);
+  assert.deepEqual(calls[1]!.arguments, { analysisId: "private-analysis", taskIndex: 4, focus: "n0" });
+  assert.equal(controller.getSnapshot().error, "");
+  assert.match(controller.getSnapshot().notice, /Opened it in your browser/);
+  assert.equal(controller.getSnapshot().explorer, undefined);
+  assert.equal(controller.getSnapshot().openingExploreCard, undefined);
+  controller.dispose();
+});
+
 test("TraceSift Explore reports a payload failure without leaving the explorer open", async () => {
   const app = {
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
@@ -381,17 +409,27 @@ test("TraceSift inflates a compressed payload before rendering it", async () => 
   controller.dispose();
 });
 
-test("TraceSift refuses a payload past the panel's limit before decoding it", async () => {
+test("TraceSift hands a payload past the panel's limit to the browser before decoding it", async () => {
+  const names: string[] = [];
   const app = {
     getHostCapabilities: () => ({ serverTools: {}, message: { text: {} } }),
     getHostContext: () => hostContext,
-    async callServerTool() { return { content: [{ type: "text", text: "x" }], structuredContent: { apiVersion: 1, kind: "task", encoding: "json", payloadBytes: 25 * 1024 * 1024 } }; },
+    async callServerTool({ name }: { name: string }) {
+      names.push(name);
+      return name === "mobile_tracesift_explore_payload"
+        ? { content: [{ type: "text", text: "x" }], structuredContent: { apiVersion: 1, kind: "task", encoding: "json", payloadBytes: 25 * 1024 * 1024 } }
+        : { content: [], structuredContent: { opened: true } };
+    },
     async sendMessage() { return {}; },
   };
   const controller = new TraceSiftController(app as never);
   controller.hostChanged(); controller.accept({ content: [], structuredContent: cpuAnalysis });
   await controller.openExplore("task-0");
-  assert.match(controller.getSnapshot().error, /Open in browser/);
+  // The envelope is read before the megabytes are inflated, so the size is known
+  // without decoding and the browser window takes the finding instead.
+  assert.deepEqual(names, ["mobile_tracesift_explore_payload", "mobile_open_tracesift_explore"]);
+  assert.equal(controller.getSnapshot().error, "");
+  assert.match(controller.getSnapshot().notice, /larger than the panel can open/);
   assert.equal(controller.getSnapshot().explorer, undefined);
   controller.dispose();
 });

@@ -117,6 +117,21 @@ test("the Explore payload tool is app-only and keeps the browser tool beside it"
   assert.ok(tools.some(tool => tool.name === "mobile_open_tracesift_explore"));
 });
 
+test("the Explore payload tool carries a real recording's call depth", async t => {
+  // A node and its `children` array are two object levels each, so a stack this
+  // deep measures twice over; real React Native recordings reach it, and the
+  // depth bound used to turn them all away.
+  const { mcp, close } = await connect({
+    async exploreTask(analysisId: string) {
+      return { analysisId, profileTitle: "Profile", totalMs: 200, card: { id: "task-0", tree: deepTree(1000), timeline: { boxes: [] } } };
+    },
+  });
+  t.after(close);
+  const result = await mcp.callTool({ name: "mobile_tracesift_explore_payload", arguments: { analysisId: "analysis-1", taskIndex: 0 } });
+  assert.equal(result.isError, undefined);
+  assert.equal((result.structuredContent as { kind: string }).kind, "task");
+});
+
 test("the Explore payload tool refuses a tree too deep to serialize", async () => {
   // `JSON.stringify` recurses, so this has to be caught before serialization;
   // the browser window renders such a recording without crossing the bridge.

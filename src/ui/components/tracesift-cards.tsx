@@ -165,6 +165,7 @@ export function TraceSiftCards({ controller }: { controller: TraceSiftController
       This host cannot call the card handoff tool or send a message to the active chat. Ask the agent to investigate a card by name instead.
     </p>}
     {state.error && <p className="tracesift-error" role="alert">{state.error}</p>}
+    {state.notice && <p className="tracesift-notice" role="status">{state.notice}</p>}
     {analysis.cards.length === 0 && <p role="status">TraceSift found no carded performance issues.</p>}
 
     <div className="hotspot-list">{analysis.profileType === "cpu"

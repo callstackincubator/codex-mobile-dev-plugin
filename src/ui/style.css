@@ -32,6 +32,7 @@ html[data-view="recording"] .recording-header { border-top: 1px solid var(--bord
 .tracesift-card li span, .tracesift-card li code { color: var(--muted-foreground); font-size: 11px; overflow-wrap: anywhere; }
 .tracesift-card > footer { align-items: center; padding-top: 2px; }
 .tracesift-error { padding: 10px; border: 1px solid color-mix(in srgb, #e5484d 45%, var(--border)); border-radius: 8px; color: #e5484d; }
+.tracesift-notice { padding: 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted-foreground, inherit); }
 .comparison-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 8px; }
 .comparison-run { display: flex; align-items: flex-start; gap: 8px; text-align: left; border: 1px solid; border-radius: 8px; padding: 10px; cursor: pointer; }
 .comparison-run[aria-pressed="false"] { opacity: 0.5; }

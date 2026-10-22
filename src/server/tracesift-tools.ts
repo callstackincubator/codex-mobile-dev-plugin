@@ -6,12 +6,10 @@ import { errorMessage } from "../shared/protocol.ts";
 import { TRACESIFT_URI, traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftProfileInputSchema, traceSiftReactCardSchema, traceSiftTaskCardSchema } from "../shared/tracesift.ts";
 import { gzip as gzipCallback } from "node:zlib";
 import { promisify } from "node:util";
-import { TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, traceSiftPayloadTooDeep } from "../shared/tracesift-explore.ts";
+import { TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, TRACE_SIFT_PAYLOAD_TOO_LARGE, traceSiftPayloadTooDeep } from "../shared/tracesift-explore.ts";
 import { captureServerError, recordTraceSiftOperation, recordTraceSiftPayload } from "./telemetry.ts";
 import type { TraceSiftClient } from "./tracesift-client.ts";
 import { TraceSiftError } from "./tracesift-client.ts";
-
-const TOO_LARGE = "This finding is larger than the panel can open. Use Open in browser for it.";
 
 // Async on purpose: compressing a megabyte tree on the main thread would stall
 // every other tool call sharing this process.
@@ -137,9 +135,14 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
         : { kind: "task" as const, value: await client.exploreTask(analysisId, taskIndex, context.signal) as unknown };
       // Depth first, and iteratively: `JSON.stringify` recurses, so a runaway
       // tree would overflow the stack before the byte guard below could see it.
-      if (traceSiftPayloadTooDeep(handoff.value)) throw new TraceSiftError(TOO_LARGE, "response");
-      const raw = { kind: handoff.kind, json: JSON.stringify(handoff.value) };
-      if (raw.json.length > TRACE_SIFT_PAYLOAD_MAX_BYTES) throw new TraceSiftError(TOO_LARGE, "response");
+      if (traceSiftPayloadTooDeep(handoff.value)) throw new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response");
+      // Even under the depth bound V8 can run out of stack on a tree it cannot
+      // serialize; that is the same answer for the reader, not a crash.
+      let json: string;
+      try { json = JSON.stringify(handoff.value); }
+      catch (error) { throw error instanceof RangeError ? new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response") : error; }
+      const raw = { kind: handoff.kind, json };
+      if (raw.json.length > TRACE_SIFT_PAYLOAD_MAX_BYTES) throw new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response");
       // Small payloads cross as plain JSON; anything worth compressing does, so
       // the bridge carries a string the host's structured decoder never walks.
       const compressed = raw.json.length > TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES;
