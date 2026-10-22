@@ -482,6 +482,154 @@ export interface AppFlowManifest {
 }
 
 /**
+ * Which toolchain a project App Flow was pointed at is built with. This is the discriminant on
+ * `ParsedAppGraph.mode` (and the string persisted as `AppFlowManifest.project.mode`), so a caller
+ * holding a parse result can tell a React Native project from a Swift one without re-reading the
+ * folder. The two React Native values predate `swiftui` and keep their exact spelling, because a
+ * saved `app-flow.json` carries them.
+ */
+export type AppFlowProjectKind = 'expo-router' | 'react-navigation' | 'swiftui'
+
+/** Which Xcode artifact drives a build of a detected Swift project. */
+export type AppFlowSwiftContainer = 'xcworkspace' | 'xcodeproj' | 'swiftpm'
+
+/**
+ * What a cheap scan of an iOS/SwiftUI project root can say about it, without opening a single Swift
+ * file. Everything here comes from one `readdir` of the root plus a `readdir` of the shared-scheme
+ * folders, so detection stays fast enough to run on every start; anything that would require
+ * parsing `project.pbxproj` or `Package.swift` is deliberately absent rather than guessed.
+ *
+ * Only the project root itself is scanned, never a nested `ios/` folder — a React Native project
+ * ships `ios/<App>.xcworkspace`, and treating that as a Swift project would hijack every RN app
+ * whose router parse happens to come up empty.
+ */
+export interface AppFlowSwiftProject {
+  /**
+   * What a build should be driven through. A `.xcworkspace` wins over the `.xcodeproj` it wraps
+   * (building the project directly skips the workspace's other targets and its package resolution),
+   * and a `.xcodeproj` wins over a bare `Package.swift` (an SPM manifest alongside a project is a
+   * dependency or a local module, not the app).
+   */
+  container: AppFlowSwiftContainer
+  /** Absolute path of the `.xcworkspace`, or null when the project has none. */
+  workspacePath: string | null
+  /** Absolute path of the `.xcodeproj`, or null for an SPM-only package. */
+  projectPath: string | null
+  /** Absolute path of `Package.swift`, or null when the project has none. */
+  packageManifestPath: string | null
+  /**
+   * Absolute directories holding the app's own Swift sources, in the order a reader should prefer
+   * them. Derived from Xcode's and SwiftPM's own conventions (`<ProjectName>/`, `Sources/`), with a
+   * single-level fallback scan for roots that follow neither. Dependency and build folders
+   * (`Pods`, `.build`, `DerivedData`, `Carthage`) are never source roots.
+   */
+  sourceRoots: string[]
+  /**
+   * Shared scheme names, read from `xcshareddata/xcschemes`. Per-user schemes live in
+   * `xcuserdata` and are not readable this way, so an empty array means "none shared", never
+   * "this project cannot be built".
+   */
+  schemes: string[]
+}
+
+/**
+ * The JSON contract version this plugin reads from `swift-appflow-parse`.
+ *
+ * The parser prints the same number for `--version`, and stamps it on every report. It is the one
+ * thing holding still while the producer behind it changes — built from source today, shipped
+ * prebuilt later, supplemented by SourceKit after that — so a mismatch is reported rather than
+ * worked around: a report of an unknown shape is not a report we can read.
+ *
+ * Contract 1: the `synthesized` rung is gone, so `byRung` never carries that key.
+ */
+export const SWIFT_PARSE_CONTRACT_VERSION = 1
+
+/**
+ * How a view was made constructible — the rung of the parser's ladder that resolved it.
+ *
+ * Every rung above `skipped` names *where the value came from*, never what it looks like, because
+ * the whole guarantee is that a value is observed and not invented. `skipped` is a correct answer:
+ * a screen we refuse to construct is better than one built from a fabricated value.
+ */
+export type AppFlowSwiftRung =
+  | 'noParams'
+  | 'preview'
+  | 'callSite'
+  | 'mockStatic'
+  | 'bindingsOnly'
+  | 'skipped'
+
+/** One view the parser resolved, or refused to. */
+export interface AppFlowSwiftResolution {
+  view: string
+  rung: AppFlowSwiftRung
+  /** The Swift construction expression, or null for `skipped`. */
+  expression: string | null
+  /** `label: Type` for every parameter with no observed value. Non-empty implies `skipped`. */
+  missing: string[]
+  /** Path relative to the source root the parser was given. */
+  file: string
+  line: number
+  /**
+   * Why this view is believed to be a destination rather than a leaf component. Empty means the
+   * parser found no such evidence, which is what separates `screens` from `views`.
+   */
+  screenEvidence: AppFlowSwiftScreenEvidence[]
+}
+
+/** Why the parser believes a view is a screen rather than a leaf component. */
+export type AppFlowSwiftScreenEvidence =
+  | 'navigationDestination'
+  | 'navigationLink'
+  | 'sheet'
+  | 'appRoot'
+  | 'navigationTitle'
+
+/** One `navigationDestination(for:)` arm — a route case resolved to a destination view. */
+export interface AppFlowSwiftRouteEdge {
+  routeType: string
+  caseName: string
+  /** Associated value types the route case carries, e.g. `['String']`. */
+  associatedTypes: string[]
+  destinationView: string
+  /** The destination construction lifted verbatim from source. */
+  expression: string
+  file: string
+  line: number
+}
+
+/** What the parser saw of the app's routing, counted rather than enumerated. */
+export interface AppFlowSwiftRouteSummary {
+  hashableRouteTypes: string[]
+  navigationDestinationTypes: string[]
+  navigationLinkValueCount: number
+  navigationLinkDestinationCount: number
+}
+
+/**
+ * The parser's stdout report. Fields a consumer does not know must be ignored rather than rejected:
+ * adding one is explicitly not a contract bump (see `SWIFT_PARSE_CONTRACT_VERSION`).
+ */
+export interface AppFlowSwiftParseReport {
+  contractVersion: number
+  /** Last path component of the source root, not a user-supplied name. */
+  app: string
+  swiftFiles: number
+  /** Every `struct _: View`, leaf components included. */
+  views: number
+  viewsConstructible: number
+  /** Views with positive evidence of being a navigation destination. */
+  screens: number
+  screensConstructible: number
+  screenCoverage: number
+  byRung: Partial<Record<AppFlowSwiftRung, number>>
+  routes: AppFlowSwiftRouteSummary
+  routeEdges: AppFlowSwiftRouteEdge[]
+  routeEdgesConstructible: number
+  resolutions: AppFlowSwiftResolution[]
+}
+
+/**
  * How a navigator is mounted in the parsed tree — moved here from `parser.ts` (where it originated
  * as part of `ParsedAppGraph`) because `AppFlowResult.navigation` persists this shape verbatim into
  * `app-flow.json`, which the renderer reads; `parser.ts` re-exports it so `ParsedAppGraph`'s own

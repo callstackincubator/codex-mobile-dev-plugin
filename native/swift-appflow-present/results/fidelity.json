@@ -1,0 +1,38 @@
+[
+  {
+    "screen": "AboutView",
+    "simctl_ms": 441.0,
+    "simctl2_ms": 443.1,
+    "simctl_self_diff": 0.0,
+    "layer_ms": 25.1,
+    "layer_diff": 0.00417,
+    "draw_ms": 95.8,
+    "draw_diff": 0.00122,
+    "renderer_ms": 27.7,
+    "renderer_diff": 0.24338
+  },
+  {
+    "screen": "SelfContainedNavView",
+    "simctl_ms": 461.6,
+    "simctl2_ms": 448.5,
+    "simctl_self_diff": 0.0,
+    "layer_ms": 18.4,
+    "layer_diff": 0.00122,
+    "draw_ms": 96.4,
+    "draw_diff": 0.0012,
+    "renderer_ms": 33.8,
+    "renderer_diff": 0.23471
+  },
+  {
+    "screen": "ProfileView",
+    "simctl_ms": 455.9,
+    "simctl2_ms": 452.9,
+    "simctl_self_diff": 0.0,
+    "layer_ms": 35.8,
+    "layer_diff": 0.00455,
+    "draw_ms": 110.9,
+    "draw_diff": 0.00172,
+    "renderer_ms": 33.8,
+    "renderer_diff": 0.27705
+  }
+]

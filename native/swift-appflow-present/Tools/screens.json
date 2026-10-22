@@ -1,0 +1,129 @@
+{
+  "app": "DemoApp",
+  "resolutions": [
+    {
+      "view": "AboutView",
+      "rung": "noParams",
+      "expression": "AboutView()",
+      "missing": [],
+      "file": "Sources/Screens.swift",
+      "line": 5,
+      "screenEvidence": ["navigationDestination", "navigationTitle"]
+    },
+    {
+      "view": "ProfileView",
+      "rung": "mockStatic",
+      "expression": "ProfileView(user: .mock)",
+      "missing": [],
+      "file": "Sources/Screens.swift",
+      "line": 21,
+      "screenEvidence": ["navigationDestination", "navigationLink"]
+    },
+    {
+      "view": "CounterEditorView",
+      "rung": "bindingsOnly",
+      "expression": "CounterEditorView(count: $0, label: \"Quantity\")",
+      "missing": [],
+      "file": "Sources/Screens.swift",
+      "line": 46,
+      "screenEvidence": ["navigationTitle"],
+      "bindingHost": { "type": "Int", "initial": "7" }
+    },
+    {
+      "view": "AccountStatusView",
+      "rung": "noParams",
+      "expression": "AccountStatusView()",
+      "missing": [],
+      "file": "Sources/Screens.swift",
+      "line": 68,
+      "screenEvidence": ["navigationTitle"],
+      "environmentRequires": ["AppSession", "themeAccent"]
+    },
+    {
+      "view": "ThemeProbeView",
+      "rung": "noParams",
+      "expression": "ThemeProbeView()",
+      "missing": [],
+      "file": "Sources/Screens.swift",
+      "line": 93,
+      "screenEvidence": ["navigationTitle"],
+      "environmentRequires": ["themeAccent"]
+    },
+    {
+      "view": "OrderDetailView",
+      "rung": "callSite",
+      "expression": "OrderDetailView(orderId: \"A-1042\")",
+      "missing": [],
+      "file": "Sources/Screens.swift",
+      "line": 93,
+      "screenEvidence": ["navigationDestination"]
+    },
+    {
+      "view": "FeedView",
+      "rung": "noParams",
+      "expression": "FeedView()",
+      "missing": [],
+      "file": "Sources/Screens.swift",
+      "line": 117,
+      "screenEvidence": ["navigationTitle"],
+      "environmentRequires": ["FeedStore"]
+    },
+    {
+      "view": "RemoteAvatarView",
+      "rung": "noParams",
+      "expression": "RemoteAvatarView()",
+      "missing": [],
+      "file": "Sources/Screens.swift",
+      "line": 206,
+      "screenEvidence": ["navigationTitle"]
+    },
+    {
+      "view": "AnimatedBannerView",
+      "rung": "noParams",
+      "expression": "AnimatedBannerView()",
+      "missing": [],
+      "file": "Sources/Screens.swift",
+      "line": 258,
+      "screenEvidence": ["navigationTitle"]
+    },
+    {
+      "view": "EmptyInboxView",
+      "rung": "noParams",
+      "expression": "EmptyInboxView()",
+      "missing": [],
+      "file": "Sources/Screens.swift",
+      "line": 296,
+      "screenEvidence": ["navigationTitle"],
+      "environmentRequires": ["InboxStore"]
+    },
+    {
+      "view": "TwoStageOrderView",
+      "rung": "noParams",
+      "expression": "TwoStageOrderView()",
+      "missing": [],
+      "file": "Sources/Screens.swift",
+      "line": 312,
+      "screenEvidence": ["navigationTitle"],
+      "environmentRequires": ["TwoStageOrderStore"]
+    },
+    {
+      "view": "BrandedHeaderView",
+      "rung": "noParams",
+      "expression": "BrandedHeaderView()",
+      "missing": [],
+      "file": "Sources/Screens.swift",
+      "line": 164,
+      "screenEvidence": ["navigationTitle"],
+      "environmentRequires": ["brandTint"]
+    },
+    {
+      "view": "SelfContainedNavView",
+      "rung": "noParams",
+      "expression": "SelfContainedNavView()",
+      "missing": [],
+      "file": "Sources/Screens.swift",
+      "line": 350,
+      "screenEvidence": ["navigationTitle"]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "grid": [
+    160,
+    347
+  ],
+  "cell_threshold": 0.06,
+  "floor_repeat_capture": 0.0,
+  "floor_vs_truth": 0.0,
+  "ceiling_different_screens": {
+    "FeedView|AboutView": 0.02439,
+    "ProfileView|OrderDetailView": 0.04485,
+    "EmptyInboxView|FeedView": 0.023,
+    "ThemeProbeView|AboutView": 0.10353,
+    "TwoStageOrderView|OrderDetailView": 0.04087
+  }
+}

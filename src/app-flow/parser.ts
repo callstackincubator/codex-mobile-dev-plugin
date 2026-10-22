@@ -6,8 +6,12 @@ import type {
   AppFlowGuard,
   AppFlowLayout,
   AppFlowNode,
+  AppFlowProjectKind,
+  AppFlowSwiftProject,
   AppFlowTrigger
 } from '../shared/app-flow.ts'
+import { recordRuntimeTiming } from './runtime-telemetry.ts'
+import { detectSwiftProject } from './swift-project.ts'
 
 // Re-exported so existing imports of `AppFlowLayout` from this module keep compiling — the type
 // itself moved to `shared/app-flow.ts` because `AppFlowResult.navigation` persists it verbatim into
@@ -35,7 +39,17 @@ function generateSlug(routeId: string): string {
 export type DeepLinkConfidence = 'verified-prefix' | 'scheme-mismatch' | 'assumed'
 
 export interface ParsedAppGraph {
-  mode: 'expo-router' | 'react-navigation'
+  /**
+   * Which toolchain this project is built with. `swiftui` was added alongside Swift detection; the
+   * two React Native values are unchanged, and nothing that branches on them had to move.
+   */
+  mode: AppFlowProjectKind
+  /**
+   * What a cheap scan found about an iOS/SwiftUI project — its workspace/project/package, source
+   * roots and shared schemes. Null for every React Native project, so `mode === 'swiftui'` and
+   * `swift !== null` always agree.
+   */
+  swift: AppFlowSwiftProject | null
   appDir: string | null
   routesFile: string | null
   scheme: string | null
@@ -655,6 +669,7 @@ export async function parseExpoRouter(
 
   return {
     mode: 'expo-router',
+    swift: null,
     appDir: rel(appDir),
     routesFile: null,
     scheme: appConfig.scheme,
@@ -1582,6 +1597,7 @@ export async function parseReactNavigation(projectRoot: string): Promise<ParsedA
 
   return {
     mode: 'react-navigation',
+    swift: null,
     appDir: null,
     routesFile: linkingFile ?? routeMapFile,
     scheme: deepLinkScheme,
@@ -1599,7 +1615,45 @@ export async function parseReactNavigation(projectRoot: string): Promise<ParsedA
   }
 }
 
+/**
+ * Everything a SwiftUI project's screen graph needs that this module does not yet produce.
+ *
+ * ---- SEAM: Swift screen parsing ----
+ * `parseProject` identifies a Swift project and hands back a `ParsedAppGraph` whose `swift` field
+ * says where to read from, but whose `nodes`/`edges`/`layouts` are empty — detection only. A Swift
+ * parser plugs in here, taking `graph.swift.sourceRoots` and returning the same four things the
+ * React Native parsers return:
+ *
+ *  - `nodes`: one `AppFlowNode` per `View` that is a destination (the body of a
+ *    `NavigationLink`/`NavigationDestination`, a `sheet`/`fullScreenCover` content, a `TabView`
+ *    tab), with a stable id. Swift has no route path, so the id has to come from the type name
+ *    qualified by its enclosing navigator, the way `navigatorKey::name` does for React Navigation.
+ *  - `edges`: one per `NavigationLink(destination:)`, `navigationDestination(for:)`,
+ *    `.sheet(isPresented:)`, `.fullScreenCover`, and `NavigationPath` append — each needing the
+ *    destination type resolved to a node id, which is the part that needs a real Swift parse rather
+ *    than a regex.
+ *  - `layouts` / `rootNavigator` / `entryLayouts` / `entryScreenIds`: from `TabView` (→ `Tabs`),
+ *    `NavigationSplitView` (→ `Drawer`), `NavigationStack` (→ `Stack`), and the `App`'s
+ *    `WindowGroup` body for the root.
+ *  - `scheme` / `bundleId` / `appName`: from `Info.plist` `CFBundleURLSchemes` and the build
+ *    settings in `project.pbxproj` — neither of which detection reads, because both need a plist
+ *    and pbxproj parser.
+ *
+ * Until that exists, callers must branch on `mode === 'swiftui'` before treating the graph as
+ * explorable; an empty node list is detection succeeding, not an app with no screens.
+ */
 export async function parseProject(projectRoot: string): Promise<ParsedAppGraph | null> {
+  const startedAt = Date.now()
+  const graph = await identifyProject(projectRoot)
+  // One bounded measurement per detection, so a root whose shape is expensive to recognise is
+  // visible without a span per file. `kind` is a closed set; nothing about the folder is sent.
+  recordRuntimeTiming('app_flow.project_detect.duration', Date.now() - startedAt, {
+    kind: graph?.mode ?? 'none'
+  })
+  return graph
+}
+
+async function identifyProject(projectRoot: string): Promise<ParsedAppGraph | null> {
   const dependencies = await projectDependencies(projectRoot)
   const candidates = ['app', 'src/app'].map((d) => join(projectRoot, d))
   if (dependencies['expo-router'])
@@ -1617,6 +1671,46 @@ export async function parseProject(projectRoot: string): Promise<ParsedAppGraph 
     }
   const reactNavigation = await parseReactNavigation(projectRoot)
   if (reactNavigation) return reactNavigation
+  // Swift is tried last and only on the root itself: a React Native project ships
+  // `ios/<App>.xcworkspace`, so checking earlier (or deeper) would relabel every RN app whose
+  // router parse came up empty.
+  const swift = await detectSwiftProject(projectRoot)
+  if (swift) {
+    console.log(
+      `[app-flow] parse: iOS project detected (${swift.container}), ` +
+        `${swift.sourceRoots.length} source root(s), ${swift.schemes.length} shared scheme(s) — ` +
+        `Swift screen parsing is not implemented yet`
+    )
+    return swiftDetectionOnly(swift)
+  }
   console.log(`[app-flow] parse: no supported router evidence under ${projectRoot}`)
   return null
+}
+
+/**
+ * A `ParsedAppGraph` carrying detection and nothing else — see the SEAM note on `parseProject`.
+ * Every graph field a Swift parser would fill is empty here, never fabricated, so a caller that
+ * forgets to check `mode` gets an obviously empty map rather than a plausible wrong one.
+ */
+function swiftDetectionOnly(swift: AppFlowSwiftProject): ParsedAppGraph {
+  return {
+    mode: 'swiftui',
+    swift,
+    appDir: swift.sourceRoots[0] ?? null,
+    routesFile: null,
+    // No `Info.plist`/`pbxproj` read, so there is no scheme to claim; `assumed` is the existing
+    // value for "nothing was found to check against".
+    scheme: null,
+    deepLinkConfidence: 'assumed',
+    linkingPrefixes: [],
+    appName: null,
+    bundleId: null,
+    slug: null,
+    nodes: [],
+    edges: [],
+    layouts: [],
+    rootNavigator: null,
+    entryLayouts: [],
+    entryScreenIds: []
+  }
 }

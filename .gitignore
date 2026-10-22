@@ -2,6 +2,8 @@ node_modules/
 .husky/_/
 dist/
 vendor/baguette/
+# Staged by `npm run rebuild:swift-appflow-parse`; built from native/swift-appflow-parse.
+vendor/swift-appflow-parse/
 release/
 .DS_Store
 *.log
@@ -9,3 +11,9 @@ release/
 .sentry/
 .env.sentry-build-plugin
 native/ios-mirror/target/
+native/swift-appflow-parse/.build/
+native/swift-appflow-present/Tools/__pycache__/
+.claude/worktrees/
+native/swift-appflow-present/build/
+native/swift-appflow-present/shots/
+native/swift-appflow-present/Sources/ScreenRegistry.generated.swift

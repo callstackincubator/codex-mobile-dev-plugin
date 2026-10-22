@@ -1,0 +1,593 @@
+{
+  "same_screen_threshold": 0.01,
+  "rows": [
+    {
+      "screen": "AboutView",
+      "signal": "frame",
+      "fired_ms": 63.7,
+      "fired": true,
+      "capture_lag_ms": 96.4,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AboutView",
+      "signal": "stable",
+      "fired_ms": 350.2,
+      "fired": true,
+      "capture_lag_ms": 101.5,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AboutView",
+      "signal": "idle",
+      "fired_ms": 251.1,
+      "fired": true,
+      "capture_lag_ms": 92.1,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AboutView",
+      "signal": "timeout",
+      "fired_ms": 4000.7,
+      "fired": true,
+      "capture_lag_ms": 135.8,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AccountStatusView",
+      "signal": "frame",
+      "fired_ms": 72.5,
+      "fired": true,
+      "capture_lag_ms": 93.7,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AccountStatusView",
+      "signal": "stable",
+      "fired_ms": 350.4,
+      "fired": true,
+      "capture_lag_ms": 107.3,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AccountStatusView",
+      "signal": "idle",
+      "fired_ms": 250.5,
+      "fired": true,
+      "capture_lag_ms": 92.3,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AccountStatusView",
+      "signal": "timeout",
+      "fired_ms": 4001.1,
+      "fired": true,
+      "capture_lag_ms": 104.9,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AnimatedBannerView",
+      "signal": "frame",
+      "fired_ms": 68.9,
+      "fired": true,
+      "capture_lag_ms": 102.0,
+      "diff": 0.00076,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.00268
+    },
+    {
+      "screen": "AnimatedBannerView",
+      "signal": "stable",
+      "fired_ms": 350.8,
+      "fired": true,
+      "capture_lag_ms": 104.6,
+      "diff": 0.00056,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.00265
+    },
+    {
+      "screen": "AnimatedBannerView",
+      "signal": "idle",
+      "fired_ms": 250.1,
+      "fired": true,
+      "capture_lag_ms": 100.6,
+      "diff": 0.00066,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.00265
+    },
+    {
+      "screen": "AnimatedBannerView",
+      "signal": "timeout",
+      "fired_ms": 4001.0,
+      "fired": true,
+      "capture_lag_ms": 117.8,
+      "diff": 4e-05,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0004
+    },
+    {
+      "screen": "BrandedHeaderView",
+      "signal": "frame",
+      "fired_ms": 66.9,
+      "fired": true,
+      "capture_lag_ms": 95.4,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [
+        "brandTint"
+      ],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "BrandedHeaderView",
+      "signal": "stable",
+      "fired_ms": 401.1,
+      "fired": true,
+      "capture_lag_ms": 100.6,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [
+        "brandTint"
+      ],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "BrandedHeaderView",
+      "signal": "idle",
+      "fired_ms": 250.5,
+      "fired": true,
+      "capture_lag_ms": 101.7,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [
+        "brandTint"
+      ],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "BrandedHeaderView",
+      "signal": "timeout",
+      "fired_ms": 4000.2,
+      "fired": true,
+      "capture_lag_ms": 118.9,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [
+        "brandTint"
+      ],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "CounterEditorView",
+      "signal": "frame",
+      "fired_ms": 76.8,
+      "fired": true,
+      "capture_lag_ms": 94.9,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "CounterEditorView",
+      "signal": "stable",
+      "fired_ms": 400.8,
+      "fired": true,
+      "capture_lag_ms": 96.4,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "CounterEditorView",
+      "signal": "idle",
+      "fired_ms": 251.1,
+      "fired": true,
+      "capture_lag_ms": 90.4,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "CounterEditorView",
+      "signal": "timeout",
+      "fired_ms": 4000.8,
+      "fired": true,
+      "capture_lag_ms": 134.9,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "EmptyInboxView",
+      "signal": "frame",
+      "fired_ms": 70.6,
+      "fired": true,
+      "capture_lag_ms": 96.5,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "EmptyInboxView",
+      "signal": "stable",
+      "fired_ms": 351.1,
+      "fired": true,
+      "capture_lag_ms": 103.9,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "EmptyInboxView",
+      "signal": "idle",
+      "fired_ms": 251.0,
+      "fired": true,
+      "capture_lag_ms": 96.1,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "EmptyInboxView",
+      "signal": "timeout",
+      "fired_ms": 4001.2,
+      "fired": true,
+      "capture_lag_ms": 132.3,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "FeedView",
+      "signal": "frame",
+      "fired_ms": 80.3,
+      "fired": true,
+      "capture_lag_ms": 99.1,
+      "diff": 0.04634,
+      "correct": false,
+      "env_missing": [],
+      "changed_fraction": 0.01099
+    },
+    {
+      "screen": "FeedView",
+      "signal": "stable",
+      "fired_ms": 351.1,
+      "fired": true,
+      "capture_lag_ms": 104.4,
+      "diff": 0.04632,
+      "correct": false,
+      "env_missing": [],
+      "changed_fraction": 0.01102
+    },
+    {
+      "screen": "FeedView",
+      "signal": "idle",
+      "fired_ms": 2900.6,
+      "fired": true,
+      "capture_lag_ms": 121.7,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "FeedView",
+      "signal": "timeout",
+      "fired_ms": 4001.1,
+      "fired": true,
+      "capture_lag_ms": 112.5,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "OrderDetailView",
+      "signal": "frame",
+      "fired_ms": 82.6,
+      "fired": true,
+      "capture_lag_ms": 104.6,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "OrderDetailView",
+      "signal": "stable",
+      "fired_ms": 400.9,
+      "fired": true,
+      "capture_lag_ms": 106.6,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "OrderDetailView",
+      "signal": "idle",
+      "fired_ms": 251.0,
+      "fired": true,
+      "capture_lag_ms": 96.1,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "OrderDetailView",
+      "signal": "timeout",
+      "fired_ms": 4001.2,
+      "fired": true,
+      "capture_lag_ms": 113.4,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ProfileView",
+      "signal": "frame",
+      "fired_ms": 75.7,
+      "fired": true,
+      "capture_lag_ms": 97.0,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ProfileView",
+      "signal": "stable",
+      "fired_ms": 350.9,
+      "fired": true,
+      "capture_lag_ms": 105.2,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ProfileView",
+      "signal": "idle",
+      "fired_ms": 251.1,
+      "fired": true,
+      "capture_lag_ms": 91.4,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ProfileView",
+      "signal": "timeout",
+      "fired_ms": 4000.9,
+      "fired": true,
+      "capture_lag_ms": 129.1,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "RemoteAvatarView",
+      "signal": "frame",
+      "fired_ms": 73.6,
+      "fired": true,
+      "capture_lag_ms": 106.8,
+      "diff": 0.04438,
+      "correct": false,
+      "env_missing": [],
+      "changed_fraction": 0.11173
+    },
+    {
+      "screen": "RemoteAvatarView",
+      "signal": "stable",
+      "fired_ms": 350.2,
+      "fired": true,
+      "capture_lag_ms": 113.6,
+      "diff": 0.04439,
+      "correct": false,
+      "env_missing": [],
+      "changed_fraction": 0.11173
+    },
+    {
+      "screen": "RemoteAvatarView",
+      "signal": "idle",
+      "fired_ms": 1150.8,
+      "fired": true,
+      "capture_lag_ms": 125.6,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "RemoteAvatarView",
+      "signal": "timeout",
+      "fired_ms": 4001.2,
+      "fired": true,
+      "capture_lag_ms": 114.3,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "SelfContainedNavView",
+      "signal": "frame",
+      "fired_ms": 76.5,
+      "fired": true,
+      "capture_lag_ms": 108.9,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "SelfContainedNavView",
+      "signal": "stable",
+      "fired_ms": 351.1,
+      "fired": true,
+      "capture_lag_ms": 104.0,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "SelfContainedNavView",
+      "signal": "idle",
+      "fired_ms": 250.3,
+      "fired": true,
+      "capture_lag_ms": 91.2,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "SelfContainedNavView",
+      "signal": "timeout",
+      "fired_ms": 4000.7,
+      "fired": true,
+      "capture_lag_ms": 130.5,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ThemeProbeView",
+      "signal": "frame",
+      "fired_ms": 72.0,
+      "fired": true,
+      "capture_lag_ms": 108.8,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ThemeProbeView",
+      "signal": "stable",
+      "fired_ms": 350.8,
+      "fired": true,
+      "capture_lag_ms": 110.1,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ThemeProbeView",
+      "signal": "idle",
+      "fired_ms": 251.1,
+      "fired": true,
+      "capture_lag_ms": 94.9,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ThemeProbeView",
+      "signal": "timeout",
+      "fired_ms": 4001.1,
+      "fired": true,
+      "capture_lag_ms": 131.6,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "TwoStageOrderView",
+      "signal": "frame",
+      "fired_ms": 74.3,
+      "fired": true,
+      "capture_lag_ms": 92.9,
+      "diff": 0.00655,
+      "correct": false,
+      "env_missing": [],
+      "changed_fraction": 0.01635
+    },
+    {
+      "screen": "TwoStageOrderView",
+      "signal": "stable",
+      "fired_ms": 400.2,
+      "fired": true,
+      "capture_lag_ms": 108.4,
+      "diff": 0.00317,
+      "correct": false,
+      "env_missing": [],
+      "changed_fraction": 0.0085
+    },
+    {
+      "screen": "TwoStageOrderView",
+      "signal": "idle",
+      "fired_ms": 1800.7,
+      "fired": true,
+      "capture_lag_ms": 122.1,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "TwoStageOrderView",
+      "signal": "timeout",
+      "fired_ms": 4001.2,
+      "fired": true,
+      "capture_lag_ms": 116.7,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    }
+  ],
+  "metric": {
+    "grid": [
+      160,
+      347
+    ],
+    "cell_threshold": 0.06,
+    "same_screen_max_changed_fraction": 0.004
+  }
+}

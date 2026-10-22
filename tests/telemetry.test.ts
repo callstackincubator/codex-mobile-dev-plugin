@@ -24,6 +24,7 @@ import { createDrivers, registerAppControlTools } from "../src/server/app-contro
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { adapterClient } from "./agent-device-fixtures.ts";
 import { recordRuntimeAmount, recordRuntimeCount, recordRuntimeTiming } from "../src/app-flow/runtime-telemetry.ts";
+import { parseProject } from "../src/app-flow/parser.ts";
 
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
@@ -942,6 +943,50 @@ test("app flow runtime metrics report settle, verify and navigate with bounded a
   recordRuntimeCount("app_flow.runtime.navigate", { outcome: "refused" });
   await Sentry.flush();
   assert.equal(JSON.stringify(envelopes), before, "Opt-out silences every app-flow runtime metric.");
+});
+
+test("project detection measures the scan by project kind and never sends the folder", async t => {
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: scrubMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  t.after(() => { delete process.env.MOBILE_DEV_TELEMETRY; });
+
+  // Detection is a filesystem scan, so the live privacy risk is the path itself — the project
+  // folder, its parent, the Xcode bundle, the scheme and the source root all name the user's disk
+  // and their product. Driven through the real `parseProject` rather than the helper, so the
+  // assertion covers what the changed execution path actually emits.
+  const parent = await mkdtemp(join(tmpdir(), "mobile-dev-app-flow-detect-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const root = join(parent, "PRIVATE_PROJECT");
+  await mkdir(join(root, "PRIVATE_PROJECT.xcodeproj", "xcshareddata", "xcschemes"), { recursive: true });
+  await writeFile(join(root, "PRIVATE_PROJECT.xcodeproj", "project.pbxproj"), "// objects");
+  await writeFile(join(root, "PRIVATE_PROJECT.xcodeproj", "xcshareddata", "xcschemes", "PRIVATE_SCHEME.xcscheme"), "<Scheme/>");
+  await mkdir(join(root, "PRIVATE_PROJECT"), { recursive: true });
+  await writeFile(join(root, "PRIVATE_PROJECT", "ContentView.swift"), "import SwiftUI");
+
+  assert.equal((await parseProject(root))?.mode, "swiftui");
+  assert.equal(await parseProject(parent), null);
+  await Sentry.flush();
+  const emitted = JSON.stringify(envelopes);
+  contains(emitted, "app_flow.project_detect.duration");
+  contains(emitted, "millisecond");
+  contains(emitted, '"surface":{"value":"app-flow"');
+  // A closed set: the four shapes detection can report, and nothing derived from the folder.
+  contains(emitted, '"kind":{"value":"swiftui"');
+  contains(emitted, '"kind":{"value":"none"');
+  contains(emitted, "PRIVATE_PROJECT", false);
+  contains(emitted, "PRIVATE_SCHEME", false);
+  contains(emitted, parent, false);
+  contains(emitted, ".xcodeproj", false);
+
+  const before = JSON.stringify(envelopes);
+  process.env.MOBILE_DEV_TELEMETRY = "off";
+  assert.equal((await parseProject(root))?.mode, "swiftui");
+  await Sentry.flush();
+  assert.equal(JSON.stringify(envelopes), before, "Opt-out silences project detection too.");
 });
 
 test("runtime replay reports a closed outcome and carries no route, node or parameter", async t => {

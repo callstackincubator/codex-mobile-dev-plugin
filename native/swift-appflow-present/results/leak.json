@@ -1,0 +1,14 @@
+[
+  {
+    "reset": "dismiss",
+    "stage_after_first_capture": 3,
+    "stage_during_next_capture": 3,
+    "leaked": true
+  },
+  {
+    "reset": "relaunch",
+    "stage_after_first_capture": 3,
+    "stage_during_next_capture": 0,
+    "leaked": false
+  }
+]

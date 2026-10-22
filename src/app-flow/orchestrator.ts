@@ -898,6 +898,14 @@ export async function buildAppFlow(
         `No supported Expo Router or React Navigation routes found in ${projectPath}.`
       )
     }
+    if (parsed.mode === 'swiftui') {
+      // Detection reaches here; the screen graph does not. Sweeping a detection-only graph would
+      // produce an empty map that looks like a successful build, so this stops at the seam
+      // (`parseProject`'s SEAM note) with an error the renderer can show.
+      throw new Error(
+        'This is an Xcode/SwiftUI project. App Flow can detect it but cannot map its screens yet.'
+      )
+    }
     console.log(
       `[app-flow] parse done in ${Date.now() - parseStartedAt}ms — ${parsed.nodes.length} routes, ` +
         `${parsed.edges.length} edges, mode=${parsed.mode}, appDir=${parsed.appDir}`

@@ -4,6 +4,14 @@ import type {
   StartAppFlowInput
 } from '../shared/app-flow.ts'
 import { parseProject } from './parser.ts'
+
+/**
+ * Shown when detection succeeds but the screen graph cannot be built — see the SEAM note on
+ * `parseProject`. Detection-only graphs carry no nodes, so every device-driving entry point has to
+ * refuse rather than launch into an empty map.
+ */
+const SWIFT_NOT_SUPPORTED =
+  'This is an Xcode/SwiftUI project. App Flow can detect it but cannot map its screens yet.'
 import { AppFlowBuilder } from './orchestrator.ts'
 import {
   bootDevice,
@@ -121,6 +129,9 @@ export function createAppFlowService(host: AppFlowHostPorts): {
             expected: true
           }
         }
+        if (parsed.mode === 'swiftui') {
+          return { ok: false, error: SWIFT_NOT_SUPPORTED, expected: true }
+        }
         const previous = launchedApps.get(projectId)
         if (previous) {
           launchedApps.delete(projectId)
@@ -180,6 +191,9 @@ export function createAppFlowService(host: AppFlowHostPorts): {
             'No supported Expo Router or React Navigation routes were found in the selected project.',
           expected: true
         }
+      }
+      if (parsed.mode === 'swiftui') {
+        return { ok: false, error: SWIFT_NOT_SUPPORTED, expected: true }
       }
       const controller = new AbortController()
       exploring.set(projectId, controller)
