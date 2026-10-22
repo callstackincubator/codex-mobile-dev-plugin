@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="ddea559c-c1fe-57bc-abf3-1de62d27c7df")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="747c903a-229a-5ea8-bcdb-c39280a4c3f5")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -17850,14 +17850,14 @@ var require_pending_interceptors_formatter = __commonJS({
       }
       format(pendingInterceptors) {
         const withPrettyHeaders = pendingInterceptors.map(
-          ({ method, path, data: { statusCode }, persist, times, timesInvoked, origin }) => ({
+          ({ method, path, data: { statusCode }, persist: persist2, times, timesInvoked, origin }) => ({
             Method: method,
             Origin: origin,
             Path: path,
             "Status code": statusCode,
-            Persistent: persist ? PERSISTENT : NOT_PERSISTENT,
+            Persistent: persist2 ? PERSISTENT : NOT_PERSISTENT,
             Invocations: timesInvoked,
-            Remaining: persist ? Infinity : times - timesInvoked
+            Remaining: persist2 ? Infinity : times - timesInvoked
           })
         );
         this.logger.table(withPrettyHeaders);
@@ -93393,7 +93393,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // src/shared/version.ts
-var PLUGIN_VERSION = "0.1.162";
+var PLUGIN_VERSION = "0.1.163";
 
 // src/shared/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -123616,7 +123616,7 @@ var storageSnapshotSchema = external_exports.object({
   bundleId: external_exports.string(),
   readAt: external_exports.number(),
   stores: external_exports.array(store),
-  // Largest files first, capped; fileCount and totalBytes cover the whole data directory.
+  // Largest allowed files first, capped; totals cover the requested store or app scope.
   files: external_exports.array(file3),
   fileCount: external_exports.number().int().nonnegative(),
   totalBytes: external_exports.number().int().nonnegative()
@@ -124123,6 +124123,61 @@ function storeId(candidate) {
   return `${candidate.kind}:${candidate.path}`;
 }
 
+// src/server/app-storage/redaction.ts
+var REDACTED = "[REDACTED]";
+var maxText = 1e6;
+var maxDepth = 16;
+var maxNodes = 1e4;
+function sensitiveStorageName(name) {
+  const normalized2 = name.normalize("NFKC").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return /password|passwd|passphrase|pwd|secret|token|credential|auth|cookie|session|apikey|privatekey|signingkey|encryptionkey|accesskey|clientkey|email|phone|address|birth|socialsecurity|ssn|creditcard|cardnumber|cvv|medical|health/.test(normalized2);
+}
+function sensitiveStorageText(text7) {
+  return /\b(?:bearer|basic)\s+\S+/i.test(text7) || /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text7) || /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]*)?/.test(text7) || /\b(?:gh[pousr]_|github_pat_|sk-(?:proj-|live_|test_)?|AKIA|ASIA)[A-Za-z0-9_-]{8,}/.test(text7) || /[a-z][a-z0-9+.-]*:\/\/[^\s/@]+:[^\s/@]+@/i.test(text7) || /\b(?:password|passwd|pwd|secret|token|api[_-]?key|authorization|cookie)\b\s*[=:]/i.test(text7) || /[\w.+-]+@[\w.-]+\.[a-z]{2,}/i.test(text7) || /[A-Za-z0-9+/_=-]{32,}/.test(text7);
+}
+function sensitiveStoragePath(path) {
+  return path.split(/[\\/]/).some((part) => sensitiveStorageText(part));
+}
+function redactStorageValue(name, value, binary2 = false) {
+  if (binary2 || sensitiveStorageName(name)) return REDACTED;
+  let nodes = 0;
+  function visit3(value2, depth) {
+    if (++nodes > maxNodes || depth > maxDepth) throw new Error("Storage value exceeds redaction limits");
+    if (value2 === null || typeof value2 === "number" || typeof value2 === "boolean") return value2;
+    if (typeof value2 === "string") {
+      if (value2.length > maxText) throw new Error("Storage value exceeds redaction limits");
+      const trimmed = value2.trim();
+      if (/^[{[\"]/.test(trimmed)) {
+        let parsed;
+        try {
+          parsed = JSON.parse(trimmed);
+        } catch {
+          return REDACTED;
+        }
+        const safe5 = visit3(parsed, depth + 1);
+        return typeof safe5 === "string" ? safe5 : JSON.stringify(safe5);
+      }
+      return sensitiveStorageText(value2) ? REDACTED : value2;
+    }
+    if (Array.isArray(value2)) return value2.map((item) => visit3(item, depth + 1));
+    if (typeof value2 === "object") return Object.fromEntries(Object.entries(value2).map(([key, item]) => [
+      sensitiveStorageText(key) ? REDACTED : key,
+      sensitiveStorageName(key) || sensitiveStorageText(key) ? REDACTED : visit3(item, depth + 1)
+    ]));
+    return REDACTED;
+  }
+  try {
+    const safe5 = visit3(value, 0);
+    return typeof safe5 === "object" && safe5 !== null ? JSON.stringify(safe5) : safe5;
+  } catch {
+    return REDACTED;
+  }
+}
+function redactStorageEntry(entry2, context3 = "") {
+  const value = sensitiveStorageText(entry2.key) ? REDACTED : entry2.type === "table" ? sensitiveStorageText(entry2.value) ? REDACTED : entry2.value : String(redactStorageValue(`${context3}.${entry2.key}`, entry2.value, entry2.type === "data"));
+  return { ...entry2, key: sensitiveStorageText(entry2.key) ? REDACTED : entry2.key, value, ...value === REDACTED ? { type: "string" } : {} };
+}
+
 // src/server/app-storage/reader.ts
 var sqlite3 = process.platform === "darwin" ? "/usr/bin/sqlite3" : "sqlite3";
 var quoteIdentifier = (name) => `"${name.replaceAll('"', '""')}"`;
@@ -124215,10 +124270,13 @@ async function mapLimited(items, limit, work) {
   }));
   return results;
 }
-async function readStorage(container, { entries: entryLimit, valueLength, bundleId: bundleId3, run: run2 }) {
+async function readStorage(container, { entries: entryLimit, valueLength, bundleId: bundleId3, run: run2, store: store2, keys }) {
   const files = await container.list();
   const sizes = new Map(files.map((file4) => [file4.path, file4.bytes]));
-  const candidates = classifyFiles(files.map((file4) => file4.path), container.platform);
+  const allCandidates = classifyFiles(files.map((file4) => file4.path), container.platform).filter((candidate) => !sensitiveStoragePath(candidate.path));
+  const candidates = store2 === void 0 ? allCandidates : allCandidates.filter((candidate) => storeId(candidate) === store2);
+  if (store2 !== void 0 && candidates.length === 0) throw new ExpectedOperationError("invalid_input", "That storage no longer exists. Refresh and try again.");
+  const selectedKeys = keys === void 0 ? void 0 : new Set(keys);
   const owner = /* @__PURE__ */ new Map();
   const stores = await mapLimited(candidates, 4, async (candidate) => {
     const id2 = storeId(candidate);
@@ -124239,18 +124297,19 @@ async function readStorage(container, { entries: entryLimit, valueLength, bundle
       ...content.note ? { note: content.note } : {},
       bytes: candidate.files.reduce((total, file4) => total + (sizes.get(file4) ?? 0), 0),
       entryCount: content.entries.length,
-      entries: content.entries.slice(0, entryLimit).map((entry2) => limitEntry(entry2, valueLength))
+      entries: content.entries.filter((entry2) => selectedKeys === void 0 || selectedKeys.has(entry2.key)).slice(0, entryLimit).map((entry2) => limitEntry(redactStorageEntry(entry2, candidate.name), valueLength))
     };
   });
-  const sorted = [...files].sort((a2, b2) => b2.bytes - a2.bytes).slice(0, storageLimits.files);
+  const scopedFiles = files.filter((file4) => !sensitiveStoragePath(file4.path) && (store2 === void 0 || owner.has(file4.path)));
+  const sorted = [...scopedFiles].sort((a2, b2) => b2.bytes - a2.bytes).slice(0, storageLimits.files);
   return {
     platform: container.platform,
     bundleId: bundleId3,
     readAt: Date.now(),
     stores,
     files: sorted.map((file4) => ({ ...file4, ...owner.has(file4.path) ? { store: owner.get(file4.path) } : {} })),
-    fileCount: files.length,
-    totalBytes: files.reduce((total, file4) => total + file4.bytes, 0)
+    fileCount: scopedFiles.length,
+    totalBytes: scopedFiles.reduce((total, file4) => total + file4.bytes, 0)
   };
 }
 async function findStore(container, id2, kind4) {
@@ -124265,25 +124324,34 @@ async function clearStore(container, id2) {
   await container.remove(candidate.files);
   return candidate;
 }
-async function readTable(container, id2, table, { offset, limit, valueLength, run: run2 }) {
+async function readTable(container, id2, table, { offset, limit, valueLength, run: run2, columns: requestedColumns }) {
   const candidate = await findStore(container, id2, "sqlite");
+  if (sensitiveStoragePath(candidate.path) || sensitiveStorageText(table)) throw new ExpectedOperationError("invalid_input", "Sensitive storage identifiers cannot be returned.");
   return withDatabase(container, candidate, async (file4) => {
-    if (!(await listTables(run2, file4)).includes(table)) throw new ExpectedOperationError("invalid_input", `The table ${table} no longer exists. Refresh and try again.`);
+    if (!(await listTables(run2, file4)).includes(table)) throw new ExpectedOperationError("invalid_input", "That table no longer exists. Refresh and try again.");
     const name = quoteIdentifier(table);
     const [info3, [count4]] = await Promise.all([sqlite(run2, file4, `PRAGMA table_info(${name})`), sqlite(run2, file4, `SELECT count(*) AS total FROM ${name}`)]);
-    const columns = info3.map((column) => ({ name: String(column.name), type: String(column.type ?? "") }));
+    const allColumns = info3.map((column) => ({ name: String(column.name), type: String(column.type ?? "") })).filter((column) => !sensitiveStorageText(column.name) && !sensitiveStorageText(column.type));
+    if (requestedColumns?.some((name2) => !allColumns.some((column) => column.name === name2))) {
+      throw new ExpectedOperationError("invalid_input", "A requested column no longer exists. Refresh and try again.");
+    }
+    const columns = requestedColumns === void 0 ? allColumns : allColumns.filter((column) => requestedColumns.includes(column.name));
+    const labels = allColumns.filter((column) => /^(key|name|k|(?:setting|preference|property|attribute)[_-]?(?:key|name))$/i.test(column.name));
     const select = columns.map((column, index) => {
       const quoted = quoteIdentifier(column.name);
-      return `CASE typeof(${quoted}) WHEN 'blob' THEN 'x''' || substr(hex(${quoted}), 1, ${valueLength}) || '''' ELSE ${quoted} END AS c${index}`;
-    }).join(", ") || "NULL AS c0";
-    const rows = await sqlite(run2, file4, `SELECT ${select} FROM ${name} LIMIT ${limit} OFFSET ${offset}`);
+      if (sensitiveStorageName(`${table}.${column.name}`)) return `'${REDACTED}' AS c${index}`;
+      return `CASE typeof(${quoted}) WHEN 'blob' THEN '${REDACTED}' ELSE ${quoted} END AS c${index}`;
+    });
+    select.push(...labels.map((column, index) => `${quoteIdentifier(column.name)} AS k${index}`));
+    const rows = await sqlite(run2, file4, `SELECT ${select.join(", ") || "NULL AS c0"} FROM ${name} LIMIT ${limit} OFFSET ${offset}`);
     return {
       table,
       columns,
       offset,
       total: Number(count4?.total ?? 0),
-      rows: rows.map((row) => columns.map((_2, index) => {
-        const cell = row[`c${index}`];
+      rows: rows.map((row) => columns.map((column, index) => {
+        const sensitiveRow = labels.some((_2, label) => sensitiveStorageName(String(row[`k${label}`] ?? "")));
+        const cell = sensitiveRow ? REDACTED : redactStorageValue(`${table}.${column.name}`, row[`c${index}`]);
         if (cell === null || cell === void 0 || typeof cell === "number") return cell ?? null;
         const text7 = String(cell);
         return text7.length > valueLength ? `${text7.slice(0, valueLength)}\u2026` : text7;
@@ -124298,6 +124366,20 @@ function createContainers(commands = systemCommands) {
 }
 var bundleId2 = bundleIdSchema.describe("App bundle ID or Android package name.");
 var storeIdSchema = external_exports.string().max(4096);
+function safeStorageError(error113) {
+  switch (expectedOutcome(error113)) {
+    case "invalid_input":
+      return "The app, store, table, or requested fields are unavailable or invalid. Refresh the selected app storage and check the request.";
+    case "unsupported_platform":
+      return "App storage requires an iOS simulator or a debuggable Android app and the platform SDK. Physical iOS and Android release-build reads are unsupported.";
+    case "device_unavailable":
+      return "The selected device is unavailable. Check that it is booted, connected, and authorized.";
+    case "cancelled":
+      return "App storage operation cancelled.";
+    default:
+      return "App storage operation failed. Check the selected app and device, then retry.";
+  }
+}
 var readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 function registerAppStorageTools(server, commands = systemCommands, driverFor = createDrivers(commands), containerFor = createContainers(commands)) {
   async function run2(operation, { platform: platform6, deviceId: deviceId4, bundleId: bundleId3 }, work) {
@@ -124310,33 +124392,35 @@ function registerAppStorageTools(server, commands = systemCommands, driverFor = 
     } catch (error113) {
       recordAppStorageOperation(operation, platform6, "failed", performance.now() - startedAt);
       captureServerError(expectedOutcome(error113) === void 0 ? new Error(`App storage ${operation} failed.`) : error113, `app_storage.${operation}`);
-      return { isError: true, content: [{ type: "text", text: errorMessage(error113) }] };
+      return { isError: true, content: [{ type: "text", text: safeStorageError(error113) }] };
     }
   }
   K3(server, "mobile_app_storage", {
     title: "Read app storage",
-    description: "Read an app's saved data (MMKV, AsyncStorage, UserDefaults, SharedPreferences, DataStore, SQLite, largest files) on iOS simulators and debuggable Android builds. MMKV types are guessed.",
+    description: "Read an app's saved data (MMKV, AsyncStorage, UserDefaults, SharedPreferences, DataStore, SQLite, largest files) on iOS simulators and debuggable Android builds. MMKV types are guessed. Values under recognized sensitive keys, credential-like text and binary data are redacted before results reach the host or panel. Use store and keys to narrow the result; filtering is not a guarantee that arbitrary app data is non-sensitive. Use synthetic test data.",
     inputSchema: {
       ...appTargetShape,
       bundleId: bundleId2,
-      store: storeIdSchema.optional().describe("A store ID to return alone."),
+      store: storeIdSchema.optional().describe("Read only this store; other stores are not decoded or returned."),
+      keys: external_exports.array(external_exports.string().min(1).max(4096)).min(1).max(100).optional().describe("Exact keys to return from the specified store. Requires store."),
       entries: external_exports.number().int().min(1).max(storageLimits.maxEntries).optional(),
       valueLength: external_exports.number().int().min(40).max(storageLimits.maxValueLength).optional()
     },
     annotations: readOnly,
     _meta: { ui: { visibility: ["app", "model"] } }
   }, (input2) => run2("read", input2, async (container) => {
-    const snapshot2 = await readStorage(container, { bundleId: input2.bundleId, entries: input2.entries ?? storageLimits.entries, valueLength: input2.valueLength ?? storageLimits.valueLength, run: commands.run });
-    return input2.store ? { ...snapshot2, stores: snapshot2.stores.filter((store2) => store2.id === input2.store) } : snapshot2;
+    if (input2.keys !== void 0 && input2.store === void 0) throw new ExpectedOperationError("invalid_input", "Key selection requires a store.");
+    return readStorage(container, { bundleId: input2.bundleId, entries: input2.entries ?? storageLimits.entries, valueLength: input2.valueLength ?? storageLimits.valueLength, run: commands.run, store: input2.store, keys: input2.keys });
   }));
   K3(server, "mobile_app_storage_table", {
     title: "Read a database table",
-    description: "Read rows from a SQLite table listed by mobile_app_storage, a page at a time. Returns column names and types, the total row count, and cells as text, numbers, or null; blobs come back as x'\u2026' hex.",
+    description: "Read rows from a SQLite table listed by mobile_app_storage, a page at a time. Returns column names/types, total row count and filtered cells. Sensitive columns, credential-like values, sensitive key/value rows and blobs are redacted. Use columns and a small limit to minimize data returned; use synthetic test data.",
     inputSchema: {
       ...appTargetShape,
       bundleId: bundleId2,
       store: storeIdSchema.describe("A SQLite store ID from mobile_app_storage."),
       table: external_exports.string().min(1).max(512).describe("A table name listed for that store."),
+      columns: external_exports.array(external_exports.string().min(1).max(512)).min(1).max(100).optional().describe("Exact columns to return; unselected cells are not read except key/name labels used locally for credential filtering."),
       offset: external_exports.number().int().min(0).optional(),
       limit: external_exports.number().int().min(1).max(storageLimits.maxTableRows).optional().describe(`Rows to return; defaults to ${storageLimits.tableRows}.`)
     },
@@ -124346,7 +124430,8 @@ function registerAppStorageTools(server, commands = systemCommands, driverFor = 
     offset: input2.offset ?? 0,
     limit: input2.limit ?? storageLimits.tableRows,
     valueLength: storageLimits.tableValueLength,
-    run: commands.run
+    run: commands.run,
+    columns: input2.columns
   })));
   K3(server, "mobile_clear_app_storage", {
     title: "Clear app storage",
@@ -124360,7 +124445,8 @@ function registerAppStorageTools(server, commands = systemCommands, driverFor = 
       await container.reset();
       return { cleared: "all", stopped: true };
     }
-    return { cleared: (await clearStore(container, input2.store)).name, stopped: true };
+    await clearStore(container, input2.store);
+    return { cleared: "store", stopped: true };
   }));
 }
 
@@ -129614,12 +129700,12 @@ var TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES = 64 * 1024;
 var TRACE_SIFT_PAYLOAD_TOO_LARGE = "This finding is larger than the panel can open.";
 var TRACE_SIFT_PAYLOAD_MAX_BYTES = 24 * 1024 * 1024;
 var TRACE_SIFT_PAYLOAD_MAX_DEPTH = 4096;
-function traceSiftPayloadTooDeep(value, maxDepth = TRACE_SIFT_PAYLOAD_MAX_DEPTH) {
+function traceSiftPayloadTooDeep(value, maxDepth2 = TRACE_SIFT_PAYLOAD_MAX_DEPTH) {
   const stack = [{ node: value, depth: 0 }];
   while (stack.length > 0) {
     const { node: node5, depth } = stack.pop();
     if (typeof node5 !== "object" || node5 === null) continue;
-    if (depth >= maxDepth) return true;
+    if (depth >= maxDepth2) return true;
     for (const child of Array.isArray(node5) ? node5 : Object.values(node5)) {
       if (typeof child === "object" && child !== null) stack.push({ node: child, depth: depth + 1 });
     }
@@ -129630,6 +129716,8 @@ function traceSiftPayloadTooDeep(value, maxDepth = TRACE_SIFT_PAYLOAD_MAX_DEPTH)
 // src/server/tracesift-tools.ts
 var gzip = promisify15(gzipCallback);
 var read4 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+var persist = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
+var localService = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 var visibility2 = ["app", "model"];
 var analysisOutput = {
   apiVersion: external_exports.literal(1),
@@ -129647,10 +129735,10 @@ function failure3(error113, operation, startedAt, signal) {
 function registerTraceSiftTools(server, client2) {
   K3(server, "mobile_analyze_profile", {
     title: "Analyze a CPU or React profile with TraceSift",
-    description: "Upload a local CPU profile or React DevTools profiling export to the local TraceSift service and render its measured findings as inline cards, each dividing its task between the features it entered, with an Explore view for the call tree and timeline. Use when the user provides a profile path and asks to investigate performance or find a root cause. Set profileType only when the format is known; auto detects supported JSON formats. After rendering, wait for the user to choose Investigate before changing code.",
+    description: "Upload a local CPU profile or React DevTools profiling export to the local TraceSift service and render its measured findings as inline cards, each dividing its task between the features it entered, with an Explore view for the call tree and timeline. Use when the user provides a profile path and asks to investigate performance or find a root cause. Set profileType only when the format is known; auto detects supported JSON formats. May start the local TraceSift service, saves analysis files, and replaces the latest analysis reference for this profile input. After rendering, wait for the user to choose Investigate before changing code.",
     inputSchema: traceSiftProfileInputSchema.shape,
     outputSchema: analysisOutput,
-    annotations: read4,
+    annotations: persist,
     _meta: { ui: { resourceUri: TRACESIFT_URI, visibility: visibility2 } }
   }, async ({ path, profileType }, context3) => {
     const startedAt = performance.now();
@@ -129669,10 +129757,10 @@ function registerTraceSiftTools(server, client2) {
   });
   K3(server, "mobile_remember_tracesift_analysis", {
     title: "Remember a TraceSift analysis for this card",
-    description: "Associate an inline TraceSift card's stable host view with its persisted compact analysis so the card can be restored after Codex restarts.",
+    description: "Associate an inline TraceSift card's stable host view with its persisted compact analysis so the card can be restored after Codex restarts. Writes a local reference file, replacing the previous association for this host view.",
     inputSchema: { viewId: external_exports.union([external_exports.string(), external_exports.number()]), analysisId: external_exports.string().min(1).max(256) },
     outputSchema: { remembered: external_exports.literal(true) },
-    annotations: read4,
+    annotations: persist,
     _meta: { ui: { visibility: ["app"] } }
   }, async ({ viewId, analysisId }, context3) => {
     const startedAt = performance.now();
@@ -129722,7 +129810,7 @@ function registerTraceSiftTools(server, client2) {
   });
   K3(server, "mobile_open_tracesift_explore", {
     title: "Open a TraceSift finding in its web explorer",
-    description: "Open one CPU task or React commit through `tracesift explore`. This app-only action is called after the user presses Explore; the persisted compact analysis carries the selection while full Explore data stays in TraceSift instead of crossing MCP.",
+    description: "Open one CPU task or React commit through `tracesift explore`. May start the local service and opens a browser. This app-only action is called after the user presses Explore; the persisted compact analysis carries the selection while full Explore data stays in TraceSift instead of crossing MCP.",
     inputSchema: {
       analysisId: external_exports.string().min(1).max(256),
       taskIndex: external_exports.number().int().nonnegative().optional(),
@@ -129731,7 +129819,7 @@ function registerTraceSiftTools(server, client2) {
       focus: external_exports.string().max(16384).optional()
     },
     outputSchema: { opened: external_exports.literal(true) },
-    annotations: read4,
+    annotations: localService,
     _meta: { ui: { visibility: ["app"] } }
   }, async ({ analysisId, taskIndex, rootId, commitIndex, focus }, context3) => {
     const startedAt = performance.now();
@@ -129751,7 +129839,7 @@ function registerTraceSiftTools(server, client2) {
   });
   K3(server, "mobile_tracesift_explore_payload", {
     title: "Load the full data one TraceSift finding explores",
-    description: "Return the complete call tree and timeline for one CPU task, or every commit timeline for one React analysis, so the inline card can render the Explore view itself. This app-only action is called when the user presses Explore; the payload is large, travels compressed as one text item, and is never read back by the model.",
+    description: "Return the complete call tree and timeline for one CPU task, or every commit timeline for one React analysis, so the inline card can render the Explore view itself. May start the local TraceSift service. This app-only action is called when the user presses Explore; the payload is large, travels compressed as one text item, and is never read back by the model.",
     inputSchema: {
       analysisId: external_exports.string().min(1).max(256),
       taskIndex: external_exports.number().int().nonnegative().optional()
@@ -129759,7 +129847,7 @@ function registerTraceSiftTools(server, client2) {
     // Only the envelope is schema-checked: the tree inside is megabytes the host
     // would walk node by node to prove a shape the explorer checks as it draws.
     outputSchema: traceSiftExploreEnvelopeSchema.shape,
-    annotations: read4,
+    annotations: localService,
     _meta: { ui: { visibility: ["app"] } }
   }, async ({ analysisId, taskIndex }, context3) => {
     const startedAt = performance.now();
@@ -129794,10 +129882,10 @@ function registerTraceSiftTools(server, client2) {
   });
   K3(server, "mobile_get_tracesift_handoff", {
     title: "Get a TraceSift card handoff",
-    description: "Return the authoritative TraceSift investigation handoff for a selected card. This app-only action is called by the inline card after the user presses Investigate.",
+    description: "Return the authoritative TraceSift investigation handoff for a selected card. May start the local TraceSift service. This app-only action is called by the inline card after the user presses Investigate.",
     inputSchema: { analysisId: external_exports.string().min(1).max(256), cardId: external_exports.string().min(1).max(256) },
     outputSchema: traceSiftHandoffSchema.shape,
-    annotations: read4,
+    annotations: localService,
     _meta: { ui: { visibility: ["app"] } }
   }, async ({ analysisId, cardId }, context3) => {
     const startedAt = performance.now();
@@ -131122,4 +131210,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=ddea559c-c1fe-57bc-abf3-1de62d27c7df
+//# debugId=747c903a-229a-5ea8-bcdb-c39280a4c3f5

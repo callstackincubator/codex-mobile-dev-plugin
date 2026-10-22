@@ -34,10 +34,10 @@
       "sha256": "23cc0077e221c7d991bd0eb02150a0d49199bcca1ddf059edccee9ffd914939d"
     }
   ],
-  "openssl": "OpenSSL 3.6.5 29 Sep 2026 (Library: OpenSSL 3.6.5 29 Sep 2026)",
+  "openssl": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)",
   "binaries": {
     "mobile-dev-ios-logs": {
-      "sha256": "20cbf9b322ac8e1ad62777f5d607a86339a5a6fec0abc9b3cb2c670fecd7b925",
+      "sha256": "719d6d028bcbc36256fc6e81ce5ff0a6f539cd172bd8436f84bf39dd85cf7605",
       "bytes": 384944
     },
     "libimobiledevice-1.0.6.dylib": {
@@ -61,12 +61,12 @@
       "bytes": 71984
     },
     "libssl.3.dylib": {
-      "sha256": "17101303986080279f4be8f8ffe71238353bad77d8c93a0a1f2fcacf3edebf4f",
-      "bytes": 885088
+      "sha256": "aa5592da518730e26b5a1a7a7a258af138512d82d0ad345fd56df2437febb982",
+      "bytes": 883184
     },
     "libcrypto.3.dylib": {
-      "sha256": "fb2bfcf1a2957c432eeaee90a57d31e5b82f0ee5aae75cd5286a78d5d3fd504c",
-      "bytes": 4846032
+      "sha256": "a04e19cf8931e6fbdb620d36c70966526cfe5442a99e1550af57370a1dcf4337",
+      "bytes": 4692784
     }
   }
 }

@@ -14,8 +14,7 @@ codex plugin add mobile-dev@mobile-dev
 ```
 
 Open a new chat after installing. The package includes the built plugin and
-bundled runtimes; no plugin build or `npm install` is needed. While the repository
-is private, installation requires GitHub read access and working Git authentication.
+bundled runtimes; no plugin build or `npm install` is needed.
 
 Mobile Dev shows a banner when a newer release is ready to install. Click
 **Update**, then fully quit and reopen Codex after it finishes.
@@ -53,6 +52,12 @@ Track app CPU and memory, expand individual thread charts, and view device-wide 
 ### App storage
 See what an app has saved without adding code to it: MMKV, AsyncStorage, UserDefaults, SharedPreferences, DataStore, SQLite databases, and the largest files in its data directory. Open SQLite tables as a paged grid, search across every store at once, and open the Changes tab to watch keys being added, changed, and removed while you use the app, with only the changed part of JSON values highlighted. SDK data from Firebase, Google Analytics and similar libraries is grouped separately. Clear one store or reset all app data. Works on iOS simulators and debuggable Android builds; MMKV value types are guessed from the stored bytes, and encrypted MMKV instances show as locked.
 
+
+Storage results are filtered before reaching the host or panel. Recognized sensitive
+fields and credential-like values show `[REDACTED]`; binary values are withheld.
+Ask for a specific store/key or table/columns to narrow inspection. This filtering
+cannot identify all personal or confidential data; use synthetic development data.
+See [storage privacy and review checks](docs/storage-privacy.md).
 
 ## Requirements
 
@@ -111,12 +116,19 @@ To build the plugin, install a local package, or contribute changes, see
 [CONTRIBUTING.md](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/CONTRIBUTING.md).
 Implementation and release details live in the linked contributor documentation.
 
-## Privacy
+## Privacy and support
 
-Mobile Dev reports plugin errors, crashes, and aggregate performance measurements
-to Sentry. App logs, screenshots, input content, tool payloads, and device
-performance recordings are excluded. Errors and crashes use a generated anonymous
-installation ID. Set `MOBILE_DEV_TELEMETRY=off` in the MCP launch environment to
-disable reporting. See
+Mobile Dev reports plugin errors, crashes, usage counters, sampled traces, and
+aggregate plugin performance measurements to Sentry by default. App logs,
+screenshots, input content, tool payloads, app storage contents, profiles, and
+device performance recordings are excluded from that telemetry. Errors and
+crashes use a randomly generated persistent installation ID. Set
+`MOBILE_DEV_TELEMETRY=off` in the MCP launch environment and restart the plugin
+processes to disable reporting. Tool results and content sent to chat are handled
+by the host separately. Read the [Privacy Policy](PRIVACY.md) and
+[Terms of Service](TERMS.md), or see
 [Sentry observability](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/docs/telemetry.md)
-for collection, privacy, and configuration details.
+for implementation details.
+
+For help, email [hello@callstack.com](mailto:hello@callstack.com).
+See [Support](SUPPORT.md) for reporting bugs, security issues, and privacy requests.
