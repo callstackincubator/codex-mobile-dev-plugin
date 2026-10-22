@@ -66,7 +66,7 @@
           ]
         },
         "commerce": false,
-        "demo_recording_url": "https://raw.githubusercontent.com/callstackincubator/codex-mobile-dev-plugin/1bbda3b5592f2644d5572cb2c30f59e07cd444cd/docs/review/media/mobile-dev-demo.mp4"
+        "demo_recording_url": "https://raw.githubusercontent.com/callstackincubator/codex-mobile-dev-plugin/main/docs/review/media/mobile-dev-demo.mp4"
       },
       "publication": {
         "release_notes": "Adds product-specific privacy, terms and support links, three starter prompts, and reproducible review cases. Corrects TraceSift write/service annotations. Filters storage secrets and binary values before host delivery, scopes reads before decoding, and adds exact key/column selection."
