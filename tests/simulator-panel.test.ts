@@ -214,7 +214,7 @@ function fixture(t: TestContext) {
   } as unknown as App;
   const panels = (["ios", "android"] as const).map(platform => {
     const root = new Element();
-    for (const name of ["devices", "settings", "screen", "device-frame", "stage", "device-bezel", "screenshot", "notice", "notice-message", "empty", "empty-description", "stopped", "start-device", "screenshot-status"]) root.elements.set(name, new Element());
+    for (const name of ["devices", "settings", "screen", "device-frame", "stage", "device-bezel", "screenshot", "notice", "notice-message", "empty", "empty-description", "stopped", "start-device", "screenshot-status", "crash-toast"]) root.elements.set(name, new Element());
     root.elements.get("device-frame")!.hidden = true;
     for (const button of ["home", "app-switcher"]) { const element = new Element(); element.dataset.button = button; root.buttons.push(element); }
     const panelContext = {

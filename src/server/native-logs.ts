@@ -31,7 +31,7 @@ export async function listAndroidLogDevices(): Promise<{ id: string; name: strin
   });
 }
 
-export function runLogProcess(command: string, args: string[], parse: (line: string) => LogRecord | undefined, sink: LogSink, signal: AbortSignal, readyLine?: string): Promise<void> {
+export function runLogProcess<T = LogRecord>(command: string, args: string[], parse: (line: string) => T | undefined, sink: { log: (record: T) => void; status: LogSink["status"] }, signal: AbortSignal, readyLine?: string): Promise<void> {
   if (signal.aborted) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
@@ -82,6 +82,20 @@ export function runLogProcess(command: string, args: string[], parse: (line: str
   });
 }
 
+/** Rerun a log reader until aborted, backing off after each failure. */
+export async function keepReading(read: (failures: number) => Promise<void>, signal: AbortSignal, failed: (error: unknown) => void = () => {}) {
+  let failures = 0;
+  while (!signal.aborted) {
+    try { await read(failures); }
+    catch (error) {
+      if (signal.aborted) break;
+      failed(error);
+      failures++;
+    }
+    await delay(Math.min(500 * 2 ** Math.min(failures, 4), 10000), undefined, { signal }).catch(() => {});
+  }
+}
+
 export function startNativeLogs(target: NativeLogTarget, sink: LogSink, physicalCommand = physicalIosLogCommand): StopLogSource {
   const controller = new AbortController();
   const signal = controller.signal;
@@ -102,32 +116,24 @@ export function startNativeLogs(target: NativeLogTarget, sink: LogSink, physical
   } };
   const running = (async () => {
     const adb = target.platform === "android" ? await adbPath() : "";
-    let failures = 0;
-    while (!signal.aborted) {
+    await keepReading(async failures => {
       sink.status({ source: "native", state: failures ? "reconnecting" : "connecting" });
-      try {
-        if (target.platform === "ios") {
-          if (process.platform !== "darwin") throw new Error("iOS logs require macOS and Xcode.");
-          if (target.kind === "physical") {
-            const reader = await physicalCommand(target, signal);
-            await runLogProcess(reader.command, reader.args, parseIOS, scopedSink, signal, '{"ready":true}');
-          } else {
-            const processFilter = target.pid === undefined ? target.process : String(target.pid);
-            await runLogProcess("xcrun", ["simctl", "spawn", target.deviceId, "log", "stream", "--style", "ndjson", "--level", "debug",
-              ...(processFilter ? ["--process", processFilter] : [])], parseIOS, scopedSink, signal);
-          }
-        } else if (!target.packageName) {
-          await runLogProcess(adb, ["-s", target.deviceId, "logcat", "-v", "threadtime", "-T", "1", "*:V"], parseLogcat, scopedSink, signal);
+      if (target.platform === "ios") {
+        if (process.platform !== "darwin") throw new Error("iOS logs require macOS and Xcode.");
+        if (target.kind === "physical") {
+          const reader = await physicalCommand(target, signal);
+          await runLogProcess(reader.command, reader.args, parseIOS, scopedSink, signal, '{"ready":true}');
         } else {
-          await streamAndroidPackage(adb, target, scopedSink, signal);
+          const processFilter = target.pid === undefined ? target.process : String(target.pid);
+          await runLogProcess("xcrun", ["simctl", "spawn", target.deviceId, "log", "stream", "--style", "ndjson", "--level", "debug",
+            ...(processFilter ? ["--process", processFilter] : [])], parseIOS, scopedSink, signal);
         }
-      } catch (error) {
-        if (signal.aborted) break;
-        sink.status({ source: "native", state: "reconnecting", message: errorMessage(error) });
-        failures++;
+      } else if (!target.packageName) {
+        await runLogProcess(adb, ["-s", target.deviceId, "logcat", "-v", "threadtime", "-T", "1", "*:V"], parseLogcat, scopedSink, signal);
+      } else {
+        await streamAndroidPackage(adb, target, scopedSink, signal);
       }
-      await delay(Math.min(500 * 2 ** Math.min(failures, 4), 10000), undefined, { signal }).catch(() => {});
-    }
+    }, signal, error => sink.status({ source: "native", state: "reconnecting", message: errorMessage(error) }));
   })().catch(error => { if (!signal.aborted) sink.status({ source: "native", state: "error", message: errorMessage(error) }); })
     .finally(() => telemetry?.close());
   return async () => { controller.abort(); await running; };

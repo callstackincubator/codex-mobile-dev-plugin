@@ -6,6 +6,8 @@ import { DevicePicker } from "./device-picker";
 import { DeviceSettings } from "./device-settings";
 import { bindScreenAnnotations, ScreenAnnotationsStore } from "../screen-annotations";
 import { ScreenAnnotationOverlay, ScreenSelectButton } from "./screen-annotations";
+import { bindCrashMonitor, CrashMonitor } from "../crash-monitor";
+import { CrashToast } from "./crash-toast";
 
 const deviceButtons: { action: string; icon: LucideIcon; label: string }[] = [
   { action: "home", icon: HouseIcon, label: "Home" },
@@ -16,6 +18,7 @@ const deviceButtons: { action: string; icon: LucideIcon; label: string }[] = [
 // Keep this subtree stable so log batches never reset a live device.
 export const SimulatorView = memo(function SimulatorView({ platform, visible }: { platform: "ios" | "android"; visible: boolean }) {
   const [annotations] = useState(() => new ScreenAnnotationsStore());
+  const [crashes] = useState(() => new CrashMonitor());
   const label = platform === "ios" ? "iOS" : "Android";
   const sidebar = document.documentElement.dataset.view !== "workspace";
   const id = (name: string) => `${platform}-${name}`;
@@ -37,6 +40,7 @@ export const SimulatorView = memo(function SimulatorView({ platform, visible }: 
       </div>
       <div data-element="stopped" className="absolute inset-0 z-10 bg-background/70" hidden><Empty><EmptyHeader><EmptyMedia variant="icon"><PowerIcon /></EmptyMedia><EmptyTitle>Device stopped</EmptyTitle></EmptyHeader><EmptyContent><Button data-element="start-device" size="sm">Start device</Button></EmptyContent></Empty></div>
       <ScreenAnnotationOverlay store={annotations} />
+      <div ref={element => { if (element) bindCrashMonitor(element, crashes); }} data-element="crash-toast" className="contents"><CrashToast monitor={crashes} /></div>
     </section>
     <footer className={sidebar ? "absolute bottom-2 right-2 z-30 flex items-center text-[10px] text-muted-foreground" : "flex h-11 shrink-0 items-center gap-x-3 border-t px-2 text-[10px] text-muted-foreground"}>
       <span data-element="notice" className="sr-only" hidden><span data-element="notice-message" /></span>

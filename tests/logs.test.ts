@@ -66,7 +66,7 @@ test("native process reads handle split UTF-8, oversized lines, and explicit can
 test("log sessions keep panels isolated and release both sources on close", async () => {
   const sinks: LogSink[] = []; let stops = 0;
   const source = (_target: unknown, sink: LogSink) => { sinks.push(sink); return async () => { stops++; }; };
-  const logs = new LogSessions({ native: source, metro: source });
+  const logs = new LogSessions({ native: source, metro: source, crashes: () => async () => {} });
   const a = logs.open({ native: { platform: "ios", deviceId: UDID }, metro: { url: "http://127.0.0.1:8081", targetId: "selected" } });
   const b = logs.open({ native: { platform: "ios", deviceId: UDID } });
   sinks[0].log(record);
@@ -81,7 +81,7 @@ test("log sessions keep panels isolated and release both sources on close", asyn
 test("keep-alives retain an unread buffered log session without disabling idle expiry", async t => {
   t.mock.timers.enable({ apis: ["Date", "setInterval"], now: 0 });
   let sink: LogSink | undefined;
-  const logs = new LogSessions({ native: (_target, next) => { sink = next; return async () => {}; }, metro: () => async () => {} });
+  const logs = new LogSessions({ native: (_target, next) => { sink = next; return async () => {}; }, metro: () => async () => {}, crashes: () => async () => {} });
   t.after(() => logs.close());
   const id = logs.open({ native: { platform: "ios", deviceId: UDID } });
   sink!.log(record);
@@ -132,7 +132,7 @@ test("Metro connects only the chosen target, enables Runtime, and cleans up its 
 
 test("MCP log sessions validate devices and expose batches without browser network access", async t => {
   const fake = await fakeBaguette(); let sink: LogSink | undefined; let stopped = false;
-  const logs = new LogSessions({ native: (_target, next) => { sink = next; return async () => { stopped = true; }; }, metro: () => async () => {} });
+  const logs = new LogSessions({ native: (_target, next) => { sink = next; return async () => { stopped = true; }; }, metro: () => async () => {}, crashes: () => async () => {} });
   const plugin = await createTestPlugin("<head></head><title>Logs</title>", new Baguette(fake.url), fakeSimulatorInput(), logs);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair(); const client = new Client({ name: "logs-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });

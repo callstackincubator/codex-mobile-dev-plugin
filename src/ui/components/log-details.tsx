@@ -1,6 +1,6 @@
-import { CheckIcon, CircleAlertIcon, CopyIcon, InfoIcon, TriangleAlertIcon, XIcon } from "lucide-react";
+import { BugIcon, CheckIcon, CircleAlertIcon, CopyIcon, InfoIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { useState } from "react";
-import type { StackedLog } from "../../shared/logs";
+import type { LogRecord, StackedLog } from "../../shared/logs";
 import { logText } from "../log-text.ts";
 import { Button } from "./ui/button";
 
@@ -16,8 +16,13 @@ function CopyField({ label, value }: { label: string; value: string }) {
   </div>;
 }
 
+export function logIcon(log: Pick<LogRecord, "kind" | "level">) {
+  if (log.kind === "crash") return BugIcon;
+  return log.level === "error" ? CircleAlertIcon : log.level === "warn" ? TriangleAlertIcon : InfoIcon;
+}
+
 export function LogDetails({ log, onClose, children }: { log: StackedLog; onClose: () => void; children: React.ReactNode }) {
-  const Icon = log.level === "error" ? CircleAlertIcon : log.level === "warn" ? TriangleAlertIcon : InfoIcon;
+  const Icon = logIcon(log);
   const time = new Date(log.lastTimestamp).toLocaleTimeString(undefined, { hour12: false });
   const prefix = log.tag || log.process;
   const text = logText(log);
@@ -25,7 +30,7 @@ export function LogDetails({ log, onClose, children }: { log: StackedLog; onClos
   return <aside id="log-detail" data-level={log.level} className="log-detail flex h-full min-w-0 flex-col overflow-hidden bg-card" aria-label="Selected log">
     <header className="log-detail-heading flex h-11 shrink-0 items-center gap-2 border-b px-3">
       <Icon className="log-severity size-4" />
-      <h2 className="text-sm font-semibold capitalize">{log.level === "warn" ? "Warning" : log.level}</h2>
+      <h2 className="text-sm font-semibold capitalize">{log.kind === "crash" ? "Crash" : log.level === "warn" ? "Warning" : log.level}</h2>
       <Button variant="ghost" size="icon-sm" className="ml-auto text-muted-foreground" onClick={onClose} aria-label="Close log details"><XIcon /></Button>
     </header>
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">

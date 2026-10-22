@@ -1,6 +1,7 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import type { LogBatch, LogOptions, MetroTarget, NativeLogTarget } from "../shared/logs.ts";
+import { isExpiredLogSession } from "../shared/logs.ts";
 import { LogList } from "./log-list.ts";
 import type { PanelContext } from "./model-context.ts";
 import { ReconnectLoop, StopReconnectError } from "./reconnect.ts";
@@ -12,7 +13,7 @@ import { countUiEvent } from "./telemetry.ts";
 type Call = App["callServerTool"];
 
 function expiredSession(error: unknown) {
-  return error instanceof Error && error.message.includes("This log session expired or closed.");
+  return error instanceof Error && isExpiredLogSession(error.message);
 }
 
 export class LogsPanel {

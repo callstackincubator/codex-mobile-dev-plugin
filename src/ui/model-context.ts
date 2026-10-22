@@ -124,7 +124,8 @@ export class PanelContext {
 
   async sendLogToChat(log: StackedLog) {
     if (!this.canSendMessage) throw new Error("This host does not support chat messages.");
-    const prompt = log.level === "error" || log.level === "warn"
+    const prompt = log.kind === "crash" ? "My app crashed. Help me find and fix the cause of this crash."
+      : log.level === "error" || log.level === "warn"
       ? "Help me fix this log's underlying issue."
       : "Explain this log and whether I need to take any action.";
     const startedAt = performance.now();

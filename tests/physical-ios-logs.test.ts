@@ -89,6 +89,7 @@ test("closing physical logs cancels pending discovery without spawning a reader"
     native: selected => startNativeLogs(selected, { log() {}, status: status => statuses.push(status) },
       (selectedTarget, signal) => physicalIosLogCommand(selectedTarget, signal, discover, helper)),
     metro: () => async () => {},
+    crashes: () => async () => {},
   });
   t.after(() => logs.close());
   const session = logs.open({ native: target });
@@ -191,7 +192,7 @@ test("MCP validates physical devices independently of Baguette and closes the au
     assert.deepEqual(selected, target);
     opened++;
     return async () => { closed++; };
-  }, metro: () => async () => {} });
+  }, metro: () => async () => {}, crashes: () => async () => {} });
   const server = new McpServer({ name: "physical-log-test", version: "1" });
   const baguette = new Baguette("http://127.0.0.1:1");
   registerLogTools(server, logs, baguette, async () => [current]);

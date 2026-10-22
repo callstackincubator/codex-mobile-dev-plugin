@@ -15,6 +15,7 @@ import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { PanelContext } from "./model-context.ts";
 import { encodeScreenshotAttachment } from "./screenshot-attachment.ts";
 import { getScreenAnnotations } from "./screen-annotations.ts";
+import { getCrashMonitor } from "./crash-monitor.ts";
 import type { ScreenAnnotation } from "../shared/screen-annotations.ts";
 import { accessibilityScreen, screenComponents, screenSize } from "../shared/screen-annotations.ts";
 import { AndroidVideo } from "./android-video.ts";
@@ -50,6 +51,8 @@ export function createSimulatorPanel(
   const stage = element("stage");
   const annotations = getScreenAnnotations(stage);
   annotations.connect(panelContext);
+  const crashes = getCrashMonitor(element("crash-toast"));
+  crashes.connect(app, panelContext);
   const bezelImage = element<HTMLImageElement>("device-bezel");
   let bezel: Bezel | undefined;
   let sourceBezel: Bezel | undefined;
@@ -97,6 +100,7 @@ export function createSimulatorPanel(
   function controls() {
     const deviceToolsUnavailable = busy || !toolsAvailable || selected?.state !== "Booted" || disposed;
     settings.configure(selected?.udid ?? "", deviceToolsUnavailable);
+    crashes.configure(selected, toolsAvailable && !disposed && !root.hidden);
     settings.prefetch();
     // App tools use simctl and adb, which do not reach paired iPhones.
     appTools.configure(platform, selected?.udid ?? "", deviceToolsUnavailable || selected?.kind === "physical" && platform === "ios");
@@ -985,6 +989,7 @@ export function createSimulatorPanel(
       appTools.dispose();
       stopObservingAnnotations();
       annotations.dispose();
+      crashes.dispose();
       toolsAvailable = false;
       resizeObserver.disconnect();
       window.removeEventListener("blur", releasePointer);
