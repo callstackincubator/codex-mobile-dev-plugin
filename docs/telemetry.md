@@ -217,15 +217,17 @@ The Storage tool (`mobile_app_storage`, `mobile_app_storage_table`, `mobile_clea
 surface. The server records `app_storage.operation.duration` in milliseconds and
 `app_storage.operation.samples` per operation (`read`, `clear`, `reset`, `table`) with the device
 platform and a success or failure outcome. The duration covers listing the data
-directory, reading and decoding every recognized store, and for clears stopping the
-app first. Unexpected failures report under `app_storage.<operation>` with a fixed
+directory, reading and decoding the requested stores, filtering results before
+returning them, and for clears stopping the app first. Scoped reads skip decoding
+unselected stores; duration therefore depends on the requested scope. Unexpected failures report under `app_storage.<operation>` with a fixed
 message; a release Android build, a missing app, or a stopped device counts only
 through `server.error.outcome`. The panel records `ui.storage.list_apps`, `.icons`, `.read`, `.table`,
 `.clear`, `.reset`, and `.launch` round trips, `ui.storage.process` for validating
 a snapshot and computing the Changes feed, gauges `ui.storage.stores` and `ui.storage.entries`,
 and counts `ui.storage.failure`. Bundle IDs, store names, paths, keys, values, and
-file names are never sent; table names and cell values from `mobile_app_storage_table`
-stay local too. Since 0.1.161 the Changes tab reads storage again every
+file names are never sent to Sentry. Filtered table names and cell values from
+`mobile_app_storage_table` are returned to the host application; this is separate
+from telemetry. See [storage result filtering](storage-privacy.md). Since 0.1.161 the Changes tab reads storage again every
 5 seconds while it is open and the page is visible; each read is one `ui.storage.read`
 sample, and the interval stops when the tab, panel, or page is hidden.
 

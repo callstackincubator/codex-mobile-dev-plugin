@@ -2,8 +2,7 @@ import { z } from "zod";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { captureServerError, recordAppStorageOperation } from "../telemetry.ts";
-import { errorMessage } from "../../shared/protocol.ts";
-import { expectedOutcome } from "../../shared/error-reporting.ts";
+import { ExpectedOperationError, expectedOutcome } from "../../shared/error-reporting.ts";
 import { appTargetShape, bundleIdSchema } from "../../shared/app-control.ts";
 import { storageLimits } from "../../shared/app-storage.ts";
 import { systemCommands } from "../app-control/commands.ts";
@@ -27,6 +26,17 @@ export function createContainers(commands: Commands = systemCommands): Container
 
 const bundleId = bundleIdSchema.describe("App bundle ID or Android package name.");
 const storeIdSchema = z.string().max(4096);
+// Never relay device/SQLite diagnostics: even expected failures can contain paths,
+// table names, SQL fragments, or values. Outcome categories retain useful recovery advice.
+function safeStorageError(error: unknown): string {
+  switch (expectedOutcome(error)) {
+    case "invalid_input": return "The app, store, table, or requested fields are unavailable or invalid. Refresh the selected app storage and check the request.";
+    case "unsupported_platform": return "App storage requires an iOS simulator or a debuggable Android app and the platform SDK. Physical iOS and Android release-build reads are unsupported.";
+    case "device_unavailable": return "The selected device is unavailable. Check that it is booted, connected, and authorized.";
+    case "cancelled": return "App storage operation cancelled.";
+    default: return "App storage operation failed. Check the selected app and device, then retry.";
+  }
+}
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 
 export function registerAppStorageTools(server: McpServer, commands: Commands = systemCommands, driverFor: DriverFactory = createDrivers(commands), containerFor: ContainerFactory = createContainers(commands)) {
@@ -43,40 +53,42 @@ export function registerAppStorageTools(server: McpServer, commands: Commands = 
       recordAppStorageOperation(operation, platform, "failed", performance.now() - startedAt);
       // Paths, keys, and values can be personal, so Sentry receives only the operation.
       captureServerError(expectedOutcome(error) === undefined ? new Error(`App storage ${operation} failed.`) : error, `app_storage.${operation}`);
-      return { isError: true, content: [{ type: "text" as const, text: errorMessage(error) }] };
+      return { isError: true, content: [{ type: "text" as const, text: safeStorageError(error) }] };
     }
   }
 
   registerAppTool(server, "mobile_app_storage", {
     title: "Read app storage",
-    description: "Read an app's saved data (MMKV, AsyncStorage, UserDefaults, SharedPreferences, DataStore, SQLite, largest files) on iOS simulators and debuggable Android builds. MMKV types are guessed.",
+    description: "Read an app's saved data (MMKV, AsyncStorage, UserDefaults, SharedPreferences, DataStore, SQLite, largest files) on iOS simulators and debuggable Android builds. MMKV types are guessed. Values under recognized sensitive keys, credential-like text and binary data are redacted before results reach the host or panel. Use store and keys to narrow the result; filtering is not a guarantee that arbitrary app data is non-sensitive. Use synthetic test data.",
     inputSchema: {
       ...appTargetShape, bundleId,
-      store: storeIdSchema.optional().describe("A store ID to return alone."),
+      store: storeIdSchema.optional().describe("Read only this store; other stores are not decoded or returned."),
+      keys: z.array(z.string().min(1).max(4096)).min(1).max(100).optional().describe("Exact keys to return from the specified store. Requires store."),
       entries: z.number().int().min(1).max(storageLimits.maxEntries).optional(),
       valueLength: z.number().int().min(40).max(storageLimits.maxValueLength).optional(),
     },
     annotations: readOnly,
     _meta: { ui: { visibility: ["app", "model"] } },
   }, input => run("read", input, async container => {
-    const snapshot = await readStorage(container, { bundleId: input.bundleId, entries: input.entries ?? storageLimits.entries, valueLength: input.valueLength ?? storageLimits.valueLength, run: commands.run });
-    return input.store ? { ...snapshot, stores: snapshot.stores.filter(store => store.id === input.store) } : snapshot;
+    if (input.keys !== undefined && input.store === undefined) throw new ExpectedOperationError("invalid_input", "Key selection requires a store.");
+    return readStorage(container, { bundleId: input.bundleId, entries: input.entries ?? storageLimits.entries, valueLength: input.valueLength ?? storageLimits.valueLength, run: commands.run, store: input.store, keys: input.keys });
   }));
 
   registerAppTool(server, "mobile_app_storage_table", {
     title: "Read a database table",
-    description: "Read rows from a SQLite table listed by mobile_app_storage, a page at a time. Returns column names and types, the total row count, and cells as text, numbers, or null; blobs come back as x'…' hex.",
+    description: "Read rows from a SQLite table listed by mobile_app_storage, a page at a time. Returns column names/types, total row count and filtered cells. Sensitive columns, credential-like values, sensitive key/value rows and blobs are redacted. Use columns and a small limit to minimize data returned; use synthetic test data.",
     inputSchema: {
       ...appTargetShape, bundleId,
       store: storeIdSchema.describe("A SQLite store ID from mobile_app_storage."),
       table: z.string().min(1).max(512).describe("A table name listed for that store."),
+      columns: z.array(z.string().min(1).max(512)).min(1).max(100).optional().describe("Exact columns to return; unselected cells are not read except key/name labels used locally for credential filtering."),
       offset: z.number().int().min(0).optional(),
       limit: z.number().int().min(1).max(storageLimits.maxTableRows).optional().describe(`Rows to return; defaults to ${storageLimits.tableRows}.`),
     },
     annotations: readOnly,
     _meta: { ui: { visibility: ["app", "model"] } },
   }, input => run("table", input, container => readTable(container, input.store, input.table, {
-    offset: input.offset ?? 0, limit: input.limit ?? storageLimits.tableRows, valueLength: storageLimits.tableValueLength, run: commands.run,
+    offset: input.offset ?? 0, limit: input.limit ?? storageLimits.tableRows, valueLength: storageLimits.tableValueLength, run: commands.run, columns: input.columns,
   })));
 
   registerAppTool(server, "mobile_clear_app_storage", {
@@ -92,6 +104,7 @@ export function registerAppStorageTools(server: McpServer, commands: Commands = 
       await container.reset();
       return { cleared: "all", stopped: true };
     }
-    return { cleared: (await clearStore(container, input.store)).name, stopped: true };
+    await clearStore(container, input.store);
+    return { cleared: "store", stopped: true };
   }));
 }
