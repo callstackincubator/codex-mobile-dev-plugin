@@ -58,18 +58,17 @@ The newer bottom workspace toolbar/layout is also absent.
 
 ## Video metadata and validation
 
-Set `extensions.com.openai.review.demo_recording_url` to the revised recording's
-public HTTPS URL when it is supplied. It is intentionally absent now; the 0.1.163
-recording is not reused. A separately named file or branch URL avoids changing
-the other submission's recording. Check reviewer access and playback.
+`extensions.com.openai.review.demo_recording_url` points to the revised recording
+on this submission branch. The recording on `main` is unchanged. Check reviewer
+access and playback.
 
 ```sh
 npm run check:marketplace-review
 npm run check:marketplace-review -- --ready
 ```
 
-The second command must fail until a real recording URL is added. Neither
-command executes cases or verifies video contents.
+These commands validate metadata only; neither executes cases nor verifies
+video contents.
 
 ## Differences from 0.1.163
 

@@ -65,7 +65,8 @@
             }
           ]
         },
-        "commerce": false
+        "commerce": false,
+        "demo_recording_url": "https://raw.githubusercontent.com/callstackincubator/codex-mobile-dev-plugin/refs/heads/submission/0.1.132/docs/review/media/mobile-dev-demo.mp4"
       },
       "publication": {
         "release_notes": "Prepares the 0.1.132 feature set for review with repository, privacy, terms and support links, the updated store logo, and five positive and three negative review cases. Runtime functionality is unchanged; this version does not include TraceSift, app storage inspection/reset, or the newer app-control and network-condition features."
