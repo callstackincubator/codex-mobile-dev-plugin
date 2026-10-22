@@ -1,64 +1,108 @@
 # Mobile Dev for Codex
 
-Keep iOS and Android devices beside your Codex desktop chat while building,
-running, and debugging mobile apps. Mobile Dev works with Expo, React Native,
-SwiftUI, and other native mobile projects.
+Build, debug, and improve iOS and Android apps with a live device beside your
+Codex chat. Point to a UI element you want to change, share an error from the logs,
+and compare performance before and after a fix.
+
+Mobile Dev works with Expo, React Native, SwiftUI, and other native mobile
+projects. Use simulators, emulators, or connected phones and tablets, with iOS
+and Android side by side or in a fullscreen workspace.
+
+![iOS and Android running side by side in Mobile Dev](img/screenshot_side_by_side.png)
 
 ## Install
 
-Install the prebuilt plugin from the release marketplace:
+You'll need **Codex desktop on an Apple Silicon Mac**, plus Xcode for iOS or the
+Android SDK for Android. See [Requirements](#requirements) for versions and device
+setup.
+
+Run these commands in your terminal to install the prebuilt plugin:
 
 ```sh
 codex plugin marketplace add https://github.com/callstackincubator/codex-mobile-dev-plugin.git --ref release/latest
 codex plugin add mobile-dev@mobile-dev
 ```
 
-Open a new chat after installing. The package includes the built plugin and
-bundled runtimes; no plugin build or `npm install` is needed. While the repository
-is private, installation requires GitHub read access and working Git authentication.
+Open a new chat after installing. The package includes its runtimes and uses
+Codex's bundled Node; no plugin build or `npm install` is needed.
 
-Mobile Dev shows a banner when a newer release is ready to install. Click
-**Update**, then fully quit and reopen Codex after it finishes.
+## Try it with your app
 
-You can also update an existing installation from the terminal:
+1. Open your app project in Codex and start a new chat.
+2. Ask: **"Build and run my app in the simulator beside this chat."**
+3. Use the device picker to choose a simulator, emulator, or connected device.
+   Selecting a stopped simulator or emulator boots it. Enable iOS and Android
+   together to see both platforms.
+4. Interact with the app, then open **Logs**, **Performance**, or **Storage** to
+   investigate what you see.
 
-```sh
-codex plugin marketplace upgrade mobile-dev
-```
+You can also open Mobile Dev directly from the Codex sidebar. Codex uses your
+project's build and run tools to launch the app; Mobile Dev provides the device
+view, controls, and debugging tools.
 
-Fully quit and reopen Codex after updating.
+## Point to what you want to change
 
-## Features
+Tap, drag, and type in the device panel, or ask Codex to inspect the screen and
+interact with your app on an iOS simulator or Android device. Use **Select** to
+annotate an element or screen region with an instruction, such as "Add more space
+above this button." React Native component and source details are included when
+available. Use **Screenshot** to attach an image to your next message.
 
-### Live devices beside your chat
-Stream iOS simulators, Android emulators, and connected iPhones, iPads, and Android devices. Show iOS and Android together or use the fullscreen workspace.
+Physical iPhones and iPads support taps, drags, screenshots, and region annotations;
+keyboard, hardware-button controls, and native accessibility element names are
+unavailable. On iOS simulators and Android, click the screen and press
+**Command-V** to paste up to 4,096 printable US-ASCII characters. Line breaks and
+unsupported characters are rejected without sending partial text.
 
-![](/img/screenshot_side_by_side.png)
+![Selecting an app element and annotating it for Codex](img/screenshot_annotations.png)
 
-### Device control, inspection and annotations
-Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let Codex inspect accessibility elements and control your app through MCP tools. Select an element or screen region and leave instructions for Codex, with React Native component and source details when available.
+## Turn an error into a fix
 
-![](/img/screenshot_annotations.png)
+Read iOS unified logs, Android logcat, and Metro console messages together.
+Follow the foreground app, search and filter the output, then send an error and
+its full stack trace to chat for Codex to investigate. Metro logs require a
+running local Metro server and a compatible app inspector target.
 
-### Native and JavaScript logs
-Read iOS unified logs, Android logcat, and Metro console messages together. Follow the foreground app, search and filter logs, and send an error and its stack trace to chat.
+Try: **"Read the app logs and help me fix this error."**
 
-![](/img/screenshot_logs.png)
+![Native and JavaScript logs with error details in Mobile Dev](img/screenshot_logs.png)
 
-### Live performance monitoring and improvements
-Track app CPU and memory, expand individual thread charts, and view device-wide Display FPS on supported devices. Ask Codex to record an interaction, inspect interactive charts in chat, compare runs, and analyze selected ranges. Android recordings include display frame pacing and jank statistics.
+## Check whether a change improved performance
 
-![](/img/screenshot_performance.png)
+Watch app CPU and memory, expand individual thread charts, or record an
+interaction and inspect the charts in chat. Select a time range to investigate a
+spike and compare runs before and after a change. Repeat the same interaction on
+the same device and app configuration for a useful comparison.
 
-### App storage
-See what an app has saved without adding code to it: MMKV, AsyncStorage, UserDefaults, SharedPreferences, DataStore, SQLite databases, and the largest files in its data directory. Open SQLite tables as a paged grid, search across every store at once, and open the Changes tab to watch keys being added, changed, and removed while you use the app, with only the changed part of JSON values highlighted. SDK data from Firebase, Google Analytics and similar libraries is grouped separately. Clear one store or reset all app data. Works on iOS simulators and debuggable Android builds; MMKV value types are guessed from the stored bytes, and encrypted MMKV instances show as locked.
+Try: **"Record CPU and memory for 30 seconds while I scroll checkout."** Then ask:
+**"Compare these two performance recordings."**
 
+Supported devices also provide **Display FPS**; Android recordings include frame
+pacing and jank statistics. These describe the whole device's display, including
+system UI, and cannot attribute a slowdown to one app. iOS simulators support CPU
+and memory monitoring, but not Display FPS.
+
+![Performance recording with CPU, memory, and thread details in chat](img/screenshot_performance.png)
+
+## Inspect saved data and test a fresh state
+
+Open **Storage** to investigate stale settings, cached state, or onboarding flags
+without adding code to your app. Browse MMKV, AsyncStorage, UserDefaults,
+SharedPreferences, DataStore preferences, SQLite tables, and the largest files in
+the app's data directory.
+
+Search across stores or use **Changes** to watch keys being added, changed, and
+removed as you use the app. Clear one store or reset all app data to test a fresh
+state; either action stops the app and deletes the selected data.
+
+Storage inspection works on iOS simulators and debuggable Android builds. MMKV
+value types are inferred from stored bytes, and encrypted MMKV instances stay
+locked.
 
 ## Requirements
 
-The prebuilt plugin targets Codex desktop on an Apple Silicon Mac and uses
-Codex's bundled Node runtime from its workspace dependency cache. Install the
-tools for the platforms you use:
+Mobile Dev runs in Codex desktop on an Apple Silicon Mac. Install the tools for
+the platforms you use:
 
 | Platform or feature | Requirements |
 | --- | --- |
@@ -74,49 +118,32 @@ Simulator tools use the full Xcode installation selected by `xcode-select` (or
 and locations are supported. If Command Line Tools or an older Xcode is selected,
 choose Xcode 26 or later in Xcode Settings > Locations > Command Line Tools.
 
-The app project's own tools build, install, and launch your app. Mobile Dev supplies
-its device panel, inspection, logs, and performance tools.
+## Update
 
-## Get started
+When a new release is available, click **Update** in Mobile Dev's banner. You can
+also update from the terminal:
 
-Open Mobile Dev from the Codex sidebar, or ask Codex to open the simulator beside
-this chat. Pick a device from the toolbar; selecting a stopped simulator or AVD
-boots it. Use the iOS and Android toggles to show either platform or both.
+```sh
+codex plugin marketplace upgrade mobile-dev
+```
 
-Click an iOS simulator or Android screen to focus it, then press **Command-V** to
-paste text into the device. Paste accepts up to 4,096 printable US-ASCII characters;
-line breaks and other characters show a notice without sending partial text.
+After either route, fully quit and reopen Codex.
 
-Ask Codex to work with your app, for example:
+## Guides and contributing
 
-- “Build and run my Expo app in the simulator beside this chat.”
-- “Read the app logs and help me fix this error.”
-- “Record CPU and memory for 30 seconds while I scroll checkout.”
-- “Compare these two performance recordings.”
+Read the guides for [devices](docs/devices.md), [logs](docs/logs.md),
+[performance](docs/performance.md), and [MCP tools](docs/mcp-tools.md) for detailed
+behavior and platform support.
 
-Open Logs, Performance, or Storage to inspect the selected device. Use Screenshot to attach
-an image to your next message, or Select to annotate an element or region with an
-instruction. Physical iOS supports taps and drags; keyboard and hardware-button
-controls are unavailable.
-
-## Documentation and contributing
-
-Detailed guides are available for
-[devices](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/docs/devices.md),
-[logs](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/docs/logs.md),
-[performance](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/docs/performance.md),
-and [MCP tools](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/docs/mcp-tools.md).
-
-To build the plugin, install a local package, or contribute changes, see
-[CONTRIBUTING.md](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/CONTRIBUTING.md).
-Implementation and release details live in the linked contributor documentation.
+To build the plugin, install a local build, or contribute, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Privacy
 
-Mobile Dev reports plugin errors, crashes, and aggregate performance measurements
-to Sentry. App logs, screenshots, input content, tool payloads, and device
-performance recordings are excluded. Errors and crashes use a generated anonymous
-installation ID. Set `MOBILE_DEV_TELEMETRY=off` in the MCP launch environment to
-disable reporting. See
-[Sentry observability](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/docs/telemetry.md)
-for collection, privacy, and configuration details.
+Mobile Dev reports plugin errors, crashes, usage counters, sampled traces, and
+aggregate plugin performance measurements to Sentry by default. App logs,
+screenshots, input content, tool payloads, and device performance recordings are
+excluded from that telemetry. Errors and crashes use a randomly generated
+persistent installation ID. Set `MOBILE_DEV_TELEMETRY=off` in the MCP launch
+environment and restart the plugin processes to disable reporting. See
+[Sentry observability](docs/telemetry.md) for collection and configuration details.
