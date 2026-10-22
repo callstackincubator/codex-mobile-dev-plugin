@@ -31,7 +31,6 @@
     "logo": "./assets/store-logo.webp",
     "defaultPrompt": [
       "Build and run my mobile app in the simulator beside this chat.",
-      "Open my mobile simulator.",
       "Analyze my CPU or React profile with TraceSift.",
       "List my iOS and Android devices."
     ]
