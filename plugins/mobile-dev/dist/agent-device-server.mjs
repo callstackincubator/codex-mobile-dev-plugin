@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="da6d5eed-1c6c-579e-814a-2d73d5d947a5")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="121ca6fc-e477-52ba-8a69-812f0d0edcf7")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -69820,7 +69820,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // src/shared/version.ts
-var PLUGIN_VERSION = "0.1.160";
+var PLUGIN_VERSION = "0.1.162";
 
 // src/shared/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -94194,7 +94194,7 @@ var resourceKinds = {
   "ui:": "ui"
 };
 var allowedContext = {
-  surface: ["logs", "performance", "simulator", "recording", "comparison"],
+  surface: ["logs", "performance", "storage", "simulator", "recording", "comparison"],
   view: ["panel", "workspace", "recording", "comparison"],
   layout: ["ios", "android", "both", "none"],
   device_platform: ["ios", "android", "mixed"],
@@ -94622,4 +94622,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=da6d5eed-1c6c-579e-814a-2d73d5d947a5
+//# debugId=121ca6fc-e477-52ba-8a69-812f0d0edcf7

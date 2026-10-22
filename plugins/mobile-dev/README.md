@@ -50,6 +50,9 @@ Track app CPU and memory, expand individual thread charts, and view device-wide 
 
 ![](/img/screenshot_performance.png)
 
+### App storage
+See what an app has saved without adding code to it: MMKV, AsyncStorage, UserDefaults, SharedPreferences, DataStore, SQLite databases, and the largest files in its data directory. Open SQLite tables as a paged grid, search across every store at once, and open the Changes tab to watch keys being added, changed, and removed while you use the app, with only the changed part of JSON values highlighted. SDK data from Firebase, Google Analytics and similar libraries is grouped separately. Clear one store or reset all app data. Works on iOS simulators and debuggable Android builds; MMKV value types are guessed from the stored bytes, and encrypted MMKV instances show as locked.
+
 
 ## Requirements
 
@@ -80,6 +83,10 @@ Open Mobile Dev from the Codex sidebar, or ask Codex to open the simulator besid
 this chat. Pick a device from the toolbar; selecting a stopped simulator or AVD
 boots it. Use the iOS and Android toggles to show either platform or both.
 
+Click an iOS simulator or Android screen to focus it, then press **Command-V** to
+paste text into the device. Paste accepts up to 4,096 printable US-ASCII characters;
+line breaks and other characters show a notice without sending partial text.
+
 Ask Codex to work with your app, for example:
 
 - “Build and run my Expo app in the simulator beside this chat.”
@@ -87,7 +94,7 @@ Ask Codex to work with your app, for example:
 - “Record CPU and memory for 30 seconds while I scroll checkout.”
 - “Compare these two performance recordings.”
 
-Open Logs or Performance to inspect the selected device. Use Screenshot to attach
+Open Logs, Performance, or Storage to inspect the selected device. Use Screenshot to attach
 an image to your next message, or Select to annotate an element or region with an
 instruction. Physical iOS supports taps and drags; keyboard and hardware-button
 controls are unavailable.

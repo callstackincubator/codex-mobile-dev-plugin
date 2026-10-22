@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="2c5d2d5f-de40-533e-a64a-3109242d86a9")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="ddea559c-c1fe-57bc-abf3-1de62d27c7df")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -1350,8 +1350,8 @@ var require_util = __commonJS({
         const rawHeaders = [];
         for (const [name, value] of Object.entries(headers)) {
           if (Array.isArray(value)) {
-            for (const entry of value) {
-              rawHeaders.push(name, `${entry}`);
+            for (const entry2 of value) {
+              rawHeaders.push(name, `${entry2}`);
             }
           } else {
             rawHeaders.push(name, `${value}`);
@@ -1377,8 +1377,8 @@ var require_util = __commonJS({
       const rawHeaders = [];
       for (const [name, value] of Object.entries(headers)) {
         if (Array.isArray(value)) {
-          for (const entry of value) {
-            rawHeaders.push(Buffer.from(name, "latin1"), Buffer.from(`${entry}`, "latin1"));
+          for (const entry2 of value) {
+            rawHeaders.push(Buffer.from(name, "latin1"), Buffer.from(`${entry2}`, "latin1"));
           }
         } else {
           rawHeaders.push(Buffer.from(name, "latin1"), Buffer.from(`${value}`, "latin1"));
@@ -4329,22 +4329,22 @@ var require_formdata = __commonJS({
         } else {
           value = webidl.converters.USVString(value);
         }
-        const entry = makeEntry(name, value, filename);
-        this.#state.push(entry);
+        const entry2 = makeEntry(name, value, filename);
+        this.#state.push(entry2);
       }
       delete(name) {
         webidl.brandCheck(this, webidl.is.FormData);
         const prefix3 = "FormData.delete";
         webidl.argumentLengthCheck(arguments, 1, prefix3);
         name = webidl.converters.USVString(name);
-        this.#state = this.#state.filter((entry) => entry.name !== name);
+        this.#state = this.#state.filter((entry2) => entry2.name !== name);
       }
       get(name) {
         webidl.brandCheck(this, webidl.is.FormData);
         const prefix3 = "FormData.get";
         webidl.argumentLengthCheck(arguments, 1, prefix3);
         name = webidl.converters.USVString(name);
-        const idx = this.#state.findIndex((entry) => entry.name === name);
+        const idx = this.#state.findIndex((entry2) => entry2.name === name);
         if (idx === -1) {
           return null;
         }
@@ -4355,14 +4355,14 @@ var require_formdata = __commonJS({
         const prefix3 = "FormData.getAll";
         webidl.argumentLengthCheck(arguments, 1, prefix3);
         name = webidl.converters.USVString(name);
-        return this.#state.filter((entry) => entry.name === name).map((entry) => entry.value);
+        return this.#state.filter((entry2) => entry2.name === name).map((entry2) => entry2.value);
       }
       has(name) {
         webidl.brandCheck(this, webidl.is.FormData);
         const prefix3 = "FormData.has";
         webidl.argumentLengthCheck(arguments, 1, prefix3);
         name = webidl.converters.USVString(name);
-        return this.#state.findIndex((entry) => entry.name === name) !== -1;
+        return this.#state.findIndex((entry2) => entry2.name === name) !== -1;
       }
       set(name, value, filename = void 0) {
         webidl.brandCheck(this, webidl.is.FormData);
@@ -4377,16 +4377,16 @@ var require_formdata = __commonJS({
         } else {
           value = webidl.converters.USVString(value);
         }
-        const entry = makeEntry(name, value, filename);
-        const idx = this.#state.findIndex((entry2) => entry2.name === name);
+        const entry2 = makeEntry(name, value, filename);
+        const idx = this.#state.findIndex((entry3) => entry3.name === name);
         if (idx !== -1) {
           this.#state = [
             ...this.#state.slice(0, idx),
-            entry,
-            ...this.#state.slice(idx + 1).filter((entry2) => entry2.name !== name)
+            entry2,
+            ...this.#state.slice(idx + 1).filter((entry3) => entry3.name !== name)
           ];
         } else {
-          this.#state.push(entry);
+          this.#state.push(entry2);
         }
       }
       [nodeUtil.inspect.custom](depth, options) {
@@ -14748,20 +14748,20 @@ var require_env_http_proxy_agent = __commonJS({
           return true;
         }
         for (let i2 = 0; i2 < this.#noProxyEntries.length; i2++) {
-          const entry = this.#noProxyEntries[i2];
-          if (entry.hostname === "*") {
-            if (entry.port && entry.port !== port2) {
+          const entry2 = this.#noProxyEntries[i2];
+          if (entry2.hostname === "*") {
+            if (entry2.port && entry2.port !== port2) {
               continue;
             }
             return false;
           }
-          if (entry.port && entry.port !== port2) {
+          if (entry2.port && entry2.port !== port2) {
             continue;
           }
-          if (!entry.wildcard && hostname6 === entry.hostname) {
+          if (!entry2.wildcard && hostname6 === entry2.hostname) {
             return false;
           }
-          if (hostname6.slice(-(entry.hostname.length + 1)) === `.${entry.hostname}`) {
+          if (hostname6.slice(-(entry2.hostname.length + 1)) === `.${entry2.hostname}`) {
             return false;
           }
         }
@@ -14772,23 +14772,23 @@ var require_env_http_proxy_agent = __commonJS({
         const noProxySplit = noProxyValue.split(/[,\s]/);
         const noProxyEntries = [];
         for (let i2 = 0; i2 < noProxySplit.length; i2++) {
-          const entry = noProxySplit[i2];
-          if (!entry) {
+          const entry2 = noProxySplit[i2];
+          if (!entry2) {
             continue;
           }
           let hostname6, port2;
-          const ipv6WithPort = entry.match(/^\[(.+)\]:(\d+)$/);
+          const ipv6WithPort = entry2.match(/^\[(.+)\]:(\d+)$/);
           if (ipv6WithPort) {
             hostname6 = ipv6WithPort[1];
             port2 = Number.parseInt(ipv6WithPort[2], 10);
           } else {
-            const unbracketed = entry.replace(/^\[(.+)\]$/, "$1");
+            const unbracketed = entry2.replace(/^\[(.+)\]$/, "$1");
             const colonCount = (unbracketed.match(/:/g) || []).length;
             const parsed = colonCount === 1 && unbracketed.match(/^(.+):(\d+)$/);
             hostname6 = parsed ? parsed[1] : unbracketed;
             port2 = parsed ? Number.parseInt(parsed[2], 10) : 0;
           }
-          const wildcard = entry.charCodeAt(0) === 42;
+          const wildcard = entry2.charCodeAt(0) === 42;
           noProxyEntries.push({
             // strip leading dot or asterisk with dot, and any trailing dot
             hostname: hostname6.replace(/^\*?\./, "").replace(/^(.+)\.$/, "$1").toLowerCase(),
@@ -17508,7 +17508,7 @@ var require_mock_interceptor = __commonJS({
 var require_mock_client = __commonJS({
   "node_modules/undici/lib/mock/mock-client.js"(exports, module2) {
     "use strict";
-    var { promisify: promisify18 } = __require("node:util");
+    var { promisify: promisify19 } = __require("node:util");
     var Client2 = require_client();
     var { buildMockDispatch } = require_mock_utils();
     var {
@@ -17556,7 +17556,7 @@ var require_mock_client = __commonJS({
         this[kDispatches] = [];
       }
       async [kClose]() {
-        await promisify18(this[kOriginalClose])();
+        await promisify19(this[kOriginalClose])();
         this[kConnected] = 0;
         this[kMockAgent][Symbols.kClients].delete(this[kOrigin]);
       }
@@ -17571,13 +17571,13 @@ var require_mock_call_history = __commonJS({
     "use strict";
     var { kMockCallHistoryAddLog } = require_mock_symbols();
     var { InvalidArgumentError } = require_errors();
-    function handleFilterCallsWithOptions(criteria, options, handler, store, allLogs) {
+    function handleFilterCallsWithOptions(criteria, options, handler, store2, allLogs) {
       switch (options.operator) {
         case "OR":
-          store.push(...handler(criteria, allLogs));
-          return store;
+          store2.push(...handler(criteria, allLogs));
+          return store2;
         case "AND":
-          return handler(criteria, store);
+          return handler(criteria, store2);
         default:
           throw new InvalidArgumentError("options.operator must to be a case insensitive string equal to 'OR' or 'AND'");
       }
@@ -17769,7 +17769,7 @@ var require_mock_call_history = __commonJS({
 var require_mock_pool = __commonJS({
   "node_modules/undici/lib/mock/mock-pool.js"(exports, module2) {
     "use strict";
-    var { promisify: promisify18 } = __require("node:util");
+    var { promisify: promisify19 } = __require("node:util");
     var Pool = require_pool();
     var { buildMockDispatch } = require_mock_utils();
     var {
@@ -17817,7 +17817,7 @@ var require_mock_pool = __commonJS({
         this[kDispatches] = [];
       }
       async [kClose]() {
-        await promisify18(this[kOriginalClose])();
+        await promisify19(this[kOriginalClose])();
         this[kConnected] = 0;
         this[kMockAgent][Symbols.kClients].delete(this[kOrigin]);
       }
@@ -18159,8 +18159,8 @@ var require_snapshot_utils = __commonJS({
 var require_snapshot_recorder = __commonJS({
   "node_modules/undici/lib/mock/snapshot-recorder.js"(exports, module2) {
     "use strict";
-    var { writeFile: writeFile8, readFile: readFile10, mkdir: mkdir4 } = __require("node:fs/promises");
-    var { dirname: dirname8, resolve: resolve5 } = __require("node:path");
+    var { writeFile: writeFile9, readFile: readFile11, mkdir: mkdir5 } = __require("node:fs/promises");
+    var { dirname: dirname9, resolve: resolve5 } = __require("node:path");
     var { setTimeout: setTimeout2, clearTimeout: clearTimeout2 } = __require("node:timers");
     var { InvalidArgumentError, UndiciError } = require_errors();
     var { setHeader } = require_util();
@@ -18377,7 +18377,7 @@ var require_snapshot_recorder = __commonJS({
           throw new InvalidArgumentError("Snapshot path is required");
         }
         try {
-          const data = await readFile10(resolve5(path), "utf8");
+          const data = await readFile11(resolve5(path), "utf8");
           const parsed = JSON.parse(data);
           if (Array.isArray(parsed)) {
             this.#snapshots.clear();
@@ -18407,12 +18407,12 @@ var require_snapshot_recorder = __commonJS({
           throw new InvalidArgumentError("Snapshot path is required");
         }
         const resolvedPath = resolve5(path);
-        await mkdir4(dirname8(resolvedPath), { recursive: true });
+        await mkdir5(dirname9(resolvedPath), { recursive: true });
         const data = Array.from(this.#snapshots.entries()).map(([hash3, snapshot2]) => ({
           hash: hash3,
           snapshot: snapshot2
         }));
-        await writeFile8(resolvedPath, JSON.stringify(data, null, 2), { flush: true });
+        await writeFile9(resolvedPath, JSON.stringify(data, null, 2), { flush: true });
       }
       /**
        * Clears all recorded snapshots
@@ -20334,12 +20334,12 @@ var require_cache = __commonJS({
       }
       return false;
     }
-    function assertCacheStore(store, name = "CacheStore") {
-      if (typeof store !== "object" || store === null) {
-        throw new TypeError(`expected type of ${name} to be a CacheStore, got ${store === null ? "null" : typeof store}`);
+    function assertCacheStore(store2, name = "CacheStore") {
+      if (typeof store2 !== "object" || store2 === null) {
+        throw new TypeError(`expected type of ${name} to be a CacheStore, got ${store2 === null ? "null" : typeof store2}`);
       }
       for (const fn2 of ["get", "createWriteStream", "delete"]) {
-        if (typeof store[fn2] !== "function") {
+        if (typeof store2[fn2] !== "function") {
           throw new TypeError(`${name} needs to have a \`${fn2}()\` function`);
         }
       }
@@ -20989,9 +20989,9 @@ var require_cache_handler = __commonJS({
     function appendConnectionHeaderTokens(headersToRemove, connectionHeader) {
       const values = Array.isArray(connectionHeader) ? connectionHeader : [connectionHeader];
       for (let i2 = 0; i2 < values.length; i2++) {
-        const tokens = values[i2].split(",");
-        for (let j2 = 0; j2 < tokens.length; j2++) {
-          headersToRemove.push(trimOWS(tokens[j2]).toLowerCase());
+        const tokens2 = values[i2].split(",");
+        for (let j2 = 0; j2 < tokens2.length; j2++) {
+          headersToRemove.push(trimOWS(tokens2[j2]).toLowerCase());
         }
       }
     }
@@ -21014,15 +21014,15 @@ var require_cache_handler = __commonJS({
       }
       return locationUrl.pathname + locationUrl.search;
     }
-    function deleteCachedUri(store, cacheKey, path) {
-      deleteCachedValue(store, {
+    function deleteCachedUri(store2, cacheKey, path) {
+      deleteCachedValue(store2, {
         ...cacheKey,
         path
       });
       for (let i2 = 0; i2 < util3.safeHTTPMethods.length; i2++) {
         const method = util3.safeHTTPMethods[i2];
         if (method !== cacheKey.method) {
-          deleteCachedValue(store, {
+          deleteCachedValue(store2, {
             ...cacheKey,
             method,
             path
@@ -21030,7 +21030,7 @@ var require_cache_handler = __commonJS({
         }
       }
     }
-    function deleteLocationTargets(store, cacheKey, headerValue) {
+    function deleteLocationTargets(store2, cacheKey, headerValue) {
       if (headerValue === void 0) {
         return;
       }
@@ -21038,14 +21038,14 @@ var require_cache_handler = __commonJS({
       for (let i2 = 0; i2 < values.length; i2++) {
         const path = getSameOriginPath(cacheKey, values[i2]);
         if (path !== void 0) {
-          deleteCachedUri(store, cacheKey, path);
+          deleteCachedUri(store2, cacheKey, path);
         }
       }
     }
-    function invalidateUnsafeRequest(store, cacheKey, resHeaders) {
-      deleteCachedUri(store, cacheKey, cacheKey.path);
-      deleteLocationTargets(store, cacheKey, resHeaders.location);
-      deleteLocationTargets(store, cacheKey, resHeaders["content-location"]);
+    function invalidateUnsafeRequest(store2, cacheKey, resHeaders) {
+      deleteCachedUri(store2, cacheKey, cacheKey.path);
+      deleteLocationTargets(store2, cacheKey, resHeaders.location);
+      deleteLocationTargets(store2, cacheKey, resHeaders["content-location"]);
     }
     var CacheHandler = class {
       /**
@@ -21081,8 +21081,8 @@ var require_cache_handler = __commonJS({
        * @param {import('../../types/cache-interceptor.d.ts').default.CacheKey} cacheKey
        * @param {import('../../types/dispatcher.d.ts').default.DispatchHandler} handler
        */
-      constructor({ store, type, cacheByDefault }, cacheKey, handler) {
-        this.#store = store;
+      constructor({ store: store2, type, cacheByDefault }, cacheKey, handler) {
+        this.#store = store2;
         this.#cacheType = type;
         this.#cacheByDefault = cacheByDefault;
         this.#cacheKey = cacheKey;
@@ -21312,15 +21312,15 @@ var require_cache_handler = __commonJS({
         this.#handler.onResponseError?.(this.#downstreamController, err);
       }
     };
-    function deleteCachedValue(store, cacheKey) {
+    function deleteCachedValue(store2, cacheKey) {
       try {
-        store.delete(cacheKey)?.catch?.(noop);
+        store2.delete(cacheKey)?.catch?.(noop);
       } catch {
       }
     }
-    function deleteCachedValueIfNotModified(statusCode, store, cacheKey) {
+    function deleteCachedValueIfNotModified(statusCode, store2, cacheKey) {
       if (statusCode === 304) {
-        deleteCachedValue(store, cacheKey);
+        deleteCachedValue(store2, cacheKey);
       }
     }
     function revalidationResponseDisallowsCachedReuse(cacheType, resHeaders, cacheControlDirectives) {
@@ -21583,22 +21583,22 @@ var require_memory_cache_store = __commonJS({
         const topLevelKey = `${key.origin}:${key.path}`;
         const now = Date.now();
         const entries = this.#entries.get(topLevelKey);
-        const entry = entries ? findEntry(key, entries, now) : null;
-        if (entry != null) {
+        const entry2 = entries ? findEntry(key, entries, now) : null;
+        if (entry2 != null) {
           this.#entries.delete(topLevelKey);
           this.#entries.set(topLevelKey, entries);
         }
-        return entry == null ? void 0 : {
-          statusMessage: entry.statusMessage,
-          statusCode: entry.statusCode,
-          headers: entry.headers,
-          body: entry.body,
-          vary: entry.vary ? entry.vary : void 0,
-          etag: entry.etag,
-          cacheControlDirectives: entry.cacheControlDirectives,
-          cachedAt: entry.cachedAt,
-          staleAt: entry.staleAt,
-          deleteAt: entry.deleteAt
+        return entry2 == null ? void 0 : {
+          statusMessage: entry2.statusMessage,
+          statusCode: entry2.statusCode,
+          headers: entry2.headers,
+          body: entry2.body,
+          vary: entry2.vary ? entry2.vary : void 0,
+          etag: entry2.etag,
+          cacheControlDirectives: entry2.cacheControlDirectives,
+          cachedAt: entry2.cachedAt,
+          staleAt: entry2.staleAt,
+          deleteAt: entry2.deleteAt
         };
       }
       /**
@@ -21610,52 +21610,52 @@ var require_memory_cache_store = __commonJS({
         assertCacheKey(key);
         assertCacheValue(val);
         const topLevelKey = `${key.origin}:${key.path}`;
-        const store = this;
-        const entry = { ...key, ...val, body: [], size: 0 };
+        const store2 = this;
+        const entry2 = { ...key, ...val, body: [], size: 0 };
         return new Writable({
           write(chunk, encoding, callback) {
             if (typeof chunk === "string") {
               chunk = Buffer.from(chunk, encoding);
             }
-            entry.size += chunk.byteLength;
-            if (entry.size > store.#maxEntrySize) {
+            entry2.size += chunk.byteLength;
+            if (entry2.size > store2.#maxEntrySize) {
               this.destroy();
             } else {
-              entry.body.push(chunk);
+              entry2.body.push(chunk);
             }
             callback(null);
           },
           final(callback) {
-            let entries = store.#entries.get(topLevelKey);
+            let entries = store2.#entries.get(topLevelKey);
             if (entries) {
-              store.#entries.delete(topLevelKey);
+              store2.#entries.delete(topLevelKey);
             } else {
               entries = [];
             }
-            store.#entries.set(topLevelKey, entries);
+            store2.#entries.set(topLevelKey, entries);
             const previousEntry = findEntry(key, entries, -Infinity);
             if (previousEntry) {
               const index = entries.indexOf(previousEntry);
-              entries.splice(index, 1, entry);
-              store.#size -= previousEntry.size;
+              entries.splice(index, 1, entry2);
+              store2.#size -= previousEntry.size;
             } else {
-              entries.push(entry);
-              store.#count += 1;
+              entries.push(entry2);
+              store2.#count += 1;
             }
-            store.#size += entry.size;
-            if (store.#size > store.#maxSize || store.#count > store.#maxCount) {
-              if (!store.#hasEmittedMaxSizeEvent) {
-                store.emit("maxSizeExceeded", {
-                  size: store.#size,
-                  maxSize: store.#maxSize,
-                  count: store.#count,
-                  maxCount: store.#maxCount
+            store2.#size += entry2.size;
+            if (store2.#size > store2.#maxSize || store2.#count > store2.#maxCount) {
+              if (!store2.#hasEmittedMaxSizeEvent) {
+                store2.emit("maxSizeExceeded", {
+                  size: store2.#size,
+                  maxSize: store2.#maxSize,
+                  count: store2.#count,
+                  maxCount: store2.#maxCount
                 });
-                store.#hasEmittedMaxSizeEvent = true;
+                store2.#hasEmittedMaxSizeEvent = true;
               }
-              store.#evict(entry);
-              if (store.#size < store.#maxSize && store.#count < store.#maxCount) {
-                store.#hasEmittedMaxSizeEvent = false;
+              store2.#evict(entry2);
+              if (store2.#size < store2.#maxSize && store2.#count < store2.#maxCount) {
+                store2.#hasEmittedMaxSizeEvent = false;
               }
             }
             callback(null);
@@ -21667,13 +21667,13 @@ var require_memory_cache_store = __commonJS({
         const targetCount = this.#maxCount / 2;
         for (const [key, entries] of this.#entries) {
           for (let i2 = 0; i2 < entries.length && (this.#size > targetSize || this.#count > targetCount); ) {
-            const entry = entries[i2];
-            if (entry === keep) {
+            const entry2 = entries[i2];
+            if (entry2 === keep) {
               i2++;
               continue;
             }
             entries.splice(i2, 1);
-            this.#size -= entry.size;
+            this.#size -= entry2.size;
             this.#count -= 1;
           }
           if (entries.length === 0) {
@@ -21702,8 +21702,8 @@ var require_memory_cache_store = __commonJS({
           throw new TypeError(`expected key to be object, got ${typeof key}`);
         }
         const topLevelKey = `${key.origin}:${key.path}`;
-        for (const entry of this.#entries.get(topLevelKey) ?? []) {
-          this.#size -= entry.size;
+        for (const entry2 of this.#entries.get(topLevelKey) ?? []) {
+          this.#size -= entry2.size;
           this.#count -= 1;
         }
         this.#entries.delete(topLevelKey);
@@ -21711,18 +21711,18 @@ var require_memory_cache_store = __commonJS({
     };
     function findEntry(key, entries, now) {
       for (let i2 = 0; i2 < entries.length; i2++) {
-        const entry = entries[i2];
-        if (entry.deleteAt > now && entry.method === key.method && varyMatches(key, entry)) {
-          return entry;
+        const entry2 = entries[i2];
+        if (entry2.deleteAt > now && entry2.method === key.method && varyMatches(key, entry2)) {
+          return entry2;
         }
       }
     }
-    function varyMatches(key, entry) {
-      if (entry.vary == null) {
+    function varyMatches(key, entry2) {
+      if (entry2.vary == null) {
         return true;
       }
-      for (const headerName in entry.vary) {
-        if (Object.hasOwn(entry.vary, headerName) && !headerValueEquals(key.headers?.[headerName], entry.vary[headerName])) {
+      for (const headerName in entry2.vary) {
+        if (Object.hasOwn(entry2.vary, headerName) && !headerValueEquals(key.headers?.[headerName], entry2.vary[headerName])) {
           return false;
         }
       }
@@ -21954,9 +21954,9 @@ var require_cache2 = __commonJS({
       }
       return false;
     }
-    function deleteCachedValue(store, cacheKey) {
+    function deleteCachedValue(store2, cacheKey) {
       try {
-        store.delete(cacheKey)?.catch?.(nop);
+        store2.delete(cacheKey)?.catch?.(nop);
       } catch {
       }
     }
@@ -22211,7 +22211,7 @@ var require_cache2 = __commonJS({
     }
     module2.exports = (opts = {}) => {
       const {
-        store = new MemoryCacheStore(),
+        store: store2 = new MemoryCacheStore(),
         methods = ["GET"],
         cacheByDefault = void 0,
         type = "shared",
@@ -22220,7 +22220,7 @@ var require_cache2 = __commonJS({
       if (typeof opts !== "object" || opts === null) {
         throw new TypeError(`expected type of opts to be an Object, got ${opts === null ? "null" : typeof opts}`);
       }
-      assertCacheStore(store, "opts.store");
+      assertCacheStore(store2, "opts.store");
       assertCacheMethods(methods, "opts.methods");
       assertCacheOrigins(origins, "opts.origins");
       if (typeof cacheByDefault !== "undefined" && typeof cacheByDefault !== "number") {
@@ -22230,7 +22230,7 @@ var require_cache2 = __commonJS({
         throw new TypeError(`expected opts.type to be shared, private, or undefined, got ${typeof type}`);
       }
       const globalOpts = {
-        store,
+        store: store2,
         methods,
         cacheByDefault,
         type
@@ -22279,7 +22279,7 @@ var require_cache2 = __commonJS({
           if (!arrayIncludes(util3.safeHTTPMethods, opts2.method)) {
             return dispatch(opts2, new CacheHandler(globalOpts, cacheKey, handler));
           }
-          const result4 = store.get(cacheKey);
+          const result4 = store2.get(cacheKey);
           if (result4 && typeof result4.then === "function") {
             return result4.then((result5) => handleResult2(
               dispatch,
@@ -23521,12 +23521,12 @@ var require_sqlite_cache_store = __commonJS({
         assertCacheValue(value);
         let size2 = 0;
         const body = [];
-        const store = this;
+        const store2 = this;
         return new Writable({
           decodeStrings: true,
           write(chunk, encoding, callback) {
             size2 += chunk.byteLength;
-            if (size2 <= store.#maxEntrySize) {
+            if (size2 <= store2.#maxEntrySize) {
               body.push(chunk);
             } else {
               this.destroy();
@@ -23534,7 +23534,7 @@ var require_sqlite_cache_store = __commonJS({
             callback();
           },
           final(callback) {
-            store.set(key, { ...value, body });
+            store2.set(key, { ...value, body });
             callback();
           }
         });
@@ -24141,7 +24141,7 @@ var require_response = __commonJS({
     var setResponseHeaders;
     var getResponseState;
     var setResponseState;
-    var Response = class {
+    var Response2 = class {
       /** @type {Headers} */
       #headers;
       #state;
@@ -24302,8 +24302,8 @@ var require_response = __commonJS({
         };
       }
     };
-    mixinBody(Response, getResponseState, webidl.is.Response);
-    Object.defineProperties(Response.prototype, {
+    mixinBody(Response2, getResponseState, webidl.is.Response);
+    Object.defineProperties(Response2.prototype, {
       type: kEnumerableProperty,
       url: kEnumerableProperty,
       status: kEnumerableProperty,
@@ -24319,7 +24319,7 @@ var require_response = __commonJS({
         configurable: true
       }
     });
-    Object.defineProperties(Response, {
+    Object.defineProperties(Response2, {
       json: kEnumerableProperty,
       redirect: kEnumerableProperty,
       error: kEnumerableProperty
@@ -24452,7 +24452,7 @@ var require_response = __commonJS({
       }
     }
     function fromInnerResponse(innerResponse, guard) {
-      const response3 = new Response(kConstruct);
+      const response3 = new Response2(kConstruct);
       setResponseState(response3, innerResponse);
       const headers = new Headers(kConstruct);
       setResponseHeaders(response3, headers);
@@ -24512,7 +24512,7 @@ var require_response = __commonJS({
       makeResponse,
       makeAppropriateNetworkError,
       filterResponse,
-      Response,
+      Response: Response2,
       cloneResponse,
       fromInnerResponse,
       getResponseState
@@ -25499,8 +25499,8 @@ var require_fetch = __commonJS({
       }
       for (const [name, value] of Object.entries(headers ?? {})) {
         if (Array.isArray(value)) {
-          for (const entry of value) {
-            headersList.append(name, `${entry}`, true);
+          for (const entry2 of value) {
+            headersList.append(name, `${entry2}`, true);
           }
         } else {
           headersList.append(name, `${value}`, true);
@@ -35638,9 +35638,9 @@ var init_memoizer = __esm({
         if (!bucket)
           return empty;
         handoff = void 0;
-        const entry = { value: empty, issues: null };
-        bucket.set(payload.value, entry);
-        open.push(entry);
+        const entry2 = { value: empty, issues: null };
+        bucket.set(payload.value, entry2);
+        open.push(entry2);
         return empty;
       },
       guard(inst) {
@@ -35714,16 +35714,16 @@ var init_memoizer = __esm({
             const depth = open.length;
             const result4 = base2(payload, ctx);
             handoff = void 0;
-            const entry = open.length > depth ? open.pop() : void 0;
+            const entry2 = open.length > depth ? open.pop() : void 0;
             if (result4 instanceof Promise) {
               return result4.then((r3) => {
-                if (entry)
-                  entry.issues = r3.issues.length ? cloneIssues(r3.issues) : NO_ISSUES;
+                if (entry2)
+                  entry2.issues = r3.issues.length ? cloneIssues(r3.issues) : NO_ISSUES;
                 return r3;
               });
             }
-            if (entry)
-              entry.issues = result4.issues.length ? cloneIssues(result4.issues) : NO_ISSUES;
+            if (entry2)
+              entry2.issues = result4.issues.length ? cloneIssues(result4.issues) : NO_ISSUES;
             return result4;
           };
           inst._zod.parse = wrapped;
@@ -39908,8 +39908,8 @@ var capitalizeFirstCharacter, error34;
 var init_lt = __esm({
   "node_modules/zod/v4/locales/lt.js"() {
     init_util();
-    capitalizeFirstCharacter = (text6) => {
-      return text6.charAt(0).toUpperCase() + text6.slice(1);
+    capitalizeFirstCharacter = (text7) => {
+      return text7.charAt(0).toUpperCase() + text7.slice(1);
     };
     error34 = () => {
       const Sizable = {
@@ -46591,42 +46591,42 @@ function extractDefs(ctx, schema2) {
   if (ctx.external && ctx.sharedDefsExtractedFor === ctx.external)
     return;
   const idToSchema = /* @__PURE__ */ new Map();
-  for (const entry of ctx.seen.entries()) {
-    const id2 = ctx.metadataRegistry.get(entry[0])?.id;
+  for (const entry2 of ctx.seen.entries()) {
+    const id2 = ctx.metadataRegistry.get(entry2[0])?.id;
     if (id2) {
       const existing = idToSchema.get(id2);
-      if (existing && existing !== entry[0]) {
+      if (existing && existing !== entry2[0]) {
         throw new Error(`Duplicate schema id "${id2}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);
       }
-      idToSchema.set(id2, entry[0]);
+      idToSchema.set(id2, entry2[0]);
     }
   }
-  const makeURI = (entry) => {
+  const makeURI = (entry2) => {
     const defsSegment = ctx.target === "draft-2020-12" ? "$defs" : "definitions";
     if (ctx.external) {
-      const externalId = ctx.external.registry.get(entry[0])?.id;
+      const externalId = ctx.external.registry.get(entry2[0])?.id;
       const uriGenerator = ctx.external.uri ?? ((id3) => id3);
       if (externalId) {
         return { ref: uriGenerator(externalId) };
       }
-      const id2 = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
-      entry[1].defId = id2;
+      const id2 = entry2[1].defId ?? entry2[1].schema.id ?? `schema${ctx.counter++}`;
+      entry2[1].defId = id2;
       return { defId: id2, ref: `${uriGenerator("__shared")}#/${defsSegment}/${encodeJSONPointerSegment(id2)}` };
     }
     const uriPrefix = `#`;
     const defUriPrefix = `${uriPrefix}/${defsSegment}/`;
-    if (entry[1] === root && !entry[1].schema.id) {
+    if (entry2[1] === root && !entry2[1].schema.id) {
       return { ref: uriPrefix };
     }
-    const defId = entry[1].schema.id ?? `__schema${ctx.counter++}`;
+    const defId = entry2[1].schema.id ?? `__schema${ctx.counter++}`;
     return { defId, ref: defUriPrefix + encodeJSONPointerSegment(defId) };
   };
-  const extractToDef = (entry) => {
-    if (entry[1].schema.$ref) {
+  const extractToDef = (entry2) => {
+    if (entry2[1].schema.$ref) {
       return;
     }
-    const seen = entry[1];
-    const { ref, defId } = makeURI(entry);
+    const seen = entry2[1];
+    const { ref, defId } = makeURI(entry2);
     seen.def = { ...seen.schema };
     if (defId)
       seen.defId = defId;
@@ -46637,8 +46637,8 @@ function extractDefs(ctx, schema2) {
     schema3.$ref = ref;
   };
   if (ctx.cycles === "throw") {
-    for (const entry of ctx.seen.entries()) {
-      const seen = entry[1];
+    for (const entry2 of ctx.seen.entries()) {
+      const seen = entry2[1];
       if (seen.cycle) {
         throw new Error(`Cycle detected: #/${seen.cycle?.join("/")}/<root>
 
@@ -46646,31 +46646,31 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       }
     }
   }
-  for (const entry of ctx.seen.entries()) {
-    const seen = entry[1];
-    if (schema2 === entry[0]) {
-      extractToDef(entry);
+  for (const entry2 of ctx.seen.entries()) {
+    const seen = entry2[1];
+    if (schema2 === entry2[0]) {
+      extractToDef(entry2);
       continue;
     }
     if (ctx.external) {
-      const ext = ctx.external.registry.get(entry[0])?.id;
-      if (schema2 !== entry[0] && ext) {
-        extractToDef(entry);
+      const ext = ctx.external.registry.get(entry2[0])?.id;
+      if (schema2 !== entry2[0] && ext) {
+        extractToDef(entry2);
         continue;
       }
     }
-    const id2 = ctx.metadataRegistry.get(entry[0])?.id;
+    const id2 = ctx.metadataRegistry.get(entry2[0])?.id;
     if (id2) {
-      extractToDef(entry);
+      extractToDef(entry2);
       continue;
     }
     if (seen.cycle) {
-      extractToDef(entry);
+      extractToDef(entry2);
       continue;
     }
     if (seen.count > 1) {
       if (ctx.reused === "ref") {
-        extractToDef(entry);
+        extractToDef(entry2);
       }
     }
   }
@@ -46850,12 +46850,12 @@ function finalize(ctx, schema2) {
     });
   };
   if (!ctx.external || ctx.sharedEmitDoneFor !== ctx.external) {
-    for (const entry of [...ctx.seen.entries()].reverse()) {
-      flattenRef(entry[0]);
+    for (const entry2 of [...ctx.seen.entries()].reverse()) {
+      flattenRef(entry2[0]);
     }
     if (ctx.target !== "openapi-3.0") {
-      for (const entry of ctx.seen.entries()) {
-        compactTypeUnion(entry[1].def ?? entry[1].schema);
+      for (const entry2 of ctx.seen.entries()) {
+        compactTypeUnion(entry2[1].def ?? entry2[1].schema);
       }
     }
     for (const rewrite of ctx.deferred)
@@ -46902,8 +46902,8 @@ function finalize(ctx, schema2) {
     delete result4.id;
   const defs = ctx.external?.defs ?? {};
   if (!ctx.external || ctx.sharedEmitDoneFor !== ctx.external) {
-    for (const entry of ctx.seen.entries()) {
-      const seen = entry[1];
+    for (const entry2 of ctx.seen.entries()) {
+      const seen = entry2[1];
       if (seen.def && seen.defId) {
         if (seen.def.id === seen.defId)
           delete seen.def.id;
@@ -47094,9 +47094,9 @@ function stringifyKeyNames(bySchema, json3, visited) {
 }
 function rewriteKeyNames(ctx) {
   const bySchema = /* @__PURE__ */ new Map();
-  for (const entry of ctx.seen.values()) {
-    if (entry.def && !bySchema.has(entry.schema))
-      bySchema.set(entry.schema, entry);
+  for (const entry2 of ctx.seen.values()) {
+    if (entry2.def && !bySchema.has(entry2.schema))
+      bySchema.set(entry2.schema, entry2);
   }
   const rewrites = /* @__PURE__ */ new Map();
   for (const record4 of pendingRecords.get(ctx) ?? []) {
@@ -47110,8 +47110,8 @@ function rewriteKeyNames(ctx) {
   }
   if (!rewrites.size)
     return;
-  for (const entry of ctx.seen.values()) {
-    for (const carrier of [entry.schema, entry.def]) {
+  for (const entry2 of ctx.seen.values()) {
+    for (const carrier of [entry2.schema, entry2.def]) {
       const rewritten = carrier && rewrites.get(carrier.propertyNames);
       if (rewritten)
         carrier.propertyNames = rewritten;
@@ -47136,8 +47136,8 @@ function toJSONSchema(input2, params) {
     const registry3 = input2;
     const ctx2 = initializeContext({ ...params, processors: allProcessors });
     const defs = {};
-    for (const entry of registry3._idmap.entries()) {
-      const [_2, schema2] = entry;
+    for (const entry2 of registry3._idmap.entries()) {
+      const [_2, schema2] = entry2;
       processSchema(schema2, ctx2);
     }
     const schemas = {};
@@ -47147,8 +47147,8 @@ function toJSONSchema(input2, params) {
       defs
     };
     ctx2.external = external;
-    for (const entry of registry3._idmap.entries()) {
-      const [key, schema2] = entry;
+    for (const entry2 of registry3._idmap.entries()) {
+      const [key, schema2] = entry2;
       extractDefs(ctx2, schema2);
       assignProp(schemas, key, finalize(ctx2, schema2));
     }
@@ -55171,49 +55171,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize2(resolved, schemelessOptions);
     }
-    function resolveComponent(base2, relative3, options, skipNormalization) {
+    function resolveComponent(base2, relative4, options, skipNormalization) {
       const target2 = {};
       if (!skipNormalization) {
         base2 = parse11(serialize2(base2, options), options);
-        relative3 = parse11(serialize2(relative3, options), options);
+        relative4 = parse11(serialize2(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative3.scheme) {
-        target2.scheme = relative3.scheme;
-        target2.userinfo = relative3.userinfo;
-        target2.host = relative3.host;
-        target2.port = relative3.port;
-        target2.path = removeDotSegments(relative3.path || "");
-        target2.query = relative3.query;
+      if (!options.tolerant && relative4.scheme) {
+        target2.scheme = relative4.scheme;
+        target2.userinfo = relative4.userinfo;
+        target2.host = relative4.host;
+        target2.port = relative4.port;
+        target2.path = removeDotSegments(relative4.path || "");
+        target2.query = relative4.query;
       } else {
-        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
-          target2.userinfo = relative3.userinfo;
-          target2.host = relative3.host;
-          target2.port = relative3.port;
-          target2.path = removeDotSegments(relative3.path || "");
-          target2.query = relative3.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target2.userinfo = relative4.userinfo;
+          target2.host = relative4.host;
+          target2.port = relative4.port;
+          target2.path = removeDotSegments(relative4.path || "");
+          target2.query = relative4.query;
         } else {
-          if (!relative3.path) {
+          if (!relative4.path) {
             target2.path = base2.path;
-            if (relative3.query !== void 0) {
-              target2.query = relative3.query;
+            if (relative4.query !== void 0) {
+              target2.query = relative4.query;
             } else {
               target2.query = base2.query;
             }
           } else {
-            if (relative3.path[0] === "/") {
-              target2.path = removeDotSegments(relative3.path);
+            if (relative4.path[0] === "/") {
+              target2.path = removeDotSegments(relative4.path);
             } else {
               if ((base2.userinfo !== void 0 || base2.host !== void 0 || base2.port !== void 0) && !base2.path) {
-                target2.path = "/" + relative3.path;
+                target2.path = "/" + relative4.path;
               } else if (!base2.path) {
-                target2.path = relative3.path;
+                target2.path = relative4.path;
               } else {
-                target2.path = base2.path.slice(0, base2.path.lastIndexOf("/") + 1) + relative3.path;
+                target2.path = base2.path.slice(0, base2.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target2.path = removeDotSegments(target2.path);
             }
-            target2.query = relative3.query;
+            target2.query = relative4.query;
           }
           target2.userinfo = base2.userinfo;
           target2.host = base2.host;
@@ -55221,7 +55221,7 @@ var require_fast_uri = __commonJS({
         }
         target2.scheme = base2.scheme;
       }
-      target2.fragment = relative3.fragment;
+      target2.fragment = relative4.fragment;
       return target2;
     }
     function equal(uriA, uriB, options) {
@@ -55922,7 +55922,7 @@ var require_core = __commonJS({
       errorsText(errors = this.errors, { separator = ", ", dataVar = "data" } = {}) {
         if (!errors || errors.length === 0)
           return "No errors";
-        return errors.map((e2) => `${dataVar}${e2.instancePath} ${e2.message}`).reduce((text6, msg) => text6 + separator + msg);
+        return errors.map((e2) => `${dataVar}${e2.instancePath} ${e2.message}`).reduce((text7, msg) => text7 + separator + msg);
       }
       $dataMetaSchema(metaSchema, keywordsJsonPointers) {
         const rules = this.RULES.all;
@@ -60045,17 +60045,17 @@ var require_sender2 = __commonJS({
        */
       ping(data, mask, cb) {
         let byteLength;
-        let readOnly;
+        let readOnly2;
         if (typeof data === "string") {
           byteLength = Buffer.byteLength(data);
-          readOnly = false;
+          readOnly2 = false;
         } else if (isBlob(data)) {
           byteLength = data.size;
-          readOnly = false;
+          readOnly2 = false;
         } else {
           data = toBuffer(data);
           byteLength = data.length;
-          readOnly = toBuffer.readOnly;
+          readOnly2 = toBuffer.readOnly;
         }
         if (byteLength > 125) {
           throw new RangeError("The data size must not be greater than 125 bytes");
@@ -60067,7 +60067,7 @@ var require_sender2 = __commonJS({
           mask,
           maskBuffer: this._maskBuffer,
           opcode: 9,
-          readOnly,
+          readOnly: readOnly2,
           rsv1: false
         };
         if (isBlob(data)) {
@@ -60092,17 +60092,17 @@ var require_sender2 = __commonJS({
        */
       pong(data, mask, cb) {
         let byteLength;
-        let readOnly;
+        let readOnly2;
         if (typeof data === "string") {
           byteLength = Buffer.byteLength(data);
-          readOnly = false;
+          readOnly2 = false;
         } else if (isBlob(data)) {
           byteLength = data.size;
-          readOnly = false;
+          readOnly2 = false;
         } else {
           data = toBuffer(data);
           byteLength = data.length;
-          readOnly = toBuffer.readOnly;
+          readOnly2 = toBuffer.readOnly;
         }
         if (byteLength > 125) {
           throw new RangeError("The data size must not be greater than 125 bytes");
@@ -60114,7 +60114,7 @@ var require_sender2 = __commonJS({
           mask,
           maskBuffer: this._maskBuffer,
           opcode: 10,
-          readOnly,
+          readOnly: readOnly2,
           rsv1: false
         };
         if (isBlob(data)) {
@@ -60150,17 +60150,17 @@ var require_sender2 = __commonJS({
         let opcode = options.binary ? 2 : 1;
         let rsv1 = options.compress;
         let byteLength;
-        let readOnly;
+        let readOnly2;
         if (typeof data === "string") {
           byteLength = Buffer.byteLength(data);
-          readOnly = false;
+          readOnly2 = false;
         } else if (isBlob(data)) {
           byteLength = data.size;
-          readOnly = false;
+          readOnly2 = false;
         } else {
           data = toBuffer(data);
           byteLength = data.length;
-          readOnly = toBuffer.readOnly;
+          readOnly2 = toBuffer.readOnly;
         }
         if (this._firstFragment) {
           this._firstFragment = false;
@@ -60180,7 +60180,7 @@ var require_sender2 = __commonJS({
           mask: options.mask,
           maskBuffer: this._maskBuffer,
           opcode,
-          readOnly,
+          readOnly: readOnly2,
           rsv1
         };
         if (isBlob(data)) {
@@ -60735,7 +60735,7 @@ var require_websocket2 = __commonJS({
     var http5 = __require("http");
     var net3 = __require("net");
     var tls2 = __require("tls");
-    var { randomBytes: randomBytes10, createHash: createHash5 } = __require("crypto");
+    var { randomBytes: randomBytes10, createHash: createHash6 } = __require("crypto");
     var { Duplex, Readable: Readable2 } = __require("stream");
     var { URL: URL3 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate2();
@@ -61416,7 +61416,7 @@ var require_websocket2 = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash5("sha1").update(key + GUID).digest("base64");
+        const digest = createHash6("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -61785,7 +61785,7 @@ var require_websocket_server = __commonJS({
     var EventEmitter2 = __require("events");
     var http5 = __require("http");
     var { Duplex } = __require("stream");
-    var { createHash: createHash5 } = __require("crypto");
+    var { createHash: createHash6 } = __require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate2();
     var subprotocol2 = require_subprotocol();
@@ -62092,7 +62092,7 @@ var require_websocket_server = __commonJS({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash5("sha1").update(key + GUID).digest("base64");
+        const digest = createHash6("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -73007,18 +73007,18 @@ var BaggageImpl = class _BaggageImpl {
     this._entries = entries ? new Map(entries) : /* @__PURE__ */ new Map();
   }
   getEntry(key) {
-    const entry = this._entries.get(key);
-    if (!entry) {
+    const entry2 = this._entries.get(key);
+    if (!entry2) {
       return void 0;
     }
-    return Object.assign({}, entry);
+    return Object.assign({}, entry2);
   }
   getAllEntries() {
     return Array.from(this._entries.entries());
   }
-  setEntry(key, entry) {
+  setEntry(key, entry2) {
     const newBaggage = new _BaggageImpl(this._entries);
-    newBaggage._entries.set(key, entry);
+    newBaggage._entries.set(key, entry2);
     return newBaggage;
   }
   removeEntry(key) {
@@ -74390,7 +74390,7 @@ function addContentAttributes(span, response3) {
   if ("content" in response3) {
     if (Array.isArray(response3.content)) {
       span.setAttributes({
-        [tn]: response3.content.map((item) => item.text).filter((text6) => !!text6).join("")
+        [tn]: response3.content.map((item) => item.text).filter((text7) => !!text7).join("")
       });
       const toolCalls = [];
       for (const item of response3.content) {
@@ -74557,7 +74557,7 @@ function setOutputMessagesAttribute2(span, parts) {
   }
 }
 function systemInstructionToText(systemInstruction) {
-  const texts = contentUnionToMessages(systemInstruction, "system").flatMap((message2) => message2.parts).map((part) => part.type === "text" && typeof part.content === "string" ? part.content : "").filter((text6) => text6.length > 0);
+  const texts = contentUnionToMessages(systemInstruction, "system").flatMap((message2) => message2.parts).map((part) => part.type === "text" && typeof part.content === "string" ? part.content : "").filter((text7) => text7.length > 0);
   return texts.length ? texts.join("\n") : void 0;
 }
 
@@ -74745,10 +74745,10 @@ function addResponseAttributes3(span, response3, recordOutputs) {
   if (recordOutputs && Array.isArray(response3.candidates) && response3.candidates.length > 0) {
     const responseTexts = response3.candidates.map((candidate) => {
       if (candidate.content?.parts && Array.isArray(candidate.content.parts)) {
-        return candidate.content.parts.map((part) => typeof part.text === "string" ? part.text : "").filter((text6) => text6.length > 0).join("");
+        return candidate.content.parts.map((part) => typeof part.text === "string" ? part.text : "").filter((text7) => text7.length > 0).join("");
       }
       return "";
-    }).filter((text6) => text6.length > 0);
+    }).filter((text7) => text7.length > 0);
     if (responseTexts.length > 0) {
       span.setAttributes({
         [tn]: responseTexts.join("")
@@ -75873,10 +75873,10 @@ function setResponseAttributes(span, inputMessages, result4) {
   let totalOutputTokens = 0;
   let totalTokens = 0;
   for (const message2 of newMessages) {
-    const tokens = extractTokenUsageFromMessage(message2);
-    totalInputTokens += tokens.inputTokens;
-    totalOutputTokens += tokens.outputTokens;
-    totalTokens += tokens.totalTokens;
+    const tokens2 = extractTokenUsageFromMessage(message2);
+    totalInputTokens += tokens2.inputTokens;
+    totalOutputTokens += tokens2.outputTokens;
+    totalTokens += tokens2.totalTokens;
     extractModelMetadata(span, message2);
   }
   if (totalInputTokens > 0) {
@@ -77625,9 +77625,9 @@ var firebaseConfig = [
     module: { name: "@firebase/firestore", versionRange: FIRESTORE_VERSION_RANGE, filePath: FIRESTORE_FILE },
     functionQuery: { functionName, kind: "Auto" }
   })),
-  ...FUNCTIONS_TRIGGERS.map(({ file: file3, functionName, channelName }) => ({
+  ...FUNCTIONS_TRIGGERS.map(({ file: file4, functionName, channelName }) => ({
     channelName,
-    module: { name: "firebase-functions", versionRange: FUNCTIONS_VERSION_RANGE, filePath: file3 },
+    module: { name: "firebase-functions", versionRange: FUNCTIONS_VERSION_RANGE, filePath: file4 },
     functionQuery: { functionName, kind: "Sync" }
   }))
 ];
@@ -79837,13 +79837,13 @@ function subscribeDispatch() {
     tracingChannel2(CHANNELS.AMQPLIB_DISPATCH),
     (data) => {
       const channel4 = data.self;
-      const fields2 = data.arguments[0];
+      const fields3 = data.arguments[0];
       const msg = data.arguments[1];
       if (!channel4 || !msg) {
         return void 0;
       }
       ensureChannelState(channel4);
-      const info3 = fields2?.consumerTag ? channel4[CHANNEL_CONSUMER_INFO]?.get(fields2.consumerTag) : void 0;
+      const info3 = fields3?.consumerTag ? channel4[CHANNEL_CONSUMER_INFO]?.get(fields3.consumerTag) : void 0;
       const queue = info3?.queue ?? msg.fields?.routingKey;
       const noAck = info3?.noAck ?? false;
       const headers = msg.properties?.headers;
@@ -81794,9 +81794,9 @@ function wrapFields(type, getConfig) {
     return;
   }
   type[GRAPHQL_PATCHED_SYMBOL] = true;
-  const fields2 = type.getFields();
-  Object.keys(fields2).forEach((key) => {
-    const field = fields2[key];
+  const fields3 = type.getFields();
+  Object.keys(fields3).forEach((key) => {
+    const field = fields3[key];
     if (!field) {
       return;
     }
@@ -82216,14 +82216,14 @@ function injectHonoInstrumentation(message2, requestMiddleware, injectedHandlerL
   }
   injectedHandlerLists.add(handlers2);
   const lastIndexByKey = /* @__PURE__ */ new Map();
-  for (const [i2, entry] of handlers2.entries()) {
-    const routeMeta2 = entry?.[0]?.[1];
+  for (const [i2, entry2] of handlers2.entries()) {
+    const routeMeta2 = entry2?.[0]?.[1];
     if (routeMeta2?.method != null && routeMeta2.path != null) {
       lastIndexByKey.set(`${routeMeta2.method}\0${routeMeta2.path}`, i2);
     }
   }
-  for (const [i2, entry] of handlers2.entries()) {
-    const pair = entry?.[0];
+  for (const [i2, entry2] of handlers2.entries()) {
+    const pair = entry2?.[0];
     const handler = pair?.[0];
     if (typeof handler !== "function") {
       continue;
@@ -84245,8 +84245,8 @@ function redactMongoQuery(value) {
   }
   try {
     const redacted = redactValue(value, 0);
-    const text6 = JSON.stringify(redacted);
-    return text6 == null || text6 === "{}" || text6 === "[]" ? void 0 : text6;
+    const text7 = JSON.stringify(redacted);
+    return text7 == null || text7 === "{}" || text7 === "[]" ? void 0 : text7;
   } catch {
     return void 0;
   }
@@ -85369,15 +85369,15 @@ function sum(a2, b2) {
 function tapModelCallStream(stream, onFinal, onError2) {
   const reader = stream.getReader();
   const state2 = { toolCalls: [] };
-  let text6 = "";
+  let text7 = "";
   let settled = false;
   const finalize3 = () => {
     if (settled) {
       return;
     }
     settled = true;
-    if (text6) {
-      state2.text = text6;
+    if (text7) {
+      state2.text = text7;
     }
     onFinal(state2);
   };
@@ -85397,7 +85397,7 @@ function tapModelCallStream(stream, onFinal, onError2) {
           controller.close();
           return;
         }
-        text6 += accumulateChunk(state2, value) ?? "";
+        text7 += accumulateChunk(state2, value) ?? "";
         controller.enqueue(value);
       } catch (error113) {
         fail(error113);
@@ -85876,10 +85876,10 @@ function partsFromContent(content) {
   }
   return parts;
 }
-function partsFromTextAndToolCalls(text6, toolCalls) {
+function partsFromTextAndToolCalls(text7, toolCalls) {
   const parts = [];
-  if (typeof text6 === "string" && text6.length) {
-    parts.push({ type: "text", content: text6 });
+  if (typeof text7 === "string" && text7.length) {
+    parts.push({ type: "text", content: text7 });
   }
   if (Array.isArray(toolCalls)) {
     for (const toolCall of toolCalls) {
@@ -86098,14 +86098,14 @@ function deferStreamTextOperationEnd(data, end) {
   const streamResult = data.result;
   void (async () => {
     try {
-      const [usage, text6, toolCalls, finishReason, response3] = await Promise.all([
+      const [usage, text7, toolCalls, finishReason, response3] = await Promise.all([
         streamResult.totalUsage ?? streamResult.usage,
         streamResult.text,
         streamResult.toolCalls,
         streamResult.finishReason,
         streamResult.response
       ]);
-      data.result = { usage, text: text6, toolCalls, finishReason, response: response3 };
+      data.result = { usage, text: text7, toolCalls, finishReason, response: response3 };
       end();
     } catch (error113) {
       end(error113);
@@ -86370,12 +86370,12 @@ function getLayerRegisteredPath(layer) {
 }
 var requestLayerPaths = /* @__PURE__ */ new WeakMap();
 function getStore(req) {
-  let store = requestLayerPaths.get(req);
-  if (!store) {
-    store = [];
-    requestLayerPaths.set(req, store);
+  let store2 = requestLayerPaths.get(req);
+  if (!store2) {
+    store2 = [];
+    requestLayerPaths.set(req, store2);
   }
-  return store;
+  return store2;
 }
 function pushLayerPath(req, path) {
   getStore(req).push(path);
@@ -87305,11 +87305,11 @@ function addTracePropagationHeadersToFetchRequest(request2, propagationDecisionM
 function normalizeUndiciHeaderPairs(headers) {
   const out = [];
   for (let i2 = 0; i2 < headers.length; i2++) {
-    const entry = headers[i2];
+    const entry2 = headers[i2];
     if (i2 % 2 === 0) {
-      out.push(typeof entry === "string" ? entry : String(entry));
+      out.push(typeof entry2 === "string" ? entry2 : String(entry2));
     } else {
-      out.push(Array.isArray(entry) ? entry.join(", ") : entry ?? "");
+      out.push(Array.isArray(entry2) ? entry2.join(", ") : entry2 ?? "");
     }
   }
   return out;
@@ -88117,8 +88117,8 @@ var LINUX_VERSIONS = {
   suse: (content) => matchFirst(/VERSION = (.*)\n/, content),
   ubuntu: (content) => matchFirst(/distrib_release=(.*)/, content)
 };
-function matchFirst(regex2, text6) {
-  const match2 = regex2.exec(text6);
+function matchFirst(regex2, text7) {
+  const match2 = regex2.exec(text7);
   return match2 ? match2[1] : void 0;
 }
 async function getDarwinInfo() {
@@ -88154,7 +88154,7 @@ async function getLinuxInfo() {
   };
   try {
     const etcFiles = await readDirAsync("/etc");
-    const distroFile = LINUX_DISTROS.find((file3) => etcFiles.includes(file3.name));
+    const distroFile = LINUX_DISTROS.find((file4) => etcFiles.includes(file4.name));
     if (!distroFile) {
       return linuxInfo;
     }
@@ -88254,8 +88254,8 @@ function shouldSkipContextLinesForFrame(frame2) {
   if (frame2.colno !== void 0 && frame2.colno > MAX_CONTEXTLINES_COLNO) return true;
   return false;
 }
-function rangeExistsInContentCache(file3, range) {
-  const contents = LRU_FILE_CONTENTS_CACHE.get(file3);
+function rangeExistsInContentCache(file4, range) {
+  const contents = LRU_FILE_CONTENTS_CACHE.get(file4);
   if (contents === void 0) return false;
   for (let i2 = range[0]; i2 <= range[1]; i2++) {
     if (contents[i2] === void 0) {
@@ -88370,21 +88370,21 @@ async function addSourceContext(event, contextLines) {
     return event;
   }
   const readlinePromises = [];
-  for (const file3 of files) {
-    if (LRU_FILE_CONTENTS_FS_READ_FAILED.get(file3)) {
+  for (const file4 of files) {
+    if (LRU_FILE_CONTENTS_FS_READ_FAILED.get(file4)) {
       continue;
     }
-    const filesToLineRanges = filesToLines[file3];
+    const filesToLineRanges = filesToLines[file4];
     if (!filesToLineRanges) {
       continue;
     }
     filesToLineRanges.sort((a2, b2) => a2 - b2);
     const ranges = makeLineReaderRanges(filesToLineRanges, contextLines);
-    if (ranges.every((r3) => rangeExistsInContentCache(file3, r3))) {
+    if (ranges.every((r3) => rangeExistsInContentCache(file4, r3))) {
       continue;
     }
-    const cache = emplace(LRU_FILE_CONTENTS_CACHE, file3, {});
-    readlinePromises.push(getContextLinesFromFile(file3, ranges, cache));
+    const cache = emplace(LRU_FILE_CONTENTS_CACHE, file4, {});
+    readlinePromises.push(getContextLinesFromFile(file4, ranges, cache));
   }
   await Promise.all(readlinePromises).catch(() => {
     DEBUG_BUILD3 && debug.log("Failed to read one or more source files and resolve context lines");
@@ -89398,11 +89398,11 @@ function createGetModuleFromFilename(basePath = process.argv[1] ? dirname(proces
       return;
     }
     const normalizedFilename = isWindows ? normalizeWindowsPath(filename) : filename;
-    let { dir, base: file3, ext } = posix.parse(normalizedFilename);
+    let { dir, base: file4, ext } = posix.parse(normalizedFilename);
     if (ext === ".js" || ext === ".mjs" || ext === ".cjs") {
-      file3 = file3.slice(0, ext.length * -1);
+      file4 = file4.slice(0, ext.length * -1);
     }
-    const decodedFile = decodeURIComponent(file3);
+    const decodedFile = decodeURIComponent(file4);
     if (!dir) {
       dir = ".";
     }
@@ -90129,26 +90129,26 @@ function match(t2) {
 function compile(t2) {
   const result4 = [];
   let checks = [];
-  const tokens = t2.trim().split(/\s+/);
-  for (let i2 = 0; i2 < tokens.length; i2++) {
-    const t22 = tokens[i2];
+  const tokens2 = t2.trim().split(/\s+/);
+  for (let i2 = 0; i2 < tokens2.length; i2++) {
+    const t22 = tokens2[i2];
     if (t22 === "-") continue;
     if (t22 === "||") {
       result4.push(checks);
       checks = [];
       continue;
     }
-    if (/^[<>=~v^]+$/.test(t22) && i2 + 1 < tokens.length) {
-      tokens[i2 + 1] = t22 + tokens[i2 + 1];
+    if (/^[<>=~v^]+$/.test(t22) && i2 + 1 < tokens2.length) {
+      tokens2[i2 + 1] = t22 + tokens2[i2 + 1];
       continue;
     }
     const res = match(t22);
     let cmp = res[1] || "=";
     if (cmp.endsWith("v")) cmp = cmp.slice(0, -1);
     let [v3, c2] = parse(res[2], cmp);
-    if (i2 + 2 < tokens.length && tokens[i2 + 1] === "-") {
-      const m5 = match(tokens[i2 + 2]);
-      tokens[i2 + 2] = "<=" + (m5[2].indexOf("-") === -1 ? m5[2] + ".*.*" : m5[2]);
+    if (i2 + 2 < tokens2.length && tokens2[i2 + 1] === "-") {
+      const m5 = match(tokens2[i2 + 2]);
+      tokens2[i2 + 2] = "<=" + (m5[2].indexOf("-") === -1 ? m5[2] + ".*.*" : m5[2]);
       c2 = ">=";
     }
     if (c2[0] === "~") {
@@ -91645,14 +91645,14 @@ var Transformer = class {
     if (ast) {
       SourceMapConsumer ?? (SourceMapConsumer = sourceMap.SourceMapConsumer);
       SourceMapGenerator ?? (SourceMapGenerator = sourceMap.SourceMapGenerator);
-      const file3 = `${__privateGet(this, _moduleName)}/${__privateGet(this, _filePath)}`;
+      const file4 = `${__privateGet(this, _moduleName)}/${__privateGet(this, _filePath)}`;
       let generator;
       if (sourcemap) {
         const consumer = new SourceMapConsumer(sourcemap);
-        consumer.file = file3;
+        consumer.file = file4;
         generator = SourceMapGenerator.fromSourceMap(consumer);
       } else {
-        generator = new SourceMapGenerator({ file: file3 });
+        generator = new SourceMapGenerator({ file: file4 });
       }
       const code2 = generate(ast, { sourceMap: generator });
       const map3 = generator.toString();
@@ -91873,8 +91873,8 @@ import require$$1__default from "node:module";
 // node_modules/@sentry/server-runtime-injection/build/esm/vendored/module-details-from-path/index.js
 import require$$0 from "node:path";
 var sep2 = require$$0.sep;
-var moduleDetailsFromPath = function(file3) {
-  var segments = file3.split(sep2);
+var moduleDetailsFromPath = function(file4) {
+  var segments = file4.split(sep2);
   var index = segments.lastIndexOf("node_modules");
   if (index === -1) return;
   if (!segments[index + 1]) return;
@@ -92584,10 +92584,10 @@ function dump(code, filename) {
   const path = require$$14;
   const fs = require$$04;
   const base2 = process.env.TRACING_DUMP_DIR ?? os4.tmpdir();
-  const dirname8 = path.dirname(filename);
-  const basename5 = path.basename(filename);
-  const targetDir = path.join(base2, dirname8.slice(path.parse(dirname8).root.length));
-  const targetFile = path.join(targetDir, basename5);
+  const dirname9 = path.dirname(filename);
+  const basename6 = path.basename(filename);
+  const targetDir = path.join(base2, dirname9.slice(path.parse(dirname9).root.length));
+  const targetFile = path.join(targetDir, basename6);
   debug2("Dumping patched code to: %s", targetFile);
   fs.mkdirSync(targetDir, { recursive: true });
   fs.writeFileSync(targetFile, code);
@@ -92692,15 +92692,15 @@ function unlabeledModuleType(url3, source) {
   return declaredModuleType(url3) ?? (esmSyntax.test(source) ? "esm" : "cjs");
 }
 function declaredModuleType(url3) {
-  let file3;
+  let file4;
   try {
-    file3 = fileURLToPath2(url3);
+    file4 = fileURLToPath2(url3);
   } catch {
     return void 0;
   }
-  if (file3.endsWith(".mjs") || file3.endsWith(".mts")) return "esm";
-  if (file3.endsWith(".cjs") || file3.endsWith(".cts")) return "cjs";
-  const type = nearestPackageType(dirname2(file3));
+  if (file4.endsWith(".mjs") || file4.endsWith(".mts")) return "esm";
+  if (file4.endsWith(".cjs") || file4.endsWith(".cts")) return "cjs";
+  const type = nearestPackageType(dirname2(file4));
   return type === "module" ? "esm" : type === "commonjs" ? "cjs" : void 0;
 }
 var packageTypes = /* @__PURE__ */ new Map();
@@ -93393,7 +93393,7 @@ var nodeRuntimeMetricsIntegration = defineIntegration((options = {}) => {
 });
 
 // src/shared/version.ts
-var PLUGIN_VERSION = "0.1.160";
+var PLUGIN_VERSION = "0.1.162";
 
 // src/shared/telemetry-identity.ts
 function isAnonymousUserId(value) {
@@ -93534,9 +93534,9 @@ function sampleTrace(name, inheritOrSampleWith) {
   if (isFrequentTool(toolName)) return 0;
   return inheritOrSampleWith(0.1);
 }
-function scrubText(text6) {
-  if (text6.startsWith("Command failed:")) return "Child process command failed";
-  let scrubbed = text6.replace(/(?:Bearer\s+|sntrys_)[A-Za-z0-9._-]+/gi, "[token]");
+function scrubText(text7) {
+  if (text7.startsWith("Command failed:")) return "Child process command failed";
+  let scrubbed = text7.replace(/(?:Bearer\s+|sntrys_)[A-Za-z0-9._-]+/gi, "[token]");
   scrubbed = scrubbed.replace(/\b[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}\b/g, "[identifier]");
   scrubbed = scrubbed.replace(/\b[A-Fa-f0-9]{24,}\b/g, "[identifier]");
   scrubbed = scrubbed.replace(/\b[^\s@]+@[^\s@]+\.[^\s@]+\b/g, "[email]");
@@ -93767,7 +93767,7 @@ client?.on("spanStart", (span) => {
 });
 
 // src/server/index.ts
-import { readFile as readFile9 } from "node:fs/promises";
+import { readFile as readFile10 } from "node:fs/promises";
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
 import process2 from "node:process";
@@ -95459,8 +95459,8 @@ function parseNativeEnvelope(encoded2) {
     const end = bytes.indexOf(10, offset);
     if (end < 0) throw new Error("Incomplete native Sentry envelope header.");
     const line = bytes.subarray(offset, end);
-    const text6 = line.toString("utf8");
-    const value = JSON.parse(text6);
+    const text7 = line.toString("utf8");
+    const value = JSON.parse(text7);
     offset = end + 1;
     if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid native Sentry envelope header.");
     return value;
@@ -95479,9 +95479,9 @@ function parseNativeEnvelope(encoded2) {
     const end = offset + item.length;
     if (end > bytes.length) throw new Error("Incomplete native Sentry envelope item.");
     const payload = bytes.subarray(offset, end);
-    const text6 = payload.toString("utf8");
+    const text7 = payload.toString("utf8");
     if (item.type === "event") {
-      const event = JSON.parse(text6);
+      const event = JSON.parse(text7);
       if (event === null || typeof event !== "object" || event.platform !== "native") throw new Error("Invalid native Sentry event.");
       if (typeof event.event_id !== "string") throw new Error("Native Sentry event has no event ID.");
       const now = /* @__PURE__ */ new Date();
@@ -95489,12 +95489,12 @@ function parseNativeEnvelope(encoded2) {
       const eventHeader = { dsn: SENTRY_NATIVE_DSN, event_id: event.event_id, sent_at: sentAt };
       envelopes.push([eventHeader, [[{ type: "event" }, event]]]);
     } else if (item.type === "trace_metric") {
-      const metrics = JSON.parse(text6);
+      const metrics = JSON.parse(text7);
       if (metrics === null || typeof metrics !== "object" || Array.isArray(metrics.items) === false) throw new Error("Invalid native Sentry metrics.");
       const count4 = metrics.items.length;
       envelopes.push([header, [[{ type: "trace_metric", item_count: count4, content_type: "application/vnd.sentry.items.trace-metric+json" }, metrics]]]);
     } else {
-      const report = JSON.parse(text6);
+      const report = JSON.parse(text7);
       if (report === null || typeof report !== "object" || Array.isArray(report.discarded_events) === false) throw new Error("Invalid native Sentry client report.");
       envelopes.push([header, [[{ type: "client_report" }, report]]]);
     }
@@ -95530,8 +95530,8 @@ var NativeTelemetryRelay = class {
     this.send = send;
   }
   write(chunk) {
-    const text6 = chunk.toString("utf8");
-    const parts = text6.split("\n");
+    const text7 = chunk.toString("utf8");
+    const parts = text7.split("\n");
     for (let index = 0; index < parts.length; index++) {
       if (this.discarding === false) this.pending += parts[index];
       if (this.pending.length > maximumLine + prefix.length) {
@@ -96068,11 +96068,22 @@ function recordPluginUpdate(operation, outcome, duration6) {
   public_api_exports.count("plugin.update.operations", 1, { attributes });
   public_api_exports.gauge("plugin.update.duration", duration6, { unit: "millisecond", attributes });
 }
+function recordAppStorageOperation(operation, platform6, outcome, duration6) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "storage", operation, device_platform: platform6, outcome };
+  public_api_exports.count("app_storage.operation.samples", 1, { attributes });
+  public_api_exports.gauge("app_storage.operation.duration", duration6, { unit: "millisecond", attributes });
+}
 function recordTraceSiftOperation(operation, outcome, duration6) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const attributes = { component: "server", surface: "tracesift", operation, outcome };
   public_api_exports.count("tracesift.operation.samples", 1, { attributes });
   public_api_exports.gauge("tracesift.operation.duration", duration6, { unit: "millisecond", attributes });
+}
+function recordTraceSiftPayload(kind4, bytes) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "tracesift", kind: kind4 };
+  public_api_exports.gauge("tracesift.explore.payload_bytes", bytes, { unit: "byte", attributes });
 }
 function recordAccessibilityBridgeRestart(outcome) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
@@ -96268,7 +96279,7 @@ var resourceKinds = {
   "ui:": "ui"
 };
 var allowedContext = {
-  surface: ["logs", "performance", "simulator", "recording", "comparison"],
+  surface: ["logs", "performance", "storage", "simulator", "recording", "comparison"],
   view: ["panel", "workspace", "recording", "comparison"],
   layout: ["ios", "android", "both", "none"],
   device_platform: ["ios", "android", "mixed"],
@@ -103025,8 +103036,8 @@ var PluginUpdates = class {
   }
   async readCache() {
     try {
-      const text6 = await readFile3(this.cachePath, "utf8");
-      const data = JSON.parse(text6);
+      const text7 = await readFile3(this.cachePath, "utf8");
+      const data = JSON.parse(text7);
       return cacheSchema.parse(data);
     } catch {
       return { checkedAt: 0 };
@@ -103038,8 +103049,8 @@ var PluginUpdates = class {
     const temporary = `${this.cachePath}.${id2}.tmp`;
     try {
       await mkdir(directory, { recursive: true });
-      const text6 = JSON.stringify(cache);
-      await writeFile(temporary, text6, { mode: 384 });
+      const text7 = JSON.stringify(cache);
+      await writeFile(temporary, text7, { mode: 384 });
       await rename(temporary, this.cachePath);
     } catch {
       throw new PluginUpdateError("Could not save the update status. Check free disk space and try again.");
@@ -103130,8 +103141,8 @@ var PluginUpdates = class {
       const plugin2 = plugins.installed.find((item) => item.pluginId === "mobile-dev@mobile-dev" && item.installed);
       const installedVersion = releaseVersionSchema.parse(plugin2?.version);
       const path = join10(this.profile, "plugins/cache/mobile-dev/mobile-dev", installedVersion, ".codex-plugin/plugin.json");
-      const text6 = await readFile3(path, "utf8");
-      const data = JSON.parse(text6);
+      const text7 = await readFile3(path, "utf8");
+      const data = JSON.parse(text7);
       const installed = manifestSchema.parse(data);
       if (installed.version !== installedVersion || compareReleaseVersions(installedVersion, update.latestVersion) < 0) {
         throw new PluginUpdateError("The new Mobile Dev version has not been installed. Try again later.");
@@ -112604,8 +112615,8 @@ function ko_default2() {
 }
 
 // node_modules/@openai/mcp-extensions/node_modules/zod/v4/locales/lt.js
-var capitalizeFirstCharacter2 = (text6) => {
-  return text6.charAt(0).toUpperCase() + text6.slice(1);
+var capitalizeFirstCharacter2 = (text7) => {
+  return text7.charAt(0).toUpperCase() + text7.slice(1);
 };
 function getUnitTypeFromNumber2(number12) {
   const abs = Math.abs(number12);
@@ -116456,42 +116467,42 @@ function extractDefs2(ctx, schema2) {
   if (!root)
     throw new Error("Unprocessed schema. This is a bug in Zod.");
   const idToSchema = /* @__PURE__ */ new Map();
-  for (const entry of ctx.seen.entries()) {
-    const id2 = ctx.metadataRegistry.get(entry[0])?.id;
+  for (const entry2 of ctx.seen.entries()) {
+    const id2 = ctx.metadataRegistry.get(entry2[0])?.id;
     if (id2) {
       const existing = idToSchema.get(id2);
-      if (existing && existing !== entry[0]) {
+      if (existing && existing !== entry2[0]) {
         throw new Error(`Duplicate schema id "${id2}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);
       }
-      idToSchema.set(id2, entry[0]);
+      idToSchema.set(id2, entry2[0]);
     }
   }
-  const makeURI = (entry) => {
+  const makeURI = (entry2) => {
     const defsSegment = ctx.target === "draft-2020-12" ? "$defs" : "definitions";
     if (ctx.external) {
-      const externalId = ctx.external.registry.get(entry[0])?.id;
+      const externalId = ctx.external.registry.get(entry2[0])?.id;
       const uriGenerator = ctx.external.uri ?? ((id3) => id3);
       if (externalId) {
         return { ref: uriGenerator(externalId) };
       }
-      const id2 = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
-      entry[1].defId = id2;
+      const id2 = entry2[1].defId ?? entry2[1].schema.id ?? `schema${ctx.counter++}`;
+      entry2[1].defId = id2;
       return { defId: id2, ref: `${uriGenerator("__shared")}#/${defsSegment}/${id2}` };
     }
-    if (entry[1] === root) {
+    if (entry2[1] === root) {
       return { ref: "#" };
     }
     const uriPrefix = `#`;
     const defUriPrefix = `${uriPrefix}/${defsSegment}/`;
-    const defId = entry[1].schema.id ?? `__schema${ctx.counter++}`;
+    const defId = entry2[1].schema.id ?? `__schema${ctx.counter++}`;
     return { defId, ref: defUriPrefix + defId };
   };
-  const extractToDef = (entry) => {
-    if (entry[1].schema.$ref) {
+  const extractToDef = (entry2) => {
+    if (entry2[1].schema.$ref) {
       return;
     }
-    const seen = entry[1];
-    const { ref, defId } = makeURI(entry);
+    const seen = entry2[1];
+    const { ref, defId } = makeURI(entry2);
     seen.def = { ...seen.schema };
     if (defId)
       seen.defId = defId;
@@ -116502,8 +116513,8 @@ function extractDefs2(ctx, schema2) {
     schema3.$ref = ref;
   };
   if (ctx.cycles === "throw") {
-    for (const entry of ctx.seen.entries()) {
-      const seen = entry[1];
+    for (const entry2 of ctx.seen.entries()) {
+      const seen = entry2[1];
       if (seen.cycle) {
         throw new Error(`Cycle detected: #/${seen.cycle?.join("/")}/<root>
 
@@ -116511,31 +116522,31 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
       }
     }
   }
-  for (const entry of ctx.seen.entries()) {
-    const seen = entry[1];
-    if (schema2 === entry[0]) {
-      extractToDef(entry);
+  for (const entry2 of ctx.seen.entries()) {
+    const seen = entry2[1];
+    if (schema2 === entry2[0]) {
+      extractToDef(entry2);
       continue;
     }
     if (ctx.external) {
-      const ext = ctx.external.registry.get(entry[0])?.id;
-      if (schema2 !== entry[0] && ext) {
-        extractToDef(entry);
+      const ext = ctx.external.registry.get(entry2[0])?.id;
+      if (schema2 !== entry2[0] && ext) {
+        extractToDef(entry2);
         continue;
       }
     }
-    const id2 = ctx.metadataRegistry.get(entry[0])?.id;
+    const id2 = ctx.metadataRegistry.get(entry2[0])?.id;
     if (id2) {
-      extractToDef(entry);
+      extractToDef(entry2);
       continue;
     }
     if (seen.cycle) {
-      extractToDef(entry);
+      extractToDef(entry2);
       continue;
     }
     if (seen.count > 1) {
       if (ctx.reused === "ref") {
-        extractToDef(entry);
+        extractToDef(entry2);
         continue;
       }
     }
@@ -116607,8 +116618,8 @@ function finalize2(ctx, schema2) {
       path: seen.path ?? []
     });
   };
-  for (const entry of [...ctx.seen.entries()].reverse()) {
-    flattenRef(entry[0]);
+  for (const entry2 of [...ctx.seen.entries()].reverse()) {
+    flattenRef(entry2[0]);
   }
   const result4 = {};
   if (ctx.target === "draft-2020-12") {
@@ -116631,8 +116642,8 @@ function finalize2(ctx, schema2) {
   if (rootMetaId !== void 0 && result4.id === rootMetaId)
     delete result4.id;
   const defs = ctx.external?.defs ?? {};
-  for (const entry of ctx.seen.entries()) {
-    const seen = entry[1];
+  for (const entry2 of ctx.seen.entries()) {
+    const seen = entry2[1];
     if (seen.def && seen.defId) {
       if (seen.def.id === seen.defId)
         delete seen.def.id;
@@ -116916,26 +116927,26 @@ var templateLiteralProcessor2 = (schema2, _ctx, json3, _params) => {
 };
 var fileProcessor2 = (schema2, _ctx, json3, _params) => {
   const _json = json3;
-  const file3 = {
+  const file4 = {
     type: "string",
     format: "binary",
     contentEncoding: "binary"
   };
   const { minimum, maximum, mime } = schema2._zod.bag;
   if (minimum !== void 0)
-    file3.minLength = minimum;
+    file4.minLength = minimum;
   if (maximum !== void 0)
-    file3.maxLength = maximum;
+    file4.maxLength = maximum;
   if (mime) {
     if (mime.length === 1) {
-      file3.contentMediaType = mime[0];
-      Object.assign(_json, file3);
+      file4.contentMediaType = mime[0];
+      Object.assign(_json, file4);
     } else {
-      Object.assign(_json, file3);
+      Object.assign(_json, file4);
       _json.anyOf = mime.map((m5) => ({ contentMediaType: m5 }));
     }
   } else {
-    Object.assign(_json, file3);
+    Object.assign(_json, file4);
   }
 };
 var successProcessor2 = (_schema, _ctx, json3, _params) => {
@@ -117248,8 +117259,8 @@ function toJSONSchema2(input2, params) {
     const registry3 = input2;
     const ctx2 = initializeContext2({ ...params, processors: allProcessors2 });
     const defs = {};
-    for (const entry of registry3._idmap.entries()) {
-      const [_2, schema2] = entry;
+    for (const entry2 of registry3._idmap.entries()) {
+      const [_2, schema2] = entry2;
       process3(schema2, ctx2);
     }
     const schemas = {};
@@ -117259,8 +117270,8 @@ function toJSONSchema2(input2, params) {
       defs
     };
     ctx2.external = external;
-    for (const entry of registry3._idmap.entries()) {
-      const [key, schema2] = entry;
+    for (const entry2 of registry3._idmap.entries()) {
+      const [key, schema2] = entry2;
       extractDefs2(ctx2, schema2);
       schemas[key] = finalize2(ctx2, schema2);
     }
@@ -120852,17 +120863,17 @@ var OpenAISettingsReadResultSchema = external_exports2.object({
 }).superRefine(({ schema: schema2, layout }, context3) => {
   const seen = /* @__PURE__ */ new Set();
   for (const item of layout ?? []) {
-    for (const entry of item.items) {
-      if (entry.kind !== "property")
+    for (const entry2 of item.items) {
+      if (entry2.kind !== "property")
         continue;
-      if (!Object.hasOwn(schema2.properties ?? {}, entry.property) || seen.has(entry.property)) {
+      if (!Object.hasOwn(schema2.properties ?? {}, entry2.property) || seen.has(entry2.property)) {
         context3.addIssue({
           code: "custom",
           path: ["layout"],
-          message: `Unknown or duplicate settings key: ${entry.property}`
+          message: `Unknown or duplicate settings key: ${entry2.property}`
         });
       }
-      seen.add(entry.property);
+      seen.add(entry2.property);
     }
   }
 });
@@ -121330,15 +121341,15 @@ function registerIosDeviceTools(server, discover = listIosDevices) {
   }, async () => {
     try {
       const physicalDevices2 = await discover();
-      const text6 = JSON.stringify(physicalDevices2);
+      const text7 = JSON.stringify(physicalDevices2);
       failures2.recover("physical_ios");
-      return { content: [{ type: "text", text: text6 }], structuredContent: { physicalDevices: physicalDevices2 } };
+      return { content: [{ type: "text", text: text7 }], structuredContent: { physicalDevices: physicalDevices2 } };
     } catch (error113) {
       const category = errorCategory(error113);
       const report = failures2.shouldReport("physical_ios", category);
       captureServerError(error113, "ios.devices.discovery", { report });
-      const text6 = errorMessage(error113);
-      return { isError: true, content: [{ type: "text", text: text6 }] };
+      const text7 = errorMessage(error113);
+      return { isError: true, content: [{ type: "text", text: text7 }] };
     }
   });
 }
@@ -121418,8 +121429,8 @@ function runLogProcess(command2, args, parse11, sink, signal, readyLine) {
       if (signal.aborted) stop();
     });
     child.stdout.on("data", (chunk) => {
-      const text6 = decoder.write(chunk);
-      for (const part of text6.match(/[^\n]*\n|[^\n]+$/g) ?? []) {
+      const text7 = decoder.write(chunk);
+      for (const part of text7.match(/[^\n]*\n|[^\n]+$/g) ?? []) {
         const complete = part.endsWith("\n");
         if (!discarding) pending += part;
         if (pending.length > 256 * 1024) {
@@ -121974,15 +121985,15 @@ import { execFile as execFile6 } from "node:child_process";
 import { access as access4, mkdtemp, readdir as readdir2, rm as rm2 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join as join14 } from "node:path";
-var run = (file3, args, { timeout, input: input2, maxBuffer = 8 * 1024 * 1024 }) => new Promise((resolve5, reject) => {
-  const child = execFile6(file3, args, { encoding: "utf8", timeout, maxBuffer }, (error113, stdout, stderr) => {
+var run = (file4, args, { timeout, input: input2, maxBuffer = 8 * 1024 * 1024 }) => new Promise((resolve5, reject) => {
+  const child = execFile6(file4, args, { encoding: "utf8", timeout, maxBuffer }, (error113, stdout, stderr) => {
     if (error113) reject(Object.assign(error113, { stdout, stderr }));
     else resolve5(stdout);
   });
   if (input2 !== void 0) child.stdin?.end(input2);
 });
-var readBinary = (file3, args, { timeout }) => new Promise((resolve5, reject) => {
-  execFile6(file3, args, { encoding: "buffer", timeout, maxBuffer: 64 * 1024 * 1024 }, (error113, stdout) => {
+var readBinary = (file4, args, { timeout }) => new Promise((resolve5, reject) => {
+  execFile6(file4, args, { encoding: "buffer", timeout, maxBuffer: 64 * 1024 * 1024 }, (error113, stdout) => {
     if (error113) reject(error113);
     else resolve5(stdout);
   });
@@ -122013,10 +122024,10 @@ function commandError(error113, action) {
   if (expectedOutcome(error113) !== void 0) return error113;
   const output2 = commandOutput(error113);
   const message2 = output2.split("\n").map((line) => line.trim()).filter((line) => line && !/^Underlying error|^An error was encountered/.test(line)).slice(0, 3).join(" ");
-  const text6 = `${action} failed${message2 ? `: ${message2}` : "."}`;
-  if (unavailable.test(output2)) return new ExpectedOperationError("device_unavailable", text6);
+  const text7 = `${action} failed${message2 ? `: ${message2}` : "."}`;
+  if (unavailable.test(output2)) return new ExpectedOperationError("device_unavailable", text7);
   if (error113 !== null && typeof error113 === "object" && "code" in error113 && error113.code === "ENOENT") return new ExpectedOperationError("unsupported_platform", `${action} needs ${process.platform === "darwin" ? "Xcode or the Android SDK" : "macOS and Xcode"}.`);
-  return new Error(text6, { cause: error113 });
+  return new Error(text7, { cause: error113 });
 }
 async function runAdb(commands, serial, action, args, timeout = 15e3) {
   try {
@@ -122587,7 +122598,7 @@ async function listApps(driver) {
   const installed = new Set(apps.map((app) => app.bundleId));
   const foregroundBundleId = foreground !== null && installed.has(foreground) ? foreground : null;
   const newest = [...running].sort((a2, b2) => b2.pid - a2.pid).map((app) => app.bundleId);
-  const runningBundleIds = [.../* @__PURE__ */ new Set([...foregroundBundleId ? [foregroundBundleId] : [], ...newest])].filter((bundleId2) => installed.has(bundleId2));
+  const runningBundleIds = [.../* @__PURE__ */ new Set([...foregroundBundleId ? [foregroundBundleId] : [], ...newest])].filter((bundleId3) => installed.has(bundleId3));
   return { apps, foregroundBundleId, runningBundleIds };
 }
 function requireSupportedPermission(platform6, permission) {
@@ -122605,7 +122616,7 @@ var sdkScheme = /^fb\d+$|^com\.googleusercontent\.apps\.|auth|^stripe|^link-popu
 var urlSchemePattern = /^[A-Za-z][A-Za-z0-9+.-]*$/;
 function rankAppLinks(links) {
   const rank = (link) => /^https?:/.test(link) ? 1 : /^[^:]*[.+][^:]*:/.test(link) ? 2 : 0;
-  return [...new Set(links)].filter((link) => !sdkScheme.test(link.slice(0, link.indexOf(":")))).map((link, index) => ({ link, index })).sort((a2, b2) => rank(a2.link) - rank(b2.link) || a2.index - b2.index).slice(0, 5).map((entry) => entry.link);
+  return [...new Set(links)].filter((link) => !sdkScheme.test(link.slice(0, link.indexOf(":")))).map((link, index) => ({ link, index })).sort((a2, b2) => rank(a2.link) - rank(b2.link) || a2.index - b2.index).slice(0, 5).map((entry2) => entry2.link);
 }
 var AppDetailsCache = class {
   entries = /* @__PURE__ */ new Map();
@@ -122623,9 +122634,9 @@ async function collectDetails(bundleIds, read7) {
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(3, bundleIds.length) }, async () => {
     while (next < bundleIds.length) {
-      const bundleId2 = bundleIds[next++];
-      const details = await read7(bundleId2).catch(() => ({}));
-      if (details.icon || details.name) results[bundleId2] = details;
+      const bundleId3 = bundleIds[next++];
+      const details = await read7(bundleId3).catch(() => ({}));
+      if (details.icon || details.name) results[bundleId3] = details;
     }
   }));
   return results;
@@ -122654,8 +122665,8 @@ function foregroundCause(stderr) {
   for (const line of stderr.split("\n")) {
     if (line.startsWith(prefix2) === false) continue;
     try {
-      const text6 = line.slice(prefix2.length);
-      const payload = JSON.parse(text6);
+      const text7 = line.slice(prefix2.length);
+      const payload = JSON.parse(text7);
       const parsed = helperDiagnostic.safeParse(payload);
       if (parsed.success) return parsed.data.cause;
     } catch {
@@ -122720,10 +122731,10 @@ function annotateDiscoveryCommand(error113, command2, elapsed, options) {
   setDiscoveryCommandDiagnostic(error113, diagnostic);
   return error113;
 }
-async function runDiscoveryCommand(command2, file3, args, options, run2 = execute5) {
+async function runDiscoveryCommand(command2, file4, args, options, run2 = execute5) {
   const startedAt = performance.now();
   try {
-    return await run2(file3, args, options);
+    return await run2(file4, args, options);
   } catch (error113) {
     const elapsed = performance.now() - startedAt;
     const annotated = annotateDiscoveryCommand(error113, command2, elapsed, options);
@@ -122867,9 +122878,9 @@ function parseAndroidForegroundPackage(output2) {
   const entries = topEntries.length > 0 ? topEntries : Array.from(resumedMatches);
   if (entries.length === 0) throw new Error("Android did not report its resumed activity.");
   const packages2 = /* @__PURE__ */ new Set();
-  for (const entry of entries) {
-    if (entry[1].trim() === "null") continue;
-    const component2 = /\b([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)\/[a-zA-Z0-9_.$]+/.exec(entry[1]);
+  for (const entry2 of entries) {
+    if (entry2[1].trim() === "null") continue;
+    const component2 = /\b([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)\/[a-zA-Z0-9_.$]+/.exec(entry2[1]);
     if (component2 === null) throw new Error("Android returned an unsupported resumed activity.");
     packages2.add(component2[1]);
   }
@@ -122888,10 +122899,10 @@ async function foregroundAndroidPackage(deviceId4, signal) {
   return parseAndroidForegroundPackage(result4.stdout);
 }
 async function foregroundAndroidApp(deviceId4, signal) {
-  const bundleId2 = await foregroundAndroidPackage(deviceId4, signal);
-  if (bundleId2 === null) return null;
+  const bundleId3 = await foregroundAndroidPackage(deviceId4, signal);
+  if (bundleId3 === null) return null;
   const adb = await adbPath();
-  const result4 = await runDiscoveryCommand("android_foreground_pid", adb, ["-s", deviceId4, "shell", "pidof", bundleId2], {
+  const result4 = await runDiscoveryCommand("android_foreground_pid", adb, ["-s", deviceId4, "shell", "pidof", bundleId3], {
     encoding: "utf8",
     timeout: 5e3,
     maxBuffer: 4096,
@@ -122906,7 +122917,7 @@ async function foregroundAndroidApp(deviceId4, signal) {
   if (numeric === false || valid === false || value < 1 || value > 2147483647) {
     throw new Error("Android returned an invalid foreground app PID.");
   }
-  return { bundleId: bundleId2, pid: value };
+  return { bundleId: bundleId3, pid: value };
 }
 
 // src/server/device-apps/apps.ts
@@ -122952,8 +122963,8 @@ function parsePhysicalApps(apps, processes2) {
     if (process4.executable === void 0) continue;
     const path = devicePath(process4.executable);
     const directory = dirname7(path);
-    const bundleId2 = bundles.get(directory);
-    if (bundleId2) result4.push({ bundleId: bundleId2, pid: process4.processIdentifier });
+    const bundleId3 = bundles.get(directory);
+    if (bundleId3) result4.push({ bundleId: bundleId3, pid: process4.processIdentifier });
   }
   return result4;
 }
@@ -123022,9 +123033,9 @@ var listingSchema = external_exports.record(external_exports.string(), external_
 function parseSimulatorApps(json3) {
   const apps = [];
   for (const [key, app] of Object.entries(listingSchema.parse(JSON.parse(json3)))) {
-    const bundleId2 = bundleIdSchema.safeParse(app.CFBundleIdentifier ?? key);
-    if (app.ApplicationType !== "User" || !bundleId2.success) continue;
-    apps.push({ bundleId: bundleId2.data, name: app.CFBundleDisplayName || app.CFBundleName || bundleId2.data, path: app.Path ?? "" });
+    const bundleId3 = bundleIdSchema.safeParse(app.CFBundleIdentifier ?? key);
+    if (app.ApplicationType !== "User" || !bundleId3.success) continue;
+    apps.push({ bundleId: bundleId3.data, name: app.CFBundleDisplayName || app.CFBundleName || bundleId3.data, path: app.Path ?? "" });
   }
   return apps.sort((a2, b2) => a2.name.localeCompare(b2.name));
 }
@@ -123034,7 +123045,7 @@ function parseIosUrlSchemes(json3) {
 }
 function parseDefaultsArray(output2) {
   const body = /^\(\s*([\s\S]*?)\s*\)\s*$/.exec(output2.trim())?.[1];
-  return body ? body.split(",").map((entry) => entry.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean) : [];
+  return body ? body.split(",").map((entry2) => entry2.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean) : [];
 }
 var iosLocale = (language) => language.replaceAll("-", "_");
 var iconFilesSchema = external_exports.object({ CFBundlePrimaryIcon: external_exports.object({ CFBundleIconFiles: external_exports.array(external_exports.string()).optional() }).loose().optional() }).loose();
@@ -123070,37 +123081,37 @@ var SimulatorDriver = class {
     }
   }
   async installed() {
-    return (await this.listing()).map(({ bundleId: bundleId2, name }) => ({ bundleId: bundleId2, name }));
+    return (await this.listing()).map(({ bundleId: bundleId3, name }) => ({ bundleId: bundleId3, name }));
   }
   // One launchctl listing names both the running apps and the foreground app's process.
   async activity() {
     const [running, pid3] = await Promise.all([runningSimulatorApps(this.deviceId).catch(() => []), foregroundSimulatorPid(this.deviceId).catch(() => null)]);
     return { foreground: running.find((app) => app.pid === pid3)?.bundleId ?? null, running };
   }
-  async launch(bundleId2) {
+  async launch(bundleId3) {
     await this.simctl(
       "Launching the app",
-      ["launch", "--terminate-running-process", this.deviceId, bundleId2],
-      { known: [[/FBSOpenApplicationServiceErrorDomain/, `${bundleId2} is not installed or could not open.`]] }
+      ["launch", "--terminate-running-process", this.deviceId, bundleId3],
+      { known: [[/FBSOpenApplicationServiceErrorDomain/, `${bundleId3} is not installed or could not open.`]] }
     );
   }
-  async stop(bundleId2) {
-    await this.simctl("Stopping the app", ["terminate", this.deviceId, bundleId2], { tolerate: /found nothing to terminate/ });
+  async stop(bundleId3) {
+    await this.simctl("Stopping the app", ["terminate", this.deviceId, bundleId3], { tolerate: /found nothing to terminate/ });
   }
   async install(path) {
     const bundle = await requireArtifact(path, ".app", "a built .app bundle for the simulator");
     await this.simctl("Installing the app", ["install", this.deviceId, bundle], { timeout: 3e5 });
-    const bundleId2 = bundleIdSchema.safeParse(await this.plutil(["-extract", "CFBundleIdentifier", "raw", "-o", "-", join17(bundle, "Info.plist")]).then((id2) => id2.trim(), () => void 0));
-    return bundleId2.success ? { bundleId: bundleId2.data } : {};
+    const bundleId3 = bundleIdSchema.safeParse(await this.plutil(["-extract", "CFBundleIdentifier", "raw", "-o", "-", join17(bundle, "Info.plist")]).then((id2) => id2.trim(), () => void 0));
+    return bundleId3.success ? { bundleId: bundleId3.data } : {};
   }
   async openUrl(url3) {
     await this.simctl("Opening the URL", ["openurl", this.deviceId, url3], { known: [[/LSApplicationWorkspaceErrorDomain/, "No installed app handles this URL."]] });
   }
-  async links(bundleId2) {
+  async links(bundleId3) {
     const container = await this.simctl(
       "Reading app links",
-      ["get_app_container", this.deviceId, bundleId2, "app"],
-      { known: [[/No such file or directory/, `${bundleId2} is not installed on this simulator.`]] }
+      ["get_app_container", this.deviceId, bundleId3, "app"],
+      { known: [[/No such file or directory/, `${bundleId3} is not installed on this simulator.`]] }
     );
     const types = await this.plutil(["-extract", "CFBundleURLTypes", "json", "-o", "-", join17(container.trim(), "Info.plist")]).catch(() => void 0);
     return types ? parseIosUrlSchemes(types) : [];
@@ -123108,8 +123119,8 @@ var SimulatorDriver = class {
   async details(bundleIds) {
     const apps = await this.listing();
     const paths = new Map(apps.map((app) => [app.bundleId, app.path]));
-    return collectDetails(bundleIds ?? apps.map((app) => app.bundleId), async (bundleId2) => {
-      const path = paths.get(bundleId2);
+    return collectDetails(bundleIds ?? apps.map((app) => app.bundleId), async (bundleId3) => {
+      const path = paths.get(bundleId3);
       return path ? this.icon(path) : {};
     });
   }
@@ -123118,8 +123129,8 @@ var SimulatorDriver = class {
     return this.cache.get(`ios:${bundlePath}:${(await stat3(plist)).mtimeMs}`, async () => {
       const icons = await this.plutil(["-extract", "CFBundleIcons", "json", "-o", "-", plist]).catch(() => "{}");
       const names = iconFilesSchema.safeParse(JSON.parse(icons)).data?.CFBundlePrimaryIcon?.CFBundleIconFiles ?? [];
-      const files = (await readdir3(bundlePath)).filter((file3) => file3.endsWith(".png") && names.some((name) => file3.startsWith(name)));
-      const sized = await Promise.all(files.map(async (file3) => ({ file: file3, size: (await stat3(join17(bundlePath, file3))).size })));
+      const files = (await readdir3(bundlePath)).filter((file4) => file4.endsWith(".png") && names.some((name) => file4.startsWith(name)));
+      const sized = await Promise.all(files.map(async (file4) => ({ file: file4, size: (await stat3(join17(bundlePath, file4))).size })));
       const largest = sized.sort((a2, b2) => b2.size - a2.size)[0];
       return largest ? { icon: await withTemporaryDirectory((directory) => pngDataUrl(this.commands.run, join17(bundlePath, largest.file), directory)) } : {};
     });
@@ -123128,31 +123139,31 @@ var SimulatorDriver = class {
   async permissions() {
     return platformPermissions.ios.map((permission) => ({ permission, state: null }));
   }
-  async setPermission(bundleId2, permission, state2) {
+  async setPermission(bundleId3, permission, state2) {
     requireSupportedPermission("ios", permission);
     const action = { allow: "grant", deny: "revoke", ask: "reset" }[state2];
-    await this.simctl("Changing the permission", ["privacy", this.deviceId, action, permission, bundleId2]);
-    return platformPermissions.ios.map((entry) => ({ permission: entry, state: permission === "all" || permission === entry ? state2 : null }));
+    await this.simctl("Changing the permission", ["privacy", this.deviceId, action, permission, bundleId3]);
+    return platformPermissions.ios.map((entry2) => ({ permission: entry2, state: permission === "all" || permission === entry2 ? state2 : null }));
   }
-  async preferences(bundleId2) {
+  async preferences(bundleId3) {
     const container = await this.simctl(
       "Finding the app data",
-      ["get_app_container", this.deviceId, bundleId2, "data"],
-      { known: [[/No such file or directory/, `${bundleId2} is not installed on this simulator.`]] }
+      ["get_app_container", this.deviceId, bundleId3, "data"],
+      { known: [[/No such file or directory/, `${bundleId3} is not installed on this simulator.`]] }
     );
-    return join17(container.trim(), "Library/Preferences", bundleId2);
+    return join17(container.trim(), "Library/Preferences", bundleId3);
   }
   // A missing key or domain means the app follows the device language.
   defaults(action, args) {
     return this.simctl(action, ["spawn", this.deviceId, "defaults", ...args], { tolerate: /Domain '[^']*' not found|Could not find key/ });
   }
-  async language(bundleId2) {
-    const languages = parseDefaultsArray(await this.defaults("Reading the app language", ["read", await this.preferences(bundleId2), "AppleLanguages"]));
+  async language(bundleId3) {
+    const languages = parseDefaultsArray(await this.defaults("Reading the app language", ["read", await this.preferences(bundleId3), "AppleLanguages"]));
     return languages[0] ?? null;
   }
-  async setLanguage(bundleId2, language) {
-    const domain3 = await this.preferences(bundleId2);
-    await this.stop(bundleId2);
+  async setLanguage(bundleId3, language) {
+    const domain3 = await this.preferences(bundleId3);
+    await this.stop(bundleId3);
     if (language === null) {
       await this.defaults("Resetting the app language", ["delete", domain3, "AppleLanguages"]);
       await this.defaults("Resetting the app language", ["delete", domain3, "AppleLocale"]);
@@ -123161,13 +123172,13 @@ var SimulatorDriver = class {
     await this.defaults("Changing the app language", ["write", domain3, "AppleLanguages", "-array", language]);
     await this.defaults("Changing the app language", ["write", domain3, "AppleLocale", "-string", iosLocale(language)]);
   }
-  async push(bundleId2, payload) {
+  async push(bundleId3, payload) {
     const json3 = JSON.stringify(payload);
     if (Buffer.byteLength(json3) > 4096) throw new ExpectedOperationError("invalid_input", "Push payloads must be 4 KB or smaller.");
     await this.simctl(
       "Sending the notification",
-      ["push", this.deviceId, bundleId2, "-"],
-      { input: json3, known: [[/UNErrorDomain/, `${bundleId2} is not installed or cannot receive notifications.`]] }
+      ["push", this.deviceId, bundleId3, "-"],
+      { input: json3, known: [[/UNErrorDomain/, `${bundleId3} is not installed or cannot receive notifications.`]] }
     );
   }
 };
@@ -123181,11 +123192,11 @@ function parseAndroidPackages(output2) {
     return match2 ? [{ bundleId: match2[1], name: match2[1] }] : [];
   }).sort((a2, b2) => a2.bundleId.localeCompare(b2.bundleId));
 }
-function parseLauncherActivity(output2, bundleId2) {
+function parseLauncherActivity(output2, bundleId3) {
   const component2 = output2.split("\n").map((line) => line.trim()).filter(Boolean).at(-1);
-  return component2 && component2.startsWith(`${bundleId2}/`) && /^[A-Za-z0-9._-]+\/[A-Za-z0-9._$]+$/.test(component2) ? component2 : null;
+  return component2 && component2.startsWith(`${bundleId3}/`) && /^[A-Za-z0-9._-]+\/[A-Za-z0-9._$]+$/.test(component2) ? component2 : null;
 }
-function parseAndroidAppLinks(output2, bundleId2) {
+function parseAndroidAppLinks(output2, bundleId3) {
   const start = output2.indexOf("Activity Resolver Table:");
   const end = output2.indexOf("Receiver Resolver Table:");
   const filters = /* @__PURE__ */ new Map();
@@ -123193,7 +123204,7 @@ function parseAndroidAppLinks(output2, bundleId2) {
   for (const line of output2.slice(start, end >= 0 ? end : void 0).split("\n")) {
     const header = /^\s+[0-9a-f]+ ([A-Za-z0-9._]+)\/(\S+) filter ([0-9a-f]+)\s*$/.exec(line);
     if (header) {
-      const own2 = header[1] === bundleId2 && (header[2].startsWith(".") || header[2].startsWith(`${bundleId2}.`));
+      const own2 = header[1] === bundleId3 && (header[2].startsWith(".") || header[2].startsWith(`${bundleId3}.`));
       current = filters.has(header[3]) ? void 0 : { own: own2, view: false, browsable: false, schemes: [], hosts: [], paths: [] };
       if (current) filters.set(header[3], current);
       continue;
@@ -123249,7 +123260,7 @@ function androidPermissionStates(runtime2) {
   return platformPermissions.android.flatMap((permission) => {
     const states2 = runtimeNames(permission).flatMap((name) => runtime2.get(name) ?? []);
     if (states2.length === 0) return [];
-    const state2 = states2.some((entry) => entry.granted) ? "allow" : states2.some((entry) => entry.userFixed) ? "deny" : "ask";
+    const state2 = states2.some((entry2) => entry2.granted) ? "allow" : states2.some((entry2) => entry2.userFixed) ? "deny" : "ask";
     return [{ permission, state: state2 }];
   });
 }
@@ -123266,13 +123277,13 @@ function pickAndroidIconFile(resources, iconPath) {
     if (/^\s+resource 0x[0-9a-f]+ /.test(line)) blocks.push(current = []);
     else if (/^\s*(?:type|Package) /.test(line)) current = void 0;
     else {
-      const file3 = /^\s+\(([^)]*)\) \(file\) (\S+)/.exec(line);
-      if (current && file3) current.push({ config: file3[1], path: file3[2] });
+      const file4 = /^\s+\(([^)]*)\) \(file\) (\S+)/.exec(line);
+      if (current && file4) current.push({ config: file4[1], path: file4[2] });
     }
   }
-  const entries = blocks.find((block) => block.some((entry) => entry.path === iconPath)) ?? [{ config: "", path: iconPath }];
+  const entries = blocks.find((block) => block.some((entry2) => entry2.path === iconPath)) ?? [{ config: "", path: iconPath }];
   const rank = (config4) => densities[/\b(ldpi|mdpi|tvdpi|hdpi|xhdpi|xxhdpi|xxxhdpi)\b/.exec(config4)?.[1] ?? ""] ?? 0;
-  return entries.filter((entry) => /\.(?:png|webp)$/i.test(entry.path)).sort((a2, b2) => rank(b2.config) - rank(a2.config))[0]?.path ?? null;
+  return entries.filter((entry2) => /\.(?:png|webp)$/i.test(entry2.path)).sort((a2, b2) => rank(b2.config) - rank(a2.config))[0]?.path ?? null;
 }
 var localeUnavailable = /Can't find service: locale|Unknown command/;
 function parseAndroidAppLocales(output2) {
@@ -123280,7 +123291,7 @@ function parseAndroidAppLocales(output2) {
   if (localeUnavailable.test(output2)) throw new ExpectedOperationError("unsupported_platform", "Per-app languages need Android 13 or later.");
   const list = /are \[([^\]]*)\]/.exec(output2);
   if (!list) throw new Error("Reading the app language failed: unexpected cmd locale output.");
-  return list[1].split(",").map((entry) => entry.trim()).find(Boolean) ?? null;
+  return list[1].split(",").map((entry2) => entry2.trim()).find(Boolean) ?? null;
 }
 var shellQuote2 = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 var AndroidDriver = class {
@@ -123311,8 +123322,8 @@ var AndroidDriver = class {
     if (failure4) throw failure4;
     return output2;
   }
-  async runtime(bundleId2) {
-    return parseAndroidRuntimePermissions(await this.shell("Reading app permissions", `dumpsys package ${bundleId2}`));
+  async runtime(bundleId3) {
+    return parseAndroidRuntimePermissions(await this.shell("Reading app permissions", `dumpsys package ${bundleId3}`));
   }
   async installed() {
     return parseAndroidPackages(await this.shell("Listing apps", "pm list packages -3"));
@@ -123321,14 +123332,14 @@ var AndroidDriver = class {
     const [running, foreground] = await Promise.all([runningDeviceApps(this.deviceId, void 0, "android").catch(() => []), foregroundAndroidPackage(this.deviceId).catch(() => null)]);
     return { foreground, running };
   }
-  async launch(bundleId2) {
-    const resolved = await this.shell("Finding the launch activity", `cmd package resolve-activity --brief --query-flags 0x000C0000 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER ${bundleId2}`);
-    const component2 = parseLauncherActivity(resolved, bundleId2);
-    if (component2 === null) throw new ExpectedOperationError("invalid_input", `${bundleId2} is not installed or has no launcher activity.`);
-    await this.shell("Launching the app", `am force-stop ${bundleId2} && am start -W -n ${shellQuote2(component2)}`, 3e4);
+  async launch(bundleId3) {
+    const resolved = await this.shell("Finding the launch activity", `cmd package resolve-activity --brief --query-flags 0x000C0000 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER ${bundleId3}`);
+    const component2 = parseLauncherActivity(resolved, bundleId3);
+    if (component2 === null) throw new ExpectedOperationError("invalid_input", `${bundleId3} is not installed or has no launcher activity.`);
+    await this.shell("Launching the app", `am force-stop ${bundleId3} && am start -W -n ${shellQuote2(component2)}`, 3e4);
   }
-  async stop(bundleId2) {
-    await this.shell("Stopping the app", `am force-stop ${bundleId2}`);
+  async stop(bundleId3) {
+    await this.shell("Stopping the app", `am force-stop ${bundleId3}`);
   }
   async install(path) {
     const apk = await requireArtifact(path, ".apk", "a built .apk file");
@@ -123338,52 +123349,52 @@ var AndroidDriver = class {
   async openUrl(url3) {
     await this.shell("Opening the URL", `am start -W -a android.intent.action.VIEW -d ${shellQuote2(url3)}`, 3e4);
   }
-  async links(bundleId2) {
-    return parseAndroidAppLinks(await this.shell("Reading app links", `dumpsys package ${bundleId2}`), bundleId2);
+  async links(bundleId3) {
+    return parseAndroidAppLinks(await this.shell("Reading app links", `dumpsys package ${bundleId3}`), bundleId3);
   }
   async details(bundleIds) {
     const aapt22 = await this.commands.aapt2();
     if (!aapt22) return {};
-    return collectDetails(bundleIds ?? (await this.installed()).map((app) => app.bundleId), (bundleId2) => this.appDetails(bundleId2, aapt22));
+    return collectDetails(bundleIds ?? (await this.installed()).map((app) => app.bundleId), (bundleId3) => this.appDetails(bundleId3, aapt22));
   }
   // Reads only the manifest, resource table, and icon from the device instead of pulling the whole APK.
-  async appDetails(bundleId2, aapt22) {
-    const paths = (await this.shell("Finding the app package", `pm path ${bundleId2}`)).split("\n").map((line) => line.trim().replace(/^package:/, "")).filter(Boolean);
+  async appDetails(bundleId3, aapt22) {
+    const paths = (await this.shell("Finding the app package", `pm path ${bundleId3}`)).split("\n").map((line) => line.trim().replace(/^package:/, "")).filter(Boolean);
     const apk = paths.find((path) => path.endsWith("base.apk")) ?? paths[0];
     if (!apk || !/^\/[\w./~=+-]+\.apk$/.test(apk)) return {};
     const adb = await this.commands.adb();
-    const entry = (name) => this.commands.readBinary(adb, ["-s", this.deviceId, "exec-out", "unzip", "-p", apk, name], { timeout: 2e4 });
+    const entry2 = (name) => this.commands.readBinary(adb, ["-s", this.deviceId, "exec-out", "unzip", "-p", apk, name], { timeout: 2e4 });
     return this.cache.get(`android:${this.deviceId}:${apk}`, () => withTemporaryDirectory(async (directory) => {
       const parts = ["AndroidManifest.xml", "resources.arsc"];
-      await Promise.all(parts.map(async (part) => writeFile2(join18(directory, part), await entry(part))));
+      await Promise.all(parts.map(async (part) => writeFile2(join18(directory, part), await entry2(part))));
       const partial3 = join18(directory, "partial.apk");
       await this.commands.run("zip", ["-q", "-0", "-j", partial3, ...parts.map((part) => join18(directory, part))], { timeout: 1e4 });
       const badging = parseAndroidBadging(await this.commands.run(aapt22, ["dump", "badging", partial3], { timeout: 15e3 }));
       const name = badging.label ?? void 0;
-      const file3 = badging.icon && pickAndroidIconFile(await this.commands.run(aapt22, ["dump", "resources", partial3], { timeout: 15e3, maxBuffer: 64 * 1024 * 1024 }), badging.icon);
-      if (!file3) return { name };
-      const source = join18(directory, `icon${file3.slice(file3.lastIndexOf("."))}`);
-      await writeFile2(source, await entry(file3));
+      const file4 = badging.icon && pickAndroidIconFile(await this.commands.run(aapt22, ["dump", "resources", partial3], { timeout: 15e3, maxBuffer: 64 * 1024 * 1024 }), badging.icon);
+      if (!file4) return { name };
+      const source = join18(directory, `icon${file4.slice(file4.lastIndexOf("."))}`);
+      await writeFile2(source, await entry2(file4));
       return { name, icon: await pngDataUrl(this.commands.run, source, directory) };
     }));
   }
-  async permissions(bundleId2) {
-    return androidPermissionStates(await this.runtime(bundleId2));
+  async permissions(bundleId3) {
+    return androidPermissionStates(await this.runtime(bundleId3));
   }
-  async setPermission(bundleId2, permission, state2) {
+  async setPermission(bundleId3, permission, state2) {
     requireSupportedPermission("android", permission);
-    const runtime2 = await this.runtime(bundleId2);
+    const runtime2 = await this.runtime(bundleId3);
     const names = (permission === "all" ? platformPermissions.android : [permission]).flatMap(runtimeNames).filter((name) => runtime2.has(name));
     if (names.length === 0) throw new ExpectedOperationError("invalid_input", permission === "all" ? "The app does not request any supported runtime permissions." : `The app does not request the ${permission} permission.`);
-    const commands = names.flatMap((name) => state2 === "allow" ? [`pm clear-permission-flags ${bundleId2} ${name} user-set user-fixed`, `pm grant ${bundleId2} ${name}`] : [`pm revoke ${bundleId2} ${name}`, `pm ${state2 === "deny" ? "set" : "clear"}-permission-flags ${bundleId2} ${name} user-set user-fixed`]);
+    const commands = names.flatMap((name) => state2 === "allow" ? [`pm clear-permission-flags ${bundleId3} ${name} user-set user-fixed`, `pm grant ${bundleId3} ${name}`] : [`pm revoke ${bundleId3} ${name}`, `pm ${state2 === "deny" ? "set" : "clear"}-permission-flags ${bundleId3} ${name} user-set user-fixed`]);
     await this.shell("Changing the permission", commands.join(" && "));
-    return this.permissions(bundleId2);
+    return this.permissions(bundleId3);
   }
-  async language(bundleId2) {
-    return parseAndroidAppLocales(await this.shell("Reading the app language", `cmd locale get-app-locales ${bundleId2}`, 15e3, localeUnavailable));
+  async language(bundleId3) {
+    return parseAndroidAppLocales(await this.shell("Reading the app language", `cmd locale get-app-locales ${bundleId3}`, 15e3, localeUnavailable));
   }
-  async setLanguage(bundleId2, language) {
-    const output2 = await this.shell("Changing the app language", `cmd locale set-app-locales ${bundleId2}${language === null ? "" : ` --locales ${language}`}; cmd locale get-app-locales ${bundleId2}`, 15e3, localeUnavailable);
+  async setLanguage(bundleId3, language) {
+    const output2 = await this.shell("Changing the app language", `cmd locale set-app-locales ${bundleId3}${language === null ? "" : ` --locales ${language}`}; cmd locale get-app-locales ${bundleId3}`, 15e3, localeUnavailable);
     const applied = parseAndroidAppLocales(output2);
     if (applied?.toLowerCase() !== language?.toLowerCase()) throw new Error("Changing the app language failed: Android kept a different language.");
   }
@@ -123574,6 +123585,783 @@ function registerAppControlTools(server, driverFor = createDrivers()) {
       return { sent: true };
     }
   );
+}
+
+// src/shared/app-storage.ts
+var storeKinds = ["mmkv", "async-storage", "user-defaults", "shared-preferences", "datastore", "sqlite", "realm"];
+var entryTypes = ["string", "json", "number", "integer", "boolean", "date", "data", "array", "object", "null", "table"];
+var entry = external_exports.object({
+  key: external_exports.string(),
+  type: external_exports.enum(entryTypes),
+  value: external_exports.string(),
+  bytes: external_exports.number().int().nonnegative(),
+  guessed: external_exports.boolean().optional(),
+  truncated: external_exports.boolean().optional()
+});
+var storeStatuses = ["ok", "encrypted", "unreadable"];
+var store = external_exports.object({
+  id: external_exports.string(),
+  kind: external_exports.enum(storeKinds),
+  name: external_exports.string(),
+  path: external_exports.string(),
+  status: external_exports.enum(storeStatuses),
+  note: external_exports.string().optional(),
+  bytes: external_exports.number().int().nonnegative(),
+  entryCount: external_exports.number().int().nonnegative(),
+  entries: external_exports.array(entry)
+});
+var file3 = external_exports.object({ path: external_exports.string(), bytes: external_exports.number().int().nonnegative(), store: external_exports.string().optional() });
+var storageSnapshotSchema = external_exports.object({
+  platform: external_exports.enum(["ios", "android"]),
+  bundleId: external_exports.string(),
+  readAt: external_exports.number(),
+  stores: external_exports.array(store),
+  // Largest files first, capped; fileCount and totalBytes cover the whole data directory.
+  files: external_exports.array(file3),
+  fileCount: external_exports.number().int().nonnegative(),
+  totalBytes: external_exports.number().int().nonnegative()
+});
+var storageClearSchema = external_exports.object({ cleared: external_exports.string(), stopped: external_exports.boolean() });
+var storageLimits = { entries: 200, maxEntries: 2e3, valueLength: 300, maxValueLength: 16e3, files: 400, tableRows: 100, maxTableRows: 500, tableValueLength: 2e3 };
+var tableCell = external_exports.union([external_exports.string(), external_exports.number(), external_exports.null()]);
+var storageTableSchema = external_exports.object({
+  table: external_exports.string(),
+  columns: external_exports.array(external_exports.object({ name: external_exports.string(), type: external_exports.string() })),
+  rows: external_exports.array(external_exports.array(tableCell)),
+  total: external_exports.number().int().nonnegative(),
+  offset: external_exports.number().int().nonnegative()
+});
+
+// src/server/app-storage/container.ts
+import { mkdir as mkdir2, readdir as readdir4, readFile as readFile5, rm as rm3, stat as stat4 } from "node:fs/promises";
+import { join as join19, relative as relative3, sep as sep3 } from "node:path";
+var maxContainerFiles = 2e4;
+var shellQuote3 = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+function safePath(path) {
+  if (path === "" || path.startsWith("/") || path.split("/").some((part) => part === ".." || part === "")) throw new ExpectedOperationError("invalid_input", "The storage path is outside the app's data.");
+  return path;
+}
+var SimulatorContainer = class _SimulatorContainer {
+  platform = "ios";
+  root;
+  deviceId;
+  commands;
+  constructor(root, deviceId4, commands) {
+    this.root = root;
+    this.deviceId = deviceId4;
+    this.commands = commands;
+  }
+  static async open(deviceId4, bundleId3, commands) {
+    let output2;
+    try {
+      output2 = await commands.run("xcrun", ["simctl", "get_app_container", deviceId4, bundleId3, "data"], { timeout: 15e3 });
+    } catch (error113) {
+      if (/No such file or directory|not installed/i.test(commandOutput(error113))) throw new ExpectedOperationError("invalid_input", `${bundleId3} is not installed on this simulator.`);
+      throw commandError(error113, "Finding the app data");
+    }
+    return new _SimulatorContainer(output2.trim(), deviceId4, commands);
+  }
+  async list() {
+    const files = [];
+    const walk = async (directory) => {
+      const entries = await readdir4(directory, { withFileTypes: true }).catch(() => []);
+      for (const entry2 of entries) {
+        if (files.length >= maxContainerFiles) return;
+        const path = join19(directory, entry2.name);
+        if (entry2.isDirectory()) await walk(path);
+        else if (entry2.isFile()) {
+          const info3 = await stat4(path).catch(() => void 0);
+          if (info3) files.push({ path: relative3(this.root, path).split(sep3).join("/"), bytes: info3.size });
+        }
+      }
+    };
+    await walk(this.root);
+    return files;
+  }
+  async read(path) {
+    return readFile5(join19(this.root, safePath(path)));
+  }
+  async remove(paths) {
+    await Promise.all(paths.map((path) => rm3(join19(this.root, safePath(path)), { recursive: true, force: true })));
+  }
+  defaults(args) {
+    return this.commands.run("xcrun", ["simctl", "spawn", this.deviceId, "defaults", ...args], { timeout: 15e3, maxBuffer: 32 * 1024 * 1024 });
+  }
+  // `defaults` asks cfprefsd, which may hold writes the app made after the plist was last saved.
+  async preferences(path) {
+    const domain3 = join19(this.root, safePath(path)).replace(/\.plist$/, "");
+    try {
+      return await this.defaults(["export", domain3, "-"]);
+    } catch {
+      return this.commands.run("plutil", ["-convert", "xml1", "-o", "-", `${domain3}.plist`], { timeout: 1e4, maxBuffer: 32 * 1024 * 1024 });
+    }
+  }
+  // Deleting only the file would leave cfprefsd's cached copy, which the app would read and save again.
+  async forgetPreferences(path) {
+    const domain3 = join19(this.root, safePath(path)).replace(/\.plist$/, "");
+    await this.defaults(["delete", domain3]).catch(() => "");
+  }
+  async reset() {
+    const preferences = (await this.list()).filter((file4) => /^Library\/Preferences\/[^/]+\.plist$/.test(file4.path));
+    for (const file4 of preferences) await this.forgetPreferences(file4.path);
+    for (const directory of ["Documents", "Library", "tmp"]) {
+      const entries = await readdir4(join19(this.root, directory)).catch(() => []);
+      await Promise.all(entries.map((entry2) => rm3(join19(this.root, directory, entry2), { recursive: true, force: true })));
+    }
+    for (const directory of ["Documents", "Library/Caches", "Library/Preferences", "tmp"]) await mkdir2(join19(this.root, directory), { recursive: true });
+  }
+};
+var AndroidContainer = class {
+  platform = "android";
+  serial;
+  bundleId;
+  commands;
+  constructor(serial, bundleId3, commands) {
+    this.serial = serial;
+    this.bundleId = bundleId3;
+    this.commands = commands;
+  }
+  // run-as starts in the app's data directory with the app's user, so it only works for debuggable builds.
+  async runAs(action, command2, timeout = 2e4) {
+    try {
+      return await this.commands.run(await this.commands.adb(), ["-s", this.serial, "shell", `run-as ${this.bundleId} sh -c ${shellQuote3(command2)}`], { timeout, maxBuffer: 32 * 1024 * 1024 });
+    } catch (error113) {
+      throw runAsError(error113, action, this.bundleId);
+    }
+  }
+  async list() {
+    const output2 = await this.runAs("Listing app data", `find . -type f -exec stat -c '%s %n' {} + 2>/dev/null | head -n ${maxContainerFiles}; true`, 3e4);
+    if (/^run-as:/m.test(output2)) throw runAsError({ stdout: output2 }, "Listing app data", this.bundleId);
+    return output2.split("\n").flatMap((line) => {
+      const match2 = /^(\d+) \.\/(.+)$/.exec(line.trimEnd());
+      return match2 ? [{ path: match2[2], bytes: Number(match2[1]) }] : [];
+    });
+  }
+  async read(path) {
+    const adb = await this.commands.adb();
+    try {
+      return await this.commands.readBinary(adb, ["-s", this.serial, "exec-out", `run-as ${this.bundleId} cat ${shellQuote3(safePath(path))}`], { timeout: 3e4 });
+    } catch (error113) {
+      throw runAsError(error113, "Reading app data", this.bundleId);
+    }
+  }
+  async remove(paths) {
+    if (paths.length === 0) return;
+    await this.runAs("Clearing app data", `rm -rf -- ${paths.map((path) => shellQuote3(safePath(path))).join(" ")}`);
+  }
+  // pm clear also stops the app and works for release builds.
+  async reset() {
+    let output2;
+    try {
+      output2 = await this.commands.run(await this.commands.adb(), ["-s", this.serial, "shell", `pm clear ${this.bundleId}`], { timeout: 3e4 });
+    } catch (error113) {
+      throw commandError(error113, "Clearing app data");
+    }
+    if (!/Success/.test(output2)) throw new ExpectedOperationError("invalid_input", `Clearing app data failed: ${output2.trim().split("\n")[0] || "pm clear did not succeed."}`);
+  }
+};
+function runAsError(error113, action, bundleId3) {
+  const output2 = commandOutput(error113);
+  if (/not debuggable/.test(output2)) return new ExpectedOperationError("unsupported_platform", `${bundleId3} is a release build. Android only allows reading app data of debuggable builds; Reset app data still works.`);
+  if (/unknown package|Unknown package|is unknown/.test(output2)) return new ExpectedOperationError("invalid_input", `${bundleId3} is not installed on this device.`);
+  return commandError(error113, action);
+}
+
+// src/server/app-storage/reader.ts
+import { createHash as createHash2 } from "node:crypto";
+import { writeFile as writeFile3 } from "node:fs/promises";
+import { join as join20 } from "node:path";
+
+// src/server/app-storage/mmkv.ts
+import { crc32 } from "node:zlib";
+var versionRandomIv = 2;
+var versionActualSize = 3;
+var versionFlag = 4;
+var flagKeyExpire = 1n;
+function readVarint(buffer, offset, limit = 10) {
+  let value = 0n;
+  let shift = 0n;
+  for (let index = 0; index < limit; index++) {
+    if (offset + index >= buffer.length) return void 0;
+    const byte = buffer[offset + index];
+    value |= BigInt(byte & 127) << shift;
+    if ((byte & 128) === 0) return { value, next: offset + index + 1 };
+    shift += 7n;
+  }
+  return void 0;
+}
+function lengthDelimited(buffer, offset) {
+  const length = readVarint(buffer, offset, 5);
+  if (length === void 0) throw new Error("truncated length");
+  const end = length.next + Number(length.value);
+  if (end > buffer.length) throw new Error("record runs past the data size");
+  return { bytes: buffer.subarray(length.next, end), next: end };
+}
+function decodeMmkv(data, meta5) {
+  const version5 = meta5 && meta5.length >= 8 ? meta5.readUInt32LE(4) : 0;
+  if (meta5 && meta5.length >= 28 && version5 >= versionRandomIv && meta5.subarray(12, 28).some((byte) => byte !== 0)) return { status: "encrypted" };
+  if (data.length < 4) return { status: "ok", records: [], crcValid: void 0 };
+  const size2 = meta5 && meta5.length >= 32 && version5 >= versionActualSize ? meta5.readUInt32LE(28) : data.readUInt32LE(0);
+  if (size2 + 4 > data.length) return { status: "unreadable", reason: "The file is shorter than its recorded size." };
+  const body = data.subarray(4, 4 + size2);
+  const crcValid = meta5 && meta5.length >= 4 ? crc32(body) === meta5.readUInt32LE(0) : void 0;
+  const expiring = meta5 !== void 0 && meta5.length >= 112 && version5 >= versionFlag && (meta5.readBigUInt64LE(104) & flagKeyExpire) !== 0n;
+  const now = Math.floor(Date.now() / 1e3);
+  const records = /* @__PURE__ */ new Map();
+  try {
+    let offset = 0;
+    if (body.length > 0) {
+      const placeholder = readVarint(body, 0, 5);
+      if (placeholder === void 0) throw new Error("missing header");
+      offset = placeholder.next;
+    }
+    while (offset < body.length) {
+      const key = lengthDelimited(body, offset);
+      offset = key.next;
+      if (key.bytes.length === 0) continue;
+      const value = lengthDelimited(body, offset);
+      offset = value.next;
+      const name = key.bytes.toString("utf8");
+      let bytes = value.bytes;
+      if (expiring && bytes.length >= 4) {
+        const expiresAt = bytes.readUInt32LE(bytes.length - 4);
+        bytes = bytes.subarray(0, bytes.length - 4);
+        if (expiresAt !== 0 && expiresAt <= now) {
+          records.delete(name);
+          continue;
+        }
+      }
+      if (value.bytes.length === 0) records.delete(name);
+      else records.set(name, bytes);
+    }
+  } catch (error113) {
+    return { status: "unreadable", reason: `The data does not decode as MMKV (${error113 instanceof Error ? error113.message : "invalid"}).` };
+  }
+  return { status: "ok", records: [...records].map(([key, value]) => ({ key, value })), crcValid };
+}
+var utf8 = new TextDecoder("utf-8", { fatal: true });
+function text4(bytes) {
+  try {
+    const value = utf8.decode(bytes);
+    return /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value) ? void 0 : value;
+  } catch {
+    return void 0;
+  }
+}
+function jsonType(value) {
+  const trimmed = value.trim();
+  if (!/^[[{]/.test(trimmed)) return void 0;
+  try {
+    JSON.parse(trimmed);
+    return "json";
+  } catch {
+    return void 0;
+  }
+}
+function guessMmkvValue(bytes) {
+  const prefix3 = readVarint(bytes, 0, 5);
+  if (bytes.length > 1 && prefix3 && prefix3.next + Number(prefix3.value) === bytes.length) {
+    const payload = bytes.subarray(prefix3.next);
+    const string7 = text4(payload);
+    if (string7 !== void 0) return { type: jsonType(string7) ?? "string", value: string7 };
+    return { type: "data", value: payload.toString("hex") };
+  }
+  if (bytes.length === 1 && bytes[0] <= 1) return { type: "boolean", value: bytes[0] === 1 ? "true" : "false" };
+  if (bytes.length === 8) {
+    const number12 = bytes.readDoubleLE(0);
+    if (Number.isFinite(number12)) return { type: "number", value: String(number12) };
+  }
+  const varint2 = readVarint(bytes, 0);
+  if (varint2 && varint2.next === bytes.length) return { type: "integer", value: BigInt.asIntN(64, varint2.value).toString() };
+  if (bytes.length === 4) {
+    const number12 = bytes.readFloatLE(0);
+    if (Number.isFinite(number12)) return { type: "number", value: String(number12) };
+  }
+  return { type: "data", value: bytes.toString("hex") };
+}
+
+// src/server/app-storage/formats.ts
+var textEntry = (key, value, bytes = Buffer.byteLength(value)) => ({ key, type: jsonType(value) ?? "string", value, bytes });
+var nullEntry = (key) => ({ key, type: "null", value: "null", bytes: 0 });
+var PlistData = class {
+  bytes;
+  constructor(bytes) {
+    this.bytes = bytes;
+  }
+};
+var PlistDate = class {
+  iso;
+  constructor(iso) {
+    this.iso = iso;
+  }
+};
+var entities = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'" };
+function unescapeXml(text7) {
+  return text7.replace(/&(#x[0-9a-f]+|#\d+|lt|gt|amp|quot|apos);/gi, (match2, name) => {
+    if (name[0] !== "#") return entities[name.toLowerCase()] ?? match2;
+    const code = name[1] === "x" || name[1] === "X" ? Number.parseInt(name.slice(2), 16) : Number.parseInt(name.slice(1), 10);
+    return Number.isFinite(code) ? String.fromCodePoint(code) : match2;
+  });
+}
+var xmlNoise = String.raw`<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>`;
+function tokens(xml) {
+  const result4 = [];
+  for (const match2 of xml.matchAll(new RegExp(String.raw`${xmlNoise}|<(\/?)([A-Za-z]+)(?:\s[^>]*?)?(\/?)>|([^<]+)`, "g"))) {
+    if (match2[4] !== void 0) result4.push({ text: match2[4] });
+    else if (match2[2] !== void 0) result4.push({ tag: match2[2], close: match2[1] === "/", empty: match2[3] === "/" });
+  }
+  return result4;
+}
+function parsePlistXml(xml) {
+  const list = tokens(xml);
+  let index = 0;
+  const next = () => list[index++];
+  const skipText = () => {
+    while (index < list.length && "text" in list[index] && /^\s*$/.test(list[index].text)) index++;
+  };
+  const textUntil = (tag) => {
+    let text7 = "";
+    for (let token = next(); token !== void 0; token = next()) {
+      if ("text" in token) text7 += token.text;
+      else if (token.close && token.tag === tag) return unescapeXml(text7);
+    }
+    throw new Error(`Unclosed <${tag}>.`);
+  };
+  const value = () => {
+    skipText();
+    const token = next();
+    if (token === void 0 || "text" in token || token.close) throw new Error("Expected a plist value.");
+    const { tag, empty } = token;
+    if (tag === "true" || tag === "false") return tag === "true";
+    if (tag === "dict") {
+      const dict = {};
+      if (empty) return dict;
+      for (; ; ) {
+        skipText();
+        const key = next();
+        if (key === void 0 || "text" in key) throw new Error("Expected a dict key.");
+        if (key.close && key.tag === "dict") return dict;
+        dict[key.empty ? "" : textUntil("key")] = value();
+      }
+    }
+    if (tag === "array") {
+      const array3 = [];
+      if (empty) return array3;
+      for (; ; ) {
+        skipText();
+        const peek = list[index];
+        if (peek && !("text" in peek) && peek.close && peek.tag === "array") {
+          index++;
+          return array3;
+        }
+        array3.push(value());
+      }
+    }
+    const text7 = empty ? "" : textUntil(tag);
+    if (tag === "string") return text7;
+    if (tag === "integer") return Number.isSafeInteger(Number(text7)) ? Number(text7) : BigInt(text7.trim());
+    if (tag === "real") return Number(text7);
+    if (tag === "date") return new PlistDate(text7.trim());
+    if (tag === "data") return new PlistData(Buffer.from(text7.replace(/\s+/g, ""), "base64"));
+    throw new Error(`Unsupported plist element <${tag}>.`);
+  };
+  skipText();
+  const root = next();
+  if (root === void 0 || "text" in root || root.tag !== "plist") throw new Error("Not a property list.");
+  if (root.empty) return {};
+  const top = value();
+  if (typeof top !== "object" || top === null || Array.isArray(top) || top instanceof PlistData || top instanceof PlistDate || typeof top === "bigint") throw new Error("The property list root is not a dictionary.");
+  return top;
+}
+function plainPlist(value) {
+  if (value instanceof PlistData) return `<${value.bytes.length} bytes>`;
+  if (value instanceof PlistDate) return value.iso;
+  if (typeof value === "bigint") return value.toString();
+  if (Array.isArray(value)) return value.map(plainPlist);
+  if (typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, plainPlist(child)]));
+  return value;
+}
+function plistEntries(dict) {
+  return Object.entries(dict).map(([key, value]) => {
+    if (value instanceof PlistData) return { key, type: "data", value: value.bytes.toString("hex"), bytes: value.bytes.length };
+    if (value instanceof PlistDate) return { key, type: "date", value: value.iso, bytes: value.iso.length };
+    if (typeof value === "boolean") return { key, type: "boolean", value: String(value), bytes: 1 };
+    if (typeof value === "bigint") return { key, type: "integer", value: value.toString(), bytes: 8 };
+    if (typeof value === "number") return { key, type: Number.isInteger(value) ? "integer" : "number", value: String(value), bytes: 8 };
+    if (typeof value === "string") return textEntry(key, value);
+    const json3 = JSON.stringify(plainPlist(value));
+    return { key, type: Array.isArray(value) ? "array" : "object", value: json3, bytes: Buffer.byteLength(json3) };
+  });
+}
+function parseSharedPreferences(xml) {
+  const entries = [];
+  const element = new RegExp(String.raw`${xmlNoise}|<(string|boolean|int|long|float|null|set)\s+name="([^"]*)"(?:\s+value="([^"]*)")?\s*(?:\/>|>([\s\S]*?)<\/\1>)`, "g");
+  for (const match2 of xml.matchAll(element)) {
+    const [, tag, rawName, rawValue, content = ""] = match2;
+    if (tag === void 0) continue;
+    const key = unescapeXml(rawName);
+    if (tag === "string") entries.push(textEntry(key, unescapeXml(content)));
+    else if (tag === "set") {
+      const items = [...content.matchAll(/<string>([\s\S]*?)<\/string>/g)].map((item) => unescapeXml(item[1]));
+      const value = JSON.stringify(items);
+      entries.push({ key, type: "array", value, bytes: Buffer.byteLength(value) });
+    } else if (tag === "null") entries.push(nullEntry(key));
+    else {
+      const value = unescapeXml(rawValue ?? "");
+      const type = tag === "boolean" ? "boolean" : tag === "float" ? "number" : "integer";
+      entries.push({ key, type, value, bytes: tag === "long" ? 8 : tag === "boolean" ? 1 : 4 });
+    }
+  }
+  return entries;
+}
+function fields(buffer) {
+  const result4 = [];
+  let offset = 0;
+  while (offset < buffer.length) {
+    const tag = readVarint(buffer, offset);
+    if (tag === void 0) throw new Error("Truncated protobuf tag.");
+    offset = tag.next;
+    const number12 = Number(tag.value >> 3n);
+    const wire = Number(tag.value & 7n);
+    if (wire === 0) {
+      const value = readVarint(buffer, offset);
+      if (value === void 0) throw new Error("Truncated protobuf varint.");
+      result4.push({ number: number12, wire, varint: value.value });
+      offset = value.next;
+    } else if (wire === 2) {
+      const length = readVarint(buffer, offset);
+      if (length === void 0) throw new Error("Truncated protobuf length.");
+      const end = length.next + Number(length.value);
+      if (end > buffer.length) throw new Error("Protobuf field runs past the end.");
+      result4.push({ number: number12, wire, bytes: buffer.subarray(length.next, end) });
+      offset = end;
+    } else if (wire === 5 || wire === 1) {
+      const size2 = wire === 5 ? 4 : 8;
+      if (offset + size2 > buffer.length) throw new Error("Truncated protobuf fixed field.");
+      result4.push({ number: number12, wire, bytes: buffer.subarray(offset, offset + size2) });
+      offset += size2;
+    } else throw new Error(`Unsupported protobuf wire type ${wire}.`);
+  }
+  return result4;
+}
+function parseDataStorePreferences(buffer) {
+  return fields(buffer).filter((field) => field.number === 1 && field.bytes).flatMap((field) => {
+    const pair = fields(field.bytes);
+    const key = pair.find((item) => item.number === 1)?.bytes?.toString("utf8");
+    const value = pair.find((item) => item.number === 2)?.bytes;
+    if (key === void 0 || value === void 0) return [];
+    const [inner] = fields(value);
+    if (inner === void 0) return [nullEntry(key)];
+    const entry2 = (type, text7, bytes) => ({ key, type, value: text7, bytes });
+    switch (inner.number) {
+      case 1:
+        return [entry2("boolean", String(inner.varint === 1n), 1)];
+      case 2:
+        return [entry2("number", String(inner.bytes.readFloatLE(0)), 4)];
+      case 3:
+        return [entry2("integer", BigInt.asIntN(32, inner.varint).toString(), 4)];
+      case 4:
+        return [entry2("integer", BigInt.asIntN(64, inner.varint).toString(), 8)];
+      case 5:
+        return [textEntry(key, inner.bytes.toString("utf8"), inner.bytes.length)];
+      case 6: {
+        const json3 = JSON.stringify(fields(inner.bytes).map((item) => item.bytes?.toString("utf8") ?? ""));
+        return [entry2("array", json3, Buffer.byteLength(json3))];
+      }
+      case 7:
+        return [entry2("number", String(inner.bytes.readDoubleLE(0)), 8)];
+      case 8:
+        return [entry2("data", inner.bytes.toString("hex"), inner.bytes.length)];
+      default:
+        return [];
+    }
+  });
+}
+var systemPaths = /^(?:Library\/(?:Caches|HTTPStorages|WebKit|Cookies|SplashBoard|Saved Application State)\/|SystemData\/|cache\/|code_cache\/|app_webview\/|no_backup\/androidx\.work)/;
+var sqliteSuffix = /-(?:wal|shm|journal)$/;
+var basename4 = (path) => path.slice(path.lastIndexOf("/") + 1);
+var dirname8 = (path) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+function classifyFiles(paths, platform6) {
+  const all = new Set(paths);
+  const stores = [];
+  for (const path of paths) {
+    const name = basename4(path);
+    const directory = dirname8(path);
+    if (name.endsWith(".crc") && all.has(path.slice(0, -4))) {
+      stores.push({ kind: "mmkv", name: name.slice(0, -4), path: path.slice(0, -4), files: [path.slice(0, -4), path] });
+      continue;
+    }
+    if (platform6 === "ios" && directory === "Library/Preferences" && name.endsWith(".plist")) {
+      stores.push({ kind: "user-defaults", name: name.slice(0, -6), path, files: [path] });
+      continue;
+    }
+    if (name === "manifest.json" && /^RCTAsyncLocalStorage/.test(basename4(directory))) {
+      stores.push({ kind: "async-storage", name: directory.includes("ExponentExperienceData/") ? directory.split("/").at(-2) ?? "default" : "default", path, files: paths.filter((file4) => dirname8(file4) === directory) });
+      continue;
+    }
+    if (directory.endsWith("shared_prefs") && name.endsWith(".xml")) {
+      stores.push({ kind: "shared-preferences", name: name.slice(0, -4), path, files: [path, ...all.has(`${path}.bak`) ? [`${path}.bak`] : []] });
+      continue;
+    }
+    if (name.endsWith(".preferences_pb")) {
+      stores.push({ kind: "datastore", name: name.slice(0, -".preferences_pb".length), path, files: [path] });
+      continue;
+    }
+    if (name.endsWith(".realm")) {
+      const related = paths.filter((file4) => file4 !== path && (file4.startsWith(`${path}.`) || file4.startsWith(`${path}.management/`)));
+      stores.push({ kind: "realm", name: name.slice(0, -6), path, files: [path, ...related] });
+      continue;
+    }
+    const sqliteName = platform6 === "android" ? directory === "databases" && !sqliteSuffix.test(name) && !name.endsWith(".bak") : /\.(?:db|sqlite3?|sql)$/i.test(name);
+    if ((sqliteName || /\.(?:db|sqlite3?)$/i.test(name)) && !systemPaths.test(path)) {
+      stores.push({ kind: "sqlite", name, path, files: [path, ...["-wal", "-shm", "-journal"].map((suffix) => path + suffix).filter((file4) => all.has(file4))] });
+    }
+  }
+  return stores;
+}
+function storeId(candidate) {
+  return `${candidate.kind}:${candidate.path}`;
+}
+
+// src/server/app-storage/reader.ts
+var sqlite3 = process.platform === "darwin" ? "/usr/bin/sqlite3" : "sqlite3";
+var quoteIdentifier = (name) => `"${name.replaceAll('"', '""')}"`;
+async function sqlite(run2, file4, sql) {
+  const output2 = await run2(sqlite3, ["-json", file4, sql], { timeout: 15e3, maxBuffer: 64 * 1024 * 1024 });
+  return output2.trim() ? JSON.parse(output2) : [];
+}
+var listTables = async (run2, file4) => (await sqlite(run2, file4, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).map((row) => String(row.name));
+function withDatabase(container, candidate, work) {
+  return withTemporaryDirectory(async (directory) => {
+    await Promise.all(candidate.files.map(async (path) => writeFile3(join20(directory, basename4(path)), await container.read(path))));
+    return work(join20(directory, candidate.name));
+  });
+}
+async function readSqlite(container, candidate, run2) {
+  return withDatabase(container, candidate, async (file4) => {
+    let tables;
+    try {
+      tables = await listTables(run2, file4);
+    } catch {
+      return { status: "unreadable", note: "Not a readable SQLite database.", entries: [] };
+    }
+    const keyValueTable = tables.includes("catalystLocalStorage") ? "catalystLocalStorage" : tables.includes("entries") && candidate.path.includes("async-storage/") ? "entries" : tables.includes("Storage") && /^AsyncStorage/.test(candidate.name) ? "Storage" : void 0;
+    if (keyValueTable) {
+      const rows = await sqlite(run2, file4, `SELECT key, value FROM ${quoteIdentifier(keyValueTable)}`);
+      const entries2 = rows.map((row) => row.value === null || row.value === void 0 ? nullEntry(String(row.key)) : textEntry(String(row.key), String(row.value)));
+      return { status: "ok", kind: "async-storage", entries: entries2 };
+    }
+    const entries = await Promise.all(tables.map(async (table) => {
+      const [count4] = await sqlite(run2, file4, `SELECT count(*) AS rows FROM ${quoteIdentifier(table)}`).catch(() => [{ rows: "?" }]);
+      const columns = (await sqlite(run2, file4, `PRAGMA table_info(${quoteIdentifier(table)})`).catch(() => [])).map((column) => String(column.name));
+      const value = `${count4?.rows ?? "?"} rows \xB7 ${columns.join(", ")}`;
+      return { key: table, type: "table", value, bytes: 0 };
+    }));
+    return { status: "ok", entries };
+  });
+}
+async function readAsyncManifest(container, candidate) {
+  const manifest = JSON.parse((await container.read(candidate.path)).toString("utf8"));
+  if (typeof manifest !== "object" || manifest === null) return { status: "unreadable", note: "The AsyncStorage manifest is not an object.", entries: [] };
+  const directory = candidate.path.slice(0, candidate.path.lastIndexOf("/"));
+  const entries = await Promise.all(Object.entries(manifest).map(async ([key, stored]) => {
+    const value = typeof stored === "string" ? stored : await container.read(`${directory}/${createHash2("md5").update(key).digest("hex")}`).then((buffer) => buffer.toString("utf8"), () => null);
+    return value === null ? nullEntry(key) : textEntry(key, value);
+  }));
+  return { status: "ok", entries };
+}
+async function readStore(container, candidate, run2) {
+  switch (candidate.kind) {
+    case "mmkv": {
+      const [data, meta5] = await Promise.all(candidate.files.map((file4) => container.read(file4)));
+      let decoded = decodeMmkv(data, meta5);
+      if (decoded.status === "ok" && decoded.crcValid === false) {
+        const [again, againMeta] = await Promise.all(candidate.files.map((file4) => container.read(file4)));
+        decoded = decodeMmkv(again, againMeta);
+      }
+      if (decoded.status === "encrypted") return { status: "encrypted", note: "Encrypted with a key only the app knows.", entries: [] };
+      if (decoded.status === "unreadable") return { status: "unreadable", note: decoded.reason, entries: [] };
+      const note = decoded.crcValid === false ? "The checksum does not match; the app may be writing. Refresh to read again." : void 0;
+      return { status: "ok", note, entries: decoded.records.map((record4) => ({ key: record4.key, ...guessMmkvValue(record4.value), bytes: record4.value.length, guessed: true })) };
+    }
+    case "user-defaults": {
+      const xml = container.preferences ? await container.preferences(candidate.path) : (await container.read(candidate.path)).toString("utf8");
+      return { status: "ok", entries: plistEntries(parsePlistXml(xml)) };
+    }
+    case "shared-preferences":
+      return { status: "ok", entries: parseSharedPreferences((await container.read(candidate.path)).toString("utf8")) };
+    case "datastore":
+      return { status: "ok", entries: parseDataStorePreferences(await container.read(candidate.path)) };
+    case "async-storage":
+      return readAsyncManifest(container, candidate);
+    case "sqlite":
+      return readSqlite(container, candidate, run2);
+    case "realm":
+      return { status: "ok", note: "Realm files are listed but not decoded.", entries: [] };
+  }
+}
+function limitEntry(entry2, valueLength) {
+  if (entry2.value.length <= valueLength) return entry2;
+  return { ...entry2, value: entry2.value.slice(0, valueLength), truncated: true };
+}
+async function mapLimited(items, limit, work) {
+  const results = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await work(items[index]);
+    }
+  }));
+  return results;
+}
+async function readStorage(container, { entries: entryLimit, valueLength, bundleId: bundleId3, run: run2 }) {
+  const files = await container.list();
+  const sizes = new Map(files.map((file4) => [file4.path, file4.bytes]));
+  const candidates = classifyFiles(files.map((file4) => file4.path), container.platform);
+  const owner = /* @__PURE__ */ new Map();
+  const stores = await mapLimited(candidates, 4, async (candidate) => {
+    const id2 = storeId(candidate);
+    for (const file4 of candidate.files) owner.set(file4, id2);
+    let content;
+    try {
+      content = await readStore(container, candidate, run2);
+    } catch (error113) {
+      if (error113 instanceof ExpectedOperationError) throw error113;
+      content = { status: "unreadable", note: "This file could not be read or parsed.", entries: [] };
+    }
+    return {
+      id: id2,
+      kind: content.kind ?? candidate.kind,
+      name: candidate.name,
+      path: candidate.path,
+      status: content.status,
+      ...content.note ? { note: content.note } : {},
+      bytes: candidate.files.reduce((total, file4) => total + (sizes.get(file4) ?? 0), 0),
+      entryCount: content.entries.length,
+      entries: content.entries.slice(0, entryLimit).map((entry2) => limitEntry(entry2, valueLength))
+    };
+  });
+  const sorted = [...files].sort((a2, b2) => b2.bytes - a2.bytes).slice(0, storageLimits.files);
+  return {
+    platform: container.platform,
+    bundleId: bundleId3,
+    readAt: Date.now(),
+    stores,
+    files: sorted.map((file4) => ({ ...file4, ...owner.has(file4.path) ? { store: owner.get(file4.path) } : {} })),
+    fileCount: files.length,
+    totalBytes: files.reduce((total, file4) => total + file4.bytes, 0)
+  };
+}
+async function findStore(container, id2, kind4) {
+  const files = await container.list();
+  const candidate = classifyFiles(files.map((file4) => file4.path), container.platform).find((store2) => storeId(store2) === id2 && (kind4 === void 0 || store2.kind === kind4));
+  if (candidate === void 0) throw new ExpectedOperationError("invalid_input", "That storage no longer exists. Refresh and try again.");
+  return candidate;
+}
+async function clearStore(container, id2) {
+  const candidate = await findStore(container, id2);
+  if (candidate.kind === "user-defaults" && container.forgetPreferences) await container.forgetPreferences(candidate.path);
+  await container.remove(candidate.files);
+  return candidate;
+}
+async function readTable(container, id2, table, { offset, limit, valueLength, run: run2 }) {
+  const candidate = await findStore(container, id2, "sqlite");
+  return withDatabase(container, candidate, async (file4) => {
+    if (!(await listTables(run2, file4)).includes(table)) throw new ExpectedOperationError("invalid_input", `The table ${table} no longer exists. Refresh and try again.`);
+    const name = quoteIdentifier(table);
+    const [info3, [count4]] = await Promise.all([sqlite(run2, file4, `PRAGMA table_info(${name})`), sqlite(run2, file4, `SELECT count(*) AS total FROM ${name}`)]);
+    const columns = info3.map((column) => ({ name: String(column.name), type: String(column.type ?? "") }));
+    const select = columns.map((column, index) => {
+      const quoted = quoteIdentifier(column.name);
+      return `CASE typeof(${quoted}) WHEN 'blob' THEN 'x''' || substr(hex(${quoted}), 1, ${valueLength}) || '''' ELSE ${quoted} END AS c${index}`;
+    }).join(", ") || "NULL AS c0";
+    const rows = await sqlite(run2, file4, `SELECT ${select} FROM ${name} LIMIT ${limit} OFFSET ${offset}`);
+    return {
+      table,
+      columns,
+      offset,
+      total: Number(count4?.total ?? 0),
+      rows: rows.map((row) => columns.map((_2, index) => {
+        const cell = row[`c${index}`];
+        if (cell === null || cell === void 0 || typeof cell === "number") return cell ?? null;
+        const text7 = String(cell);
+        return text7.length > valueLength ? `${text7.slice(0, valueLength)}\u2026` : text7;
+      }))
+    };
+  });
+}
+
+// src/server/app-storage/tools.ts
+function createContainers(commands = systemCommands) {
+  return async ({ platform: platform6, deviceId: deviceId4 }, bundleId3) => platform6 === "android" ? new AndroidContainer(deviceId4, bundleId3, commands) : SimulatorContainer.open(deviceId4, bundleId3, commands);
+}
+var bundleId2 = bundleIdSchema.describe("App bundle ID or Android package name.");
+var storeIdSchema = external_exports.string().max(4096);
+var readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+function registerAppStorageTools(server, commands = systemCommands, driverFor = createDrivers(commands), containerFor = createContainers(commands)) {
+  async function run2(operation, { platform: platform6, deviceId: deviceId4, bundleId: bundleId3 }, work) {
+    const startedAt = performance.now();
+    try {
+      const driver = driverFor({ platform: platform6, deviceId: deviceId4 });
+      const result4 = await work(await containerFor({ platform: platform6, deviceId: deviceId4 }, bundleId3), driver);
+      recordAppStorageOperation(operation, platform6, "success", performance.now() - startedAt);
+      return { content: [{ type: "text", text: JSON.stringify(result4) }], structuredContent: result4 };
+    } catch (error113) {
+      recordAppStorageOperation(operation, platform6, "failed", performance.now() - startedAt);
+      captureServerError(expectedOutcome(error113) === void 0 ? new Error(`App storage ${operation} failed.`) : error113, `app_storage.${operation}`);
+      return { isError: true, content: [{ type: "text", text: errorMessage(error113) }] };
+    }
+  }
+  K3(server, "mobile_app_storage", {
+    title: "Read app storage",
+    description: "Read an app's saved data (MMKV, AsyncStorage, UserDefaults, SharedPreferences, DataStore, SQLite, largest files) on iOS simulators and debuggable Android builds. MMKV types are guessed.",
+    inputSchema: {
+      ...appTargetShape,
+      bundleId: bundleId2,
+      store: storeIdSchema.optional().describe("A store ID to return alone."),
+      entries: external_exports.number().int().min(1).max(storageLimits.maxEntries).optional(),
+      valueLength: external_exports.number().int().min(40).max(storageLimits.maxValueLength).optional()
+    },
+    annotations: readOnly,
+    _meta: { ui: { visibility: ["app", "model"] } }
+  }, (input2) => run2("read", input2, async (container) => {
+    const snapshot2 = await readStorage(container, { bundleId: input2.bundleId, entries: input2.entries ?? storageLimits.entries, valueLength: input2.valueLength ?? storageLimits.valueLength, run: commands.run });
+    return input2.store ? { ...snapshot2, stores: snapshot2.stores.filter((store2) => store2.id === input2.store) } : snapshot2;
+  }));
+  K3(server, "mobile_app_storage_table", {
+    title: "Read a database table",
+    description: "Read rows from a SQLite table listed by mobile_app_storage, a page at a time. Returns column names and types, the total row count, and cells as text, numbers, or null; blobs come back as x'\u2026' hex.",
+    inputSchema: {
+      ...appTargetShape,
+      bundleId: bundleId2,
+      store: storeIdSchema.describe("A SQLite store ID from mobile_app_storage."),
+      table: external_exports.string().min(1).max(512).describe("A table name listed for that store."),
+      offset: external_exports.number().int().min(0).optional(),
+      limit: external_exports.number().int().min(1).max(storageLimits.maxTableRows).optional().describe(`Rows to return; defaults to ${storageLimits.tableRows}.`)
+    },
+    annotations: readOnly,
+    _meta: { ui: { visibility: ["app", "model"] } }
+  }, (input2) => run2("table", input2, (container) => readTable(container, input2.store, input2.table, {
+    offset: input2.offset ?? 0,
+    limit: input2.limit ?? storageLimits.tableRows,
+    valueLength: storageLimits.tableValueLength,
+    run: commands.run
+  })));
+  K3(server, "mobile_clear_app_storage", {
+    title: "Clear app storage",
+    description: "Stop the app, then delete one store listed by mobile_app_storage, or all of the app's saved data when store is omitted. Deleted data cannot be recovered. The app stays installed and is not relaunched; launch it again to test a fresh state.",
+    inputSchema: { ...appTargetShape, bundleId: bundleId2, store: storeIdSchema.optional().describe("Store ID to clear. Omit to reset all app data.") },
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    _meta: { ui: { visibility: ["app", "model"] } }
+  }, (input2) => run2(input2.store ? "clear" : "reset", input2, async (container, driver) => {
+    await driver.stop(input2.bundleId);
+    if (input2.store === void 0) {
+      await container.reset();
+      return { cleared: "all", stopped: true };
+    }
+    return { cleared: (await clearStore(container, input2.store)).name, stopped: true };
+  }));
 }
 
 // src/shared/bezel.ts
@@ -123895,8 +124683,8 @@ var sessionIdSchema = external_exports.string().regex(/^[a-f0-9]{64}$/);
 var deviceInput = { deviceId: androidIdSchema.describe("An Android serial or avd: name returned by mobile_list_android_devices.") };
 var write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 var read = { ...write, readOnlyHint: true };
-function result2(data, text6) {
-  return { content: [{ type: "text", text: text6 }], structuredContent: { ...data } };
+function result2(data, text7) {
+  return { content: [{ type: "text", text: text7 }], structuredContent: { ...data } };
 }
 function guarded(handler) {
   return async (input2, context3) => {
@@ -124356,8 +125144,8 @@ async function readDefinitionFailure(response3) {
       chunks.push(chunk.value);
     }
     const bytes = Buffer.concat(chunks);
-    const text6 = bytes.toString("utf8");
-    return JSON.parse(text6);
+    const text7 = bytes.toString("utf8");
+    return JSON.parse(text7);
   } catch {
     return;
   } finally {
@@ -124441,8 +125229,8 @@ async function startService() {
   if (starting) return starting;
   starting = (async () => {
     const bundled = import.meta.url.endsWith("/server.mjs");
-    const entry = bundled ? "./ios-mirror-service.mjs" : "./ios-mirror-service.ts";
-    const url3 = new URL(entry, import.meta.url);
+    const entry2 = bundled ? "./ios-mirror-service.mjs" : "./ios-mirror-service.ts";
+    const url3 = new URL(entry2, import.meta.url);
     const path = fileURLToPath9(url3);
     const child = spawn5(process.execPath, [path], { detached: true, stdio: "ignore", env: process.env });
     let failure4;
@@ -124672,19 +125460,19 @@ var IosMirrorSessions = class {
 
 // src/server/physical-ios-bezel.ts
 import { execFile as execFile11 } from "node:child_process";
-import { mkdtemp as mkdtemp2, readFile as readFile5, rm as rm3 } from "node:fs/promises";
+import { mkdtemp as mkdtemp2, readFile as readFile6, rm as rm4 } from "node:fs/promises";
 import { tmpdir as tmpdir2 } from "node:os";
-import { join as join19 } from "node:path";
+import { join as join21 } from "node:path";
 import { fileURLToPath as fileURLToPath10 } from "node:url";
 import { promisify as promisify10 } from "node:util";
 var execute8 = promisify10(execFile11);
-var text4 = external_exports.string();
-var deviceTypeSchema = external_exports.object({ name: text4, modelIdentifier: text4, bundlePath: text4 });
+var text5 = external_exports.string();
+var deviceTypeSchema = external_exports.object({ name: text5, modelIdentifier: text5, bundlePath: text5 });
 var deviceTypes = external_exports.array(deviceTypeSchema);
 var deviceTypesSchema = external_exports.object({ devicetypes: deviceTypes });
 var maskIdentifier = external_exports.uuid();
 var framebufferMask = maskIdentifier.optional();
-var representedModelIdentifiers = external_exports.array(text4);
+var representedModelIdentifiers = external_exports.array(text5);
 var profileSchema = external_exports.object({ framebufferMask, representedModelIdentifiers });
 var rectSchema = bezelGeometrySchema.shape.rect;
 var viewportSchema = bezelGeometrySchema.shape.viewport;
@@ -124699,16 +125487,16 @@ function pngDataUri(bytes) {
   return `data:image/png;base64,${encoded2}`;
 }
 async function readMask(identifier3, run2) {
-  const prefix3 = join19(tmpdir2(), "mobile-dev-device-mask-");
+  const prefix3 = join21(tmpdir2(), "mobile-dev-device-mask-");
   const directory = await mkdtemp2(prefix3);
   try {
     const input2 = `/Library/Developer/DeviceKit/FramebufferMasks/${identifier3}.pdf`;
-    const output2 = join19(directory, "mask.png");
+    const output2 = join21(directory, "mask.png");
     await run2("/usr/bin/sips", ["-s", "format", "png", input2, "--out", output2], commandOptions);
-    const bytes = await readFile5(output2);
+    const bytes = await readFile6(output2);
     return pngDataUri(bytes);
   } finally {
-    await rm3(directory, { recursive: true, force: true });
+    await rm4(directory, { recursive: true, force: true });
   }
 }
 async function renderBezel(device2, run2, runtime2) {
@@ -124725,7 +125513,7 @@ async function renderBezel(device2, run2, runtime2) {
   });
   let selected;
   for (const type2 of candidates) {
-    const profilePath = join19(type2.bundlePath, "Contents", "Resources", "profile.plist");
+    const profilePath = join21(type2.bundlePath, "Contents", "Resources", "profile.plist");
     const profileOutput = await run2("/usr/bin/plutil", ["-convert", "json", "-o", "-", profilePath], commandOptions);
     const profileJson = profileOutput.stdout.toString("utf8");
     const profilePayload = JSON.parse(profileJson);
@@ -124772,21 +125560,21 @@ var readPhysicalIosBezel = createPhysicalIosBezelReader();
 
 // src/server/clipboard.ts
 import { execFile as execFile12 } from "node:child_process";
-import { mkdtemp as mkdtemp3, writeFile as writeFile3, rm as rm4 } from "node:fs/promises";
+import { mkdtemp as mkdtemp3, writeFile as writeFile4, rm as rm5 } from "node:fs/promises";
 import { tmpdir as tmpdir3 } from "node:os";
-import { join as join20 } from "node:path";
+import { join as join22 } from "node:path";
 import { promisify as promisify11 } from "node:util";
 var execute9 = promisify11(execFile12);
 async function copyPNGToClipboard(bytes) {
-  const directory = await mkdtemp3(join20(tmpdir3(), "mobile-dev-screenshot-"));
+  const directory = await mkdtemp3(join22(tmpdir3(), "mobile-dev-screenshot-"));
   try {
-    const path = join20(directory, "screenshot.png");
-    await writeFile3(path, bytes, { mode: 384 });
+    const path = join22(directory, "screenshot.png");
+    await writeFile4(path, bytes, { mode: 384 });
     await execute9("/usr/bin/osascript", ["-e", `on run argv
 set the clipboard to (read (POSIX file (item 1 of argv)) as \xABclass PNGf\xBB)
 end run`, path], { timeout: 5e3, maxBuffer: 64 * 1024 });
   } finally {
-    await rm4(directory, { recursive: true, force: true });
+    await rm5(directory, { recursive: true, force: true });
   }
 }
 
@@ -124804,8 +125592,8 @@ function registerIosMirrorTools(server, appUri, sessions = new IosMirrorSessions
   }, async (uri2, variables) => {
     const id2 = parseResourceInput(sessionId, variables.sessionId);
     const batch = await sessions.batch(id2);
-    const text6 = JSON.stringify(batch);
-    return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text6 }] };
+    const text7 = JSON.stringify(batch);
+    return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text7 }] };
   });
   K3(server, "mobile_ios_mirror_session", {
     title: "Mirror physical iOS device",
@@ -125054,8 +125842,8 @@ function registerDeviceChoiceTools(server, extensions, sources) {
       public_api_exports.count("device_picker.result", 1, { attributes: { ...attributes, outcome: "accept" } });
       public_api_exports.distribution("device_picker.selected", current.length, { unit: "none", attributes });
       const data = { action: "accept", devices: current };
-      const text6 = JSON.stringify(data);
-      return { content: [{ type: "text", text: text6 }], structuredContent: data };
+      const text7 = JSON.stringify(data);
+      return { content: [{ type: "text", text: text7 }], structuredContent: data };
     } catch (error113) {
       public_api_exports.count("device_picker.result", 1, { attributes: { ...attributes, outcome: extra.signal.aborted ? "cancel" : "failed" } });
       if (extra.signal.aborted === false && error113 instanceof SimulatorUnavailableError === false) {
@@ -125395,10 +126183,10 @@ var LogBuffer = class {
   }
   push(record4) {
     if (this.closed) return;
-    const entry = { ...record4, message: record4.message.slice(0, 16384), stack: record4.stack?.slice(0, 16384), sequence: ++this.sequence };
-    const size2 = JSON.stringify(entry).length * 2;
-    this.entries.push(entry);
-    this.sizes.set(entry.sequence, size2);
+    const entry2 = { ...record4, message: record4.message.slice(0, 16384), stack: record4.stack?.slice(0, 16384), sequence: ++this.sequence };
+    const size2 = JSON.stringify(entry2).length * 2;
+    this.entries.push(entry2);
+    this.sizes.set(entry2.sequence, size2);
     this.bytes += size2;
     while (this.entries.length > this.limit || this.bytes > this.byteLimit) {
       const old = this.entries.shift();
@@ -125442,7 +126230,7 @@ var LogBuffer = class {
       const timer = setTimeout(done, 75);
       this.batches.add(done);
     });
-    const entries = this.entries.filter((entry) => entry.sequence > after).slice(0, 100);
+    const entries = this.entries.filter((entry2) => entry2.sequence > after).slice(0, 100);
     const first = this.entries[0]?.sequence ?? this.sequence + 1;
     return { entries, cursor: entries.at(-1)?.sequence ?? Math.max(after, this.sequence), dropped: Math.max(0, first - after - 1), statuses: [...this.statuses.values()] };
   }
@@ -125582,7 +126370,7 @@ var LogSessions = class {
     const session = { buffer: new LogBuffer(), stops: [], expires: Date.now() + 5 * 60 * 1e3 };
     const id2 = randomBytes5(32).toString("hex");
     this.sessions.set(id2, session);
-    const sink = { log: (entry) => session.buffer.push(entry), status: (status) => session.buffer.status(status) };
+    const sink = { log: (entry2) => session.buffer.push(entry2), status: (status) => session.buffer.status(status) };
     try {
       if (options.native) session.stops.push(this.sources.native(options.native, sink));
       if (options.metro) session.stops.push(this.sources.metro(options.metro, sink));
@@ -125650,8 +126438,8 @@ function registerLogTools(server, logs, baguette, discoverIosDevices = listIosDe
     const id2 = parseResourceInput(sessionId2, variables.sessionId);
     const after = parseResourceInput(sequence, variables.sequence);
     const batch = await logs.read(id2, after);
-    const text6 = JSON.stringify(batch);
-    return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text6 }] };
+    const text7 = JSON.stringify(batch);
+    return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text7 }] };
   });
   K3(server, "mobile_log_sources", {
     title: "Find log sources",
@@ -125881,17 +126669,17 @@ async function resolveReactNativeSources(nodes, urls, stacks, origin, signal) {
   const base2 = parseBaseUrl(origin, "Metro URL");
   const frames = [];
   const indices = stacks.map((stack) => stack.flatMap((frame2) => {
-    const file3 = urls[frame2.url];
-    if (!file3) return [];
+    const file4 = urls[frame2.url];
+    if (!file4) return [];
     let url3;
     try {
-      url3 = new URL(file3);
+      url3 = new URL(file4);
     } catch {
       return [];
     }
     if (url3.protocol !== base2.protocol || !["127.0.0.1", "localhost", "[::1]"].includes(url3.hostname) || url3.port !== base2.port || url3.username || url3.password || url3.hash) return [];
     const index = frames.length;
-    frames.push({ file: file3, lineNumber: frame2.line, column: frame2.column, methodName: frame2.methodName });
+    frames.push({ file: file4, lineNumber: frame2.line, column: frame2.column, methodName: frame2.methodName });
     return [index];
   }));
   if (!frames.length) return;
@@ -125903,9 +126691,9 @@ async function resolveReactNativeSources(nodes, urls, stacks, origin, signal) {
     signal: AbortSignal.any([AbortSignal.timeout(2e3), ...signal ? [signal] : []])
   });
   if (!response3.ok) return;
-  const text6 = await response3.text();
-  if (text6.length > 1024 * 1024) return;
-  const body = JSON.parse(text6);
+  const text7 = await response3.text();
+  if (text7.length > 1024 * 1024) return;
+  const body = JSON.parse(text7);
   if (!Array.isArray(body.stack) || body.stack.length !== frames.length) return;
   const mapped = body.stack;
   function location2(frame2) {
@@ -126083,24 +126871,24 @@ async function readDeviceApps(deviceId4, signal, platform6 = "ios", kind4, sourc
 function record3(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
 }
-function text5(value) {
+function text6(value) {
   return typeof value === "string" && value.trim() ? value : void 0;
 }
 function reactContext(value) {
-  const node5 = record3(value), component2 = text5(node5?.component);
+  const node5 = record3(value), component2 = text6(node5?.component);
   if (!node5 || !component2) return;
   const owners = Array.isArray(node5.owners) ? node5.owners.filter((name) => typeof name === "string" && !!name.trim()).slice(0, 12).map((name) => name.slice(0, 256)) : [];
-  const source = record3(node5.source), file3 = text5(source?.file);
+  const source = record3(node5.source), file4 = text6(source?.file);
   return {
     component: component2.slice(0, 256),
     owners,
-    ...text5(node5.key) ? { key: text5(node5.key).slice(0, 256) } : {},
+    ...text6(node5.key) ? { key: text6(node5.key).slice(0, 256) } : {},
     ...node5.sourceKind === "element" || node5.sourceKind === "owner" ? { sourceKind: node5.sourceKind } : {},
-    ...file3 && typeof source?.line === "number" && Number.isInteger(source.line) && source.line > 0 ? { source: {
-      file: file3.slice(0, 2048),
+    ...file4 && typeof source?.line === "number" && Number.isInteger(source.line) && source.line > 0 ? { source: {
+      file: file4.slice(0, 2048),
       line: source.line,
       ...typeof source.column === "number" && Number.isInteger(source.column) && source.column > 0 ? { column: source.column } : {},
-      ...text5(source.functionName) ? { functionName: text5(source.functionName).slice(0, 256) } : {}
+      ...text6(source.functionName) ? { functionName: text6(source.functionName).slice(0, 256) } : {}
     } } : {}
   };
 }
@@ -126133,18 +126921,18 @@ function screenComponents(tree, scale = 1) {
     if (!node5 || node5.hidden === true) return;
     const frame2 = bounds(node5.frame ?? node5.bounds);
     if (frame2 && !/^(AX)?(Application|Window)$/i.test(String(node5.role ?? node5.type ?? ""))) {
-      const label = text5(node5.label) ?? text5(node5.text) ?? text5(node5.contentDescription) ?? text5(node5.title);
-      const identifier3 = text5(node5.identifier) ?? text5(node5.resourceId) ?? text5(node5.id);
-      const role = text5(node5.role) ?? text5(node5.className);
-      const nodeId = text5(node5.nodeId) ?? `node-${components.length}`;
+      const label = text6(node5.label) ?? text6(node5.text) ?? text6(node5.contentDescription) ?? text6(node5.title);
+      const identifier3 = text6(node5.identifier) ?? text6(node5.resourceId) ?? text6(node5.id);
+      const role = text6(node5.role) ?? text6(node5.className);
+      const nodeId = text6(node5.nodeId) ?? `node-${components.length}`;
       const nodeDepth = typeof node5.depth === "number" && Number.isInteger(node5.depth) && node5.depth >= 0 && node5.depth <= 1e4 ? node5.depth : depth;
       const react2 = node5.source === "react-native" ? reactContext(node5.react) : void 0;
-      components.push({ name: text5(node5.name) ?? label ?? identifier3 ?? role ?? "Element", bounds: {
+      components.push({ name: text6(node5.name) ?? label ?? identifier3 ?? role ?? "Element", bounds: {
         x: frame2.x * scale,
         y: frame2.y * scale,
         width: frame2.width * scale,
         height: frame2.height * scale
-      }, label, identifier: identifier3, role, value: text5(node5.value), depth: nodeDepth, source: node5.source === "react-native" ? "react-native" : node5.source === "screen" ? "screen" : "accessibility", nodeId, parentId: text5(node5.parentId) ?? parentId, ...react2 ? { react: react2 } : {} });
+      }, label, identifier: identifier3, role, value: text6(node5.value), depth: nodeDepth, source: node5.source === "react-native" ? "react-native" : node5.source === "screen" ? "screen" : "accessibility", nodeId, parentId: text6(node5.parentId) ?? parentId, ...react2 ? { react: react2 } : {} });
       parentId = nodeId;
     }
     for (const key of ["children", "elements", "nodes", "tree", "root"]) if (node5[key]) visit3(node5[key], depth + 1, parentId);
@@ -126268,7 +127056,7 @@ var CpuBuffer = class {
   push(sample) {
     if (this.closed) return;
     const earliest = sample.time - CPU_HISTORY_SECONDS;
-    this.samples = this.samples.filter((entry) => entry.sample.time >= earliest);
+    this.samples = this.samples.filter((entry2) => entry2.sample.time >= earliest);
     this.samples.push({ revision: ++this.revision, sample });
     this.samples = this.samples.slice(-CPU_MAX_SAMPLES);
     this.phase = "recording";
@@ -126301,8 +127089,8 @@ var CpuBuffer = class {
         this.waiters.add(done);
       });
     }
-    const samples = this.samples.filter((entry) => entry.revision > after);
-    return { cursor: this.revision, timeOrigin: this.timeOrigin, phase: this.phase, samples: samples.map((entry) => entry.sample), memoryMetric: this.memoryMetric, error: this.error };
+    const samples = this.samples.filter((entry2) => entry2.revision > after);
+    return { cursor: this.revision, timeOrigin: this.timeOrigin, phase: this.phase, samples: samples.map((entry2) => entry2.sample), memoryMetric: this.memoryMetric, error: this.error };
   }
 };
 
@@ -126354,8 +127142,8 @@ var GdbPacketDecoder = class {
         } else decoded.push(byte);
       }
       const bytes = Buffer.from(decoded);
-      const text6 = bytes.toString("utf8");
-      packets.push(text6);
+      const text7 = bytes.toString("utf8");
+      packets.push(text7);
       this.buffer = this.buffer.subarray(end + 3);
     }
     return packets;
@@ -126580,8 +127368,8 @@ async function launchLocalDebugserver(binary2, signal) {
     const destination = `127.0.0.1:${address2.port}`;
     child = spawn6(binary2, ["--native-regs", "--setsid", "--reverse-connect", destination], { stdio: ["ignore", "pipe", "pipe"] });
     const drain = (chunk) => {
-      const text6 = chunk.toString();
-      diagnostics5 = (diagnostics5 + text6).slice(-4e3);
+      const text7 = chunk.toString();
+      diagnostics5 = (diagnostics5 + text7).slice(-4e3);
     };
     child.stdout?.on("data", drain);
     child.stderr?.on("data", drain);
@@ -126633,8 +127421,8 @@ function parseCpuCounters(profile) {
     ids2.add(thread.id);
     threads.push({ id: thread.id, name: thread.name ?? "", cpuTimeUs: thread.cpuTimeUs });
   };
-  const fields2 = profile.split(";");
-  for (const field of fields2) {
+  const fields3 = profile.split(";");
+  for (const field of fields3) {
     const separator = field.indexOf(":");
     if (separator < 0) continue;
     const key = field.slice(0, separator);
@@ -126906,8 +127694,8 @@ async function openPhysicalDebugserver(deviceId4, signal, helper = new URL("./io
   });
   child.once("error", fail);
   child.stderr.on("data", (chunk) => {
-    const text6 = chunk.toString("utf8");
-    diagnostics5 = (diagnostics5 + text6).slice(-4096);
+    const text7 = chunk.toString("utf8");
+    diagnostics5 = (diagnostics5 + text7).slice(-4096);
   });
   child.stdout.on("data", (chunk) => {
     if (closing2 || socket) return;
@@ -126962,10 +127750,10 @@ async function openPhysicalDebugserver(deviceId4, signal, helper = new URL("./io
 // src/server/cpu/android.ts
 import { execFile as execFile15 } from "node:child_process";
 import { promisify as promisify14 } from "node:util";
-import { createHash as createHash2, randomBytes as randomBytes6 } from "node:crypto";
-import { mkdtemp as mkdtemp4, readFile as readFile6, rm as rm5, writeFile as writeFile4 } from "node:fs/promises";
+import { createHash as createHash3, randomBytes as randomBytes6 } from "node:crypto";
+import { mkdtemp as mkdtemp4, readFile as readFile7, rm as rm6, writeFile as writeFile5 } from "node:fs/promises";
 import { tmpdir as tmpdir4 } from "node:os";
-import { join as join21 } from "node:path";
+import { join as join23 } from "node:path";
 import { StringDecoder as StringDecoder2 } from "node:string_decoder";
 
 // src/server/cpu/android-counters.ts
@@ -127036,14 +127824,14 @@ var command = async (adb, args, signal) => {
 };
 async function loadAndroidCollector(root) {
   const manifest = new URL("release.json", root);
-  const releaseText = await readFile6(manifest, "utf8");
+  const releaseText = await readFile7(manifest, "utf8");
   const releaseJson = JSON.parse(releaseText);
   const release2 = releaseSchema2.parse(releaseJson);
   const collector = /* @__PURE__ */ new Map();
   for (const abi of abiSchema.options) {
     const local = new URL(`${abi}/mobile-dev-cpu`, root);
-    const bytes = await readFile6(local);
-    const hash3 = createHash2("sha256");
+    const bytes = await readFile7(local);
+    const hash3 = createHash3("sha256");
     hash3.update(bytes);
     const sha256 = hash3.digest("hex");
     if (sha256 !== release2.binaries[abi].sha256) throw new Error(`The bundled Android CPU collector failed its integrity check for ${abi}.`);
@@ -127063,11 +127851,11 @@ async function deployAndroidCollector(adb, deviceId4, signal, collector, run2 = 
   const tokenText = token.toString("hex");
   const temporary = `${remote}-${tokenText}`;
   const hostTemporary = tmpdir4();
-  const prefix3 = join21(hostTemporary, "mobile-dev-cpu-");
+  const prefix3 = join23(hostTemporary, "mobile-dev-cpu-");
   const directory = await mkdtemp4(prefix3);
-  const localPath = join21(directory, "mobile-dev-cpu");
+  const localPath = join23(directory, "mobile-dev-cpu");
   try {
-    await writeFile4(localPath, binary2.bytes, { mode: 384 });
+    await writeFile5(localPath, binary2.bytes, { mode: 384 });
     signal.throwIfAborted();
     await run2(adb, ["-s", deviceId4, "push", localPath, temporary], signal);
     await run2(adb, ["-s", deviceId4, "shell", `chmod 700 ${temporary} && mv ${temporary} ${remote}`], signal);
@@ -127076,7 +127864,7 @@ async function deployAndroidCollector(adb, deviceId4, signal, collector, run2 = 
     });
     throw error113;
   } finally {
-    await rm5(directory, { recursive: true, force: true });
+    await rm6(directory, { recursive: true, force: true });
   }
   return remote;
 }
@@ -127108,8 +127896,8 @@ async function startAndroidCpuMonitor(options, dependencies) {
   let diagnostics5 = "";
   let pending = "";
   const decoder = new StringDecoder2("utf8");
-  const telemetry = new NativeTelemetryRelay((text6) => {
-    diagnostics5 = (diagnostics5 + text6).slice(-4096);
+  const telemetry = new NativeTelemetryRelay((text7) => {
+    diagnostics5 = (diagnostics5 + text7).slice(-4096);
   });
   let watchdog;
   const deadline = () => {
@@ -127348,8 +128136,8 @@ function registerDeviceAppsTool(server, discover) {
     try {
       const data = await discover(device2, context3.signal);
       episodes.recover(key);
-      const text6 = JSON.stringify(data);
-      return { content: [{ type: "text", text: text6 }], structuredContent: data };
+      const text7 = JSON.stringify(data);
+      return { content: [{ type: "text", text: text7 }], structuredContent: data };
     } catch (error113) {
       const annotated = annotateDeviceAppsError(error113, "discovery", device2.platform, device2.kind);
       const tags = deviceAppsDiagnosticTags(annotated);
@@ -127411,8 +128199,8 @@ function registerCpuTools(server, cpu, baguette, sources = { apps: readDeviceApp
     const id2 = parseResourceInput(sessionId3, variables.sessionId);
     const after = parseResourceInput(sequence2, variables.sequence);
     const batch = await cpu.read(id2, after);
-    const text6 = JSON.stringify(batch);
-    return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text6 }] };
+    const text7 = JSON.stringify(batch);
+    return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text7 }] };
   });
   registerDeviceAppsTool(server, async (device2, signal) => {
     await withDeviceAppsDiagnostic(() => validateDevice(device2), "device_validation", device2.platform, device2.kind);
@@ -127428,8 +128216,8 @@ function registerCpuTools(server, cpu, baguette, sources = { apps: readDeviceApp
     await validateDevice(target2);
     const id2 = cpu.open(target2);
     const data = { target: target2, sessionId: id2, cpuUri: `cpu://mobile-dev/${id2}/batch?after=0` };
-    const text6 = JSON.stringify(data);
-    return { content: [{ type: "text", text: text6 }], structuredContent: data };
+    const text7 = JSON.stringify(data);
+    return { content: [{ type: "text", text: text7 }], structuredContent: data };
   }));
   K3(server, "mobile_read_cpu", {
     title: "Read native CPU and memory usage",
@@ -127439,8 +128227,8 @@ function registerCpuTools(server, cpu, baguette, sources = { apps: readDeviceApp
     _meta: metadata2
   }, safe2(async ({ sessionId: id2, after }) => {
     const batch = await cpu.read(id2, after, 0);
-    const text6 = JSON.stringify(batch);
-    return { content: [{ type: "text", text: text6 }], structuredContent: { ...batch } };
+    const text7 = JSON.stringify(batch);
+    return { content: [{ type: "text", text: text7 }], structuredContent: { ...batch } };
   }));
   K3(server, "mobile_cpu_close", {
     title: "Stop native CPU and memory monitor",
@@ -127457,9 +128245,9 @@ function registerCpuTools(server, cpu, baguette, sources = { apps: readDeviceApp
 
 // src/server/performance-recordings.ts
 import { randomUUID as randomUUID4 } from "node:crypto";
-import { mkdir as mkdir2, readFile as readFile7, readdir as readdir4, rename as rename2, stat as stat4, writeFile as writeFile5, rm as rm6 } from "node:fs/promises";
+import { mkdir as mkdir3, readFile as readFile8, readdir as readdir5, rename as rename2, stat as stat5, writeFile as writeFile6, rm as rm7 } from "node:fs/promises";
 import { homedir as homedir5 } from "node:os";
-import { join as join22 } from "node:path";
+import { join as join24 } from "node:path";
 
 // src/shared/display-fps.ts
 var MAX_DISPLAY_FRAMES_PER_INTERVAL = 4096;
@@ -127760,7 +128548,7 @@ function summarizeRecording(recording2, range) {
 }
 
 // src/server/performance-recordings.ts
-var RECORDINGS_DIRECTORY = join22(homedir5(), "Library/Application Support/mobile-dev/recordings");
+var RECORDINGS_DIRECTORY = join24(homedir5(), "Library/Application Support/mobile-dev/recordings");
 var RecordingStore = class {
   directory;
   constructor(directory = RECORDINGS_DIRECTORY) {
@@ -127768,22 +128556,22 @@ var RecordingStore = class {
   }
   async save(recording2) {
     const validated = recordingSchema.parse(recording2);
-    await mkdir2(this.directory, { recursive: true, mode: 448 });
-    const filename = join22(this.directory, `${validated.id}.json`);
+    await mkdir3(this.directory, { recursive: true, mode: 448 });
+    const filename = join24(this.directory, `${validated.id}.json`);
     const temporary = `${filename}.tmp`;
-    const text6 = JSON.stringify(validated);
+    const text7 = JSON.stringify(validated);
     try {
-      await writeFile5(temporary, text6, { mode: 384 });
+      await writeFile6(temporary, text7, { mode: 384 });
       await rename2(temporary, filename);
     } finally {
-      await rm6(temporary, { force: true });
+      await rm7(temporary, { force: true });
     }
   }
   async read(id2) {
     const validated = recordingIdSchema.parse(id2);
-    const filename = join22(this.directory, `${validated}.json`);
-    const text6 = await readFile7(filename, "utf8");
-    const parsed = JSON.parse(text6);
+    const filename = join24(this.directory, `${validated}.json`);
+    const text7 = await readFile8(filename, "utf8");
+    const parsed = JSON.parse(text7);
     const recording2 = recordingSchema.parse(parsed);
     if (recording2.id !== validated) throw new Error("The saved recording ID does not match.");
     return recording2;
@@ -127791,19 +128579,19 @@ var RecordingStore = class {
   async list(limit) {
     let entries;
     try {
-      entries = await readdir4(this.directory, { withFileTypes: true });
+      entries = await readdir5(this.directory, { withFileTypes: true });
     } catch (error113) {
       if (error113 instanceof Error && "code" in error113 && error113.code === "ENOENT") return [];
       throw error113;
     }
     const candidates = [];
-    for (const entry of entries) {
-      if (entry.isFile() === false || entry.name.endsWith(".json") === false) continue;
-      const id2 = entry.name.slice(0, -5);
+    for (const entry2 of entries) {
+      if (entry2.isFile() === false || entry2.name.endsWith(".json") === false) continue;
+      const id2 = entry2.name.slice(0, -5);
       const parsed = recordingIdSchema.safeParse(id2);
       if (parsed.success === false) continue;
-      const filename = join22(this.directory, entry.name);
-      const metadata4 = await stat4(filename);
+      const filename = join24(this.directory, entry2.name);
+      const metadata4 = await stat5(filename);
       candidates.push({ id: id2, modified: metadata4.mtimeMs });
     }
     candidates.sort((left, right) => right.modified - left.modified);
@@ -127822,10 +128610,10 @@ var PerformanceRecordings = class {
   cpu;
   fps;
   store;
-  constructor(cpu, fps, store = new RecordingStore()) {
+  constructor(cpu, fps, store2 = new RecordingStore()) {
     this.cpu = cpu;
     this.fps = fps;
-    this.store = store;
+    this.store = store2;
   }
   start(target2, title2, durationSeconds, deviceName) {
     if (this.disposed) throw new Error("The plugin server has closed.");
@@ -128187,8 +128975,8 @@ function registerRecordingTools(server, recordings, validateDevice, workspaceUri
     const recording2 = await recordings.read(recordingId);
     const summary = summarizeRecording(recording2, range);
     const structuredContent = { recording: recording2, summary, ...range ? { range } : {} };
-    const text6 = JSON.stringify(structuredContent);
-    return { content: [{ type: "text", text: text6 }], structuredContent };
+    const text7 = JSON.stringify(structuredContent);
+    return { content: [{ type: "text", text: text7 }], structuredContent };
   });
   K3(server, "mobile_read_performance_recording", {
     title: "Read a saved performance recording or range",
@@ -128201,8 +128989,8 @@ function registerRecordingTools(server, recordings, validateDevice, workspaceUri
   const readFrames = safe3(async ({ recordingId, range, after, limit }) => {
     const recording2 = await recordings.read(recordingId);
     const data = readRecordingFrames(recording2, range, after, limit);
-    const text6 = JSON.stringify(data);
-    return { content: [{ type: "text", text: text6 }], structuredContent: data };
+    const text7 = JSON.stringify(data);
+    return { content: [{ type: "text", text: text7 }], structuredContent: data };
   });
   K3(server, "mobile_read_performance_frames", {
     title: "Read Android display frames from a saved recording",
@@ -128269,8 +129057,8 @@ function registerRecordingTools(server, recordings, validateDevice, workspaceUri
     const comparison = comparisonSchema.parse({ title: title2, recordings: runs, range });
     const summaries = summarizeComparison(comparison.recordings, comparison.range);
     const structuredContent = { ...comparison, summaries };
-    const text6 = JSON.stringify(structuredContent);
-    return { content: [{ type: "text", text: text6 }], structuredContent };
+    const text7 = JSON.stringify(structuredContent);
+    return { content: [{ type: "text", text: text7 }], structuredContent };
   }));
   K3(server, "mobile_finish_performance_recording", {
     title: "Finish and save a performance recording early",
@@ -128297,8 +129085,8 @@ function registerRecordingTools(server, recordings, validateDevice, workspaceUri
       sampleCount: samples.length,
       fps: { status: fps.status, error: fps.error, sampleCount: fps.samples.length }
     }));
-    const text6 = JSON.stringify({ recordings: items });
-    return { content: [{ type: "text", text: text6 }], structuredContent: { recordings: items } };
+    const text7 = JSON.stringify({ recordings: items });
+    return { content: [{ type: "text", text: text7 }], structuredContent: { recordings: items } };
   }));
 }
 
@@ -128442,16 +129230,17 @@ var traceSiftHandoffSchema = external_exports.object({ apiVersion: external_expo
 
 // src/server/tracesift-client.ts
 import { spawn as spawn10 } from "node:child_process";
-import { createHash as createHash3, randomUUID as randomUUID5 } from "node:crypto";
+import { createHash as createHash4, randomUUID as randomUUID5 } from "node:crypto";
 import { openAsBlob } from "node:fs";
-import { mkdir as mkdir3, readFile as readFileAsync2, realpath as realpath2, rename as rename3, rm as rm7, stat as stat5, writeFile as writeFile6 } from "node:fs/promises";
+import { mkdir as mkdir4, readFile as readFileAsync2, realpath as realpath2, rename as rename3, rm as rm8, stat as stat6, writeFile as writeFile7 } from "node:fs/promises";
 import { homedir as homedir6 } from "node:os";
-import { basename as basename4, join as join23 } from "node:path";
+import { basename as basename5, join as join25 } from "node:path";
 import { createServer as createServer5 } from "node:net";
 import { setTimeout as delay7 } from "node:timers/promises";
 var STARTUP_TIMEOUT_MS = 6e4;
 var REQUEST_TIMEOUT_MS = 10 * 6e4;
 var EXPLORE_TIMEOUT_MS = 15e3;
+var EXPLORE_UNSUPPORTED = "This TraceSift service cannot open findings in the panel. Update TraceSift and restart it, or use Open in browser.";
 var TraceSiftError = class extends ExpectedOperationError {
   kind;
   constructor(message2, kind4) {
@@ -128471,7 +129260,7 @@ function processAlive(pid3) {
 async function parseDescriptor(path) {
   let raw;
   try {
-    const metadata4 = await stat5(path);
+    const metadata4 = await stat6(path);
     if ((metadata4.mode & 63) !== 0) throw new TraceSiftError("TraceSift service.json permissions are unsafe. Restart TraceSift so it recreates the file with mode 0600.", "setup");
     raw = JSON.parse(await readFileAsync2(path, "utf8"));
   } catch (error113) {
@@ -128522,10 +129311,10 @@ var TraceSiftClient = class {
   command;
   constructor(command2 = process.env.TRACE_SIFT_COMMAND ?? "tracesift", home2) {
     this.command = command2;
-    this.home = home2 ?? process.env.TRACE_SIFT_HOME ?? join23(homedir6(), ".tracesift");
+    this.home = home2 ?? process.env.TRACE_SIFT_HOME ?? join25(homedir6(), ".tracesift");
   }
   async existing(signal) {
-    const descriptor = await parseDescriptor(join23(this.home, "service.json"));
+    const descriptor = await parseDescriptor(join25(this.home, "service.json"));
     return descriptor && await health(descriptor, signal) ? descriptor : void 0;
   }
   async start(signal) {
@@ -128579,42 +129368,42 @@ var TraceSiftClient = class {
     await this.service(signal);
   }
   analysisPath(analysisId) {
-    return join23(this.home, "integrations", "mobile-dev", `${createHash3("sha256").update(analysisId).digest("hex")}.json`);
+    return join25(this.home, "integrations", "mobile-dev", `${createHash4("sha256").update(analysisId).digest("hex")}.json`);
   }
   viewPath(viewId) {
-    const key = createHash3("sha256").update(JSON.stringify(viewId)).digest("hex");
-    return join23(this.home, "integrations", "mobile-dev", `view-${key}.json`);
+    const key = createHash4("sha256").update(JSON.stringify(viewId)).digest("hex");
+    return join25(this.home, "integrations", "mobile-dev", `view-${key}.json`);
   }
   inputPath(path, profileType) {
-    const key = createHash3("sha256").update(JSON.stringify({ path, profileType })).digest("hex");
-    return join23(this.home, "integrations", "mobile-dev", `input-${key}.json`);
+    const key = createHash4("sha256").update(JSON.stringify({ path, profileType })).digest("hex");
+    return join25(this.home, "integrations", "mobile-dev", `input-${key}.json`);
   }
-  async writePrivateJson(file3, value) {
-    const directory = join23(this.home, "integrations", "mobile-dev");
-    const temporary = join23(directory, `.analysis-${randomUUID5()}`);
+  async writePrivateJson(file4, value) {
+    const directory = join25(this.home, "integrations", "mobile-dev");
+    const temporary = join25(directory, `.analysis-${randomUUID5()}`);
     try {
-      await writeFile6(temporary, `${JSON.stringify(value)}
+      await writeFile7(temporary, `${JSON.stringify(value)}
 `, { flag: "wx", mode: 384 });
-      await rename3(temporary, file3);
+      await rename3(temporary, file4);
     } finally {
-      await rm7(temporary, { force: true });
+      await rm8(temporary, { force: true });
     }
   }
   async persistAnalysis(analysis) {
-    const directory = join23(this.home, "integrations", "mobile-dev");
-    await mkdir3(directory, { recursive: true, mode: 448 });
+    const directory = join25(this.home, "integrations", "mobile-dev");
+    await mkdir4(directory, { recursive: true, mode: 448 });
     await this.writePrivateJson(this.analysisPath(analysis.analysisId), analysis);
   }
   async remember(viewId, analysisId) {
-    const analysis = await stat5(this.analysisPath(analysisId)).catch(() => void 0);
+    const analysis = await stat6(this.analysisPath(analysisId)).catch(() => void 0);
     if (!analysis?.isFile()) throw new TraceSiftError("This TraceSift analysis is no longer available. Run it again.", "request");
-    const directory = join23(this.home, "integrations", "mobile-dev");
-    await mkdir3(directory, { recursive: true, mode: 448 });
+    const directory = join25(this.home, "integrations", "mobile-dev");
+    await mkdir4(directory, { recursive: true, mode: 448 });
     await this.writePrivateJson(this.viewPath(viewId), { apiVersion: 1, analysisId });
   }
   async rememberInput(path, profileType, analysisId) {
-    const directory = join23(this.home, "integrations", "mobile-dev");
-    await mkdir3(directory, { recursive: true, mode: 448 });
+    const directory = join25(this.home, "integrations", "mobile-dev");
+    await mkdir4(directory, { recursive: true, mode: 448 });
     await this.writePrivateJson(this.inputPath(path, profileType), { apiVersion: 1, analysisId });
   }
   async restoreReference(referencePath) {
@@ -128644,7 +129433,7 @@ var TraceSiftClient = class {
   async restoreInput(path, profileType) {
     return this.restoreReference(this.inputPath(path, profileType));
   }
-  async request(path, init2, signal) {
+  async request(path, init2, signal, unsupported2) {
     let descriptor = await this.service(signal);
     const send = (requestSignal) => fetch(new URL(path, descriptor.baseUrl), {
       ...init2,
@@ -128671,11 +129460,16 @@ var TraceSiftClient = class {
       }
     }
     let body;
+    let unreadable = false;
     try {
       body = await response3.json();
     } catch {
-      throw new Error("TraceSift returned an invalid response.");
+      unreadable = true;
     }
+    if (unsupported2 !== void 0 && !response3.ok && (response3.status === 404 || response3.status === 405 || response3.status === 501) && (unreadable || !(typeof body === "object" && body !== null && typeof body.error === "string"))) {
+      throw new TraceSiftError(unsupported2, "version");
+    }
+    if (unreadable) throw new Error("TraceSift returned an invalid response.");
     if (!response3.ok) throw responseError(response3.status, body);
     return body;
   }
@@ -128683,15 +129477,15 @@ var TraceSiftClient = class {
     const resolved = await realpath2(path).catch(() => {
       throw new TraceSiftError("The profile path does not exist or is not readable.", "setup");
     });
-    const metadata4 = await stat5(resolved).catch(() => {
+    const metadata4 = await stat6(resolved).catch(() => {
       throw new TraceSiftError("The profile path does not exist or is not readable.", "setup");
     });
     if (!metadata4.isFile()) throw new TraceSiftError("The profile path must point to a regular file.", "setup");
     let form;
     try {
-      const file3 = await openAsBlob(resolved);
+      const file4 = await openAsBlob(resolved);
       form = new FormData();
-      form.set("profile", file3, basename4(resolved));
+      form.set("profile", file4, basename5(resolved));
       form.set("profileType", profileType);
     } catch {
       throw new TraceSiftError("The profile could not be opened for upload. Check its permissions and retry.", "setup");
@@ -128711,14 +129505,13 @@ var TraceSiftClient = class {
     return parsed.data;
   }
   /**
-   * Let the TraceSift CLI open its own loopback URL. The persisted compact
-   * analysis carries the measured card and function ids; the full tree and
-   * timeline stay in the already-running TraceSift service.
+   * Let the TraceSift CLI open its own loopback URL. The tree and timeline stay
+   * in the running service; the persisted analysis carries only card ids.
    */
   async openExplore(analysisId, taskIndex, focus, signal) {
     await this.service(signal);
     const analysisPath = this.analysisPath(analysisId);
-    const analysisFile = await stat5(analysisPath).catch(() => void 0);
+    const analysisFile = await stat6(analysisPath).catch(() => void 0);
     if (!analysisFile?.isFile()) throw new TraceSiftError("This analysis is no longer available to Explore. Run it again.", "request");
     const args = ["explore", analysisPath, "--task", String(taskIndex), ...focus ? ["--focus", focus] : []];
     await this.launchExplore(args, signal);
@@ -128726,7 +129519,7 @@ var TraceSiftClient = class {
   async openReactExplore(analysisId, rootId, commitIndex, signal) {
     await this.service(signal);
     const analysisPath = this.analysisPath(analysisId);
-    const analysisFile = await stat5(analysisPath).catch(() => void 0);
+    const analysisFile = await stat6(analysisPath).catch(() => void 0);
     if (!analysisFile?.isFile()) throw new TraceSiftError("This analysis is no longer available to Explore. Run it again.", "request");
     await this.launchExplore(["explore", analysisPath, "--commit", `${rootId}.${commitIndex}`], signal);
   }
@@ -128764,6 +129557,27 @@ var TraceSiftClient = class {
       else signal?.addEventListener("abort", abort, { once: true });
     });
   }
+  /**
+   * One task with its call tree and timeline, which `/analyze` never ships.
+   * Checked at its seams only; the explorer that draws it parses the rest.
+   */
+  async exploreTask(analysisId, taskIndex, signal) {
+    const body = await this.request(`/api/integration/v1/task?analysisId=${encodeURIComponent(analysisId)}&taskIndex=${taskIndex}`, { method: "GET" }, signal, EXPLORE_UNSUPPORTED);
+    if (typeof body !== "object" || body === null) throw new Error("TraceSift returned an invalid task response.");
+    const value = body;
+    if (value.apiVersion !== 1 || typeof value.analysisId !== "string" || typeof value.title !== "string" || typeof value.totalMs !== "number" || !Number.isFinite(value.totalMs) || typeof value.card !== "object" || value.card === null || typeof value.card.tree !== "object" || value.card.tree === null || typeof value.card.timeline !== "object" || value.card.timeline === null) throw new Error("TraceSift returned an invalid task response.");
+    return { analysisId: value.analysisId, profileTitle: value.title, totalMs: value.totalMs, card: value.card };
+  }
+  /** Every commit timeline of one React analysis, which the explorer switches between itself. */
+  async exploreReact(analysisId, signal) {
+    const body = await this.request(`/api/integration/v1/react-explore?analysisId=${encodeURIComponent(analysisId)}`, { method: "GET" }, signal, EXPLORE_UNSUPPORTED);
+    if (typeof body !== "object" || body === null) throw new Error("TraceSift returned an invalid commit timeline response.");
+    const value = body;
+    if (value.apiVersion !== 1 || typeof value.analysisId !== "string" || typeof value.title !== "string" || typeof value.explore !== "object" || value.explore === null || !Array.isArray(value.cards)) {
+      throw new Error("TraceSift returned an invalid commit timeline response.");
+    }
+    return { analysisId: value.analysisId, profileTitle: value.title, explore: value.explore, cards: value.cards };
+  }
   async handoff(analysisId, cardId, signal) {
     const parsed = traceSiftHandoffSchema.safeParse(await this.request("/api/integration/v1/handoff", {
       method: "POST",
@@ -128785,6 +129599,36 @@ var TraceSiftClient = class {
 };
 
 // src/server/tracesift-tools.ts
+import { gzip as gzipCallback } from "node:zlib";
+import { promisify as promisify15 } from "node:util";
+
+// src/shared/tracesift-explore.ts
+var traceSiftExploreEnvelopeSchema = external_exports.object({
+  apiVersion: external_exports.literal(1),
+  kind: external_exports.enum(["task", "react"]),
+  encoding: external_exports.enum(["json", "gzip+base64"]),
+  /** JSON bytes before compression, which is the figure the size gauge reports. */
+  payloadBytes: external_exports.number().int().nonnegative()
+});
+var TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES = 64 * 1024;
+var TRACE_SIFT_PAYLOAD_TOO_LARGE = "This finding is larger than the panel can open.";
+var TRACE_SIFT_PAYLOAD_MAX_BYTES = 24 * 1024 * 1024;
+var TRACE_SIFT_PAYLOAD_MAX_DEPTH = 4096;
+function traceSiftPayloadTooDeep(value, maxDepth = TRACE_SIFT_PAYLOAD_MAX_DEPTH) {
+  const stack = [{ node: value, depth: 0 }];
+  while (stack.length > 0) {
+    const { node: node5, depth } = stack.pop();
+    if (typeof node5 !== "object" || node5 === null) continue;
+    if (depth >= maxDepth) return true;
+    for (const child of Array.isArray(node5) ? node5 : Object.values(node5)) {
+      if (typeof child === "object" && child !== null) stack.push({ node: child, depth: depth + 1 });
+    }
+  }
+  return false;
+}
+
+// src/server/tracesift-tools.ts
+var gzip = promisify15(gzipCallback);
 var read4 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 var visibility2 = ["app", "model"];
 var analysisOutput = {
@@ -128905,6 +129749,49 @@ function registerTraceSiftTools(server, client2) {
       return failure3(error113, "task", startedAt, context3.signal);
     }
   });
+  K3(server, "mobile_tracesift_explore_payload", {
+    title: "Load the full data one TraceSift finding explores",
+    description: "Return the complete call tree and timeline for one CPU task, or every commit timeline for one React analysis, so the inline card can render the Explore view itself. This app-only action is called when the user presses Explore; the payload is large, travels compressed as one text item, and is never read back by the model.",
+    inputSchema: {
+      analysisId: external_exports.string().min(1).max(256),
+      taskIndex: external_exports.number().int().nonnegative().optional()
+    },
+    // Only the envelope is schema-checked: the tree inside is megabytes the host
+    // would walk node by node to prove a shape the explorer checks as it draws.
+    outputSchema: traceSiftExploreEnvelopeSchema.shape,
+    annotations: read4,
+    _meta: { ui: { visibility: ["app"] } }
+  }, async ({ analysisId, taskIndex }, context3) => {
+    const startedAt = performance.now();
+    try {
+      const handoff2 = taskIndex === void 0 ? { kind: "react", value: await client2.exploreReact(analysisId, context3.signal) } : { kind: "task", value: await client2.exploreTask(analysisId, taskIndex, context3.signal) };
+      if (traceSiftPayloadTooDeep(handoff2.value)) throw new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response");
+      let json3;
+      try {
+        json3 = JSON.stringify(handoff2.value);
+      } catch (error113) {
+        throw error113 instanceof RangeError ? new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response") : error113;
+      }
+      const raw = { kind: handoff2.kind, json: json3 };
+      if (raw.json.length > TRACE_SIFT_PAYLOAD_MAX_BYTES) throw new TraceSiftError(TRACE_SIFT_PAYLOAD_TOO_LARGE, "response");
+      const compressed = raw.json.length > TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES;
+      const text7 = compressed ? (await gzip(raw.json, { level: 6 })).toString("base64") : raw.json;
+      const result4 = {
+        content: [{ type: "text", text: text7 }],
+        structuredContent: {
+          apiVersion: 1,
+          kind: raw.kind,
+          encoding: compressed ? "gzip+base64" : "json",
+          payloadBytes: raw.json.length
+        }
+      };
+      recordTraceSiftOperation("payload", "success", performance.now() - startedAt);
+      recordTraceSiftPayload(result4.structuredContent.kind, result4.structuredContent.payloadBytes);
+      return result4;
+    } catch (error113) {
+      return failure3(error113, "payload", startedAt, context3.signal);
+    }
+  });
   K3(server, "mobile_get_tracesift_handoff", {
     title: "Get a TraceSift card handoff",
     description: "Return the authoritative TraceSift investigation handoff for a selected card. This app-only action is called by the inline card after the user presses Investigate.",
@@ -128926,23 +129813,23 @@ function registerTraceSiftTools(server, client2) {
 }
 
 // src/server/storage-metrics.ts
-import { readdir as readdir5, stat as stat6 } from "node:fs/promises";
-import { join as join24 } from "node:path";
+import { readdir as readdir6, stat as stat7 } from "node:fs/promises";
+import { join as join26 } from "node:path";
 async function directoryBytes(directory) {
   let entries;
   try {
-    entries = await readdir5(directory, { withFileTypes: true });
+    entries = await readdir6(directory, { withFileTypes: true });
   } catch (error113) {
     if (error113 instanceof Error && "code" in error113 && error113.code === "ENOENT") return 0;
     throw error113;
   }
   let bytes = 0;
-  for (const entry of entries) {
-    const path = join24(directory, entry.name);
-    if (entry.isDirectory()) bytes += await directoryBytes(path);
-    else if (entry.isFile()) {
+  for (const entry2 of entries) {
+    const path = join26(directory, entry2.name);
+    if (entry2.isDirectory()) bytes += await directoryBytes(path);
+    else if (entry2.isFile()) {
       try {
-        const metadata4 = await stat6(path);
+        const metadata4 = await stat7(path);
         bytes += metadata4.size;
       } catch (error113) {
         if (error113 instanceof Error && "code" in error113 && error113.code === "ENOENT") continue;
@@ -128986,7 +129873,7 @@ import { randomBytes as randomBytes9 } from "node:crypto";
 
 // src/server/fps/source.ts
 import { execFile as execFile17 } from "node:child_process";
-import { promisify as promisify16 } from "node:util";
+import { promisify as promisify17 } from "node:util";
 import { access as access9 } from "node:fs/promises";
 import { fileURLToPath as fileURLToPath12 } from "node:url";
 
@@ -129032,9 +129919,9 @@ async function collectorProcess(command2, args, options) {
     });
   };
   options.signal.addEventListener("abort", abort, { once: true });
-  const telemetry = new NativeTelemetryRelay((text6) => {
-    diagnostics5 = (diagnostics5 + text6).slice(-4096);
-    options.diagnostic?.(text6);
+  const telemetry = new NativeTelemetryRelay((text7) => {
+    diagnostics5 = (diagnostics5 + text7).slice(-4096);
+    options.diagnostic?.(text7);
   });
   child.stderr.on("data", (chunk) => {
     telemetry.write(chunk);
@@ -129102,13 +129989,13 @@ async function collectorProcess(command2, args, options) {
 }
 
 // src/server/fps/android-helper.ts
-import { createHash as createHash4, randomBytes as randomBytes8 } from "node:crypto";
+import { createHash as createHash5, randomBytes as randomBytes8 } from "node:crypto";
 import { execFile as execFile16 } from "node:child_process";
-import { promisify as promisify15 } from "node:util";
-import { mkdtemp as mkdtemp5, readFile as readFile8, rm as rm8, writeFile as writeFile7 } from "node:fs/promises";
+import { promisify as promisify16 } from "node:util";
+import { mkdtemp as mkdtemp5, readFile as readFile9, rm as rm9, writeFile as writeFile8 } from "node:fs/promises";
 import { tmpdir as tmpdir5 } from "node:os";
-import { join as join25 } from "node:path";
-var execute13 = promisify15(execFile16);
+import { join as join27 } from "node:path";
+var execute13 = promisify16(execFile16);
 var abiSchema2 = external_exports.enum(["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]);
 var checksumString = external_exports.string();
 var checksum = checksumString.regex(/^[a-f0-9]{64}$/);
@@ -129122,25 +130009,25 @@ async function deployFpsHelper(adb, deviceId4, signal, root) {
   const name = raw.stdout.trim();
   const abi = abiSchema2.parse(name);
   const manifest = new URL("release.json", root);
-  const text6 = await readFile8(manifest, "utf8");
-  const decoded = JSON.parse(text6);
+  const text7 = await readFile9(manifest, "utf8");
+  const decoded = JSON.parse(text7);
   const release2 = releaseSchema3.parse(decoded);
   const path = new URL(`${abi}/mobile-dev-fps`, root);
-  const bytes = await readFile8(path);
-  const hash3 = createHash4("sha256");
+  const bytes = await readFile9(path);
+  const hash3 = createHash5("sha256");
   hash3.update(bytes);
   const sha256 = hash3.digest("hex");
   if (sha256 !== release2.binaries[abi].sha256) throw new Error("The bundled Android FPS helper failed its integrity check.");
   const remote = `/data/local/tmp/mobile-dev-fps-${sha256}`;
   const temporaryRoot = tmpdir5();
-  const temporaryPrefix = join25(temporaryRoot, "mobile-dev-fps-");
+  const temporaryPrefix = join27(temporaryRoot, "mobile-dev-fps-");
   const directory = await mkdtemp5(temporaryPrefix);
-  const local = join25(directory, "mobile-dev-fps");
+  const local = join27(directory, "mobile-dev-fps");
   const token = randomBytes8(8);
   const id2 = token.toString("hex");
   const temporary = `${remote}-${id2}`;
   try {
-    await writeFile7(local, bytes);
+    await writeFile8(local, bytes);
     await execute13(adb, [...prefix3, "push", local, temporary], settings);
     await execute13(adb, [...prefix3, "shell", `chmod 700 ${temporary} && mv ${temporary} ${remote}`], settings);
   } catch (error113) {
@@ -129148,7 +130035,7 @@ async function deployFpsHelper(adb, deviceId4, signal, root) {
     });
     throw error113;
   } finally {
-    await rm8(directory, { recursive: true, force: true });
+    await rm9(directory, { recursive: true, force: true });
   }
   return remote;
 }
@@ -129167,7 +130054,7 @@ function varint(bytes, offset) {
   }
   throw new Error("Invalid Perfetto varint.");
 }
-function* fields(bytes) {
+function* fields2(bytes) {
   let offset = 0;
   while (offset < bytes.length) {
     const tag = varint(bytes, offset);
@@ -129255,7 +130142,7 @@ var FrameTimeline = class {
     let clock;
     let clockSnapshot;
     let defaults;
-    for (const field of fields(packet)) {
+    for (const field of fields2(packet)) {
       if (field.id === 8) timestamp2 = field.integer;
       else if (field.id === 76) timeline = field.bytes;
       else if (field.id === 69) service = field.bytes;
@@ -129271,7 +130158,7 @@ var FrameTimeline = class {
     }
     if (clockSnapshot) this.synchronize(clockSnapshot);
     if (defaults && sequence4 !== void 0) {
-      for (const field of fields(defaults)) {
+      for (const field of fields2(defaults)) {
         if (field.id !== 58) continue;
         const clockId2 = Number(field.integer);
         this.defaults.set(sequence4, clockId2);
@@ -129291,7 +130178,7 @@ var FrameTimeline = class {
       timestamp2 += offset;
     } else if (clockId !== 6) throw new Error("FrameTimeline uses an unsupported clock.");
     if (service) {
-      for (const field of fields(service)) {
+      for (const field of fields2(service)) {
         if (field.id === 1 && field.integer === 1n) this.start = timestamp2;
         if (field.id === 4 && field.integer === 1n) this.complete(timestamp2);
         if (field.id === 6 && field.integer === 1n) throw new Error("Another tool took the FPS trace for a bug report.");
@@ -129302,11 +130189,11 @@ var FrameTimeline = class {
   synchronize(snapshot2) {
     let monotonic;
     let boot;
-    for (const clock of fields(snapshot2)) {
+    for (const clock of fields2(snapshot2)) {
       if (clock.id !== 1 || clock.bytes === void 0) continue;
       let id2;
       let time6;
-      for (const detail of fields(clock.bytes)) {
+      for (const detail of fields2(clock.bytes)) {
         if (detail.id === 1) id2 = detail.integer;
         else if (detail.id === 2) time6 = detail.integer;
       }
@@ -129318,13 +130205,13 @@ var FrameTimeline = class {
     this.clocks = this.clocks.slice(-600);
   }
   frame(event, timestamp2) {
-    for (const field of fields(event)) {
+    for (const field of fields2(event)) {
       if (field.bytes === void 0 || field.id !== 2 && field.id !== 5) continue;
       let cookie;
       let token;
       let present = 0;
       const metadata4 = {};
-      for (const detail of fields(field.bytes)) {
+      for (const detail of fields2(field.bytes)) {
         if (detail.id === 1) cookie = detail.integer;
         else if (detail.id === 2) token = detail.integer;
         else if (detail.id === 4) present = Number(detail.integer);
@@ -129398,7 +130285,7 @@ var FrameTimeline = class {
 };
 
 // src/server/fps/source.ts
-var execute14 = promisify16(execFile17);
+var execute14 = promisify17(execFile17);
 var fpsNumber = external_exports.number();
 var finiteFps = fpsNumber.finite();
 var nonnegativeFps = finiteFps.min(0);
@@ -129517,7 +130404,7 @@ var DisplayFpsSessions = class {
         if (reading3.frameTimeline !== void 0) sample.frameTimeline = reading3.frameTimeline;
         const last = session.samples.at(-1);
         const latest = Math.max(sample.time, last?.sample.time ?? sample.time);
-        session.samples = session.samples.filter((entry) => entry.sample.time >= latest - CPU_HISTORY_SECONDS && entry.sample.time !== sample.time);
+        session.samples = session.samples.filter((entry2) => entry2.sample.time >= latest - CPU_HISTORY_SECONDS && entry2.sample.time !== sample.time);
         session.samples.push({ revision: ++session.revision, sample });
         session.samples.sort((a2, b2) => a2.sample.time - b2.sample.time);
         session.samples = session.samples.slice(-CPU_MAX_SAMPLES);
@@ -129555,8 +130442,8 @@ var DisplayFpsSessions = class {
         session.waiters.add(done);
       });
     }
-    const entries = session.samples.filter((entry) => entry.revision > after);
-    const samples = entries.map((entry) => entry.sample);
+    const entries = session.samples.filter((entry2) => entry2.revision > after);
+    const samples = entries.map((entry2) => entry2.sample);
     return { cursor: session.revision, phase: session.phase, error: session.error, samples };
   }
   async closeSession(id2) {
@@ -129644,16 +130531,16 @@ function registerDisplayFpsTools(server, sessions, sources = { ios: listIosDevic
     const id2 = parseResourceInput(sessionId4, variables.sessionId);
     const after = parseResourceInput(sequence3, variables.sequence);
     const batch = await sessions.read(id2, after);
-    const text6 = JSON.stringify(batch);
-    return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text6 }] };
+    const text7 = JSON.stringify(batch);
+    return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text7 }] };
   });
   const startSession2 = safe4(async ({ target: target2 }) => {
     await validate3(target2);
     const id2 = sessions.open(target2);
     const timeOrigin = performance.now() / 1e3;
     const data = { sessionId: id2, timeOrigin, fpsUri: `display-fps://mobile-dev/${id2}/batch?after=0` };
-    const text6 = JSON.stringify(data);
-    return { content: [{ type: "text", text: text6 }], structuredContent: data };
+    const text7 = JSON.stringify(data);
+    return { content: [{ type: "text", text: text7 }], structuredContent: data };
   });
   K3(server, "mobile_display_fps_session", {
     title: "Monitor Display FPS",
@@ -129664,8 +130551,8 @@ function registerDisplayFpsTools(server, sessions, sources = { ios: listIosDevic
   }, startSession2);
   const readSession = safe4(async ({ sessionId: id2, after }) => {
     const batch = await sessions.read(id2, after, 0);
-    const text6 = JSON.stringify(batch);
-    return { content: [{ type: "text", text: text6 }], structuredContent: { ...batch } };
+    const text7 = JSON.stringify(batch);
+    return { content: [{ type: "text", text: text7 }], structuredContent: { ...batch } };
   });
   K3(server, "mobile_read_display_fps", {
     title: "Read Display FPS",
@@ -129689,8 +130576,8 @@ function registerDisplayFpsTools(server, sessions, sources = { ios: listIosDevic
 
 // src/server/simulator-input.ts
 import { execFile as execFile18 } from "node:child_process";
-import { promisify as promisify17 } from "node:util";
-var execute15 = promisify17(execFile18);
+import { promisify as promisify18 } from "node:util";
+var execute15 = promisify18(execFile18);
 var deviceHubKey = "com.apple.coredevice.dtuhidd.active";
 async function readDeviceHubState(udid) {
   const { stdout } = await execute15("/usr/bin/xcrun", ["simctl", "spawn", udid, "notifyutil", "-g", deviceHubKey], {
@@ -129853,6 +130740,7 @@ async function createPlugin(html2, baguette = new Baguette(), simulatorInput = n
   });
   const closeDeviceSettings = registerDeviceSettingsTools(server, baguette, android2);
   registerAppControlTools(server);
+  registerAppStorageTools(server);
   const automaticRepairs = /* @__PURE__ */ new Map();
   async function panelInputStatus(udid) {
     const inputStatus = await simulatorInput.status(udid, { fresh: true });
@@ -129954,11 +130842,11 @@ async function createPlugin(html2, baguette = new Baguette(), simulatorInput = n
         const { data, ...metadata4 } = read7.frame;
         return { contents: [{ uri: uri2.href, mimeType: "image/jpeg", blob: data, _meta: { ...metadata4, ...timings } }] };
       }
-      const text6 = JSON.stringify({ state: "waiting", connectionState: streams.connectionState(sessionId5), ...timings });
-      return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text6, _meta: timings }] };
+      const text7 = JSON.stringify({ state: "waiting", connectionState: streams.connectionState(sessionId5), ...timings });
+      return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text7, _meta: timings }] };
     } catch (error113) {
-      const text6 = JSON.stringify({ state: "failed", error: errorMessage(error113), retryable: !(error113 instanceof SimulatorUnavailableError) });
-      return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text6 }] };
+      const text7 = JSON.stringify({ state: "failed", error: errorMessage(error113), retryable: !(error113 instanceof SimulatorUnavailableError) });
+      return { contents: [{ uri: uri2.href, mimeType: "application/json", text: text7 }] };
     }
   });
   const openPanel = guarded2(async (panelTarget) => {
@@ -130186,7 +131074,7 @@ async function createPlugin(html2, baguette = new Baguette(), simulatorInput = n
 }
 
 // src/server/index.ts
-var html = await readFile9(new URL("./app.html", import.meta.url), "utf8");
+var html = await readFile10(new URL("./app.html", import.meta.url), "utf8");
 var plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)));
 var transport2 = new StdioServerTransport();
 installTracePropagation(transport2);
@@ -130234,4 +131122,4 @@ undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 */
 
-//# debugId=2c5d2d5f-de40-533e-a64a-3109242d86a9
+//# debugId=ddea559c-c1fe-57bc-abf3-1de62d27c7df
