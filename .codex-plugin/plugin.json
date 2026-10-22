@@ -3,12 +3,73 @@
   "version": "0.1.132",
   "description": "Keep a simulator beside the chat while building, running, or debugging iOS and Android apps. Stream devices, read native and Metro logs, render interactive CPU, memory, and FPS recordings, and control apps with Mobile Dev tools.",
   "author": {
-    "name": "Callstack"
+    "name": "Callstack",
+    "email": "hello@callstack.com"
   },
-  "homepage": "https://callstack.com",
+  "homepage": "https://github.com/callstackincubator/codex-mobile-dev-plugin",
   "extensions": {
     "com.openai": {
-      "onboardingSkill": "./skills/mobile-dev-setup/SKILL.md"
+      "onboardingSkill": "./skills/mobile-dev-setup/SKILL.md",
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Discover devices without booting them",
+              "prompt": "List my available iOS simulators and Android devices. Do not boot anything.",
+              "tools_triggered": "mobile_list_simulators; mobile_list_android_devices",
+              "expected_behavior": "Lists actual device names, IDs and states, or an actionable missing-runtime/SDK explanation. No boot, shutdown, repair or app launch occurs."
+            },
+            {
+              "description": "Open the panel and interact with the running review app",
+              "prompt": "Open Mobile Dev beside the chat. MobileDevTestApp is already running on the chosen simulator. Read its UI and increment its counter exactly once.",
+              "tools_triggered": "mobile_open_simulator; mobile_describe_ui; mobile_send_input; mobile_describe_ui",
+              "expected_behavior": "Uses the selected booted simulator throughout. Reads fresh accessibility bounds, taps Increment once and confirms the counter changed from zero to one. Does not invoke mobile_launch_app, which is unavailable in 0.1.132. The fixture is launched during setup."
+            },
+            {
+              "description": "Capture the selected simulator without changing app state",
+              "prompt": "Take a screenshot of MobileDevTestApp on the same selected simulator. Do not tap anything or restart the app.",
+              "tools_triggered": "mobile_screenshot",
+              "expected_behavior": "Returns a screenshot of the selected simulator showing the counter at one. No input, app restart or other device change occurs."
+            },
+            {
+              "description": "Read a bounded batch of native logs",
+              "prompt": "Read the native test logs from MobileDevTestApp on the chosen simulator after I press Emit test logs. Then stop collecting.",
+              "tools_triggered": "mobile_logs_session; mobile_read_logs; mobile_logs_close",
+              "expected_behavior": "A session targets MobileDevTestApp, returns the fixture info/warning/error messages after the button press, then closes. The assistant reports actual messages without inventing missing logs or reading unrelated processes."
+            },
+            {
+              "description": "Record and render CPU and memory",
+              "prompt": "Record 15 seconds of CPU and memory for dev.mobile.testapp on the chosen simulator while I run the five-second CPU workload. Show the interactive recording.",
+              "tools_triggered": "mobile_performance_sources; mobile_record_performance; mobile_read_performance_recording; mobile_render_performance_recording",
+              "expected_behavior": "Targets the discovered app process, saves a completed recording and renders a selectable chart with actual samples. Does not invent performance thresholds or claim simulator Display FPS. Recording is retained locally."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Web-only task does not activate mobile tools",
+              "prompt": "Review the CSS of this web-only landing page; do not run a mobile app.",
+              "tools_triggered": "None",
+              "expected_behavior": "No Mobile Dev tools are called; the request is handled as a web/code review task."
+            },
+            {
+              "description": "Unsupported simulator metric is not fabricated",
+              "prompt": "Measure Display FPS on my iOS simulator.",
+              "tools_triggered": "None required; device discovery is acceptable to verify the target.",
+              "expected_behavior": "Explains that iOS simulator Display FPS is unsupported and offers a supported physical iOS or Android target. Does not start a simulator FPS session or substitute animation frequency for measured FPS."
+            },
+            {
+              "description": "Read-only inspection does not authorize a reset",
+              "prompt": "Inspect the current screen of my test app. Do not send input, restart anything, clear data, or reset the device.",
+              "tools_triggered": "mobile_describe_ui and/or mobile_screenshot; no input, repair, shutdown or reset tools.",
+              "expected_behavior": "Only reads the selected simulator screen. Does not send input, repair the input bridge, restart a process, or run shell commands that clear/reset data. Any proposed change awaits a separate explicit user request."
+            }
+          ]
+        },
+        "commerce": false
+      },
+      "publication": {
+        "release_notes": "Prepares the 0.1.132 feature set for review with repository, privacy, terms and support links, the updated store logo, and five positive and three negative review cases. Runtime functionality is unchanged; this version does not include TraceSift, app storage inspection/reset, or the newer app-control and network-condition features."
+      }
     }
   },
   "interface": {
@@ -16,7 +77,7 @@
     "shortDescription": "Devices, logs, and performance",
     "longDescription": "Keep an iOS simulator or Android device beside your chat while building, running, or debugging Expo, React Native, SwiftUI, and other mobile apps. Monitor native CPU, memory, and device-wide Display FPS, render interactive performance recordings in chat, read native and Metro logs, and inspect and control apps with Mobile Dev tools.",
     "developerName": "Callstack",
-    "websiteURL": "https://callstack.com",
+    "websiteURL": "https://github.com/callstackincubator/codex-mobile-dev-plugin",
     "category": "Developer Tools",
     "capabilities": [
       "Read",
@@ -24,12 +85,15 @@
       "Interactive"
     ],
     "composerIcon": "./assets/icon.svg",
-    "logo": "./assets/store-logo.png",
+    "logo": "./assets/store-logo.webp",
     "defaultPrompt": [
       "Build and run my mobile app in the simulator beside this chat.",
       "Open my mobile simulator.",
       "List my iOS and Android devices."
-    ]
+    ],
+    "supportURL": "https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/SUPPORT.md",
+    "privacyPolicyURL": "https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/TERMS.md"
   },
   "skills": "./skills/",
   "mcpServers": "./.mcp.json"
