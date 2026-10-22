@@ -62,8 +62,7 @@ service. No Mobile Dev account or test credentials are required.
 
 ## Demo recording
 
-Set `extensions.com.openai.review.demo_recording_url` to the reviewer-accessible
-HTTPS recording URL, then run:
+Validate the submission metadata with:
 
 ```sh
 npm run check:marketplace-review -- --ready
