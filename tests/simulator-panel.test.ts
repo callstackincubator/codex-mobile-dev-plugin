@@ -1019,6 +1019,109 @@ test("device settings target each selected simulator and leave both streams open
 
 function dispatch(target: Element, name: string, properties: object = {}) { target.dispatchEvent(Object.assign(new Event(name), properties)); }
 
+function pasteText(target: Element, text: string) {
+  const event = new Event("paste", { cancelable: true });
+  Object.assign(event, { clipboardData: { getData: (format: string) => format === "text/plain" ? text : "" } });
+  target.dispatchEvent(event);
+  return event;
+}
+
+for (const platform of ["ios", "android"] as const) test(`Command-V on ${platform} preserves paste and subsequent typing order in its own session`, async t => {
+  const f = fixture(t);
+  await Promise.all([f.ios.panel.load(), f.android.panel.load()]);
+  await waitFor(() => f.ios.element("screen").draws > 0 && f.android.element("screen").draws > 0);
+  const screen = f[platform].element("screen");
+  const shortcut = new Event("keydown", { cancelable: true });
+  Object.assign(shortcut, { key: "v", code: "KeyV", metaKey: true });
+  screen.dispatchEvent(shortcut);
+  assert.equal(shortcut.defaultPrevented, false, "Command-V lets the browser deliver its paste event.");
+  const text = "https://example.test/path?q=hello%20world&count=2";
+  const paste = pasteText(screen, text);
+  assert.equal(paste.defaultPrevented, true);
+  dispatch(screen, "keydown", { key: "!", code: "Digit1", shiftKey: true });
+  await waitFor(() => f.calls.filter(call => call.name.endsWith("_stream_input")).length === 2);
+  const inputs = f.calls.filter(call => call.name.endsWith("_stream_input"));
+  const tool = platform === "ios" ? "mobile_stream_input" : "mobile_android_stream_input";
+  for (const input of inputs) {
+    assert.equal(input.name, tool);
+    assert.equal(input.arguments.sessionId, inputs[0].arguments.sessionId);
+  }
+  assert.deepEqual(inputs[0].arguments.messages, [{ type: "type", text }]);
+  assert.deepEqual(inputs[1].arguments.messages, [{ type: "type", text: "!" }]);
+});
+
+for (const platform of ["ios", "android"] as const) test(`${platform} paste rejects unsupported text without sending partial content`, async t => {
+  const f = fixture(t);
+  const panel = f[platform];
+  await panel.panel.load();
+  await waitFor(() => panel.element("screen").draws > 0);
+  const screen = panel.element("screen");
+  const empty = pasteText(screen, "");
+  assert.equal(empty.defaultPrevented, true);
+  const notice = panel.element("notice");
+  const message = panel.element("notice-message");
+  assert.equal(notice.hidden, true);
+  const oversized = "a".repeat(4097);
+  for (const text of ["hello\nworld", "hello\tworld", "caf\u00e9", oversized]) {
+    const paste = pasteText(screen, text);
+    assert.equal(paste.defaultPrevented, true);
+    assert.match(message.textContent, /4,096 printable US-ASCII/);
+  }
+  const inputs = f.calls.filter(call => call.name.endsWith("_stream_input"));
+  assert.equal(inputs.length, 0);
+  const supported = "a".repeat(4096);
+  pasteText(screen, supported);
+  assert.equal(notice.hidden, true);
+  const input = f.calls.find(call => call.name.endsWith("_stream_input"));
+  assert.deepEqual(input?.arguments.messages, [{ type: "type", text: supported }]);
+});
+
+for (const platform of ["ios", "android"] as const) test(`${platform} paste waits for readiness and stays disabled during selection, unavailability and teardown`, async t => {
+  const f = fixture(t);
+  const panel = f[platform];
+  const screen = panel.element("screen");
+  const beforeReady = pasteText(screen, "before ready");
+  assert.equal(beforeReady.defaultPrevented, false);
+  await panel.panel.load();
+  await waitFor(() => screen.draws > 0);
+  const stage = panel.element("stage");
+  const store = getScreenAnnotations(stage as unknown as HTMLElement);
+  await store.toggle();
+  const selecting = pasteText(screen, "selecting");
+  assert.equal(selecting.defaultPrevented, false);
+  dispatch(screen, "pointerdown", { button: 0, pointerId: 1, clientX: 20, clientY: 30 });
+  dispatch(screen, "pointerup", { button: 0, pointerId: 1, clientX: 20, clientY: 30 });
+  const drafting = pasteText(screen, "drafting");
+  assert.equal(drafting.defaultPrevented, false);
+  store.exit();
+  panel.panel.setAvailable(false);
+  const unavailable = pasteText(screen, "unavailable");
+  assert.equal(unavailable.defaultPrevented, false);
+  await panel.panel.dispose();
+  const disposed = pasteText(screen, "disposed");
+  assert.equal(disposed.defaultPrevented, false);
+  const inputs = f.calls.filter(call => call.name.endsWith("_stream_input"));
+  assert.equal(inputs.length, 0);
+});
+
+test("blocked iOS and physical iOS streams do not accept pasted text", async t => {
+  const f = fixture(t);
+  f.blockIos();
+  await f.ios.panel.load();
+  await waitFor(() => f.ios.element("screen").draws > 0);
+  const screen = f.ios.element("screen");
+  const blocked = pasteText(screen, "blocked");
+  assert.equal(blocked.defaultPrevented, false);
+  f.setPhysicalDevices([physicalPhone]);
+  f.ios.panel.setOpeningTarget({ platform: "ios", kind: "physical", deviceId: physicalPhone.udid });
+  await f.ios.panel.load();
+  await waitFor(() => f.calls.some(call => call.name === "mobile_ios_mirror_session") && f.ios.root.buttons[0].disabled);
+  const physical = pasteText(screen, "physical");
+  assert.equal(physical.defaultPrevented, false);
+  const inputs = f.calls.filter(call => call.name.endsWith("_stream_input") || call.name === "mobile_ios_mirror_input");
+  assert.equal(inputs.length, 0);
+});
+
 test("both platforms stream at once and each routes input to its own session", async t => {
   const f = fixture(t);
   await Promise.all([f.ios.panel.load(), f.android.panel.load()]);

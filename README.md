@@ -83,6 +83,10 @@ Open Mobile Dev from the Codex sidebar, or ask Codex to open the simulator besid
 this chat. Pick a device from the toolbar; selecting a stopped simulator or AVD
 boots it. Use the iOS and Android toggles to show either platform or both.
 
+Click an iOS simulator or Android screen to focus it, then press **Command-V** to
+paste text into the device. Paste accepts up to 4,096 printable US-ASCII characters;
+line breaks and other characters show a notice without sending partial text.
+
 Ask Codex to work with your app, for example:
 
 - “Build and run my Expo app in the simulator beside this chat.”
