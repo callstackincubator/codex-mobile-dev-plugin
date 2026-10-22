@@ -1,9 +1,6 @@
 # Mobile Dev Privacy Policy
 
-Last updated: 22 October 2026
-
-> Draft publication TODO: confirm and fill in the Sentry retention periods in
-> section 5 before using this policy for directory resubmission.
+Last updated: 23 October 2026
 
 ## 1. Who we are and what this policy covers
 
@@ -145,7 +142,8 @@ and [OpenAI's privacy policy](https://openai.com/policies/privacy-policy/).
 
 | Data | Retention and deletion |
 | --- | --- |
-| Sentry errors/crashes, traces, and metrics | **TODO before publication:** verify the configured retention for each Mobile Dev Sentry project and data category, including any applicable backup/deletion delay, and replace this entry with those periods. Do not assume a vendor default. |
+| Sentry errors/crashes | 90 days under our Sentry Team plan. |
+| Sentry performance spans and Application Metrics | 30 days under our Sentry Team plan. |
 | Local live logs | Held in bounded memory buffers. A server log session expires after five minutes without reads or keep-alives; closing the session stops collection. Copies already attached to the host follow the host's retention. |
 | Saved performance recordings | Stored under `~/Library/Application Support/mobile-dev/recordings` until you remove them; the recording store has no automatic age-based expiry. |
 | TraceSift integration results/references | Stored under `~/.tracesift/integrations/mobile-dev` by default, or the corresponding `TRACE_SIFT_HOME` directory, until removed. Original profiles and the TraceSift service's own data are separate. |
@@ -153,6 +151,8 @@ and [OpenAI's privacy policy](https://openai.com/policies/privacy-policy/).
 | Native crash-report caches | Pending reports can persist between runs under `~/Library/Caches/mobile-dev/sentry` or `/data/local/tmp/mobile-dev-sentry` on Android and be sent on a subsequent start. They can be removed after stopping the relevant processes. |
 | Temporary app-storage database copies | Created locally for inspection and removed by the operation's cleanup handler. An interrupted process may leave temporary files for OS/manual cleanup. |
 | Support correspondence | Kept while handling the request and for any further period needed for a specific legal obligation or claim; information no longer needed for those purposes is deleted. |
+
+Sentry's [data retention periods](https://docs.sentry.io/security-legal-pii/security/data-retention-periods/) apply to active telemetry data. Sentry separately [reports deleting production event-data backups](https://www.sentry.help/en/articles/13965019-how-frequently-is-data-backed-up) 30 or 90 days after backup creation, depending on the data type; that guidance does not specify an Application Metrics-specific backup period. Active-data expiry does not imply immediate removal from backups.
 
 Uninstalling the plugin does not necessarily remove saved recordings, identifiers,
 crash caches, TraceSift files, host messages, or backups. GitHub, the host, your
