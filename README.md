@@ -14,8 +14,7 @@ codex plugin add mobile-dev@mobile-dev
 ```
 
 Open a new chat after installing. The package includes the built plugin and
-bundled runtimes; no plugin build or `npm install` is needed. While the repository
-is private, installation requires GitHub read access and working Git authentication.
+bundled runtimes; no plugin build or `npm install` is needed.
 
 Mobile Dev shows a banner when a newer release is ready to install. Click
 **Update**, then fully quit and reopen Codex after it finishes.
@@ -111,12 +110,19 @@ To build the plugin, install a local package, or contribute changes, see
 [CONTRIBUTING.md](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/CONTRIBUTING.md).
 Implementation and release details live in the linked contributor documentation.
 
-## Privacy
+## Privacy and support
 
-Mobile Dev reports plugin errors, crashes, and aggregate performance measurements
-to Sentry. App logs, screenshots, input content, tool payloads, and device
-performance recordings are excluded. Errors and crashes use a generated anonymous
-installation ID. Set `MOBILE_DEV_TELEMETRY=off` in the MCP launch environment to
-disable reporting. See
+Mobile Dev reports plugin errors, crashes, usage counters, sampled traces, and
+aggregate plugin performance measurements to Sentry by default. App logs,
+screenshots, input content, tool payloads, app storage contents, profiles, and
+device performance recordings are excluded from that telemetry. Errors and
+crashes use a randomly generated persistent installation ID. Set
+`MOBILE_DEV_TELEMETRY=off` in the MCP launch environment and restart the plugin
+processes to disable reporting. Tool results and content sent to chat are handled
+by the host separately. Read the [Privacy Policy](PRIVACY.md) and
+[Terms of Service](TERMS.md), or see
 [Sentry observability](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/docs/telemetry.md)
-for collection, privacy, and configuration details.
+for implementation details.
+
+For help, email [hello@callstack.com](mailto:hello@callstack.com).
+See [Support](SUPPORT.md) for reporting bugs, security issues, and privacy requests.

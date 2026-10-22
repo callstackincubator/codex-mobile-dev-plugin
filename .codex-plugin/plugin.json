@@ -3,9 +3,10 @@
   "version": "0.1.162",
   "description": "Keep a simulator beside the chat while building, running, or debugging iOS and Android apps. Stream devices, read native and Metro logs, analyze CPU and React profiles with TraceSift, render interactive CPU, memory, and FPS recordings, and control apps with Mobile Dev tools.",
   "author": {
-    "name": "Callstack"
+    "name": "Callstack",
+    "email": "hello@callstack.com"
   },
-  "homepage": "https://callstack.com",
+  "homepage": "https://github.com/callstackincubator/codex-mobile-dev-plugin",
   "extensions": {
     "com.openai": {
       "onboardingSkill": "./skills/mobile-dev-setup/SKILL.md"
@@ -16,8 +17,10 @@
     "shortDescription": "Devices, logs, and performance",
     "longDescription": "Keep an iOS simulator or Android device beside your chat while building, running, or debugging Expo, React Native, SwiftUI, and other mobile apps. Monitor native CPU, memory, and device-wide Display FPS, analyze local CPU and React profiles with TraceSift cards, render interactive performance recordings in chat, read native and Metro logs, and inspect and control apps with Mobile Dev tools.",
     "developerName": "Callstack",
-    "websiteURL": "https://callstack.com",
-    "privacyPolicyURL": "https://www.callstack.com/documents/privacy-policy",
+    "websiteURL": "https://github.com/callstackincubator/codex-mobile-dev-plugin",
+    "supportURL": "https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/SUPPORT.md",
+    "privacyPolicyURL": "https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/TERMS.md",
     "category": "Developer Tools",
     "capabilities": [
       "Read",
