@@ -62,8 +62,8 @@ service. No Mobile Dev account or test credentials are required.
 
 ## Demo recording
 
-Set `extensions.com.openai.review.demo_recording_url` to the reviewer-accessible
-HTTPS recording URL, then run:
+[Watch the supplied demo recording](https://raw.githubusercontent.com/callstackincubator/codex-mobile-dev-plugin/1bbda3b5592f2644d5572cb2c30f59e07cd444cd/docs/review/media/mobile-dev-demo.mp4). The manifest
+links to this commit-pinned recording. Validate the submission metadata with:
 
 ```sh
 npm run check:marketplace-review -- --ready
