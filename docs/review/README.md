@@ -60,11 +60,10 @@ service. No Mobile Dev account or test credentials are required.
    Remove only test-generated profile/recording artifacts if cleanup is desired;
    uninstalling Mobile Dev does not delete saved recordings or TraceSift results.
 
-## Demo recording: TODO URL
+## Demo recording
 
-The publisher has an existing recording. Its URL is intentionally **not** a fake
-`demo_recording_url` in the manifest. Before submission, add the actual HTTPS link
-at `extensions.com.openai.review.demo_recording_url` and run:
+Set `extensions.com.openai.review.demo_recording_url` to the reviewer-accessible
+HTTPS recording URL, then run:
 
 ```sh
 npm run check:marketplace-review -- --ready
@@ -105,26 +104,16 @@ existing video predates a fix, add a short supplemental segment and link it from
 the same reviewer-accessible location. A script or automated test log is not a
 substitute for the walkthrough recording.
 
-## Submission evidence (complete for the final ZIP)
+## Final verification
 
-| Item | Evidence |
-| --- | --- |
-| Source commit, plugin version, ZIP SHA-256 | TODO |
-| macOS / Codex / Xcode / simulator runtime | TODO |
-| Android SDK/device, if exercised | TODO or explicitly not exercised |
-| TraceSift CLI version | TODO |
-| Five positive cases | TODO: actual outcome and timestamp for each |
-| Three negative cases | TODO: actual outcome and timestamp for each |
-| Final storage redaction smoke test | TODO: synthetic values only |
-| Demo recording and access check | TODO: publisher-provided URL |
-| Main-branch Website/Privacy/Terms/Support links | Verify after stack merge |
+Install the exact ZIP being submitted and run all eight cases. Record the build
+version, source commit, ZIP checksum, test environment, TraceSift CLI version,
+and actual case outcomes in the release PR. Keep outstanding work in the PR.
 
-Before re-upload, merge the stack in order, resolve publication checks in
-[the legal baseline](../legal-baseline.md), bump the synchronized plugin version,
-build/package the final production artifact and run the package smoke checks.
-Update release notes to include only changes present in that ZIP. Re-upload is
-needed to change imported cases; the dashboard makes imported cases read-only.
-Sentry's configured retention remains a separate TODO at the publisher's request.
+Verify the public Website, Privacy, Terms and Support URLs, then build/package
+the production artifact and run the package smoke checks. Release notes must
+match the contents of that ZIP. Re-upload to change imported cases; the dashboard
+makes imported cases read-only.
 
 Sources: [submission metadata](https://developers.openai.com/plugins/deploy/submission#configure-onboarding-review-and-publication),
 [plugin guidelines](https://developers.openai.com/plugins/plugin-guidelines),
