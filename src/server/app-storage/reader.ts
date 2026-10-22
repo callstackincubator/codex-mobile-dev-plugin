@@ -10,8 +10,9 @@ import type { AppContainer, ContainerFile } from "./container.ts";
 import { basename, classifyFiles, nullEntry, parseDataStorePreferences, parsePlistXml, parseSharedPreferences, plistEntries, storeId, textEntry } from "./formats.ts";
 import type { ParsedEntry, StoreCandidate } from "./formats.ts";
 import { decodeMmkv, guessMmkvValue } from "./mmkv.ts";
+import { REDACTED, redactStorageEntry, redactStorageValue, sensitiveStorageName, sensitiveStorageText, sensitiveStoragePath } from "./redaction.ts";
 
-export type ReadOptions = { entries: number; valueLength: number; bundleId: string; run: CommandRunner };
+export type ReadOptions = { entries: number; valueLength: number; bundleId: string; run: CommandRunner; store?: string; keys?: string[] };
 // AsyncStorage databases are SQLite files recognized by their tables, so reading one can change its kind.
 type StoreContent = { status: StorageStore["status"]; note?: string; entries: ParsedEntry[]; kind?: StoreKind };
 
@@ -118,10 +119,13 @@ async function mapLimited<T, R>(items: readonly T[], limit: number, work: (item:
   return results;
 }
 
-export async function readStorage(container: AppContainer, { entries: entryLimit, valueLength, bundleId, run }: ReadOptions): Promise<StorageSnapshot> {
+export async function readStorage(container: AppContainer, { entries: entryLimit, valueLength, bundleId, run, store, keys }: ReadOptions): Promise<StorageSnapshot> {
   const files = await container.list();
   const sizes = new Map(files.map(file => [file.path, file.bytes]));
-  const candidates = classifyFiles(files.map(file => file.path), container.platform);
+  const allCandidates = classifyFiles(files.map(file => file.path), container.platform).filter(candidate => !sensitiveStoragePath(candidate.path));
+  const candidates = store === undefined ? allCandidates : allCandidates.filter(candidate => storeId(candidate) === store);
+  if (store !== undefined && candidates.length === 0) throw new ExpectedOperationError("invalid_input", "That storage no longer exists. Refresh and try again.");
+  const selectedKeys = keys === undefined ? undefined : new Set(keys);
   const owner = new Map<string, string>();
   const stores = await mapLimited(candidates, 4, async (candidate): Promise<StorageStore> => {
     const id = storeId(candidate);
@@ -136,15 +140,18 @@ export async function readStorage(container: AppContainer, { entries: entryLimit
       id, kind: content.kind ?? candidate.kind, name: candidate.name, path: candidate.path, status: content.status, ...content.note ? { note: content.note } : {},
       bytes: candidate.files.reduce((total, file) => total + (sizes.get(file) ?? 0), 0),
       entryCount: content.entries.length,
-      entries: content.entries.slice(0, entryLimit).map(entry => limitEntry(entry, valueLength)),
+      entries: content.entries.filter(entry => selectedKeys === undefined || selectedKeys.has(entry.key)).slice(0, entryLimit)
+        .map(entry => limitEntry(redactStorageEntry(entry, candidate.name), valueLength)),
     };
   });
-  const sorted = [...files].sort((a, b) => b.bytes - a.bytes).slice(0, storageLimits.files);
+  // A scoped request must not expose other stores' paths, sizes, or values.
+  const scopedFiles = files.filter(file => !sensitiveStoragePath(file.path) && (store === undefined || owner.has(file.path)));
+  const sorted = [...scopedFiles].sort((a, b) => b.bytes - a.bytes).slice(0, storageLimits.files);
   return {
     platform: container.platform, bundleId, readAt: Date.now(), stores,
     files: sorted.map((file: ContainerFile): StorageFile => ({ ...file, ...owner.has(file.path) ? { store: owner.get(file.path) } : {} })),
-    fileCount: files.length,
-    totalBytes: files.reduce((total, file) => total + file.bytes, 0),
+    fileCount: scopedFiles.length,
+    totalBytes: scopedFiles.reduce((total, file) => total + file.bytes, 0),
   };
 }
 
@@ -164,23 +171,34 @@ export async function clearStore(container: AppContainer, id: string) {
 }
 
 // One page of a table. The table must be in the database's own list, so callers cannot inject SQL.
-export async function readTable(container: AppContainer, id: string, table: string, { offset, limit, valueLength, run }: { offset: number; limit: number; valueLength: number; run: CommandRunner }): Promise<StorageTable> {
+export async function readTable(container: AppContainer, id: string, table: string, { offset, limit, valueLength, run, columns: requestedColumns }: { offset: number; limit: number; valueLength: number; run: CommandRunner; columns?: string[] }): Promise<StorageTable> {
   const candidate = await findStore(container, id, "sqlite");
+  if (sensitiveStoragePath(candidate.path) || sensitiveStorageText(table)) throw new ExpectedOperationError("invalid_input", "Sensitive storage identifiers cannot be returned.");
   return withDatabase(container, candidate, async file => {
-    if (!(await listTables(run, file)).includes(table)) throw new ExpectedOperationError("invalid_input", `The table ${table} no longer exists. Refresh and try again.`);
+    if (!(await listTables(run, file)).includes(table)) throw new ExpectedOperationError("invalid_input", "That table no longer exists. Refresh and try again.");
     const name = quoteIdentifier(table);
     const [info, [count]] = await Promise.all([sqlite(run, file, `PRAGMA table_info(${name})`), sqlite(run, file, `SELECT count(*) AS total FROM ${name}`)]);
-    const columns = info.map(column => ({ name: String(column.name), type: String(column.type ?? "") }));
-    // Blobs cannot travel as JSON, so they become a hex preview no longer than the value limit.
+    const allColumns = info.map(column => ({ name: String(column.name), type: String(column.type ?? "") })).filter(column => !sensitiveStorageText(column.name) && !sensitiveStorageText(column.type));
+    if (requestedColumns?.some(name => !allColumns.some(column => column.name === name))) {
+      throw new ExpectedOperationError("invalid_input", "A requested column no longer exists. Refresh and try again.");
+    }
+    const columns = requestedColumns === undefined ? allColumns : allColumns.filter(column => requestedColumns.includes(column.name));
+    // Key/value tables often store credentials in a generically named value column.
+    // Read their key/name label even when it is outside the requested projection;
+    // it is only used locally to decide whether the whole row must be redacted.
+    const labels = allColumns.filter(column => /^(key|name|k|(?:setting|preference|property|attribute)[_-]?(?:key|name))$/i.test(column.name));
     const select = columns.map((column, index) => {
       const quoted = quoteIdentifier(column.name);
-      return `CASE typeof(${quoted}) WHEN 'blob' THEN 'x''' || substr(hex(${quoted}), 1, ${valueLength}) || '''' ELSE ${quoted} END AS c${index}`;
-    }).join(", ") || "NULL AS c0";
-    const rows = await sqlite(run, file, `SELECT ${select} FROM ${name} LIMIT ${limit} OFFSET ${offset}`);
+      if (sensitiveStorageName(`${table}.${column.name}`)) return `'${REDACTED}' AS c${index}`;
+      return `CASE typeof(${quoted}) WHEN 'blob' THEN '${REDACTED}' ELSE ${quoted} END AS c${index}`;
+    });
+    select.push(...labels.map((column, index) => `${quoteIdentifier(column.name)} AS k${index}`));
+    const rows = await sqlite(run, file, `SELECT ${select.join(", ") || "NULL AS c0"} FROM ${name} LIMIT ${limit} OFFSET ${offset}`);
     return {
       table, columns, offset, total: Number(count?.total ?? 0),
-      rows: rows.map(row => columns.map((_, index) => {
-        const cell = row[`c${index}`];
+      rows: rows.map(row => columns.map((column, index) => {
+        const sensitiveRow = labels.some((_, label) => sensitiveStorageName(String(row[`k${label}`] ?? "")));
+        const cell = sensitiveRow ? REDACTED : redactStorageValue(`${table}.${column.name}`, row[`c${index}`]);
         if (cell === null || cell === undefined || typeof cell === "number") return cell ?? null;
         const text = String(cell);
         return text.length > valueLength ? `${text.slice(0, valueLength)}…` : text;

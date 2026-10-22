@@ -37,7 +37,10 @@ Depending on the tools you use, Mobile Dev processes:
   and stack traces.
 - App CPU, memory, thread, FPS, and frame-timing measurements and saved recordings.
 - App storage keys, values, database rows, and file metadata when you inspect
-  storage. Clear/reset operations can delete data in the selected app.
+  storage. Results are filtered before reaching the host or panel: recognized
+  sensitive fields, credential-like values, and binary values are redacted. These
+  rules cannot identify every secret or personal detail. Clear/reset operations
+  can delete data in the selected app.
 - CPU and React profiles, call trees, component names, source paths, analysis
   results, and investigation context when you use TraceSift. The integration
   sends profiles to a TraceSift service on your own computer and saves analysis
