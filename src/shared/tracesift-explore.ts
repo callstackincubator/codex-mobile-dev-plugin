@@ -18,6 +18,18 @@ export type TraceSiftExploreKind = TraceSiftExploreEnvelope["kind"];
 export const TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES = 64 * 1024;
 
 /**
+ * What the payload tool answers with when a finding cannot cross the bridge.
+ * The card reads it to fall back to the browser window, so both sides name it
+ * here rather than matching prose.
+ */
+export const TRACE_SIFT_PAYLOAD_TOO_LARGE = "This finding is larger than the panel can open.";
+
+/** Whether a failed payload call is the size refusal rather than a real fault. */
+export function traceSiftPayloadRefused(message: string): boolean {
+  return message.includes(TRACE_SIFT_PAYLOAD_TOO_LARGE);
+}
+
+/**
  * Past this the explorer gives up before decoding. The service caps its trees
  * (60k nodes, 5k commits), so more than this is one for the browser window.
  */
@@ -26,8 +38,15 @@ export const TRACE_SIFT_PAYLOAD_MAX_BYTES = 24 * 1024 * 1024;
 /**
  * Past this depth the payload goes to the browser instead: `JSON.stringify`
  * recurses, so a runaway tree overflows before the byte guard can see it.
+ *
+ * Counted in object levels, not call frames: a tree node and its `children`
+ * array are two levels each, so a 900-frame stack — ordinary for a React Native
+ * recording — measures about 1900. V8 serializes to roughly 6000 levels, so
+ * this sits between the real recordings and the cliff. The serializer is
+ * guarded against overflow in its own right, so this bound only decides where
+ * a runaway tree is turned away.
  */
-export const TRACE_SIFT_PAYLOAD_MAX_DEPTH = 1024;
+export const TRACE_SIFT_PAYLOAD_MAX_DEPTH = 4096;
 
 /** Walks `value` with an explicit stack, so measuring depth cannot itself overflow. */
 export function traceSiftPayloadTooDeep(value: unknown, maxDepth = TRACE_SIFT_PAYLOAD_MAX_DEPTH): boolean {
