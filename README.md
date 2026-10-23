@@ -166,3 +166,8 @@ for implementation details.
 
 For help, email [hello@callstack.com](mailto:hello@callstack.com).
 See [Support](SUPPORT.md) for reporting bugs, security issues, and privacy requests.
+
+## License
+
+Mobile Dev is available under the [MIT License](LICENSE). Bundled third-party
+components keep their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).

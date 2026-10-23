@@ -137,7 +137,12 @@ npm run package:claude
 npm run test:claude
 ```
 
-This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`.
+This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` and
+the Claude plugin folder `release/claude-plugin/mobile-dev`. The plugin folder
+uses `.claude-plugin/plugin.json`, which starts `dist/server.mjs` with Node.js
+22.19 or later from `PATH`, and leaves out the Codex manifest, `.mcp.json`, and
+launcher. Check it with `claude plugin validate ./release/claude-plugin/mobile-dev`,
+or load it with `claude --plugin-dir ./release/claude-plugin/mobile-dev`.
 Follow the [manual installation steps](README.md#claude-desktop-manual-installation).
 Remove the `mobile-dev` development entry before installing the bundle to avoid
 duplicate servers. Rebuild, repackage, and reinstall to update a bundled copy.
