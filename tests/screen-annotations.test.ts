@@ -641,3 +641,56 @@ test("editing a note while its context is publishing prevents an obsolete draft"
   assert.equal(sends, 0);
   assert.equal(context.screenAnnotations[0].text, "Updated request");
 });
+
+test("native MCP Apps handshake publishes retrievable selection evidence before the chat draft", async t => {
+  const toolName = "mcp__mobile_dev__mobile_open_workspace";
+  const app = new App({ name: "annotation-native-test", version: "1" }, {}, { autoResize: false });
+  const bridge = new AppBridge(null, { name: "native-host-fixture", version: "1" }, {
+    updateModelContext: { text: {} }, message: { text: {} },
+  }, { hostContext: { toolInfo: { id: "opening-call", tool: { name: toolName, inputSchema: { type: "object" } } } } });
+  let shared: Parameters<App["updateModelContext"]>[0] | undefined;
+  let acknowledge: (() => void) | undefined;
+  let hold = false;
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  bridge.onupdatemodelcontext = async params => {
+    if (hold) { hold = false; await new Promise<void>(resolve => { acknowledge = resolve; }); }
+    shared = params;
+    return {};
+  };
+  bridge.onmessage = async message => { messages.push(message); return {}; };
+  const [appTransport, hostTransport] = InMemoryTransport.createLinkedPair();
+  t.after(async () => { await app.close(); await bridge.close(); });
+  await bridge.connect(hostTransport); await app.connect(appTransport);
+  const context = new PanelContext(app, {} as OpenAIExtensions);
+  await context.attachAnnotation(annotation);
+  await context.attachAnnotation({ ...annotation, id: "note-2", number: 2, text: "Only change this instance", component: {
+    ...component, identifier: "second-continue-button", bounds: { x: 200, y: 300, width: 60, height: 30 },
+  } });
+  hold = true;
+  const preparing = context.sendAnnotationsToChat();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(messages.length, 0, "Do not prepare a draft until the host acknowledges selection context.");
+  acknowledge!();
+  await preparing;
+  assert.equal(messages.length, 1);
+  assert.match(JSON.stringify(messages[0].content), /mcp__mobile_dev__mobile_open_workspace/);
+  assert.match(JSON.stringify(messages[0].content), /Only change this instance/);
+  assert.doesNotMatch(JSON.stringify(messages[0].content), /second-continue-button|Bounds:/);
+  assert.equal(messages[0]._meta, undefined);
+  // Hosts can fetch this snapshot on the later user turn, even after the draft
+  // was acknowledged. Both identically labelled targets must remain distinct.
+  const fetched = shared!.content!.filter(item => item.type === "text").map(item => item.text).join("\n");
+  assert.match(fetched, /Identifier: "continue-button"/);
+  assert.match(fetched, /Bounds: 10,20,100,40 points/);
+  assert.match(fetched, /Identifier: "second-continue-button"/);
+  assert.match(fetched, /Bounds: 200,300,60,30 points/);
+  assert.match(fetched, /Apply each Edit as a request/);
+  assert.equal(shared!.structuredContent, undefined, "Selection evidence must be in text, without requiring structured-content support.");
+  assert.ok(shared!.content!.every(item => item._meta === undefined));
+  assert.equal(context.screenAnnotations.length, 2);
+  context.hostChanged();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(JSON.stringify(shared!.content), /second-continue-button/);
+  await context.clearAttachments();
+  assert.doesNotMatch(JSON.stringify(shared!.content), /continue-button/);
+});

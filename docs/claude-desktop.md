@@ -63,6 +63,10 @@ upload process. The packager refuses a mismatched build environment.
   action. This is separate from listing this server's MCP resources. The draft
   and Claude tool descriptions direct it to read widget context before acting,
   and to ask for the widget to be reopened if that context is unavailable.
+  When the host supplies the opening tool's name, the draft includes it so
+  Claude can identify the correct widget. Context updates must be acknowledged
+  before the draft is prepared; the full selection evidence stays available
+  until notes are explicitly cleared.
   Verify the handoff by asking for a saved note's exact identifier and bounds;
   label matching against a fresh accessibility tree does not prove delivery.
   See the [upstream explanation](https://github.com/anthropics/claude-ai-mcp/issues/102).

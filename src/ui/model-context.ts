@@ -92,7 +92,7 @@ export class PanelContext {
     if (!annotations.length) return;
     const startedAt = performance.now();
     const hostAttachments = this.usesHostAttachments;
-    const text = hostAttachments ? ANNOTATION_EDIT_PROMPT : formatAnnotationDraft(annotations);
+    const text = hostAttachments ? ANNOTATION_EDIT_PROMPT : formatAnnotationDraft(annotations, this.app.getHostContext?.()?.toolInfo?.tool.name);
     const revision = this.revision;
     recordUiTiming("ui.annotations.message_build", performance.now() - startedAt);
     if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
