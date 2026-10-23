@@ -52,9 +52,14 @@ upload process. The packager refuses a mismatched build environment.
 - Codex update checks and installation are disabled, including UI polling.
   Reinstall a rebuilt bundle to update.
 - Logs and annotations use standard context updates when advertised. Images
-  additionally require image-context support. A local **Clear attachments**
-  control replaces composer-chip removal; Codex keeps its native chips.
-- Ask/Investigate sends complete standard messages; OpenAI routing is included
+  additionally require image-context support. The top attachment bar lists saved
+  notes and provides **Add notes to chat** and **Clear attachments**; Codex keeps
+  its native chips and device-level send controls.
+- **Add notes to chat** prepares a readable draft with the note text and targets.
+  Selection details and editing guidance stay in model context. Review and send
+  the draft in Claude before clearing notes. Claude may show a warning for
+  app-generated drafts. Notes remain until explicitly removed or cleared.
+- Other Ask/Investigate actions send complete standard messages; OpenAI routing is included
   only when the host advertises it. Codex skills are not installed by this bundle.
 
 `test:claude` extracts the bundle into a temporary path and verifies MCP startup,

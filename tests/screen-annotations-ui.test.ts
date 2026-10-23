@@ -29,8 +29,8 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   let cleanup = async () => {};
   t.after(async () => { await cleanup(); dom.window.close(); for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); } await rm(directory, { recursive: true, force: true }); });
   const output = resolve(directory, "annotations.mjs");
-  await build({ stdin: { contents: 'export { SimulatorView } from "./src/ui/components/simulator-view.tsx"; export { getScreenAnnotations } from "./src/ui/screen-annotations.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic", external: ["react", "react/*", "react-dom", "react-dom/*", "radix-ui", "lucide-react", "@base-ui/react/*"] });
-  const { SimulatorView, getScreenAnnotations } = await import(pathToFileURL(output).href);
+  await build({ stdin: { contents: 'export { ContextAttachments } from "./src/ui/components/context-attachments.tsx"; export { SimulatorView } from "./src/ui/components/simulator-view.tsx"; export { getScreenAnnotations } from "./src/ui/screen-annotations.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic", external: ["react", "react/*", "react-dom", "react-dom/*", "radix-ui", "lucide-react", "@base-ui/react/*"] });
+  const { ContextAttachments, SimulatorView, getScreenAnnotations } = await import(pathToFileURL(output).href);
   const { act, createElement } = await import("react"); const { createRoot } = await import("react-dom/client");
   const root = createRoot(dom.window.document.getElementById("root")!);
   cleanup = async () => { await act(async () => { root.unmount(); }); };
@@ -100,6 +100,39 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   await act(async () => { (Array.from(dom.window.document.querySelectorAll("button")).find(button => button.textContent === "1 note") as HTMLButtonElement).click(); });
   await act(async () => { (dom.window.document.querySelector('[aria-label="Remove annotation 1"]') as HTMLButtonElement).click(); });
+  assert.equal(dom.window.document.querySelector('.annotation-marker'), null);
+  // Claude uses one shared bar; preparing a draft must preserve its notes.
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  const standard = new PanelContext({
+    getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
+    async updateModelContext() { return {}; },
+    async sendMessage(message) { messages.push(message); return {}; },
+  } as App, {} as OpenAIExtensions);
+  const top = dom.window.document.createElement("div");
+  dom.window.document.body.prepend(top);
+  const topRoot = createRoot(top);
+  cleanup = async () => { await act(async () => { topRoot.unmount(); root.unmount(); }); };
+  await act(async () => {
+    topRoot.render(createElement(ContextAttachments, { context: standard }));
+    store.connect(standard);
+    await store.toggle();
+    store.select({ x: 50, y: 40 }); store.setText("Make this button green");
+  });
+  assert.equal(dom.window.document.querySelector('[aria-label="Save annotation"]')?.getAttribute("title"), "Save note");
+  await act(async () => { await store.save(); });
+  assert.equal(dom.window.document.querySelector('[data-element="annotations"]')?.textContent?.includes("Send to chat"), false);
+  assert.match(top.textContent!, /1 note/);
+  assert.match(top.textContent!, /Make this button green/);
+  const add = Array.from(top.querySelectorAll("button")).find(button => button.textContent === "Add notes to chat")!;
+  await act(async () => { add.click(); });
+  assert.equal(messages.length, 1);
+  assert.doesNotMatch(JSON.stringify(messages[0].content), /Bounds:|AXButton/);
+  assert.equal(standard.screenAnnotations.length, 1);
+  assert.ok(dom.window.document.querySelector('.annotation-marker'));
+  assert.match(top.querySelector('[role="status"]')!.textContent!, /Review and send there/);
+  await act(async () => { (Array.from(top.querySelectorAll("button")).find(button => button.textContent === "Clear attachments (1)") as HTMLButtonElement).click(); });
+  assert.equal(standard.attachmentCount, 0);
+  assert.equal(top.textContent, "");
   assert.equal(dom.window.document.querySelector('.annotation-marker'), null);
   await act(async () => { selectButton.click(); store.dispose(); });
   assert.equal(dom.window.document.querySelector("canvas"), canvas);
