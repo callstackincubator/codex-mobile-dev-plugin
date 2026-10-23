@@ -1,6 +1,5 @@
 import { App, applyDocumentTheme, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
 import { OpenAIExtensions } from "@openai/mcp-extensions/app";
-import "@openai/mcp-extensions/app/styles.css";
 import "@fontsource-variable/inter";
 import "./theme.css";
 import "./style.css";
@@ -115,7 +114,6 @@ function hostContext() {
   const host = app.getHostContext();
   if (host?.theme) applyDocumentTheme(host.theme);
   if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
-  document.documentElement.style.setProperty("--font-sans", '"Inter Variable", sans-serif');
   panelContext.hostChanged();
   recordingController.hostChanged();
   panelContext.resume();
