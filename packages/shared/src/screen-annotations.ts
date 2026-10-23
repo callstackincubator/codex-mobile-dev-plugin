@@ -184,6 +184,29 @@ export function formatAnnotationMessage(annotations: ScreenAnnotation[]): string
   return `${ANNOTATION_EDIT_PROMPT}\n${ANNOTATION_EDIT_GUIDANCE}\n\n${annotations.map(formatAnnotationContext).join("\n\n")}`;
 }
 
+function draftLocator(annotation: ScreenAnnotation): string {
+  const { component, screen, point, simulator, selection } = annotation, source = component.react?.source;
+  return [
+    component.source === "screen" ? "manual region" : component.role,
+    component.identifier && `${component.source === "react-native" ? "testID" : "identifier"} ${JSON.stringify(component.identifier)}`,
+    source && `${component.react?.sourceKind === "owner" ? "owner source" : "source"} ${sourceLocation(source)}`,
+    selection?.instance && `instance ${selection.instance.index} of ${selection.instance.total}`,
+    `bounds ${formatBounds(component.bounds)} ${screen.units}`,
+    `point ${[point.x, point.y].map(value => Math.round(value * 10) / 10).join(",")}`,
+    `device ${simulator.udid}`,
+  ].filter(Boolean).join("; ");
+}
+
+// Widget model context is host-dependent: some hosts attach it to the next turn,
+// some expose an on-demand reader, some never show it to the model. The draft must
+// identify each target on its own; model context adds hierarchy and guidance.
+// Notes live only in this widget instance, so never ask the user to reopen it.
+export function formatAnnotationDraft(annotations: ScreenAnnotation[]): string {
+  return `Apply these notes. Each Locator identifies the selected element; change only that element unless the note asks for more. Mobile Dev's widget context, when available, adds the hierarchy and editing guidance.\n\n${annotations.map(annotation =>
+    `- ${annotation.simulator.name} · #${annotation.number} ${JSON.stringify(annotation.component.label ?? annotation.component.name)}: ${annotation.text}\n  Locator: ${draftLocator(annotation)}`
+  ).join("\n")}`;
+}
+
 export function formatAnnotationContext(annotation: ScreenAnnotation): string {
   const { component, screen, simulator } = annotation, source = component.react?.source;
   const target = component.label ?? component.name;

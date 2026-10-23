@@ -4,12 +4,23 @@
 
 ## Hosts
 
-Since 0.1.165, UI and server telemetry carry a `host` tag and attribute: `codex` for
-the Codex plugin and `mac` for the Mac app, which runs the same server and shared UI.
-The UI reads the value from its page (`data-host`), the server from
-`MOBILE_DEV_HOST`, and the server's metadata allowlist accepts only these two values.
-Earlier releases have no `host` value; treat its absence as `codex`. Surfaces,
-measurement names, units and boundaries are unchanged in both hosts.
+Since 0.1.165, UI and server telemetry carry a `host` tag and attribute with one of
+`codex`, `claude`, `mac` or `other`. Codex, Claude Desktop and other MCP Apps hosts
+load the same panel and server; the Mac app runs the same server and shared UI.
+Behavior never depends on this value; it only attributes measurements and errors.
+
+- The Mac page names itself (`data-host="mac"`); the Mac app also starts the server
+  with `MOBILE_DEV_HOST=mac`.
+- MCP Apps panels are labelled once connected: `codex` when the host advertises
+  OpenAI extensions, otherwise the host's reported name mapped by `telemetryHost`
+  (`claude` for Claude, else `other`). Calls before connecting carry no host.
+- The server labels itself from the connecting MCP client's name on initialize and
+  reports `other` until then.
+- The server's metadata allowlist accepts only these four values; the raw host or
+  client name is never sent.
+
+Earlier releases have no `host` value. Surfaces, measurement names, units and
+boundaries are unchanged in every host.
 
 The Mac app loads its page through the server's `ui://mobile-dev/mac.html` resource,
 so the page receives the same server-owned environment, opt-out and anonymous
@@ -336,6 +347,13 @@ Since 0.1.92, Android inspection timing also includes the full-resolution displa
 Since 0.1.93, `ui.video.paint` and the platform frame counters also cover frames drawn to the local buffer while Select freezes the visible screen. These remain bounded plugin processing measurements, not device FPS. Recovery uses the same surface attribution and timing units; screenshots and element details remain local.
 
 `ui.annotations.send` measures the host send round trip, including composer retries. Outcome counters distinguish success, a missing composer, timeout and other failures. Unexpected send failures use a fixed error message. No message content goes to Sentry. A timeout keeps notes for a manual retry; it never triggers an automatic resend, since delivery may have succeeded without acknowledgement.
+
+The standard-host attachment bar reuses these annotation measurements. On standard hosts,
+the measured operation includes publishing selection context before preparing the
+chat draft. `ui.annotations.send_success` means the host accepted the request;
+it does not confirm user submission or a model response. Notes remain until the
+user clears them. Message/context construction timings, surface attribution, and
+content scrubbing are preserved; no note text or selection evidence enters telemetry.
 
 Since 0.1.99, `ui.logs.foreground_change` counts automatic app-filter changes applied while Logs is active, including selected-device and process-lifetime changes. From 0.1.103, these changes update the visible query and local process identity mapping instead of restarting a scoped collector. `ui.logs.app_identity` measures batch insertion with native PID-to-app joins and discovery updates in milliseconds, using bounded aggregate windows. Hidden or closed log views defer row processing until reopened. Shared `ui.device_apps.discovery` timing and handled discovery-error coverage remain in place, including Android's foreground PID lookup; native session operations retain MCP tracing, Node runtime coverage, and `logs.ios.parse` timings. No app IDs, PIDs, package names, device IDs, or query text are attached to these measurements. Native helper telemetry and symbols are unchanged.
 

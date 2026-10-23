@@ -101,8 +101,9 @@ Release builds check for updates when Mobile Dev becomes visible. The server
 checks GitHub's latest full release and the public `release/latest` manifest;
 their versions must agree before the banner offers an update. Successful checks
 are cached for one hour across chats in the active Codex profile; unavailable
-checks retry after fifteen minutes. Development builds do not check or install
-public updates. The embedded UI needs no GitHub network permissions.
+checks retry after fifteen minutes. Development builds, and installs that are
+not a Codex plugin package (such as the Claude MCPB bundle), do not check or
+install public updates. The embedded UI needs no GitHub network permissions.
 
 The Update button calls an app-only MCP tool. It locates the CLI process that
 launched the plugin, verifies the `mobile-dev` Git marketplace belongs to this

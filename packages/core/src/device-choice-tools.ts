@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/node";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult, ClientCapabilities } from "@modelcontextprotocol/sdk/types.js";
 import type { OpenAIExtensions, OpenAIForm, OpenAIFormOption } from "@openai/mcp-extensions/server";
 import { deviceChoiceInputSchema } from "@mobile-dev/shared/device-choice.ts";
 import type { DeviceChoice, DeviceChoiceInput, DeviceChoiceReference } from "@mobile-dev/shared/device-choice.ts";
@@ -86,6 +86,11 @@ export async function resolveDeviceChoices(references: DeviceChoiceReference[], 
   });
 }
 
+export function supportsDeviceChoiceForms(capabilities: ClientCapabilities | undefined): boolean {
+  const formCapability = capabilities?.extensions?.["openai/elicitation"];
+  return typeof formCapability === "object" && formCapability !== null && "form" in formCapability;
+}
+
 export function registerDeviceChoiceTools(server: McpServer, extensions: Pick<OpenAIExtensions, "elicitInput">, sources: DeviceChoiceSources) {
   server.registerTool("mobile_choose_devices", {
     title: "Choose a device",
@@ -96,9 +101,7 @@ export function registerDeviceChoiceTools(server: McpServer, extensions: Pick<Op
     const attributes = { selection_mode: input.selectionMode };
     let stage: "prepare" | "request" | "validate" = "prepare";
     try {
-      const capabilities = server.server.getClientCapabilities();
-      const formCapability = capabilities?.extensions?.["openai/elicitation"];
-      if (formCapability === undefined || typeof formCapability !== "object" || formCapability === null || "form" in formCapability === false) {
+      if (!supportsDeviceChoiceForms(server.server.getClientCapabilities())) {
         Sentry.metrics.count("device_picker.result", 1, { attributes: { ...attributes, outcome: "unsupported" } });
         return { isError: true, content: [{ type: "text", text: "This host does not support OpenAI native request forms. No device was selected and the pending task must not start." }] };
       }

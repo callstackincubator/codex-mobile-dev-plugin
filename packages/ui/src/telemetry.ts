@@ -5,7 +5,7 @@ import {
   isFrequentTool, sampleTrace, createErrorEventFilter, sampleMetric, scrubSpan, validateTelemetryEnvironment,
   errorReportSignature,
 } from "@mobile-dev/shared/telemetry.ts";
-import type { Surface, TelemetryAttributes } from "@mobile-dev/shared/telemetry.ts";
+import type { Surface, TelemetryAttributes, TelemetryHost } from "@mobile-dev/shared/telemetry.ts";
 import { validateTelemetryIdentity } from "@mobile-dev/shared/telemetry-identity.ts";
 import { deviceAppsDiagnosticTags, getDeviceAppsDiagnostic } from "@mobile-dev/shared/device-apps-diagnostics.ts";
 import { FailureEpisodes, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
@@ -152,6 +152,12 @@ export function setUiTelemetryContext(next: TelemetryAttributes) {
   if (running) Sentry.setAttributes(attributes);
 }
 
+/** Attributes later measurements and tool calls to the host, a fixed low-cardinality label. */
+export function setUiTelemetryHost(host: TelemetryHost) {
+  setUiTelemetryContext({ host });
+  if (running) Sentry.setTag("host", host);
+}
+
 export function getUiTelemetryAttributes(): TelemetryAttributes {
   return attributes;
 }
@@ -245,9 +251,10 @@ export function startUiTelemetry(app: HostBridge) {
   const requestedView = document.documentElement.dataset.view;
   const view = requestedView === "recording" || requestedView === "workspace" || requestedView === "comparison" || requestedView === "tracesift" ? requestedView : "panel";
   if (view === "recording" || view === "comparison" || view === "tracesift") surface = view;
-  const host = document.documentElement.dataset.host === "mac" ? "mac" : "codex";
-  attributes = { ...attributes, surface, view, host };
-  Sentry.setTags({ component: "ui", surface, view, host });
+  // A page that names its host carries it from the start; MCP Apps panels learn it on connect.
+  const host = document.documentElement.dataset.host === "mac" ? "mac" : undefined;
+  attributes = { ...attributes, surface, view, ...(host ? { host } : {}) };
+  Sentry.setTags({ component: "ui", surface, view, ...(host ? { host } : {}) });
   Sentry.setAttributes(attributes);
   Sentry.metrics.count("ui.panel.opened", 1, { attributes });
   if (document.visibilityState !== "hidden") visibleSince = performance.now();

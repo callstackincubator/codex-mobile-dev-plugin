@@ -1,8 +1,10 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -44,6 +46,13 @@ const pluginsSchema = z.object({ installed: installedPluginsSchema });
 type Cache = z.infer<typeof cacheSchema>;
 export type RunCodex = (args: string[]) => Promise<unknown>;
 class PluginUpdateError extends Error {}
+
+// Updates go through Codex's plugin marketplace, so only a Codex plugin package
+// (dist/server.mjs beside .codex-plugin) can apply them. Other installs, such as
+// an MCPB bundle, update through their own host.
+function installedAsCodexPlugin(): boolean {
+  return existsSync(fileURLToPath(new URL("../.codex-plugin/plugin.json", import.meta.url)));
+}
 
 export async function resolveCodexCli(parentPid = process.ppid, cwd = homedir()): Promise<string> {
   const pid = String(parentPid);
@@ -90,7 +99,7 @@ export class PluginUpdates {
   private readonly abort = new AbortController();
 
   constructor(options: { enabled?: boolean; currentVersion?: string; profile?: string; fetch?: typeof fetch; run?: RunCodex; now?: () => number } = {}) {
-    this.enabled = options.enabled ?? resolveTelemetryEnvironment() === "release";
+    this.enabled = options.enabled ?? (resolveTelemetryEnvironment() === "release" && installedAsCodexPlugin());
     this.currentVersion = options.currentVersion ?? PLUGIN_VERSION;
     const home = homedir();
     const defaultProfile = join(home, ".codex");
@@ -182,7 +191,7 @@ export class PluginUpdates {
 
   install(): Promise<PluginUpdate> {
     if (this.enabled === false) {
-      const error = new Error("Development builds do not install public plugin updates.");
+      const error = new Error("Only release builds installed as a Codex plugin install public plugin updates.");
       return Promise.reject(error);
     }
     if (this.installing !== undefined) return this.installing;

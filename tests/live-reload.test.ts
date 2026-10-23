@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import { startLiveReload } from "../apps/codex-plugin/src/live-reload.ts";
+import { startLiveReload } from "../packages/mcp-app/src/live-reload.ts";
 
 test("live reload waits for stream cleanup and keeps the workspace view", async t => {
   const revision = "a".repeat(64);

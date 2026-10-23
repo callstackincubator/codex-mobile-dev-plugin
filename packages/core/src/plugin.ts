@@ -8,7 +8,7 @@ import { LIVE_UI_URI } from "@mobile-dev/shared/live-ui.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { SENTRY_ORIGIN } from "@mobile-dev/shared/telemetry.ts";
-import { captureServerError, instrumentMcpServer } from "./telemetry.ts";
+import { captureServerError, instrumentMcpServer, setServerTelemetryHost } from "./telemetry.ts";
 import { resolveTelemetryEnvironment } from "./telemetry-environment.ts";
 import { getTelemetryIdentity } from "./telemetry-identity.ts";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
@@ -23,7 +23,7 @@ import { registerAndroidTools } from "./android-tools.ts";
 import { Baguette } from "./baguette.ts";
 import { registerIosMirrorTools } from "./ios-mirror-tools.ts";
 import { listIosDevices, registerIosDeviceTools } from "./ios-devices.ts";
-import { registerDeviceChoiceTools } from "./device-choice-tools.ts";
+import { registerDeviceChoiceTools, supportsDeviceChoiceForms } from "./device-choice-tools.ts";
 import { StreamSessions } from "./stream-sessions.ts";
 import { LogSessions } from "./log-sessions.ts";
 import { registerLogTools } from "./log-tools.ts";
@@ -110,16 +110,23 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   const cpu = selectedCpu;
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
-    instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill for device control, logs, profiles, and performance workflows.",
+    instructions: "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.",
   });
   instrumentMcpServer(server);
   const updates = new PluginUpdates();
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
   registerPluginUpdateTools(server, updates);
   const extensions = new OpenAIExtensions(server);
-  registerDeviceChoiceTools(server, extensions, {
-    simulators: () => baguette.start(), android: () => android.list(), physicalIos: listIosDevices,
-  });
+  // The native form is a client extension; list the tool only for hosts that render it.
+  let deviceChoiceRegistered = false;
+  server.server.oninitialized = () => {
+    setServerTelemetryHost(server.server.getClientVersion()?.name);
+    if (deviceChoiceRegistered || !supportsDeviceChoiceForms(server.server.getClientCapabilities())) return;
+    deviceChoiceRegistered = true;
+    registerDeviceChoiceTools(server, extensions, {
+      simulators: () => baguette.start(), android: () => android.list(), physicalIos: listIosDevices,
+    });
+  };
   registerIosDeviceTools(server);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   registerLogTools(server, logs, baguette);
@@ -181,7 +188,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
         ? content.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
         : content,
       _meta: {
-        ui: { csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
+        ui: { permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
         "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] },
       },
     }],
@@ -210,7 +217,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
       const configured = configureUI(resource.html);
       const content = configured.replace('data-view="panel"', `data-view="${view}"`);
       return { contents: [{ uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: content, _meta: {
-        ui: { prefersBorder: true, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
+        ui: { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
         "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] },
       } }] };
     };
@@ -253,7 +260,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   registerAppTool(server, "mobile_open_workspace", {
     title: "Mobile Dev",
-    description: "Open the fullscreen Mobile Dev workspace when the user asks for fullscreen, with logs and performance tools beside the devices. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. For app development beside a chat, prefer mobile_open_simulator. Starts the bundled backend without booting a device.",
+    description: "Open the Mobile Dev workspace, with logs and performance tools beside the devices, when the user asks for fullscreen or for those tools. It opens fullscreen where the host supports it. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. For app development alongside a chat, prefer mobile_open_simulator. Starts the bundled backend without booting a device.",
     inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema }, annotations: write,
     _meta: {
       ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
@@ -263,7 +270,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   registerAppTool(server, "mobile_open_simulator", {
     title: "Mobile Dev",
-    description: "Open Mobile Dev beside the chat for local mobile app development, before the first device launch unless a panel is open or the workflow is tool-only. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. Starts the bundled backend without booting devices.",
+    description: "Open Mobile Dev alongside the chat for local mobile app development, before the first device launch unless a view is open or the workflow is tool-only. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. Starts the bundled backend without booting devices.",
     inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema }, annotations: write,
     _meta: {
       ui: { resourceUri: APP_URI, visibility: ["app", "model"] },

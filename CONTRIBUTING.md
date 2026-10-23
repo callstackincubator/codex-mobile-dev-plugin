@@ -15,15 +15,19 @@ product that ships it lives in `apps/`.
 | `packages/ui` (`@mobile-dev/ui`) | Host-independent React views, panel controllers, theme and UI telemetry. |
 | `packages/native` | Native helper sources; `packages/native/vendor` holds their verified prebuilt binaries. |
 | `packages/runtimes` | Pinned Node runtimes bundled into the server (agent-device, serve-emu). |
-| `apps/codex-plugin` | The Codex manifest, MCP launcher, skills, assets and the Codex panel shell (toolbar, update banner, MCP Apps entries). |
+| `packages/mcp-app` (`@mobile-dev/mcp-app`) | The MCP Apps panel shell every MCP Apps host loads: the workspace toolbar, card entries, display-mode and context-attachment controls, and the Codex updater banner. Host differences follow advertised capabilities, not host names. |
+| `apps/codex-plugin` | The Codex manifest, MCP launcher, skills and assets. |
+| `apps/claude-desktop` | The Claude Desktop MCPB manifest. |
 | `apps/mac` | The Mac app: a SwiftUI shell (`Sources/`) and the web page it hosts (`web/`). |
 | `tooling` | Build, packaging, release and smoke-test scripts. Run them from the repository root. |
 
 Import across packages with the workspace name and an explicit extension, for example
-`@mobile-dev/shared/logs.ts`. `packages/ui` never imports from an app; host-specific
-chrome belongs in that host's app. `npm run build` writes the shared runtime and the
-Codex panel to `dist/`, and `npm run package` assembles the Codex plugin from `dist/` and
-`apps/codex-plugin`. The published `release/latest` layout is unchanged.
+`@mobile-dev/shared/logs.ts`. `packages/ui` never imports from `packages/mcp-app` or an app.
+Chrome shared by MCP Apps hosts belongs in `packages/mcp-app`; chrome for one host,
+such as the Mac sidebar, belongs in that host's app. `npm run build` writes the shared runtime and the
+MCP Apps panel to `dist/`. `npm run package` assembles the Codex plugin from `dist/` and
+`apps/codex-plugin`; `npm run package:claude` builds the Claude Desktop bundle from the
+same files and `apps/claude-desktop/manifest.json`. The published `release/latest` layout is unchanged.
 
 ## Mac app
 
@@ -141,6 +145,8 @@ not included in the plugin package.
 
 ## Install the local build
 
+### Codex
+
 From this project directory, after packaging:
 
 ```sh
@@ -152,9 +158,48 @@ Open a new chat after installing, then open Mobile Dev from the sidebar.
 
 `npm run package` writes the local ZIP to `release/mobile-dev-<version>-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
+### Claude Desktop local development
+
+Complete the first-time runtime and native-helper setup under [Build and package](#build-and-package),
+then run from this checkout with Node.js 22.19 or later:
+
+```sh
+npm run build
+npm run claude:config
+```
+
+1. Open Claude Desktop **Settings > Developer > Edit Config**. On macOS, this is
+   `~/Library/Application Support/Claude/claude_desktop_config.json`.
+2. Merge the `mobile-dev` entry from `.local-dev/claude-desktop-config.json` into
+   the existing `mcpServers` object, preserving other servers and settings. The
+   snippet uses absolute paths to this checkout and the Node executable running
+   the generator.
+3. Fully quit and reopen Claude, start a new conversation, and ask **“Open Mobile Dev.”**
+   Approve the connector when prompted; use **Expand** when available.
+
+After UI or server edits, run `npm run build` and fully restart Claude. This
+workflow uses the checkout directly and needs no repackaging. Regenerate the
+config if the checkout or Node path changes. For connection failures, check
+**Settings > Developer** for the server status and logs.
+
+To create and check a bundle for manual installation instead:
+
+```sh
+npm run package:claude
+npm run test:claude
+```
+
+This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`.
+Follow the [manual installation steps](README.md#claude-desktop-manual-installation).
+Remove the `mobile-dev` development entry before installing the bundle to avoid
+duplicate servers. Rebuild, repackage, and reinstall to update a bundled copy.
+
+Local builds retain the `development` telemetry environment. Public releases use
+`npm run build:release` and `npm run package:claude -- --release`.
+
 ## Live React UI development
 
-Run `npm run dev` after installing the plugin. It watches the UI sources and
+In Codex, run `npm run dev` after installing the plugin. It watches the UI sources and
 rebuilds a self-contained HTML bundle. Open panels read updates through MCP,
 then reload and reconnect their streams. Edits reset UI state.
 

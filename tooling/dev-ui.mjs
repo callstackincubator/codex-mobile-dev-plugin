@@ -30,7 +30,7 @@ try {
 if (!running) {
   const builder = await context({
     absWorkingDir: projectRoot,
-    entryPoints: ["apps/codex-plugin/src/app.tsx"], jsx: "automatic",
+    entryPoints: ["packages/mcp-app/src/app.tsx"], jsx: "automatic",
     define: { "process.env.NODE_ENV": '"production"' },
     loader: { ".woff2": "dataurl", ".woff": "dataurl" },
     bundle: true, write: false, format: "iife", platform: "browser",
@@ -39,16 +39,16 @@ if (!running) {
       build.onLoad({ filter: /theme\.css$/ }, async ({ path }) => {
         const dependencies = [];
         const compiler = await compile(await readFile(path, "utf8"), { base: dirname(path), onDependency(file) { dependencies.push(file); } });
-        const scanner = new Scanner({ sources: ["packages/ui/src", "apps/codex-plugin/src"].map(base => ({ base: resolve(projectRoot, base), pattern: "**/*.{ts,tsx}", negated: false })) });
+        const scanner = new Scanner({ sources: ["packages/ui/src", "packages/mcp-app/src"].map(base => ({ base: resolve(projectRoot, base), pattern: "**/*.{ts,tsx}", negated: false })) });
         const contents = compiler.build(scanner.scan());
         return { contents, loader: "css", resolveDir: dirname(path), watchFiles: [...dependencies, ...scanner.files] };
       });
-      build.onLoad({ filter: /\/app\.tsx$/ }, async ({ path }) => ({ contents: await readFile(path, "utf8"), loader: "tsx", resolveDir: dirname(path), watchFiles: [resolve(projectRoot, "apps/codex-plugin/src/index.html")] }));
+      build.onLoad({ filter: /\/app\.tsx$/ }, async ({ path }) => ({ contents: await readFile(path, "utf8"), loader: "tsx", resolveDir: dirname(path), watchFiles: [resolve(projectRoot, "packages/mcp-app/src/index.html")] }));
       build.onEnd(async result => {
         if (result.errors.length) return;
         const js = result.outputFiles.find(file => file.path.endsWith(".js")).text;
         const css = `${result.outputFiles.find(file => file.path.endsWith(".css"))?.text ?? ""}\n${await exploreUILayerCSS()}`;
-        const template = await readFile(resolve(projectRoot, "apps/codex-plugin/src/index.html"), "utf8");
+        const template = await readFile(resolve(projectRoot, "packages/mcp-app/src/index.html"), "utf8");
         const html = template.replace("<!-- APP_STYLE -->", () => `<style>${css}</style>`)
           .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}</script>`);
         await writeFile(resolve(output, "app.html.tmp"), html);

@@ -39,6 +39,25 @@ test("both opening tools accept optional device intent and preserve it in their 
   assert.equal(boots.length, 0);
 });
 
+test("the device choice tool is listed only for clients that render native forms", async t => {
+  const fake = await fakeBaguette();
+  t.after(() => fake.close());
+  for (const forms of [false, true]) {
+    const plugin = await createTestPlugin("<html></html>", new Baguette(fake.url), fakeSimulatorInput());
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const capabilities = forms ? { extensions: { "openai/elicitation": { form: {} } } } : {};
+    const client = new Client({ name: "device-choice-host", version: "1" }, { capabilities });
+    await plugin.server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const { tools } = await client.listTools();
+    const choice = tools.find(tool => tool.name === "mobile_choose_devices");
+    assert.equal(!!choice, forms);
+    if (choice) assert.ok(choice.icons?.length);
+    assert.match(client.getInstructions() ?? "", /mobile_choose_devices when it is available, otherwise in chat/);
+    await client.close(); await plugin.close();
+  }
+});
+
 test("live UI reads use MCP and allow only Sentry browser connections", async t => {
   let revision = "a".repeat(64);
   const plugin = await createTestPlugin(async () => ({ html: '<html data-view="panel">jonas</html>', liveRevision: revision }));
@@ -48,7 +67,7 @@ test("live UI reads use MCP and allow only Sentry browser connections", async t 
   await plugin.server.connect(serverTransport);
   await client.connect(clientTransport);
   const first = await client.readResource({ uri: APP_URI });
-  assert.deepEqual(first.contents[0]._meta?.ui, { csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
+  assert.deepEqual(first.contents[0]._meta?.ui, { permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
   const uri = `ui://mobile-dev/live?after=${revision}`;
   const unchanged = await client.readResource({ uri });
   assert.deepEqual(JSON.parse(unchanged.contents[0].text as string), { revision });
@@ -219,7 +238,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   assert.match(recordingResource.contents[0].text as string, /data-view="recording"/);
   assert.equal(recordingResource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.deepEqual(recordingResource.contents[0]._meta?.["openai/ui"], { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] });
-  assert.deepEqual(recordingResource.contents[0]._meta?.ui, { prefersBorder: true, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
+  assert.deepEqual(recordingResource.contents[0]._meta?.ui, { prefersBorder: true, permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
   const renderRecording = tools.tools.find(tool => tool.name === "mobile_render_performance_recording");
   assert.deepEqual(renderRecording?._meta?.ui, { resourceUri: RECORDING_URI, visibility: ["app", "model"] });
   const comparisonResource = await client.readResource({ uri: COMPARISON_URI });
@@ -256,7 +275,7 @@ test("MCP tools expose native entrypoints and complete the simulator workflow", 
   OpenAIUiResourceMetadataSchema.parse(resource.contents[0]._meta?.["openai/ui"]);
   assert.equal(resource.contents[0].mimeType, "text/html;profile=mcp-app");
   assert.match(resource.contents[0].text as string, /data-view="panel" data-layout="stacked"/);
-  assert.deepEqual(resource.contents[0]._meta?.ui, { csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
+  assert.deepEqual(resource.contents[0]._meta?.ui, { permissions: { clipboardWrite: {} }, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } });
   const status = await client.callTool({ name: "mobile_open_simulator", arguments: {} });
   assert.equal(status.structuredContent?.connected, true);
   assert.equal((status.structuredContent?.devices as unknown[]).length, 2);

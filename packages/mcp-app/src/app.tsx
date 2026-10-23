@@ -1,4 +1,3 @@
-import "@openai/mcp-extensions/app/styles.css";
 import "@fontsource-variable/inter";
 import "@mobile-dev/ui/theme.css";
 import "@mobile-dev/ui/style.css";

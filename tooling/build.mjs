@@ -108,8 +108,8 @@ const workflow = execFileSync(process.execPath, [resolve(`${runtime}/node_module
 await writeFile("apps/codex-plugin/skills/agent-device/references/workflow.md", workflow);
 await buildServeEmu("dist/serve-emu");
 const appMetafile = await buildUIPage({
-  name: "ui", entry: "apps/codex-plugin/src/app.tsx", template: "apps/codex-plugin/src/index.html",
-  sources: ["packages/ui/src", "apps/codex-plugin/src"], output: "dist/app.html",
+  name: "ui", entry: "packages/mcp-app/src/app.tsx", template: "packages/mcp-app/src/index.html",
+  sources: ["packages/ui/src", "packages/mcp-app/src"], output: "dist/app.html",
   environment: telemetryEnvironment, sourceURL: "app:///mobile-dev-ui.js",
 });
 const cli = new SentryCli();

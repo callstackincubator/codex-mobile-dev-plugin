@@ -1,4 +1,5 @@
-import { App, applyDocumentTheme, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
+import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
+import { attributeHost } from "./host-telemetry.ts";
 import { createRoot } from "react-dom/client";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { TraceSiftCards } from "@mobile-dev/ui/components/tracesift-cards.tsx";
@@ -16,6 +17,7 @@ export function startTraceSiftApp() {
     const host = app.getHostContext();
     if (host?.theme) applyDocumentTheme(host.theme);
     if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
+    if (host?.styles?.css?.fonts) applyHostFonts(host.styles.css.fonts);
     controller.hostChanged();
     const viewId = host?.toolInfo?.id;
     if (typeof viewId === "string" || typeof viewId === "number") controller.setViewId(viewId);
@@ -36,6 +38,7 @@ export function startTraceSiftApp() {
   window.addEventListener("pagehide", pageHide);
   app.onteardown = async () => { await close(); return {}; };
   void app.connect().then(() => {
+    attributeHost(app);
     hostChanged();
     // The inline card investigates too, so it needs the same project the panel saved.
     void controller.loadProject();

@@ -1,0 +1,7 @@
+{
+  "name": "@mobile-dev/claude-desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Claude Desktop extension: the MCPB manifest for the shared server and MCP Apps panel."
+}

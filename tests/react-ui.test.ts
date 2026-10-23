@@ -57,7 +57,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
     await rm(directory, { recursive: true, force: true });
   });
   const output = resolve(directory, "workspace.mjs");
-  await build({ stdin: { contents: 'export { Workspace } from "./apps/codex-plugin/src/components/workspace.tsx"; export { getDeviceSettings } from "./packages/ui/src/device-settings.ts"; export { getDevicePicker } from "./packages/ui/src/device-picker.ts"; export { getAppTools } from "./packages/ui/src/app-tools.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
+  await build({ stdin: { contents: 'export { Workspace } from "./packages/mcp-app/src/components/workspace.tsx"; export { getDeviceSettings } from "./packages/ui/src/device-settings.ts"; export { getDevicePicker } from "./packages/ui/src/device-picker.ts"; export { getAppTools } from "./packages/ui/src/app-tools.ts";', resolveDir: process.cwd(), loader: "ts" }, outfile: output, bundle: true, format: "esm", platform: "node", jsx: "automatic",
     external: ["recharts", "react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "radix-ui", "lucide-react", "@base-ui/react/*", "react-resizable-panels"] });
   const { Workspace, getDeviceSettings, getDevicePicker, getAppTools } = await import(pathToFileURL(output).href);
   const { act, createElement, Profiler } = await import("react");

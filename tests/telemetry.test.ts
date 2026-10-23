@@ -448,11 +448,11 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   assert.equal(observedTags?.surface, "tracesift");
   assert.equal(observedTags?.view, "tracesift");
   assert.equal(observedTags?.profilePath, undefined);
-  // The Mac app shares this server, so its host value survives the allowlist; anything else is dropped.
+  // Every host shares this server, so a known host value survives the allowlist; anything else is dropped.
   await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_HOST_ARGUMENT" }, _meta: {
-    [TELEMETRY_META_KEY]: { surface: "logs", view: "workspace", host: "mac" },
+    [TELEMETRY_META_KEY]: { surface: "logs", view: "workspace", host: "claude" },
   } });
-  assert.equal(observedTags?.host, "mac");
+  assert.equal(observedTags?.host, "claude");
   await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_HOST_ARGUMENT" }, _meta: {
     [TELEMETRY_META_KEY]: { surface: "logs", view: "workspace", host: "PRIVATE_HOST" },
   } });

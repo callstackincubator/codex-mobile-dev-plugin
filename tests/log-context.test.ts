@@ -14,7 +14,7 @@ const log = stackLogs([{ timestamp: "2026-09-30T12:00:00Z", message: "Request fa
 test("hosts without context pills receive the clicked log in the message", async () => {
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const context = new PanelContext({
-    getHostCapabilities: () => ({ message: { text: {} } }),
+    getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} } }),
     async sendMessage(params: Parameters<App["sendMessage"]>[0]) { messages.push(params); return {}; },
   } as App, {} as OpenAIExtensions);
   for (const level of ["error", "warn", "info", "debug"] as const) {
@@ -29,7 +29,7 @@ test("hosts without context pills receive the clicked log in the message", async
 
 test("chat actions report host rejection and unsupported hosts", async () => {
   const context = new PanelContext({
-    getHostCapabilities: () => ({ message: { text: {} } }),
+    getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} } }),
     async sendMessage() { return { isError: true }; },
   } as unknown as App, {} as OpenAIExtensions);
   await assert.rejects(context.sendLogToChat(log), /Could not send/);
@@ -53,7 +53,7 @@ function fixture(send: App["sendMessage"] = async () => ({})) {
   };
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const context = new PanelContext({
-    getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { image: {} } }),
+    getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} }, updateModelContext: { image: {} } }),
     async sendMessage(...args: Parameters<App["sendMessage"]>) { messages.push(args[0]); return send(...args); },
   } as App, { modelContext } as OpenAIExtensions);
   return { context, updates, messages, clear() { current = null; context.hostChanged(); }, removeContent() { if (current) current = { ...current, content: [] }; context.hostChanged(); }, removeScreenshot(id: string) { if (current) current = { ...current, updateId: "removed", content: current.content?.filter(item => item._meta?.["mobile-dev/screenshotId"] !== id) }; context.hostChanged(); }, fail() { failure = true; }, hold(value: Promise<void>) { gate = value; } };
@@ -337,4 +337,61 @@ test("side by side devices share both IDs while logs keep the active selection",
   assert.deepEqual(updates.at(-1)?.structuredContent?.selectedSimulators, [simulator]);
   assert.equal(updates.at(-1)?.content?.some(item => item.type === "text" && item.text.includes("emulator-5554")), false);
   assert.deepEqual(updates.at(-1)?.structuredContent?.selectedLog, log);
+});
+
+test("standard context supports logs, local removal and complete chat messages", async () => {
+  const updates: Parameters<App["updateModelContext"]>[0][] = [];
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {}, structuredContent: {} } }),
+    async updateModelContext(params) { updates.push(params); return {}; },
+    async sendMessage(params) { messages.push(params); return {}; },
+  } as App, {} as OpenAIExtensions);
+  assert.equal(context.canAttach, true);
+  assert.equal(context.canAttachScreenshots, false);
+  await context.attach(log);
+  assert.equal(context.attachmentCount, 1);
+  assert.ok(updates.at(-1)?.content?.every(item => item._meta === undefined));
+  context.hostChanged();
+  assert.equal(context.attachmentCount, 1, "No host pills does not mean attachments were removed");
+  await context.sendLogToChat(log);
+  assert.match(JSON.stringify(messages[0].content), /Request failed/);
+  assert.equal(messages[0]._meta, undefined);
+  assert.equal(context.attachmentCount, 0);
+  assert.equal(updates.at(-1)?.structuredContent?.selectedLog, null);
+});
+
+test("standard screenshot context is capability-gated and clearing rolls back on failure", async () => {
+  let images = false;
+  let fail = false;
+  const updates: Parameters<App["updateModelContext"]>[0][] = [];
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ updateModelContext: { text: {}, ...(images ? { image: {} } : {}) } }),
+    async updateModelContext(params) { if (fail) throw new Error("Host unavailable"); updates.push(params); return {}; },
+  } as unknown as App, {} as OpenAIExtensions);
+  const screenshot = { id: "shot-standard", simulator, data: "cG5n", mimeType: "image/png" } as ScreenshotAttachment;
+  await assert.rejects(context.attachScreenshot(screenshot), /does not support/);
+  images = true;
+  await context.attachScreenshot(screenshot);
+  assert.equal(context.attachmentCount, 1);
+  assert.equal(updates.at(-1)?.structuredContent, undefined, "Do not send unsupported structured context");
+  assert.equal(updates.at(-1)?.content?.filter(item => item.type === "image").length, 1);
+  fail = true;
+  await assert.rejects(context.clearAttachments(), /Host unavailable/);
+  assert.equal(context.attachmentCount, 1);
+  fail = false;
+  await context.clearAttachments();
+  assert.equal(context.attachmentCount, 0);
+  assert.equal(updates.at(-1)?.content?.some(item => item.type === "image"), false);
+});
+
+test("failed standard context cleanup never retries a delivered message", async () => {
+  let sent = 0;
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {}, structuredContent: {} } }),
+    async updateModelContext() { if (sent) throw new Error("Cleanup unavailable"); return {}; },
+    async sendMessage() { sent++; return {}; },
+  } as unknown as App, {} as OpenAIExtensions);
+  await context.sendLogToChat(log);
+  assert.equal(sent, 1);
 });

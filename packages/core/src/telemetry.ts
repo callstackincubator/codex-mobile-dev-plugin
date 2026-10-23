@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/node";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { McpServer, ResourceTemplate, ResourceMetadata, ReadResourceCallback, ReadResourceTemplateCallback, RegisteredResource, RegisteredResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { MeasurementWindow, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY } from "@mobile-dev/shared/telemetry.ts";
+import { MeasurementWindow, TELEMETRY_HOSTS, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY, telemetryHost } from "@mobile-dev/shared/telemetry.ts";
 import { ExpectedOperationError, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 import { closeNativeTelemetry } from "./native-telemetry.ts";
 import { closeHttpRuntime } from "./http-runtime.ts";
@@ -252,8 +252,15 @@ const resourceKinds: Record<string, string> = {
 };
 const allowedContext: Record<string, readonly string[]> = {
   surface: ["logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift"], view: ["panel", "workspace", "recording", "comparison", "tracesift"], layout: ["ios", "android", "both", "none"],
-  device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"], host: ["codex", "mac"],
+  device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"], host: TELEMETRY_HOSTS,
 };
+
+/** Attributes server telemetry to the host that launched it: the Mac app sets `MOBILE_DEV_HOST`, other hosts are named by their MCP client. */
+export function setServerTelemetryHost(clientName: string | undefined) {
+  const host = process.env.MOBILE_DEV_HOST === "mac" ? "mac" : telemetryHost(clientName);
+  Sentry.setTag("host", host);
+  Sentry.setAttribute("host", host);
+}
 
 export function installTracePropagation(transport: Transport) {
   const send = transport.send.bind(transport);

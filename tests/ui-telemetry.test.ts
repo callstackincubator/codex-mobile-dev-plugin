@@ -684,11 +684,19 @@ test("stream retries exclude expected host lifecycle failures and retain unexpec
 
 test("UI telemetry attributes each call to the host that renders the page", async t => {
   const built = await build({
-    stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts";', resolveDir: process.cwd(), loader: "ts" },
+    stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts"; export { telemetryHost } from "./packages/shared/src/telemetry.ts";', resolveDir: process.cwd(), loader: "ts" },
     bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
     define: { "process.env.NODE_ENV": '"production"' },
   });
-  for (const [attribute, expected] of [[' data-host="mac"', "mac"], ["", "codex"], [' data-host="PRIVATE_HOST"', "codex"]] as const) {
+  // The Mac page names itself. MCP Apps panels have no label until the shell maps
+  // the connected host; unknown or private names never pass through.
+  for (const [attribute, connected, expected] of [
+    [' data-host="mac"', undefined, "mac"],
+    ["", undefined, undefined],
+    ["", "claude", "claude"],
+    ["", "codex", "codex"],
+    [' data-host="PRIVATE_HOST"', undefined, undefined],
+  ] as const) {
     const html = `<html data-view="workspace"${attribute}><head><meta name="mobile-dev-environment" content="development">${identityMeta}</head></html>`;
     const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
     t.after(() => dom.window.close());
@@ -701,9 +709,15 @@ test("UI telemetry attributes each call to the host that renders the page", asyn
     const calls: { _meta?: Record<string, Record<string, unknown>> }[] = [];
     const app = { async callServerTool(params: { _meta?: Record<string, Record<string, unknown>> }) { calls.push(params); return { content: [] }; } };
     api.startUiTelemetry(app);
+    if (connected) api.setUiTelemetryHost(connected);
     assert.equal(api.getUiTelemetryAttributes().host, expected);
     await app.callServerTool({ name: "mobile_cpu_session", arguments: {} });
     assert.equal(calls[0]._meta?.["mobile-dev/telemetry"].host, expected);
     await api.stopUiTelemetry();
+    if (attribute === "") {
+      for (const [name, label] of [["Codex Desktop", "codex"], ["openai-codex", "codex"], ["Claude", "claude"], ["claude-ai", "claude"], ["PRIVATE_HOST", "other"], [undefined, "other"]] as const) {
+        assert.equal(api.telemetryHost(name), label);
+      }
+    }
   }
 });

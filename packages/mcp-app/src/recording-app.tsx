@@ -1,4 +1,5 @@
-import { App, applyDocumentTheme, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
+import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
+import { attributeHost } from "./host-telemetry.ts";
 import { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import { createRoot } from "react-dom/client";
 import { RecordingController } from "@mobile-dev/ui/recording-controller.ts";
@@ -17,6 +18,7 @@ export function startRecordingApp() {
     const host = app.getHostContext();
     if (host?.theme) applyDocumentTheme(host.theme);
     if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
+    if (host?.styles?.css?.fonts) applyHostFonts(host.styles.css.fonts);
     controller.hostChanged();
   }
   app.addEventListener("hostcontextchanged", hostChanged);
@@ -37,5 +39,5 @@ export function startRecordingApp() {
   function pageHide(event: PageTransitionEvent) { if (event.persisted === false) void close(); }
   window.addEventListener("pagehide", pageHide);
   app.onteardown = async () => { await close(); return {}; };
-  void app.connect().then(hostChanged).catch(error => { captureUiError(error, "recording.connect"); });
+  void app.connect().then(() => { attributeHost(app); hostChanged(); }).catch(error => { captureUiError(error, "recording.connect"); });
 }

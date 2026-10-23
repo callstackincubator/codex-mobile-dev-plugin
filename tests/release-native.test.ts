@@ -66,7 +66,7 @@ test("native keys ignore plugin versions and unrelated UI edits", async t => {
   metadata.version = "1.2.4";
   const updated = JSON.stringify(metadata);
   await put(directory, "package.json", updated);
-  await put(directory, "apps/codex-plugin/src/app.tsx", "different UI\n");
+  await put(directory, "packages/mcp-app/src/app.tsx", "different UI\n");
   const after = await nativeArtifactKey(helper, toolchain, directory);
   assert.equal(after, before);
 });

@@ -110,7 +110,7 @@ test("offline checks remain quiet, invalid tags cannot advertise updates, and de
   const disabled = await dev.check();
   assert.equal(disabled.status, "disabled");
   const installation = dev.install();
-  await assert.rejects(installation, /Development builds/);
+  await assert.rejects(installation, /Only release builds installed as a Codex plugin/);
   const otherDirectory = await profile(t);
   const invalid = new PluginUpdates({ enabled: true, profile: otherDirectory, fetch: releaseFetch("../bad", "0.1.132") });
   const malformed = await invalid.check();

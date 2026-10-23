@@ -1,6 +1,7 @@
+import { chatMessage } from "./chat-message.ts";
 import type { HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { OpenAIExtensions, OpenAIMessageParams } from "@openai/mcp-extensions/app";
+import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import { recordingRangeSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
 import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
@@ -148,7 +149,7 @@ export class RecordingController {
       }
       if (this.disposed) return;
       const text = modelContext ? (action === "ask" ? (range ? "Explain this selected range." : "Explain this recording.") : "Open this recording in Mobile Dev.") : prompt;
-      const message: OpenAIMessageParams = { role: "user", content: [{ type: "text", text }], _meta: { "openai/message": { target: "active", send: true } } };
+      const message = chatMessage(this.app, text);
       const startedAt = performance.now();
       sending = true;
       const result = await this.app.sendMessage(message, { timeout: 5000, maxTotalTimeout: 5000 });
@@ -159,7 +160,7 @@ export class RecordingController {
     } catch (error) {
       captureUiError(new Error("Recording chat action failed."), `recording.${action}`);
       const timedOut = sending && typeof error === "object" && error !== null && "code" in error && error.code === -32001;
-      const message = timedOut ? "Codex did not confirm delivery. Check the chat before retrying to avoid sending the question twice." : error instanceof Error ? error.message : "Could not send this recording to chat.";
+      const message = timedOut ? "The host did not confirm delivery. Check the chat before retrying to avoid sending the question twice." : error instanceof Error ? error.message : "Could not send this recording to chat.";
       this.update({ error: message });
     } finally { this.update({ busy: false }); }
   }

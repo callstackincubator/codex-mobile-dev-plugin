@@ -5,7 +5,7 @@ import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 
 const built = await build({
-  entryPoints: ["apps/codex-plugin/src/workspace-app.tsx"],
+  entryPoints: ["packages/mcp-app/src/workspace-app.tsx"],
   bundle: true, write: false, format: "iife", platform: "browser", jsx: "automatic",
   loader: { ".css": "empty", ".woff2": "empty", ".woff": "empty" },
   define: { "process.env.NODE_ENV": '"production"' },

@@ -1,4 +1,5 @@
-import { App, applyDocumentTheme, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
+import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
+import { attributeHost } from "./host-telemetry.ts";
 import { createRoot } from "react-dom/client";
 import { ComparisonController } from "@mobile-dev/ui/comparison-controller.ts";
 import { ComparisonCard } from "@mobile-dev/ui/components/comparison-card.tsx";
@@ -16,6 +17,7 @@ export function startComparisonApp() {
     const host = app.getHostContext();
     if (host?.theme) applyDocumentTheme(host.theme);
     if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
+    if (host?.styles?.css?.fonts) applyHostFonts(host.styles.css.fonts);
     controller.hostChanged();
   }
   app.addEventListener("hostcontextchanged", hostChanged);
@@ -36,5 +38,5 @@ export function startComparisonApp() {
   function pageHide(event: PageTransitionEvent) { if (event.persisted === false) void close(); }
   window.addEventListener("pagehide", pageHide);
   app.onteardown = async () => { await close(); return {}; };
-  void app.connect().then(hostChanged).catch(error => { captureUiError(error, "comparison.connect"); });
+  void app.connect().then(() => { attributeHost(app); hostChanged(); }).catch(error => { captureUiError(error, "comparison.connect"); });
 }

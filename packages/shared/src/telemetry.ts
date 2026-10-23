@@ -10,6 +10,19 @@ export const SENTRY_ORIGIN = "https://o4512180958068736.ingest.de.sentry.io";
 export const SENTRY_RELEASE = `mobile-dev@${PLUGIN_VERSION}`;
 export const TELEMETRY_META_KEY = "mobile-dev/telemetry";
 export const TELEMETRY_INTERVAL_MS = 30_000;
+export const TELEMETRY_HOSTS = ["codex", "claude", "mac", "other"] as const;
+export type TelemetryHost = typeof TELEMETRY_HOSTS[number];
+
+/**
+ * Maps the name a host or MCP client reports to a fixed, low-cardinality label.
+ * Behavior never depends on it; it only attributes telemetry. Unknown names are `other`.
+ */
+export function telemetryHost(name: string | undefined): TelemetryHost {
+  if (name === undefined) return "other";
+  if (/codex|openai/i.test(name)) return "codex";
+  if (/claude/i.test(name)) return "claude";
+  return "other";
+}
 export const METRIC_SAMPLE_RATE = 0.005;
 export const HANDLED_ERROR_SAMPLE_RATE = 0.05;
 export type TelemetryEnvironment = "development" | "release";

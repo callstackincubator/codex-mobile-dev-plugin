@@ -1,6 +1,6 @@
+import { chatMessage } from "./chat-message.ts";
 import type { HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { OpenAIMessageParams } from "@openai/mcp-extensions/app";
 import { comparisonDuration, comparisonSchema } from "@mobile-dev/shared/performance-comparison.ts";
 import type { PerformanceComparison } from "@mobile-dev/shared/performance-comparison.ts";
 import { recordingRangeSchema } from "@mobile-dev/shared/recordings.ts";
@@ -100,7 +100,7 @@ export class ComparisonController {
     const reference = JSON.stringify({ recordingIds, title: comparison.title, ...(range ? { range } : {}) });
     const interval = range ? `${range.start}–${range.end}s` : "the entire runs";
     const prompt = `Compare CPU, memory, and device-wide Display FPS for ${interval}, aligned at recording start. Read the original runs and summaries with mobile_compare_performance_recordings using ${reference}. Account for different durations, devices, apps and memory definitions. Distinguish measurements from hypotheses about their cause; device-wide display data cannot attribute a slowdown to one app.`;
-    const message: OpenAIMessageParams = { role: "user", content: [{ type: "text", text: prompt }], _meta: { "openai/message": { target: "active", send: true } } };
+    const message = chatMessage(this.app, prompt);
     const startedAt = performance.now();
     try {
       const result = await this.app.sendMessage(message);

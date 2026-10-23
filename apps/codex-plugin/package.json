@@ -3,6 +3,5 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Codex plugin: manifest, skills and the Codex panel shell.",
-  "exports": { "./*": "./src/*" }
+  "description": "Codex plugin: manifest, launcher, skills and assets for the shared server and MCP Apps panel."
 }
