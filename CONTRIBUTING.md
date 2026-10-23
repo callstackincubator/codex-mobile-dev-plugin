@@ -21,9 +21,15 @@ packages know no host by name.
 | `apps/codex-plugin` | Codex: manifest, launcher, assets, and its own server (`server/`, the self-updater) and panel (`ui/`, the update banner). |
 | `apps/claude-desktop` | Claude Desktop: the MCPB manifest. It runs the shared server and panel unchanged. |
 | `apps/mac` | The Mac app: a SwiftUI shell (`Sources/`), the page it hosts (`web/`) and its server (`server/`). |
+| `packages/test-support` | Fixtures shared by tests across packages and apps. |
 | `tooling` | Shared build, native, release and device smoke-test scripts. Run them from the repository root. |
 
 Each app's `tooling/` holds that host's packaging and smoke tests.
+
+Tests live beside the code they cover, in each package's or app's `test/` folder;
+`tooling/test` covers the release and build scripts. Fixtures several packages share
+are in `packages/test-support`. `npm test` runs them all from the repository root,
+which test paths such as `packages/ui/src/...` are relative to.
 
 Import across packages with the workspace name and an explicit extension, for example
 `@mobile-dev/shared/logs.ts`. `packages/ui` never imports from `packages/mcp-app` or an

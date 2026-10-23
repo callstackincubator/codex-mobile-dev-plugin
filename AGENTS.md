@@ -71,7 +71,7 @@ new telemetry when existing coverage already answers the relevant questions.
   Node feature change into native Sentry setup incidentally.
 - Verify instrumentation on the changed execution path, including surface
   attribution and observer/timer cleanup where relevant. Use the existing
-  `tests/telemetry.test.ts` and `tests/ui-telemetry.test.ts` for meaningful telemetry
+  `packages/core/test/telemetry.test.ts` and `packages/ui/test/ui-telemetry.test.ts` for meaningful telemetry
   behavior checks. In the completion summary, state what coverage was added or
   preserved, or why existing coverage is sufficient.
 

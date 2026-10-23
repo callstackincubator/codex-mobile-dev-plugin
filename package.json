@@ -7,6 +7,7 @@
     "packages/core",
     "packages/ui",
     "packages/mcp-app",
+    "packages/test-support",
     "apps/codex-plugin",
     "apps/claude-desktop",
     "apps/mac"
@@ -28,7 +29,7 @@
     "rebuild:android-cpu": "node tooling/build-android-cpu.mjs",
     "rebuild:ios-logs": "node tooling/build-ios-logs.mjs",
     "start": "/bin/sh apps/codex-plugin/scripts/launch-mcp.sh dist/server.mjs",
-    "test": "node --test tests/*.test.ts",
+    "test": "node --test \"packages/*/test/*.test.ts\" \"apps/*/test/*.test.ts\" \"tooling/test/*.test.ts\"",
     "test:package": "node apps/codex-plugin/tooling/smoke-package.mjs",
     "test:mac": "node apps/mac/tooling/smoke.mjs",
     "test:discovery-diagnostics": "node tooling/smoke-discovery-diagnostics.mjs",

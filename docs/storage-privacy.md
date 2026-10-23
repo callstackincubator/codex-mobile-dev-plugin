@@ -66,7 +66,7 @@ before the optional key projection and display cap.
 
 ## Verification
 
-Run `node --test tests/app-storage.test.ts tests/app-storage-redaction.test.ts`.
+Run `node --test packages/core/test/app-storage.test.ts packages/core/test/app-storage-redaction.test.ts`.
 The tests exercise real MCP responses, both output channels, selected/unselected
 stores, nested and malformed JSON, redaction before truncation, credential column
 projection, actual SQLite blobs and key/value rows, static errors, pagination,
