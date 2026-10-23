@@ -2,6 +2,21 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+## Hosts
+
+From the release after 0.1.164, UI and server telemetry carry a `host` tag and attribute: `codex` for
+the Codex plugin and `mac` for the Mac app, which runs the same server and shared UI.
+The UI reads the value from its page (`data-host`), the server from
+`MOBILE_DEV_HOST`, and the server's metadata allowlist accepts only these two values.
+Earlier releases have no `host` value; treat its absence as `codex`. Surfaces,
+measurement names, units and boundaries are unchanged in both hosts.
+
+The Mac app loads its page through the server's `ui://mobile-dev/mac.html` resource,
+so the page receives the same server-owned environment, opt-out and anonymous
+identity as the Codex panel. Mac builds are development-only for now: their page
+source maps are written to `.sentry/mac-ui` but not uploaded, and the SwiftUI shell
+has no native Sentry SDK.
+
 ## Volume policy
 
 Since 0.1.164, application metrics in the UI, Node servers and native helpers use

@@ -4,6 +4,17 @@
 
 The Agent Device MCP entry and skill are currently disabled; their implementation and bundled runtime are retained for later reactivation.
 
+## Hosts
+
+The server (`packages/core`) and the shared UI (`packages/ui`) run in two hosts. In
+Codex, the panel is an MCP App: the `App` from ext-apps carries tool calls and
+resource reads through the host. The Mac app (`apps/mac`) starts the same server over
+stdio and relays its JSON-RPC lines to a web view, whose page calls the server with
+an MCP client. Shared views depend only on `HostBridge`, the subset of `App` they use;
+each host composes them with its own chrome. Codex has the tool and platform
+toolbar; the Mac app has a native sidebar. `DeviceWorkspace` keeps the iOS and Android
+panels, their selection and layout identical in both hosts.
+
 ## Shared app discovery
 
 `packages/ui/src/device-apps.ts` owns one `DeviceAppsStore` per workspace. Device selection

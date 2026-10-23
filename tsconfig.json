@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
@@ -9,7 +13,15 @@
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true,
-    "paths": { "@/ui/*": ["./packages/ui/src/*"] }
+    "paths": {
+      "@/ui/*": [
+        "./packages/ui/src/*"
+      ]
+    }
   },
-  "include": ["packages/*/src", "apps/*/src"]
+  "include": [
+    "packages/*/src",
+    "apps/*/src",
+    "apps/mac/web"
+  ]
 }

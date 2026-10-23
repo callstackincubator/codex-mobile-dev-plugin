@@ -16,6 +16,7 @@ product that ships it lives in `apps/`.
 | `packages/native` | Native helper sources; `packages/native/vendor` holds their verified prebuilt binaries. |
 | `packages/runtimes` | Pinned Node runtimes bundled into the server (agent-device, serve-emu). |
 | `apps/codex-plugin` | The Codex manifest, MCP launcher, skills, assets and the Codex panel shell (toolbar, update banner, MCP Apps entries). |
+| `apps/mac` | The Mac app: a SwiftUI shell (`Sources/`) and the web page it hosts (`web/`). |
 | `tooling` | Build, packaging, release and smoke-test scripts. Run them from the repository root. |
 
 Import across packages with the workspace name and an explicit extension, for example
@@ -23,6 +24,32 @@ Import across packages with the workspace name and an explicit extension, for ex
 chrome belongs in that host's app. `npm run build` writes the shared runtime and the
 Codex panel to `dist/`, and `npm run package` assembles the Codex plugin from `dist/` and
 `apps/codex-plugin`. The published `release/latest` layout is unchanged.
+
+## Mac app
+
+The Mac app runs the same server and shared UI as the Codex plugin. A SwiftUI
+window provides the native sidebar (tools and visible device platforms); a web
+view renders `apps/mac/web`, the shared views without the Codex toolbar.
+
+The app starts the bundled server over stdio exactly as Codex does and relays
+JSON-RPC lines between it and the page. Before the page connects, the app reads
+`ui://mobile-dev/mac.html` from the server, so the page gets the server's telemetry
+metadata. The page implements `HostBridge` (`packages/ui/src/host-bridge.ts`) with
+an MCP client and offers no chat capabilities, so chat-only actions stay hidden.
+
+```sh
+npm run build        # shared runtime in dist/
+npm run build:mac    # release/mac/Mobile Dev.app, signed ad hoc
+npm run test:mac     # launches the app, waits for the page to connect and draw, quits
+open "release/mac/Mobile Dev.app"
+```
+
+`build:mac` copies `dist/`, the Mac page and the Node executable running the build
+(pass `--node <path>` for another self-contained build) into the app. Distribution
+still needs a Developer ID signature, hardened-runtime entitlements for Node, and
+notarization. `test:mac` uses the app's `MOBILE_DEV_SMOKE_SNAPSHOT` hook to save a
+page snapshot because it cannot rely on Screen Recording permission; pass a path to
+keep it. Restart the server from **View › Restart Server** (⇧⌘R).
 
 ## Development requirements
 

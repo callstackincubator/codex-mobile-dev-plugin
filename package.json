@@ -6,7 +6,8 @@
     "packages/shared",
     "packages/core",
     "packages/ui",
-    "apps/codex-plugin"
+    "apps/codex-plugin",
+    "apps/mac"
   ],
   "type": "module",
   "engines": {
@@ -15,6 +16,7 @@
   "scripts": {
     "build": "node tooling/build.mjs",
     "build:release": "node tooling/build.mjs --release",
+    "build:mac": "node tooling/build-mac.mjs",
     "public-release": "node tooling/public-release.mjs",
     "vendor:baguette": "node tooling/vendor-baguette.mjs",
     "vendor:agent-device": "npm ci --prefix packages/runtimes/agent-device --ignore-scripts --no-audit --no-fund",
@@ -26,6 +28,7 @@
     "start": "/bin/sh apps/codex-plugin/scripts/launch-mcp.sh dist/server.mjs",
     "test": "node --test tests/*.test.ts",
     "test:package": "node tooling/smoke-package.mjs",
+    "test:mac": "node tooling/smoke-mac.mjs",
     "test:discovery-diagnostics": "node tooling/smoke-discovery-diagnostics.mjs",
     "test:cpu-cache": "node tooling/smoke-cpu-cache.mjs",
     "test:agent-device": "node tooling/smoke-agent-device.mjs",
