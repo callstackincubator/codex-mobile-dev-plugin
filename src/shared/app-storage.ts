@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 // Storage the panel recognizes from files in the app's data directory, without code in the app.
-export const storeKinds = ["mmkv", "async-storage", "user-defaults", "shared-preferences", "datastore", "sqlite", "realm"] as const;
+export const storeKinds = ["mmkv", "async-storage", "user-defaults", "shared-preferences", "datastore", "proto-datastore", "sqlite", "realm"] as const;
 export type StoreKind = typeof storeKinds[number];
 export const storeKindLabels: Record<StoreKind, string> = {
   "mmkv": "MMKV", "async-storage": "AsyncStorage", "user-defaults": "UserDefaults", "shared-preferences": "SharedPreferences",
-  "datastore": "DataStore", "sqlite": "SQLite", "realm": "Realm",
+  "datastore": "DataStore", "proto-datastore": "Proto DataStore", "sqlite": "SQLite", "realm": "Realm",
 };
 
 export const entryTypes = ["string", "json", "number", "integer", "boolean", "date", "data", "array", "object", "null", "table"] as const;
@@ -56,7 +56,7 @@ export type StorageSnapshot = z.infer<typeof storageSnapshotSchema>;
 export const storageClearSchema = z.object({ cleared: z.string(), stopped: z.boolean() });
 
 // Defaults keep model-visible results small; the panel asks for more. Tables are read a page of rows at a time.
-export const storageLimits = { entries: 200, maxEntries: 2000, valueLength: 300, maxValueLength: 16000, files: 400, tableRows: 100, maxTableRows: 500, tableValueLength: 2000 };
+export const storageLimits = { entries: 200, maxEntries: 2000, valueLength: 300, maxValueLength: 16000, files: 400, tableRows: 100, maxTableRows: 500, tableValueLength: 2000, previewBytes: 8 * 1024 * 1024, previewLength: 200000 };
 
 // One filtered page of rows from SQLite. Cells are text, numbers, or null; blobs are redacted.
 const tableCell = z.union([z.string(), z.number(), z.null()]);
@@ -68,3 +68,18 @@ export const storageTableSchema = z.object({
   offset: z.number().int().nonnegative(),
 });
 export type StorageTable = z.infer<typeof storageTableSchema>;
+
+// One file's contents, filtered like storage values. json, plist, and archive (NSKeyedArchiver) arrive as JSON text;
+// binary and too-large files arrive without content.
+export const filePreviewFormats = ["json", "plist", "archive", "text", "binary", "too-large"] as const;
+export const storageFileSchema = z.object({
+  path: z.string(),
+  bytes: z.number().int().nonnegative(),
+  format: z.enum(filePreviewFormats),
+  content: z.string(),
+  truncated: z.boolean(),
+});
+export type StorageFilePreview = z.infer<typeof storageFileSchema>;
+
+// Apple frameworks (Core Data, SwiftData, NSDate) count seconds from 2001-01-01.
+export const appleDate = (seconds: number) => new Date((seconds + 978307200) * 1000).toISOString();

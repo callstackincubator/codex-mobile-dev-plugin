@@ -1,5 +1,6 @@
 import { crc32 } from "node:zlib";
 import type { EntryType } from "../../shared/app-storage.ts";
+import { jsonType, readVarint, utf8Text } from "./encoding.ts";
 
 // MMKV's on-disk format, from Tencent/MMKV Core (MMKV_IO.cpp, MiniPBCoder.cpp, MMKVMetaInfo.hpp):
 // - `<id>` holds a 4-byte header, then a placeholder varint and appended records of
@@ -18,19 +19,6 @@ const versionRandomIv = 2;
 const versionActualSize = 3;
 const versionFlag = 4;
 const flagKeyExpire = 1n;
-
-export function readVarint(buffer: Buffer, offset: number, limit = 10): { value: bigint; next: number } | undefined {
-  let value = 0n;
-  let shift = 0n;
-  for (let index = 0; index < limit; index++) {
-    if (offset + index >= buffer.length) return undefined;
-    const byte = buffer[offset + index];
-    value |= BigInt(byte & 0x7f) << shift;
-    if ((byte & 0x80) === 0) return { value, next: offset + index + 1 };
-    shift += 7n;
-  }
-  return undefined;
-}
 
 function lengthDelimited(buffer: Buffer, offset: number) {
   const length = readVarint(buffer, offset, 5);
@@ -81,28 +69,13 @@ export function decodeMmkv(data: Buffer, meta?: Buffer): MmkvFile {
   return { status: "ok", records: [...records].map(([key, value]) => ({ key, value })), crcValid };
 }
 
-const utf8 = new TextDecoder("utf-8", { fatal: true });
-function text(bytes: Buffer): string | undefined {
-  try {
-    const value = utf8.decode(bytes);
-    // Control characters other than whitespace mean binary data that happens to be valid UTF-8.
-    return /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value) ? undefined : value;
-  } catch { return undefined; }
-}
-
-export function jsonType(value: string): "json" | undefined {
-  const trimmed = value.trim();
-  if (!/^[[{]/.test(trimmed)) return undefined;
-  try { JSON.parse(trimmed); return "json"; } catch { return undefined; }
-}
-
 // Same tie-breaking order as Rozenite's MMKV adapter: strings, then byte buffers, then numbers, then booleans.
 // A single 0x00 byte is either false or an empty string; it reads as false.
 export function guessMmkvValue(bytes: Buffer): { type: EntryType; value: string } {
   const prefix = readVarint(bytes, 0, 5);
   if (bytes.length > 1 && prefix && prefix.next + Number(prefix.value) === bytes.length) {
     const payload = bytes.subarray(prefix.next);
-    const string = text(payload);
+    const string = utf8Text(payload);
     if (string !== undefined) return { type: jsonType(string) ?? "string", value: string };
     return { type: "data", value: payload.toString("hex") };
   }

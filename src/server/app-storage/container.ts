@@ -29,16 +29,24 @@ function safePath(path: string) {
   return path;
 }
 
+// Paths under this prefix live in one of the app's App Group containers, shared with its widgets and extensions.
+const appGroupPrefix = "AppGroup/";
+const preferencesPlist = /(?:^|\/)Library\/Preferences\/[^/]+\.plist$/;
+const containerMetadata = ".com.apple.mobile_container_manager.metadata.plist";
+
 export class SimulatorContainer implements AppContainer {
   readonly platform = "ios";
   private readonly root: string;
   private readonly deviceId: string;
   private readonly commands: Commands;
+  // App Group ID to its container directory.
+  private readonly groups: ReadonlyMap<string, string>;
 
-  constructor(root: string, deviceId: string, commands: Commands) {
+  constructor(root: string, deviceId: string, commands: Commands, groups: ReadonlyMap<string, string> = new Map()) {
     this.root = root;
     this.deviceId = deviceId;
     this.commands = commands;
+    this.groups = groups;
   }
 
   static async open(deviceId: string, bundleId: string, commands: Commands) {
@@ -48,31 +56,47 @@ export class SimulatorContainer implements AppContainer {
       if (/No such file or directory|not installed/i.test(commandOutput(error))) throw new ExpectedOperationError("invalid_input", `${bundleId} is not installed on this simulator.`);
       throw commandError(error, "Finding the app data");
     }
-    return new SimulatorContainer(output.trim(), deviceId, commands);
+    // Apps without the App Groups entitlement list none.
+    const groups = await commands.run("xcrun", ["simctl", "get_app_container", deviceId, bundleId, "groups"], { timeout: 15000 }).catch(() => "");
+    const entries = groups.split("\n").map(line => line.split("\t")).filter(([id, path]) => id && path && !id.includes("/")).map(([id, path]) => [id.trim(), path.trim()] as const);
+    return new SimulatorContainer(output.trim(), deviceId, commands, new Map(entries));
+  }
+
+  // Container-relative path to its directory on disk.
+  private resolve(path: string) {
+    safePath(path);
+    if (path.startsWith(appGroupPrefix)) {
+      const [id, ...rest] = path.slice(appGroupPrefix.length).split("/");
+      const group = this.groups.get(id);
+      if (group === undefined || rest.length === 0) throw new ExpectedOperationError("invalid_input", "The storage path is outside the app's data.");
+      return join(group, ...rest);
+    }
+    return join(this.root, path);
   }
 
   async list() {
     const files: ContainerFile[] = [];
-    const walk = async (directory: string) => {
+    const walk = async (root: string, prefix: string, directory: string) => {
       const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
       for (const entry of entries) {
         if (files.length >= maxContainerFiles) return;
         const path = join(directory, entry.name);
-        if (entry.isDirectory()) await walk(path);
+        if (entry.isDirectory()) await walk(root, prefix, path);
         else if (entry.isFile()) {
           const info = await stat(path).catch(() => undefined);
-          if (info) files.push({ path: relative(this.root, path).split(sep).join("/"), bytes: info.size });
+          if (info) files.push({ path: prefix + relative(root, path).split(sep).join("/"), bytes: info.size });
         }
       }
     };
-    await walk(this.root);
+    await walk(this.root, "", this.root);
+    for (const [id, root] of this.groups) await walk(root, `${appGroupPrefix}${id}/`, root);
     return files;
   }
 
-  async read(path: string) { return readFile(join(this.root, safePath(path))); }
+  async read(path: string) { return readFile(this.resolve(path)); }
 
   async remove(paths: string[]) {
-    await Promise.all(paths.map(path => rm(join(this.root, safePath(path)), { recursive: true, force: true })));
+    await Promise.all(paths.map(path => rm(this.resolve(path), { recursive: true, force: true })));
   }
 
   private defaults(args: string[]) {
@@ -81,26 +105,29 @@ export class SimulatorContainer implements AppContainer {
 
   // `defaults` asks cfprefsd, which may hold writes the app made after the plist was last saved.
   async preferences(path: string) {
-    const domain = join(this.root, safePath(path)).replace(/\.plist$/, "");
+    const domain = this.resolve(path).replace(/\.plist$/, "");
     try { return await this.defaults(["export", domain, "-"]); }
     catch { return this.commands.run("plutil", ["-convert", "xml1", "-o", "-", `${domain}.plist`], { timeout: 10000, maxBuffer: 32 * 1024 * 1024 }); }
   }
 
   // Deleting only the file would leave cfprefsd's cached copy, which the app would read and save again.
   async forgetPreferences(path: string) {
-    const domain = join(this.root, safePath(path)).replace(/\.plist$/, "");
-    await this.defaults(["delete", domain]).catch(() => "");
+    await this.defaults(["delete", this.resolve(path).replace(/\.plist$/, "")]).catch(() => "");
   }
 
   async reset() {
-    const preferences = (await this.list()).filter(file => /^Library\/Preferences\/[^/]+\.plist$/.test(file.path));
-    for (const file of preferences) await this.forgetPreferences(file.path);
+    for (const file of await this.list()) if (preferencesPlist.test(file.path)) await this.forgetPreferences(file.path);
     // The container keeps its top-level layout and metadata; everything the app created inside goes.
     for (const directory of ["Documents", "Library", "tmp"]) {
       const entries = await readdir(join(this.root, directory)).catch(() => []);
       await Promise.all(entries.map(entry => rm(join(this.root, directory, entry), { recursive: true, force: true })));
     }
     for (const directory of ["Documents", "Library/Caches", "Library/Preferences", "tmp"]) await mkdir(join(this.root, directory), { recursive: true });
+    // App Group containers are emptied too: SwiftData and shared defaults often live there.
+    for (const root of this.groups.values()) {
+      const entries = await readdir(root).catch(() => []);
+      await Promise.all(entries.filter(entry => entry !== containerMetadata).map(entry => rm(join(root, entry), { recursive: true, force: true })));
+    }
   }
 }
 

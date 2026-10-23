@@ -1,13 +1,13 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
 import { installedAppsSchema } from "../shared/app-control.ts";
 import type { InstalledApp } from "../shared/app-control.ts";
-import { storageClearSchema, storageLimits, storageSnapshotSchema, storageTableSchema } from "../shared/app-storage.ts";
-import type { StorageEntry, StorageSnapshot, StorageStore, StorageTable } from "../shared/app-storage.ts";
+import { storageClearSchema, storageFileSchema, storageLimits, storageSnapshotSchema, storageTableSchema } from "../shared/app-storage.ts";
+import type { StorageEntry, StorageFilePreview, StorageSnapshot, StorageStore, StorageTable } from "../shared/app-storage.ts";
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import { errorMessage } from "../shared/protocol.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
 import { appIcons } from "./app-icons.ts";
-import { isSdkStore } from "./storage-labels.ts";
+import { isSdkStore, storeTitle } from "./storage-labels.ts";
 import { measureUiOperation, recordUiTiming, setUiGauge } from "./telemetry.ts";
 
 export type StorageAction = "apps" | "read" | "clear" | "reset" | "launch";
@@ -24,7 +24,11 @@ export type StorageChangeEvent = {
   before?: StorageEntry;
   after?: StorageEntry;
 };
-export type StorageTableView = { storeId: string; name: string; data?: StorageTable; loading: boolean; error: string };
+// A table or file opened from Browse. Only one is open at a time, and its data arrives after it opens.
+type DetailLoad = { loading: boolean; error: string };
+export type StorageTableView = DetailLoad & { kind: "table"; storeId: string; name: string; data?: StorageTable };
+export type StorageFileView = DetailLoad & { kind: "file"; path: string; data?: StorageFilePreview };
+export type StorageDetail = StorageTableView | StorageFileView;
 export type StorageState = {
   open: boolean;
   available: boolean;
@@ -41,8 +45,7 @@ export type StorageState = {
   changes: readonly StorageChangeEvent[];
   // SDK stores (analytics, crash reporting) write often, so their changes are hidden unless asked for.
   showSdkChanges: boolean;
-  // The database table open in Browse, page by page.
-  table?: StorageTableView;
+  detail?: StorageDetail;
   watchingSince?: number;
   busy: StorageAction | null;
   error: string;
@@ -138,7 +141,7 @@ export class StoragePanel {
     }
     this.revision++;
     this.appsFor = "";
-    this.update({ platform, deviceId, deviceLabel: device?.name ?? "", unsupported, apps: [], bundleId: this.selections.get(`${platform}:${deviceId}`) ?? "", snapshot: undefined, changes: [], table: undefined, watchingSince: undefined, busy: null, error: "", status: "" });
+    this.update({ platform, deviceId, deviceLabel: device?.name ?? "", unsupported, apps: [], bundleId: this.selections.get(`${platform}:${deviceId}`) ?? "", snapshot: undefined, changes: [], detail: undefined, watchingSince: undefined, busy: null, error: "", status: "" });
     if (this.state.open) void this.loadApps();
   }
 
@@ -159,26 +162,42 @@ export class StoragePanel {
 
   setShowSdkChanges(showSdkChanges: boolean) { this.update({ showSdkChanges }); }
 
-  async openTable(storeId: string, name: string, offset = 0) {
+  openTable(storeId: string, name: string, offset = 0) {
+    const previous = this.state.detail;
+    // Paging keeps the current rows on screen until the next page arrives.
+    const shown = previous?.kind === "table" && previous.storeId === storeId && previous.name === name ? previous.data : undefined;
+    const detail: StorageTableView = { kind: "table", storeId, name, data: shown, loading: true, error: "" };
+    return this.load(detail, "ui.storage.table", async bundleId => {
+      const data = storageTableSchema.parse(await this.call("mobile_app_storage_table", { bundleId, store: storeId, table: name, offset, limit: storageLimits.tableRows }));
+      return { ...detail, data, loading: false };
+    });
+  }
+
+  openFile(path: string) {
+    const detail: StorageFileView = { kind: "file", path, loading: true, error: "" };
+    return this.load(detail, "ui.storage.file", async bundleId => {
+      const data = storageFileSchema.parse(await this.call("mobile_app_storage_file", { bundleId, path }));
+      return { ...detail, data, loading: false };
+    });
+  }
+
+  closeDetail() { if (this.state.detail) this.update({ detail: undefined }); }
+
+  // Opens a detail and fills in its data. A newer detail, including the next page of the same table, replaces this
+  // one, so a slower earlier response is dropped.
+  private async load(detail: StorageDetail, metric: string, fetch: (bundleId: string) => Promise<StorageDetail>) {
     const bundleId = this.state.bundleId;
     if (!this.ready() || !bundleId) return;
     const current = this.current();
-    const previous = this.state.table;
-    const isOpen = (table?: StorageTableView) => table?.storeId === storeId && table.name === name;
-    // Paging keeps the current rows on screen until the next page arrives.
-    const table: StorageTableView = { storeId, name, data: isOpen(previous) ? previous?.data : undefined, loading: true, error: "" };
-    this.update({ table });
-    const stillOpen = () => current() && isOpen(this.state.table);
+    this.update({ detail });
+    const open = () => current() && this.state.detail === detail;
     try {
-      const data = storageTableSchema.parse(await measureUiOperation("ui.storage.table", "ui.storage.failure",
-        () => this.call("mobile_app_storage_table", { bundleId, store: storeId, table: name, offset, limit: storageLimits.tableRows })));
-      if (stillOpen()) this.update({ table: { ...table, data, loading: false } });
+      const loaded = await measureUiOperation(metric, "ui.storage.failure", () => fetch(bundleId));
+      if (open()) this.update({ detail: loaded });
     } catch (error) {
-      if (stillOpen()) this.update({ table: { ...table, loading: false, error: errorMessage(error) } });
+      if (open()) this.update({ detail: { ...detail, loading: false, error: errorMessage(error) } });
     }
   }
-
-  closeTable() { if (this.state.table) this.update({ table: undefined }); }
 
   clearChanges() { this.update({ changes: [], watchingSince: this.state.snapshot?.readAt }); }
 
@@ -232,7 +251,7 @@ export class StoragePanel {
     if (bundleId !== this.state.bundleId) {
       this.revision++;
       this.selections.set(`${this.state.platform}:${this.state.deviceId}`, bundleId);
-      this.update({ bundleId, snapshot: undefined, changes: [], table: undefined, watchingSince: undefined, busy: null, error: "", status: "" });
+      this.update({ bundleId, snapshot: undefined, changes: [], detail: undefined, watchingSince: undefined, busy: null, error: "", status: "" });
     }
     if (bundleId) void this.refresh();
   }
@@ -260,10 +279,13 @@ export class StoragePanel {
     const bundleId = this.state.bundleId;
     if (!this.ready() || !bundleId || this.state.busy) return;
     const action = storeId ? "clear" : "reset";
+    // The server confirms without echoing the store's name, so the panel names it from its own snapshot.
+    const store = this.state.snapshot?.stores.find(item => item.id === storeId);
+    const cleared = !storeId ? "all app data" : store ? storeTitle(store, bundleId) : "the store";
     await this.run(action, { status: "" }, async current => {
-      const result = storageClearSchema.parse(await measureUiOperation(`ui.storage.${action}`, "ui.storage.failure", () => this.call("mobile_clear_app_storage", storeId ? { bundleId, store: storeId } : { bundleId })));
+      storageClearSchema.parse(await measureUiOperation(`ui.storage.${action}`, "ui.storage.failure", () => this.call("mobile_clear_app_storage", storeId ? { bundleId, store: storeId } : { bundleId })));
       if (!current()) return;
-      this.update({ busy: null, status: result.cleared === "all" ? "Cleared all app data. The app was stopped." : `Cleared ${result.cleared}. The app was stopped.` });
+      this.update({ busy: null, status: `Cleared ${cleared}. The app was stopped.` });
       await this.refresh();
     });
   }
