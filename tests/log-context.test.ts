@@ -14,7 +14,7 @@ const log = stackLogs([{ timestamp: "2026-09-30T12:00:00Z", message: "Request fa
 test("hosts without context pills receive the clicked log in the message", async () => {
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const context = new PanelContext({
-    getHostCapabilities: () => ({ message: { text: {} } }),
+    getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} } }),
     async sendMessage(params: Parameters<App["sendMessage"]>[0]) { messages.push(params); return {}; },
   } as App, {} as OpenAIExtensions);
   for (const level of ["error", "warn", "info", "debug"] as const) {
@@ -29,7 +29,7 @@ test("hosts without context pills receive the clicked log in the message", async
 
 test("chat actions report host rejection and unsupported hosts", async () => {
   const context = new PanelContext({
-    getHostCapabilities: () => ({ message: { text: {} } }),
+    getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} } }),
     async sendMessage() { return { isError: true }; },
   } as unknown as App, {} as OpenAIExtensions);
   await assert.rejects(context.sendLogToChat(log), /Could not send/);
@@ -53,7 +53,7 @@ function fixture(send: App["sendMessage"] = async () => ({})) {
   };
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const context = new PanelContext({
-    getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { image: {} } }),
+    getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} }, updateModelContext: { image: {} } }),
     async sendMessage(...args: Parameters<App["sendMessage"]>) { messages.push(args[0]); return send(...args); },
   } as App, { modelContext } as OpenAIExtensions);
   return { context, updates, messages, clear() { current = null; context.hostChanged(); }, removeContent() { if (current) current = { ...current, content: [] }; context.hostChanged(); }, removeScreenshot(id: string) { if (current) current = { ...current, updateId: "removed", content: current.content?.filter(item => item._meta?.["mobile-dev/screenshotId"] !== id) }; context.hostChanged(); }, fail() { failure = true; }, hold(value: Promise<void>) { gate = value; } };

@@ -1,3 +1,4 @@
+import { chatMessage } from "./chat-message.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import type { SimulatorDevice } from "../shared/protocol.ts";
@@ -96,9 +97,7 @@ export class PanelContext {
       if (this.canAttach && annotations.some(annotation => this.pendingAnnotations.has(annotation.id))) await this.publish();
       const result = await withComposer(() => {
         if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
-        return this.app.sendMessage({ role: "user", content: [
-          { type: "text", text },
-        ], _meta: { "openai/message": { target: "active", send: true } } }, { timeout: 5000, maxTotalTimeout: 5000 });
+        return this.app.sendMessage(chatMessage(this.app, text), { timeout: 5000, maxTotalTimeout: 5000 });
       });
       if (result.isError) throw new Error("Could not send these annotations to chat.");
       const sent = new Set(annotations.map(item => item.id));
@@ -109,12 +108,12 @@ export class PanelContext {
     } catch (error) {
       if (composerUnavailable(error)) {
         countUiEvent("ui.annotations.send_composer_unavailable");
-        throw new Error("Codex could not find this chat's input. Try reopening the chat, or copy the notes and paste them into chat.");
+        throw new Error("The host could not find this chat's input. Try reopening the chat, or copy the notes and paste them into chat.");
       }
       // A timeout does not prove delivery failed. Never retry it automatically.
       if (typeof error === "object" && error !== null && "code" in error && error.code === -32001) {
         countUiEvent("ui.annotations.send_timeout");
-        throw new Error("Codex did not confirm delivery. Check the chat before retrying to avoid sending the notes twice.");
+        throw new Error("The host did not confirm delivery. Check the chat before retrying to avoid sending the notes twice.");
       }
       countUiEvent("ui.annotations.send_failure");
       captureUiError(new Error("Annotation chat send failed."), "annotations.send");
@@ -138,9 +137,7 @@ export class PanelContext {
       const text = this.canAttach ? prompt : `${prompt}\n\n${formatLogContext(log)}`;
       const result = await withComposer(() => {
         if (this.canAttach && this.attached !== log) throw new Error("The selected log was removed or changed before sending.");
-        return this.app.sendMessage({ role: "user", content: [{ type: "text", text }],
-          _meta: { "openai/message": { target: "active", send: true } },
-        }, { timeout: 5000, maxTotalTimeout: 5000 });
+        return this.app.sendMessage(chatMessage(this.app, text), { timeout: 5000, maxTotalTimeout: 5000 });
       });
       if (result.isError) throw new Error("Could not send this log to chat.");
       if (this.attached === log) {
