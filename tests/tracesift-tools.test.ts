@@ -153,6 +153,9 @@ test("published TraceSift annotations distinguish saved references, service star
   const { tools } = await mcp.listTools();
   const expected = {
     mobile_analyze_profile: [false, true],
+    mobile_pick_profile_file: [false, false],
+    mobile_get_tracesift_project: [true, false],
+    mobile_pick_tracesift_project: [false, true],
     mobile_remember_tracesift_analysis: [false, true],
     mobile_restore_tracesift_analysis: [true, false],
     mobile_restore_tracesift_analysis_by_input: [true, false],
