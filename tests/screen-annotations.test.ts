@@ -8,8 +8,9 @@ import { PanelContext } from "../packages/ui/src/model-context.ts";
 import { App } from "@modelcontextprotocol/ext-apps";
 import { AppBridge } from "@modelcontextprotocol/ext-apps/app-bridge";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import type { OpenAIExtensions, OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
+import type { OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
 import { PNG, UDID } from "./fixtures.ts";
+import type { HostAttachments } from "../packages/ui/src/host-bridge.ts";
 
 const simulator = { udid: UDID, name: "iPhone", runtime: "iOS 26", state: "Booted", platform: "ios" as const };
 const capture = { screenshot: { id: "screen-1", data: PNG.toString("base64"), capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 393, height: 852, units: "points" as const } };
@@ -30,14 +31,14 @@ function fixture(messageApp?: App) {
   const context = new PanelContext({
     getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {}, ...(imageMessages ? { image: {} } : {}) }, updateModelContext: imageAttachments ? { image: {} } : {} }),
     async sendMessage(message: Parameters<App["sendMessage"]>[0], options: Parameters<App["sendMessage"]>[1]) { if (sendFailures-- > 0) throw new Error("MCP app messages require an available composer"); messages.push(message); return messageApp ? messageApp.sendMessage(message, options) : { isError: rejected }; },
-  } as unknown as App, { modelContext: {
+  } as unknown as App, () => ({
     getCurrent: () => current,
     async update(params: Parameters<App["updateModelContext"]>[0]) {
       updates.push(params); await gate;
       if (failure && failuresLeft-- > 0) throw new Error(failure);
       current = { ...params, updateId: String(updates.length) }; return { updateId: current.updateId };
     },
-  } } as unknown as OpenAIExtensions);
+  }) as unknown as HostAttachments);
   const store = new ScreenAnnotationsStore();
   store.connect(context); store.configure(simulator, false); store.capture = () => capture;
   store.readTree = async () => ({ tree: { elements: [{ ...component, label: component.name, frame: component.bounds }] } });
@@ -578,7 +579,7 @@ test("standard hosts receive readable, self-locating drafts and retain selection
     getHostCapabilities: () => ({ updateModelContext: { text: {}, structuredContent: {} }, message: { text: {} } }),
     async updateModelContext(params) { updates.push(params); return {}; },
     async sendMessage(params) { messages.push(params); return {}; },
-  } as App, {} as OpenAIExtensions);
+  } as App, () => undefined);
   await context.attachAnnotation(annotation);
   assert.equal(context.screenAnnotations.length, 1);
   await context.attachAnnotation({ ...annotation, id: "android-note", simulator: { ...simulator, udid: "android", name: "Pixel", platform: "android" } });
@@ -610,7 +611,7 @@ test("a standard annotation draft waits for context and preserves notes when con
     getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
     async updateModelContext() { if (failContext) throw new Error("Context unavailable"); return {}; },
     async sendMessage() { sends++; return { isError: rejectMessage }; },
-  } as unknown as App, {} as OpenAIExtensions);
+  } as unknown as App, () => undefined);
   await context.attachAnnotation(annotation);
   failContext = true;
   await assert.rejects(context.sendAnnotationsToChat(), /Context unavailable/);
@@ -633,7 +634,7 @@ test("editing a note while its context is publishing prevents an obsolete draft"
     getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
     async updateModelContext() { if (hold) { hold = false; await new Promise<void>(resolve => { release = resolve; }); } return {}; },
     async sendMessage() { sends++; return {}; },
-  } as unknown as App, {} as OpenAIExtensions);
+  } as unknown as App, () => undefined);
   await context.attachAnnotation(annotation);
   hold = true;
   const sending = context.sendAnnotationsToChat();
@@ -664,7 +665,7 @@ test("native MCP Apps handshake publishes retrievable selection evidence before 
   const [appTransport, hostTransport] = InMemoryTransport.createLinkedPair();
   t.after(async () => { await app.close(); await bridge.close(); });
   await bridge.connect(hostTransport); await app.connect(appTransport);
-  const context = new PanelContext(app, {} as OpenAIExtensions);
+  const context = new PanelContext(app, () => undefined);
   await context.attachAnnotation(annotation);
   await context.attachAnnotation({ ...annotation, id: "note-2", number: 2, text: "Only change this instance", component: {
     ...component, identifier: "second-continue-button", bounds: { x: 200, y: 300, width: 60, height: 30 },

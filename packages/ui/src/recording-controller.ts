@@ -1,7 +1,6 @@
 import { chatMessage } from "./chat-message.ts";
-import type { HostBridge } from "./host-bridge.ts";
+import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import { recordingRangeSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
 import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
@@ -16,7 +15,7 @@ type RecordingState = {
 
 export class RecordingController {
   private readonly app: HostBridge;
-  private readonly extensions?: OpenAIExtensions;
+  private readonly attachments: HostAttachmentsSource;
   private state: RecordingState = { canMessage: false, busy: false, error: "" };
   private listeners = new Set<() => void>();
   private timer?: ReturnType<typeof setTimeout>;
@@ -26,9 +25,9 @@ export class RecordingController {
   private readyAt = performance.now();
   private abort = new AbortController();
 
-  constructor(app: HostBridge, extensions?: OpenAIExtensions) {
+  constructor(app: HostBridge, attachments: HostAttachmentsSource = () => undefined) {
     this.app = app;
-    this.extensions = extensions;
+    this.attachments = attachments;
     document.addEventListener("visibilitychange", this.visibilityChanged);
   }
   subscribe = (listener: () => void) => {
@@ -133,7 +132,7 @@ export class RecordingController {
       : `Open “${recording.title}” in Mobile Dev with ${selected.start}–${selected.end}s selected. Use mobile_open_performance_recording with ${reference}.`;
     let sending = false;
     try {
-      const modelContext = this.extensions?.modelContext;
+      const modelContext = this.attachments();
       if (modelContext) {
         const current = modelContext.getCurrent();
         const contextStartedAt = performance.now();

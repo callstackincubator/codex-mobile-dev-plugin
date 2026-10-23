@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { OpenAIExtensions, OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
+import type { OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
 import { PanelContext, type ScreenshotAttachment } from "../packages/ui/src/model-context.ts";
 import { stackLogs } from "../packages/shared/src/logs.ts";
 import { UDID } from "./fixtures.ts";
 import type { PhysicalIosDevice } from "../packages/shared/src/ios-devices.ts";
 import type { PhysicalAndroidDevice } from "../packages/shared/src/android-devices.ts";
+import type { HostAttachments } from "../packages/ui/src/host-bridge.ts";
 
 const simulator = { udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS 26" };
 const log = stackLogs([{ timestamp: "2026-09-30T12:00:00Z", message: "Request failed", level: "error", source: "js", origin: "metro", stack: "at load (App.tsx:9:3)", sequence: 1 }])[0];
@@ -16,7 +17,7 @@ test("hosts without context pills receive the clicked log in the message", async
   const context = new PanelContext({
     getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} } }),
     async sendMessage(params: Parameters<App["sendMessage"]>[0]) { messages.push(params); return {}; },
-  } as App, {} as OpenAIExtensions);
+  } as App, () => undefined);
   for (const level of ["error", "warn", "info", "debug"] as const) {
     await context.sendLogToChat({ ...log, level });
     const message = messages.at(-1)!;
@@ -31,9 +32,9 @@ test("chat actions report host rejection and unsupported hosts", async () => {
   const context = new PanelContext({
     getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} } }),
     async sendMessage() { return { isError: true }; },
-  } as unknown as App, {} as OpenAIExtensions);
+  } as unknown as App, () => undefined);
   await assert.rejects(context.sendLogToChat(log), /Could not send/);
-  const unsupported = new PanelContext({ getHostCapabilities: () => ({}) } as App, {} as OpenAIExtensions);
+  const unsupported = new PanelContext({ getHostCapabilities: () => ({}) } as App, () => undefined);
   await assert.rejects(unsupported.sendLogToChat(log), /does not support chat/);
 });
 
@@ -55,7 +56,7 @@ function fixture(send: App["sendMessage"] = async () => ({})) {
   const context = new PanelContext({
     getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} }, updateModelContext: { image: {} } }),
     async sendMessage(...args: Parameters<App["sendMessage"]>) { messages.push(args[0]); return send(...args); },
-  } as App, { modelContext } as OpenAIExtensions);
+  } as App, () => modelContext);
   return { context, updates, messages, clear() { current = null; context.hostChanged(); }, removeContent() { if (current) current = { ...current, content: [] }; context.hostChanged(); }, removeScreenshot(id: string) { if (current) current = { ...current, updateId: "removed", content: current.content?.filter(item => item._meta?.["mobile-dev/screenshotId"] !== id) }; context.hostChanged(); }, fail() { failure = true; }, hold(value: Promise<void>) { gate = value; } };
 }
 
@@ -317,7 +318,7 @@ test("a failed screenshot attachment restores the prior image", async () => {
 });
 
 test("a host without image attachment support rejects screenshots", async () => {
-  const context = new PanelContext({ getHostCapabilities: () => ({}) } as App, { modelContext: {} } as OpenAIExtensions);
+  const context = new PanelContext({ getHostCapabilities: () => ({}) } as App, () => ({}) as HostAttachments);
   assert.equal(context.canAttachScreenshots, false);
   await assert.rejects(context.attachScreenshot(screenshot), /does not support screenshot/);
 });
@@ -346,7 +347,7 @@ test("standard context supports logs, local removal and complete chat messages",
     getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {}, structuredContent: {} } }),
     async updateModelContext(params) { updates.push(params); return {}; },
     async sendMessage(params) { messages.push(params); return {}; },
-  } as App, {} as OpenAIExtensions);
+  } as App, () => undefined);
   assert.equal(context.canAttach, true);
   assert.equal(context.canAttachScreenshots, false);
   await context.attach(log);
@@ -368,7 +369,7 @@ test("standard screenshot context is capability-gated and clearing rolls back on
   const context = new PanelContext({
     getHostCapabilities: () => ({ updateModelContext: { text: {}, ...(images ? { image: {} } : {}) } }),
     async updateModelContext(params) { if (fail) throw new Error("Host unavailable"); updates.push(params); return {}; },
-  } as unknown as App, {} as OpenAIExtensions);
+  } as unknown as App, () => undefined);
   const screenshot = { id: "shot-standard", simulator, data: "cG5n", mimeType: "image/png" } as ScreenshotAttachment;
   await assert.rejects(context.attachScreenshot(screenshot), /does not support/);
   images = true;
@@ -391,7 +392,7 @@ test("failed standard context cleanup never retries a delivered message", async 
     getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {}, structuredContent: {} } }),
     async updateModelContext() { if (sent) throw new Error("Cleanup unavailable"); return {}; },
     async sendMessage() { sent++; return {}; },
-  } as unknown as App, {} as OpenAIExtensions);
+  } as unknown as App, () => undefined);
   await context.sendLogToChat(log);
   assert.equal(sent, 1);
 });

@@ -17,9 +17,9 @@ for (const reducedMotion of [false, true]) {
         import { RecordingCard } from "./packages/ui/src/components/recording-card.tsx";
         import { RecordingController } from "./packages/ui/src/recording-controller.ts";
         import { startUiTelemetry, stopUiTelemetry } from "./packages/ui/src/telemetry.ts";
-        export function mount(app, result, extensions) {
+        export function mount(app, result, attachments) {
           startUiTelemetry(app);
-          const controller = new RecordingController(app, extensions);
+          const controller = new RecordingController(app, attachments);
           controller.hostChanged();
           controller.accept(result);
           const root = createRoot(document.getElementById("root"));
@@ -67,17 +67,17 @@ for (const reducedMotion of [false, true]) {
     window.HTMLElement.prototype.releasePointerCapture = () => {};
     const messages: Array<{ role: string; content: Array<{ type: string; text: string }> }> = [];
     const contextUpdates: Array<{ content: Array<{ type: string; text: string; _meta?: Record<string, unknown> }>; structuredContent?: Record<string, unknown> }> = [];
-    const extensions = { modelContext: {
+    const attachments = () => ({
       getCurrent() { return contextUpdates.at(-1); },
       async update(params: typeof contextUpdates[number]) { contextUpdates.push(params); return { updateId: String(contextUpdates.length) }; },
-    } };
+    });
     const app = { getHostCapabilities() { return { message: { text: {} }, serverTools: {} }; },
       async sendMessage(message: typeof messages[number]) { messages.push(message); return {}; },
       async callServerTool() { throw new Error("Finished recordings must not poll"); },
     };
     window.eval(built.outputFiles[0].text);
     const recording = recordingWithFramesFixture();
-    const mounted = window.RecordingTest.mount(app, { content: [], structuredContent: { recording } }, extensions);
+    const mounted = window.RecordingTest.mount(app, { content: [], structuredContent: { recording } }, attachments);
     t.after(async () => {
       await mounted.close();
       dom.window.close();

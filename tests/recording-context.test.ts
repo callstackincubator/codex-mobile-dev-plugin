@@ -2,7 +2,7 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { OpenAIExtensions, OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
+import type { OpenAIModelContextHostState } from "@openai/mcp-extensions/app";
 import { RecordingController } from "../packages/ui/src/recording-controller.ts";
 import { recordingWithFramesFixture } from "./recording-fixtures.ts";
 
@@ -37,7 +37,7 @@ function fixture(t: TestContext, pills = true) {
       return { isError: sendFailure };
     },
   } as unknown as App;
-  const controller = new RecordingController(app, (pills ? { modelContext } : {}) as OpenAIExtensions);
+  const controller = new RecordingController(app, () => pills ? modelContext : undefined);
   const recording = recordingWithFramesFixture();
   controller.hostChanged();
   controller.accept({ content: [], structuredContent: { recording } });

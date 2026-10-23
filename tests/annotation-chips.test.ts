@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import type { ScreenAnnotation } from "../packages/shared/src/screen-annotations.ts";
 import { PanelContext } from "../packages/ui/src/model-context.ts";
 import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationMessage } from "../packages/shared/src/screen-annotations.ts";
+import type { HostAttachments } from "../packages/ui/src/host-bridge.ts";
 
 const annotation: ScreenAnnotation = {
   id: "header-note", number: 1, text: "Make this\n  smaller.",
@@ -22,12 +22,12 @@ function fixture() {
   const context = new PanelContext({
     getHostCapabilities: () => ({ message: { text: {} } }),
     async sendMessage(message: Parameters<App["sendMessage"]>[0]) { messages.push(message); return {}; },
-  } as unknown as App, { modelContext: {
+  } as unknown as App, () => ({
     async update(params: Parameters<App["updateModelContext"]>[0]) {
       if (!composerAvailable) throw new Error("MCP model context requires an available composer");
       updates.push(params); return { updateId: String(updates.length) };
     },
-  } } as unknown as OpenAIExtensions);
+  }) as unknown as HostAttachments);
   return { context, updates, messages, composer(available: boolean) { composerAvailable = available; } };
 }
 

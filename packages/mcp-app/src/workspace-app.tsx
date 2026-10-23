@@ -29,13 +29,15 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, { availableDisplayModes: ["inline", "fullscreen"] }, { autoResize: false });
   startUiTelemetry(app);
   const extensions = new OpenAIExtensions(app);
-  const panelContext = new PanelContext(app, extensions);
+  // Codex shows context as composer attachments through OpenAI's extension.
+  const attachments = () => extensions.modelContext;
+  const panelContext = new PanelContext(app, attachments);
   const deviceApps = new DeviceAppsStore(app, document);
   const performancePanel = new PerformancePanel(app, deviceApps);
   const logsPanel = new LogsPanel(app, panelContext, deviceApps);
   const storagePanel = new StoragePanel(app, deviceApps);
   const traceSiftPanel = new TraceSiftPanel(app);
-  const recordingController = new RecordingController(app, extensions);
+  const recordingController = new RecordingController(app, attachments);
   const extension = options.extension?.(app);
   const reactRoot = createRoot(document.getElementById("root")!);
   function renderWorkspace(automaticLayout?: DeviceLayout) {

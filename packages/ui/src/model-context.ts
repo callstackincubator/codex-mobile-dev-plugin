@@ -1,6 +1,5 @@
 import { chatMessage } from "./chat-message.ts";
-import type { HostBridge } from "./host-bridge.ts";
-import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
+import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import type { StackedLog } from "@mobile-dev/shared/logs.ts";
 import { formatLogContext, logKey } from "@mobile-dev/shared/logs.ts";
@@ -44,12 +43,12 @@ export class PanelContext {
   private resuming?: Promise<void>;
   private selectionKey?: string;
   private readonly app: HostBridge;
-  private readonly extensions?: OpenAIExtensions;
+  private readonly attachments: HostAttachmentsSource;
   private contextReady = false;
   onChange = () => {};
 
-  constructor(app: HostBridge, extensions?: OpenAIExtensions) { this.app = app; this.extensions = extensions; }
-  get usesHostAttachments() { return !!this.extensions?.modelContext; }
+  constructor(app: HostBridge, attachments: HostAttachmentsSource = () => undefined) { this.app = app; this.attachments = attachments; }
+  get usesHostAttachments() { return !!this.attachments(); }
   get canAttach() { return this.usesHostAttachments || !!this.app.getHostCapabilities()?.updateModelContext?.text; }
   get attachmentCount() { return Number(!!this.attached) + this.screenshots.length + this.annotations.length; }
   get canSendMessage() { return !!this.app.getHostCapabilities()?.message?.text; }
@@ -221,7 +220,7 @@ export class PanelContext {
       this.contextReady = ready;
       return;
     }
-    const current = this.extensions?.modelContext?.getCurrent();
+    const current = this.attachments()?.getCurrent();
     if (current === undefined) return;
     const logPresent = this.attached && (current?.content
       ? current.content.some(item => item.type === "text" && item.text === formatLogContext(this.attached!))
@@ -282,7 +281,8 @@ export class PanelContext {
       try {
         await withComposer(async () => {
           if (revision !== this.revision) return;
-          if (this.extensions?.modelContext) this.updateId = (await this.extensions.modelContext.update(params, { timeout: 5000 }))?.updateId;
+          const host = this.attachments();
+          if (host) this.updateId = (await host.update(params, { timeout: 5000 }))?.updateId;
           else {
             // Standard hosts own no composer pills. Local controls own selection
             // and removal; publish the complete replacement context each time.

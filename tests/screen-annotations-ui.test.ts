@@ -7,7 +7,6 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { PanelContext } from "../packages/ui/src/model-context.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
 
 test("the simulator toolbar opens notes, saves blue markers, and lets users edit and remove them", async t => {
   const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: "http://localhost" });
@@ -37,7 +36,7 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   await act(async () => { root.render(createElement(SimulatorView, { platform: "ios", visible: true })); });
   const canvas = dom.window.document.querySelector("canvas");
   const store = getScreenAnnotations(dom.window.document.querySelector('[data-element="stage"]'));
-  const context = new PanelContext({ getHostCapabilities: () => ({ updateModelContext: { image: {} }, message: { text: {} } }), async sendMessage() { return { isError: true }; } } as unknown as App, { modelContext: { getCurrent: () => undefined, update: async () => ({ updateId: "annotation-update" }) } } as unknown as OpenAIExtensions);
+  const context = new PanelContext({ getHostCapabilities: () => ({ updateModelContext: { image: {} }, message: { text: {} } }), async sendMessage() { return { isError: true }; } } as unknown as App, () => ({ getCurrent: () => undefined, update: async () => ({ updateId: "annotation-update" }) }));
   store.capture = () => ({ screenshot: { id: "capture", data: "AA==", capturedAt: "2026-10-01T10:00:00Z" }, screen: { width: 390, height: 844, units: "points" } });
   store.readTree = async () => ({ tree: { label: "Continue", identifier: "continue", role: "AXButton", frame: { x: 10, y: 20, width: 100, height: 40 } } });
   await act(async () => {
@@ -107,7 +106,7 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
     getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
     async updateModelContext() { return {}; },
     async sendMessage(message) { messages.push(message); return {}; },
-  } as App, {} as OpenAIExtensions);
+  } as App, () => undefined);
   const top = dom.window.document.createElement("div");
   dom.window.document.body.prepend(top);
   const topRoot = createRoot(top);

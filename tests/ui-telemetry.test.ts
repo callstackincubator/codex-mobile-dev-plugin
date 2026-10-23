@@ -286,9 +286,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
     if (sendFailure === "composer") throw new Error("MCP app messages require an available composer");
     if (sendFailure) throw new Error("PRIVATE_SEND_ERROR");
     return {};
-  } }, {
-    modelContext: { getCurrent: () => undefined, async update() { return { updateId: "PRIVATE_UPDATE" }; } },
-  });
+  } }, () => ({ getCurrent: () => undefined, async update() { return { updateId: "PRIVATE_UPDATE" }; } }));
   const store = new api.ScreenAnnotationsStore();
   store.connect(context);
   store.configure({ udid: "PRIVATE_DEVICE", name: "PRIVATE_DEVICE_NAME", runtime: "iOS 26", state: "Booted" }, false);

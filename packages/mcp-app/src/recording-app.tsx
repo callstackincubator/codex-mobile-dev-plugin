@@ -11,7 +11,8 @@ export function startRecordingApp() {
   const app = new App({ name: "mobile-dev-recording", version: PLUGIN_VERSION });
   startUiTelemetry(app);
   setUiSurface("recording");
-  const controller = new RecordingController(app, new OpenAIExtensions(app));
+  const extensions = new OpenAIExtensions(app);
+  const controller = new RecordingController(app, () => extensions.modelContext);
   const root = createRoot(document.getElementById("root")!);
   root.render(<ErrorBoundary fallback={<p role="alert">This recording could not render. Reopen it to try again.</p>}><RecordingCard controller={controller} /></ErrorBoundary>);
   function hostChanged() {
