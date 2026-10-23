@@ -102,7 +102,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
       : "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill for device control, logs, profiles, and performance workflows.",
   });
   instrumentMcpServer(server);
-  const updates = new PluginUpdates();
+  const updates = new PluginUpdates(claudeDesktop ? { enabled: false } : {});
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
   registerPluginUpdateTools(server, updates);
   if (!claudeDesktop) {
@@ -164,6 +164,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   }
 
   function configureUI(content: string): string {
+    if (claudeDesktop) content = content.replace("<html ", '<html data-host="claude-desktop" ');
     const telemetryEnvironment = resolveTelemetryEnvironment();
     const identity = getTelemetryIdentity();
     const enabled = identity ? "on" : "off";

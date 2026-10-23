@@ -23,6 +23,7 @@ import { RecordingController } from "./recording-controller.ts";
 import { PluginUpdateController } from "./plugin-updates.ts";
 
 const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, {}, { autoResize: false });
+const claudeDesktop = document.documentElement.dataset.host === "claude-desktop";
 startUiTelemetry(app);
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
@@ -169,7 +170,7 @@ void (async () => {
     performancePanel.setAvailable(available);
     storagePanel.setAvailable(available);
     deviceApps.setAvailable(available);
-    updates.setAvailable(available);
+    updates.setAvailable(available && !claudeDesktop);
     for (const panel of panels) if (!available) panel.notice("This host cannot call the plugin's simulator tools.");
     if (available) {
       stopLiveReload = startLiveReload(app, disposeUI);
