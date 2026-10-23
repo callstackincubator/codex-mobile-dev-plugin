@@ -4,6 +4,7 @@ import { loadUIResource } from "./ui-resource.ts";
 import { createPlugin } from "./plugin.ts";
 import type { ServerFeature } from "./server-feature.ts";
 import { closeServerTelemetry, installTracePropagation } from "./telemetry.ts";
+import { declareSchemaDialect } from "./schema-dialect.ts";
 
 /**
  * Runs the server over stdio, as every host launches it, with the host's own features.
@@ -14,6 +15,7 @@ export async function runStdioServer(features: ServerFeature[] = []) {
   const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), { features });
   const transport = new StdioServerTransport();
   installTracePropagation(transport);
+  declareSchemaDialect(transport);
   let closing = false;
   async function close() {
     if (closing) return;
