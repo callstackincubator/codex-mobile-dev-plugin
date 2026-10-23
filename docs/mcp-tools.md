@@ -41,7 +41,7 @@
 | `mobile_read_display_fps` | Read FPS intervals and connection status |
 | `mobile_read_performance_frames` | Read Android jank/pacing statistics and page through exact display frames |
 | `mobile_display_fps_close` | Stop FPS collection and release the tracing connection |
-| `mobile_appflow_start` | Start a non-blocking structure build or screen sweep; Fast (the default) uses the deterministic runtime, Auto tries Deep Link → Fast, and Thorough tries Deep Link → Exploration |
+| `mobile_appflow_start` | Start a non-blocking structure build or screen sweep; Adaptive (the default) tries Runtime → Deep Link → verified replay without AI, while `ai` continues unresolved screens with interactive exploration. Legacy Fast, Auto and Thorough modes remain accepted. |
 | `mobile_appflow_status` | Read current or persisted App Flow status |
 | `mobile_appflow_result` | Read the current or persisted screen graph |
 | `mobile_appflow_events` | Poll buffered progress and manual-recording events past a sequence cursor (app only) |

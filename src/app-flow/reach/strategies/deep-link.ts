@@ -106,10 +106,10 @@ export interface DeepLinkInput {
    * has a second code path. The switch only applies here; exploration's own judge calls are
    * untouched, because a walk has no "the URL resolved" to fall back on.
    */
-  arrivalJudge?: boolean
+  arrivalJudge?: boolean | 'never'
   /**
    * What the judge-free not-found check knows about this build's fallback screen. Only read when
-   * `arrivalJudge` is false; see `NotFoundEvidence`.
+   * `arrivalJudge` is false or `never`; see `NotFoundEvidence`.
    */
   notFoundEvidence?: NotFoundEvidence
 }
@@ -294,7 +294,9 @@ export async function deepLinkStrategy(
     const route = await ports.device.waitForRoute()
     // A route that still needs the judge even with the sweep's switch off — see
     // `routeDeclaresParams` for why param routes are the exception.
-    const judgeThisOpen = arrivalJudge || routeDeclaresParams(node)
+    const judgeThisOpen = arrivalJudge === 'never'
+      ? false
+      : arrivalJudge || routeDeclaresParams(node)
     // `withPressables`: this screen's controls are read while the judge is thinking rather than
     // after it answers — see that option's doc comment. On a mismatch they are simply dropped,
     // which costs nothing, because the read ran inside the judge's own latency either way.

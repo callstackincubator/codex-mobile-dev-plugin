@@ -53,6 +53,34 @@ export interface CaptureTally {
   reasons: string[];
 }
 
+export interface UnresolvedSummary {
+  /** Screens an interactive model walk may still reach. Includes parameterized routes. */
+  aiEligible: number;
+  parameters: number;
+  authentication: number;
+  unavailable: number;
+}
+
+/**
+ * Groups deterministic misses for the completion banner. This is intentionally conservative:
+ * authentication walls and routes proven unavailable in this build are not offered to the AI
+ * continuation, while parameterized routes are — walking through a concrete list item is exactly
+ * where interactive exploration adds value.
+ */
+export function unresolvedSummary(nodes: AppFlowNode[]): UnresolvedSummary {
+  const summary: UnresolvedSummary = { aiEligible: 0, parameters: 0, authentication: 0, unavailable: 0 };
+  for (const node of nodes) {
+    if (node.origin === "chrome" || node.capture?.screenshot) continue;
+    const capture = node.capture;
+    const note = capture?.note ?? "";
+    if (capture?.status === "unavailable" || capture?.status === "not-found") { summary.unavailable += 1; continue; }
+    if (capture?.status === "auth-wall" || /\b(auth|sign[ -]?in|log[ -]?in)\b/i.test(note)) { summary.authentication += 1; continue; }
+    if (/unresolved route parameters?/i.test(note)) summary.parameters += 1;
+    summary.aiEligible += 1;
+  }
+  return summary;
+}
+
 /**
  * Counts what a finished sweep holds. The sweep summary's `completed` is the queue index — every
  * route the sweep *tried* — so it reports a full house even when routes failed with "Unresolved

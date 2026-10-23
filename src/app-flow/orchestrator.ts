@@ -110,7 +110,7 @@ import {
   decideDelivery,
   type DeliveryScreenshotOutcome
 } from './reach/delivery.ts'
-import { runReachLadder, strategiesFor, touchedDevice, type ReachStrategy } from './reach/ladder.ts'
+import { allowsAgentExploration, runReachLadder, strategiesFor, touchedDevice, type ReachStrategy } from './reach/ladder.ts'
 import {
   NAVIGATION_SYSTEM_PROMPT,
   RUNTIME_SCREEN_SYSTEM_PROMPT
@@ -219,6 +219,16 @@ export type AppFlowPhase = 'parse' | 'boot' | 'capture' | 'classify' | 'render'
 
 /** Slug of the screenshot shown to the user when the build stops on a screen it cannot leave. */
 const BLOCKED_SLUG = '--blocked'
+
+/** The two model-free pipelines share runtime timing, auth-gate and logging behavior. */
+function isDeterministicMode(mode: ExplorationMode | undefined): boolean {
+  return mode === 'fast' || mode === 'adaptive'
+}
+
+function isNonActionableAiCapture(capture: AppFlowCapture): boolean {
+  return capture.status === 'unavailable' || capture.status === 'not-found' ||
+    capture.status === 'auth-wall' || /\b(auth|sign[ -]?in|log[ -]?in)\b/i.test(capture.note ?? '')
+}
 
 // `computeStructureKey` moved to `reach/structure-key.ts` (plan Step 4b) — that module has no
 // Electron import and is unit-testable under `node --test`, which `orchestrator.ts` itself is not.
@@ -1081,7 +1091,7 @@ export async function buildAppFlow(
         // its soft re-root) deals with the aftermath of a restarted bundler.
         const metroCheckStartedAt = performance.now()
         const adoptedMetro = await ensureAdoptedMetro(bootCtx, device, {
-          explorationMode: options.explorationMode ?? 'auto'
+          explorationMode: options.explorationMode ?? 'adaptive'
         })
         // Deliberately an attribute value on the existing `app_flow.runtime.connect` series rather
         // than a new one: this is the same question that series already answers — did this run get
@@ -1404,7 +1414,7 @@ export async function buildAppFlow(
         // sweep run against a signed-out app no longer stops to say so — it captures the sign-in
         // wall under every route instead, which is a bad run the user can see, rather than a
         // stopped one they cannot.
-        if (options.explorationMode === 'fast') return 'clear'
+        if (isDeterministicMode(options.explorationMode)) return 'clear'
         if (authSettledBy) return 'clear'
         const resolution = await runAuthGate(remaining, budget)
         authSettledBy = settlesAuthGateForRun(resolution)
@@ -1442,10 +1452,14 @@ export async function buildAppFlow(
        * in `routeDeclaresParams` (`reach/strategies/deep-link.ts`), next to the node whose params
        * it is about, rather than here where only the sweep-wide setting is known.
        */
-      const deepLinkArrivalJudge = (options.deepLinkJudgeMode ?? 'on') === 'on'
+      const deepLinkArrivalJudge = options.deepLinkJudgeMode === 'never'
+        ? 'never' as const
+        : (options.deepLinkJudgeMode ?? 'on') === 'on'
       console.log(
         `[app-flow] deep-link arrival judge: ${
-          deepLinkArrivalJudge
+          deepLinkArrivalJudge === 'never'
+            ? 'off for every route (not-found detected from the screen)'
+            : deepLinkArrivalJudge
             ? 'on'
             : 'off for routes with no params (not-found detected from the screen); routes with params keep the judge'
         }`
@@ -1497,9 +1511,9 @@ export async function buildAppFlow(
       const renderTransport = fastRuntime.transport
 
       /**
-       * The per-run log file — Fast only, and best-effort.
+       * The per-run deterministic log file, best-effort.
        *
-       * Fast only because it is the mode whose per-node cost this log exists to explain: a
+       * Deterministic only because it is the path whose per-node cost this log exists to explain: a
        * dispatch, a bounded settle and one verification, each of which already produces the
        * numbers written here. The other modes spend their time inside model-driven walks, which
        * this record has nothing to say about.
@@ -1510,7 +1524,7 @@ export async function buildAppFlow(
        * style of `pruneTransientScreens`.
        */
       const sweepLog =
-        options.explorationMode === 'fast'
+        isDeterministicMode(options.explorationMode)
           ? await createSweepLog({
               projectId,
               // The sweep has no run id of its own (the run store's lives in the server layer), so
@@ -1538,7 +1552,7 @@ export async function buildAppFlow(
         // Fast fails the settle poll over at 3s unless the screen is visibly still loading, in
         // which case it may run to 8s. Every other mode keeps the single 8s bound it has always
         // had, so the poll's behaviour outside Fast is unchanged.
-        settleDeadlinesMs: options.explorationMode === 'fast' ? [3_000, 8_000] : [8_000]
+        settleDeadlinesMs: isDeterministicMode(options.explorationMode) ? [3_000, 8_000] : [8_000]
       })
 
       /**
@@ -1618,12 +1632,12 @@ export async function buildAppFlow(
       // Said once, in the progress stream the UI is already reading, so a Fast run that walks
       // straight into a sign-in wall is not a mystery afterwards: the check the other modes make
       // here was not skipped by accident. `checkAuthGate` below is a no-op in this mode.
-      if (options.explorationMode === 'fast') {
+      if (isDeterministicMode(options.explorationMode)) {
         emit(projectId, onEvent, {
           type: 'phase',
           phase: 'boot',
           message:
-            'Fast mode skips the sign-in check — make sure the app is launched and signed in before the sweep.'
+            'The deterministic pass skips the sign-in check — make sure the app is launched and signed in before the sweep.'
         })
       }
       if ((await checkAuthGate(nodesWithSlug.length)) === 'stop') {
@@ -1650,7 +1664,7 @@ export async function buildAppFlow(
       // is only reused when the parsed structure still fingerprints the same, so routes that moved
       // force a full sweep rather than resuming onto screens that no longer exist.
       const resumed = await readSweepProgress(projectId)
-      const explorationMode = options.explorationMode ?? 'auto'
+      const explorationMode = options.explorationMode ?? 'adaptive'
       const reconciled = reconcileSweepProgress(resumed, {
         structureKey,
         explorationMode,
@@ -1673,6 +1687,18 @@ export async function buildAppFlow(
       }
 
       const captureMap: Record<string, AppFlowCapture> = { ...checkpoint.captures }
+      // The AI pass is a continuation, even after the deterministic pass completed and removed its
+      // in-flight checkpoint. Reuse every successful screenshot and every settled non-actionable
+      // result, leaving only genuinely explorable misses in the queue. This preserves the canvas
+      // and prevents AI completion from repeating known runtime/deep-link failures.
+      if (explorationMode === 'ai') {
+        for (const [id, prior] of previousById) {
+          const capture = prior.capture
+          if (!capture) continue
+          const settledWithoutAI = isNonActionableAiCapture(capture)
+          if (capture.screenshot || settledWithoutAI) captureMap[id] ??= { ...capture, stale: false }
+        }
+      }
       const openedByNode: Record<string, { app: string; url: string }> = { ...checkpoint.opened }
       const inferredScreens: Record<string, { key?: string; info?: string | null }> = {
         ...checkpoint.inferred
@@ -2624,7 +2650,9 @@ export async function buildAppFlow(
       // verdict before the first runtime dispatch — often most of a short six-screen run — and
       // could then be claimed as a deep-link capture despite the user selecting Fast.
       const probeRoute =
-        options.explorationMode === 'fast' ? null : pickProbeRoute(nodesWithSlug)
+        options.explorationMode === 'fast' || options.explorationMode === 'adaptive' || options.explorationMode === 'ai'
+          ? null
+          : pickProbeRoute(nodesWithSlug)
 
       /**
        * The reach the one-time deep-link probe below already performed and verified, held for the
@@ -3027,11 +3055,13 @@ export async function buildAppFlow(
         // reattempted.
         const settled = checkpoint.captures[node.id] ?? null
         const opportunistic = captureMap[node.id]?.captureMethod === 'opportunistic'
-        if (settled || opportunistic) {
+        const aiContinuationSettled = explorationMode === 'ai' && Boolean(captureMap[node.id]) &&
+          (captureMap[node.id]?.screenshot != null || isNonActionableAiCapture(captureMap[node.id]!))
+        if (settled || opportunistic || aiContinuationSettled) {
           console.log(
             opportunistic
               ? `[app-flow] skip ${node.id} — captured opportunistically while exploring another screen`
-              : `[app-flow] skip ${node.id} — already captured in a previous run`
+              : `[app-flow] skip ${node.id} — already settled in a previous run`
           )
           emit(projectId, onEvent, {
             type: 'step',
@@ -3054,7 +3084,7 @@ export async function buildAppFlow(
         // The modes that can spend minutes legitimately (a model-driven walk) keep the old number.
         nodeStartedAt = Date.now()
         const budget = new ActiveTimeBudget(
-          options.explorationMode === 'fast' ? 45_000 : 5 * 60_000,
+          isDeterministicMode(options.explorationMode) ? 45_000 : 5 * 60_000,
           activeNow(),
           activeNow
         )
@@ -3836,7 +3866,7 @@ export async function buildAppFlow(
               // cannot disagree about which route that is. Usually null on a first sweep (fallback
               // routes sort last) and populated on a resumed one, where the capture is read back
               // off the document — see `detectNotFoundScreen`'s rule 1.
-              notFoundEvidence: deepLinkArrivalJudge
+              notFoundEvidence: deepLinkArrivalJudge === true
                 ? undefined
                 : { fallbackPressables: capturedFallbackPressables() }
             },
@@ -3849,6 +3879,16 @@ export async function buildAppFlow(
             (effect) => effect.kind === 'deep-link-partial-landed'
           )
           if (!partial || partial.kind !== 'deep-link-partial-landed') return attempt
+          // A partial URL is useful evidence, but completing it requires an interactive walk.
+          // Adaptive is a strict no-model pass: keep the effects already folded above and let the
+          // ladder continue to the verified-replay rung instead of bypassing its deterministic
+          // strategy list through this wrapper.
+          if (!allowsAgentExploration(options.explorationMode)) {
+            console.log(
+              `[app-flow] ${node.id} prefix ${partial.seed.urlPath} landed on a real screen — leaving the last hop for AI completion`
+            )
+            return attempt
+          }
           console.log(
             `[app-flow] ${node.id} prefix ${partial.seed.urlPath} landed on a real screen — attempting a bounded last hop for the remaining segment`
           )
@@ -4007,7 +4047,9 @@ export async function buildAppFlow(
               // Only Fast may settle for the runtime's own readiness evidence in place of the
               // vision judge; auto and thorough ask the judge on every arrival exactly as before.
               // See `RenderInput.arrivalJudge`.
-              arrivalJudge: options.explorationMode === 'fast' ? 'fallback' : 'always'
+              arrivalJudge: options.explorationMode === 'adaptive' && !options.judgeUnclearScreens
+                ? 'never'
+                : isDeterministicMode(options.explorationMode) ? 'fallback' : 'always'
             },
             p
           )

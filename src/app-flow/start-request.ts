@@ -11,11 +11,10 @@ import type {
 
 /**
  * What an absent option means. One table so the service and its test cannot drift apart.
- * `explorationMode` defaults to `fast`, matching the App Flow panel's own default: an unstated
- * mode gets the deterministic runtime ladder and no decision loop, so a caller that never asked
- * for a model is not handed one.
- * `deepLinkJudgeMode` defaults to `on`: skipping the judge changes what a sweep can tell about an
- * open, so an existing run keeps behaving exactly as it did until someone asks for the cheaper one.
+ * `explorationMode` defaults to `adaptive`, matching the App Flow panel's default: runtime
+ * navigation is tried first, followed by deep links and verified replays, without a model.
+ * `deepLinkJudgeMode` defaults to `never` for the model-free adaptive pass. Legacy callers can
+ * still request `on` or the parameter-route-only `off` behavior explicitly.
  * `captureUiStates` defaults to off for the same reason: it adds device work to every screen.
  * `judgeUnclearScreens` defaults to off because it is what makes a Fast sweep need the decision
  * loop at all: defaulting it on would quietly hand every Fast run back the chat round trip the
@@ -23,8 +22,8 @@ import type {
  */
 export const APP_FLOW_START_DEFAULTS = {
   mode: 'structure-only',
-  explorationMode: 'fast',
-  deepLinkJudgeMode: 'on',
+  explorationMode: 'adaptive',
+  deepLinkJudgeMode: 'never',
   captureUiStates: false,
   judgeUnclearScreens: false
 } as const satisfies {
@@ -95,7 +94,9 @@ export function requiresDecisionProvider(
   judgeUnclearScreens?: boolean
 ): boolean {
   if ((mode ?? APP_FLOW_START_DEFAULTS.mode) !== 'screen-ui-and-structure') return false
-  if ((explorationMode ?? APP_FLOW_START_DEFAULTS.explorationMode) !== 'fast') return true
+  const resolved = explorationMode ?? APP_FLOW_START_DEFAULTS.explorationMode
+  if (resolved === 'adaptive') return judgeUnclearScreens ?? false
+  if (resolved !== 'fast') return true
   return judgeUnclearScreens ?? APP_FLOW_START_DEFAULTS.judgeUnclearScreens
 }
 
@@ -126,12 +127,14 @@ export function parseAppFlowStartRequest(raw: unknown): ParsedAppFlowStart {
     return { ok: false, error: 'Screen limit must be a non-negative integer.' }
   if (
     explorationMode !== undefined &&
+    explorationMode !== 'adaptive' &&
+    explorationMode !== 'ai' &&
     explorationMode !== 'auto' &&
     explorationMode !== 'fast' &&
     explorationMode !== 'thorough'
   )
     return { ok: false, error: 'Invalid exploration mode.' }
-  if (deepLinkJudgeMode !== undefined && deepLinkJudgeMode !== 'on' && deepLinkJudgeMode !== 'off')
+  if (deepLinkJudgeMode !== undefined && deepLinkJudgeMode !== 'on' && deepLinkJudgeMode !== 'off' && deepLinkJudgeMode !== 'never')
     return { ok: false, error: 'Invalid deep-link judge mode.' }
   if (captureUiStates !== undefined && typeof captureUiStates !== 'boolean')
     return { ok: false, error: 'Capture UI states must be true or false.' }

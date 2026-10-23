@@ -956,7 +956,7 @@ export async function ensureAdoptedMetro(
     return {
       status: 'degraded',
       metroPort: adoptedPort,
-      warning: `${problem} Continuing without the Fast runtime — deep links and on-device exploration do not need it.`
+      warning: `${problem} Continuing without runtime navigation — deep links and on-device exploration do not need it.`
     }
   }
 }

@@ -88,6 +88,11 @@ export interface ReachRungs<TInput> {
   explore: ReachStrategy<TInput>
 }
 
+/** Whether a pipeline is allowed to invoke the interactive device-walking agent. */
+export function allowsAgentExploration(mode: ExplorationMode | undefined): boolean {
+  return mode === 'ai' || mode === 'thorough'
+}
+
 /**
  * The ladder an `ExplorationMode` asks for.
  *
@@ -104,6 +109,8 @@ export function strategiesFor<TInput>(
   rungs: ReachRungs<TInput>
 ): readonly ReachStrategy<TInput>[] {
   const shortcuts = [rungs.probeCredit, rungs.savedReplay]
+  if (mode === 'adaptive') return [rungs.render, rungs.deepLink, rungs.savedReplay]
+  if (mode === 'ai') return [rungs.savedReplay, rungs.explore]
   if (mode === 'fast') return [rungs.render]
   if (mode === 'thorough') return [...shortcuts, rungs.deepLink, rungs.explore]
   return [...shortcuts, rungs.deepLink, rungs.render]

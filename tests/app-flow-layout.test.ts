@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { AppFlowEdge, AppFlowNode, ManualSnapshotNode, ManualSnapshotRect } from "../src/shared/app-flow.ts";
-import { NODE_WIDTH, UI_STATE_COL_GAP, UI_STATE_NODE_HEIGHT, UI_STATE_NODE_WIDTH, UI_STATE_ROW_GAP, captureTally, displayableUiStates, hasUiStates, layoutTopology, layoutUiStates, nodeTitle, screenOptions, uiStateCount, uiStateNodeId, uiStateOptions, type ResolvedEdge } from "../src/ui/components/app-flow-layout.ts";
+import { NODE_WIDTH, UI_STATE_COL_GAP, UI_STATE_NODE_HEIGHT, UI_STATE_NODE_WIDTH, UI_STATE_ROW_GAP, captureTally, displayableUiStates, hasUiStates, layoutTopology, layoutUiStates, nodeTitle, screenOptions, uiStateCount, uiStateNodeId, uiStateOptions, unresolvedSummary, type ResolvedEdge } from "../src/ui/components/app-flow-layout.ts";
 import { isTextInput, layoutWireframe, STATUS_BAR_POINTS } from "../src/ui/components/manual-wireframe.ts";
 
 function screen(id: string, status?: string): AppFlowNode {
@@ -69,6 +69,17 @@ describe("App Flow capture tally", () => {
   test("an empty or chrome-only node list has no screens to report", () => {
     assert.deepEqual(captureTally([]), { captured: 0, unableToCapture: 0, total: 0, reasons: [] });
     assert.equal(captureTally([node("chrome:tabs", { status: "ok", screenshot: "tabs.png" }, "chrome")]).total, 0);
+  });
+
+  test("groups deterministic misses into actionable AI, auth and unavailable buckets", () => {
+    const summary = unresolvedSummary([
+      node("Captured", { status: "ok", screenshot: "captured.png" }),
+      node("Params", { status: "missing", screenshot: null, note: "Unresolved route parameters: id" }),
+      node("Unclear", { status: "missing", screenshot: null, note: "Runtime could not verify arrival" }),
+      node("Auth", { status: "auth-wall", screenshot: null, note: "Sign in required" }),
+      node("Gone", { status: "unavailable", screenshot: null, note: "Not in this build" }),
+    ]);
+    assert.deepEqual(summary, { aiEligible: 2, parameters: 1, authentication: 1, unavailable: 1 });
   });
 
 });

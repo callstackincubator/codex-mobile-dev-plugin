@@ -57,7 +57,8 @@ export interface RenderInput {
   /**
    * Whether every arrival here is the vision judge's to decide (`'always'`, the default and what
    * auto and thorough get), or whether an unambiguous runtime readiness snapshot may stand in for
-   * it (`'fallback'`, Fast only).
+   * it (`'fallback'`, Fast only), or whether no judge may be called and incomplete evidence must
+   * remain unresolved (`'never'`, adaptive without the explicit judge option).
    *
    * `'fallback'` is not "trust the dispatch". The judge is skipped only when the runtime answers
    * every part of the question the judge is being asked: the screen is *found* (its fiber exists
@@ -89,7 +90,7 @@ export interface RenderInput {
    * is still there to prevent. `settled` keeps its other jobs: it bounds the wait, it is reported
    * in the log and the metric, and it still qualifies the failure note on a mismatch below.
    */
-  arrivalJudge?: 'always' | 'fallback'
+  arrivalJudge?: 'always' | 'fallback' | 'never'
 }
 
 /**
@@ -214,7 +215,7 @@ export async function renderStrategy(input: RenderInput, ports: ReachPorts): Pro
   // was asked for, and only the reply says what the app resolved it to.
   const dispatchedPath = dispatched.path ?? null
   const runtimeEvidenceComplete =
-    input.arrivalJudge === 'fallback' &&
+    (input.arrivalJudge === 'fallback' || input.arrivalJudge === 'never') &&
     settled.found &&
     !settled.paramMismatch?.length &&
     settled.content > 0 &&
@@ -254,7 +255,15 @@ export async function renderStrategy(input: RenderInput, ports: ReachPorts): Pro
               reason: `Runtime navigation confirmed: ${runtimeArrival}`
             })
           }
-        : {})
+        : input.arrivalJudge === 'never'
+          ? {
+              verdictWithoutJudge: () => ({
+                verdict: 'uncertain' as const,
+                status: null,
+                reason: 'Runtime navigation completed, but its readiness evidence could not verify the target without AI.'
+              })
+            }
+          : {})
     }
   )
   // Which of the two answered, and how long it took. `runtimeArrival` is the whole measurement
@@ -266,7 +275,7 @@ export async function renderStrategy(input: RenderInput, ports: ReachPorts): Pro
   // readiness poll gave up on a timeout but whose evidence was otherwise complete (live feeds,
   // mostly), which previously landed in `judge`. A release-over-release comparison of the two
   // shares crosses that change in meaning — see `docs/telemetry.md`.
-  const verifyPath = runtimeArrival ? ('runtime' as const) : ('judge' as const)
+  const verifyPath = runtimeArrival || input.arrivalJudge === 'never' ? ('runtime' as const) : ('judge' as const)
   const verifyMs = Date.now() - verifyStartedAt
   ports.metrics?.verify(verifyMs, verifyPath, arrival.verdict)
   log?.verify({ path: verifyPath, verdict: arrival.verdict, ms: verifyMs })

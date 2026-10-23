@@ -58,6 +58,7 @@ function UiStateStrip({ node, title, variants, selectedId, onSelect }: { node: A
 
 function ScreenNode({ data }: NodeProps) {
   const node = data.node as AppFlowNode;
+  const selected = data.selected === true;
   const graph = useContext(GraphContext)!;
   const title = nodeTitle(node); const status = captureStatus(node); const screenshot = node.capture?.screenshot;
   const route = status?.fromMethod ? null : routeBadge(node);
@@ -80,12 +81,12 @@ function ScreenNode({ data }: NodeProps) {
           {node.origin === "chrome" ? "Not a screen — nothing to capture" : node.urlPath ?? "In-app navigation only"}</div></div>
         {status && <div className={`flex items-center gap-1.5 text-[10px] ${TONE_TEXT[status.tone]}`} title={node.capture?.note ?? undefined}>
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[status.tone]}`} /><span className="truncate">{status.label}</span></div>}
-        {route && <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground" title={route.detail}>
+        {selected && route && <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground" title={route.detail}>
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" /><span className="truncate">{route.label}</span></div>}
-        {gate && <div className="flex items-center gap-1.5 text-[10px] text-violet-600 dark:text-violet-300/90" title={gate.detail}>
+        {selected && gate && <div className="flex items-center gap-1.5 text-[10px] text-violet-600 dark:text-violet-300/90" title={gate.detail}>
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" /><span className="truncate">{gate.label}</span></div>}
         {variants.length > 0 && <UiStateStrip node={node} title={title} variants={variants} selectedId={shown?.id ?? null} onSelect={setVariantId} />}
-        <NodeActions node={node} />
+        {selected && <NodeActions node={node} />}
       </div>
     </div><Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !border-0 !bg-slate-400" /></>;
 }
@@ -159,7 +160,7 @@ export function AppFlowGraph({ nodes, edges, runtimeEdges, entryScreenIds, proje
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => setSelectedId(current => current === node.id ? null : node.id), []);
   const recording = useSyncExternalStore(panel.recording.subscribe, panel.recording.getSnapshot);
   const flowNodes = useMemo<Node[]>(() => {
-    const screens = nodes.map(node => { const where = topology.placement.get(node.id) ?? "connected"; return { id: node.id, type: "screen", position: topology.positions.get(node.id) ?? { x: 0, y: 0 }, data: { node },
+    const screens = nodes.map(node => { const where = topology.placement.get(node.id) ?? "connected"; return { id: node.id, type: "screen", position: topology.positions.get(node.id) ?? { x: 0, y: 0 }, data: { node, selected: node.id === selectedId },
       style: { width: NODE_WIDTH, height: node.capture?.screenshot ? NODE_HEIGHT : STRUCTURE_NODE_HEIGHT, padding: 0, background: "var(--background)",
         border: node.id === selectedId ? "2px solid var(--foreground)" : where === "connected" ? "1px solid var(--border)" : "1px dashed var(--muted-foreground)",
         opacity: where === "connected" || node.id === selectedId ? 1 : 0.72, color: "var(--foreground)", borderRadius: 8 } }; });

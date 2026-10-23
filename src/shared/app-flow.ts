@@ -9,21 +9,25 @@ export type AppFlowBuildMode = 'structure-only' | 'screen-ui-and-structure'
  * replay script — a dispatched navigation is not a journey a user could repeat. Asking a model to
  * walk the UI costs 22-33s and produces one.
  *
- * - `auto` — try a deep link, then use the deterministic runtime navigator.
+ * - `adaptive` — use the deterministic runtime navigator, then a deep link, then a verified replay.
+ * - `ai` — continue an adaptive sweep by reusing verified replays and exploring unresolved screens.
+ * - `auto` — legacy deep-link-first behavior, then the deterministic runtime navigator.
  * - `fast` — use the deterministic runtime navigator directly.
  * - `thorough` — try a deep link, then ask the model to explore the UI.
  *
  * Auto and Thorough reuse a verified probe or saved manual replay before the named pipeline. Fast
  * remains runtime-only: it does not open a probe URL or execute a stored agent-device journey.
  */
-export type ExplorationMode = 'auto' | 'fast' | 'thorough'
+export type ExplorationMode = 'adaptive' | 'ai' | 'auto' | 'fast' | 'thorough'
 
 /**
  * Whether a *deep link*'s arrival is confirmed by the vision judge.
  *
- * - `on` — the default: a screenshot plus a model call per open.
+ * - `on` — a screenshot plus a model call per open.
  * - `off` — takes the open at its word. Faster and cheaper, at the cost of not catching an open
  *   that resolved to a *different* real screen than the one asked for, which only the judge sees.
+ * - `never` — the adaptive pass's model-free setting, including parameterized routes. The local
+ *   not-found signal remains active, but no arrival can ask the model.
  *
  * The one case `off` cannot do without — the build's own not-found route, which drives the
  * ancestor-prefix fallback, the exploration hint and the breaker's 404 exemption — is detected
@@ -32,7 +36,7 @@ export type ExplorationMode = 'auto' | 'fast' | 'thorough'
  * Scoped to deep links on purpose: a walk has no "the URL resolved" to fall back on, so removing
  * the judge there would remove the sweep's only evidence that it arrived anywhere at all.
  */
-export type DeepLinkJudgeMode = 'on' | 'off'
+export type DeepLinkJudgeMode = 'on' | 'off' | 'never'
 
 /**
  * One App Flow start request, as it crosses the renderer -> preload -> main boundary and as the

@@ -245,6 +245,16 @@ describe("AppFlowHost.start", () => {
     assert.equal(started.at(-1)!.hasDecisions, false);
   });
 
+  it("starts adaptive capture without a provider and gives AI continuation one", async () => {
+    const { started, host: subject } = host();
+    const adaptive = await subject.start({ projectPath: "/projects/demo", mode: "screen-ui-and-structure", explorationMode: "adaptive" });
+    assert.equal(started.at(-1)!.hasDecisions, false);
+    assert.equal(adaptive.instructions, undefined);
+    const ai = await subject.start({ projectPath: "/projects/demo", mode: "screen-ui-and-structure", explorationMode: "ai" });
+    assert.equal(started.at(-1)!.hasDecisions, true);
+    assert.match(ai.instructions ?? "", /mobile_appflow_next_decision/);
+  });
+
   it("still gives every model-driven sweep its provider", async () => {
     const { started, host: subject } = host();
     for (const explorationMode of ["auto", "thorough"]) {

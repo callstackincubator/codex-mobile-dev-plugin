@@ -100,13 +100,13 @@ export function registerAppFlowTools(server: McpServer, host: AppFlowHost, proje
   registerAppTool(server, "mobile_appflow_start", {
     title: "Start App Flow",
     description:
-      "Start a non-blocking App Flow build. When the result carries instructions, immediately service mobile_appflow_next_decision and mobile_appflow_submit_decision until completion, suspension, cancellation, or a human-action gate. A fast screen sweep without judgeUnclearScreens runs deterministically and has no decision loop to service.",
+      "Start a non-blocking App Flow build. Adaptive capture runs deterministically (runtime navigation, deep-link fallback, then verified replay). Use ai only as a continuation for unresolved screens; when the result carries instructions, immediately service mobile_appflow_next_decision and mobile_appflow_submit_decision until completion, suspension, cancellation, or a human-action gate.",
     inputSchema: {
       projectPath,
       mode: z.enum(["structure-only", "screen-ui-and-structure"]).default("structure-only"),
       screenLimit: z.number().int().min(0).max(1000).optional(),
-      explorationMode: z.enum(["auto", "fast", "thorough"]).default("fast"),
-      deepLinkJudgeMode: z.enum(["on", "off"]).optional(),
+      explorationMode: z.enum(["adaptive", "ai", "auto", "fast", "thorough"]).default("adaptive"),
+      deepLinkJudgeMode: z.enum(["on", "off", "never"]).optional(),
       captureUiStates: z.boolean().optional(),
       judgeUnclearScreens: z.boolean().optional(),
     },

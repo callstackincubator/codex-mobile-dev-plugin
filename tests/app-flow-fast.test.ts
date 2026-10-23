@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import vm from 'node:vm'
-import { runReachLadder, strategiesFor, touchedDevice, type ReachRungs, type ReachStrategy } from '../src/app-flow/reach/ladder.ts'
+import { allowsAgentExploration, runReachLadder, strategiesFor, touchedDevice, type ReachRungs, type ReachStrategy } from '../src/app-flow/reach/ladder.ts'
 import { isToolingFailure } from '../src/app-flow/exploration.ts'
 import { agentSource } from '../src/app-flow/cdp/runtime-source.ts'
 import {
@@ -68,11 +68,22 @@ test('exploration modes select the exact approved pipelines', () => {
     render: rung('fast'),
     explore: rung('explore')
   }
-  const names = (mode: 'auto' | 'fast' | 'thorough') =>
+  const names = (mode: 'adaptive' | 'ai' | 'auto' | 'fast' | 'thorough') =>
     strategiesFor(mode, rungs).map((strategy) => strategy.name)
+  assert.deepEqual(names('adaptive'), ['fast', 'deep-link', 'saved'])
+  assert.deepEqual(names('ai'), ['saved', 'explore'])
   assert.deepEqual(names('fast'), ['fast'])
   assert.deepEqual(names('auto'), ['probe', 'saved', 'deep-link', 'fast'])
   assert.deepEqual(names('thorough'), ['probe', 'saved', 'deep-link', 'explore'])
+})
+
+test('a partial deep-link landing cannot smuggle agent exploration into adaptive capture', () => {
+  // The orchestrator's deep-link wrapper consults this before turning a
+  // `deep-link-partial-landed` effect into the bounded last hop.
+  assert.equal(allowsAgentExploration('adaptive'), false)
+  assert.equal(allowsAgentExploration('fast'), false)
+  assert.equal(allowsAgentExploration('ai'), true)
+  assert.equal(allowsAgentExploration('thorough'), true)
 })
 
 test('the packaged Fast agent dispatches the navigate command', () => {
@@ -369,13 +380,13 @@ test('App Flow start no longer exposes a render transport switch', () => {
     mode: 'screen-ui-and-structure',
     screenLimit: undefined,
     explorationMode: 'fast',
-    deepLinkJudgeMode: 'on',
+    deepLinkJudgeMode: 'never',
     captureUiStates: false,
     judgeUnclearScreens: false
   })
 })
 
-test('the judge switch is what makes a Fast sweep need a decision provider', () => {
+test('adaptive capture is model-free and AI completion requires a decision provider', () => {
   // Fast is the only mode where this is a question. Its ladder is the render rung alone and its
   // auth gate is skipped, so with the switch off nothing can ask a model anything and the sweep
   // runs with no provider at all; with it on, the arrival judge becomes reachable again.
@@ -383,7 +394,11 @@ test('the judge switch is what makes a Fast sweep need a decision provider', () 
   assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast', false), false)
   assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast', true), true)
 
-  // An unstated mode is Fast, so it answers the question exactly as Fast does.
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'adaptive'), false)
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'adaptive', true), true)
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'ai'), true)
+
+  // An unstated mode is adaptive and remains model-free.
   assert.equal(requiresDecisionProvider('screen-ui-and-structure', undefined), false)
   assert.equal(requiresDecisionProvider('screen-ui-and-structure', undefined, false), false)
   assert.equal(requiresDecisionProvider('screen-ui-and-structure', undefined, true), true)
@@ -572,7 +587,7 @@ const renderPorts = (settle: Record<string, unknown>) => {
   return { ports, judged }
 }
 
-const runRender = (settle: Record<string, unknown>, arrivalJudge?: 'always' | 'fallback') => {
+const runRender = (settle: Record<string, unknown>, arrivalJudge?: 'always' | 'fallback' | 'never') => {
   const { ports, judged } = renderPorts(settle)
   return renderStrategy(
     {
@@ -620,14 +635,24 @@ test('Fast falls through to the judge on anything the runtime cannot settle outr
   assert.deepEqual(elsewhere.judged, ['HomeTab/Profile'])
 })
 
-test('a Fast sweep starts without a decision provider; every other mode still demands one', () => {
+test('adaptive leaves unclear runtime arrivals unresolved without calling the judge', async () => {
+  const { attempt, judged } = await runRender({ found: false }, 'never')
+  assert.deepEqual(judged, [])
+  assert.equal(attempt.ok, false)
+  assert.equal(attempt.arrival?.verdict, 'uncertain')
+  assert.match(attempt.reason, /could not verify the target without AI/)
+})
+
+test('deterministic sweeps start without a decision provider; model-driven modes demand one', () => {
   // The guard both the orchestrator's throw and the service's start refusal are made of. A Fast
   // sweep asks no model anything it cannot do without, so requiring a provider for it would be a
   // requirement the sweep no longer has.
   assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'fast'), false)
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'adaptive'), false)
+  assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'ai'), true)
   assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'auto'), true)
   assert.equal(requiresDecisionProvider('screen-ui-and-structure', 'thorough'), true)
-  // The default exploration mode is `fast`, so an unstated one is Fast.
+  // The default exploration mode is adaptive.
   assert.equal(requiresDecisionProvider('screen-ui-and-structure', undefined), false)
   // A structure build never asked for one in the first place.
   assert.equal(requiresDecisionProvider('structure-only', 'auto'), false)
