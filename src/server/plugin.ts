@@ -90,22 +90,27 @@ function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promis
 }
 
 export async function createPlugin(html: string | (() => Promise<UIResource>), baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), android = new ServeEmu(), copyScreenshot = copyPNGToClipboard, providedCpu?: CpuSessions) {
+  const claudeDesktop = process.env.MOBILE_DEV_HOST === "claude-desktop";
   const streams = new StreamSessions(baguette);
   let selectedCpu = providedCpu;
   if (selectedCpu === undefined) selectedCpu = await createCpuSessions();
   const cpu = selectedCpu;
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
-    instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill for device control, logs, profiles, and performance workflows.",
+    instructions: claudeDesktop
+      ? "For mobile app development, call mobile_open_workspace to show Mobile Dev in the conversation. The user can expand it to fullscreen. Use selected device IDs. If device targets are ambiguous, discover candidates and ask the user in chat; wait for their answer before starting the task. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate."
+      : "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill for device control, logs, profiles, and performance workflows.",
   });
   instrumentMcpServer(server);
   const updates = new PluginUpdates();
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
   registerPluginUpdateTools(server, updates);
-  const extensions = new OpenAIExtensions(server);
-  registerDeviceChoiceTools(server, extensions, {
-    simulators: () => baguette.start(), android: () => android.list(), physicalIos: listIosDevices,
-  });
+  if (!claudeDesktop) {
+    const extensions = new OpenAIExtensions(server);
+    registerDeviceChoiceTools(server, extensions, {
+      simulators: () => baguette.start(), android: () => android.list(), physicalIos: listIosDevices,
+    });
+  }
   registerIosDeviceTools(server);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   registerLogTools(server, logs, baguette);
