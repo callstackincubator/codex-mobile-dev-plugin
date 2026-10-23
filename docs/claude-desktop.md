@@ -34,8 +34,9 @@ npm run test:claude
 ```
 
 The output is `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`.
-Open it with Claude Desktop and confirm installation. It includes the shared
-runtime and native helpers; Claude supplies Node. Do not also configure the
+In Claude Desktop, choose **Settings > Extensions > Advanced settings > Install Extension…**,
+select the file, and confirm installation. You can also open it with Claude Desktop.
+It includes the shared runtime and native helpers; Claude supplies Node. Do not also configure the
 checkout connector above, or two Mobile Dev servers will appear.
 
 This development bundle preserves the development telemetry environment. A
@@ -68,9 +69,9 @@ Remaining live checks in Claude Desktop:
 - Confirm one log/annotation question and, when advertised, one image attachment
   reaches Claude. Verify local clearing and clipboard actions.
 
-No remaining code blocker was established by the automated checks. This is not
-an end-to-end Claude certification: the attempted Desktop inspection returned an
-empty accessibility view, so rendering, codec and message behavior remain unverified.
+Basic operation in Claude Desktop has been manually confirmed. The checks above
+remain the checklist for broader device, codec, and interaction coverage; the
+automated checks do not establish full end-to-end compatibility.
 
 Sources: [Claude local MCP Apps setup](https://claude.com/docs/connectors/building/mcp-apps/getting-started),
 [MCPB manifest](https://github.com/anthropics/mcpb/blob/main/MANIFEST.md).

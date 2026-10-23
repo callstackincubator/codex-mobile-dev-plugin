@@ -1,10 +1,13 @@
-# Mobile Dev for Codex
+# Mobile Dev for Codex and Claude Desktop
 
 Keep iOS and Android devices beside your Codex desktop chat while building,
-running, and debugging mobile apps. Mobile Dev works with Expo, React Native,
-SwiftUI, and other native mobile projects.
+running, and debugging mobile apps, or open the app in a Claude Desktop
+conversation. Mobile Dev works with Expo, React Native, SwiftUI, and other native
+mobile projects. Claude Desktop support is a development preview.
 
 ## Install
+
+### Codex
 
 Install the prebuilt plugin from the release marketplace:
 
@@ -26,6 +29,24 @@ codex plugin marketplace upgrade mobile-dev
 ```
 
 Fully quit and reopen Codex after updating.
+
+### Claude Desktop: manual installation
+
+On an Apple Silicon Mac, obtain a `mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb`
+bundle from the person sharing the preview, or [build one locally](CONTRIBUTING.md#claude-desktop-local-development).
+The Claude bundle is not yet published through this repository's release workflow.
+
+1. Open Claude Desktop **Settings > Extensions > Advanced settings**.
+2. Under **Extension Developer**, click **Install Extension…**, select the `.mcpb`
+   file, and confirm installation. You can also open the file with Claude Desktop.
+3. Fully quit and reopen Claude, then start a new conversation and ask **“Open Mobile Dev.”**
+4. Approve the connector when prompted. Click **Expand** to use the larger view
+   when available; Mobile Dev does not add a permanent Claude sidebar entry.
+
+The bundle includes the plugin and native helpers; Claude supplies Node, so no
+`npm install` is needed. Install a newer `.mcpb` manually to update. Use either
+the bundle or the [local development connection](CONTRIBUTING.md#claude-desktop-local-development)
+to avoid duplicate Mobile Dev servers. See [Claude's installation guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop).
 
 ## Features
 
@@ -62,8 +83,9 @@ See [storage privacy and review checks](docs/storage-privacy.md).
 ## Requirements
 
 The prebuilt plugin targets Codex desktop on an Apple Silicon Mac and uses
-Codex's bundled Node runtime from its workspace dependency cache. Install the
-tools for the platforms you use:
+Codex's bundled Node runtime from its workspace dependency cache. The Claude
+Desktop preview also targets Apple Silicon and uses Claude's Node runtime when
+installed as a bundle. Install the tools for the platforms you use:
 
 | Platform or feature | Requirements |
 | --- | --- |
@@ -84,15 +106,18 @@ its device panel, inspection, logs, and performance tools.
 
 ## Get started
 
-Open Mobile Dev from the Codex sidebar, or ask Codex to open the simulator beside
-this chat. Pick a device from the toolbar; selecting a stopped simulator or AVD
+In Codex, open Mobile Dev from the sidebar or ask to open the simulator beside
+this chat. In Claude Desktop, ask **“Open Mobile Dev”** in a conversation with the
+connector enabled, then use **Expand** when available.
+
+Pick a device from the toolbar; selecting a stopped simulator or AVD
 boots it. Use the iOS and Android toggles to show either platform or both.
 
 Click an iOS simulator or Android screen to focus it, then press **Command-V** to
 paste text into the device. Paste accepts up to 4,096 printable US-ASCII characters;
 line breaks and other characters show a notice without sending partial text.
 
-Ask Codex to work with your app, for example:
+Ask your assistant to work with your app, for example:
 
 - “Build and run my Expo app in the simulator beside this chat.”
 - “Read the app logs and help me fix this error.”
