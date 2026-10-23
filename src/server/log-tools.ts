@@ -66,7 +66,9 @@ export function registerLogTools(server: McpServer, logs: LogSessions, baguette:
     }
     if (options.metro) parseBaseUrl(options.metro.url, "Metro URL");
     const id = logs.open(options);
-    return { content: [{ type: "text", text: "Log stream started." }], structuredContent: { options }, _meta: { sessionId: id, logsUri: `logs://mobile-dev/${id}/batch?after=0` } };
+    const handles = { sessionId: id, logsUri: `logs://mobile-dev/${id}/batch?after=0` };
+    // Models need the handle for subsequent reads; _meta is only for the app.
+    return { content: [{ type: "text", text: JSON.stringify({ status: "started", ...handles }) }], structuredContent: { options, ...handles }, _meta: handles };
   }));
 
   registerAppTool(server, "mobile_read_logs", {

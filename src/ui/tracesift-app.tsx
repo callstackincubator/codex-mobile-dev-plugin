@@ -1,4 +1,4 @@
-import { App, applyDocumentTheme, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
+import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
 import { createRoot } from "react-dom/client";
 import { PLUGIN_VERSION } from "../shared/version.ts";
 import { TraceSiftCards } from "./components/tracesift-cards.tsx";
@@ -16,6 +16,7 @@ export function startTraceSiftApp() {
     const host = app.getHostContext();
     if (host?.theme) applyDocumentTheme(host.theme);
     if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
+    if (host?.styles?.css?.fonts) applyHostFonts(host.styles.css.fonts);
     controller.hostChanged();
     const viewId = host?.toolInfo?.id;
     if (typeof viewId === "string" || typeof viewId === "number") controller.setViewId(viewId);

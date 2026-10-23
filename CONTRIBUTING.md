@@ -93,6 +93,8 @@ not included in the plugin package.
 
 ## Install the local build
 
+### Codex
+
 From this project directory, after packaging:
 
 ```sh
@@ -104,9 +106,53 @@ Open a new chat after installing, then open Mobile Dev from the sidebar.
 
 `npm run package` writes the local ZIP to `release/mobile-dev-<version>-darwin-arm64.zip`. Install through the local marketplace above. The New Plugin archive dialog uploads to the workspace plugin service; it is a separate install route. This package has not gone through public directory review or publication.
 
+### Claude Desktop local development
+
+Complete the first-time runtime and native-helper setup under [Build and package](#build-and-package),
+then run from this checkout with Node.js 22.19 or later:
+
+```sh
+npm run build
+npm run claude:config
+```
+
+1. Open Claude Desktop **Settings > Developer > Edit Config**. On macOS, this is
+   `~/Library/Application Support/Claude/claude_desktop_config.json`.
+2. Merge the `mobile-dev` entry from `.local-dev/claude-desktop-config.json` into
+   the existing `mcpServers` object, preserving other servers and settings. The
+   snippet uses absolute paths to this checkout and the Node executable running
+   the generator.
+3. Fully quit and reopen Claude, start a new conversation, and ask **“Open Mobile Dev.”**
+   Approve the connector when prompted; use **Expand** when available.
+
+After UI or server edits, run `npm run build` and fully restart Claude. This
+workflow uses the checkout directly and needs no repackaging. Regenerate the
+config if the checkout or Node path changes. For connection failures, check
+**Settings > Developer** for the server status and logs.
+
+To create and check a bundle for manual installation instead:
+
+```sh
+npm run package:claude
+npm run test:claude
+```
+
+This writes `release/mobile-dev-<version>-claude-desktop-darwin-arm64.mcpb` and
+the Claude plugin folder `release/claude-plugin/mobile-dev`. The plugin folder
+uses `.claude-plugin/plugin.json`, which starts `dist/server.mjs` with Node.js
+22.19 or later from `PATH`, and leaves out the Codex manifest, `.mcp.json`, and
+launcher. Check it with `claude plugin validate ./release/claude-plugin/mobile-dev`,
+or load it with `claude --plugin-dir ./release/claude-plugin/mobile-dev`.
+Follow the [manual installation steps](README.md#claude-desktop-manual-installation).
+Remove the `mobile-dev` development entry before installing the bundle to avoid
+duplicate servers. Rebuild, repackage, and reinstall to update a bundled copy.
+
+Local builds retain the `development` telemetry environment. Public releases use
+`npm run build:release` and `npm run package:claude -- --release`.
+
 ## Live React UI development
 
-Run `npm run dev` after installing the plugin. It watches the UI sources and
+In Codex, run `npm run dev` after installing the plugin. It watches the UI sources and
 rebuilds a self-contained HTML bundle. Open panels read updates through MCP,
 then reload and reconnect their streams. Edits reset UI state.
 

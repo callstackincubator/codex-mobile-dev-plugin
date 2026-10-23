@@ -1,4 +1,3 @@
-import "@openai/mcp-extensions/app/styles.css";
 import "@fontsource-variable/inter";
 import "./theme.css";
 import "./style.css";

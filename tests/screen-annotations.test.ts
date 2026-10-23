@@ -28,7 +28,7 @@ function fixture(messageApp?: App) {
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const context = new PanelContext({
-    getHostCapabilities: () => ({ message: { text: {}, ...(imageMessages ? { image: {} } : {}) }, updateModelContext: imageAttachments ? { image: {} } : {} }),
+    getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {}, ...(imageMessages ? { image: {} } : {}) }, updateModelContext: imageAttachments ? { image: {} } : {} }),
     async sendMessage(message: Parameters<App["sendMessage"]>[0], options: Parameters<App["sendMessage"]>[1]) { if (sendFailures-- > 0) throw new Error("MCP app messages require an available composer"); messages.push(message); return messageApp ? messageApp.sendMessage(message, options) : { isError: rejected }; },
   } as unknown as App, { modelContext: {
     getCurrent: () => current,
@@ -514,7 +514,7 @@ test("a second batch survives a missing composer and sends after a manual retry"
   f.delayMessageComposer(Infinity); await f.store.send();
   assert.equal(f.store.getSnapshot().busy, false);
   assert.equal(f.store.getSnapshot().sending, false);
-  assert.match(f.store.getSnapshot().sendError, /Codex could not find this chat's input/);
+  assert.match(f.store.getSnapshot().sendError, /The host could not find this chat's input/);
   assert.equal(f.context.screenAnnotations.length, 1);
   assert.match(f.store.messageText, /SECOND_BATCH/);
   assert.doesNotMatch(f.store.messageText, /Make this button larger|data:image|AA==/);
@@ -569,4 +569,135 @@ test("a fresh annotation batch starts at one after chat clears or sends the prio
   f.store.setText("Keep this draft"); f.store.configure(simulator, true);
   assert.equal(f.store.getSnapshot().draft?.text, "Keep this draft");
   f.store.dispose();
+});
+
+test("standard hosts receive readable, self-locating drafts and retain selection context until explicitly cleared", async () => {
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  const updates: Parameters<App["updateModelContext"]>[0][] = [];
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ updateModelContext: { text: {}, structuredContent: {} }, message: { text: {} } }),
+    async updateModelContext(params) { updates.push(params); return {}; },
+    async sendMessage(params) { messages.push(params); return {}; },
+  } as App, {} as OpenAIExtensions);
+  await context.attachAnnotation(annotation);
+  assert.equal(context.screenAnnotations.length, 1);
+  await context.attachAnnotation({ ...annotation, id: "android-note", simulator: { ...simulator, udid: "android", name: "Pixel", platform: "android" } });
+  await context.sendAnnotationsToChat();
+  assert.match(JSON.stringify(messages[0].content), /Make this button larger/);
+  assert.match(JSON.stringify(messages[0].content), /iPhone/);
+  assert.match(JSON.stringify(messages[0].content), /Pixel/);
+  // The draft must locate each target without the host exposing widget context.
+  const draft = messages[0].content.map(item => item.type === "text" ? item.text : "").join("\n");
+  assert.match(draft, /Locator: AXButton; identifier "continue-button"; bounds 10,20,100,40 points; point 50,40; device /);
+  assert.match(draft, /device android/);
+  assert.doesNotMatch(draft, /reopen|creation site/);
+  assert.match(JSON.stringify(updates.at(-1)?.content), /Bounds:|AXButton/);
+  assert.match(JSON.stringify(updates.at(-1)?.content), /Device:.*Pixel/);
+  assert.match(JSON.stringify(updates.at(-1)?.content), /creation site/);
+  assert.equal(context.attachmentCount, 2);
+  await context.clearAttachments();
+  assert.equal(messages[0]._meta, undefined);
+  assert.equal(context.attachmentCount, 0);
+  assert.deepEqual(updates.at(-1)?.structuredContent?.annotationIds, []);
+});
+
+
+test("a standard annotation draft waits for context and preserves notes when context or message fails", async () => {
+  let failContext = false;
+  let sends = 0;
+  let rejectMessage = true;
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
+    async updateModelContext() { if (failContext) throw new Error("Context unavailable"); return {}; },
+    async sendMessage() { sends++; return { isError: rejectMessage }; },
+  } as unknown as App, {} as OpenAIExtensions);
+  await context.attachAnnotation(annotation);
+  failContext = true;
+  await assert.rejects(context.sendAnnotationsToChat(), /Context unavailable/);
+  assert.equal(sends, 0);
+  assert.equal(context.attachmentCount, 1);
+  failContext = false;
+  await assert.rejects(context.sendAnnotationsToChat(), /Could not send/);
+  assert.equal(context.attachmentCount, 1);
+  rejectMessage = false;
+  await context.sendAnnotationsToChat();
+  assert.equal(sends, 2);
+  assert.equal(context.attachmentCount, 1);
+});
+
+test("editing a note while its context is publishing prevents an obsolete draft", async () => {
+  let release: (() => void) | undefined;
+  let hold = false;
+  let sends = 0;
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
+    async updateModelContext() { if (hold) { hold = false; await new Promise<void>(resolve => { release = resolve; }); } return {}; },
+    async sendMessage() { sends++; return {}; },
+  } as unknown as App, {} as OpenAIExtensions);
+  await context.attachAnnotation(annotation);
+  hold = true;
+  const sending = context.sendAnnotationsToChat();
+  const rejected = assert.rejects(sending, /Notes changed/);
+  await new Promise(resolve => setImmediate(resolve));
+  const editing = context.attachAnnotation({ ...annotation, text: "Updated request" });
+  release!();
+  await Promise.all([rejected, editing]);
+  assert.equal(sends, 0);
+  assert.equal(context.screenAnnotations[0].text, "Updated request");
+});
+
+test("native MCP Apps handshake publishes retrievable selection evidence before the chat draft", async t => {
+  const app = new App({ name: "annotation-native-test", version: "1" }, {}, { autoResize: false });
+  const bridge = new AppBridge(null, { name: "native-host-fixture", version: "1" }, {
+    updateModelContext: { text: {} }, message: { text: {} },
+  });
+  let shared: Parameters<App["updateModelContext"]>[0] | undefined;
+  let acknowledge: (() => void) | undefined;
+  let hold = false;
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  bridge.onupdatemodelcontext = async params => {
+    if (hold) { hold = false; await new Promise<void>(resolve => { acknowledge = resolve; }); }
+    shared = params;
+    return {};
+  };
+  bridge.onmessage = async message => { messages.push(message); return {}; };
+  const [appTransport, hostTransport] = InMemoryTransport.createLinkedPair();
+  t.after(async () => { await app.close(); await bridge.close(); });
+  await bridge.connect(hostTransport); await app.connect(appTransport);
+  const context = new PanelContext(app, {} as OpenAIExtensions);
+  await context.attachAnnotation(annotation);
+  await context.attachAnnotation({ ...annotation, id: "note-2", number: 2, text: "Only change this instance", component: {
+    ...component, identifier: "second-continue-button", bounds: { x: 200, y: 300, width: 60, height: 30 },
+  } });
+  hold = true;
+  const preparing = context.sendAnnotationsToChat();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(messages.length, 0, "Do not prepare a draft until the host acknowledges selection context.");
+  acknowledge!();
+  await preparing;
+  assert.equal(messages.length, 1);
+  assert.match(JSON.stringify(messages[0].content), /Only change this instance/);
+  // Identically labelled targets stay distinct in the draft itself, because the
+  // host may never show widget context to the model.
+  const draft = messages[0].content.map(item => item.type === "text" ? item.text : "").join("\n");
+  assert.match(draft, /#1 "Continue": Make this button larger\n  Locator: AXButton; identifier "continue-button"; bounds 10,20,100,40 points/);
+  assert.match(draft, /#2 "Continue": Only change this instance\n  Locator: AXButton; identifier "second-continue-button"; bounds 200,300,60,30 points/);
+  assert.doesNotMatch(draft, /reopen/);
+  assert.equal(messages[0]._meta, undefined);
+  // Hosts can fetch this snapshot on the later user turn, even after the draft
+  // was acknowledged. Both identically labelled targets must remain distinct.
+  const fetched = shared!.content!.filter(item => item.type === "text").map(item => item.text).join("\n");
+  assert.match(fetched, /Identifier: "continue-button"/);
+  assert.match(fetched, /Bounds: 10,20,100,40 points/);
+  assert.match(fetched, /Identifier: "second-continue-button"/);
+  assert.match(fetched, /Bounds: 200,300,60,30 points/);
+  assert.match(fetched, /Apply each Edit as a request/);
+  assert.equal(shared!.structuredContent, undefined, "Selection evidence must be in text, without requiring structured-content support.");
+  assert.ok(shared!.content!.every(item => item._meta === undefined));
+  assert.equal(context.screenAnnotations.length, 2);
+  context.hostChanged();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(JSON.stringify(shared!.content), /second-continue-button/);
+  await context.clearAttachments();
+  assert.doesNotMatch(JSON.stringify(shared!.content), /continue-button/);
 });
