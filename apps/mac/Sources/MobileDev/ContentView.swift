@@ -8,8 +8,11 @@ struct ContentView: View {
       SidebarView(model: model)
         .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
     } detail: {
+      // The page has its own toolbar row, so it runs up to the window's top edge.
       PageView(page: model.page)
-        .navigationTitle(model.tool?.title ?? "Mobile Dev")
+        .ignoresSafeArea()
     }
+    .toolbar(removing: .sidebarToggle)
+    .toolbar(removing: .title)
   }
 }

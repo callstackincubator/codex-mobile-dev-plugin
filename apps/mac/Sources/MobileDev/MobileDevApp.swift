@@ -9,6 +9,7 @@ struct MobileDevApp: App {
       ContentView(model: delegate.model)
         .frame(minWidth: 900, minHeight: 600)
     }
+    .windowStyle(.hiddenTitleBar)
     .commands {
       CommandGroup(after: .toolbar) {
         Button("Restart Server") { delegate.model.restart() }
