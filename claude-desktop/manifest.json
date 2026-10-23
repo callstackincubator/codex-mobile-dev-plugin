@@ -10,8 +10,7 @@
     "entry_point": "dist/server.mjs",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/dist/server.mjs"],
-      "env": { "MOBILE_DEV_HOST": "claude-desktop" }
+      "args": ["${__dirname}/dist/server.mjs"]
     }
   },
   "compatibility": {

@@ -39,6 +39,25 @@ test("both opening tools accept optional device intent and preserve it in their 
   assert.equal(boots.length, 0);
 });
 
+test("the device choice tool is listed only for clients that render native forms", async t => {
+  const fake = await fakeBaguette();
+  t.after(() => fake.close());
+  for (const forms of [false, true]) {
+    const plugin = await createTestPlugin("<html></html>", new Baguette(fake.url), fakeSimulatorInput());
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const capabilities = forms ? { extensions: { "openai/elicitation": { form: {} } } } : {};
+    const client = new Client({ name: "device-choice-host", version: "1" }, { capabilities });
+    await plugin.server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const { tools } = await client.listTools();
+    const choice = tools.find(tool => tool.name === "mobile_choose_devices");
+    assert.equal(!!choice, forms);
+    if (choice) assert.ok(choice.icons?.length);
+    assert.match(client.getInstructions() ?? "", /mobile_choose_devices when it is available, otherwise in chat/);
+    await client.close(); await plugin.close();
+  }
+});
+
 test("live UI reads use MCP and allow only Sentry browser connections", async t => {
   let revision = "a".repeat(64);
   const plugin = await createTestPlugin(async () => ({ html: '<html data-view="panel">jonas</html>', liveRevision: revision }));

@@ -1,13 +1,22 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
-import { useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { Button } from "./ui/button";
 import { captureUiError, countUiEvent } from "../telemetry.ts";
 
+// Shown only when the host advertises the other display mode, so hosts that own
+// their own fullscreen chrome or offer a single mode get no extra control.
 export function DisplayModeButton({ app }: { app: App }) {
-  const host = app.getHostContext();
+  const subscribe = useCallback((onChange: () => void) => {
+    app.addEventListener("hostcontextchanged", onChange);
+    return () => app.removeEventListener("hostcontextchanged", onChange);
+  }, [app]);
+  const mode = useSyncExternalStore(subscribe, () => {
+    const host = app.getHostContext();
+    const next = host?.displayMode === "fullscreen" ? "inline" : "fullscreen";
+    return host?.availableDisplayModes?.includes(next) ? next : undefined;
+  });
   const [busy, setBusy] = useState(false);
-  const mode = host?.displayMode === "fullscreen" ? "inline" : "fullscreen";
-  if (!host?.availableDisplayModes?.includes(mode)) return null;
+  if (!mode) return null;
   return <Button variant="outline" size="sm" disabled={busy} onClick={async () => {
     setBusy(true);
     try {

@@ -25,7 +25,6 @@ import { RecordingController } from "./recording-controller.ts";
 import { PluginUpdateController } from "./plugin-updates.ts";
 
 const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, { availableDisplayModes: ["inline", "fullscreen"] }, { autoResize: false });
-const claudeDesktop = document.documentElement.dataset.host === "claude-desktop";
 startUiTelemetry(app);
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
@@ -39,7 +38,7 @@ const updates = new PluginUpdateController(app);
 const reactRoot = createRoot(document.getElementById("root")!);
 function renderWorkspace(automaticLayout?: DeviceLayout) {
   const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-    <Workspace performance={performancePanel} logs={logsPanel} storage={storagePanel} tracesift={traceSiftPanel} recordingController={recordingController} updates={updates} displayModeControl={claudeDesktop ? <DisplayModeButton app={app} /> : undefined} contextControl={<ContextAttachments context={panelContext} />} automaticLayout={automaticLayout} onLayout={changeLayout} />
+    <Workspace performance={performancePanel} logs={logsPanel} storage={storagePanel} tracesift={traceSiftPanel} recordingController={recordingController} updates={updates} displayModeControl={<DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panelContext} />} automaticLayout={automaticLayout} onLayout={changeLayout} />
   </ErrorBoundary>;
   reactRoot.render(workspace);
 }
@@ -114,7 +113,22 @@ function onPageHide(event: PageTransitionEvent) { if (!event.persisted) { stopLi
 window.addEventListener("pagehide", onPageHide);
 app.onteardown = async () => { stopLiveReload(); await disposeUI(); return {}; };
 
+// MCP Apps sizing: fill fullscreen, a fixed container height, or a host that sends
+// no dimensions. A container without a fixed height sizes to the app, so choose an
+// inline height within its maxHeight and report it.
 let reportedInlineHeight: number | undefined;
+function fitContainer(host: ReturnType<App["getHostContext"]>) {
+  const dimensions = host?.containerDimensions;
+  const flexible = host?.displayMode !== "fullscreen" && !!dimensions && !("height" in dimensions);
+  const maximum = flexible && "maxHeight" in dimensions ? dimensions.maxHeight : undefined;
+  const height = flexible ? Math.min(600, typeof maximum === "number" && maximum > 0 ? maximum : 600) : undefined;
+  const root = document.documentElement;
+  root.style.setProperty("--workspace-height", height ? `${height}px` : "100dvh");
+  root.style.setProperty("--workspace-bottom-inset", `${host?.safeAreaInsets?.bottom ?? 0}px`);
+  if (height === reportedInlineHeight) return;
+  reportedInlineHeight = height;
+  if (height) void app.sendSizeChanged({ height }).catch(error => captureUiError(error, "workspace.resize"));
+}
 function hostContext() {
   if (disposingUI) return;
   const host = app.getHostContext();
@@ -127,21 +141,7 @@ function hostContext() {
   panelContext.resume();
   for (const panel of panels) { panel.fitScreen(); panel.controls(); }
   // Initial context arrives with connect(), without a hostcontextchanged event.
-  if (claudeDesktop) {
-    const root = document.documentElement;
-    const fullscreen = host?.displayMode === "fullscreen";
-    const dimensions = host?.containerDimensions;
-    const maximum = dimensions && "maxHeight" in dimensions ? dimensions.maxHeight : undefined;
-    const height = typeof maximum === "number" && maximum > 0 ? Math.min(600, maximum) : 600;
-    root.style.setProperty("--workspace-height", fullscreen ? "100dvh" : `${height}px`);
-    root.style.setProperty("--workspace-bottom-inset", `${host?.safeAreaInsets?.bottom ?? 0}px`);
-    if (fullscreen) reportedInlineHeight = undefined;
-    else if (reportedInlineHeight !== height) {
-      reportedInlineHeight = height;
-      void app.sendSizeChanged({ height }).catch(error => captureUiError(error, "workspace.resize"));
-    }
-    renderWorkspace();
-  }
+  fitContainer(host);
 }
 function resumeContext() {
   if (document.visibilityState !== "hidden" && !disposingUI) {
@@ -195,7 +195,7 @@ void (async () => {
     storagePanel.setAvailable(available);
     traceSiftPanel.setAvailable(available);
     deviceApps.setAvailable(available);
-    updates.setAvailable(available && !claudeDesktop);
+    updates.setAvailable(available);
     for (const panel of panels) if (!available) panel.notice("This host cannot call the plugin's simulator tools.");
     if (available) {
       stopLiveReload = startLiveReload(app, disposeUI);

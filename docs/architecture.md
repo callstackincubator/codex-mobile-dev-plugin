@@ -77,7 +77,9 @@ Annotations send text only. Each note includes the user request, element label, 
 ## Native device requests
 
 When a mobile task has ambiguous targets, `mobile_choose_devices` asks the user
-through Codex's native inline request form. The agent discovers suitable devices
+through Codex's native inline request form. The server lists this tool only for
+clients that advertise the `openai/elicitation` form extension; other hosts ask in
+chat. The agent discovers suitable devices
 first, then supplies their IDs, platform and kind, a task-specific question, and
 optional operation details. The form shows canonical device names, platform/type,
 runtime, optional verified app labels, and platform phone illustrations. Use

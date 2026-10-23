@@ -1,9 +1,18 @@
-# Mobile Dev for Codex and Claude Desktop
+# Mobile Dev
 
-Keep iOS and Android devices beside your Codex desktop chat while building,
-running, and debugging mobile apps, or open the app in a Claude Desktop
-conversation. Mobile Dev works with Expo, React Native, SwiftUI, and other native
-mobile projects. Claude Desktop support is a development preview.
+Keep iOS and Android devices beside your chat while building, running, and
+debugging mobile apps. Mobile Dev works with Expo, React Native, SwiftUI, and
+other native mobile projects.
+
+Mobile Dev is an MCP plugin that works with both Codex and Claude. Codex shows it
+beside the chat; Claude opens it in the conversation, with an expanded view when
+available. Claude support is a development preview.
+
+- [Live devices beside your chat](#live-devices-beside-your-chat): stream simulators, emulators, and physical devices.
+- [Device control, inspection and annotations](#device-control-inspection-and-annotations): tap, type, inspect elements, and leave notes for the agent.
+- [Native and JavaScript logs](#native-and-javascript-logs): iOS, Android, and Metro logs in one stream.
+- [Live performance monitoring and improvements](#live-performance-monitoring-and-improvements): CPU, memory, Display FPS, recordings, and comparisons.
+- [App storage](#app-storage): inspect and watch what an app saves, without adding code.
 
 ## Install
 
@@ -56,7 +65,7 @@ Stream iOS simulators, Android emulators, and connected iPhones, iPads, and Andr
 ![](/img/screenshot_side_by_side.png)
 
 ### Device control, inspection and annotations
-Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let Codex inspect accessibility elements and control your app through MCP tools. Select an element or screen region and leave instructions for Codex, with React Native component and source details when available.
+Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let the agent inspect accessibility elements and control your app through MCP tools. Select an element or screen region and leave instructions for the agent, with React Native component and source details when available.
 
 ![](/img/screenshot_annotations.png)
 
@@ -66,7 +75,7 @@ Read iOS unified logs, Android logcat, and Metro console messages together. Foll
 ![](/img/screenshot_logs.png)
 
 ### Live performance monitoring and improvements
-Track app CPU and memory, expand individual thread charts, and view device-wide Display FPS on supported devices. Ask Codex to record an interaction, inspect interactive charts in chat, compare runs, and analyze selected ranges. Android recordings include display frame pacing and jank statistics.
+Track app CPU and memory, expand individual thread charts, and view device-wide Display FPS on supported devices. Ask the agent to record an interaction, inspect interactive charts in chat, compare runs, and analyze selected ranges. Android recordings include display frame pacing and jank statistics.
 
 ![](/img/screenshot_performance.png)
 

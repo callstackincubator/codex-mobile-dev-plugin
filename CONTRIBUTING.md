@@ -121,7 +121,7 @@ npm run claude:config
 2. Merge the `mobile-dev` entry from `.local-dev/claude-desktop-config.json` into
    the existing `mcpServers` object, preserving other servers and settings. The
    snippet uses absolute paths to this checkout and the Node executable running
-   the generator, and sets `MOBILE_DEV_HOST=claude-desktop`.
+   the generator.
 3. Fully quit and reopen Claude, start a new conversation, and ask **“Open Mobile Dev.”**
    Approve the connector when prompted; use **Expand** when available.
 
@@ -142,9 +142,8 @@ Follow the [manual installation steps](README.md#claude-desktop-manual-installat
 Remove the `mobile-dev` development entry before installing the bundle to avoid
 duplicate servers. Rebuild, repackage, and reinstall to update a bundled copy.
 
-Local builds retain the `development` telemetry environment. See the
-[Claude compatibility and release notes](docs/claude-desktop.md) for host
-limitations, manual checks, and public-release packaging.
+Local builds retain the `development` telemetry environment. Public releases use
+`npm run build:release` and `npm run package:claude -- --release`.
 
 ## Live React UI development
 

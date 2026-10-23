@@ -13,10 +13,9 @@ const source = resolve("release/marketplace/plugins/mobile-dev");
 const directory = resolve("release/claude-desktop/mobile-dev");
 await rm(directory, { recursive: true, force: true });
 await mkdir(directory, { recursive: true });
-for (const path of ["dist", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "TERMS.md", "SUPPORT.md"]) {
+for (const path of ["dist", "README.md", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "TERMS.md", "SUPPORT.md"]) {
   await cp(`${source}/${path}`, `${directory}/${path}`, { recursive: true, verbatimSymlinks: true });
 }
-await cp("docs/claude-desktop.md", `${directory}/README.md`);
 await writeFile(`${directory}/manifest.json`, JSON.stringify(manifest, null, 2) + "\n");
 const archive = resolve(`release/mobile-dev-${manifest.version}-claude-desktop-darwin-arm64.mcpb`);
 await rm(archive, { force: true });

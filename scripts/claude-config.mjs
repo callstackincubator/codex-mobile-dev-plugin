@@ -9,7 +9,6 @@ const config = {
     "mobile-dev": {
       command: process.execPath,
       args: [resolve(manifest.server.entry_point)],
-      env: manifest.server.mcp_config.env,
     },
   },
 };
