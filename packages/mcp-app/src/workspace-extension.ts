@@ -12,4 +12,12 @@ export type WorkspaceExtension = {
   dispose(): void;
 };
 
-export type WorkspaceOptions = { extension?: (app: App) => WorkspaceExtension };
+export type WorkspaceOptions = {
+  extension?: (app: App) => WorkspaceExtension;
+  /**
+   * Whether the workspace shows Expand / Back to chat. Hosts with their own
+   * fullscreen and sidebar controls, such as Codex, turn it off; the host's
+   * advertised display modes alone cannot tell.
+   */
+  displayModeControl?: boolean;
+};

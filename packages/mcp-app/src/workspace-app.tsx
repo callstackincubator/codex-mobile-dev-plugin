@@ -33,7 +33,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   const reactRoot = createRoot(document.getElementById("root")!);
   function renderWorkspace(automaticLayout?: DeviceLayout) {
     const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-      <Workspace panels={panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={<DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} automaticLayout={automaticLayout} onLayout={changeLayout} />
+      <Workspace panels={panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} automaticLayout={automaticLayout} onLayout={changeLayout} />
     </ErrorBoundary>;
     reactRoot.render(workspace);
   }

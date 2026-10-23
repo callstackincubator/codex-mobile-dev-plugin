@@ -3,8 +3,9 @@ import { useCallback, useState, useSyncExternalStore } from "react";
 import { Button } from "@mobile-dev/ui/components/ui/button.tsx";
 import { captureUiError, countUiEvent } from "@mobile-dev/ui/telemetry.ts";
 
-// Shown only when the host advertises the other display mode, so hosts that own
-// their own fullscreen chrome or offer a single mode get no extra control.
+// Shown only when the host advertises the other display mode, so hosts that offer a
+// single mode get no extra control. Hosts with their own fullscreen controls turn
+// it off through WorkspaceOptions.displayModeControl.
 export function DisplayModeButton({ app }: { app: App }) {
   const subscribe = useCallback((onChange: () => void) => {
     app.addEventListener("hostcontextchanged", onChange);
