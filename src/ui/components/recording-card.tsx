@@ -1,3 +1,5 @@
+import { preparesChatMessages } from "../chat-message.ts";
+import { ChatPreparationNotice } from "./chat-preparation-notice.tsx";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { PointerEvent, ReactNode } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -187,6 +189,7 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
   const hasFrames = frameStats !== null && frameStats.frameCount > 0;
   const hasReadings = hasCpu || hasMemory || hasFps || hasFrames;
   return <article className="recording-card" aria-label="Saved performance recording">
+    {!detailed && <ChatPreparationNotice />}
     <header className="recording-header">
       <div className="recording-heading"><h2>{recording.title}</h2><p title={recording.target.bundleId}>{recording.deviceName} · {recording.durationSeconds}s · {savedAt}</p></div>
       <span className="recording-status" role="status">{status}</span>
@@ -219,7 +222,7 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
           </details>}
         </section>}
         <div className="recording-actions">
-          <Button disabled={state.canMessage === false || state.busy || hasReadings === false} onClick={() => { void controller.send("ask"); }}><MessageCircleIcon />{range ? "Ask about this range" : "Ask about recording"}</Button>
+          <Button disabled={state.canMessage === false || state.busy || hasReadings === false} onClick={() => { void controller.send("ask"); }}><MessageCircleIcon />{preparesChatMessages() ? "Prepare question" : range ? "Ask about this range" : "Ask about recording"}</Button>
           {detailed === false && <Button variant="outline" disabled={state.canMessage === false || state.busy} onClick={() => { void controller.send("open"); }}><ExternalLinkIcon />Open in Mobile Dev</Button>}
           {state.canMessage === false && <p>This host does not support sending chart selections to chat.</p>}
         </div>

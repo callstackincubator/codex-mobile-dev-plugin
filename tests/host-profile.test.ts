@@ -35,7 +35,7 @@ for (const host of ["cursor", "vscode", "claude-desktop"] as const) {
     const resource = await client.readResource({ uri: APP_URI });
     assert.match(resource.contents[0].text as string, new RegExp(`data-host="${host}"`));
     assert.match(resource.contents[0].text as string, /mobile-dev-environment" content="development"/);
-    assert.ok(resource.contents[0]._meta?.ui);
+    assert.deepEqual((resource.contents[0]._meta?.ui as { permissions: unknown }).permissions, { clipboardWrite: {} });
     assert.match(client.getInstructions() ?? "", /ask the user in chat/);
   });
 }

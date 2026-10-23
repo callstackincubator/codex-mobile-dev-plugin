@@ -1,4 +1,4 @@
-import { chatMessage } from "./chat-message.ts";
+import { chatMessage, canMessage, preparesChatMessages } from "./chat-message.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
@@ -43,8 +43,7 @@ export class RecordingController {
   }
   hostChanged() {
     const capabilities = this.app.getHostCapabilities();
-    const canMessage = Boolean(capabilities?.message?.text);
-    this.update({ canMessage });
+    this.update({ canMessage: canMessage(this.app) });
     this.schedule();
   }
   setVisible(visible: boolean) { this.visible = visible; this.schedule(); }
@@ -154,7 +153,7 @@ export class RecordingController {
       sending = true;
       const result = await this.app.sendMessage(message, { timeout: 5000, maxTotalTimeout: 5000 });
       if (result.isError) throw new Error("The host could not send this recording to chat.");
-      countUiEvent(`ui.recording.${action}`);
+      countUiEvent(`ui.recording.${action}${preparesChatMessages() ? "_prepared" : ""}`);
       const elapsed = performance.now() - startedAt;
       recordUiTiming("ui.recording.message_ack", elapsed);
     } catch (error) {

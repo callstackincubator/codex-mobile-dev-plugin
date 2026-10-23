@@ -1,3 +1,5 @@
+import { ChatPreparationNotice } from "./chat-preparation-notice.tsx";
+import { preparesChatMessages } from "../chat-message.ts";
 /**
  * The full Explore view inside the card's frame, drawn from the same package the
  * web app uses. Its data arrives over MCP: this frame cannot reach the service.
@@ -27,6 +29,7 @@ export function TraceSiftExplorer({ controller }: { controller: TraceSiftControl
   const count = explorer.selected?.length ?? 0;
   const noun = count === 1 ? picks.one : picks.many;
   return <div className={state.dark ? `${TRACE_SIFT_EXPLORE_CLASS} dark` : TRACE_SIFT_EXPLORE_CLASS} data-kind={explorer.kind}>
+    <ChatPreparationNotice />
     <div className="tracesift-explorer-bar">
       <Button size="sm" variant="outline" onClick={controller.closeExplore}>
         <ArrowLeftIcon />Findings
@@ -51,8 +54,8 @@ export function TraceSiftExplorer({ controller }: { controller: TraceSiftControl
           {state.busyCard === explorer.cardId
             ? "Starting…"
             : count
-              ? `Investigate ${count} ${noun}`
-              : `Investigate selected ${picks.many}`}
+              ? `${preparesChatMessages() ? "Prepare question for" : "Investigate"} ${count} ${noun}`
+              : `${preparesChatMessages() ? "Prepare question for" : "Investigate"} selected ${picks.many}`}
         </Button>
       </div>
       <Button size="sm" variant="outline" disabled={Boolean(state.openingExploreCard)} title="Open this finding in the TraceSift web app instead"

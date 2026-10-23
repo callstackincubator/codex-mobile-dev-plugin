@@ -1,3 +1,4 @@
+import { preparesChatMessages } from "./chat-message.ts";
 import { componentAt, componentsAt, formatAnnotationMessage, screenComponents, screenSelectionContext } from "../shared/screen-annotations.ts";
 import type { ScreenAnnotation, ScreenBounds, ScreenComponent, ScreenPoint, ScreenSelectionContext, ScreenSize } from "../shared/screen-annotations.ts";
 import { recordUiTiming, countUiEvent } from "./telemetry.ts";
@@ -220,7 +221,7 @@ export class ScreenAnnotationsStore {
     if (!this.simulator || !this.context || this.state.busy || !this.state.annotations.length) return;
     const simulatorId = this.simulator.udid;
     this.update({ busy: true, sending: true, error: "", sendError: "" });
-    try { await this.context.sendAnnotationsToChat(simulatorId); if (simulatorId === this.simulator?.udid) this.update({ status: "Annotations sent to chat." }); }
+    try { await this.context.sendAnnotationsToChat(simulatorId); if (simulatorId === this.simulator?.udid) this.update({ status: preparesChatMessages() ? "Question prepared in chat. Review it and press Send." : "Annotations sent to chat." }); }
     catch (error) { if (simulatorId === this.simulator?.udid) { const message = error instanceof Error ? error.message : String(error); this.update({ error: message, sendError: message }); } }
     // Stream readiness can change the selection revision while chat is sending.
     finally { this.update({ busy: false, sending: false }); }

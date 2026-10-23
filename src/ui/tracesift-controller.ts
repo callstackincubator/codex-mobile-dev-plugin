@@ -1,4 +1,4 @@
-import { chatMessage } from "./chat-message.ts";
+import { chatMessage, canMessage, preparesChatMessages } from "./chat-message.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "../shared/tracesift.ts";
@@ -92,7 +92,7 @@ export class TraceSiftController {
     // TraceSift's components read their theme from a `.dark` ancestor, not the
     // document attribute the rest of this frame uses.
     this.update({
-      canInvestigate: Boolean(capabilities?.serverTools && capabilities?.message?.text),
+      canInvestigate: Boolean(capabilities?.serverTools && canMessage(this.app)),
       dark: this.app.getHostContext()?.theme === "dark",
     });
   }
@@ -205,7 +205,7 @@ export class TraceSiftController {
       const sent = await this.app.sendMessage(message, { timeout: 5000, maxTotalTimeout: 5000 });
       if (sent.isError) throw new Error("The host could not start this investigation.");
       recordUiTiming("ui.tracesift.message_ack", performance.now() - sendStartedAt);
-      countUiEvent(event);
+      countUiEvent(preparesChatMessages() ? `${event}_prepared` : event);
     } catch (error) {
       const timedOut = sending && typeof error === "object" && error !== null && "code" in error && error.code === -32001;
       const missingComposer = sending && composerUnavailable(error);

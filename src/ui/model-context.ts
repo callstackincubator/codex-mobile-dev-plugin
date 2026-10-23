@@ -1,4 +1,4 @@
-import { chatMessage } from "./chat-message.ts";
+import { chatMessage, canMessage, preparesChatMessages, canUpdateTextContext } from "./chat-message.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import type { SimulatorDevice } from "../shared/protocol.ts";
@@ -50,9 +50,9 @@ export class PanelContext {
 
   constructor(app: App, extensions: OpenAIExtensions) { this.app = app; this.extensions = extensions; }
   get usesHostAttachments() { return !!this.extensions.modelContext; }
-  get canAttach() { return this.usesHostAttachments || !!this.app.getHostCapabilities()?.updateModelContext?.text; }
+  get canAttach() { return this.usesHostAttachments || canUpdateTextContext(this.app); }
   get attachmentCount() { return Number(!!this.attached) + this.screenshots.length + this.annotations.length; }
-  get canSendMessage() { return !!this.app.getHostCapabilities()?.message?.text; }
+  get canSendMessage() { return canMessage(this.app); }
   get canAttachScreenshots() { return this.canAttach && !!this.app.getHostCapabilities()?.updateModelContext?.image; }
   get attachedKey() { return this.attached ? logKey(this.attached) : undefined; }
   get screenAnnotations() { return this.annotations; }
@@ -103,6 +103,7 @@ export class PanelContext {
         return this.app.sendMessage(chatMessage(this.app, text), { timeout: 5000, maxTotalTimeout: 5000 });
       });
       if (result.isError) throw new Error("Could not send these annotations to chat.");
+      if (preparesChatMessages()) { countUiEvent("ui.annotations.prepare_success"); return; }
       const sent = new Set(annotations.map(item => item.id));
       this.annotations = this.annotations.filter(item => !sent.has(item.id));
       for (const id of sent) this.pendingAnnotations.delete(id);
@@ -144,6 +145,7 @@ export class PanelContext {
         return this.app.sendMessage(chatMessage(this.app, text), { timeout: 5000, maxTotalTimeout: 5000 });
       });
       if (result.isError) throw new Error("Could not send this log to chat.");
+      if (preparesChatMessages()) { countUiEvent("ui.logs.prepare"); return; }
       if (this.attached === log) {
         this.attached = undefined;
         this.revision++; this.changed();
@@ -278,7 +280,7 @@ export class PanelContext {
           if (revision !== this.revision) return;
           if (this.extensions.modelContext) this.updateId = (await this.extensions.modelContext.update(params, { timeout: 5000 }))?.updateId;
           else {
-            // Standard hosts own no composer pills. Local controls own selection
+            // Standard context has no attachment readback. Local controls own selection
             // and removal; publish the complete replacement context each time.
             const content = params.content
               .filter(item => item.type !== "image" || this.canAttachScreenshots)

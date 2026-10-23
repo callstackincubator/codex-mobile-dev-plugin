@@ -1,3 +1,4 @@
+import { preparesChatMessages } from "../chat-message.ts";
 import { useState, useSyncExternalStore } from "react";
 import { ArrowUpIcon, CircleAlertIcon, MessageCircleIcon, MousePointer2Icon, SendIcon, Trash2Icon } from "lucide-react";
 import type { ScreenAnnotationsStore } from "../screen-annotations";
@@ -60,7 +61,7 @@ export function ScreenAnnotationOverlay({ store }: { store: ScreenAnnotationsSto
     {!!state.annotations.length && !draft && <div className="pointer-events-auto absolute bottom-2 left-1/2 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-1 rounded-full border border-border/50 bg-popover/65 p-1 shadow-sm backdrop-blur-xl backdrop-saturate-150">
       <Popover><PopoverTrigger asChild><Button variant="ghost" size="sm" className="rounded-full"><MessageCircleIcon className="text-blue-500" />{state.annotations.length} {state.annotations.length === 1 ? "note" : "notes"}</Button></PopoverTrigger><PopoverContent className="max-h-64 w-64 overflow-y-auto p-1" side="top">{state.annotations.map(annotation => <div key={annotation.id} className="flex items-center"><button type="button" className="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left hover:bg-muted" disabled={state.busy} onClick={() => store.edit(annotation)}><p className="truncate text-xs font-medium">#{annotation.number} {annotation.component.name}</p><p className="truncate text-xs text-muted-foreground">{annotation.text}</p></button><Button variant="ghost" size="icon-xs" aria-label={`Remove annotation ${annotation.number}`} disabled={state.busy} onClick={() => void store.remove(annotation.id)}><Trash2Icon /></Button></div>)}</PopoverContent></Popover>
       {state.sendError && <AnnotationSendError key={state.sendError} store={store} error={state.sendError} />}
-      {state.canSend && <Button size="sm" className="rounded-full" disabled={state.busy} title={state.sendError || undefined} onClick={() => void store.send()}><SendIcon />{state.sending ? "Sending…" : state.sendError ? "Retry send" : "Send to chat"}</Button>}
+      {state.canSend && <Button size="sm" className="rounded-full" disabled={state.busy} title={state.sendError || undefined} onClick={() => void store.send()}><SendIcon />{state.sending ? (preparesChatMessages() ? "Preparing…" : "Sending…") : preparesChatMessages() ? "Prepare question" : state.sendError ? "Retry send" : "Send to chat"}</Button>}
     </div>}
   </div>;
 }

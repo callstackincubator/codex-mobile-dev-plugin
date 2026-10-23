@@ -24,8 +24,9 @@ import { PLUGIN_VERSION } from "../shared/version.ts";
 import { RecordingController } from "./recording-controller.ts";
 import { PluginUpdateController } from "./plugin-updates.ts";
 
-const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, { availableDisplayModes: ["inline", "fullscreen"] }, { autoResize: false });
-const standardHost = configuredHost(document.documentElement.dataset.host) !== "codex";
+const hostProfile = configuredHost(document.documentElement.dataset.host);
+const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, { availableDisplayModes: hostProfile === "vscode" ? ["inline"] : ["inline", "fullscreen"] }, { autoResize: false });
+const standardHost = hostProfile !== "codex";
 startUiTelemetry(app);
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);

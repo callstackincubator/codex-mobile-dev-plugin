@@ -1,3 +1,5 @@
+import { preparesChatMessages } from "../chat-message.ts";
+import { ChatPreparationNotice } from "./chat-preparation-notice.tsx";
 import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { PointerEvent } from "react";
 import { CartesianGrid, Line, LineChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -127,6 +129,7 @@ export function ComparisonCard({ controller }: { controller: ComparisonControlle
   const hasDisplayData = derived.total.some(run => run.summary !== null && (run.summary.averageFps !== null || run.summary.frameStats !== null));
   const differentDurations = comparison.recordings.some(recording => recording.durationSeconds !== derived.duration);
   return <article className="recording-card comparison-card" aria-label="Performance comparison">
+    <ChatPreparationNotice />
     <header className="recording-header">
       <span className="recording-icon"><ChartNoAxesCombinedIcon size={24} /></span>
       <div className="recording-heading"><h2>{comparison.title}</h2><p>{comparison.recordings.length} runs · Aligned at recording start · {derived.duration}s timeline</p></div>
@@ -164,7 +167,7 @@ export function ComparisonCard({ controller }: { controller: ComparisonControlle
       {mixedMemory && <p className="recording-footnote">RSS and physical footprint measure different memory definitions and use separate tracks.</p>}
       {hasDisplayData && <p className="recording-footnote">Display FPS and frame statistics measure the whole device. Jank rate uses classified presented frames; — means unavailable.</p>}
       {comparison.recordings.map(recording => recording.error && <p key={recording.id} className="recording-error">{recording.title}: {recording.error}</p>)}
-      <div className="comparison-actions"><Button disabled={state.canMessage === false || state.busy} onClick={() => { void controller.ask(); }}><MessageCircleIcon />{range ? "Ask about this range" : "Ask about this comparison"}</Button></div>
+      <div className="comparison-actions"><Button disabled={state.canMessage === false || state.busy} onClick={() => { void controller.ask(); }}><MessageCircleIcon />{preparesChatMessages() ? "Prepare question" : range ? "Ask about this range" : "Ask about this comparison"}</Button></div>
       {state.canMessage === false && <p className="recording-footnote">This host does not support sending chart selections to chat.</p>}
       {state.error && <p role="alert" className="recording-error">{state.error}</p>}
     </div>

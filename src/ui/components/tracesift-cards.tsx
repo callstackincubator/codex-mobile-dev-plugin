@@ -1,3 +1,5 @@
+import { preparesChatMessages } from "../chat-message.ts";
+import { ChatPreparationNotice } from "./chat-preparation-notice.tsx";
 /**
  * TraceSift's findings inline in the chat: the same card the TraceSift tab draws.
  * Only the actions differ — Explore opens here, Investigate asks the model.
@@ -66,7 +68,7 @@ function CardFooter({ cardId, controller, canExplore }: { cardId: string; contro
           title={state.canInvestigate ? "Hand this card to the chat and have it read the task." : undefined}
           onClick={() => void controller.investigate(cardId)}
         >
-          <MessageCircleIcon />{state.busyCard === cardId ? "Starting…" : "Investigate"}
+          <MessageCircleIcon />{state.busyCard === cardId ? (preparesChatMessages() ? "Preparing…" : "Starting…") : preparesChatMessages() ? "Prepare investigation" : "Investigate"}
         </Button>
       </div>
       <div className="hotspot-actions">
@@ -143,12 +145,14 @@ export function TraceSiftCards({ controller }: { controller: TraceSiftController
   if (state.explorer) return <TraceSiftExplorer controller={controller} />;
 
   if (!analysis) return <main className="tracesift-results">
+    <ChatPreparationNotice />
     <p role="status">Analyzing profile with TraceSift…</p>
     {state.error && <p className="tracesift-error" role="alert">{state.error}</p>}
   </main>;
 
   const cpu = analysis.profileType === "cpu";
   return <main className="tracesift-results">
+    <ChatPreparationNotice />
     <div className="results-header">
       <div className="intro">
         <span className="eyebrow">TraceSift · {cpu ? "CPU profile" : "React profile"}</span>

@@ -1,3 +1,4 @@
+import { ChatPreparationNotice } from "./chat-preparation-notice.tsx";
 import { ActivityIcon, DatabaseIcon, TerminalIcon, PanelsTopLeftIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
@@ -146,6 +147,7 @@ export function Workspace({ logs, performance, storage, recordingController, upd
   return <main className="flex flex-col" style={{ height: "var(--workspace-height, 100dvh)", paddingBottom: "var(--workspace-bottom-inset, 0px)" }}>
     {updates && <PluginUpdateBanner controller={updates} />}
     {contextControl}
+    <ChatPreparationNotice />
     {!bottomToolbar && toolbar}
     <ResizablePanelGroup id="workspace-panels" groupRef={workspaceGroupRef} orientation={split ? "horizontal" : "vertical"} className="min-h-0 flex-1" data-split={split}>
       {split ? [toolPanel, divider, simulatorPanel] : [simulatorPanel, divider, toolPanel]}

@@ -12,6 +12,14 @@ display-mode changes use `ui.workspace.display_mode_changed`; resize failures us
 on the active rendering and streaming paths. The Codex updater and its polling
 are disabled outside Codex. No native telemetry changes are required.
 
+VS Code prepares messages in the composer without submitting a turn. Its success
+counters are `ui.annotations.prepare_success`, `ui.logs.prepare`,
+`ui.recording.ask_prepared`, `ui.recording.open_prepared`,
+`ui.comparison.ask_prepared`, `ui.tracesift.investigate_prepared` and
+`ui.tracesift.pick_investigate_prepared`. Existing send/action counters retain
+their behavior on other hosts. Message-acknowledgement timings still measure the
+host round trip; they do not measure model response time or prove submission.
+
 ## Volume policy
 
 Since 0.1.164, application metrics in the UI, Node servers and native helpers use

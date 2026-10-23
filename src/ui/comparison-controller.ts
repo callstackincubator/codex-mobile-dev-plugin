@@ -1,4 +1,4 @@
-import { chatMessage } from "./chat-message.ts";
+import { chatMessage, canMessage, preparesChatMessages } from "./chat-message.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { comparisonDuration, comparisonSchema } from "../shared/performance-comparison.ts";
@@ -36,8 +36,7 @@ export class ComparisonController {
   }
   hostChanged() {
     const capabilities = this.app.getHostCapabilities();
-    const canMessage = Boolean(capabilities?.message?.text);
-    this.update({ canMessage });
+    this.update({ canMessage: canMessage(this.app) });
   }
   accept(result: CallToolResult) {
     if (this.disposed) return;
@@ -105,7 +104,7 @@ export class ComparisonController {
     try {
       const result = await this.app.sendMessage(message);
       if (result.isError) throw new Error("The host could not send this comparison to chat.");
-      countUiEvent("ui.comparison.ask");
+      countUiEvent(preparesChatMessages() ? "ui.comparison.ask_prepared" : "ui.comparison.ask");
       const elapsed = performance.now() - startedAt;
       recordUiTiming("ui.comparison.message_ack", elapsed);
     } catch (error) {

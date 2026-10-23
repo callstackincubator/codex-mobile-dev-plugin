@@ -1,3 +1,4 @@
+import { preparesChatMessages } from "../chat-message.ts";
 import { CopyIcon, MessageCircleIcon, ArrowDownToLineIcon, CircleAlertIcon, InfoIcon, TriangleAlertIcon, CheckIcon, LayersIcon, ListXIcon, PauseIcon, PlayIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, TerminalIcon, UnlinkIcon, XIcon, CircleHelpIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { LegendList, type LegendListRef, type LegendListRenderItemProps } from "@legendapp/list/react";
@@ -77,7 +78,7 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
       <ContextMenuContent>
         <ContextMenuItem onSelect={() => { setCopyStatus(""); void copyLog(item); }}><CopyIcon />Copy</ContextMenuItem>
         <ContextMenuItem disabled={logs.sending || !logs.canSendMessage} onSelect={() => void panel.list.sendToChat(item)}>
-          <MessageCircleIcon />{item.level === "error" || item.level === "warn" ? "Fix in chat" : "Ask in chat"}
+          <MessageCircleIcon />{preparesChatMessages() ? "Prepare question" : item.level === "error" || item.level === "warn" ? "Fix in chat" : "Ask in chat"}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>;
@@ -215,7 +216,7 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
           </div>
           </ResizablePanel>
           {logs.selected && <><ResizableHandle aria-label="Resize log list and details" /><ResizablePanel id="log-detail-resizable" defaultSize="42%" minSize="25%" maxSize="70%"><LogDetails key={logs.selected.sequence} log={logs.selected} onClose={() => panel.list.select()}>
-            <Button id="log-chat" variant="outline" disabled={logs.sending || !logs.canSendMessage} onClick={() => { if (logs.selected) void panel.list.sendToChat(logs.selected); }} title={logs.canSendMessage ? "Send this log and stack trace to chat" : "This host does not support chat messages"}><MessageCircleIcon />{logs.selected.level === "error" || logs.selected.level === "warn" ? "Fix in chat" : "Ask in chat"}</Button>
+            <Button id="log-chat" variant="outline" disabled={logs.sending || !logs.canSendMessage} onClick={() => { if (logs.selected) void panel.list.sendToChat(logs.selected); }} title={logs.canSendMessage ? "Send this log and stack trace to chat" : "This host does not support chat messages"}><MessageCircleIcon />{preparesChatMessages() ? "Prepare question" : logs.selected.level === "error" || logs.selected.level === "warn" ? "Fix in chat" : "Ask in chat"}</Button>
           </LogDetails></ResizablePanel></>}
         </ResizablePanelGroup>
       </CollapsibleContent>
