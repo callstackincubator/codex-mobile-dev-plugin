@@ -1,10 +1,23 @@
-# Mobile Dev for Codex
+# Mobile Dev
 
-Keep iOS and Android devices beside your Codex desktop chat while building,
-running, and debugging mobile apps. Mobile Dev works with Expo, React Native,
-SwiftUI, and other native mobile projects.
+Build, run, and debug iOS and Android apps without leaving your AI coding tool.
+Mobile Dev keeps devices beside your agent's chat and works with Expo, React
+Native, SwiftUI, and other native mobile projects.
+
+- [Live devices beside your chat](#live-devices-beside-your-chat): stream iOS and
+  Android simulators, emulators, and physical devices.
+- [Device control, inspection and annotations](#device-control-inspection-and-annotations):
+  let your agent tap, type, and inspect your app, and annotate elements for it.
+- [Native and JavaScript logs](#native-and-javascript-logs): iOS, Android, and
+  Metro logs in one filterable view.
+- [Live performance monitoring and improvements](#live-performance-monitoring-and-improvements):
+  CPU, memory, and FPS charts, with recordings your agent can analyze.
+- [App storage](#app-storage): browse and watch what your app saves, without
+  adding code to it.
 
 ## Install
+
+### Codex
 
 **[Add Mobile Dev to Codex](https://chatgpt.com/plugins/plugins_6ac4c117f76881918d3676e851fa4005)**
 from the plugin directory, then open a new chat.
@@ -13,17 +26,6 @@ To install the prebuilt plugin from this repository instead, see
 [Install from the GitHub marketplace](CONTRIBUTING.md#install-from-the-github-marketplace).
 
 ## Features
-
-- [Live devices beside your chat](#live-devices-beside-your-chat): stream iOS and
-  Android simulators, emulators, and physical devices.
-- [Device control, inspection and annotations](#device-control-inspection-and-annotations):
-  let Codex tap, type, and inspect your app, and annotate elements for it.
-- [Native and JavaScript logs](#native-and-javascript-logs): iOS, Android, and
-  Metro logs in one filterable view.
-- [Live performance monitoring and improvements](#live-performance-monitoring-and-improvements):
-  CPU, memory, and FPS charts, with recordings Codex can analyze.
-- [App storage](#app-storage): browse and watch what your app saves, without
-  adding code to it.
 
 ### Live devices beside your chat
 Stream iOS simulators, Android emulators, and connected iPhones, iPads, and Android devices. Show iOS and Android together or use the fullscreen workspace.
