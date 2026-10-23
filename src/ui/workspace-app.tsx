@@ -37,7 +37,7 @@ const updates = new PluginUpdateController(app);
 const reactRoot = createRoot(document.getElementById("root")!);
 function renderWorkspace(automaticLayout?: DeviceLayout) {
   const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-    <Workspace performance={performancePanel} logs={logsPanel} storage={storagePanel} recordingController={recordingController} updates={updates} displayModeControl={<>{claudeDesktop && <DisplayModeButton app={app} />}<ContextAttachments context={panelContext} /></>} automaticLayout={automaticLayout} onLayout={changeLayout} />
+    <Workspace performance={performancePanel} logs={logsPanel} storage={storagePanel} recordingController={recordingController} updates={updates} displayModeControl={claudeDesktop ? <DisplayModeButton app={app} /> : undefined} contextControl={<ContextAttachments context={panelContext} />} automaticLayout={automaticLayout} onLayout={changeLayout} />
   </ErrorBoundary>;
   reactRoot.render(workspace);
 }
@@ -93,6 +93,7 @@ let disposingUI: Promise<void> | undefined;
 function disposeUI() {
   return disposingUI ??= (async () => {
     window.removeEventListener("pagehide", onPageHide);
+    app.removeEventListener("hostcontextchanged", hostContext);
     window.removeEventListener("focus", resumeContext);
     window.removeEventListener("pageshow", resumeContext);
     document.removeEventListener("visibilitychange", resumeContext);
@@ -110,7 +111,9 @@ function onPageHide(event: PageTransitionEvent) { if (!event.persisted) { stopLi
 window.addEventListener("pagehide", onPageHide);
 app.onteardown = async () => { stopLiveReload(); await disposeUI(); return {}; };
 
+let reportedInlineHeight: number | undefined;
 function hostContext() {
+  if (disposingUI) return;
   const host = app.getHostContext();
   if (host?.theme) applyDocumentTheme(host.theme);
   if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
@@ -119,7 +122,21 @@ function hostContext() {
   panelContext.resume();
   for (const panel of panels) { panel.fitScreen(); panel.controls(); }
   // Initial context arrives with connect(), without a hostcontextchanged event.
-  if (claudeDesktop) renderWorkspace();
+  if (claudeDesktop) {
+    const root = document.documentElement;
+    const fullscreen = host?.displayMode === "fullscreen";
+    const dimensions = host?.containerDimensions;
+    const maximum = dimensions && "maxHeight" in dimensions ? dimensions.maxHeight : undefined;
+    const height = typeof maximum === "number" && maximum > 0 ? Math.min(600, maximum) : 600;
+    root.style.setProperty("--workspace-height", fullscreen ? "100dvh" : `${height}px`);
+    root.style.setProperty("--workspace-bottom-inset", `${host?.safeAreaInsets?.bottom ?? 0}px`);
+    if (fullscreen) reportedInlineHeight = undefined;
+    else if (reportedInlineHeight !== height) {
+      reportedInlineHeight = height;
+      void app.sendSizeChanged({ height }).catch(error => captureUiError(error, "workspace.resize"));
+    }
+    renderWorkspace();
+  }
 }
 function resumeContext() {
   if (document.visibilityState !== "hidden" && !disposingUI) {

@@ -32,7 +32,7 @@ const tools = {
 type Tool = keyof typeof tools;
 const isTool = (value: string): value is Tool => value in tools;
 
-export function Workspace({ logs, performance, storage, recordingController, updates, displayModeControl, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; recordingController: RecordingController; updates?: PluginUpdateController; displayModeControl?: ReactNode; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
+export function Workspace({ logs, performance, storage, recordingController, updates, displayModeControl, contextControl, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; recordingController: RecordingController; updates?: PluginUpdateController; displayModeControl?: ReactNode; contextControl?: ReactNode; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
   const [tool, setTool] = useState<Tool>("logs");
   const [savedVisible, setSavedVisible] = useState(false);
   const [simulatorsCollapsed, setSimulatorsCollapsed] = useState(false);
@@ -143,8 +143,9 @@ export function Workspace({ logs, performance, storage, recordingController, upd
   // A collapsed simulator area would put the handle's line against the toolbar's border, doubling it.
   // The handle stays draggable so the simulators can be pulled back open.
   const divider = <ResizableHandle key="divider" hidden={layout === "none" || (!fullscreen && !open)} disabled={layout === "none" || (!fullscreen && !open)} className={simulatorsCollapsed ? "bg-transparent" : undefined} aria-label="Resize tools and simulators" />;
-  return <main className="flex h-dvh flex-col">
+  return <main className="flex flex-col" style={{ height: "var(--workspace-height, 100dvh)", paddingBottom: "var(--workspace-bottom-inset, 0px)" }}>
     {updates && <PluginUpdateBanner controller={updates} />}
+    {contextControl}
     {!bottomToolbar && toolbar}
     <ResizablePanelGroup id="workspace-panels" groupRef={workspaceGroupRef} orientation={split ? "horizontal" : "vertical"} className="min-h-0 flex-1" data-split={split}>
       {split ? [toolPanel, divider, simulatorPanel] : [simulatorPanel, divider, toolPanel]}

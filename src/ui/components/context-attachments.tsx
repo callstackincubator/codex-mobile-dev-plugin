@@ -8,7 +8,7 @@ export function ContextAttachments({ context }: { context: PanelContext }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   if (context.usesHostAttachments || !count) return null;
-  return <div className="flex items-center gap-2">
+  return <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-2 py-1">
     <Button variant="outline" size="sm" disabled={busy} onClick={async () => {
       setBusy(true); setError(false);
       try { await context.clearAttachments(); }
