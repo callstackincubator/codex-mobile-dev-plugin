@@ -38,7 +38,7 @@ function ValuePreview({ entry, query }: { entry: StorageEntry; query: string }) 
   return <span className="truncate"><Highlight text={text} query={query} /></span>;
 }
 
-function JsonTree({ value }: { value: unknown }): ReactNode {
+export function JsonTree({ value }: { value: unknown }): ReactNode {
   if (value === null || typeof value !== "object") {
     const tone = typeof value === "boolean" ? value ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400" : typeof value === "number" ? "text-blue-600 dark:text-blue-400" : "text-amber-700 dark:text-amber-400";
     return <span className={`${tone} [overflow-wrap:anywhere]`}>{JSON.stringify(value)}</span>;

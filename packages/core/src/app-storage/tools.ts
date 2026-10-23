@@ -2,6 +2,7 @@ import { z } from "zod";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { captureServerError, recordAppStorageOperation } from "../telemetry.ts";
+import type { AppStorageOperation } from "../telemetry.ts";
 import { ExpectedOperationError, expectedOutcome } from "@mobile-dev/shared/error-reporting.ts";
 import { appTargetShape, bundleIdSchema } from "@mobile-dev/shared/app-control.ts";
 import { storageLimits } from "@mobile-dev/shared/app-storage.ts";
@@ -13,9 +14,9 @@ import type { DriverFactory } from "../app-control/tools.ts";
 import { AndroidContainer, SimulatorContainer } from "./container.ts";
 import type { AppContainer } from "./container.ts";
 import { clearStore, readStorage, readTable } from "./reader.ts";
+import { previewFile } from "./preview.ts";
 
 type Target = { platform: "ios" | "android"; deviceId: string };
-type Operation = "read" | "clear" | "reset" | "table";
 export type ContainerFactory = (target: Target, bundleId: string) => Promise<AppContainer>;
 
 export function createContainers(commands: Commands = systemCommands): ContainerFactory {
@@ -41,7 +42,7 @@ const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: fa
 
 export function registerAppStorageTools(server: McpServer, commands: Commands = systemCommands, driverFor: DriverFactory = createDrivers(commands), containerFor: ContainerFactory = createContainers(commands)) {
   // Every operation opens the app's container on a validated device and reports one timing.
-  async function run(operation: Operation, { platform, deviceId, bundleId }: Target & { bundleId: string }, work: (container: AppContainer, driver: AppDriver) => Promise<Record<string, unknown>>) {
+  async function run(operation: AppStorageOperation, { platform, deviceId, bundleId }: Target & { bundleId: string }, work: (container: AppContainer, driver: AppDriver) => Promise<Record<string, unknown>>) {
     const startedAt = performance.now();
     try {
       // Resolving the driver validates the device ID before any command runs.
@@ -89,6 +90,16 @@ export function registerAppStorageTools(server: McpServer, commands: Commands = 
     _meta: { ui: { visibility: ["app", "model"] } },
   }, input => run("table", input, container => readTable(container, input.store, input.table, {
     offset: input.offset ?? 0, limit: input.limit ?? storageLimits.tableRows, valueLength: storageLimits.tableValueLength, run: commands.run, columns: input.columns,
+  })));
+
+  registerAppTool(server, "mobile_app_storage_file", {
+    title: "Read an app data file",
+    description: "Read one file listed by mobile_app_storage, decoded by its contents: JSON, property lists (including binary and NSKeyedArchiver archives) as JSON, or text. Content is filtered like storage values: sensitive keys and credential-like text are redacted, and binary data is withheld. Use synthetic test data.",
+    inputSchema: { ...appTargetShape, bundleId, path: z.string().min(1).max(4096).describe("A file path from mobile_app_storage's files list.") },
+    annotations: readOnly,
+    _meta: { ui: { visibility: ["app", "model"] } },
+  }, input => run("file", input, container => previewFile(container, input.path, {
+    maxBytes: storageLimits.previewBytes, maxLength: storageLimits.previewLength, run: commands.run,
   })));
 
   registerAppTool(server, "mobile_clear_app_storage", {

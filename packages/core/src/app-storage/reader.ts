@@ -7,7 +7,7 @@ import type { StorageEntry, StorageFile, StorageSnapshot, StorageStore, StorageT
 import { withTemporaryDirectory } from "../app-control/commands.ts";
 import type { CommandRunner } from "../app-control/commands.ts";
 import type { AppContainer, ContainerFile } from "./container.ts";
-import { basename, classifyFiles, nullEntry, parseDataStorePreferences, parsePlistXml, parseSharedPreferences, plistEntries, storeId, textEntry } from "./formats.ts";
+import { basename, classifyFiles, nullEntry, parseDataStorePreferences, parsePlistXml, parseSharedPreferences, plistEntries, protobufEntries, storeId, textEntry } from "./formats.ts";
 import type { ParsedEntry, StoreCandidate } from "./formats.ts";
 import { decodeMmkv, guessMmkvValue } from "./mmkv.ts";
 import { REDACTED, redactStorageEntry, redactStorageValue, sensitiveStorageName, sensitiveStorageText, sensitiveStoragePath } from "./redaction.ts";
@@ -18,14 +18,24 @@ type StoreContent = { status: StorageStore["status"]; note?: string; entries: Pa
 
 const sqlite3 = process.platform === "darwin" ? "/usr/bin/sqlite3" : "sqlite3";
 const quoteIdentifier = (name: string) => `"${name.replaceAll("\"", "\"\"")}"`;
+const sqlString = (text: string) => `'${text.replaceAll("'", "''")}'`;
 
 async function sqlite(run: CommandRunner, file: string, sql: string): Promise<Record<string, unknown>[]> {
   const output = await run(sqlite3, ["-json", file, sql], { timeout: 15000, maxBuffer: 64 * 1024 * 1024 });
   return output.trim() ? JSON.parse(output) : [];
 }
 
-const listTables = async (run: CommandRunner, file: string) =>
-  (await sqlite(run, file, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")).map(row => String(row.name));
+type Column = StorageTable["columns"][number];
+// Every table's columns in one query, by table name. A SQLite table always has a column, so this lists every table.
+async function describeTables(run: CommandRunner, file: string): Promise<Map<string, Column[]>> {
+  const tables = new Map<string, Column[]>();
+  for (const row of await sqlite(run, file, "SELECT m.name AS tbl, p.name AS col, p.type AS type FROM sqlite_master m JOIN pragma_table_info(m.name) p WHERE m.type='table' AND m.name NOT LIKE 'sqlite_%' ORDER BY m.name, p.cid")) {
+    let columns = tables.get(String(row.tbl));
+    if (columns === undefined) tables.set(String(row.tbl), columns = []);
+    columns.push({ name: String(row.col), type: String(row.type ?? "") });
+  }
+  return tables;
+}
 
 // sqlite3 reads a local copy that includes the write-ahead log, so writes SQLite has not checkpointed are read too.
 function withDatabase<T>(container: AppContainer, candidate: StoreCandidate, work: (file: string) => Promise<T>): Promise<T> {
@@ -39,24 +49,23 @@ function withDatabase<T>(container: AppContainer, candidate: StoreCandidate, wor
 // table named Storage, and v3 an `entries` table under async-storage/databases/.
 async function readSqlite(container: AppContainer, candidate: StoreCandidate, run: CommandRunner): Promise<StoreContent> {
   return withDatabase(container, candidate, async file => {
-    let tables: string[];
-    try { tables = await listTables(run, file); }
+    let tables: Map<string, Column[]>;
+    try { tables = await describeTables(run, file); }
     catch { return { status: "unreadable", note: "Not a readable SQLite database.", entries: [] }; }
-    const keyValueTable = tables.includes("catalystLocalStorage") ? "catalystLocalStorage"
-      : tables.includes("entries") && candidate.path.includes("async-storage/") ? "entries"
-      : tables.includes("Storage") && /^AsyncStorage/.test(candidate.name) ? "Storage" : undefined;
+    const keyValueTable = tables.has("catalystLocalStorage") ? "catalystLocalStorage"
+      : tables.has("entries") && candidate.path.includes("async-storage/") ? "entries"
+      : tables.has("Storage") && /^AsyncStorage/.test(candidate.name) ? "Storage" : undefined;
     if (keyValueTable) {
       const rows = await sqlite(run, file, `SELECT key, value FROM ${quoteIdentifier(keyValueTable)}`);
       const entries = rows.map(row => row.value === null || row.value === undefined ? nullEntry(String(row.key)) : textEntry(String(row.key), String(row.value)));
       return { status: "ok", kind: "async-storage", entries };
     }
-    const entries = await Promise.all(tables.map(async (table): Promise<ParsedEntry> => {
-      const [count] = await sqlite(run, file, `SELECT count(*) AS rows FROM ${quoteIdentifier(table)}`).catch(() => [{ rows: "?" }]);
-      const columns = (await sqlite(run, file, `PRAGMA table_info(${quoteIdentifier(table)})`).catch(() => [])).map(column => String(column.name));
-      const value = `${count?.rows ?? "?"} rows · ${columns.join(", ")}`;
-      return { key: table, type: "table", value, bytes: 0 };
-    }));
-    return { status: "ok", entries };
+    if (tables.size === 0) return { status: "ok", entries: [] };
+    // One query counts every table. Running one sqlite3 per table in parallel let the first process recover the
+    // write-ahead log while the others failed on its lock.
+    const counts = new Map((await sqlite(run, file, [...tables.keys()].map(table => `SELECT ${sqlString(table)} AS name, count(*) AS total FROM ${quoteIdentifier(table)}`).join(" UNION ALL ")))
+      .map(row => [String(row.name), Number(row.total)]));
+    return { status: "ok", entries: [...tables].map(([table, columns]) => ({ key: table, type: "table", value: `${counts.get(table) ?? "?"} rows · ${columns.map(column => column.name).join(", ")}`, bytes: 0 })) };
   });
 }
 
@@ -92,10 +101,18 @@ async function readStore(container: AppContainer, candidate: StoreCandidate, run
       const xml = container.preferences ? await container.preferences(candidate.path) : (await container.read(candidate.path)).toString("utf8");
       return { status: "ok", entries: plistEntries(parsePlistXml(xml)) };
     }
-    case "shared-preferences":
-      return { status: "ok", entries: parseSharedPreferences((await container.read(candidate.path)).toString("utf8")) };
+    case "shared-preferences": {
+      const entries = parseSharedPreferences((await container.read(candidate.path)).toString("utf8"));
+      // EncryptedSharedPreferences stores its keysets beside encrypted keys and values, which would read as noise.
+      if (entries.some(entry => entry.key.startsWith("__androidx_security_crypto_encrypted_prefs_"))) {
+        return { status: "encrypted", note: "EncryptedSharedPreferences: keys and values are encrypted with a key in the Android Keystore.", entries: [] };
+      }
+      return { status: "ok", entries };
+    }
     case "datastore":
       return { status: "ok", entries: parseDataStorePreferences(await container.read(candidate.path)) };
+    case "proto-datastore":
+      return { status: "ok", note: "The file has no schema, so keys are field numbers and types are guessed.", entries: protobufEntries(await container.read(candidate.path)) };
     case "async-storage":
       return readAsyncManifest(container, candidate);
     case "sqlite":
@@ -175,10 +192,11 @@ export async function readTable(container: AppContainer, id: string, table: stri
   const candidate = await findStore(container, id, "sqlite");
   if (sensitiveStoragePath(candidate.path) || sensitiveStorageText(table)) throw new ExpectedOperationError("invalid_input", "Sensitive storage identifiers cannot be returned.");
   return withDatabase(container, candidate, async file => {
-    if (!(await listTables(run, file)).includes(table)) throw new ExpectedOperationError("invalid_input", "That table no longer exists. Refresh and try again.");
+    const described = (await describeTables(run, file)).get(table);
+    if (described === undefined) throw new ExpectedOperationError("invalid_input", "That table no longer exists. Refresh and try again.");
     const name = quoteIdentifier(table);
-    const [info, [count]] = await Promise.all([sqlite(run, file, `PRAGMA table_info(${name})`), sqlite(run, file, `SELECT count(*) AS total FROM ${name}`)]);
-    const allColumns = info.map(column => ({ name: String(column.name), type: String(column.type ?? "") })).filter(column => !sensitiveStorageText(column.name) && !sensitiveStorageText(column.type));
+    const [count] = await sqlite(run, file, `SELECT count(*) AS total FROM ${name}`);
+    const allColumns = described.filter(column => !sensitiveStorageText(column.name) && !sensitiveStorageText(column.type));
     if (requestedColumns?.some(name => !allColumns.some(column => column.name === name))) {
       throw new ExpectedOperationError("invalid_input", "A requested column no longer exists. Refresh and try again.");
     }
@@ -193,6 +211,7 @@ export async function readTable(container: AppContainer, id: string, table: stri
       return `CASE typeof(${quoted}) WHEN 'blob' THEN '${REDACTED}' ELSE ${quoted} END AS c${index}`;
     });
     select.push(...labels.map((column, index) => `${quoteIdentifier(column.name)} AS k${index}`));
+    // Every column of a table can be filtered as sensitive, which leaves nothing to select.
     const rows = await sqlite(run, file, `SELECT ${select.join(", ") || "NULL AS c0"} FROM ${name} LIMIT ${limit} OFFSET ${offset}`);
     return {
       table, columns, offset, total: Number(count?.total ?? 0),

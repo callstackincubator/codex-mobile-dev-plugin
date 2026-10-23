@@ -145,7 +145,6 @@ class MemoryContainer implements AppContainer {
     if (!value) throw new Error("missing");
     return value;
   }
-  async copy() { throw new Error("not used"); }
   async remove(paths: string[]) { this.removed.push(...paths); for (const path of paths) this.files.delete(path); }
 }
 

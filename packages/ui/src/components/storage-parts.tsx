@@ -20,6 +20,7 @@ const kindLook: Record<StoreKind, ChipLook> = {
   "user-defaults": { ...chipColors.sky, icon: LayersIcon },
   "shared-preferences": { ...chipColors.sky, icon: LayersIcon },
   "datastore": { ...chipColors.sky, icon: LayersIcon },
+  "proto-datastore": { ...chipColors.sky, icon: LayersIcon },
   "mmkv": { ...chipColors.amber, icon: LayersIcon },
   "async-storage": { ...chipColors.violet, icon: BracesIcon },
   "sqlite": { ...chipColors.emerald, icon: DatabaseIcon },
