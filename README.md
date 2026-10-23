@@ -33,7 +33,7 @@ Stream iOS simulators, Android emulators, and connected iPhones, iPads, and Andr
 ![](/img/screenshot_side_by_side.png)
 
 ### Device control, inspection and annotations
-Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let Codex inspect accessibility elements and control your app through MCP tools. Select an element or screen region and leave instructions for Codex, with React Native component and source details when available.
+Select and boot simulators or emulators, interact with taps and drags, type on supported devices, and let your agent inspect accessibility elements and control your app through MCP tools. Select an element or screen region and leave instructions for your agent, with React Native component and source details when available.
 
 ![](/img/screenshot_annotations.png)
 
@@ -43,7 +43,7 @@ Read iOS unified logs, Android logcat, and Metro console messages together. Foll
 ![](/img/screenshot_logs.png)
 
 ### Live performance monitoring and improvements
-Track app CPU and memory, expand individual thread charts, and view device-wide Display FPS on supported devices. Ask Codex to record an interaction, inspect interactive charts in chat, compare runs, and analyze selected ranges. Android recordings include display frame pacing and jank statistics.
+Track app CPU and memory, expand individual thread charts, and view device-wide Display FPS on supported devices. Ask your agent to record an interaction, inspect interactive charts in chat, compare runs, and analyze selected ranges. Android recordings include display frame pacing and jank statistics.
 
 ![](/img/screenshot_performance.png)
 
@@ -59,9 +59,9 @@ See [storage privacy and review checks](docs/storage-privacy.md).
 
 ## Requirements
 
-The prebuilt plugin targets Codex desktop on an Apple Silicon Mac and uses
-Codex's bundled Node runtime from its workspace dependency cache. Install the
-tools for the platforms you use:
+Mobile Dev runs on an Apple Silicon Mac. In Codex desktop, the prebuilt plugin
+uses Codex's bundled Node runtime from its workspace dependency cache. Install
+the tools for the platforms you use:
 
 | Platform or feature | Requirements |
 | --- | --- |
