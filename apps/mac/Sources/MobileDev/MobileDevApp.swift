@@ -7,7 +7,7 @@ struct MobileDevApp: App {
   var body: some Scene {
     Window("Mobile Dev", id: "main") {
       ContentView(model: delegate.model)
-        .frame(minWidth: 900, minHeight: 600)
+        .frame(minWidth: 1280, minHeight: 720)
     }
     .windowStyle(.hiddenTitleBar)
     .commands {
