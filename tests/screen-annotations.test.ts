@@ -575,7 +575,7 @@ test("standard hosts receive complete annotation messages and cleared context af
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
   const context = new PanelContext({
-    getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
+    getHostCapabilities: () => ({ updateModelContext: { text: {}, structuredContent: {} }, message: { text: {} } }),
     async updateModelContext(params) { updates.push(params); return {}; },
     async sendMessage(params) { messages.push(params); return {}; },
   } as App, {} as OpenAIExtensions);

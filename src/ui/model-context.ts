@@ -283,7 +283,8 @@ export class PanelContext {
             const content = params.content
               .filter(item => item.type !== "image" || this.canAttachScreenshots)
               .map(({ _meta, ...item }) => item);
-            await this.app.updateModelContext({ ...params, content }, { timeout: 5000 });
+            const structured = this.app.getHostCapabilities()?.updateModelContext?.structuredContent;
+            await this.app.updateModelContext({ content, ...(structured ? { structuredContent: params.structuredContent } : {}) }, { timeout: 5000 });
           }
         });
         if (revision === this.revision) { this.deferred = false; this.pendingAnnotations.clear(); }

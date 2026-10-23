@@ -343,7 +343,7 @@ test("standard context supports logs, local removal and complete chat messages",
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const context = new PanelContext({
-    getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {} } }),
+    getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {}, structuredContent: {} } }),
     async updateModelContext(params) { updates.push(params); return {}; },
     async sendMessage(params) { messages.push(params); return {}; },
   } as App, {} as OpenAIExtensions);
@@ -374,6 +374,7 @@ test("standard screenshot context is capability-gated and clearing rolls back on
   images = true;
   await context.attachScreenshot(screenshot);
   assert.equal(context.attachmentCount, 1);
+  assert.equal(updates.at(-1)?.structuredContent, undefined, "Do not send unsupported structured context");
   assert.equal(updates.at(-1)?.content?.filter(item => item.type === "image").length, 1);
   fail = true;
   await assert.rejects(context.clearAttachments(), /Host unavailable/);
@@ -387,7 +388,7 @@ test("standard screenshot context is capability-gated and clearing rolls back on
 test("failed standard context cleanup never retries a delivered message", async () => {
   let sent = 0;
   const context = new PanelContext({
-    getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {} } }),
+    getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {}, structuredContent: {} } }),
     async updateModelContext() { if (sent) throw new Error("Cleanup unavailable"); return {}; },
     async sendMessage() { sent++; return {}; },
   } as unknown as App, {} as OpenAIExtensions);
