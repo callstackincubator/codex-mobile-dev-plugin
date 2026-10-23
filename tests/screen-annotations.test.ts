@@ -570,3 +570,20 @@ test("a fresh annotation batch starts at one after chat clears or sends the prio
   assert.equal(f.store.getSnapshot().draft?.text, "Keep this draft");
   f.store.dispose();
 });
+
+test("standard hosts receive complete annotation messages and cleared context after sending", async () => {
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  const updates: Parameters<App["updateModelContext"]>[0][] = [];
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
+    async updateModelContext(params) { updates.push(params); return {}; },
+    async sendMessage(params) { messages.push(params); return {}; },
+  } as App, {} as OpenAIExtensions);
+  await context.attachAnnotation(annotation);
+  assert.equal(context.screenAnnotations.length, 1);
+  await context.sendAnnotationsToChat(simulator.udid);
+  assert.match(JSON.stringify(messages[0].content), /Make this button larger/);
+  assert.equal(messages[0]._meta, undefined);
+  assert.equal(context.attachmentCount, 0);
+  assert.deepEqual(updates.at(-1)?.structuredContent?.annotationIds, []);
+});

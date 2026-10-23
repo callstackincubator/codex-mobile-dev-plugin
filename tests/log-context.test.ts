@@ -338,3 +338,59 @@ test("side by side devices share both IDs while logs keep the active selection",
   assert.equal(updates.at(-1)?.content?.some(item => item.type === "text" && item.text.includes("emulator-5554")), false);
   assert.deepEqual(updates.at(-1)?.structuredContent?.selectedLog, log);
 });
+
+test("standard context supports logs, local removal and complete chat messages", async () => {
+  const updates: Parameters<App["updateModelContext"]>[0][] = [];
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {} } }),
+    async updateModelContext(params) { updates.push(params); return {}; },
+    async sendMessage(params) { messages.push(params); return {}; },
+  } as App, {} as OpenAIExtensions);
+  assert.equal(context.canAttach, true);
+  assert.equal(context.canAttachScreenshots, false);
+  await context.attach(log);
+  assert.equal(context.attachmentCount, 1);
+  assert.ok(updates.at(-1)?.content?.every(item => item._meta === undefined));
+  context.hostChanged();
+  assert.equal(context.attachmentCount, 1, "No host pills does not mean attachments were removed");
+  await context.sendLogToChat(log);
+  assert.match(JSON.stringify(messages[0].content), /Request failed/);
+  assert.equal(messages[0]._meta, undefined);
+  assert.equal(context.attachmentCount, 0);
+  assert.equal(updates.at(-1)?.structuredContent?.selectedLog, null);
+});
+
+test("standard screenshot context is capability-gated and clearing rolls back on failure", async () => {
+  let images = false;
+  let fail = false;
+  const updates: Parameters<App["updateModelContext"]>[0][] = [];
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ updateModelContext: { text: {}, ...(images ? { image: {} } : {}) } }),
+    async updateModelContext(params) { if (fail) throw new Error("Host unavailable"); updates.push(params); return {}; },
+  } as unknown as App, {} as OpenAIExtensions);
+  const screenshot = { id: "shot-standard", simulator, data: "cG5n", mimeType: "image/png" } as ScreenshotAttachment;
+  await assert.rejects(context.attachScreenshot(screenshot), /does not support/);
+  images = true;
+  await context.attachScreenshot(screenshot);
+  assert.equal(context.attachmentCount, 1);
+  assert.equal(updates.at(-1)?.content?.filter(item => item.type === "image").length, 1);
+  fail = true;
+  await assert.rejects(context.clearAttachments(), /Host unavailable/);
+  assert.equal(context.attachmentCount, 1);
+  fail = false;
+  await context.clearAttachments();
+  assert.equal(context.attachmentCount, 0);
+  assert.equal(updates.at(-1)?.content?.some(item => item.type === "image"), false);
+});
+
+test("failed standard context cleanup never retries a delivered message", async () => {
+  let sent = 0;
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ message: { text: {} }, updateModelContext: { text: {} } }),
+    async updateModelContext() { if (sent) throw new Error("Cleanup unavailable"); return {}; },
+    async sendMessage() { sent++; return {}; },
+  } as unknown as App, {} as OpenAIExtensions);
+  await context.sendLogToChat(log);
+  assert.equal(sent, 1);
+});

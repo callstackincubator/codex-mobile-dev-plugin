@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { Workspace } from "./components/workspace";
 import { DisplayModeButton } from "./components/display-mode-button";
+import { ContextAttachments } from "./components/context-attachments";
 import type { DeviceLayout } from "./device-layout.ts";
 import { panelTargetSchema } from "../shared/panel-target.ts";
 import { WorkspaceDevices } from "./workspace-devices.ts";
@@ -37,7 +38,7 @@ const updates = new PluginUpdateController(app);
 const reactRoot = createRoot(document.getElementById("root")!);
 function renderWorkspace(automaticLayout?: DeviceLayout) {
   const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-    <Workspace performance={performancePanel} logs={logsPanel} storage={storagePanel} recordingController={recordingController} updates={updates} displayModeControl={claudeDesktop ? <DisplayModeButton app={app} /> : undefined} automaticLayout={automaticLayout} onLayout={changeLayout} />
+    <Workspace performance={performancePanel} logs={logsPanel} storage={storagePanel} recordingController={recordingController} updates={updates} displayModeControl={<>{claudeDesktop && <DisplayModeButton app={app} />}<ContextAttachments context={panelContext} /></>} automaticLayout={automaticLayout} onLayout={changeLayout} />
   </ErrorBoundary>;
   reactRoot.render(workspace);
 }
