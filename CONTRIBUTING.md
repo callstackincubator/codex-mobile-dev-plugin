@@ -91,6 +91,31 @@ logs, and CPU/memory monitoring. Open its Xcode project or use its build-and-run
 script with a booted simulator UDID. It needs no external app dependencies and is
 not included in the plugin package.
 
+## Install from the GitHub marketplace
+
+Most users should install Mobile Dev from the
+[Codex plugin directory](README.md#install). To install the prebuilt plugin from
+this repository's release marketplace instead:
+
+```sh
+codex plugin marketplace add https://github.com/callstackincubator/codex-mobile-dev-plugin.git --ref release/latest
+codex plugin add mobile-dev@mobile-dev
+```
+
+Open a new chat after installing. The package includes the built plugin and
+bundled runtimes; no plugin build or `npm install` is needed.
+
+Mobile Dev shows a banner when a newer release is ready to install. Click
+**Update**, then fully quit and reopen Codex after it finishes.
+
+You can also update an existing installation from the terminal:
+
+```sh
+codex plugin marketplace upgrade mobile-dev
+```
+
+Fully quit and reopen Codex after updating.
+
 ## Install the local build
 
 From this project directory, after packaging:

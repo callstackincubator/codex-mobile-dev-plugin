@@ -6,28 +6,24 @@ SwiftUI, and other native mobile projects.
 
 ## Install
 
-Install the prebuilt plugin from the release marketplace:
+**[Add Mobile Dev to Codex](https://chatgpt.com/plugins/plugins_6ac4c117f76881918d3676e851fa4005)**
+from the plugin directory, then open a new chat.
 
-```sh
-codex plugin marketplace add https://github.com/callstackincubator/codex-mobile-dev-plugin.git --ref release/latest
-codex plugin add mobile-dev@mobile-dev
-```
-
-Open a new chat after installing. The package includes the built plugin and
-bundled runtimes; no plugin build or `npm install` is needed.
-
-Mobile Dev shows a banner when a newer release is ready to install. Click
-**Update**, then fully quit and reopen Codex after it finishes.
-
-You can also update an existing installation from the terminal:
-
-```sh
-codex plugin marketplace upgrade mobile-dev
-```
-
-Fully quit and reopen Codex after updating.
+To install the prebuilt plugin from this repository instead, see
+[Install from the GitHub marketplace](CONTRIBUTING.md#install-from-the-github-marketplace).
 
 ## Features
+
+- [Live devices beside your chat](#live-devices-beside-your-chat): stream iOS and
+  Android simulators, emulators, and physical devices.
+- [Device control, inspection and annotations](#device-control-inspection-and-annotations):
+  let Codex tap, type, and inspect your app, and annotate elements for it.
+- [Native and JavaScript logs](#native-and-javascript-logs): iOS, Android, and
+  Metro logs in one filterable view.
+- [Live performance monitoring and improvements](#live-performance-monitoring-and-improvements):
+  CPU, memory, and FPS charts, with recordings Codex can analyze.
+- [App storage](#app-storage): browse and watch what your app saves, without
+  adding code to it.
 
 ### Live devices beside your chat
 Stream iOS simulators, Android emulators, and connected iPhones, iPads, and Android devices. Show iOS and Android together or use the fullscreen workspace.
