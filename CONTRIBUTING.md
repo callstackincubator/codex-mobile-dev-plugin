@@ -1,5 +1,7 @@
 # Contributing to Mobile Dev
 
+For the Claude Desktop development preview, see [the local setup and bundle workflow](docs/claude-desktop.md).
+
 This guide covers building the plugin, installing it locally, and working on its UI
 and native helpers. To use the prebuilt plugin, see the [README](README.md#install).
 
