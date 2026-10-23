@@ -18,7 +18,9 @@ await mkdir(plugin, { recursive: true });
 await copyFile(`${source}/.mcp.json`, `${plugin}/.mcp.json`);
 for (const path of ["README.md", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "TERMS.md", "SUPPORT.md"]) await copyFile(path, `${plugin}/${path}`);
 await stageRuntime(`${plugin}/dist`, "codex");
-for (const path of [".codex-plugin", "assets", "skills/mobile-dev", "skills/mobile-dev-setup"]) await cp(`${source}/${path}`, `${plugin}/${path}`, { recursive: true, verbatimSymlinks: true });
+for (const path of [".codex-plugin", "assets"]) await cp(`${source}/${path}`, `${plugin}/${path}`, { recursive: true, verbatimSymlinks: true });
+// Codex loads skills; the inactive agent-device skill stays out until its server returns.
+for (const skill of ["mobile-dev", "mobile-dev-setup"]) await cp(`packages/skills/${skill}`, `${plugin}/skills/${skill}`, { recursive: true, verbatimSymlinks: true });
 await writeFile(`${plugin}/.codex-plugin/plugin.json`, JSON.stringify(manifest, null, 2) + "\n");
 await mkdir(`${plugin}/scripts`, { recursive: true });
 await copyFile(`${source}/scripts/launch-mcp.sh`, `${plugin}/scripts/launch-mcp.sh`);

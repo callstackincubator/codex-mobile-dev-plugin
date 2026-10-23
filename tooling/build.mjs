@@ -100,11 +100,11 @@ await writeFile("dist/agent-device/release.json", JSON.stringify({
   name: installed.name, version: installed.version, url: pinned.resolved, integrity: pinned.integrity,
   lockfileSHA256: createHash("sha256").update(lock).digest("hex"),
 }, null, 2) + "\n");
-await mkdir("apps/codex-plugin/skills/agent-device/references", { recursive: true });
+await mkdir("packages/skills/agent-device/references", { recursive: true });
 const workflow = execFileSync(process.execPath, [resolve(`${runtime}/node_modules/agent-device/bin/agent-device.mjs`), "help", "workflow"], {
   encoding: "utf8", env: { ...process.env, AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1" },
 });
-await writeFile("apps/codex-plugin/skills/agent-device/references/workflow.md", workflow);
+await writeFile("packages/skills/agent-device/references/workflow.md", workflow);
 await buildServeEmu("dist/serve-emu");
 // The host-neutral runtime: the shared server, its services and the MCP Apps panel
 // as hosts without their own chrome load it. Each host's own pieces build into
