@@ -1,5 +1,7 @@
 import { z } from "zod";
-import baguetteRelease from "../../native/vendor/baguette-release.json" with { type: "json" };
+// The pinned Baguette build, copied from packages/native/vendor/baguette-release.json so
+// shared code stays free of vendored files; a test keeps the two equal.
+export const BAGUETTE_PIN = { version: "0.2.1", sourceCommit: "db17446e25059247879dba7941e4de641c2f31e2" };
 
 const stages = z.enum(["simulator_lookup", "profile_read", "profile_parse", "profile_chrome_identifier", "panel_lookup", "chrome_lookup", "chrome_read",
   "chrome_parse", "composite_read", "composite_layout", "composite_rasterize", "screen_geometry",
@@ -197,8 +199,8 @@ export function parseDefinitionDiagnostic(payload: unknown): DefinitionDiagnosti
   }
   if ("panel" in candidate && (candidate.panel === "primary" || candidate.panel === "secondary")) diagnostic.panel = candidate.panel;
   if ("xcode_version" in candidate) diagnostic.xcodeVersion = numericVersion(candidate.xcode_version);
-  if ("backend_version" in candidate && candidate.backend_version === baguetteRelease.version) diagnostic.backendVersion = baguetteRelease.version;
-  if ("backend_source" in candidate && candidate.backend_source === baguetteRelease.rebuild.sourceCommit) diagnostic.backendSource = "pinned";
+  if ("backend_version" in candidate && candidate.backend_version === BAGUETTE_PIN.version) diagnostic.backendVersion = BAGUETTE_PIN.version;
+  if ("backend_source" in candidate && candidate.backend_source === BAGUETTE_PIN.sourceCommit) diagnostic.backendSource = "pinned";
   return diagnostic;
 }
 

@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { startupStages, startupOutcomes } from "../../runtimes/serve-emu/src/startup-diagnostics.ts";
+// Copied from the serve-emu runtime so shared code stays free of vendored runtimes;
+// a test keeps the two lists equal.
+export const startupStages = [
+  "locate-server", "hash-server", "cache-probe", "push-server", "publish-cache",
+  "copy-server", "forward-socket", "launch-server", "socket-ready", "socket-poll", "connect-video",
+  "connect-control", "video-preamble", "cleanup", "cleanup-forward", "cleanup-jars",
+] as const;
+export const startupOutcomes = ["ok", "nonzero", "timeout", "aborted", "offline", "unauthorized", "missing", "closed", "spawn-error", "error"] as const;
 
 const stageSchema = z.enum(startupStages);
 const outcomeSchema = z.enum(startupOutcomes);
