@@ -1,0 +1,22 @@
+{
+  "manifest_version": "0.3",
+  "name": "mobile-dev",
+  "display_name": "Mobile Dev",
+  "version": "0.1.164",
+  "description": "Inspect local iOS and Android devices, logs and performance in Claude Desktop. Initial Apple Silicon development preview.",
+  "author": { "name": "Callstack" },
+  "server": {
+    "type": "node",
+    "entry_point": "dist/server.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/server.mjs"],
+      "env": { "MOBILE_DEV_HOST": "claude-desktop" }
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin"],
+    "runtimes": { "node": ">=22.19.0" }
+  },
+  "tools_generated": true
+}
