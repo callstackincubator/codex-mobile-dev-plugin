@@ -571,7 +571,7 @@ test("a fresh annotation batch starts at one after chat clears or sends the prio
   f.store.dispose();
 });
 
-test("standard hosts receive complete annotation messages and cleared context after sending", async () => {
+test("standard hosts receive readable drafts and retain selection context until explicitly cleared", async () => {
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
   const context = new PanelContext({
@@ -581,9 +581,63 @@ test("standard hosts receive complete annotation messages and cleared context af
   } as App, {} as OpenAIExtensions);
   await context.attachAnnotation(annotation);
   assert.equal(context.screenAnnotations.length, 1);
-  await context.sendAnnotationsToChat(simulator.udid);
+  await context.attachAnnotation({ ...annotation, id: "android-note", simulator: { ...simulator, udid: "android", name: "Pixel", platform: "android" } });
+  await context.sendAnnotationsToChat();
   assert.match(JSON.stringify(messages[0].content), /Make this button larger/);
+  assert.match(JSON.stringify(messages[0].content), /iPhone/);
+  assert.match(JSON.stringify(messages[0].content), /Pixel/);
+  assert.doesNotMatch(JSON.stringify(messages[0].content), /Bounds:|AXButton|creation site/);
+  assert.match(JSON.stringify(updates.at(-1)?.content), /Bounds:|AXButton/);
+  assert.match(JSON.stringify(updates.at(-1)?.content), /Device:.*Pixel/);
+  assert.match(JSON.stringify(updates.at(-1)?.content), /creation site/);
+  assert.equal(context.attachmentCount, 2);
+  await context.clearAttachments();
   assert.equal(messages[0]._meta, undefined);
   assert.equal(context.attachmentCount, 0);
   assert.deepEqual(updates.at(-1)?.structuredContent?.annotationIds, []);
+});
+
+
+test("a standard annotation draft waits for context and preserves notes when context or message fails", async () => {
+  let failContext = false;
+  let sends = 0;
+  let rejectMessage = true;
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
+    async updateModelContext() { if (failContext) throw new Error("Context unavailable"); return {}; },
+    async sendMessage() { sends++; return { isError: rejectMessage }; },
+  } as unknown as App, {} as OpenAIExtensions);
+  await context.attachAnnotation(annotation);
+  failContext = true;
+  await assert.rejects(context.sendAnnotationsToChat(), /Context unavailable/);
+  assert.equal(sends, 0);
+  assert.equal(context.attachmentCount, 1);
+  failContext = false;
+  await assert.rejects(context.sendAnnotationsToChat(), /Could not send/);
+  assert.equal(context.attachmentCount, 1);
+  rejectMessage = false;
+  await context.sendAnnotationsToChat();
+  assert.equal(sends, 2);
+  assert.equal(context.attachmentCount, 1);
+});
+
+test("editing a note while its context is publishing prevents an obsolete draft", async () => {
+  let release: (() => void) | undefined;
+  let hold = false;
+  let sends = 0;
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ updateModelContext: { text: {} }, message: { text: {} } }),
+    async updateModelContext() { if (hold) { hold = false; await new Promise<void>(resolve => { release = resolve; }); } return {}; },
+    async sendMessage() { sends++; return {}; },
+  } as unknown as App, {} as OpenAIExtensions);
+  await context.attachAnnotation(annotation);
+  hold = true;
+  const sending = context.sendAnnotationsToChat();
+  const rejected = assert.rejects(sending, /Notes changed/);
+  await new Promise(resolve => setImmediate(resolve));
+  const editing = context.attachAnnotation({ ...annotation, text: "Updated request" });
+  release!();
+  await Promise.all([rejected, editing]);
+  assert.equal(sends, 0);
+  assert.equal(context.screenAnnotations[0].text, "Updated request");
 });

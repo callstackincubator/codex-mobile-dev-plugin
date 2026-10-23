@@ -184,6 +184,14 @@ export function formatAnnotationMessage(annotations: ScreenAnnotation[]): string
   return `${ANNOTATION_EDIT_PROMPT}\n${ANNOTATION_EDIT_GUIDANCE}\n\n${annotations.map(formatAnnotationContext).join("\n\n")}`;
 }
 
+// The visible draft contains the user's requests; selection evidence and edit
+// boundaries stay in model context. Keep requests intact, including long notes.
+export function formatAnnotationDraft(annotations: ScreenAnnotation[]): string {
+  return `Apply these notes using the selected elements in Mobile Dev:\n\n${annotations.map(annotation =>
+    `- ${annotation.simulator.name} · #${annotation.number} ${JSON.stringify(annotation.component.label ?? annotation.component.name)}: ${annotation.text}`
+  ).join("\n")}`;
+}
+
 export function formatAnnotationContext(annotation: ScreenAnnotation): string {
   const { component, screen, simulator } = annotation, source = component.react?.source;
   const target = component.label ?? component.name;

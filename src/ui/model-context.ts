@@ -4,7 +4,7 @@ import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import type { SimulatorDevice } from "../shared/protocol.ts";
 import type { StackedLog } from "../shared/logs.ts";
 import { formatLogContext, logKey } from "../shared/logs.ts";
-import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationMessage } from "../shared/screen-annotations.ts";
+import { ANNOTATION_EDIT_GUIDANCE, ANNOTATION_EDIT_PROMPT, formatAnnotationContext, formatAnnotationDraft } from "../shared/screen-annotations.ts";
 import type { ScreenAnnotation } from "../shared/screen-annotations.ts";
 import { captureUiError, countUiEvent, recordUiTiming } from "./telemetry.ts";
 import type { EncodedScreenshotAttachment } from "./screenshot-attachment.ts";
@@ -86,28 +86,35 @@ export class PanelContext {
     finally { this.changed(); }
   }
 
-  async sendAnnotationsToChat(simulatorId: string) {
+  async sendAnnotationsToChat(simulatorId?: string) {
     if (!this.canSendMessage) throw new Error("This host does not support chat messages.");
-    const annotations = this.annotations.filter(item => item.simulator.udid === simulatorId);
+    const annotations = this.annotations.filter(item => !simulatorId || item.simulator.udid === simulatorId);
     if (!annotations.length) return;
     const startedAt = performance.now();
-    const text = this.usesHostAttachments ? ANNOTATION_EDIT_PROMPT : formatAnnotationMessage(annotations);
+    const hostAttachments = this.usesHostAttachments;
+    const text = hostAttachments ? ANNOTATION_EDIT_PROMPT : formatAnnotationDraft(annotations);
+    const revision = this.revision;
     recordUiTiming("ui.annotations.message_build", performance.now() - startedAt);
     if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
     const sendStartedAt = performance.now();
     try {
-      // Deferred notes need confirmed attachments before sending the short prompt.
-      if (this.canAttach && annotations.some(annotation => this.pendingAnnotations.has(annotation.id))) await this.publish();
+      // A short draft depends on the full context reaching the host first.
+      if (!hostAttachments && !this.canAttach) throw new Error("This host cannot receive the notes' selection context.");
+      if (!hostAttachments || annotations.some(annotation => this.pendingAnnotations.has(annotation.id))) await this.publish();
       const result = await withComposer(() => {
+        if (!hostAttachments && revision !== this.revision) throw new Error("Notes changed while preparing the draft. Add them to chat again.");
         if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
         return this.app.sendMessage(chatMessage(this.app, text), { timeout: 5000, maxTotalTimeout: 5000 });
       });
       if (result.isError) throw new Error("Could not send these annotations to chat.");
-      const sent = new Set(annotations.map(item => item.id));
-      this.annotations = this.annotations.filter(item => !sent.has(item.id));
-      for (const id of sent) this.pendingAnnotations.delete(id);
-      this.revision++; this.changed();
-      await this.clearSentContext();
+      // Standard hosts can acknowledge a composer draft before the user sends
+      // it. Keep its context and local notes until explicit removal/clearing.
+      if (hostAttachments) {
+        const sent = new Set(annotations.map(item => item.id));
+        this.annotations = this.annotations.filter(item => !sent.has(item.id));
+        for (const id of sent) this.pendingAnnotations.delete(id);
+        this.revision++; this.changed();
+      }
       countUiEvent("ui.annotations.send_success");
     } catch (error) {
       if (composerUnavailable(error)) {
@@ -259,7 +266,7 @@ export class PanelContext {
         return `${role} ${device.platform === "android" ? "Android" : "iOS"} simulator: ${device.name}. Device ID: ${device.udid}. State: ${device.state}. Use this ${device.platform === "android" ? "serial" : "UDID"} with the Mobile Dev tools for platform ${device.platform ?? "ios"}.`;
       });
       const contextStartedAt = performance.now();
-      const annotationContent = this.annotations.map(annotation => ({ type: "text" as const, text: formatAnnotationContext(annotation), _meta: { "openai/title": `${annotation.component.name}: ${annotation.text.replace(/\s+/g, " ").trim()}`, "mobile-dev/annotationId": annotation.id } }));
+      const annotationContent = this.annotations.map(annotation => ({ type: "text" as const, text: `${this.usesHostAttachments ? "" : `Device: ${JSON.stringify(annotation.simulator.name)} (${annotation.simulator.udid})\n`}${formatAnnotationContext(annotation)}`, _meta: { "openai/title": `${annotation.component.name}: ${annotation.text.replace(/\s+/g, " ").trim()}`, "mobile-dev/annotationId": annotation.id } }));
       if (this.annotations.length) recordUiTiming("ui.annotations.context_build", performance.now() - contextStartedAt);
       const content = [{ type: "text" as const, annotations: { audience: ["assistant" as const] }, text: devices.length
         ? `Mobile Dev devices. Logs follow the active device.\n${devices.join("\n")}`
