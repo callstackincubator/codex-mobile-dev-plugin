@@ -1,4 +1,4 @@
-import type { App } from "@modelcontextprotocol/ext-apps";
+import type { HostBridge } from "./host-bridge.ts";
 import { recordUiTiming, setUiGauge } from "./telemetry.ts";
 import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES } from "@mobile-dev/shared/cpu.ts";
 import type { DeviceApp } from "@mobile-dev/shared/device-apps.ts";
@@ -21,7 +21,7 @@ type Snapshot = DisplayFpsState & {
 type Session = { id: string; abort: AbortController; closing?: Promise<void> };
 
 export class PerformancePanel {
-  private app: App;
+  private app: HostBridge;
   private fps: DisplayFpsPanel;
   private timeOrigin?: number;
   private simulator?: SimulatorDevice;
@@ -40,7 +40,7 @@ export class PerformancePanel {
     selectedLabel: "Selected device", platform: "ios", bundleId: "", apps: [], samples: [], threadHistory: new Map(), threadOrder: "activity",
     phase: "idle", error: "", sourceError: "" };
 
-  constructor(app: App, deviceApps: DeviceAppsStore) {
+  constructor(app: HostBridge, deviceApps: DeviceAppsStore) {
     this.app = app;
     this.deviceApps = deviceApps;
     this.fps = new DisplayFpsPanel(app, (fields, origin) => {

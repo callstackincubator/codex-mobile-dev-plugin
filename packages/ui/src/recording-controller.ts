@@ -1,4 +1,4 @@
-import type { App } from "@modelcontextprotocol/ext-apps";
+import type { HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { OpenAIExtensions, OpenAIMessageParams } from "@openai/mcp-extensions/app";
 import { recordingRangeSchema, recordingSchema, summarizeRecording } from "@mobile-dev/shared/recordings.ts";
@@ -14,7 +14,7 @@ type RecordingState = {
 };
 
 export class RecordingController {
-  private readonly app: App;
+  private readonly app: HostBridge;
   private readonly extensions?: OpenAIExtensions;
   private state: RecordingState = { canMessage: false, busy: false, error: "" };
   private listeners = new Set<() => void>();
@@ -25,7 +25,7 @@ export class RecordingController {
   private readyAt = performance.now();
   private abort = new AbortController();
 
-  constructor(app: App, extensions?: OpenAIExtensions) {
+  constructor(app: HostBridge, extensions?: OpenAIExtensions) {
     this.app = app;
     this.extensions = extensions;
     document.addEventListener("visibilitychange", this.visibilityChanged);

@@ -5,12 +5,10 @@ import { androidCpuSourceHash } from "./build-android-cpu.mjs";
 import { baguetteTelemetrySourceHash } from "./rebuild-baguette.mjs";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { buildServeEmu } from "./build-serve-emu.mjs";
-import { exploreUILayerCSS } from "./explore-css.mjs";
+import { buildUIPage } from "./ui-page.mjs";
 import { build } from "esbuild";
 import { sentryEsbuildPlugin } from "@sentry/node/esbuild";
 import SentryCli from "@sentry/cli";
-import { compile } from "@tailwindcss/node";
-import { Scanner } from "@tailwindcss/oxide";
 import { access, copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -109,35 +107,12 @@ const workflow = execFileSync(process.execPath, [resolve(`${runtime}/node_module
 });
 await writeFile("apps/codex-plugin/skills/agent-device/references/workflow.md", workflow);
 await buildServeEmu("dist/serve-emu");
-const app = await build({
-  entryPoints: ["apps/codex-plugin/src/app.tsx"], jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
-  loader: { ".woff2": "dataurl", ".woff": "dataurl" },
-  plugins: [{ name: "shadcn-theme", setup(build) {
-    build.onLoad({ filter: /theme\.css$/ }, async ({ path }) => {
-      const compiler = await compile(await readFile(path, "utf8"), { base: dirname(path), onDependency() {} });
-      const scanner = new Scanner({ sources: ["packages/ui/src", "apps/codex-plugin/src"].map(base => ({ base: resolve(base), pattern: "**/*.{ts,tsx}", negated: false })) });
-      return { contents: compiler.build(scanner.scan()), loader: "css", resolveDir: dirname(path) };
-    });
-  } }],
-  bundle: true, write: false, format: "iife", platform: "browser",
-  outfile: ".sentry/ui/app.js", sourcemap: "external",
-  target: "chrome120", minify: true, legalComments: "eof", metafile: true,
+const appMetafile = await buildUIPage({
+  name: "ui", entry: "apps/codex-plugin/src/app.tsx", template: "apps/codex-plugin/src/index.html",
+  sources: ["packages/ui/src", "apps/codex-plugin/src"], output: "dist/app.html",
+  environment: telemetryEnvironment, sourceURL: "app:///mobile-dev-ui.js",
 });
-await mkdir(".sentry/ui", { recursive: true });
-for (const file of app.outputFiles) await writeFile(file.path, file.contents);
 const cli = new SentryCli();
-await cli.execute(["sourcemaps", "inject", ".sentry/ui"]);
-const js = await readFile(".sentry/ui/app.js", "utf8");
-// The Explore sheet ships compiled, so it joins the inlined styles after the
-// plugin's foundation rather than through it.
-const css = `${app.outputFiles.find(file => file.path.endsWith(".css"))?.text ?? ""}\n${await exploreUILayerCSS()}`;
-const template = await readFile("apps/codex-plugin/src/index.html", "utf8");
-const configuredTemplate = template.replace('name="mobile-dev-environment" content="development"', `name="mobile-dev-environment" content="${telemetryEnvironment}"`);
-// Inlined sheets must not close their own tag; esbuild escapes the script side.
-if (css.includes("</style")) throw new Error("An inlined stylesheet contains a </style sequence and cannot be folded into app.html.");
-await writeFile("dist/app.html", configuredTemplate
-  .replace("<!-- APP_STYLE -->", () => `<style>${css}</style>`)
-  .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}\n//# sourceURL=app:///mobile-dev-ui.js\n</script>`));
 const server = await build({
   entryPoints: { server: "packages/core/src/index.ts", "agent-device-server": "packages/core/src/agent-device-server.mjs", "ios-mirror-service": "packages/core/src/ios-mirror-service.ts" }, outdir: "dist", outExtension: { ".js": ".mjs" }, bundle: true,
   format: "esm", platform: "node", target: "node22", minify: false, legalComments: "eof", metafile: true,
@@ -158,7 +133,7 @@ for (const name of ["server.mjs", "agent-device-server.mjs", "ios-mirror-service
 }
 // Tailwind compiles these styles before esbuild records its input files.
 const packageRoots = new Set(["shadcn", "tailwindcss", "tw-animate-css"].map(name => resolve("node_modules", name)));
-for (const path of [...Object.keys(app.metafile.inputs), ...Object.keys(server.metafile.inputs)]) {
+for (const path of [...Object.keys(appMetafile.inputs), ...Object.keys(server.metafile.inputs)]) {
   if (!path.includes("node_modules/")) continue;
   let directory = dirname(resolve(path));
   while (directory !== dirname(directory)) {

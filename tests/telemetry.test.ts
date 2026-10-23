@@ -448,6 +448,15 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   assert.equal(observedTags?.surface, "tracesift");
   assert.equal(observedTags?.view, "tracesift");
   assert.equal(observedTags?.profilePath, undefined);
+  // The Mac app shares this server, so its host value survives the allowlist; anything else is dropped.
+  await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_HOST_ARGUMENT" }, _meta: {
+    [TELEMETRY_META_KEY]: { surface: "logs", view: "workspace", host: "mac" },
+  } });
+  assert.equal(observedTags?.host, "mac");
+  await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_HOST_ARGUMENT" }, _meta: {
+    [TELEMETRY_META_KEY]: { surface: "logs", view: "workspace", host: "PRIVATE_HOST" },
+  } });
+  assert.equal(observedTags?.host, undefined);
   await Sentry.flush();
   const encoded = JSON.stringify(envelopes);
   contains(encoded, "PRIVATE_", false);
@@ -456,14 +465,14 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   contains(encoded, "Handled tool failed");
   const eventItems = envelopes.flatMap(envelope => envelope[1]);
   const errors = eventItems.filter(item => item[0].type === "event");
-  // One handled failure per tool call above: logs, recording, comparison, TraceSift.
-  assert.equal(errors.length, 4);
+  // One handled failure per tool call above: logs, recording, comparison, TraceSift and two host checks.
+  assert.equal(errors.length, 6);
   const unavailable = new SimulatorUnavailableError("Expected stopped simulator");
   captureServerError(unavailable, "expected");
   await Sentry.flush();
   const afterItems = envelopes.flatMap(envelope => envelope[1]);
   const afterErrors = afterItems.filter(item => item[0].type === "event");
-  assert.equal(afterErrors.length, 4);
+  assert.equal(afterErrors.length, 6);
 });
 
 test("error filters retain only generated identity while metrics and spans omit user dimensions", async () => {

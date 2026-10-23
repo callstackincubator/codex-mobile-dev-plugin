@@ -52,6 +52,8 @@ import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 
 export const APP_URI = `ui://mobile-dev/${PLUGIN_VERSION}/simulator.html`;
 export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
+/** The Mac app's page. Only runtimes that ship `mac.html` register it. */
+export const MAC_PAGE_URI = "ui://mobile-dev/mac.html";
 // Codex keeps the address of side tabs and saved cards opened before a plugin update, so earlier
 // releases' addresses serve the current UI. These older addresses do not fit that pattern.
 const unversionedAppUris = ["ui://mobile-dev/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html"];
@@ -87,6 +89,18 @@ function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promis
       return { isError: true, content: [{ type: "text", text: errorMessage(error) }], _meta: { retryable: !(error instanceof SimulatorUnavailableError) } };
     }
   };
+}
+
+/** Gives a served UI page the server's telemetry environment, opt-out and anonymous identity. */
+export function configureUI(content: string): string {
+  const telemetryEnvironment = resolveTelemetryEnvironment();
+  const identity = getTelemetryIdentity();
+  const enabled = identity ? "on" : "off";
+  const identityMeta = identity
+    ? `<meta name="mobile-dev-user-id" content="${identity.userId}"><meta name="mobile-dev-session-id" content="${identity.sessionId}">`
+    : "";
+  const metadata = `<meta name="mobile-dev-environment" content="${telemetryEnvironment}"><meta name="mobile-dev-telemetry" content="${enabled}">${identityMeta}`;
+  return content.replace(/<meta name="mobile-dev-environment" content="(?:development|release)">/, metadata);
 }
 
 export async function createPlugin(html: string | (() => Promise<UIResource>), baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), android = new ServeEmu(), copyScreenshot = copyPNGToClipboard, providedCpu?: CpuSessions) {
@@ -158,16 +172,6 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     };
   }
 
-  function configureUI(content: string): string {
-    const telemetryEnvironment = resolveTelemetryEnvironment();
-    const identity = getTelemetryIdentity();
-    const enabled = identity ? "on" : "off";
-    const identityMeta = identity
-      ? `<meta name="mobile-dev-user-id" content="${identity.userId}"><meta name="mobile-dev-session-id" content="${identity.sessionId}">`
-      : "";
-    const metadata = `<meta name="mobile-dev-environment" content="${telemetryEnvironment}"><meta name="mobile-dev-telemetry" content="${enabled}">${identityMeta}`;
-    return content.replace(/<meta name="mobile-dev-environment" content="(?:development|release)">/, metadata);
-  }
   const readApp = async (uri: URL) => {
     const resource = typeof html === "string" ? { html } : await html();
     const content = configureUI(resource.html);

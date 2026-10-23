@@ -1,4 +1,4 @@
-import type { App } from "@modelcontextprotocol/ext-apps";
+import type { HostBridge } from "./host-bridge.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import type { LogBatch, LogOptions, MetroTarget, NativeLogTarget } from "@mobile-dev/shared/logs.ts";
 import { LogList } from "./log-list.ts";
@@ -9,7 +9,7 @@ import type { DeviceApp, ForegroundApp } from "@mobile-dev/shared/device-apps.ts
 import { composeAppLogQuery, quoteLogQueryValue } from "./log-query.ts";
 import { countUiEvent } from "./telemetry.ts";
 
-type Call = App["callServerTool"];
+type Call = HostBridge["callServerTool"];
 
 function expiredSession(error: unknown) {
   return error instanceof Error && error.message.includes("This log session expired or closed.");
@@ -48,8 +48,8 @@ export class LogsPanel {
     followApp: true, hideSystemLogs: true, foregroundApp: null as ForegroundApp | null, appDiscoveryError: "",
   };
 
-  private readonly app: App;
-  constructor(app: App, context: PanelContext, deviceApps: DeviceAppsStore) {
+  private readonly app: HostBridge;
+  constructor(app: HostBridge, context: PanelContext, deviceApps: DeviceAppsStore) {
     this.app = app;
     this.list = new LogList(context);
     this.deviceApps = deviceApps;
@@ -280,7 +280,7 @@ export class LogsPanel {
         const reading = new AbortController();
         this.reading = reading;
         const readSignal = AbortSignal.any([signal, reading.signal]);
-        let resource: Awaited<ReturnType<App["readServerResource"]>>;
+        let resource: Awaited<ReturnType<HostBridge["readServerResource"]>>;
         try {
           resource = await this.app.readServerResource({ uri: uri.href }, { signal: readSignal, timeout: 10000 });
         } catch (error) {

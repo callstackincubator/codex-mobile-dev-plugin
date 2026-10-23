@@ -681,3 +681,29 @@ test("stream retries exclude expected host lifecycle failures and retain unexpec
   contains(captured, "abcdef0123456789abcdef0123456789", false);
   contains(captured, '"environment":"release"');
 });
+
+test("UI telemetry attributes each call to the host that renders the page", async t => {
+  const built = await build({
+    stdin: { contents: 'export * from "./packages/ui/src/telemetry.ts";', resolveDir: process.cwd(), loader: "ts" },
+    bundle: true, write: false, format: "iife", globalName: "Telemetry", platform: "browser", target: "chrome120",
+    define: { "process.env.NODE_ENV": '"production"' },
+  });
+  for (const [attribute, expected] of [[' data-host="mac"', "mac"], ["", "codex"], [' data-host="PRIVATE_HOST"', "codex"]] as const) {
+    const html = `<html data-view="workspace"${attribute}><head><meta name="mobile-dev-environment" content="development">${identityMeta}</head></html>`;
+    const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
+    t.after(() => dom.window.close());
+    const window = dom.window;
+    Object.defineProperty(window.performance, "getEntriesByType", { value: () => [] });
+    Object.defineProperty(window.performance, "getEntries", { value: () => [] });
+    window.fetch = async () => new Response("", { status: 200 });
+    window.eval(built.outputFiles[0].text);
+    const api = window.Telemetry;
+    const calls: { _meta?: Record<string, Record<string, unknown>> }[] = [];
+    const app = { async callServerTool(params: { _meta?: Record<string, Record<string, unknown>> }) { calls.push(params); return { content: [] }; } };
+    api.startUiTelemetry(app);
+    assert.equal(api.getUiTelemetryAttributes().host, expected);
+    await app.callServerTool({ name: "mobile_cpu_session", arguments: {} });
+    assert.equal(calls[0]._meta?.["mobile-dev/telemetry"].host, expected);
+    await api.stopUiTelemetry();
+  }
+});

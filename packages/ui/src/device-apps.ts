@@ -1,4 +1,4 @@
-import type { App } from "@modelcontextprotocol/ext-apps";
+import type { HostBridge } from "./host-bridge.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { deviceAppsSchema } from "@mobile-dev/shared/device-apps.ts";
@@ -23,7 +23,7 @@ export type DeviceAppsVisibility = {
 type Discovery = { abort: AbortController; done?: Promise<void> };
 
 export class DeviceAppsStore {
-  private readonly app: App;
+  private readonly app: HostBridge;
   private readonly visibility: DeviceAppsVisibility;
   private available = false;
   private disposed = false;
@@ -33,7 +33,7 @@ export class DeviceAppsStore {
   private listeners = new Set<() => void>();
   private snapshot: DeviceAppsSnapshot = { apps: [], foregroundApp: null, discovering: false, ready: false, error: "" };
 
-  constructor(app: App, visibility: DeviceAppsVisibility) {
+  constructor(app: HostBridge, visibility: DeviceAppsVisibility) {
     this.app = app;
     this.visibility = visibility;
     visibility.addEventListener("visibilitychange", this.visibilityChanged);

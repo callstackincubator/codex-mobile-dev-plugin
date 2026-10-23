@@ -2,11 +2,19 @@ import "./instrument.ts";
 import { readFile } from "node:fs/promises";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadUIResource } from "./ui-resource.ts";
-import { createPlugin } from "./plugin.ts";
+import { configureUI, createPlugin, MAC_PAGE_URI } from "./plugin.ts";
 import { closeServerTelemetry, installTracePropagation } from "./telemetry.ts";
 
 const html = await readFile(new URL("./app.html", import.meta.url), "utf8");
 const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)));
+// The Mac app bundles its page beside this runtime and loads it through MCP, so it
+// receives the same server-owned telemetry metadata as the Codex panel.
+const macPage = await readFile(new URL("./mac.html", import.meta.url), "utf8").catch(() => undefined);
+if (macPage !== undefined) {
+  plugin.server.registerResource("mobile-dev-mac", MAC_PAGE_URI, { mimeType: "text/html" }, uri => ({
+    contents: [{ uri: uri.href, mimeType: "text/html", text: configureUI(macPage) }],
+  }));
+}
 const transport = new StdioServerTransport();
 installTracePropagation(transport);
 let closing = false;

@@ -1,4 +1,4 @@
-import type { App } from "@modelcontextprotocol/ext-apps";
+import type { HostBridge } from "./host-bridge.ts";
 import { installedAppsSchema } from "@mobile-dev/shared/app-control.ts";
 import type { InstalledApp } from "@mobile-dev/shared/app-control.ts";
 import { storageClearSchema, storageLimits, storageSnapshotSchema, storageTableSchema } from "@mobile-dev/shared/app-storage.ts";
@@ -91,7 +91,7 @@ export function diffSnapshots(previous: StorageSnapshot, next: StorageSnapshot):
 }
 
 export class StoragePanel {
-  private readonly app: App;
+  private readonly app: HostBridge;
   private readonly deviceApps: DeviceAppsStore;
   private readonly unsubscribe: () => void;
   private listeners = new Set<() => void>();
@@ -102,7 +102,7 @@ export class StoragePanel {
   private selections = new Map<string, string>();
   private state: StorageState = { open: false, available: false, platform: "ios", deviceId: "", deviceLabel: "", unsupported: "", apps: [], bundleId: "", tab: "browse", changes: [], showSdkChanges: false, busy: null, error: "", status: "" };
 
-  constructor(app: App, deviceApps: DeviceAppsStore) {
+  constructor(app: HostBridge, deviceApps: DeviceAppsStore) {
     this.app = app;
     this.deviceApps = deviceApps;
     this.unsubscribe = deviceApps.subscribe(() => this.selectDevice(deviceApps.getSnapshot().device));

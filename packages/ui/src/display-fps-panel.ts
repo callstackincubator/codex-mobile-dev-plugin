@@ -1,4 +1,4 @@
-import type { App } from "@modelcontextprotocol/ext-apps";
+import type { HostBridge } from "./host-bridge.ts";
 import type { CpuPhase } from "@mobile-dev/shared/cpu.ts";
 import { CPU_HISTORY_SECONDS, CPU_MAX_SAMPLES } from "@mobile-dev/shared/cpu.ts";
 import type { DisplayFpsBatch, DisplayFpsSample, DisplayFpsTarget } from "@mobile-dev/shared/display-fps.ts";
@@ -10,7 +10,7 @@ type Session = { id: string; abort: AbortController; closing?: Promise<void> };
 export const initialFpsState: DisplayFpsState = { fpsSamples: [], fpsPhase: "idle", fpsError: "", fpsMonitoring: false, fpsSupported: false };
 
 export class DisplayFpsPanel {
-  private app: App;
+  private app: HostBridge;
   private update: (state: Partial<DisplayFpsState>, origin?: number) => void;
   private device?: SimulatorDevice;
   private available = false;
@@ -20,7 +20,7 @@ export class DisplayFpsPanel {
   private running?: Promise<void>;
   private cleanup: Promise<void> = Promise.resolve();
   private samples: DisplayFpsSample[] = [];
-  constructor(app: App, update: (state: Partial<DisplayFpsState>, origin?: number) => void) {
+  constructor(app: HostBridge, update: (state: Partial<DisplayFpsState>, origin?: number) => void) {
     this.app = app; this.update = update;
   }
   private stopSafely() {

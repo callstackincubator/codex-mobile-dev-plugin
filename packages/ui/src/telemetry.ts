@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/react";
-import type { App } from "@modelcontextprotocol/ext-apps";
+import type { HostBridge } from "./host-bridge.ts";
 import {
   MeasurementWindow, SENTRY_RELEASE, SENTRY_UI_DSN, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY,
   isFrequentTool, sampleTrace, createErrorEventFilter, sampleMetric, scrubSpan, validateTelemetryEnvironment,
@@ -212,7 +212,7 @@ function visibilityChanged() {
   previousFrame = undefined;
 }
 
-export function startUiTelemetry(app: App) {
+export function startUiTelemetry(app: HostBridge) {
   const environmentMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-environment"]');
   const environment = validateTelemetryEnvironment(environmentMeta?.content);
   const telemetryMeta = document.querySelector<HTMLMetaElement>('meta[name="mobile-dev-telemetry"]');
@@ -245,8 +245,9 @@ export function startUiTelemetry(app: App) {
   const requestedView = document.documentElement.dataset.view;
   const view = requestedView === "recording" || requestedView === "workspace" || requestedView === "comparison" || requestedView === "tracesift" ? requestedView : "panel";
   if (view === "recording" || view === "comparison" || view === "tracesift") surface = view;
-  attributes = { ...attributes, surface, view };
-  Sentry.setTags({ component: "ui", surface, view });
+  const host = document.documentElement.dataset.host === "mac" ? "mac" : "codex";
+  attributes = { ...attributes, surface, view, host };
+  Sentry.setTags({ component: "ui", surface, view, host });
   Sentry.setAttributes(attributes);
   Sentry.metrics.count("ui.panel.opened", 1, { attributes });
   if (document.visibilityState !== "hidden") visibleSince = performance.now();

@@ -4,7 +4,7 @@
  * the same controller draws the cards and the explorer that follow.
  */
 
-import type { App } from "@modelcontextprotocol/ext-apps";
+import type { HostBridge } from "./host-bridge.ts";
 import { TraceSiftController } from "./tracesift-controller.ts";
 
 export type TraceSiftState = { open: boolean; available: boolean };
@@ -16,7 +16,7 @@ export class TraceSiftPanel {
   /** Whether the saved project has been asked for; it is read once per frame. */
   private projectLoaded = false;
 
-  constructor(app: App) { this.controller = new TraceSiftController(app); }
+  constructor(app: HostBridge) { this.controller = new TraceSiftController(app); }
 
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.state;

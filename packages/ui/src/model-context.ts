@@ -1,4 +1,4 @@
-import type { App } from "@modelcontextprotocol/ext-apps";
+import type { HostBridge } from "./host-bridge.ts";
 import type { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import type { StackedLog } from "@mobile-dev/shared/logs.ts";
@@ -42,12 +42,12 @@ export class PanelContext {
   private pendingAnnotations = new Set<string>();
   private resuming?: Promise<void>;
   private selectionKey?: string;
-  private readonly app: App;
-  private readonly extensions: OpenAIExtensions;
+  private readonly app: HostBridge;
+  private readonly extensions?: OpenAIExtensions;
   onChange = () => {};
 
-  constructor(app: App, extensions: OpenAIExtensions) { this.app = app; this.extensions = extensions; }
-  get canAttach() { return !!this.extensions.modelContext; }
+  constructor(app: HostBridge, extensions?: OpenAIExtensions) { this.app = app; this.extensions = extensions; }
+  get canAttach() { return !!this.extensions?.modelContext; }
   get canSendMessage() { return !!this.app.getHostCapabilities()?.message?.text; }
   get canAttachScreenshots() { return this.canAttach && !!this.app.getHostCapabilities()?.updateModelContext?.image; }
   get attachedKey() { return this.attached ? logKey(this.attached) : undefined; }
@@ -188,7 +188,7 @@ export class PanelContext {
   }
 
   hostChanged() {
-    const current = this.extensions.modelContext?.getCurrent();
+    const current = this.extensions?.modelContext?.getCurrent();
     if (current === undefined) return;
     const logPresent = this.attached && (current?.content
       ? current.content.some(item => item.type === "text" && item.text === formatLogContext(this.attached!))
@@ -248,7 +248,7 @@ export class PanelContext {
       try {
         await withComposer(async () => {
           if (revision !== this.revision) return;
-          if (this.extensions.modelContext) this.updateId = (await this.extensions.modelContext.update(params, { timeout: 5000 }))?.updateId;
+          if (this.extensions?.modelContext) this.updateId = (await this.extensions.modelContext.update(params, { timeout: 5000 }))?.updateId;
           else await this.app.updateModelContext(params, { timeout: 5000 });
         });
         if (revision === this.revision) { this.deferred = false; this.pendingAnnotations.clear(); }

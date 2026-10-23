@@ -1,4 +1,4 @@
-import type { App } from "@modelcontextprotocol/ext-apps";
+import type { HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { OpenAIMessageParams } from "@openai/mcp-extensions/app";
 import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRestoreSchema, type TraceSiftAnalysis, type TraceSiftProfileType } from "@mobile-dev/shared/tracesift.ts";
@@ -70,7 +70,7 @@ export class TraceSiftController {
   private readyAt = performance.now();
   /** When the current explorer's payload arrived, so its own readiness can be timed. */
   private explorerReadyAt = 0;
-  private readonly app: App;
+  private readonly app: HostBridge;
   private viewId?: string | number;
   private inputKey?: string;
   private copiedTimer?: ReturnType<typeof setTimeout>;
@@ -78,7 +78,7 @@ export class TraceSiftController {
   private rememberChain: Promise<void> = Promise.resolve();
   /** Bumped by every restore attempt; a response only applies while it still matches the latest one requested. */
   private restoreToken = 0;
-  constructor(app: App) { this.app = app; }
+  constructor(app: HostBridge) { this.app = app; }
 
   /** The authoritative hand-off for one card. Investigate sends it; Copy copies it. */
   private async handoff(cardId: string) {

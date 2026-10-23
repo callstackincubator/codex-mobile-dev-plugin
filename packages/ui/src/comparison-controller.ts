@@ -1,4 +1,4 @@
-import type { App } from "@modelcontextprotocol/ext-apps";
+import type { HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { OpenAIMessageParams } from "@openai/mcp-extensions/app";
 import { comparisonDuration, comparisonSchema } from "@mobile-dev/shared/performance-comparison.ts";
@@ -17,13 +17,13 @@ type ComparisonState = {
 };
 
 export class ComparisonController {
-  private readonly app: App;
+  private readonly app: HostBridge;
   private state: ComparisonState = { hiddenIds: new Set(), canMessage: false, busy: false, error: "" };
   private listeners = new Set<() => void>();
   private disposed = false;
   private readyAt = performance.now();
 
-  constructor(app: App) { this.app = app; }
+  constructor(app: HostBridge) { this.app = app; }
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };

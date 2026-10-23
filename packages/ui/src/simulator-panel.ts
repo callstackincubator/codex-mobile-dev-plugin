@@ -29,12 +29,12 @@ import { StreamInput } from "./stream-input.ts";
 import type { StreamMessage } from "./stream-input.ts";
 import { IosVideo } from "./ios-video.ts";
 import type { AndroidVideoBatch } from "./android-video.ts";
-import type { App } from "@modelcontextprotocol/ext-apps";
+import type { HostBridge } from "./host-bridge.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { initialPanelDevice } from "./device-layout.ts";
 
 export function createSimulatorPanel(
-  app: App,
+  app: HostBridge,
   root: HTMLElement,
   platform: "ios" | "android",
   panelContext: PanelContext,

@@ -47,6 +47,10 @@ const mirrorService = executable.endsWith("ios-mirror-service.mjs") || executabl
 const component = mirrorService ? "ios-mirror-service" : executable.endsWith("agent-device-server.mjs") ? "agent-device-wrapper" : "server";
 Sentry.setTag("component", component);
 Sentry.setAttribute("component", component);
+// The Mac app launches this same server; Codex leaves the variable unset.
+const host = process.env.MOBILE_DEV_HOST === "mac" ? "mac" : "codex";
+Sentry.setTag("host", host);
+Sentry.setAttribute("host", host);
 client?.on("spanStart", span => {
   const scope = Sentry.getIsolationScope();
   const data = scope.getScopeData();

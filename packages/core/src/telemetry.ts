@@ -251,7 +251,7 @@ const resourceKinds: Record<string, string> = {
 };
 const allowedContext: Record<string, readonly string[]> = {
   surface: ["logs", "performance", "storage", "simulator", "recording", "comparison", "tracesift"], view: ["panel", "workspace", "recording", "comparison", "tracesift"], layout: ["ios", "android", "both", "none"],
-  device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"],
+  device_platform: ["ios", "android", "mixed"], device_kind: ["physical", "simulator", "emulator", "none"], host: ["codex", "mac"],
 };
 
 export function installTracePropagation(transport: Transport) {
