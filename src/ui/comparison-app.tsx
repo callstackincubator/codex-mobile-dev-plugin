@@ -1,4 +1,4 @@
-import { App, applyDocumentTheme, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
+import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
 import { createRoot } from "react-dom/client";
 import { ComparisonController } from "./comparison-controller.ts";
 import { ComparisonCard } from "./components/comparison-card.tsx";
@@ -16,6 +16,7 @@ export function startComparisonApp() {
     const host = app.getHostContext();
     if (host?.theme) applyDocumentTheme(host.theme);
     if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
+    if (host?.styles?.css?.fonts) applyHostFonts(host.styles.css.fonts);
     controller.hostChanged();
   }
   app.addEventListener("hostcontextchanged", hostChanged);

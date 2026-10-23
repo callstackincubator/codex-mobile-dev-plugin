@@ -1,4 +1,4 @@
-import { App, applyDocumentTheme, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
+import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
 import { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import "@fontsource-variable/inter";
 import "./theme.css";
@@ -120,6 +120,7 @@ function hostContext() {
   const host = app.getHostContext();
   if (host?.theme) applyDocumentTheme(host.theme);
   if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
+  if (host?.styles?.css?.fonts) applyHostFonts(host.styles.css.fonts);
   panelContext.hostChanged();
   recordingController.hostChanged();
   traceSiftPanel.hostChanged();

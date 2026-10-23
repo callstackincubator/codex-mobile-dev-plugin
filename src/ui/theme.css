@@ -55,29 +55,29 @@
 
 :root {
     --background: var(--color-background-primary, #fff);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
+    --foreground: var(--color-text-primary, oklch(0.145 0 0));
+    --card: var(--color-background-secondary, oklch(1 0 0));
+    --card-foreground: var(--color-text-primary, oklch(0.145 0 0));
+    --popover: var(--color-background-primary, oklch(1 0 0));
+    --popover-foreground: var(--color-text-primary, oklch(0.145 0 0));
+    --primary: var(--color-background-inverse, oklch(0.205 0 0));
+    --primary-foreground: var(--color-text-inverse, oklch(0.985 0 0));
+    --secondary: var(--color-background-secondary, oklch(0.97 0 0));
+    --secondary-foreground: var(--color-text-primary, oklch(0.205 0 0));
+    --muted: var(--color-background-secondary, oklch(0.97 0 0));
+    --muted-foreground: var(--color-text-secondary, oklch(0.556 0 0));
+    --accent: var(--color-background-tertiary, var(--color-background-secondary, oklch(0.97 0 0)));
+    --accent-foreground: var(--color-text-primary, oklch(0.205 0 0));
+    --destructive: var(--color-text-danger, oklch(0.577 0.245 27.325));
+    --border: var(--color-border-secondary, oklch(0.922 0 0));
+    --input: var(--color-border-primary, var(--color-border-secondary, oklch(0.922 0 0)));
+    --ring: var(--color-ring-primary, oklch(0.708 0 0));
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
+    --radius: var(--border-radius-lg, 0.625rem);
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-primary: oklch(0.205 0 0);
@@ -90,23 +90,23 @@
 
 html[data-theme="dark"] {
     --background: var(--color-background-primary, #181818);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --foreground: var(--color-text-primary, oklch(0.985 0 0));
+    --card: var(--color-background-secondary, oklch(0.205 0 0));
+    --card-foreground: var(--color-text-primary, oklch(0.985 0 0));
+    --popover: var(--color-background-primary, oklch(0.205 0 0));
+    --popover-foreground: var(--color-text-primary, oklch(0.985 0 0));
+    --primary: var(--color-background-inverse, oklch(0.922 0 0));
+    --primary-foreground: var(--color-text-inverse, oklch(0.205 0 0));
+    --secondary: var(--color-background-secondary, oklch(0.269 0 0));
+    --secondary-foreground: var(--color-text-primary, oklch(0.985 0 0));
+    --muted: var(--color-background-secondary, oklch(0.269 0 0));
+    --muted-foreground: var(--color-text-secondary, oklch(0.708 0 0));
+    --accent: var(--color-background-tertiary, var(--color-background-secondary, oklch(0.269 0 0)));
+    --accent-foreground: var(--color-text-primary, oklch(0.985 0 0));
+    --destructive: var(--color-text-danger, oklch(0.704 0.191 22.216));
+    --border: var(--color-border-secondary, oklch(1 0 0 / 10%));
+    --input: var(--color-border-primary, var(--color-border-secondary, oklch(1 0 0 / 15%)));
+    --ring: var(--color-ring-primary, oklch(0.556 0 0));
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -134,28 +134,13 @@ html[data-theme="dark"] {
     }
 }
 
-/* Standard MCP host tokens override the shared light/dark fallbacks. */
-html[data-host="claude-desktop"] {
-    --foreground: var(--color-text-primary, light-dark(#1a1c1f, #fff));
-    --card: var(--color-background-secondary, light-dark(#fafafa, #262626));
-    --card-foreground: var(--foreground);
-    --popover: var(--color-background-primary, light-dark(#fff, #262626));
-    --popover-foreground: var(--foreground);
-    --muted: var(--color-background-secondary, light-dark(#f5f5f5, #404040));
-    --muted-foreground: var(--color-text-secondary, light-dark(#737373, #b4b4b4));
-    --secondary: var(--muted);
-    --secondary-foreground: var(--foreground);
-    --accent: var(--color-background-tertiary, var(--muted));
-    --accent-foreground: var(--foreground);
-    --border: var(--color-border-secondary, light-dark(#e5e5e5, #404040));
-    --input: var(--color-border-primary, var(--border));
-    --ring: var(--color-border-info, light-dark(#737373, #a3a3a3));
-    --radius: var(--border-radius-lg, 0.625rem);
-}
-
+/* Host typography. Hosts may send any subset of the standard MCP variables. */
 @layer base {
+    body { font-weight: var(--font-weight-normal, 400); }
     body, body > * { font-family: var(--font-sans); }
 }
-@layer utilities {
-    .cursor-interaction { cursor: var(--cursor-interaction, pointer); }
+
+/* Icon defaults for every host. Tailwind size utilities are a later layer, so they still win. */
+@layer components {
+    svg.lucide { width: 16px; height: 16px; flex: none; stroke-width: 1.6; }
 }
