@@ -1,3 +1,4 @@
+import { configuredHost } from "../shared/host.ts";
 import { parseResourceInput } from "./resource-input.ts";
 import { openRequestSession } from "./request-session.ts";
 import type { ServerRequestContext } from "./request-session.ts";
@@ -90,22 +91,28 @@ function guarded<T>(handler: (input: T, context: ServerRequestContext) => Promis
 }
 
 export async function createPlugin(html: string | (() => Promise<UIResource>), baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), android = new ServeEmu(), copyScreenshot = copyPNGToClipboard, providedCpu?: CpuSessions) {
+  const host = configuredHost(process.env.MOBILE_DEV_HOST);
+  const standardHost = host !== "codex";
   const streams = new StreamSessions(baguette);
   let selectedCpu = providedCpu;
   if (selectedCpu === undefined) selectedCpu = await createCpuSessions();
   const cpu = selectedCpu;
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
-    instructions: "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill for device control, logs, profiles, and performance workflows.",
+    instructions: standardHost
+      ? "For mobile app development, call mobile_open_workspace to show Mobile Dev in the conversation. Use the display modes supported by the host. Use selected device IDs. If device targets are ambiguous, discover candidates and ask the user in chat; wait for their answer before starting the task. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate."
+      : "For mobile app development, open mobile_open_simulator beside the chat before the first device launch, or reuse the panel. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask with mobile_choose_devices; proceed only after action accept. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill for device control, logs, profiles, and performance workflows.",
   });
   instrumentMcpServer(server);
-  const updates = new PluginUpdates();
+  const updates = new PluginUpdates(standardHost ? { enabled: false } : {});
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
   registerPluginUpdateTools(server, updates);
-  const extensions = new OpenAIExtensions(server);
-  registerDeviceChoiceTools(server, extensions, {
-    simulators: () => baguette.start(), android: () => android.list(), physicalIos: listIosDevices,
-  });
+  if (!standardHost) {
+    const extensions = new OpenAIExtensions(server);
+    registerDeviceChoiceTools(server, extensions, {
+      simulators: () => baguette.start(), android: () => android.list(), physicalIos: listIosDevices,
+    });
+  }
   registerIosDeviceTools(server);
   const closeIosMirror = registerIosMirrorTools(server, APP_URI);
   registerLogTools(server, logs, baguette);
@@ -159,6 +166,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
   }
 
   function configureUI(content: string): string {
+    if (standardHost) content = content.replace("<html ", `<html data-host="${host}" `);
     const telemetryEnvironment = resolveTelemetryEnvironment();
     const identity = getTelemetryIdentity();
     const enabled = identity ? "on" : "off";
@@ -249,7 +257,9 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   registerAppTool(server, "mobile_open_workspace", {
     title: "Mobile Dev",
-    description: "Open the fullscreen Mobile Dev workspace when the user asks for fullscreen, with logs and performance tools beside the devices. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. For app development beside a chat, prefer mobile_open_simulator. Starts the bundled backend without booting a device.",
+    description: standardHost
+      ? "Open Mobile Dev in the conversation, with devices, logs and performance tools. Expand when supported by the host. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. Starts the bundled backend without booting a device."
+      : "Open the fullscreen Mobile Dev workspace when the user asks for fullscreen, with logs and performance tools beside the devices. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. For app development beside a chat, prefer mobile_open_simulator. Starts the bundled backend without booting a device.",
     inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema }, annotations: write,
     _meta: {
       ui: { resourceUri: WORKSPACE_URI, visibility: ["app", "model"] },
@@ -259,7 +269,9 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
 
   registerAppTool(server, "mobile_open_simulator", {
     title: "Mobile Dev",
-    description: "Open Mobile Dev beside the chat for local mobile app development, before the first device launch unless a panel is open or the workflow is tool-only. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. Starts the bundled backend without booting devices.",
+    description: standardHost
+      ? "Open a compact Mobile Dev view in the conversation. Prefer mobile_open_workspace for devices with logs and performance tools. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. Starts the bundled backend without booting devices."
+      : "Open Mobile Dev beside the chat for local mobile app development, before the first device launch unless a panel is open or the workflow is tool-only. Pass established platform, kind, or discovered deviceId to select the initial device; omit undecided fields. Starts the bundled backend without booting devices.",
     inputSchema: panelTargetSchema, outputSchema: { ...statusOutput, panelTarget: panelTargetSchema }, annotations: write,
     _meta: {
       ui: { resourceUri: APP_URI, visibility: ["app", "model"] },

@@ -11,10 +11,11 @@ const built = await build({
   define: { "process.env.NODE_ENV": '"production"' },
 });
 
-for (const notification of ["input", "result"] as const) test(`workspace applies Android intent from host ${notification} before connecting`, async t => {
+for (const host of ["codex", "cursor", "vscode"] as const)
+for (const notification of ["input", "result"] as const) test(`${host} workspace applies Android intent from host ${notification} before connecting`, async t => {
   const identity = '<meta name="mobile-dev-user-id" content="anon_0123456789abcdef0123456789abcdef"><meta name="mobile-dev-session-id" content="run_1234567890abcdef1234567890abcdef">';
   const telemetryMeta = notification === "input" ? identity : '<meta name="mobile-dev-telemetry" content="off">';
-  const dom = new JSDOM(`<html data-view="panel"><head><meta name="mobile-dev-environment" content="development">${telemetryMeta}</head><body><div id="root"></div></body></html>`, {
+  const dom = new JSDOM(`<html data-view="panel" ${host === "codex" ? "" : `data-host="${host}"`}><head><meta name="mobile-dev-environment" content="development">${telemetryMeta}</head><body><div id="root"></div></body></html>`, {
     pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/",
   });
   const window = dom.window;
@@ -33,6 +34,7 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
   Object.defineProperty(window.HTMLElement.prototype, "clientWidth", { get: () => 400 });
   Object.defineProperty(window.HTMLElement.prototype, "clientHeight", { get: () => 800 });
   const calls: string[] = [];
+  const sizes: number[] = [];
   let initialized = false;
   let tornDown = false;
   function send(message: object) {
@@ -45,6 +47,8 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
       result(message.id, { protocolVersion: "2026-01-26", hostInfo: { name: "test", version: "1" }, hostCapabilities: { serverTools: {}, serverResources: {} }, hostContext: {} });
     } else if (message.method === "ui/notifications/initialized") {
       initialized = true;
+    } else if (message.method === "ui/notifications/size-changed") {
+      sizes.push(message.params.height);
     } else if (message.method === "tools/call") {
       const name = message.params.name;
       calls.push(name);
@@ -86,6 +90,11 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
   window.eval(built.outputFiles[0].text);
   await until(() => initialized);
   await setTimeout(10);
+  if (host !== "codex") {
+    assert.deepEqual(sizes, [600]);
+    assert.equal(window.document.documentElement.style.getPropertyValue("--workspace-height"), "600px");
+    assert.ok(!calls.includes("mobile_check_plugin_update"));
+  }
   const earlyDiscovery = calls.filter(name => name.startsWith("mobile_list_"));
   assert.deepEqual(earlyDiscovery, []);
   const target = { platform: "android", kind: "emulator", deviceId: "avd:Pixel" };

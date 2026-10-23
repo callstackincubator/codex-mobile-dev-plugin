@@ -28,7 +28,7 @@ function fixture(messageApp?: App) {
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const context = new PanelContext({
-    getHostCapabilities: () => ({ message: { text: {}, ...(imageMessages ? { image: {} } : {}) }, updateModelContext: imageAttachments ? { image: {} } : {} }),
+    getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {}, ...(imageMessages ? { image: {} } : {}) }, updateModelContext: imageAttachments ? { image: {} } : {} }),
     async sendMessage(message: Parameters<App["sendMessage"]>[0], options: Parameters<App["sendMessage"]>[1]) { if (sendFailures-- > 0) throw new Error("MCP app messages require an available composer"); messages.push(message); return messageApp ? messageApp.sendMessage(message, options) : { isError: rejected }; },
   } as unknown as App, { modelContext: {
     getCurrent: () => current,
@@ -514,7 +514,7 @@ test("a second batch survives a missing composer and sends after a manual retry"
   f.delayMessageComposer(Infinity); await f.store.send();
   assert.equal(f.store.getSnapshot().busy, false);
   assert.equal(f.store.getSnapshot().sending, false);
-  assert.match(f.store.getSnapshot().sendError, /Codex could not find this chat's input/);
+  assert.match(f.store.getSnapshot().sendError, /The host could not find this chat's input/);
   assert.equal(f.context.screenAnnotations.length, 1);
   assert.match(f.store.messageText, /SECOND_BATCH/);
   assert.doesNotMatch(f.store.messageText, /Make this button larger|data:image|AA==/);
@@ -569,4 +569,21 @@ test("a fresh annotation batch starts at one after chat clears or sends the prio
   f.store.setText("Keep this draft"); f.store.configure(simulator, true);
   assert.equal(f.store.getSnapshot().draft?.text, "Keep this draft");
   f.store.dispose();
+});
+
+test("standard hosts receive complete annotation messages and cleared context after sending", async () => {
+  const messages: Parameters<App["sendMessage"]>[0][] = [];
+  const updates: Parameters<App["updateModelContext"]>[0][] = [];
+  const context = new PanelContext({
+    getHostCapabilities: () => ({ updateModelContext: { text: {}, structuredContent: {} }, message: { text: {} } }),
+    async updateModelContext(params) { updates.push(params); return {}; },
+    async sendMessage(params) { messages.push(params); return {}; },
+  } as App, {} as OpenAIExtensions);
+  await context.attachAnnotation(annotation);
+  assert.equal(context.screenAnnotations.length, 1);
+  await context.sendAnnotationsToChat(simulator.udid);
+  assert.match(JSON.stringify(messages[0].content), /Make this button larger/);
+  assert.equal(messages[0]._meta, undefined);
+  assert.equal(context.attachmentCount, 0);
+  assert.deepEqual(updates.at(-1)?.structuredContent?.annotationIds, []);
 });

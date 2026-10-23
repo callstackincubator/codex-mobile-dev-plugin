@@ -31,7 +31,7 @@ test("TraceSift Investigate fetches one authoritative handoff and sends it to th
   assert.equal(calls.length, 1); assert.equal(messages.length, 1);
   assert.deepEqual(calls[0], { name: "mobile_get_tracesift_handoff", arguments: { analysisId: "private-analysis", cardId: "react-commit-1-2" } });
   assert.equal((messages[0] as { content: Array<{ text: string }> }).content[0].text, "PRIVATE_HANDOFF");
-  assert.deepEqual((messages[0] as { _meta: unknown })._meta, { "openai/message": { target: "active", send: true } });
+  assert.equal((messages[0] as { _meta: unknown })._meta, undefined);
 });
 
 test("TraceSift disables investigation when host capabilities are absent", async () => {
@@ -544,7 +544,7 @@ test("TraceSift sends the selected frames' measured evidence to the active chat"
   assert.match(text, /60 ms including everything it called/);
   assert.match(text, /Search_Search rendered the list/);
   assert.match(text, /← selection #1/);
-  assert.deepEqual((messages[0] as { _meta: unknown })._meta, { "openai/message": { target: "active", send: true } });
+  assert.equal((messages[0] as { _meta: unknown })._meta, undefined);
   // The picks never leave the frame: no handoff round trip, so an older
   // installed TraceSift answers this question just as well.
   assert.equal(controller.getSnapshot().error, "");
@@ -690,7 +690,7 @@ test("TraceSift sends the selected components' measured evidence to the active c
   assert.match(text, /Location: `Screen` › `Chart`\./);
   assert.match(text, /Treat each selection and render reason as a lead, not proof/);
   assert.doesNotMatch(text, /Heavy component|Where those components sit/);
-  assert.deepEqual((messages[0] as { _meta: unknown })._meta, { "openai/message": { target: "active", send: true } });
+  assert.equal((messages[0] as { _meta: unknown })._meta, undefined);
   assert.equal(controller.getSnapshot().error, "");
   controller.dispose();
 });

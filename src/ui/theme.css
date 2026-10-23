@@ -7,9 +7,12 @@
 
 @custom-variant dark (&:is([data-theme="dark"] *));
 
+@theme {
+    --font-sans: "Inter Variable", system-ui, sans-serif;
+}
+
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'Inter Variable', sans-serif;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -129,4 +132,30 @@ html[data-theme="dark"] {
   html {
     @apply bg-background font-sans;
     }
+}
+
+/* Standard MCP host tokens override the shared light/dark fallbacks. */
+html[data-host="claude-desktop"] {
+    --foreground: var(--color-text-primary, light-dark(#1a1c1f, #fff));
+    --card: var(--color-background-secondary, light-dark(#fafafa, #262626));
+    --card-foreground: var(--foreground);
+    --popover: var(--color-background-primary, light-dark(#fff, #262626));
+    --popover-foreground: var(--foreground);
+    --muted: var(--color-background-secondary, light-dark(#f5f5f5, #404040));
+    --muted-foreground: var(--color-text-secondary, light-dark(#737373, #b4b4b4));
+    --secondary: var(--muted);
+    --secondary-foreground: var(--foreground);
+    --accent: var(--color-background-tertiary, var(--muted));
+    --accent-foreground: var(--foreground);
+    --border: var(--color-border-secondary, light-dark(#e5e5e5, #404040));
+    --input: var(--color-border-primary, var(--border));
+    --ring: var(--color-border-info, light-dark(#737373, #a3a3a3));
+    --radius: var(--border-radius-lg, 0.625rem);
+}
+
+@layer base {
+    body, body > * { font-family: var(--font-sans); }
+}
+@layer utilities {
+    .cursor-interaction { cursor: var(--cursor-interaction, pointer); }
 }

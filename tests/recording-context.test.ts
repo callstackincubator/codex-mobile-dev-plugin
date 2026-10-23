@@ -28,7 +28,7 @@ function fixture(t: TestContext, pills = true) {
     },
   };
   const app = {
-    getHostCapabilities: () => ({ message: { text: {} } }),
+    getHostCapabilities: () => ({ experimental: { "openai/message": {} }, message: { text: {} } }),
     async sendMessage(params: Parameters<App["sendMessage"]>[0], options: { timeout?: number; maxTotalTimeout?: number }) {
       assert.equal(options.timeout, 5000);
       assert.equal(options.maxTotalTimeout, 5000);

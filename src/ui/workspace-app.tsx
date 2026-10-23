@@ -1,12 +1,14 @@
+import { configuredHost } from "../shared/host.ts";
 import { App, applyDocumentTheme, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
 import { OpenAIExtensions } from "@openai/mcp-extensions/app";
-import "@openai/mcp-extensions/app/styles.css";
 import "@fontsource-variable/inter";
 import "./theme.css";
 import "./style.css";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { Workspace } from "./components/workspace";
+import { DisplayModeButton } from "./components/display-mode-button";
+import { ContextAttachments } from "./components/context-attachments";
 import type { DeviceLayout } from "./device-layout.ts";
 import { panelTargetSchema } from "../shared/panel-target.ts";
 import { WorkspaceDevices } from "./workspace-devices.ts";
@@ -22,7 +24,8 @@ import { PLUGIN_VERSION } from "../shared/version.ts";
 import { RecordingController } from "./recording-controller.ts";
 import { PluginUpdateController } from "./plugin-updates.ts";
 
-const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, {}, { autoResize: false });
+const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, { availableDisplayModes: ["inline", "fullscreen"] }, { autoResize: false });
+const standardHost = configuredHost(document.documentElement.dataset.host) !== "codex";
 startUiTelemetry(app);
 const extensions = new OpenAIExtensions(app);
 const panelContext = new PanelContext(app, extensions);
@@ -35,7 +38,7 @@ const updates = new PluginUpdateController(app);
 const reactRoot = createRoot(document.getElementById("root")!);
 function renderWorkspace(automaticLayout?: DeviceLayout) {
   const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-    <Workspace performance={performancePanel} logs={logsPanel} storage={storagePanel} recordingController={recordingController} updates={updates} automaticLayout={automaticLayout} onLayout={changeLayout} />
+    <Workspace performance={performancePanel} logs={logsPanel} storage={storagePanel} recordingController={recordingController} updates={updates} displayModeControl={standardHost ? <DisplayModeButton app={app} /> : undefined} contextControl={<ContextAttachments context={panelContext} />} automaticLayout={automaticLayout} onLayout={changeLayout} />
   </ErrorBoundary>;
   reactRoot.render(workspace);
 }
@@ -91,6 +94,7 @@ let disposingUI: Promise<void> | undefined;
 function disposeUI() {
   return disposingUI ??= (async () => {
     window.removeEventListener("pagehide", onPageHide);
+    app.removeEventListener("hostcontextchanged", hostContext);
     window.removeEventListener("focus", resumeContext);
     window.removeEventListener("pageshow", resumeContext);
     document.removeEventListener("visibilitychange", resumeContext);
@@ -108,15 +112,32 @@ function onPageHide(event: PageTransitionEvent) { if (!event.persisted) { stopLi
 window.addEventListener("pagehide", onPageHide);
 app.onteardown = async () => { stopLiveReload(); await disposeUI(); return {}; };
 
+let reportedInlineHeight: number | undefined;
 function hostContext() {
+  if (disposingUI) return;
   const host = app.getHostContext();
   if (host?.theme) applyDocumentTheme(host.theme);
   if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
-  document.documentElement.style.setProperty("--font-sans", '"Inter Variable", sans-serif');
   panelContext.hostChanged();
   recordingController.hostChanged();
   panelContext.resume();
   for (const panel of panels) { panel.fitScreen(); panel.controls(); }
+  // Initial context arrives with connect(), without a hostcontextchanged event.
+  if (standardHost) {
+    const root = document.documentElement;
+    const fullscreen = host?.displayMode === "fullscreen";
+    const dimensions = host?.containerDimensions;
+    const maximum = dimensions && "maxHeight" in dimensions ? dimensions.maxHeight : undefined;
+    const height = typeof maximum === "number" && maximum > 0 ? Math.min(600, maximum) : 600;
+    root.style.setProperty("--workspace-height", fullscreen ? "100dvh" : `${height}px`);
+    root.style.setProperty("--workspace-bottom-inset", `${host?.safeAreaInsets?.bottom ?? 0}px`);
+    if (fullscreen) reportedInlineHeight = undefined;
+    else if (reportedInlineHeight !== height) {
+      reportedInlineHeight = height;
+      void app.sendSizeChanged({ height }).catch(error => captureUiError(error, "workspace.resize"));
+    }
+    renderWorkspace();
+  }
 }
 function resumeContext() {
   if (document.visibilityState !== "hidden" && !disposingUI) {
@@ -129,7 +150,7 @@ window.addEventListener("pageshow", resumeContext);
 document.addEventListener("visibilitychange", resumeContext);
 function connectionFailed(error: unknown) {
   captureUiError(error, "host.connect");
-  const message = error instanceof Error ? error.message : "Could not connect to Codex.";
+  const message = error instanceof Error ? error.message : "Could not connect to the host.";
   for (const panel of panels) panel.notice(message);
 }
 function openDevices(input: unknown) {
@@ -169,7 +190,7 @@ void (async () => {
     performancePanel.setAvailable(available);
     storagePanel.setAvailable(available);
     deviceApps.setAvailable(available);
-    updates.setAvailable(available);
+    updates.setAvailable(available && !standardHost);
     for (const panel of panels) if (!available) panel.notice("This host cannot call the plugin's simulator tools.");
     if (available) {
       stopLiveReload = startLiveReload(app, disposeUI);

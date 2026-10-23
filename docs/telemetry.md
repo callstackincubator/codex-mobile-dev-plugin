@@ -2,6 +2,16 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+## Standard MCP Apps hosts
+
+Explicit host profiles preserve the existing UI/server/native initialization,
+release environment, identity, sampling and scrubbing. Standard context and chat
+handoffs retain their existing timing and handled-error boundaries. Workspace
+display-mode changes use `ui.workspace.display_mode_changed`; resize failures use
+`workspace.resize`. Surface/device attribution and hidden-panel cleanup remain
+on the active rendering and streaming paths. The Codex updater and its polling
+are disabled outside Codex. No native telemetry changes are required.
+
 ## Volume policy
 
 Since 0.1.164, application metrics in the UI, Node servers and native helpers use
