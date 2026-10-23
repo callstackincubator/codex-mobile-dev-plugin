@@ -44,7 +44,10 @@ Depending on the tools you use, Mobile Dev processes:
 - CPU and React profiles, call trees, component names, source paths, analysis
   results, and investigation context when you use TraceSift. The integration
   sends profiles to a TraceSift service on your own computer and saves analysis
-  references locally.
+  references locally. Choosing a profile or a project folder in the TraceSift
+  panel opens your operating system's own dialog; the path you pick is used to
+  read that profile and to tell the chat which code a finding belongs to, and the
+  project folder is saved locally until you choose another.
 - Network requests passing through the local proxy when you enable network
   throttling. That proxy forwards traffic to the destinations requested by your
   app; it is not a Callstack-hosted traffic collection service.
@@ -149,7 +152,7 @@ and [OpenAI's privacy policy](https://openai.com/policies/privacy-policy/).
 | Sentry performance spans and Application Metrics | 30 days under our Sentry Team plan. |
 | Local live logs | Held in bounded memory buffers. A server log session expires after five minutes without reads or keep-alives; closing the session stops collection. Copies already attached to the host follow the host's retention. |
 | Saved performance recordings | Stored under `~/Library/Application Support/mobile-dev/recordings` until you remove them; the recording store has no automatic age-based expiry. |
-| TraceSift integration results/references | Stored under `~/.tracesift/integrations/mobile-dev` by default, or the corresponding `TRACE_SIFT_HOME` directory, until removed. Original profiles and the TraceSift service's own data are separate. |
+| TraceSift integration results/references and the chosen project folder | Stored under `~/.tracesift/integrations/mobile-dev` by default, or the corresponding `TRACE_SIFT_HOME` directory, until removed. Original profiles and the TraceSift service's own data are separate. |
 | Installation ID | Stored at `~/Library/Application Support/mobile-dev/telemetry/anonymous-user-id` until you remove it. Process-session IDs last for the process; copies in sent reports follow Sentry retention. |
 | Native crash-report caches | Pending reports can persist between runs under `~/Library/Caches/mobile-dev/sentry` or `/data/local/tmp/mobile-dev-sentry` on Android and be sent on a subsequent start. They can be removed after stopping the relevant processes. |
 | Temporary app-storage database copies | Created locally for inspection and removed by the operation's cleanup handler. An interrupted process may leave temporary files for OS/manual cleanup. |

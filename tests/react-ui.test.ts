@@ -9,6 +9,7 @@ import { LogsPanel } from "../src/ui/logs-panel.ts";
 import { createDeviceApps } from "./device-apps-fixtures.ts";
 import { PerformancePanel } from "../src/ui/performance-panel.ts";
 import { StoragePanel } from "../src/ui/storage-panel.ts";
+import { TraceSiftPanel } from "../src/ui/tracesift-panel.ts";
 import { RecordingController } from "../src/ui/recording-controller.ts";
 import { recordingFixture } from "./recording-fixtures.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
@@ -112,17 +113,18 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   };
   const storage = new StoragePanel(storageApp as unknown as App, deviceApps);
   storage.setAvailable(true);
+  const tracesift = new TraceSiftPanel(storageApp as unknown as App);
   const recordingController = new RecordingController(performanceApp as unknown as App);
   deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
   performance.setAvailable(true);
   deviceApps.setAvailable(true);
   const root = createRoot(dom.window.document.getElementById("root")!);
-  cleanupView = async () => { recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); deviceApps.dispose(); storage.dispose(); await performance.dispose(); }); };
+  cleanupView = async () => { recordingController.dispose(); await act(async () => { root.unmount(); await panel.dispose(); deviceApps.dispose(); storage.dispose(); tracesift.dispose(); await performance.dispose(); }); };
   const layouts: string[] = [];
   let commits = 0;
   const onLayout = (layout: string) => { layouts.push(layout); };
   const renderWorkspace = (automaticLayout?: DeviceLayout) => {
-    const workspace = createElement(Workspace, { logs: panel, performance, storage, recordingController, automaticLayout, onLayout });
+    const workspace = createElement(Workspace, { logs: panel, performance, storage, tracesift, recordingController, automaticLayout, onLayout });
     const profiled = createElement(Profiler, { id: "workspace", onRender() { commits++; } }, workspace);
     root.render(profiled);
   };

@@ -440,6 +440,14 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   assert.equal(observedTags?.device_platform, "mixed");
   assert.equal(observedTags?.device_kind, "none");
   assert.equal(observedTags?.recordingIds, undefined);
+  // The TraceSift tool is a workspace surface of its own, so its calls must keep
+  // their attribution rather than being dropped by the metadata allowlist.
+  await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_PROFILE_PATH" }, _meta: {
+    [TELEMETRY_META_KEY]: { surface: "tracesift", view: "tracesift", profilePath: "PRIVATE_PROFILE_PATH" },
+  } });
+  assert.equal(observedTags?.surface, "tracesift");
+  assert.equal(observedTags?.view, "tracesift");
+  assert.equal(observedTags?.profilePath, undefined);
   await Sentry.flush();
   const encoded = JSON.stringify(envelopes);
   contains(encoded, "PRIVATE_", false);
@@ -448,13 +456,14 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   contains(encoded, "Handled tool failed");
   const eventItems = envelopes.flatMap(envelope => envelope[1]);
   const errors = eventItems.filter(item => item[0].type === "event");
-  assert.equal(errors.length, 3);
+  // One handled failure per tool call above: logs, recording, comparison, TraceSift.
+  assert.equal(errors.length, 4);
   const unavailable = new SimulatorUnavailableError("Expected stopped simulator");
   captureServerError(unavailable, "expected");
   await Sentry.flush();
   const afterItems = envelopes.flatMap(envelope => envelope[1]);
   const afterErrors = afterItems.filter(item => item[0].type === "event");
-  assert.equal(afterErrors.length, 3);
+  assert.equal(afterErrors.length, 4);
 });
 
 test("error filters retain only generated identity while metrics and spans omit user dimensions", async () => {

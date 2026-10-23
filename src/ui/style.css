@@ -32,6 +32,11 @@ html[data-view="recording"] .recording-header { border-top: 1px solid var(--bord
 .tracesift-card li span, .tracesift-card li code { color: var(--muted-foreground); font-size: 11px; overflow-wrap: anywhere; }
 .tracesift-card > footer { align-items: center; padding-top: 2px; }
 .tracesift-error { padding: 10px; border: 1px solid color-mix(in srgb, #e5484d 45%, var(--border)); border-radius: 8px; color: #e5484d; }
+/* Which code the findings belong to. It sits above the list because Investigate
+   below it does nothing until the folder is chosen. */
+.tracesift-project-bar { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--muted); font-size: 12px; }
+.tracesift-project-bar > svg { width: 14px; height: 14px; flex: none; color: var(--muted-foreground); }
+.tracesift-project-bar > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); }
 .tracesift-notice { padding: 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted-foreground, inherit); }
 .comparison-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 8px; }
 .comparison-run { display: flex; align-items: flex-start; gap: 8px; text-align: left; border: 1px solid; border-radius: 8px; padding: 10px; cursor: pointer; }
@@ -393,3 +398,58 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
   color: var(--muted-foreground);
 }
 .tracesift-pick-bar > span { flex: 1; min-width: 0; }
+
+/* The TraceSift tool's upload pane. Ported from perf-ai `src/app/globals.css`
+   and scoped to `.tracesift-upload`, the surface shown until a profile is read. */
+.tracesift-upload { display: grid; align-content: start; gap: 12px; padding: 12px; color: var(--foreground); font-size: 13px; }
+.tracesift-upload .results-header { padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.tracesift-upload .intro { min-width: 0; text-align: left; }
+.tracesift-upload .eyebrow { display: inline-block; color: var(--primary); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.tracesift-upload .results-title { margin: 6px 0; font-size: 15px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 600; }
+.tracesift-upload .intro p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
+.tracesift-upload .profile-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.tracesift-upload .workflow-label { display: flex; align-items: baseline; gap: 8px; }
+.tracesift-upload .workflow-label > span { display: grid; place-items: center; width: 18px; height: 18px; flex: none; align-self: center; border-radius: 50%; background: var(--accent); color: var(--primary); font-size: 10px; font-weight: 700; }
+.tracesift-upload .workflow-label strong { font-size: 13px; }
+.tracesift-upload .workflow-label small { color: var(--muted-foreground); font-size: 11.5px; }
+/* The two profile types sit side by side: one short choice, not a page of rows. */
+.tracesift-upload .profile-options { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tracesift-upload .profile-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 11px; background: transparent; border: 1px solid var(--border); border-radius: 999px; color: inherit; font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.tracesift-upload .profile-chip:hover { background: var(--muted); }
+.tracesift-upload .profile-chip.selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); }
+.tracesift-upload .profile-chip:disabled { opacity: 0.55; cursor: not-allowed; }
+.tracesift-upload .profile-chip:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.tracesift-upload .profile-chip em { color: var(--muted-foreground); font-size: 10.5px; font-style: normal; font-weight: 500; font-family: var(--font-mono, monospace); }
+.tracesift-upload .profile-chip.selected em { color: inherit; opacity: 0.75; }
+.tracesift-upload .profile-detail { margin: -4px 0 0; color: var(--muted-foreground); font-size: 11.5px; }
+.tracesift-upload .upload-pane {
+  width: 100%;
+  min-height: 170px;
+  padding: 22px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
+  color: inherit;
+  font: inherit;
+  background: var(--muted);
+  border: 1.5px dashed var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.tracesift-upload .upload-pane:hover, .tracesift-upload .upload-pane.is-dragging { background: var(--accent); border-color: var(--primary); }
+.tracesift-upload .upload-pane.is-disabled { opacity: 0.55; cursor: not-allowed; }
+.tracesift-upload .upload-pane.is-disabled:hover { background: var(--muted); border-color: var(--border); }
+.tracesift-upload .upload-pane:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.tracesift-upload .upload-icon { display: grid; place-items: center; width: 40px; height: 40px; color: var(--primary); background: var(--accent); border-radius: 50%; }
+.tracesift-upload .upload-icon svg { width: 20px; height: 20px; }
+.tracesift-upload .upload-title { max-width: 100%; margin-top: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 700; }
+.tracesift-upload .upload-detail { margin-top: 6px; color: var(--muted-foreground); font-size: 12px; }
+.tracesift-upload .browse-button { margin-top: 14px; padding: 6px 11px; color: var(--primary); background: var(--card); border: 1px solid var(--border); border-radius: 7px; font-size: 12px; font-weight: 650; }
+.tracesift-upload .upload-analyzing { padding: 10px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted-foreground); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tracesift-upload .upload-pane { transition: none; }
+}

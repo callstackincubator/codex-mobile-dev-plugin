@@ -37,5 +37,7 @@ export function startTraceSiftApp() {
   app.onteardown = async () => { await close(); return {}; };
   void app.connect().then(() => {
     hostChanged();
+    // The inline card investigates too, so it needs the same project the panel saved.
+    void controller.loadProject();
   }).catch(error => captureUiError(error, "tracesift.connect"));
 }

@@ -10,6 +10,7 @@ import { TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceS
 import { captureServerError, recordTraceSiftOperation, recordTraceSiftPayload } from "./telemetry.ts";
 import type { TraceSiftClient } from "./tracesift-client.ts";
 import { TraceSiftError } from "./tracesift-client.ts";
+import { pickProfileFile, pickProjectFolder } from "./profile-picker.ts";
 
 // Async on purpose: compressing a megabyte tree on the main thread would stall
 // every other tool call sharing this process.
@@ -25,7 +26,7 @@ const analysisOutput = {
   summary: z.record(z.string(), z.unknown()), cards: z.array(z.union([traceSiftTaskCardSchema, traceSiftReactCardSchema])),
 };
 
-function failure(error: unknown, operation: "analyze" | "remember" | "restore" | "handoff" | "task" | "payload", startedAt: number, signal: AbortSignal): CallToolResult {
+function failure(error: unknown, operation: "analyze" | "remember" | "restore" | "handoff" | "task" | "payload" | "pick" | "project", startedAt: number, signal: AbortSignal): CallToolResult {
   recordTraceSiftOperation(operation, "failed", performance.now() - startedAt);
   captureServerError(error, `tracesift.${operation}`, { signal });
   return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
@@ -46,6 +47,62 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
       recordTraceSiftOperation("analyze", "success", performance.now() - startedAt);
       return { content: [{ type: "text", text: `TraceSift found ${analysis.cards.length} ${analysis.profileType === "cpu" ? "task" : "React commit"} cards. Show the inline cards and wait for the user to choose Investigate.` }], structuredContent: analysis };
     } catch (error) { return failure(error, "analyze", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_pick_profile_file", {
+    title: "Choose a profile file to analyze",
+    description: "Open the host's file dialog so the TraceSift panel can choose a local CPU or React profile, and return the chosen path. A panel frame only sees a browser file, which carries no path, so this is how its upload pane reaches `mobile_analyze_profile`. Opens a window and waits for a person; pressing Cancel returns picked false.",
+    inputSchema: {},
+    outputSchema: { picked: z.boolean(), path: z.string().optional() }, annotations: localService,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async (_input, context) => {
+    const startedAt = performance.now();
+    try {
+      const chosen = await pickProfileFile();
+      recordTraceSiftOperation("pick", "success", performance.now() - startedAt);
+      return {
+        content: [{ type: "text", text: chosen.picked ? "A profile file was chosen." : "No profile file was chosen." }],
+        structuredContent: chosen.picked ? { picked: true, path: chosen.path } : { picked: false },
+      };
+    } catch (error) { return failure(error, "pick", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_get_tracesift_project", {
+    title: "Read the project TraceSift findings are investigated in",
+    description: "Return the source folder a TraceSift investigation should land in, as the panel last chose it. Returns none when nothing is chosen or the saved folder no longer exists.",
+    inputSchema: {},
+    outputSchema: { path: z.string().optional() }, annotations: read,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async (_input, context) => {
+    const startedAt = performance.now();
+    try {
+      const path = await client.readProject();
+      recordTraceSiftOperation("project", "success", performance.now() - startedAt);
+      return {
+        content: [{ type: "text", text: path ? "A project folder is chosen." : "No project folder is chosen." }],
+        structuredContent: path ? { path } : {},
+      };
+    } catch (error) { return failure(error, "project", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_pick_tracesift_project", {
+    title: "Choose the project TraceSift findings are investigated in",
+    description: "Open the host's folder dialog so the TraceSift panel can choose the source folder an investigation should land in, and save that choice. Opens a window and waits for a person; pressing Cancel returns picked false and leaves the saved folder alone. Replaces the previously saved folder.",
+    inputSchema: {},
+    outputSchema: { picked: z.boolean(), path: z.string().optional() }, annotations: persist,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async (_input, context) => {
+    const startedAt = performance.now();
+    try {
+      const chosen = await pickProjectFolder();
+      // Cancel leaves the saved folder standing, so nothing is written for it.
+      const path = chosen.picked ? await client.writeProject(chosen.path) : undefined;
+      recordTraceSiftOperation("project", "success", performance.now() - startedAt);
+      return {
+        content: [{ type: "text", text: path ? "A project folder was chosen." : "No project folder was chosen." }],
+        structuredContent: path ? { picked: true, path } : { picked: false },
+      };
+    } catch (error) { return failure(error, "project", startedAt, context.signal); }
   });
 
   registerAppTool(server, "mobile_remember_tracesift_analysis", {
