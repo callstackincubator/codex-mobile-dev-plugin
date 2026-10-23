@@ -3,9 +3,9 @@
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
 The `Release plugin` workflow in `.github/workflows/release.yml` runs when you push
-an existing commit with a `v<version>` tag. The tag must match `apps/codex-plugin/.codex-plugin/plugin.json`,
-`package.json`, both root versions in `package-lock.json`, and
-`packages/shared/src/version.ts`. After committing your changes, run from the repository root:
+an existing commit with a `v<version>` tag. The tag must match the root `package.json`,
+both root versions in `package-lock.json`, and `packages/shared/src/version.ts`; host
+manifests take the version at package time. After committing your changes, run from the repository root:
 
 ```sh
 npm run public-release

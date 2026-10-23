@@ -1,6 +1,6 @@
 import { ArrowUpCircleIcon, CheckCircleIcon, LoaderCircleIcon, XIcon } from "lucide-react";
 import { useSyncExternalStore } from "react";
-import type { PluginUpdateController } from "../plugin-updates.ts";
+import type { PluginUpdateController } from "./plugin-updates.ts";
 import { Button } from "@mobile-dev/ui/components/ui/button.tsx";
 
 export function PluginUpdateBanner({ controller }: { controller: PluginUpdateController }) {

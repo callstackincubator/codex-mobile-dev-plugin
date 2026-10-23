@@ -248,4 +248,4 @@ jobs:
         run: |
           mkdir "$RUNNER_TEMP/mobile-dev-marketplace"
           unzip -q "release/mobile-dev-$RELEASE_VERSION-darwin-arm64.zip" -d "$RUNNER_TEMP/mobile-dev-marketplace"
-          node tooling/publish-release.mjs "$RUNNER_TEMP/mobile-dev-marketplace"
+          node apps/codex-plugin/tooling/publish-release.mjs "$RUNNER_TEMP/mobile-dev-marketplace"

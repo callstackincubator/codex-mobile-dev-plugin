@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test, type TestContext } from "node:test";
-import { createLaunchHome } from "../tooling/mcp-launch-fixture.mjs";
+import { createLaunchHome } from "../apps/codex-plugin/tooling/mcp-launch-fixture.mjs";
 import mcp from "../apps/codex-plugin/.mcp.json" with { type: "json" };
 
 const config = mcp.mcpServers["mobile-dev"];

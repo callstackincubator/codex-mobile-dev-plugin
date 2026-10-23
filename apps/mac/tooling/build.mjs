@@ -1,8 +1,10 @@
-import { access, chmod, copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
-import { assertBuildEnvironment, telemetryBuildEnvironment } from "./telemetry-build.mjs";
-import { buildUIPage } from "./ui-page.mjs";
+import { telemetryBuildEnvironment } from "../../../tooling/telemetry-build.mjs";
+import { assertRuntime, releaseVersion, stageRuntime } from "../../../tooling/host-runtime.mjs";
+import { buildServerBundles } from "../../../tooling/server-bundle.mjs";
+import { buildUIPage } from "../../../tooling/ui-page.mjs";
 
 // Assembles `release/mac/Mobile Dev.app` from the shared runtime in `dist/`, the
 // Mac page, the SwiftUI shell and a Node runtime. Run `npm run build` first.
@@ -11,9 +13,8 @@ const option = name => {
   return index === -1 ? undefined : process.argv[index + 1];
 };
 const telemetryEnvironment = telemetryBuildEnvironment(process.argv.slice(2).filter(arg => arg === "--release"));
-await assertBuildEnvironment("dist", telemetryEnvironment);
-await access("dist/server.mjs");
-const manifest = JSON.parse(await readFile("apps/codex-plugin/.codex-plugin/plugin.json", "utf8"));
+await assertRuntime(telemetryEnvironment);
+const version = await releaseVersion();
 const node = resolve(option("--node") ?? process.execPath);
 const nodeLibraries = execFileSync("otool", ["-L", node], { encoding: "utf8" }).split("\n").slice(1).map(line => line.trim().split(" ")[0]).filter(Boolean);
 const external = nodeLibraries.filter(path => !path.startsWith("/usr/lib/") && !path.startsWith("/System/"));
@@ -27,10 +28,13 @@ await mkdir(`${contents}/Resources/node`, { recursive: true });
 
 // The server is the one Codex runs; the Mac page sits beside it so the server
 // registers and serves it with its telemetry metadata.
-await cp("dist", `${contents}/Resources/runtime`, { recursive: true, verbatimSymlinks: true });
+// The shared runtime with the Mac app's own server, which serves the page its window loads.
+const runtime = `${contents}/Resources/runtime`;
+await stageRuntime(runtime);
+await buildServerBundles({ entryPoints: { server: "apps/mac/server/index.ts" }, outdir: runtime, sentryDirectory: ".sentry/server/mac" });
 await buildUIPage({
-  name: "mac-ui", entry: "apps/mac/web/main.tsx", template: "apps/mac/web/index.html",
-  sources: ["packages/ui/src", "apps/mac/web"], output: `${contents}/Resources/runtime/mac.html`,
+  name: "ui/mac", entry: "apps/mac/web/main.tsx", template: "apps/mac/web/index.html",
+  sources: ["packages/ui/src", "apps/mac/web"], output: `${runtime}/mac.html`,
   environment: telemetryEnvironment, sourceURL: "app:///mobile-dev-mac-ui.js",
 });
 await copyFile(node, `${contents}/Resources/node/node`);
@@ -58,8 +62,8 @@ await writeFile(`${contents}/Info.plist`, `<?xml version="1.0" encoding="UTF-8"?
   <key>CFBundleIdentifier</key><string>com.callstack.mobile-dev</string>
   <key>CFBundleExecutable</key><string>MobileDev</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>${manifest.version}</string>
-  <key>CFBundleVersion</key><string>${manifest.version}</string>
+  <key>CFBundleShortVersionString</key><string>${version}</string>
+  <key>CFBundleVersion</key><string>${version}</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSMinimumSystemVersion</key><string>${minimumSystem}</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>

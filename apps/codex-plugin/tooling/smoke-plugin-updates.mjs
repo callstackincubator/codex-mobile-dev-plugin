@@ -6,7 +6,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { createCodexRunner, PluginUpdates, resolveCodexCli } from "../packages/core/src/plugin-updates.ts";
+import { createCodexRunner, PluginUpdates, resolveCodexCli } from "../../../apps/codex-plugin/server/plugin-updates.ts";
 
 const execute = promisify(execFile);
 const parent = tmpdir();

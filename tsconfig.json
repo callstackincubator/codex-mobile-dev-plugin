@@ -21,7 +21,9 @@
   },
   "include": [
     "packages/*/src",
-    "apps/*/src",
+    "apps/*/server",
+    "apps/*/shared",
+    "apps/*/ui",
     "apps/mac/web"
   ]
 }

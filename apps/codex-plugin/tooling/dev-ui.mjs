@@ -5,10 +5,10 @@ import { readFile, writeFile, rm, mkdir, rename, stat, utimes } from "node:fs/pr
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { exploreUILayerCSS } from "./explore-css.mjs";
+import { exploreUILayerCSS } from "../../../tooling/explore-css.mjs";
 
-const projectRoot = fileURLToPath(new URL("..", import.meta.url));
-const { version } = JSON.parse(await readFile(new URL("../apps/codex-plugin/.codex-plugin/plugin.json", import.meta.url), "utf8"));
+const projectRoot = fileURLToPath(new URL("../../..", import.meta.url));
+const { version } = JSON.parse(await readFile(new URL("../../../package.json", import.meta.url), "utf8"));
 const pluginRoot = process.env.MOBILE_DEV_PLUGIN_ROOT ?? resolve(process.env.CODEX_HOME ?? resolve(homedir(), ".codex"), "plugins/cache/mobile-dev-local/mobile-dev", version);
 const configPath = resolve(pluginRoot, "ui-dev.json");
 const output = resolve(projectRoot, ".local-dev");
@@ -30,7 +30,7 @@ try {
 if (!running) {
   const builder = await context({
     absWorkingDir: projectRoot,
-    entryPoints: ["packages/mcp-app/src/app.tsx"], jsx: "automatic",
+    entryPoints: ["apps/codex-plugin/ui/main.tsx"], jsx: "automatic",
     define: { "process.env.NODE_ENV": '"production"' },
     loader: { ".woff2": "dataurl", ".woff": "dataurl" },
     bundle: true, write: false, format: "iife", platform: "browser",
@@ -39,11 +39,11 @@ if (!running) {
       build.onLoad({ filter: /theme\.css$/ }, async ({ path }) => {
         const dependencies = [];
         const compiler = await compile(await readFile(path, "utf8"), { base: dirname(path), onDependency(file) { dependencies.push(file); } });
-        const scanner = new Scanner({ sources: ["packages/ui/src", "packages/mcp-app/src"].map(base => ({ base: resolve(projectRoot, base), pattern: "**/*.{ts,tsx}", negated: false })) });
+        const scanner = new Scanner({ sources: ["packages/ui/src", "packages/mcp-app/src", "apps/codex-plugin/ui"].map(base => ({ base: resolve(projectRoot, base), pattern: "**/*.{ts,tsx}", negated: false })) });
         const contents = compiler.build(scanner.scan());
         return { contents, loader: "css", resolveDir: dirname(path), watchFiles: [...dependencies, ...scanner.files] };
       });
-      build.onLoad({ filter: /\/app\.tsx$/ }, async ({ path }) => ({ contents: await readFile(path, "utf8"), loader: "tsx", resolveDir: dirname(path), watchFiles: [resolve(projectRoot, "packages/mcp-app/src/index.html")] }));
+      build.onLoad({ filter: /\/codex-plugin\/ui\/main\.tsx$/ }, async ({ path }) => ({ contents: await readFile(path, "utf8"), loader: "tsx", resolveDir: dirname(path), watchFiles: [resolve(projectRoot, "packages/mcp-app/src/index.html")] }));
       build.onEnd(async result => {
         if (result.errors.length) return;
         const js = result.outputFiles.find(file => file.path.endsWith(".js")).text;

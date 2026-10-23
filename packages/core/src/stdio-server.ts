@@ -1,0 +1,31 @@
+import { readFile } from "node:fs/promises";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { loadUIResource } from "./ui-resource.ts";
+import { createPlugin } from "./plugin.ts";
+import type { ServerFeature } from "./server-feature.ts";
+import { closeServerTelemetry, installTracePropagation } from "./telemetry.ts";
+
+/**
+ * Runs the server over stdio, as every host launches it, with the host's own features.
+ * Import `./instrument.ts` before this module so telemetry starts first.
+ */
+export async function runStdioServer(features: ServerFeature[] = []) {
+  const html = await readFile(new URL("./app.html", import.meta.url), "utf8");
+  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), undefined, undefined, undefined, undefined, undefined, undefined, features);
+  const transport = new StdioServerTransport();
+  installTracePropagation(transport);
+  let closing = false;
+  async function close() {
+    if (closing) return;
+    closing = true;
+    try { await plugin.close(); }
+    finally { await closeServerTelemetry(); }
+  }
+  transport.onclose = () => { void close(); };
+  process.stdin.on("end", () => { void close(); });
+  process.on("SIGINT", () => { void close(); });
+  process.on("SIGTERM", () => { void close(); });
+  process.on("uncaughtException", error => { console.error(error); void close().finally(() => { process.exitCode = 1; }); });
+  process.on("unhandledRejection", error => { console.error(error); void close().finally(() => { process.exitCode = 1; }); });
+  await plugin.server.connect(transport);
+}

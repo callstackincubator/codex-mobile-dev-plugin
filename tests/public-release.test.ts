@@ -28,7 +28,7 @@ async function fixture(t: TestContext) {
   git(repository, ["remote", "add", "origin", remote]);
   await mkdir(`${repository}/packages/shared/src`, { recursive: true });
   await mkdir(`${repository}/apps/codex-plugin/.codex-plugin`, { recursive: true });
-  await writeFile(`${repository}/apps/codex-plugin/.codex-plugin/plugin.json`, '{"name":"mobile-dev","version":"1.2.3"}');
+  await writeFile(`${repository}/apps/codex-plugin/.codex-plugin/plugin.json`, '{"name":"mobile-dev"}');
   await writeFile(`${repository}/package.json`, '{"version":"1.2.3"}');
   await writeFile(`${repository}/package-lock.json`, '{"version":"1.2.3","packages":{"":{"version":"1.2.3"}}}');
   await writeFile(`${repository}/packages/shared/src/version.ts`, 'export const PLUGIN_VERSION = "1.2.3";\n');
@@ -65,7 +65,7 @@ test("public-release refuses inconsistent committed versions before creating a t
   git(repository, ["add", "package.json"]);
   git(repository, ["commit", "-m", "chore(release): mismatch package version"]);
   const release = publicRelease(repository);
-  await assert.rejects(release, /package.json version/);
+  await assert.rejects(release, /does not match package.json/);
   const tags = git(repository, ["tag", "--list"]);
   assert.equal(tags, "");
 });

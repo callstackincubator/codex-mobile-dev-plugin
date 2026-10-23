@@ -19,8 +19,6 @@ import { useMediaQuery } from "@mobile-dev/ui/components/use-media-query.ts";
 import { markUiSurfaceReady, setUiSurface, setUiTelemetryContext } from "@mobile-dev/ui/telemetry.ts";
 import type { RecordingController } from "@mobile-dev/ui/recording-controller.ts";
 import { RecordingCard } from "@mobile-dev/ui/components/recording-card.tsx";
-import { PluginUpdateBanner } from "./plugin-update-banner";
-import type { PluginUpdateController } from "../plugin-updates.ts";
 
 import type { DeviceLayout } from "@mobile-dev/ui/device-layout.ts";
 export type { DeviceLayout } from "@mobile-dev/ui/device-layout.ts";
@@ -35,7 +33,7 @@ const tools = {
 type Tool = keyof typeof tools;
 const isTool = (value: string): value is Tool => value in tools;
 
-export function Workspace({ logs, performance, storage, tracesift, recordingController, updates, displayModeControl, contextControl, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; tracesift: TraceSiftPanel; recordingController: RecordingController; updates?: PluginUpdateController; displayModeControl?: ReactNode; contextControl?: ReactNode; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
+export function Workspace({ logs, performance, storage, tracesift, recordingController, banner, displayModeControl, contextControl, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; tracesift: TraceSiftPanel; recordingController: RecordingController; banner?: ReactNode; displayModeControl?: ReactNode; contextControl?: ReactNode; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
   const [tool, setTool] = useState<Tool>("logs");
   const [savedVisible, setSavedVisible] = useState(false);
   const [simulatorsCollapsed, setSimulatorsCollapsed] = useState(false);
@@ -150,7 +148,7 @@ export function Workspace({ logs, performance, storage, tracesift, recordingCont
   // The handle stays draggable so the simulators can be pulled back open.
   const divider = <ResizableHandle key="divider" hidden={layout === "none" || (!fullscreen && !open)} disabled={layout === "none" || (!fullscreen && !open)} className={simulatorsCollapsed ? "bg-transparent" : undefined} aria-label="Resize tools and simulators" />;
   return <main className="flex flex-col" style={{ height: "var(--workspace-height, 100dvh)", paddingBottom: "var(--workspace-bottom-inset, 0px)" }}>
-    {updates && <PluginUpdateBanner controller={updates} />}
+    {banner}
     {contextControl}
     {!bottomToolbar && toolbar}
     <ResizablePanelGroup id="workspace-panels" groupRef={workspaceGroupRef} orientation={split ? "horizontal" : "vertical"} className="min-h-0 flex-1" data-split={split}>

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pluginMarketplace } from "./plugin-marketplace.mjs";
-import { assertBuildEnvironment } from "./telemetry-build.mjs";
+import { assertBuildEnvironment } from "../../../tooling/telemetry-build.mjs";
 
 const branch = "refs/heads/release/latest";
 

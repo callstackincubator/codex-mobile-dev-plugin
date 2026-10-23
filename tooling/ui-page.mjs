@@ -41,6 +41,7 @@ export async function buildUIPage({ name, entry, template, sources, output, envi
   const configured = html.replace('name="mobile-dev-environment" content="development"', `name="mobile-dev-environment" content="${environment}"`);
   // Inlined sheets must not close their own tag; esbuild escapes the script side.
   if (css.includes("</style")) throw new Error(`An inlined stylesheet contains a </style sequence and cannot be folded into ${output}.`);
+  await mkdir(dirname(output), { recursive: true });
   await writeFile(output, configured
     .replace("<!-- APP_STYLE -->", () => `<style>${css}</style>`)
     .replace("<!-- APP_SCRIPT -->", () => `<script>${js.replace(/<\/script/gi, "<\\/script")}\n//# sourceURL=${sourceURL}\n</script>`));

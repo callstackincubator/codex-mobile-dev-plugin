@@ -20,13 +20,6 @@ export function recordIosMirrorSharing(captures: number, subscribers: number, dr
   if (dropped > 0) Sentry.metrics.count("ios.mirror.shared.queue_dropped", dropped, { attributes });
 }
 
-export function recordPluginUpdate(operation: "check" | "install", outcome: "disabled" | "unavailable" | "current" | "available" | "updated" | "failed", duration: number) {
-  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
-  const attributes = { component: "server", operation, outcome };
-  Sentry.metrics.count("plugin.update.operations", 1, { attributes });
-  Sentry.metrics.gauge("plugin.update.duration", duration, { unit: "millisecond", attributes });
-}
-
 export type AppStorageOperation = "read" | "clear" | "reset" | "table" | "file";
 export function recordAppStorageOperation(operation: AppStorageOperation, platform: "ios" | "android", outcome: "success" | "failed", duration: number) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;

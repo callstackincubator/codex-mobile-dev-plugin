@@ -6,9 +6,8 @@ import { baguetteTelemetrySourceHash } from "./rebuild-baguette.mjs";
 import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { buildServeEmu } from "./build-serve-emu.mjs";
 import { buildUIPage } from "./ui-page.mjs";
-import { build } from "esbuild";
-import { sentryEsbuildPlugin } from "@sentry/node/esbuild";
-import SentryCli from "@sentry/cli";
+import { buildServerBundles } from "./server-bundle.mjs";
+import { buildCodexHost } from "../apps/codex-plugin/tooling/build.mjs";
 import { access, copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -107,33 +106,31 @@ const workflow = execFileSync(process.execPath, [resolve(`${runtime}/node_module
 });
 await writeFile("apps/codex-plugin/skills/agent-device/references/workflow.md", workflow);
 await buildServeEmu("dist/serve-emu");
-const appMetafile = await buildUIPage({
-  name: "ui", entry: "packages/mcp-app/src/app.tsx", template: "packages/mcp-app/src/index.html",
-  sources: ["packages/ui/src", "packages/mcp-app/src"], output: "dist/app.html",
-  environment: telemetryEnvironment, sourceURL: "app:///mobile-dev-ui.js",
-});
-const cli = new SentryCli();
-const server = await build({
-  entryPoints: { server: "packages/core/src/index.ts", "agent-device-server": "packages/core/src/agent-device-server.mjs", "ios-mirror-service": "packages/core/src/ios-mirror-service.ts" }, outdir: "dist", outExtension: { ".js": ".mjs" }, bundle: true,
-  format: "esm", platform: "node", target: "node22", minify: false, legalComments: "eof", metafile: true,
-  sourcemap: "external",
-  plugins: [sentryEsbuildPlugin({ project: "codex-mobile-dev-server", telemetry: false, sourcemaps: { disable: true }, release: { inject: false, create: false, finalize: false } })],
-  banner: { js: "import { createRequire as mobileDevBundleRequire } from 'node:module'; const require = mobileDevBundleRequire(import.meta.url);" },
-});
-await mkdir(".sentry/server", { recursive: true });
-for (const name of ["server.mjs", "agent-device-server.mjs", "ios-mirror-service.mjs"]) {
-  await copyFile(`dist/${name}`, `.sentry/server/${name}`);
-  await copyFile(`dist/${name}.map`, `.sentry/server/${name}.map`);
-  await rm(`dist/${name}.map`);
-}
-await cli.execute(["sourcemaps", "inject", ".sentry/server"]);
-for (const name of ["server.mjs", "agent-device-server.mjs", "ios-mirror-service.mjs"]) {
-  await copyFile(`.sentry/server/${name}`, `dist/${name}`);
-  execFileSync(process.execPath, ["--check", `dist/${name}`]);
-}
+// The host-neutral runtime: the shared server, its services and the MCP Apps panel
+// as hosts without their own chrome load it. Each host's own pieces build into
+// dist/hosts/<host>, and its package step lays them over the runtime.
+await rm("dist/hosts", { recursive: true, force: true });
+await rm(".sentry/ui", { recursive: true, force: true });
+await rm(".sentry/server", { recursive: true, force: true });
+const pageMetafiles = [
+  await buildUIPage({
+    name: "ui/mcp-app", entry: "packages/mcp-app/src/main.tsx", template: "packages/mcp-app/src/index.html",
+    sources: ["packages/ui/src", "packages/mcp-app/src"], output: "dist/app.html",
+    environment: telemetryEnvironment, sourceURL: "app:///mobile-dev-ui.js",
+  }),
+];
+const serverMetafiles = [
+  await buildServerBundles({
+    entryPoints: { server: "packages/core/src/index.ts", "agent-device-server": "packages/core/src/agent-device-server.mjs", "ios-mirror-service": "packages/core/src/ios-mirror-service.ts" },
+    outdir: "dist", sentryDirectory: ".sentry/server",
+  }),
+];
+// Hosts whose server or panel adds to the shared one. The Mac app builds its own
+// pieces with npm run build:mac, which needs Xcode.
+const hostMetafiles = await buildCodexHost(telemetryEnvironment);
 // Tailwind compiles these styles before esbuild records its input files.
 const packageRoots = new Set(["shadcn", "tailwindcss", "tw-animate-css"].map(name => resolve("node_modules", name)));
-for (const path of [...Object.keys(appMetafile.inputs), ...Object.keys(server.metafile.inputs)]) {
+for (const path of [...pageMetafiles, ...serverMetafiles, ...hostMetafiles].flatMap(metafile => Object.keys(metafile.inputs))) {
   if (!path.includes("node_modules/")) continue;
   let directory = dirname(resolve(path));
   while (directory !== dirname(directory)) {

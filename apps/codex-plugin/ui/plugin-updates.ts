@@ -1,6 +1,6 @@
 import type { App } from "@modelcontextprotocol/ext-apps";
-import { pluginReleaseUrl, pluginUpdateSchema } from "@mobile-dev/shared/plugin-updates.ts";
-import type { PluginUpdate } from "@mobile-dev/shared/plugin-updates.ts";
+import { pluginReleaseUrl, pluginUpdateSchema } from "../shared/plugin-updates.ts";
+import type { PluginUpdate } from "../shared/plugin-updates.ts";
 import { captureUiError, countUiEvent } from "@mobile-dev/ui/telemetry.ts";
 
 export type UpdateSnapshot = { update?: PluginUpdate; busy: boolean; error: string; dismissedVersion?: string };

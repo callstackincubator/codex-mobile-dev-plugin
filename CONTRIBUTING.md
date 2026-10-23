@@ -6,28 +6,35 @@ and native helpers. To use the prebuilt plugin, see the [README](README.md#insta
 ## Repository layout
 
 The repository is an npm workspace. Host-independent code lives in `packages/`; each
-product that ships it lives in `apps/`.
+product that ships it lives in `apps/`. Adding a host means adding an app; the shared
+packages know no host by name.
 
 | Path | Contents |
 | --- | --- |
 | `packages/shared` (`@mobile-dev/shared`) | Protocol types and pure logic used by the server and every UI host. |
-| `packages/core` (`@mobile-dev/core`) | The MCP server, device runtimes and tool handlers. |
-| `packages/ui` (`@mobile-dev/ui`) | Host-independent React views, panel controllers, theme and UI telemetry. |
+| `packages/core` (`@mobile-dev/core`) | The MCP server, device runtimes and tool handlers. A host adds to it with `ServerFeature`s passed to `runStdioServer`. |
+| `packages/ui` (`@mobile-dev/ui`) | Host-independent React views, panel controllers, theme and UI telemetry. Views reach the host only through `HostBridge`. |
+| `packages/mcp-app` (`@mobile-dev/mcp-app`) | The MCP Apps panel every MCP Apps host loads. Host differences follow advertised capabilities; a host adds chrome through `startMcpApp`. |
 | `packages/native` | Native helper sources; `packages/native/vendor` holds their verified prebuilt binaries. |
 | `packages/runtimes` | Pinned Node runtimes bundled into the server (agent-device, serve-emu). |
-| `packages/mcp-app` (`@mobile-dev/mcp-app`) | The MCP Apps panel shell every MCP Apps host loads: the workspace toolbar, card entries, display-mode and context-attachment controls, and the Codex updater banner. Host differences follow advertised capabilities, not host names. |
-| `apps/codex-plugin` | The Codex manifest, MCP launcher, skills and assets. |
-| `apps/claude-desktop` | The Claude Desktop MCPB manifest. |
-| `apps/mac` | The Mac app: a SwiftUI shell (`Sources/`) and the web page it hosts (`web/`). |
-| `tooling` | Build, packaging, release and smoke-test scripts. Run them from the repository root. |
+| `apps/codex-plugin` | Codex: manifest, launcher, skills, assets, and its own server (`server/`, the self-updater) and panel (`ui/`, the update banner). |
+| `apps/claude-desktop` | Claude Desktop: the MCPB manifest. It runs the shared server and panel unchanged. |
+| `apps/mac` | The Mac app: a SwiftUI shell (`Sources/`), the page it hosts (`web/`) and its server (`server/`). |
+| `tooling` | Shared build, native, release and device smoke-test scripts. Run them from the repository root. |
+
+Each app's `tooling/` holds that host's packaging and smoke tests.
 
 Import across packages with the workspace name and an explicit extension, for example
-`@mobile-dev/shared/logs.ts`. `packages/ui` never imports from `packages/mcp-app` or an app.
-Chrome shared by MCP Apps hosts belongs in `packages/mcp-app`; chrome for one host,
-such as the Mac sidebar, belongs in that host's app. `npm run build` writes the shared runtime and the
-MCP Apps panel to `dist/`. `npm run package` assembles the Codex plugin from `dist/` and
-`apps/codex-plugin`; `npm run package:claude` builds the Claude Desktop bundle from the
-same files and `apps/claude-desktop/manifest.json`. The published `release/latest` layout is unchanged.
+`@mobile-dev/shared/logs.ts`. `packages/ui` never imports from `packages/mcp-app` or an
+app. Chrome every MCP Apps host shares belongs in `packages/mcp-app`; chrome for one
+host, such as the Mac sidebar or Codex's update banner, belongs in that host's app.
+
+`npm run build` writes the host-neutral runtime to `dist/`: the shared server, its
+services and natives, and the MCP Apps panel. Hosts that add to them build their own
+pieces into `dist/hosts/<host>`. Each host's package step copies the runtime and lays
+its pieces over it, so no host packages through another. The release version comes
+from the root `package.json`; each package step writes it into its host's manifest.
+The published `release/latest` layout is unchanged.
 
 ## Mac app
 
@@ -48,7 +55,8 @@ npm run test:mac     # launches the app, waits for the page to connect and draw,
 open "release/mac/Mobile Dev.app"
 ```
 
-`build:mac` copies `dist/`, the Mac page and the Node executable running the build
+`build:mac` copies the runtime from `dist/`, builds the Mac server and page into it, and
+adds the Node executable running the build
 (pass `--node <path>` for another self-contained build) into the app. Distribution
 still needs a Developer ID signature, hardened-runtime entitlements for Node, and
 notarization. `test:mac` uses the app's `MOBILE_DEV_SMOKE_SNAPSHOT` hook to save a
@@ -229,8 +237,9 @@ helpers. Local builds use the `development` environment; public packages require
 `npm run build:release` and `npm run package:release`. Keep credentials, source maps,
 and native symbols outside the package.
 
-Bump the plugin version for plugin changes and keep `apps/codex-plugin/.codex-plugin/plugin.json`, `package.json`,
-both root versions in `package-lock.json`, and `packages/shared/src/version.ts` in sync.
+Bump the version in the root `package.json` for product changes and keep both root
+versions in `package-lock.json` and `packages/shared/src/version.ts` in sync. Host
+manifests carry no version; each package step writes it.
 See [GitHub releases](docs/releases.md) for tagging, CI packaging, symbol uploads,
 and marketplace publishing.
 

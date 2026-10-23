@@ -92,6 +92,8 @@ try {
   const client = new Client({ name: "mobile-dev-package-smoke", version: "1" });
   await client.connect(transport);
   const tools = await client.listTools();
+  // Codex's own server and panel: the updater tools and the banner that calls them.
+  assert.ok(tools.tools.some(tool => tool.name === "mobile_check_plugin_update"), "The Codex server must include its updater.");
   const recordingCard = tools.tools.find(tool => tool.name === "mobile_render_performance_recording");
   assert.ok(recordingCard);
   assert.deepEqual(recordingCard._meta.ui.visibility, ["app", "model"]);
@@ -181,6 +183,7 @@ try {
   assert.ok(resource.contents[0].text.includes('workspace-toolbar'));
   assert.ok(resource.contents[0].text.includes('workspace-panels'));
   assert.ok(resource.contents[0].text.includes('tool-logs'));
+  assert.ok(resource.contents[0].text.includes('Retry update'), "The Codex panel must include its update banner.");
   assert.ok(resource.contents[0].text.includes('Memory usage'), 'The packaged Performance view must include the live memory track.');
   assert.equal(workspace._meta.ui.resourceUri, `ui://mobile-dev/${manifest.version}/workspace.html`);
   assert.deepEqual(resource.contents[0]._meta.ui.csp.connectDomains, ["https://o4512180958068736.ingest.de.sentry.io"]);

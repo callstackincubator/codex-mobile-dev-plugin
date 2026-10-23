@@ -24,9 +24,8 @@ boundaries are unchanged in every host.
 
 The Mac app loads its page through the server's `ui://mobile-dev/mac.html` resource,
 so the page receives the same server-owned environment, opt-out and anonymous
-identity as the Codex panel. Mac builds are development-only for now: their page
-source maps are written to `.sentry/mac-ui` but not uploaded, and the SwiftUI shell
-has no native Sentry SDK.
+identity as the Codex panel. Mac builds are development-only for now; the SwiftUI
+shell has no native Sentry SDK.
 
 ## Volume policy
 
@@ -459,7 +458,7 @@ Error and crash events carry only a generated anonymous `user.id` and a `telemet
 
 Session Replay, minidumps, screenshots and profiling are disabled. Requests, account details, app log content, tool payloads, automatic console breadcrumbs and exception source context are excluded. JavaScript error text redacts common tokens, identifiers, URLs, email addresses and local home paths. Native reports retain source basenames and debug IDs, omit absolute module paths, and never send Rust panic payloads. Safe product attributes and source locations remain available for diagnosis. `MOBILE_DEV_TELEMETRY=off` disables reporting across JavaScript and native helpers.
 
-Builds generate debug IDs and source maps under the ignored `.sentry/` directory. Native rebuilds retain macOS dSYMs and unstripped Android ELF files in `.sentry/native` before stripping the bundled binaries. Release runs can reuse each helper's exact build artifact, restoring the vendor files and matching symbols together after SHA-256 verification. Reused symbols are still uploaded by the current release's Sentry step. Native helpers receive the current release and environment at runtime, so reuse preserves release attribution, measurement boundaries and debug IDs. Symbols, source maps and the upload credential are excluded from the plugin package. Native builds require CMake and Ninja, with an Android NDK for Android collectors. The SDK source archive is pinned and checked by SHA-256. Store the organization build token in the ignored `.env.sentry-build-plugin` file at the repository root:
+Builds generate debug IDs and source maps under the ignored `.sentry/` directory. Each page and server bundle keeps its maps in its own folder: `.sentry/ui/<page>` (`mcp-app`, `codex`, `mac`) and `.sentry/server` with host servers under `.sentry/server/<host>`. `npm run sentry:upload` uploads both trees, so every host's bundles share the release and its debug IDs. Host servers keep the shared server's component, metric names and boundaries; Codex's `plugin.update.*` metrics now come only from Codex's server. Native rebuilds retain macOS dSYMs and unstripped Android ELF files in `.sentry/native` before stripping the bundled binaries. Release runs can reuse each helper's exact build artifact, restoring the vendor files and matching symbols together after SHA-256 verification. Reused symbols are still uploaded by the current release's Sentry step. Native helpers receive the current release and environment at runtime, so reuse preserves release attribution, measurement boundaries and debug IDs. Symbols, source maps and the upload credential are excluded from the plugin package. Native builds require CMake and Ninja, with an Android NDK for Android collectors. The SDK source archive is pinned and checked by SHA-256. Store the organization build token in the ignored `.env.sentry-build-plugin` file at the repository root:
 
 ```dotenv
 SENTRY_AUTH_TOKEN=your_org_token

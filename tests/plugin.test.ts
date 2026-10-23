@@ -16,7 +16,7 @@ import { Baguette } from "../packages/core/src/baguette.ts";
 import { parseBaseUrl } from "../packages/shared/src/protocol.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID, SCREEN, PNG } from "./fixtures.ts";
 import { getTelemetryIdentity } from "../packages/core/src/telemetry-identity.ts";
-import manifest from "../apps/codex-plugin/.codex-plugin/plugin.json" with { type: "json" };
+import manifest from "../package.json" with { type: "json" };
 
 test("both opening tools accept optional device intent and preserve it in their results", async t => {
   const fake = await fakeBaguette();

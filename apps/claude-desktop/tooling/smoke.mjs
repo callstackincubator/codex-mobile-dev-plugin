@@ -27,8 +27,7 @@ try {
   // No Codex installation, no PATH Node lookup, and no dependency on package cwd.
   const home = join(temporary, "home");
   await mkdir(home);
-  // Behavior follows client capabilities, not the host's name. Release must still
-  // disable the updater because the bundle is not a Codex plugin package.
+  // Behavior follows client capabilities, not the host's name.
   for (const [environment, forms] of [["development", false], ["release", false], ["development", true]]) {
     const capabilities = forms ? { extensions: { "openai/elicitation": { form: {} } } } : {};
     const client = new Client({ name: "claude-package-smoke", version: "1" }, { capabilities });
@@ -56,13 +55,10 @@ try {
       assert.ok(html.includes(`name="mobile-dev-environment" content="${environment}"`));
       assert.match(html, /name="mobile-dev-telemetry" content="off"/);
       assert.match(html, /ui.workspace.display_mode_changed/);
-      const check = await client.callTool({ name: "mobile_check_plugin_update", arguments: {} });
-      assert.notEqual(check.isError, true);
-      assert.equal(check.structuredContent.update.status, "disabled");
-      const install = await client.callTool({ name: "mobile_install_plugin_update", arguments: {} });
-      assert.equal(install.isError, true);
-      assert.match(install.content[0].text, /installed as a Codex plugin/);
-      console.log(`${environment}${forms ? "/forms" : ""}: relocated MCP startup, tools, UI resource and disabled updater passed.`);
+      assert.doesNotMatch(html, /Retry update/, "The shared panel has no Codex update banner.");
+      // The Codex updater belongs to Codex's server; this bundle runs the shared one.
+      assert.equal(tools.some(tool => tool.name.includes("plugin_update")), false);
+      console.log(`${environment}${forms ? "/forms" : ""}: relocated MCP startup, tools, UI resource and no Codex updater passed.`);
     } catch (error) {
       if (diagnostics) console.error(diagnostics);
       throw error;

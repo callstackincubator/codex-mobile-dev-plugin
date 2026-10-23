@@ -6,14 +6,23 @@ The Agent Device MCP entry and skill are currently disabled; their implementatio
 
 ## Hosts
 
-The server (`packages/core`) and the shared UI (`packages/ui`) run in two hosts. In
-Codex, the panel is an MCP App: the `App` from ext-apps carries tool calls and
-resource reads through the host. The Mac app (`apps/mac`) starts the same server over
-stdio and relays its JSON-RPC lines to a web view, whose page calls the server with
-an MCP client. Shared views depend only on `HostBridge`, the subset of `App` they use;
-each host composes them with its own chrome. Codex has the tool and platform
-toolbar; the Mac app has a native sidebar. `DeviceWorkspace` keeps the iOS and Android
-panels, their selection and layout identical in both hosts.
+The server (`packages/core`), the shared UI (`packages/ui`) and the MCP Apps panel
+(`packages/mcp-app`) run in every host. Codex and Claude Desktop load the panel as an
+MCP App: the `App` from ext-apps carries tool calls and resource reads through the
+host, and the panel adapts to the capabilities each host advertises. The Mac app
+(`apps/mac`) starts the server over stdio and relays its JSON-RPC lines to a web view,
+whose page calls the server with an MCP client.
+
+A host adds to the shared pieces without changing them:
+
+- **Server:** each host's entry calls `runStdioServer` with its `ServerFeature`s.
+  Codex adds the self-updater, which installs through Codex's marketplace; the Mac
+  app adds its page resource; Claude Desktop runs the shared server unchanged.
+- **Panel:** a host's page entry calls `startMcpApp` with its chrome. Codex adds the
+  update banner; Claude Desktop uses the shared entry.
+- **Views:** shared views depend only on `HostBridge`, the subset of `App` they use,
+  plus optional host context attachments. `DeviceWorkspace` keeps the iOS and Android
+  panels, their selection and layout identical in every host.
 
 ## Shared app discovery
 

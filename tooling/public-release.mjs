@@ -14,9 +14,8 @@ function git(args, directory) {
 export async function publicRelease(directory = ".") {
   const status = git(["status", "--porcelain"], directory);
   if (status.trim().length > 0) throw new Error("Commit your changes before running npm run public-release.");
-  const manifestText = await readFile(`${directory}/apps/codex-plugin/.codex-plugin/plugin.json`, "utf8");
-  const manifest = JSON.parse(manifestText);
-  const release = await releaseMetadata(`v${manifest.version}`, directory);
+  const metadata = JSON.parse(await readFile(`${directory}/package.json`, "utf8"));
+  const release = await releaseMetadata(`v${metadata.version}`, directory);
   const existing = git(["tag", "--list", release.tag], directory);
   if (existing.trim().length > 0) {
     throw new Error(`${release.tag} already exists locally. To push it, run git push origin refs/tags/${release.tag}.`);

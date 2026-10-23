@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { PluginUpdates, registerPluginUpdateTools, resolveCodexCli } from "../packages/core/src/plugin-updates.ts";
-import type { RunCodex } from "../packages/core/src/plugin-updates.ts";
-import { compareReleaseVersions, pluginUpdateSchema } from "../packages/shared/src/plugin-updates.ts";
+import { PluginUpdates, registerPluginUpdateTools, resolveCodexCli } from "../apps/codex-plugin/server/plugin-updates.ts";
+import type { RunCodex } from "../apps/codex-plugin/server/plugin-updates.ts";
+import { compareReleaseVersions, pluginUpdateSchema } from "../apps/codex-plugin/shared/plugin-updates.ts";
 
 async function profile(t: test.TestContext) {
   const parent = tmpdir();
@@ -110,7 +110,7 @@ test("offline checks remain quiet, invalid tags cannot advertise updates, and de
   const disabled = await dev.check();
   assert.equal(disabled.status, "disabled");
   const installation = dev.install();
-  await assert.rejects(installation, /Only release builds installed as a Codex plugin/);
+  await assert.rejects(installation, /Development builds do not install public plugin updates/);
   const otherDirectory = await profile(t);
   const invalid = new PluginUpdates({ enabled: true, profile: otherDirectory, fetch: releaseFetch("../bad", "0.1.132") });
   const malformed = await invalid.check();

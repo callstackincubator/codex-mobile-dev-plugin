@@ -3,7 +3,7 @@ import { openRequestSession } from "./request-session.ts";
 import type { ServerRequestContext } from "./request-session.ts";
 import { addToolIcons, PHONE_ICONS } from "./tool-icons.ts";
 import type { UIResource } from "./ui-resource.ts";
-import { PluginUpdates, registerPluginUpdateTools } from "./plugin-updates.ts";
+import type { ServerFeature } from "./server-feature.ts";
 import { LIVE_UI_URI } from "@mobile-dev/shared/live-ui.ts";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
@@ -52,8 +52,6 @@ import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 
 export const APP_URI = `ui://mobile-dev/${PLUGIN_VERSION}/simulator.html`;
 export const WORKSPACE_URI = `ui://mobile-dev/${PLUGIN_VERSION}/workspace.html`;
-/** The Mac app's page. Only runtimes that ship `mac.html` register it. */
-export const MAC_PAGE_URI = "ui://mobile-dev/mac.html";
 // Codex keeps the address of side tabs and saved cards opened before a plugin update, so earlier
 // releases' addresses serve the current UI. These older addresses do not fit that pattern.
 const unversionedAppUris = ["ui://mobile-dev/simulator.html", "ui://mobile-dev/0.1.24/mcp-stream/simulator.html"];
@@ -103,7 +101,7 @@ export function configureUI(content: string): string {
   return content.replace(/<meta name="mobile-dev-environment" content="(?:development|release)">/, metadata);
 }
 
-export async function createPlugin(html: string | (() => Promise<UIResource>), baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), android = new ServeEmu(), copyScreenshot = copyPNGToClipboard, providedCpu?: CpuSessions) {
+export async function createPlugin(html: string | (() => Promise<UIResource>), baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), android = new ServeEmu(), copyScreenshot = copyPNGToClipboard, providedCpu?: CpuSessions, features: ServerFeature[] = []) {
   const streams = new StreamSessions(baguette);
   let selectedCpu = providedCpu;
   if (selectedCpu === undefined) selectedCpu = await createCpuSessions();
@@ -113,9 +111,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     instructions: "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.",
   });
   instrumentMcpServer(server);
-  const updates = new PluginUpdates();
   addToolIcons(server, { mobile_open_workspace: PHONE_ICONS, mobile_open_simulator: PHONE_ICONS, mobile_choose_devices: PHONE_ICONS });
-  registerPluginUpdateTools(server, updates);
   const extensions = new OpenAIExtensions(server);
   // The native form is a client extension; list the tool only for hosts that render it.
   let deviceChoiceRegistered = false;
@@ -434,11 +430,12 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
     streams.reset(sessionId);
     return result({}, "Restarting simulator capture.");
   }));
+  const featureCleanups = features.flatMap(feature => feature(server) ?? []);
 
   return {
     server,
     async close() {
-      updates.close();
+      await Promise.allSettled(featureCleanups.map(cleanup => cleanup()));
       stopRecordingStorageMetrics();
       // Clearing Android throttles waits on adb, so it runs alongside the other cleanup.
       const deviceSettingsClosed = closeDeviceSettings();

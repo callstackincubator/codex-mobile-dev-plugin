@@ -1,21 +1,27 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { compareReleaseVersions, pluginUpdateSchema, releaseVersionSchema } from "@mobile-dev/shared/plugin-updates.ts";
-import type { PluginUpdate } from "@mobile-dev/shared/plugin-updates.ts";
+import * as Sentry from "@sentry/node";
+import { compareReleaseVersions, pluginUpdateSchema, releaseVersionSchema } from "../shared/plugin-updates.ts";
+import type { PluginUpdate } from "../shared/plugin-updates.ts";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
-import { captureServerError, recordPluginUpdate } from "./telemetry.ts";
-import { resolveTelemetryEnvironment } from "./telemetry-environment.ts";
+import { captureServerError } from "@mobile-dev/core/telemetry.ts";
+import { resolveTelemetryEnvironment } from "@mobile-dev/core/telemetry-environment.ts";
 
 const execute = promisify(execFile);
+
+export function recordPluginUpdate(operation: "check" | "install", outcome: "disabled" | "unavailable" | "current" | "available" | "updated" | "failed", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", operation, outcome };
+  Sentry.metrics.count("plugin.update.operations", 1, { attributes });
+  Sentry.metrics.gauge("plugin.update.duration", duration, { unit: "millisecond", attributes });
+}
 const repository = "callstackincubator/codex-mobile-dev-plugin";
 const releaseEndpoint = `https://api.github.com/repos/${repository}/releases/latest`;
 const marketplaceEndpoint = `https://raw.githubusercontent.com/${repository}/release/latest/plugins/mobile-dev/.codex-plugin/plugin.json`;
@@ -46,13 +52,6 @@ const pluginsSchema = z.object({ installed: installedPluginsSchema });
 type Cache = z.infer<typeof cacheSchema>;
 export type RunCodex = (args: string[]) => Promise<unknown>;
 class PluginUpdateError extends Error {}
-
-// Updates go through Codex's plugin marketplace, so only a Codex plugin package
-// (dist/server.mjs beside .codex-plugin) can apply them. Other installs, such as
-// an MCPB bundle, update through their own host.
-function installedAsCodexPlugin(): boolean {
-  return existsSync(fileURLToPath(new URL("../.codex-plugin/plugin.json", import.meta.url)));
-}
 
 export async function resolveCodexCli(parentPid = process.ppid, cwd = homedir()): Promise<string> {
   const pid = String(parentPid);
@@ -99,7 +98,7 @@ export class PluginUpdates {
   private readonly abort = new AbortController();
 
   constructor(options: { enabled?: boolean; currentVersion?: string; profile?: string; fetch?: typeof fetch; run?: RunCodex; now?: () => number } = {}) {
-    this.enabled = options.enabled ?? (resolveTelemetryEnvironment() === "release" && installedAsCodexPlugin());
+    this.enabled = options.enabled ?? resolveTelemetryEnvironment() === "release";
     this.currentVersion = options.currentVersion ?? PLUGIN_VERSION;
     const home = homedir();
     const defaultProfile = join(home, ".codex");
@@ -191,7 +190,7 @@ export class PluginUpdates {
 
   install(): Promise<PluginUpdate> {
     if (this.enabled === false) {
-      const error = new Error("Only release builds installed as a Codex plugin install public plugin updates.");
+      const error = new Error("Development builds do not install public plugin updates.");
       return Promise.reject(error);
     }
     if (this.installing !== undefined) return this.installing;

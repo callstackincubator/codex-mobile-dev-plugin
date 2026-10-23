@@ -13,7 +13,7 @@ async function fixture(t: TestContext) {
   const sourceDirectory = join(directory, "packages/shared/src");
   await mkdir(sourceDirectory, { recursive: true });
   await mkdir(`${directory}/apps/codex-plugin/.codex-plugin`, { recursive: true });
-  await writeFile(`${directory}/apps/codex-plugin/.codex-plugin/plugin.json`, '{"name":"mobile-dev","version":"1.2.3"}');
+  await writeFile(`${directory}/apps/codex-plugin/.codex-plugin/plugin.json`, '{"name":"mobile-dev"}');
   await writeFile(`${directory}/package.json`, '{"version":"1.2.3"}');
   await writeFile(`${directory}/package-lock.json`, '{"version":"1.2.3","packages":{"":{"version":"1.2.3"}}}');
   await writeFile(`${sourceDirectory}/version.ts`, 'export const PLUGIN_VERSION = "1.2.3";\n');
@@ -38,7 +38,8 @@ test("release metadata rejects a tag for a different release", async t => {
 
 test("release metadata rejects inconsistent package and runtime versions", async t => {
   const changes: Array<[string, string, RegExp]> = [
-    ["package.json", '{"version":"1.2.4"}', /package.json version/],
+    // package.json is the source, so a different version there no longer matches the tag.
+    ["package.json", '{"version":"1.2.4"}', /Release tag must be v1\.2\.4/],
     ["package-lock.json", '{"version":"1.2.4"}', /package-lock.json version/],
     ["package-lock.json", '{"version":"1.2.3","packages":{"":{"version":"1.2.4"}}}', /root package version/],
     ["packages/shared/src/version.ts", 'export const PLUGIN_VERSION = "1.2.4";', /packages\/shared\/src\/version.ts/],
@@ -51,9 +52,9 @@ test("release metadata rejects inconsistent package and runtime versions", async
   }
 });
 
-test("release metadata rejects manifest values that could escape artifact paths or outputs", async t => {
+test("release metadata rejects versions that could escape artifact paths or outputs", async t => {
   const directory = await fixture(t);
-  await writeFile(`${directory}/apps/codex-plugin/.codex-plugin/plugin.json`, '{"name":"mobile-dev","version":"../1.2.3"}');
+  await writeFile(`${directory}/package.json`, '{"version":"../1.2.3"}');
   const result = releaseMetadata("v../1.2.3", directory);
   await assert.rejects(result, /semantic release version/);
 });
