@@ -59,6 +59,13 @@ upload process. The packager refuses a mismatched build environment.
   Selection details and editing guidance stay in model context. Review and send
   the draft in Claude before clearing notes. Claude may show a warning for
   app-generated drafts. Notes remain until explicitly removed or cleared.
+- Claude may fetch model context on demand using its own **Reading widget context**
+  action. This is separate from listing this server's MCP resources. The draft
+  and Claude tool descriptions direct it to read widget context before acting,
+  and to ask for the widget to be reopened if that context is unavailable.
+  Verify the handoff by asking for a saved note's exact identifier and bounds;
+  label matching against a fresh accessibility tree does not prove delivery.
+  See the [upstream explanation](https://github.com/anthropics/claude-ai-mcp/issues/102).
 - Other Ask/Investigate actions send complete standard messages; OpenAI routing is included
   only when the host advertises it. Codex skills are not installed by this bundle.
 

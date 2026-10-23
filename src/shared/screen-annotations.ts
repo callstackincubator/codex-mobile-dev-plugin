@@ -187,7 +187,7 @@ export function formatAnnotationMessage(annotations: ScreenAnnotation[]): string
 // The visible draft contains the user's requests; selection evidence and edit
 // boundaries stay in model context. Keep requests intact, including long notes.
 export function formatAnnotationDraft(annotations: ScreenAnnotation[]): string {
-  return `Apply these notes using the selected elements in Mobile Dev:\n\n${annotations.map(annotation =>
+  return `Apply these notes. First read the current Mobile Dev widget context for the exact selections. If that context is unavailable, ask me to reopen Mobile Dev instead of guessing targets from labels.\n\n${annotations.map(annotation =>
     `- ${annotation.simulator.name} · #${annotation.number} ${JSON.stringify(annotation.component.label ?? annotation.component.name)}: ${annotation.text}`
   ).join("\n")}`;
 }
