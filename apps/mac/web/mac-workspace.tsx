@@ -29,6 +29,9 @@ export function MacWorkspace({ panels, tool, layout }: { panels: MacPanels; tool
     workspaceGroup.current?.setLayout({ "mac-tools": 100 - devices, "mac-devices": devices });
     if (layout !== "none") deviceGroup.current?.setLayout({ "mac-ios": layout === "android" ? 0 : layout === "both" ? 50 : 100, "mac-android": layout === "ios" ? 0 : layout === "both" ? 50 : 100 });
   }, [tool, layout]);
+  // The leftmost visible panel sits under the window controls when the sidebar is collapsed.
+  const leading = tool !== undefined ? "tool" : layout === "android" ? "android" : "ios";
+  const leadingClass = (panel: string) => panel === leading ? "mac-leading h-full" : "h-full";
   const toolView = tool === "logs" ? <LogsView panel={panels.logs} />
     : tool === "performance" ? <PerformanceView panel={panels.performance} />
     : tool === "storage" ? <StorageView panel={panels.storage} />
@@ -36,13 +39,13 @@ export function MacWorkspace({ panels, tool, layout }: { panels: MacPanels; tool
     : <EmptyTool layout={layout} />;
   return <main className="flex h-dvh flex-col">
     <ResizablePanelGroup id="mac-workspace" groupRef={workspaceGroup} orientation="horizontal" className="min-h-0 flex-1">
-      <ResizablePanel id="mac-tools" defaultSize="60%" minSize="0px" collapsible collapsedSize="0px">{toolView}</ResizablePanel>
+      <ResizablePanel id="mac-tools" defaultSize="60%" minSize="0px" collapsible collapsedSize="0px"><div className={leadingClass("tool")}>{toolView}</div></ResizablePanel>
       <ResizableHandle hidden={layout === "none" || tool === undefined} aria-label="Resize tool and devices" />
       <ResizablePanel id="mac-devices" defaultSize="40%" minSize="0px" collapsible collapsedSize="0px">
         <ResizablePanelGroup id="mac-device-panels" groupRef={deviceGroup} orientation="horizontal" className="h-full" aria-label="Devices">
-          <ResizablePanel id="mac-ios" defaultSize="100%" minSize="0px" collapsible collapsedSize="0px"><SimulatorView platform="ios" visible={layout === "ios" || layout === "both"} /></ResizablePanel>
+          <ResizablePanel id="mac-ios" defaultSize="100%" minSize="0px" collapsible collapsedSize="0px"><div className={leadingClass("ios")}><SimulatorView platform="ios" visible={layout === "ios" || layout === "both"} /></div></ResizablePanel>
           <ResizableHandle hidden={layout !== "both"} disabled={layout !== "both"} aria-label="Resize iOS and Android devices" />
-          <ResizablePanel id="mac-android" defaultSize="0%" minSize="0px" collapsible collapsedSize="0px"><SimulatorView platform="android" visible={layout === "android" || layout === "both"} /></ResizablePanel>
+          <ResizablePanel id="mac-android" defaultSize="0%" minSize="0px" collapsible collapsedSize="0px"><div className={leadingClass("android")}><SimulatorView platform="android" visible={layout === "android" || layout === "both"} /></div></ResizablePanel>
         </ResizablePanelGroup>
       </ResizablePanel>
     </ResizablePanelGroup>

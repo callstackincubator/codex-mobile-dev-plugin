@@ -6,6 +6,8 @@ import WebKit
 @MainActor
 enum SmokeSnapshot {
   static let path = ProcessInfo.processInfo.environment["MOBILE_DEV_SMOKE_SNAPSHOT"]
+  /// `MOBILE_DEV_SMOKE_SIDEBAR=collapsed` starts the window with the sidebar collapsed.
+  static let collapsedSidebar = path != nil && ProcessInfo.processInfo.environment["MOBILE_DEV_SMOKE_SIDEBAR"] == "collapsed"
 
   /// Seconds to let the device panels draw first; `MOBILE_DEV_SMOKE_DELAY` overrides the default.
   private static let delay = Double(ProcessInfo.processInfo.environment["MOBILE_DEV_SMOKE_DELAY"] ?? "") ?? 6

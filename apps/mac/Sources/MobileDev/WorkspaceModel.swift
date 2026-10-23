@@ -13,6 +13,7 @@ final class WorkspaceModel {
     didSet { log.info("Status: \(self.status.label, privacy: .public)") }
   }
   @ObservationIgnored private let log = Logger(subsystem: "com.callstack.mobile-dev", category: "workspace")
+  @ObservationIgnored private var sidebarVisible = true
   @ObservationIgnored let page = PageBridge()
   @ObservationIgnored private var server: ServerProcess?
   @ObservationIgnored private var loader: PageLoader?
@@ -27,6 +28,12 @@ final class WorkspaceModel {
     guard tool != self.tool else { return }
     self.tool = tool
     page.select(tool: tool)
+  }
+
+  /// Moves the page's top-left controls clear of the window controls while the sidebar is collapsed.
+  func setSidebarVisible(_ visible: Bool) {
+    sidebarVisible = visible
+    page.setTitlebarInset(visible ? .zero : CGSize(width: WindowControls.width, height: WindowControls.height))
   }
 
   func setShowsIOS(_ shows: Bool) { select(layout: DeviceLayout(showsIOS: shows, showsAndroid: layout.showsAndroid)) }
@@ -89,6 +96,7 @@ final class WorkspaceModel {
       status = .ready
       // The page starts with no tool; apply the sidebar's. It picks the devices itself.
       page.select(tool: tool)
+      setSidebarVisible(sidebarVisible)
       SmokeSnapshot.capture(page.webView)
     case .layout(let layout):
       // The page already applied this layout; reflect it without sending it back.

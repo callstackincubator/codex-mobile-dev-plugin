@@ -115,7 +115,7 @@ export const LogsView = memo(function LogsView({ panel }: { panel: LogsPanel }) 
     <section id="logs-drawer" data-open={state.open} className="@container flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-label="Logs">
       <span className="sr-only" role="status">{copyStatus}</span>
       {copyStatus === "Could not copy log" && <Alert variant="destructive" className="shrink-0 rounded-none border-x-0 border-t-0"><AlertDescription>{copyStatus}</AlertDescription></Alert>}
-      {state.open && <header className="logs-toolbar flex h-[49px] shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
+      {state.open && <header className="logs-toolbar panel-toolbar flex h-[49px] shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
         <span id="logs-status" className="sr-only" role="status">{state.status} · {logs.filtered.length} shown · {logs.buffered} buffered{logs.dropped > 0 ? ` · ${logs.dropped} older logs dropped` : ""}</span>
           <InputGroup className="h-7 min-w-16 flex-1"><InputGroupInput className="text-xs" aria-label="Search logs" type="search" placeholder="Filter logs..." maxLength={512} autoComplete="off" spellCheck={false} aria-invalid={Boolean(logs.queryError)} aria-describedby={logs.queryError ? "logs-query-error" : undefined} value={logs.query} onChange={event => panel.search(event.target.value)} /><InputGroupAddon className="pl-2"><SearchIcon className="size-3.5" /></InputGroupAddon></InputGroup>
           <Popover>

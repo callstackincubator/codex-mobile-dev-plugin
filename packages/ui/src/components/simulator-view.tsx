@@ -20,7 +20,7 @@ export const SimulatorView = memo(function SimulatorView({ platform, visible }: 
   const sidebar = document.documentElement.dataset.view !== "workspace";
   const id = (name: string) => `${platform}-${name}`;
   return <section hidden={!visible} id={`${platform}-panel`} className="simulator-panel group/simulator @container relative flex h-full min-w-0 flex-1 flex-col" data-platform={platform} aria-label={`${label} simulator`}>
-    <header className="flex h-[49px] shrink-0 items-center border-b px-2">
+    <header className="panel-toolbar flex h-[49px] shrink-0 items-center border-b px-2">
       <div className="flex w-full min-w-0 items-center gap-1" role="toolbar" aria-label={`${label} controls`}>
         <DevicePicker id={id("devices")} label={`${label} device`} />
         {deviceButtons.map(({ action, icon: Icon, label }) => <Button key={action} variant="ghost" size="icon" className="shrink-0 data-[unsupported=true]:text-muted-foreground data-[unsupported=true]:cursor-not-allowed data-[unsupported=true]:disabled:pointer-events-auto data-[unsupported=true]:hover:bg-transparent data-[unsupported=true]:hover:text-muted-foreground" data-button={action} title={label} aria-label={label} disabled><Icon /></Button>)}

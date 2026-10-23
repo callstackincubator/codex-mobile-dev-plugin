@@ -59,7 +59,7 @@ export const StorageView = memo(function StorageView({ panel }: { panel: Storage
   else body = <BrowseView key={`${snapshot.platform}:${snapshot.bundleId}`} panel={panel} snapshot={snapshot} query={search} copy={copy} />;
 
   return <section id="storage-drawer" className="@container flex h-full min-h-0 min-w-0 flex-col" role="tabpanel" aria-label="Storage">
-    <header className="flex h-[49px] shrink-0 items-center gap-2 border-b px-2">
+    <header className="panel-toolbar flex h-[49px] shrink-0 items-center gap-2 border-b px-2">
       <AppPicker panel={panel} state={state} />
       <Tabs value={state.tab} onValueChange={value => panel.setTab(value as StorageTab)} className="shrink-0">
         <TabsList size="sm" aria-label="Storage view">

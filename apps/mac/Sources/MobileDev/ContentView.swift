@@ -2,9 +2,10 @@ import SwiftUI
 
 struct ContentView: View {
   let model: WorkspaceModel
+  @State private var columns: NavigationSplitViewVisibility = SmokeSnapshot.collapsedSidebar ? .detailOnly : .all
 
   var body: some View {
-    NavigationSplitView {
+    NavigationSplitView(columnVisibility: $columns) {
       SidebarView(model: model)
         .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
     } detail: {
@@ -12,7 +13,7 @@ struct ContentView: View {
       PageView(page: model.page)
         .ignoresSafeArea()
     }
-    .toolbar(removing: .sidebarToggle)
     .toolbar(removing: .title)
+    .onChange(of: columns, initial: true) { model.setSidebarVisible(columns != .detailOnly) }
   }
 }

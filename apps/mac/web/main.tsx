@@ -1,6 +1,7 @@
 import "@fontsource-variable/inter";
 import "@mobile-dev/ui/theme.css";
 import "@mobile-dev/ui/style.css";
+import "./mac.css";
 import { applyDocumentTheme } from "@modelcontextprotocol/ext-apps";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
@@ -85,12 +86,16 @@ function selectLayout(next: DeviceLayout) {
 declare global {
   interface Window {
     /** The native sidebar drives the content area through these calls. */
-    mobileDevShell?: { selectTool(tool: string | null): void; selectLayout(layout: string): void };
+    mobileDevShell?: { selectTool(tool: string | null): void; selectLayout(layout: string): void; setTitlebarInset(width: number, height: number): void };
   }
 }
 window.mobileDevShell = {
   selectTool: value => selectTool(isTool(value) ? value : undefined),
   selectLayout: value => { if (isLayout(value)) selectLayout(value); },
+  setTitlebarInset: (width, height) => {
+    document.documentElement.style.setProperty("--mac-titlebar-inset", `${Math.max(0, width)}px`);
+    document.documentElement.style.setProperty("--mac-titlebar-height", `${Math.max(0, height)}px`);
+  },
 };
 
 const dark = window.matchMedia("(prefers-color-scheme: dark)");
