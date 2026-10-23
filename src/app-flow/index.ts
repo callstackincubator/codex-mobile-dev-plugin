@@ -6,12 +6,19 @@ import type {
 import { parseProject } from './parser.ts'
 
 /**
- * Shown when detection succeeds but the screen graph cannot be built — see the SEAM note on
- * `parseProject`. Detection-only graphs carry no nodes, so every device-driving entry point has to
- * refuse rather than launch into an empty map.
+ * Shown for the two operations that have no SwiftUI equivalent.
+ *
+ * Building a screen map does work for a SwiftUI project — `parseProject` reads its screens and the
+ * orchestrator sweeps them through the app's own control channel (`swift-sweep.ts`). These two do
+ * not, and not because they were missed. Both drive the React Native runtime directly: `launchApp`
+ * boots a simulator with a Metro server and a deep-link scheme read from the app config, and
+ * `exploreUi` opens states on whatever screen the user left the app on by talking to that same
+ * runtime. A SwiftUI app has no Metro, and the capture path presents screens by name instead of
+ * navigating to them, so there is nothing here to point at a SwiftUI project.
  */
 const SWIFT_NOT_SUPPORTED =
-  'This is an Xcode/SwiftUI project. App Flow can detect it but cannot map its screens yet.'
+  'This is an Xcode/SwiftUI project. Build its screen map from the App Flow screen — launching ' +
+  'and UI explore drive a React Native runtime and have no SwiftUI equivalent.'
 import { AppFlowBuilder } from './orchestrator.ts'
 import {
   bootDevice,

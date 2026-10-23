@@ -214,6 +214,7 @@ import {
   shellQuote
 } from '../server/app-flow-deps/profiling/cdp.ts'
 import { checkSignal } from './cancel.ts'
+import { runSwiftSweep } from './swift-sweep.ts'
 
 export type AppFlowPhase = 'parse' | 'boot' | 'capture' | 'classify' | 'render'
 
@@ -898,13 +899,11 @@ export async function buildAppFlow(
         `No supported Expo Router or React Navigation routes found in ${projectPath}.`
       )
     }
-    if (parsed.mode === 'swiftui') {
-      // Detection reaches here; the screen graph does not. Sweeping a detection-only graph would
-      // produce an empty map that looks like a successful build, so this stops at the seam
-      // (`parseProject`'s SEAM note) with an error the renderer can show.
-      throw new Error(
-        'This is an Xcode/SwiftUI project. App Flow can detect it but cannot map its screens yet.'
-      )
+    if (parsed.mode === 'swiftui' && parsed.swiftParseError !== undefined) {
+      // Detection succeeded and the screen parse did not, which is the one case where an empty
+      // node list is not a true answer about the app. Sweeping it would produce an empty map
+      // that looks like a successful build, so it stops here with the parser's own sentence.
+      throw new Error(parsed.swiftParseError)
     }
     console.log(
       `[app-flow] parse done in ${Date.now() - parseStartedAt}ms — ${parsed.nodes.length} routes, ` +
@@ -1025,6 +1024,69 @@ export async function buildAppFlow(
       })
       return { ok: true, projectId, result: partialResult }
     }
+
+    // ---- SwiftUI ----
+    //
+    // Everything below this point is the React Native sweep: a simulator boot that needs a scheme
+    // and a bundle id, a Metro-backed runtime transport, a reach ladder, an arrival judge. A
+    // SwiftUI app has none of those. It is driven instead by asking its own control channel to
+    // present a screen by name, which is a different enough shape that it gets its own path rather
+    // than a set of conditionals threaded through this one.
+    //
+    // The sweep does not build or install the app; see `swift-sweep.ts` for why not and what it
+    // reports when the app is not there.
+    if (parsed.mode === 'swiftui' && parsed.swift !== null) {
+      checkSignal(signal)
+      emit(projectId, onEvent, {
+        type: 'phase',
+        phase: 'capture',
+        message: 'Capturing SwiftUI screens...'
+      })
+      const sweepStartedAt = Date.now()
+      const { captures: swiftCaptures } = await runSwiftSweep({
+        projectId,
+        swift: parsed.swift,
+        nodes: nodesWithSlug,
+        structureRevision,
+        ...(signal === undefined ? {} : { abortSignal: signal }),
+        onProgress: (completed, total, node) => {
+          emit(projectId, onEvent, {
+            type: 'step',
+            phase: 'capture',
+            message: `Capturing ${node.title}`,
+            completed,
+            total
+          })
+        }
+      })
+      const swiftNodes = nodesWithSlug.map((node) => ({
+        ...node,
+        capture: swiftCaptures[node.id] ?? node.capture
+      }))
+      const swiftResult: AppFlowResult = { ...partialResult, nodes: swiftNodes }
+      await writeCaptureStatus(
+        projectId,
+        Object.fromEntries(
+          Object.entries(swiftCaptures).map(([id, capture]) => [
+            id,
+            { status: capture.status, needsNavigation: capture.needsNavigation, note: capture.note }
+          ])
+        )
+      )
+      manifest.sweepStatus = 'completed'
+      await finishManifest(manifest)
+      await writeAppFlow(projectId, swiftResult)
+      const captured = swiftNodes.filter((node) => node.capture?.screenshot).length
+      emit(projectId, onEvent, {
+        type: 'complete',
+        phase: 'render',
+        message: `Captured ${String(captured)} of ${String(swiftNodes.length)} screens in ${String(
+          Math.round((Date.now() - sweepStartedAt) / 1000)
+        )}s.`
+      })
+      return { ok: true, projectId, result: swiftResult }
+    }
+
     // Every mode but Fast is built around model roles — the navigator, the arrival judge, the
     // auth-gate classifier — so starting one without a provider could
     // only ever fail at the first node, and failing here says so before a simulator is booted.

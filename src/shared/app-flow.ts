@@ -563,7 +563,10 @@ export type AppFlowSwiftRung =
 export interface AppFlowSwiftResolution {
   view: string
   rung: AppFlowSwiftRung
-  /** The Swift construction expression, or null for `skipped`. */
+  /**
+   * The Swift construction expression, or null for `skipped`. Always present: the parser writes an
+   * explicit null rather than omitting the key, so every row has the same shape whatever its rung.
+   */
   expression: string | null
   /** `label: Type` for every parameter with no observed value. Non-empty implies `skipped`. */
   missing: string[]
@@ -575,6 +578,32 @@ export interface AppFlowSwiftResolution {
    * parser found no such evidence, which is what separates `screens` from `views`.
    */
   screenEvidence: AppFlowSwiftScreenEvidence[]
+  /**
+   * What the view reads out of the environment, as it declares it — an `@EnvironmentObject`'s
+   * type, an `@Environment(\.key)`'s key, an `@Environment(Model.self)`'s type.
+   *
+   * This is what the runtime audit checks against the keys actually installed where the screen was
+   * presented. It is the only mechanism that catches a missing `@Environment` key: unlike a missing
+   * `@EnvironmentObject`, which traps, a missing key falls back to `defaultValue` and renders a
+   * complete, plausible, wrong screen that no screenshot comparison can expose.
+   *
+   * Only the view's *own* properties are seen; what its children read arrives in
+   * `environmentRequiresTransitive`.
+   */
+  environmentRequires: string[]
+  /**
+   * Keys the view needs because something in its body reads them — the closure over the view types
+   * its body constructs, with its own declarations removed so the two readings stay apart.
+   *
+   * A consumer installing an environment for a presentation wants the union of this and
+   * `environmentRequires`; one reporting what a view declares wants only the latter. Added after
+   * contract 1, so a report from an older parser does not carry it: read a missing field as empty.
+   *
+   * Lexical, like the containment it is read from, and so an over-approximation — a child built
+   * inside a branch that never runs still contributes. That is the safe direction: a key named but
+   * not needed costs an audit line, while a key needed but not named renders a plausible lie.
+   */
+  environmentRequiresTransitive?: string[]
 }
 
 /** Why the parser believes a view is a screen rather than a leaf component. */
@@ -594,6 +623,29 @@ export interface AppFlowSwiftRouteEdge {
   destinationView: string
   /** The destination construction lifted verbatim from source. */
   expression: string
+  file: string
+  line: number
+}
+
+/**
+ * How one view reaches another, as the source declares it.
+ *
+ * `push` and `modal` are true `from → to` relations: the construction is lexically inside the body
+ * of `from`, so that view really does present `to`. `route` is weaker and kept apart from them on
+ * purpose — the arm of a `navigationDestination(for:)` switch is declared on whichever view hosts
+ * the `NavigationStack`, not on the screen the user was looking at when the path was appended, and
+ * nothing in the source says which screen that was.
+ */
+export type AppFlowSwiftViewEdgeKind = 'push' | 'modal' | 'route'
+
+/** One navigation relation lifted verbatim from a view's body. */
+export interface AppFlowSwiftViewEdge {
+  /** The type whose body declares the construction. Never inferred. */
+  from: string
+  to: string
+  kind: AppFlowSwiftViewEdgeKind
+  /** The presenting modifier or initializer as written, e.g. `sheet` or `NavigationLink`. */
+  via: string
   file: string
   line: number
 }
@@ -626,7 +678,63 @@ export interface AppFlowSwiftParseReport {
   routes: AppFlowSwiftRouteSummary
   routeEdges: AppFlowSwiftRouteEdge[]
   routeEdgesConstructible: number
+  /**
+   * Added after contract 1, so a report from an older parser does not carry it — read it as empty
+   * rather than refusing the report. Adding a field is explicitly not a contract bump.
+   */
+  viewEdges?: AppFlowSwiftViewEdge[]
+  /**
+   * The navigation containers each view's body builds. Also added after contract 1, so a missing
+   * field reads as empty rather than as "this app has no navigators".
+   */
+  navigators?: AppFlowSwiftNavigator[]
+  /** The `App` declarations and the views their scenes present. Added after contract 1. */
+  appEntries?: AppFlowSwiftAppEntry[]
+  /** Route values observed at `NavigationLink(value:)` sites. Added after contract 1. */
+  observedRouteValues?: AppFlowSwiftRouteValue[]
   resolutions: AppFlowSwiftResolution[]
+}
+
+/**
+ * The shape a navigation container gives the screens under it, named after what the container is
+ * rather than after what a consumer calls it — `tabs` is a `TabView`, and mapping it onto a layout
+ * name is the consumer's decision.
+ */
+export type AppFlowSwiftNavigatorKind = 'tabs' | 'splitView' | 'stack'
+
+/** One navigation container, attributed to the view whose body constructs it. */
+export interface AppFlowSwiftNavigator {
+  view: string
+  kind: AppFlowSwiftNavigatorKind
+  /** The container as written, e.g. `TabView` or `NavigationView`. */
+  via: string
+  file: string
+  line: number
+}
+
+/**
+ * An `App` declaration and the views its scenes present — where a journey starts, which nothing
+ * else in the report says. Scene and layout containers are already skipped, so these are views.
+ */
+export interface AppFlowSwiftAppEntry {
+  name: string
+  entryViews: string[]
+  file: string
+  line: number
+}
+
+/**
+ * A route value the app itself writes down at a `NavigationLink(value:)` site, which is what lets a
+ * destination arm's pattern-bound names be satisfied by observation rather than invention.
+ */
+export interface AppFlowSwiftRouteValue {
+  /** Null only when the enum could not be recovered; such an observation is not used. */
+  routeType: string | null
+  caseName: string
+  /** The associated values as written, in declaration order. */
+  arguments: string[]
+  file: string
+  line: number
 }
 
 /**

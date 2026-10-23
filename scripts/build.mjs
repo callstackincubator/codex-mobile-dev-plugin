@@ -89,6 +89,22 @@ for (const [abi, metadata] of Object.entries(cpuRelease.binaries)) {
 await rm("dist/android-cpu", { recursive: true, force: true });
 await cp("vendor/android-cpu", "dist/android-cpu", { recursive: true });
 for (const file of ["LICENSE", "README.md", "collector.c"]) await copyFile(`native/android-cpu/${file}`, `dist/android-cpu/${file}`);
+// The SwiftUI screen parser. `swift-parse.ts` looks beside the bundle first and then two levels up
+// at `vendor/`, so the same code finds it whether it is running from this checkout or from the
+// packaged plugin — without this copy the packaged plugin has no parser at all, and every SwiftUI
+// project reports `parser_missing` while every other App Flow path works.
+await rm("dist/swift-appflow-parse", { recursive: true, force: true });
+await cp("vendor/swift-appflow-parse", "dist/swift-appflow-parse", { recursive: true });
+const swiftParseRelease = JSON.parse(await readFile("vendor/swift-appflow-parse/release.json", "utf8"));
+const swiftParseVersion = execFileSync("vendor/swift-appflow-parse/swift-appflow-parse", ["--version"], {
+  encoding: "utf8"
+});
+// The staged binary is what ships, so its own `--version` has to agree with the contract the
+// TypeScript side checks. A binary built from an older tree answers a report the plugin refuses.
+if (JSON.parse(swiftParseVersion).contractVersion !== swiftParseRelease.contractVersion) {
+  throw new Error("Run npm run rebuild:swift-appflow-parse after changing the SwiftUI parser.");
+}
+
 const runtime = "runtimes/agent-device";
 const lock = await readFile(`${runtime}/package-lock.json`, "utf8");
 const pinned = JSON.parse(lock).packages["node_modules/agent-device"];

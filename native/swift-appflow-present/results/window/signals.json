@@ -1,0 +1,247 @@
+{
+  "tuning": {
+    "stable_threshold": 0.004,
+    "stable_quiet_ms": 250,
+    "idle_quiet_ms": 150,
+    "budget_ms": 5000
+  },
+  "rows": [
+    {
+      "screen": "AboutView",
+      "frame_ms": 134.0,
+      "stable_ms": 404.5,
+      "idle_ms": 304.5,
+      "timeout_ms": 5004.5,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0,
+      "env": {
+        "satisfied": [],
+        "missing": [],
+        "advisory": []
+      }
+    },
+    {
+      "screen": "AccountStatusView",
+      "frame_ms": 161.4,
+      "stable_ms": 504.5,
+      "idle_ms": 354.5,
+      "timeout_ms": 5004.5,
+      "stable_samples": 7,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0,
+      "env": {
+        "satisfied": [
+          "AppSession",
+          "themeAccent"
+        ],
+        "missing": [],
+        "advisory": []
+      }
+    },
+    {
+      "screen": "AnimatedBannerView",
+      "frame_ms": 148.1,
+      "stable_ms": 405.0,
+      "idle_ms": 304.3,
+      "timeout_ms": 5005.0,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0,
+      "env": {
+        "satisfied": [],
+        "missing": [],
+        "advisory": []
+      }
+    },
+    {
+      "screen": "BrandedHeaderView",
+      "frame_ms": 137.0,
+      "stable_ms": 404.8,
+      "idle_ms": 304.7,
+      "timeout_ms": 5004.8,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0,
+      "env": {
+        "satisfied": [],
+        "missing": [
+          "brandTint"
+        ],
+        "advisory": []
+      }
+    },
+    {
+      "screen": "CounterEditorView",
+      "frame_ms": 150.9,
+      "stable_ms": 404.9,
+      "idle_ms": 304.9,
+      "timeout_ms": 5005.0,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0,
+      "env": {
+        "satisfied": [],
+        "missing": [],
+        "advisory": []
+      }
+    },
+    {
+      "screen": "EmptyInboxView",
+      "frame_ms": 142.5,
+      "stable_ms": 404.1,
+      "idle_ms": 303.9,
+      "timeout_ms": 5004.2,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0,
+      "env": {
+        "satisfied": [
+          "InboxStore"
+        ],
+        "missing": [],
+        "advisory": []
+      }
+    },
+    {
+      "screen": "FeedView",
+      "frame_ms": 145.5,
+      "stable_ms": 453.4,
+      "idle_ms": 2954.4,
+      "timeout_ms": 5004.4,
+      "stable_samples": 7,
+      "last_diff": 0.0,
+      "saw_animation": true,
+      "peak_outstanding": 1,
+      "env": {
+        "satisfied": [
+          "FeedStore"
+        ],
+        "missing": [],
+        "advisory": []
+      }
+    },
+    {
+      "screen": "OrderDetailView",
+      "frame_ms": 151.3,
+      "stable_ms": 504.3,
+      "idle_ms": 304.3,
+      "timeout_ms": 5004.4,
+      "stable_samples": 7,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0,
+      "env": {
+        "satisfied": [],
+        "missing": [],
+        "advisory": []
+      }
+    },
+    {
+      "screen": "ProfileView",
+      "frame_ms": 148.5,
+      "stable_ms": 404.2,
+      "idle_ms": 304.3,
+      "timeout_ms": 5004.3,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0,
+      "env": {
+        "satisfied": [],
+        "missing": [],
+        "advisory": []
+      }
+    },
+    {
+      "screen": "RemoteAvatarView",
+      "frame_ms": 149.5,
+      "stable_ms": 404.7,
+      "idle_ms": 1304.7,
+      "timeout_ms": 5004.2,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": true,
+      "peak_outstanding": 0,
+      "env": {
+        "satisfied": [],
+        "missing": [],
+        "advisory": []
+      }
+    },
+    {
+      "screen": "RootView",
+      "frame_ms": 182.4,
+      "stable_ms": 505.3,
+      "idle_ms": 355.2,
+      "timeout_ms": 5005.3,
+      "stable_samples": 7,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0,
+      "env": {
+        "satisfied": [],
+        "missing": [],
+        "advisory": []
+      }
+    },
+    {
+      "screen": "SelfContainedNavView",
+      "frame_ms": 162.4,
+      "stable_ms": 453.5,
+      "idle_ms": 353.5,
+      "timeout_ms": 5003.8,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0,
+      "env": {
+        "satisfied": [],
+        "missing": [],
+        "advisory": []
+      }
+    },
+    {
+      "screen": "ThemeProbeView",
+      "frame_ms": 134.3,
+      "stable_ms": 404.6,
+      "idle_ms": 304.6,
+      "timeout_ms": 5004.7,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0,
+      "env": {
+        "satisfied": [
+          "themeAccent"
+        ],
+        "missing": [],
+        "advisory": []
+      }
+    },
+    {
+      "screen": "TwoStageOrderView",
+      "frame_ms": 141.0,
+      "stable_ms": 404.5,
+      "idle_ms": 1904.6,
+      "timeout_ms": 5004.6,
+      "stable_samples": 6,
+      "last_diff": 0.00196,
+      "saw_animation": false,
+      "peak_outstanding": 1,
+      "env": {
+        "satisfied": [
+          "TwoStageOrderStore"
+        ],
+        "missing": [],
+        "advisory": []
+      }
+    }
+  ]
+}

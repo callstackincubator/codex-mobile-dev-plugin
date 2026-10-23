@@ -27,6 +27,10 @@ import pngdiff  # noqa: E402
 CTRL = os.environ.get("CTRL", "http://127.0.0.1:8765")
 DEV = os.environ.get("DEV", "booted")
 BUNDLE = "dev.codex.appflow.demo"
+# Which presentation the whole run uses. `overlay` is the harness default and what every figure
+# in docs/swiftui-plan.md's demo table was measured in; `window` is what the app-flow sweep asks
+# for, so re-running with MODE=window is how the two are compared on the same corpus.
+MODE = os.environ.get("MODE", "overlay")
 SIGNALS = ["frame", "stable", "idle", "timeout"]
 # Mean grayscale difference (0..1) below which two captures are "the same
 # screen". Calibrated in `fidelity` from repeat captures of a static screen,
@@ -71,8 +75,14 @@ def results(name):
     return os.path.join(d, name)
 
 
+# `CrashOnAppearView` exists to prove the capture loop survives a dead process, which is a
+# different question from readiness and would simply end this experiment. The capture loop
+# (`src/app-flow/swift-capture.ts`) is what exercises it.
+EXCLUDED_SCREENS = {"CrashOnAppearView"}
+
+
 def screens():
-    return get_json("/screens")["detail"]
+    return [s for s in get_json("/screens")["detail"] if s["name"] not in EXCLUDED_SCREENS]
 
 
 def dismiss():
@@ -103,6 +113,10 @@ def relaunch(timeout_s=30):
 
 
 def present(screen, **kw):
+    # `mode` is sent on every presentation rather than left to the harness default, because the
+    # harness now refuses a mode it does not have: a run against an older build fails loudly here
+    # instead of quietly measuring `overlay` and reporting whatever MODE said.
+    kw.setdefault("mode", MODE)
     q = "&".join(f"{k}={v}" for k, v in kw.items())
     return get_json(f"/present?screen={screen}&{q}", timeout=60)
 

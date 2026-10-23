@@ -6,6 +6,11 @@ import SwiftParser
 
 let skippedDirs: Set<String> = [
   ".build", ".git", "Pods", "Carthage", "DerivedData", "build",
+  // Codegen output is not a parse input. Leaving the generated registry inside the
+  // parsed tree fed the previous build's `AnyView(AboutView())` entries back in as
+  // call sites -- the parser read its own output. The build system needs that file
+  // inside the target's source directory, so the exclusion lives here.
+  "Generated",
   "Tests", "Test", "UITests", "Snapshots", "__Snapshots__", "node_modules",
 ]
 
@@ -223,15 +228,21 @@ final class IdentifierSubstitution: SyntaxRewriter {
 /// we can name an observed value for every one of them.
 ///
 /// "Observed" is the whole rule: the substitute must be a value the app itself declares
-/// (a `.mock` / `.sample` / `.preview` static on the associated type) or a value that
+/// (a `.mock` / `.sample` / `.preview` static on the associated type), a value the app writes
+/// down at a `NavigationLink(value:)` site for this very case, or a value that
 /// cannot misrepresent anything (an empty collection, a `nil` optional). A `String`
-/// hashtag or an `Int` id has no such value — `""` would make the screen render a lookup
-/// failure dressed as content — so those names go to `missing` and the view stays
-/// `skipped`. We never fabricate a route associated value to make a screen reachable.
+/// hashtag or an `Int` id has no such value of its own — `""` would make the screen render a lookup
+/// failure dressed as content — so a name with none of the three goes to `missing` and the view
+/// stays `skipped`. We never fabricate a route associated value to make a screen reachable.
+///
+/// `observed` is preferred over a synthesis for the same reason the ladder prefers a route
+/// destination over an init: the app wrote `Route.orderDetail("A-1042")` and meant it, where `nil`
+/// or `[]` is only ever our own statement that there is nothing.
 func substitutedCallSite(
   _ site: CallSite,
   enumCases: [String: [String: [String]]],
-  mocks: [String: String]
+  mocks: [String: String],
+  observed: [String: [String: [String]]] = [:]
 ) -> (expression: String, missing: [String])? {
   guard site.unresolvedNames.isEmpty, !site.patternBoundNames.isEmpty else { return nil }
   guard let routeType = site.routeType, let caseName = site.caseName,
@@ -242,9 +253,18 @@ func substitutedCallSite(
     return (site.expression, site.patternBoundNames.map { "\($0): <unknown route value>" })
   }
 
+  // An observation only applies when it carries one value per bound name; a shorter list would
+  // leave a name standing and a longer one means we matched the wrong case.
+  let written = observed[routeType]?[caseName]
+  let observedArguments = written?.count == associated.count ? written : nil
+
   var values: [String: String] = [:]
   var missing: [String] = []
-  for (name, type) in zip(site.patternBoundNames, associated) {
+  for (index, (name, type)) in zip(site.patternBoundNames, associated).enumerated() {
+    if let observedArguments {
+      values[name] = observedArguments[index]
+      continue
+    }
     let param = ParamInfo(
       label: name, type: type, hasDefault: false,
       isBinding: false, isClosure: type.contains("->")
@@ -272,7 +292,8 @@ func classify(
   _ view: ViewDecl,
   callSites: [String: [CallSite]],
   mocks: [String: String],
-  enumCases: [String: [String: [String]]]
+  enumCases: [String: [String: [String]]],
+  observedRouteValues: [String: [String: [String]]] = [:]
 ) -> Resolution {
   func resolved(_ rung: Rung, _ expression: String) -> Resolution {
     Resolution(view: view.name, rung: rung, expression: expression,
@@ -312,8 +333,9 @@ func classify(
   // values, each of which we can point at an observed value for.
   var routeShapeMissing: [String]?
   for site in sites where site.context == .navigationDestination {
-    guard let attempt = substitutedCallSite(site, enumCases: enumCases, mocks: mocks)
-    else { continue }
+    guard let attempt = substitutedCallSite(
+      site, enumCases: enumCases, mocks: mocks, observed: observedRouteValues
+    ) else { continue }
     if attempt.missing.isEmpty { return resolved(.callSite, attempt.expression) }
     if routeShapeMissing == nil { routeShapeMissing = attempt.missing }
   }
@@ -385,7 +407,15 @@ func classify(
 // new one: a field removed, a field's meaning changed, an enum case removed. Adding a field is not
 // a bump — consumers must ignore what they do not know.
 //
-// Contract 1 removed the `synthesized` rung, so `byRung` no longer carries that key.
+// Contract 1 removed the `synthesized` rung, so `byRung` no longer carries that key. Every
+// `resolutions` row has the same keys whatever its rung: `expression` is explicitly `null` for a
+// `skipped` view rather than absent.
+//
+// Added since, without a bump, because each is a new key beside the old ones rather than a change
+// to one: `navigators`, `appEntries`, `observedRouteValues`, and `environmentRequiresTransitive` on
+// every `resolutions` row. In particular `environmentRequires` still means exactly what it did —
+// the keys the view declares itself — and the transitive ones arrive in their own field, so a
+// consumer reading only the old field reads the same answer it did before.
 
 let contractVersion = 1
 let toolName = "swift-appflow-parse"
@@ -461,16 +491,102 @@ for path in files {
   Collector(file: relative, tree: tree, into: collection).walk(tree)
 }
 
+// A `NavigationLink(value: .orderDetail("A-1042"))` leaves the enum to inference, so the type is
+// recovered from the declarations instead — and only when exactly one enum declares that case with
+// a matching number of associated values. Two enums with a `detail` case make the site ambiguous,
+// and an ambiguous observation is no observation at all.
+let observedRouteValues: [RouteValueObservation] = collection.observedRouteValues.compactMap {
+  observation in
+  if observation.routeType != nil { return observation }
+  let owners = collection.enumCases.filter { _, cases in
+    cases[observation.caseName]?.count == observation.arguments.count
+  }.keys
+  guard owners.count == 1, let owner = owners.first else { return nil }
+  var resolved = observation
+  resolved.routeType = owner
+  return resolved
+}
+
+// Route type -> case -> the arguments written down for it. A case written at two sites with
+// different values keeps the first: both are observed, and picking one is not a claim about
+// content the way synthesising one would be.
+var observedByRoute: [String: [String: [String]]] = [:]
+for observation in observedRouteValues {
+  guard let routeType = observation.routeType else { continue }
+  if observedByRoute[routeType]?[observation.caseName] == nil {
+    observedByRoute[routeType, default: [:]][observation.caseName] = observation.arguments
+  }
+}
+
+// An `App` body builds more than views — `RouterPath()`, `Task { }`, a model container — and the
+// collector cannot tell them apart while walking, because the view declarations may be in files it
+// has not reached yet. Filtering against the declarations afterwards is the only point where that
+// is knowable, so an entry is a view the app really declares or it is not reported at all.
+// An `App`'s scenes are routinely written in an extension — IceCubesApp's is
+// `extension IceCubesApp { var appScene: some Scene { WindowGroup { AppView(...) } } }` — which the
+// struct's own member block does not contain. The scene containers are collected separately,
+// attributed to the type they are written on, so an extension's scene reaches its own `App` here.
+//
+// Filtered against the declarations because a scene body constructs more than views, and the
+// collector cannot tell them apart while walking: the view declarations may be in files it has not
+// reached yet. This is the only point where that is knowable.
+let declaredViews = Set(collection.views.map(\.name))
+let appEntries: [AppEntry] = collection.appEntries.map { entry in
+  var entry = entry
+  entry.entryViews = (collection.sceneEntries[entry.name] ?? []).filter {
+    declaredViews.contains($0)
+  }
+  return entry
+}
+
+// An entry is where a journey starts, which is the strongest screen evidence there is. Marked here
+// rather than during the walk, because the entry is only known once the declarations are: a root
+// named as an entry and then left without a node would be a journey starting nowhere.
+for entry in appEntries {
+  for view in entry.entryViews { collection.markScreen(view, .appRoot) }
+}
+
 let sitesByView = Dictionary(grouping: collection.callSites, by: \.viewName)
 var resolutions = collection.views
   .map {
     classify($0, callSites: sitesByView, mocks: collection.mockStaticsByType,
-             enumCases: collection.enumCases)
+             enumCases: collection.enumCases, observedRouteValues: observedByRoute)
   }
 
+/// Every environment key a view needs because something beneath it reads one.
+///
+/// A screen's children render inside the environment the screen was presented in, so a key a child
+/// declares is a key the presentation must install. Walked as a closure over `childrenByView`
+/// rather than a single hop, because the child that reads the key is routinely two or three
+/// components down. Cycle-safe by construction: a view already visited contributes nothing twice,
+/// and mutual recursion between two views' bodies terminates on the visited set rather than
+/// recursing forever.
+func transitiveEnvironment(
+  of view: String,
+  children: [String: [String]],
+  own: [String: [String]]
+) -> [String] {
+  var visited: Set<String> = [view]
+  var queue = children[view] ?? []
+  var found: [String] = []
+  while !queue.isEmpty {
+    let next = queue.removeFirst()
+    guard visited.insert(next).inserted else { continue }
+    for key in own[next] ?? [] where !found.contains(key) { found.append(key) }
+    queue.append(contentsOf: children[next] ?? [])
+  }
+  let declared = Set(own[view] ?? [])
+  return found.filter { !declared.contains($0) }
+}
+
 for index in resolutions.indices {
+  let view = resolutions[index].view
   resolutions[index].screenEvidence =
-    (collection.screenEvidence[resolutions[index].view] ?? []).sorted { $0.rawValue < $1.rawValue }
+    (collection.screenEvidence[view] ?? []).sorted { $0.rawValue < $1.rawValue }
+  resolutions[index].environmentRequires = collection.environmentRequires[view] ?? []
+  resolutions[index].environmentRequiresTransitive = transitiveEnvironment(
+    of: view, children: collection.childrenByView, own: collection.environmentRequires
+  )
 }
 resolutions.sort { ($0.rung.rawValue, $0.view) < ($1.rung.rawValue, $1.view) }
 
@@ -516,6 +632,10 @@ let report = Report(
   ),
   routeEdges: routeEdges,
   routeEdgesConstructible: routeEdgesConstructible,
+  viewEdges: collection.viewEdges,
+  navigators: collection.navigators,
+  appEntries: appEntries,
+  observedRouteValues: observedRouteValues,
   resolutions: resolutions
 )
 
@@ -536,6 +656,8 @@ let summary = """
   routes:  \(routeEdgesConstructible)/\(routeEdges.count) route edges constructible, \
 \(report.routes.navigationLinkValueCount) NavigationLink(value:), \
 \(report.routes.navigationLinkDestinationCount) NavigationLink(destination:)
+  shape:   \(report.navigators.count) navigators, \(report.appEntries.count) app entries, \
+\(observedRouteValues.count) observed route values
 
 """
 if !quiet { FileHandle.standardError.write(Data(summary.utf8)) }

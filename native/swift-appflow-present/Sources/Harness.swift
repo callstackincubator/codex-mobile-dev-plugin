@@ -79,7 +79,30 @@ struct ReadinessTuning {
   var stableQuietMs: Double = 250
   /// How long the work ledger must stay empty before `idle` fires, milliseconds.
   var idleQuietMs: Double = 150
-  /// Backstop.
+  /// Backstop: how long a presentation may run before it is captured unfinished.
+  ///
+  /// This is not a rare safety margin. On IceCubesApp 18 of 39 screens never reach `idle`,
+  /// blocked by decoration that cannot be told apart from a spinner (see `isHeldState`), and
+  /// every one of them is captured here instead. That makes the number worth measuring.
+  ///
+  /// Two measurements bear on it, and only one of them sets it.
+  ///
+  ///   - How long a *blocked* screen needs to look finished. Signed in, each was captured at
+  ///     a range of budgets and compared by RMSE against a 12 s reference: `ExploreView` is
+  ///     the slowest, still missing 13% of its pixels at 1000 ms and complete at 1500 ms.
+  ///     Nothing measured changed after that.
+  ///   - How long the slowest *unblocked* screen takes to answer honestly. On the demo corpus
+  ///     `FeedView` holds ledger work until 2851 ms and `TwoStageOrderView` until 1851 ms.
+  ///
+  /// The second governs. A budget set from the first looks generous and is not: at 2000 ms
+  /// `FeedView` stops firing and is captured unfinished, taking the demo from 13/13 to 12/13.
+  /// Truncating a screen that would have given a true answer is the one outcome worth paying
+  /// to avoid, so the backstop clears the slowest real readiness rather than the slowest
+  /// pixel. 5000 ms is 2851 plus headroom.
+  ///
+  /// Caveat on the first figure: the reference frame was captured first, so later budgets ran
+  /// against a warm network cache and 1500 ms is optimistic for a genuinely cold screen. It
+  /// does not set the number, but a re-run should capture the reference last.
   var budgetMs: Double = 5000
   /// Comparison raster size. Coarse hides a spinner; fine exposes text
   /// antialiasing and a blinking caret. There may be no setting that does
@@ -101,8 +124,18 @@ enum SnapshotKind: String {
 
 @MainActor
 enum Raster {
+  /// The window `window`/`bare` mode created, while it is up.
+  ///
+  /// It has to beat `isKeyWindow`, and the reason is specific: the harness window is above
+  /// everything at `.alert + 1`, but an app that presents a sheet of its own keeps *its* window
+  /// key. The raster would then photograph the app behind the screen it was asked to capture and
+  /// report it as that screen -- a wrong screenshot that looks entirely right. Checking this
+  /// first means the capture always comes from the window the harness put the screen in.
+  static var harnessWindow: UIWindow?
+
   static var keyWindow: UIWindow? {
-    UIApplication.shared.connectedScenes
+    if let harness = harnessWindow, !harness.isHidden { return harness }
+    return UIApplication.shared.connectedScenes
       .compactMap { $0 as? UIWindowScene }
       .flatMap { $0.windows }
       .first { $0.isKeyWindow } ??
@@ -208,19 +241,72 @@ enum EnvironmentAudit {
     return out
   }
 
+  /// Keys the dump cannot see and that do not need seeing.
+  ///
+  /// `String(describing: EnvironmentValues)` lists only what something *installed*. A SwiftUI
+  /// built-in that nobody overrode is simply absent, so the audit reported it missing and the
+  /// capture loop flagged four IceCubesApp screens `environment_unsatisfied` while they
+  /// rendered perfectly.
+  ///
+  /// The audit exists for one failure: a key that falls back to `defaultValue` and renders a
+  /// plausible lie, like an account service quietly becoming an empty one. These keys cannot
+  /// do that. `scenePhase` defaults to `.active` and `redactionReasons` to none, which is the
+  /// honest state for a screen being presented; `horizontalSizeClass` is read from the trait
+  /// collection whether or not anyone installed it; `openWindow` and
+  /// `webAuthenticationSession` default to actions that do nothing, and a capture never
+  /// invokes them. There is no lie available in any of them.
+  ///
+  /// This list is deliberately only what has been observed to false-positive, not every
+  /// built-in that might. Adding a key here on reasoning alone would be inventing a value for
+  /// the audit, which is the thing the audit exists to prevent -- and over-excluding turns a
+  /// real missing service into a clean capture, which is the expensive direction.
+  private static let alwaysDefaulted: Set<String> = [
+    "scenePhase", "horizontalSizeClass", "redactionReasons", "openWindow",
+    "webAuthenticationSession",
+  ]
+
   /// `nil` when the registry records no requirement for the screen.
   static func verdict(for screen: String) -> (satisfied: [String], missing: [String])? {
     guard let required = ScreenRegistry.requirements[screen], !required.isEmpty else {
       return ([], [])
     }
+    let exempt = Set(alwaysDefaulted.map(normalize))
     let installed = installedKeys.map(normalize)
     var sat: [String] = []
     var miss: [String] = []
     for req in required {
       let n = normalize(req)
-      if installed.contains(where: { $0.contains(n) }) { sat.append(req) } else { miss.append(req) }
+      if exempt.contains(n) || installed.contains(where: { $0.contains(n) }) {
+        sat.append(req)
+      } else {
+        miss.append(req)
+      }
     }
     return (sat, miss)
+  }
+
+  /// Keys a screen needs because something *inside* it reads them, reported and never enforced.
+  ///
+  /// The parser now reads the environment transitively — a screen's body builds a child, the child
+  /// declares `@Environment(\.quickLook)`, and the screen needs that key as much as the child
+  /// does. On IceCubesApp that closure runs to twenty-odd keys per screen, because a few shared
+  /// components reach most of the app.
+  ///
+  /// Those keys are deliberately not in `requirements`. The relation is lexical, so a child built
+  /// inside a branch that never runs still contributes, and feeding that into the enforced audit
+  /// would fail nearly every capture of a screen that renders perfectly — the exact failure
+  /// `alwaysDefaulted` above exists to undo, at twenty times the scale. Reported separately, an
+  /// unsatisfied key here is a lead for whoever reads a crash; enforced, it would be noise that
+  /// buries the one key that mattered.
+  static func advisory(for screen: String) -> [String] {
+    let required = ScreenRegistry.transitiveRequirements[screen] ?? []
+    guard !required.isEmpty else { return [] }
+    let exempt = Set(alwaysDefaulted.map(normalize))
+    let installed = installedKeys.map(normalize)
+    return required.filter { req in
+      let n = normalize(req)
+      return !exempt.contains(n) && !installed.contains(where: { $0.contains(n) })
+    }
   }
 }
 
@@ -240,8 +326,22 @@ struct EnvAuditProbe: View {
 
 enum PresentationMode: String {
   /// Overlaid inside the live root view tree (inherits the root environment).
+  ///
+  /// Cheapest and most faithful, and the wrong default for an app the sweep did not write: the
+  /// screen is rendered *inside* the live root, so it goes under anything the app presents over
+  /// it. Measured on IceCubesApp, that took 6 of 21 screens' processes down against 1 in
+  /// `window`, and the same run cost 71 s rather than 30.5 s.
   case overlay
+  /// Hosted in its own `UIWindow` above everything, with the app-root environment re-applied.
+  ///
+  /// `bare` plus `Raster.applyRootEnvironment`. Above a sheet, still inside the environment --
+  /// which is what makes it hold for an app whose presentation habits the harness does not know.
+  /// Every IceCubesApp figure in `docs/swiftui-plan.md` was measured in this mode.
+  case window
   /// Hosted in a brand-new UIWindow (no app-root environment at all).
+  ///
+  /// The known-hostile control: it exists to prove the environment audit reports an unsatisfied
+  /// screen rather than rendering a plausible lie, so it must stay without the environment.
   case bare
 }
 
@@ -303,8 +403,10 @@ final class PresentationController: ObservableObject {
       generation += 1
       screen = name
       appflowLog.notice("present overlay \(name, privacy: .public) gen=\(self.generation) wait=\(opts.waitFor.rawValue, privacy: .public)")
+    case .window:
+      presentBare(name, rootEnvironment: true)
     case .bare:
-      presentBare(name)
+      presentBare(name, rootEnvironment: false)
     }
     startTicker()
   }
@@ -315,6 +417,9 @@ final class PresentationController: ObservableObject {
     log = SignalLog()
     bareWindow?.isHidden = true
     bareWindow = nil
+    // Released with the window it names, so a later `overlay` capture is not photographed through
+    // a window that is no longer on screen.
+    Raster.harnessWindow = nil
     completion = nil
     completed = true
     appflowLog.notice("dismiss")
@@ -398,17 +503,70 @@ final class PresentationController: ObservableObject {
     maybeFinish()
   }
 
-  /// Does any layer under the key window have a CAAnimation attached?
+  /// Whether anything is animating that can actually finish.
+  ///
+  /// The check used to report *any* animation key as "still busy". On a real app that is
+  /// close to permanently true, and it took `idle` down with it: measured on IceCubesApp
+  /// (iOS 26), `idle` fired on 12 of 38 screens, and the animations blocking the other 26
+  /// were three unlike things lumped together --
+  ///
+  ///   - `CASDFElementLayer:match-*` and `_UILiquidLensView.punchout` carry `duration ==
+  ///     .infinity`. These are the system's Liquid Glass morph effects.
+  ///   - Some layers animate `contents` with `repeatCount == Float(Int32.max)`.
+  ///   - A `CAReplicatorLayer` shimmer, which is SwiftUI's redacted placeholder.
+  ///
+  /// Only the first can be dismissed. A `duration` of infinity is a value held open, so
+  /// waiting on it cannot pay off. The other two repeat forever but still mean "not ready":
+  /// a shimmer is SwiftUI's redacted placeholder, i.e. the screen is showing a skeleton, and
+  /// blocking on it is the correct answer -- the backstop capture of an unfinished screen is
+  /// honest, where `stable` fires at ~510 ms on a frame reading "Loading ...". See
+  /// `isHeldState` for the counter-example that settled this.
+  ///
+  /// Re-measured on IceCubesApp under that rule: 22 of 38, +10 screens, none lost, and not
+  /// one fired earlier than before.
+  ///
+  /// What that leaves is a limit, not a bug. 18 of 39 screens still never reach `idle`, and
+  /// signing in -- the experiment that was supposed to resolve them -- moved 0 of them. They
+  /// are blocked by a form with a *finite* duration and an effectively infinite repeat count
+  /// (`CALayer:_uitcvba` at `dur=1.0 rep=3.4e+38`, and an animated `contents` at
+  /// `dur=0.8 rep=2.1e+09`), on screens such as `EditFilterView` and `AboutView` that touch
+  /// no network at all. Both are pure decoration. So is the demo's `ProgressView` spinner, in
+  /// every respect the animation object exposes -- and that one means "still loading". On an
+  /// app with no work ledger there is nothing left to separate them, so these screens are
+  /// paid for in time, at `Tuning.budgetMs`, rather than in a wrong screenshot.
   private static func hasRunningAnimation() -> Bool {
     guard let w = Raster.keyWindow else { return false }
     var stack: [CALayer] = [w.layer]
     var budget = 4000
     while let l = stack.popLast(), budget > 0 {
       budget -= 1
-      if let keys = l.animationKeys(), !keys.isEmpty { return true }
+      for key in l.animationKeys() ?? [] {
+        guard let a = l.animation(forKey: key) else { continue }
+        if !isHeldState(a) { return true }
+      }
       stack.append(contentsOf: l.sublayers ?? [])
     }
     return false
+  }
+
+  /// An animation that is a *held state* rather than a cycle, and so can be ignored.
+  ///
+  /// The tempting rule is "ignore anything that repeats forever". It is wrong, and the demo
+  /// corpus catches it: `RemoteAvatarView` shows a `ProgressView` spinner while its
+  /// `AsyncImage` loads, a spinner repeats forever, and ignoring it fired `idle` at 252 ms
+  /// onto a half-loaded screen -- 13/13 became 12/13. A spinner and a redacted-placeholder
+  /// shimmer repeat forever *and* mean "not ready"; nothing in the animation object separates
+  /// them from a decorative logo that also repeats forever.
+  ///
+  /// What *is* separable is an animation with an infinite `duration`. That is not a cycle at
+  /// all: it is a value held open, which is how iOS 26 renders its Liquid Glass morphs
+  /// (`CASDFElementLayer:match-*`, `_UILiquidLensView.punchout`, all `dur=inf rep=0`). Nothing
+  /// further will happen, so waiting cannot pay off.
+  ///
+  /// Everything else keeps blocking and the flat backstop bounds the cost. That asymmetry is
+  /// deliberate: capturing early is a wrong screenshot, while waiting too long is only slow.
+  private static func isHeldState(_ a: CAAnimation) -> Bool {
+    a.duration.isInfinite
   }
 
   private func maybeFinish() {
@@ -427,35 +585,54 @@ final class PresentationController: ObservableObject {
     cb(log)
   }
 
-  // MARK: Bare presentation (the known-hostile control)
+  // MARK: Windowed presentation (`window`, and the known-hostile `bare` control)
 
-  /// Deliberately hostile presentation: the registry's view, alone, in a fresh
-  /// window, with none of the app-root environment attached.
-  private func presentBare(_ name: String) {
+  /// The registry's view, alone, in a fresh window above everything.
+  ///
+  /// `rootEnvironment` is the whole difference between the two modes that come through here.
+  /// With it, this is `window`: the screen sits above any sheet the app has up and still reads
+  /// the environment the app root installed, which is what a sweep against someone else's app
+  /// needs. Without it, this is `bare`, the deliberately hostile control that proves the
+  /// environment audit reports an unsatisfied screen rather than quietly rendering a lie.
+  ///
+  /// The white backdrop is not decoration: a hosted view with a clear background over a window
+  /// of its own shows whatever the compositor has behind it, which photographs as the app's own
+  /// screen bleeding through the capture.
+  private func presentBare(_ name: String, rootEnvironment: Bool) {
     guard let scene = UIApplication.shared.connectedScenes
       .compactMap({ $0 as? UIWindowScene }).first,
       let make = ScreenRegistry.entries[name]
     else {
-      appflowLog.error("bare present failed to resolve \(name, privacy: .public)")
+      appflowLog.error("window present failed to resolve \(name, privacy: .public)")
       return
     }
-    appflowLog.notice("present bare \(name, privacy: .public) (no environment)")
+    appflowLog.notice(
+      "present \(rootEnvironment ? "window" : "bare", privacy: .public) \(name, privacy: .public)")
     // The audit probe goes in here too, at the same environment depth as the
     // screen, so the unsatisfied case is actually reported rather than just
     // rendering wrong in silence.
     let gen = generation
-    let host = UIHostingController(rootView: AnyView(
+    var content = AnyView(
       ZStack {
-        NavigationStack { make() }
+        Color(white: 1.0).ignoresSafeArea()
+        NavigationStack { make().toolbarBackground(.visible, for: .navigationBar) }
         EnvAuditProbe(generation: gen)
       }
-    ))
+      // `markAppear` has to fire when the hosted screen's first frame is about to commit, not
+      // when the window was made key: in `window` mode those are different moments, and timing
+      // the second one reports a readiness the screen had not reached.
+      .onAppear { PresentationController.shared.markAppear() }
+    )
+    // The app installs this at its root. In `bare` it is deliberately skipped; in `window` it is
+    // the only thing that puts the screen back in the environment it was written for.
+    if rootEnvironment, let apply = Raster.applyRootEnvironment { content = apply(content) }
+    let host = UIHostingController(rootView: content)
     let window = UIWindow(windowScene: scene)
     window.rootViewController = host
     window.windowLevel = .alert + 1
     window.makeKeyAndVisible()
     bareWindow = window
-    markAppear()
+    Raster.harnessWindow = window
   }
 }
 

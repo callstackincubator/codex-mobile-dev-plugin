@@ -13,6 +13,8 @@ release/
 native/ios-mirror/target/
 native/swift-appflow-parse/.build/
 native/swift-appflow-present/Tools/__pycache__/
+# Codegen'd from a parse of the demo app's own sources by build.sh.
+native/swift-appflow-present/Generated/
 .claude/worktrees/
 native/swift-appflow-present/build/
 native/swift-appflow-present/shots/

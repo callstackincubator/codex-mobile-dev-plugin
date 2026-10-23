@@ -1,0 +1,295 @@
+[
+  {
+    "screen": "AboutView",
+    "settle_ms": 4000,
+    "capture_ms": 112.8,
+    "signals": {
+      "frame_ms": 120.9,
+      "stable_ms": 453.8,
+      "idle_ms": 303.7,
+      "timeout_ms": 4003.8,
+      "stable_samples": 7,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0
+    },
+    "env": {
+      "satisfied": [],
+      "missing": [],
+      "advisory": []
+    }
+  },
+  {
+    "screen": "AccountStatusView",
+    "settle_ms": 4000,
+    "capture_ms": 137.3,
+    "signals": {
+      "frame_ms": 152.3,
+      "stable_ms": 454.4,
+      "idle_ms": 304.4,
+      "timeout_ms": 4003.7,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0
+    },
+    "env": {
+      "satisfied": [
+        "AppSession",
+        "themeAccent"
+      ],
+      "missing": [],
+      "advisory": []
+    }
+  },
+  {
+    "screen": "AnimatedBannerView",
+    "settle_ms": 4000,
+    "capture_ms": 117.2,
+    "signals": {
+      "frame_ms": 150.8,
+      "stable_ms": 453.9,
+      "idle_ms": 304.9,
+      "timeout_ms": 4004.9,
+      "stable_samples": 7,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0
+    },
+    "env": {
+      "satisfied": [],
+      "missing": [],
+      "advisory": []
+    }
+  },
+  {
+    "screen": "BrandedHeaderView",
+    "settle_ms": 4000,
+    "capture_ms": 139.5,
+    "signals": {
+      "frame_ms": 151.0,
+      "stable_ms": 504.3,
+      "idle_ms": 304.7,
+      "timeout_ms": 4005.0,
+      "stable_samples": 7,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0
+    },
+    "env": {
+      "satisfied": [],
+      "missing": [
+        "brandTint"
+      ],
+      "advisory": []
+    }
+  },
+  {
+    "screen": "CounterEditorView",
+    "settle_ms": 4000,
+    "capture_ms": 123.3,
+    "signals": {
+      "frame_ms": 164.4,
+      "stable_ms": 454.9,
+      "idle_ms": 354.8,
+      "timeout_ms": 4004.9,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0
+    },
+    "env": {
+      "satisfied": [],
+      "missing": [],
+      "advisory": []
+    }
+  },
+  {
+    "screen": "EmptyInboxView",
+    "settle_ms": 4000,
+    "capture_ms": 131.0,
+    "signals": {
+      "frame_ms": 139.2,
+      "stable_ms": 404.4,
+      "idle_ms": 303.4,
+      "timeout_ms": 4004.4,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0
+    },
+    "env": {
+      "satisfied": [
+        "InboxStore"
+      ],
+      "missing": [],
+      "advisory": []
+    }
+  },
+  {
+    "screen": "FeedView",
+    "settle_ms": 4000,
+    "capture_ms": 131.8,
+    "signals": {
+      "frame_ms": 156.2,
+      "stable_ms": 454.5,
+      "idle_ms": 2954.6,
+      "timeout_ms": 4004.6,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": true,
+      "peak_outstanding": 1
+    },
+    "env": {
+      "satisfied": [
+        "FeedStore"
+      ],
+      "missing": [],
+      "advisory": []
+    }
+  },
+  {
+    "screen": "OrderDetailView",
+    "settle_ms": 4000,
+    "capture_ms": 138.5,
+    "signals": {
+      "frame_ms": 177.1,
+      "stable_ms": 454.2,
+      "idle_ms": 354.3,
+      "timeout_ms": 4004.2,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0
+    },
+    "env": {
+      "satisfied": [],
+      "missing": [],
+      "advisory": []
+    }
+  },
+  {
+    "screen": "ProfileView",
+    "settle_ms": 4000,
+    "capture_ms": 113.4,
+    "signals": {
+      "frame_ms": 135.1,
+      "stable_ms": 404.5,
+      "idle_ms": 304.5,
+      "timeout_ms": 4004.5,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0
+    },
+    "env": {
+      "satisfied": [],
+      "missing": [],
+      "advisory": []
+    }
+  },
+  {
+    "screen": "RemoteAvatarView",
+    "settle_ms": 4000,
+    "capture_ms": 101.6,
+    "signals": {
+      "frame_ms": 135.2,
+      "stable_ms": 404.3,
+      "idle_ms": 1304.3,
+      "timeout_ms": 4004.2,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": true,
+      "peak_outstanding": 0
+    },
+    "env": {
+      "satisfied": [],
+      "missing": [],
+      "advisory": []
+    }
+  },
+  {
+    "screen": "RootView",
+    "settle_ms": 4000,
+    "capture_ms": 137.3,
+    "signals": {
+      "frame_ms": 143.8,
+      "stable_ms": 404.1,
+      "idle_ms": 304.0,
+      "timeout_ms": 4004.1,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0
+    },
+    "env": {
+      "satisfied": [],
+      "missing": [],
+      "advisory": []
+    }
+  },
+  {
+    "screen": "SelfContainedNavView",
+    "settle_ms": 4000,
+    "capture_ms": 131.9,
+    "signals": {
+      "frame_ms": 138.8,
+      "stable_ms": 404.6,
+      "idle_ms": 304.6,
+      "timeout_ms": 4003.8,
+      "stable_samples": 6,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0
+    },
+    "env": {
+      "satisfied": [],
+      "missing": [],
+      "advisory": []
+    }
+  },
+  {
+    "screen": "ThemeProbeView",
+    "settle_ms": 4000,
+    "capture_ms": 106.3,
+    "signals": {
+      "frame_ms": 137.9,
+      "stable_ms": 454.7,
+      "idle_ms": 305.2,
+      "timeout_ms": 4004.8,
+      "stable_samples": 7,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0
+    },
+    "env": {
+      "satisfied": [
+        "themeAccent"
+      ],
+      "missing": [],
+      "advisory": []
+    }
+  },
+  {
+    "screen": "TwoStageOrderView",
+    "settle_ms": 4000,
+    "capture_ms": 131.9,
+    "signals": {
+      "frame_ms": 143.3,
+      "stable_ms": 404.4,
+      "idle_ms": 1954.4,
+      "timeout_ms": 4004.5,
+      "stable_samples": 6,
+      "last_diff": 0.00196,
+      "saw_animation": false,
+      "peak_outstanding": 1
+    },
+    "env": {
+      "satisfied": [
+        "TwoStageOrderStore"
+      ],
+      "missing": [],
+      "advisory": []
+    }
+  }
+]

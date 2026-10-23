@@ -2,12 +2,12 @@
   {
     "screen": "AboutView",
     "settle_ms": 4000,
-    "capture_ms": 132.9,
+    "capture_ms": 122.3,
     "signals": {
-      "frame_ms": 83.0,
-      "stable_ms": 351.1,
-      "idle_ms": 250.5,
-      "timeout_ms": 4000.4,
+      "frame_ms": 59.2,
+      "stable_ms": 352.0,
+      "idle_ms": 251.9,
+      "timeout_ms": 4001.5,
       "stable_samples": 6,
       "last_diff": 0.0,
       "saw_animation": false,
@@ -21,13 +21,13 @@
   {
     "screen": "AccountStatusView",
     "settle_ms": 4000,
-    "capture_ms": 134.7,
+    "capture_ms": 133.8,
     "signals": {
-      "frame_ms": 87.8,
-      "stable_ms": 350.6,
-      "idle_ms": 250.5,
-      "timeout_ms": 4000.6,
-      "stable_samples": 6,
+      "frame_ms": 76.5,
+      "stable_ms": 401.0,
+      "idle_ms": 251.0,
+      "timeout_ms": 4001.9,
+      "stable_samples": 7,
       "last_diff": 0.0,
       "saw_animation": false,
       "peak_outstanding": 0
@@ -43,14 +43,14 @@
   {
     "screen": "AnimatedBannerView",
     "settle_ms": 4000,
-    "capture_ms": 103.6,
+    "capture_ms": 120.8,
     "signals": {
-      "frame_ms": 80.6,
-      "stable_ms": 350.4,
-      "idle_ms": 250.3,
-      "timeout_ms": 4000.7,
+      "frame_ms": 63.8,
+      "stable_ms": 352.1,
+      "idle_ms": 252.0,
+      "timeout_ms": 4002.1,
       "stable_samples": 6,
-      "last_diff": 3e-05,
+      "last_diff": 4e-05,
       "saw_animation": false,
       "peak_outstanding": 0
     },
@@ -62,13 +62,13 @@
   {
     "screen": "BrandedHeaderView",
     "settle_ms": 4000,
-    "capture_ms": 126.6,
+    "capture_ms": 129.6,
     "signals": {
-      "frame_ms": 75.6,
-      "stable_ms": 351.1,
-      "idle_ms": 251.1,
-      "timeout_ms": 4001.2,
-      "stable_samples": 6,
+      "frame_ms": 58.5,
+      "stable_ms": 401.3,
+      "idle_ms": 251.2,
+      "timeout_ms": 4000.8,
+      "stable_samples": 7,
       "last_diff": 0.0,
       "saw_animation": false,
       "peak_outstanding": 0
@@ -83,13 +83,13 @@
   {
     "screen": "CounterEditorView",
     "settle_ms": 4000,
-    "capture_ms": 130.1,
+    "capture_ms": 132.3,
     "signals": {
-      "frame_ms": 91.1,
-      "stable_ms": 451.0,
-      "idle_ms": 301.1,
-      "timeout_ms": 4001.1,
-      "stable_samples": 7,
+      "frame_ms": 74.0,
+      "stable_ms": 351.4,
+      "idle_ms": 251.3,
+      "timeout_ms": 4000.9,
+      "stable_samples": 6,
       "last_diff": 0.0,
       "saw_animation": false,
       "peak_outstanding": 0
@@ -102,13 +102,13 @@
   {
     "screen": "EmptyInboxView",
     "settle_ms": 4000,
-    "capture_ms": 123.4,
+    "capture_ms": 132.0,
     "signals": {
-      "frame_ms": 79.1,
-      "stable_ms": 351.1,
-      "idle_ms": 251.1,
-      "timeout_ms": 4001.1,
-      "stable_samples": 6,
+      "frame_ms": 65.4,
+      "stable_ms": 400.8,
+      "idle_ms": 252.0,
+      "timeout_ms": 4001.6,
+      "stable_samples": 7,
       "last_diff": 0.0,
       "saw_animation": false,
       "peak_outstanding": 0
@@ -123,12 +123,12 @@
   {
     "screen": "FeedView",
     "settle_ms": 4000,
-    "capture_ms": 96.6,
+    "capture_ms": 125.3,
     "signals": {
-      "frame_ms": 80.0,
-      "stable_ms": 350.1,
-      "idle_ms": 2900.2,
-      "timeout_ms": 4000.6,
+      "frame_ms": 68.1,
+      "stable_ms": 350.9,
+      "idle_ms": 2900.9,
+      "timeout_ms": 4002.0,
       "stable_samples": 6,
       "last_diff": 0.0,
       "saw_animation": true,
@@ -142,34 +142,15 @@
     }
   },
   {
-    "screen": "OrderDetailView",
-    "settle_ms": 4000,
-    "capture_ms": 131.0,
-    "signals": {
-      "frame_ms": 86.2,
-      "stable_ms": 400.4,
-      "idle_ms": 250.4,
-      "timeout_ms": 4000.5,
-      "stable_samples": 7,
-      "last_diff": 0.0,
-      "saw_animation": false,
-      "peak_outstanding": 0
-    },
-    "env": {
-      "satisfied": [],
-      "missing": []
-    }
-  },
-  {
     "screen": "ProfileView",
     "settle_ms": 4000,
-    "capture_ms": 119.0,
+    "capture_ms": 141.6,
     "signals": {
-      "frame_ms": 73.0,
-      "stable_ms": 401.1,
-      "idle_ms": 251.1,
-      "timeout_ms": 4001.2,
-      "stable_samples": 7,
+      "frame_ms": 61.5,
+      "stable_ms": 352.1,
+      "idle_ms": 252.0,
+      "timeout_ms": 4001.6,
+      "stable_samples": 6,
       "last_diff": 0.0,
       "saw_animation": false,
       "peak_outstanding": 0
@@ -182,12 +163,12 @@
   {
     "screen": "RemoteAvatarView",
     "settle_ms": 4000,
-    "capture_ms": 125.4,
+    "capture_ms": 114.4,
     "signals": {
-      "frame_ms": 72.7,
-      "stable_ms": 351.1,
-      "idle_ms": 1151.1,
-      "timeout_ms": 4000.6,
+      "frame_ms": 65.9,
+      "stable_ms": 352.0,
+      "idle_ms": 1151.2,
+      "timeout_ms": 4001.9,
       "stable_samples": 6,
       "last_diff": 0.0,
       "saw_animation": true,
@@ -199,14 +180,33 @@
     }
   },
   {
+    "screen": "RootView",
+    "settle_ms": 4000,
+    "capture_ms": 127.5,
+    "signals": {
+      "frame_ms": 76.8,
+      "stable_ms": 401.5,
+      "idle_ms": 251.6,
+      "timeout_ms": 4001.5,
+      "stable_samples": 7,
+      "last_diff": 0.0,
+      "saw_animation": false,
+      "peak_outstanding": 0
+    },
+    "env": {
+      "satisfied": [],
+      "missing": []
+    }
+  },
+  {
     "screen": "SelfContainedNavView",
     "settle_ms": 4000,
-    "capture_ms": 129.5,
+    "capture_ms": 124.6,
     "signals": {
-      "frame_ms": 77.9,
-      "stable_ms": 350.9,
-      "idle_ms": 251.1,
-      "timeout_ms": 4000.9,
+      "frame_ms": 69.0,
+      "stable_ms": 351.8,
+      "idle_ms": 251.8,
+      "timeout_ms": 4001.9,
       "stable_samples": 6,
       "last_diff": 0.0,
       "saw_animation": false,
@@ -220,13 +220,13 @@
   {
     "screen": "ThemeProbeView",
     "settle_ms": 4000,
-    "capture_ms": 126.5,
+    "capture_ms": 123.5,
     "signals": {
-      "frame_ms": 63.1,
-      "stable_ms": 351.1,
-      "idle_ms": 251.0,
-      "timeout_ms": 4001.2,
-      "stable_samples": 6,
+      "frame_ms": 65.2,
+      "stable_ms": 400.3,
+      "idle_ms": 250.1,
+      "timeout_ms": 4001.8,
+      "stable_samples": 7,
       "last_diff": 0.0,
       "saw_animation": false,
       "peak_outstanding": 0
@@ -241,12 +241,12 @@
   {
     "screen": "TwoStageOrderView",
     "settle_ms": 4000,
-    "capture_ms": 120.9,
+    "capture_ms": 129.8,
     "signals": {
-      "frame_ms": 71.4,
-      "stable_ms": 351.1,
-      "idle_ms": 1851.2,
-      "timeout_ms": 4000.7,
+      "frame_ms": 61.9,
+      "stable_ms": 351.0,
+      "idle_ms": 1802.0,
+      "timeout_ms": 4002.1,
       "stable_samples": 6,
       "last_diff": 0.00196,
       "saw_animation": false,

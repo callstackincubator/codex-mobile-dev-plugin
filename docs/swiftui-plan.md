@@ -64,10 +64,129 @@ So the screen is still adversarial by construction — static for 1.25 s, then i
 mutates — but a work ledger that *sees* the pending work is right about it. The
 earlier 12/13 measured the harness, not the signal.
 
+### The readiness default, re-decided against a real app
+
+The table above is the demo corpus, and it does not transfer unexamined. Measured on
+IceCubesApp (42 registry screens, 38 presented, logged out):
+
+| | demo, 13 screens | IceCubesApp, 38 screens |
+|---|---|---|
+| `peak_outstanding > 0` | most screens | **0 of 38** |
+| `idle` fires | 13/13 | **12/38** |
+| `stable` fires | 13/13, 10 correct | 38/38 |
+
+Two things follow.
+
+**The work ledger is inert on an unannotated app.** Nothing in IceCubesApp calls
+`WorkTracker.begin`, so `idle` there is the animation check and nothing else. The demo's
+13/13 is carried by the ledger, which a real app will not have. That is a property of the
+corpus, not of the signal, and it has to be said plainly wherever the 13/13 is quoted.
+
+**`stable` is not the fallback it appears to be.** On IceCubesApp it fires on every screen,
+including all nine data-backed lists, at 459–1060 ms. The capture it produces for
+`TrendingLinksListView` is a frame reading "Loading ...". It is not succeeding where `idle`
+fails; it is failing in the way the demo corpus already found it fails, on a corpus where
+nothing can catch it, because logged out no screen ever finishes loading and there is no
+ground truth to compare against.
+
+**What was actually wrong with `idle`** was `hasRunningAnimation`, which treated any
+animation key as "still busy". On iOS 26 that is close to permanently true. The animations
+blocking it are three unlike things:
+
+| form | example | meaning |
+|---|---|---|
+| `duration == .infinity`, `rep = 0` | `CASDFElementLayer:match-*`, `_UILiquidLensView.punchout` | Liquid Glass; a held state |
+| finite `duration`, repeating forever | `ProgressView` spinner, redaction shimmer | **not ready** |
+| finite `duration`, re-added each cycle | `CAReplicatorLayer:instanceAlphaOffset` | **not ready** |
+
+Only the first can be ignored. The obvious rule — ignore anything that repeats forever —
+is wrong, and the demo corpus catches it: `RemoteAvatarView` shows a `ProgressView` while
+its `AsyncImage` loads, so ignoring forever-repeats fired `idle` at 252 ms onto a
+half-loaded screen and took 13/13 to 12/13. Nothing in a `CAAnimation` separates a spinner
+from a decorative logo. An infinite `duration` is separable, because it is not a cycle at
+all.
+
+So readiness ignores animations with an infinite `duration` and waits for everything else,
+with the flat backstop bounding the cost. The asymmetry is deliberate: capturing early
+produces a wrong screenshot that looks right, while waiting too long is only slow.
+
+Re-measured under that rule, within one run:
+
+| | demo | IceCubesApp |
+|---|---|---|
+| `idle` fires | **13/13** (unchanged) | **22/38**, up from 12 |
+| lost | 0 | 0 |
+| fired earlier than before | 0 | 0 |
+
+### The signed-in run, and what it refuted
+
+The paragraph that used to stand here said the screens still refusing were the data-backed
+lists, that logged out they are genuinely never ready, and that refusing them is correct. A
+signed-in run was named as the thing that would confirm it, with a falsifiable prediction:
+those screens resolve and the backstop count collapses.
+
+They did not. Signed in, nothing moved.
+
+| | logged out, relaunch per screen | signed in, single process |
+|---|---|---|
+| `idle` fires | 22/39 | **21/39** |
+| gained by signing in | — | **0** |
+| lost | — | 1 (`AccountsListView`) |
+
+The same 18 screens refuse in both runs, and the two runs used different process models, so
+a clean process per screen rules out leftover animation from a previous presentation. The
+blocked set also includes screens that touch no network at all — `EditFilterView`,
+`EditTagGroupView`, `AddRemoteTimelineView`, `AboutView`. A settings form with an account
+signed in is ready, and `idle` still will not say so. These are false refusals.
+
+Probing the animation inventory on those screens named a **fourth** form, which the table
+above does not have:
+
+| screen | `idle` | what is running |
+|---|---|---|
+| `EditFilterView`, `EditTagGroupView` | never | `CALayer:_uitcvba` — `dur=1.0`, `rep=3.4e+38` |
+| `AboutView` | never | `CALayer:contents` — `dur=0.8`, `rep=2.1e+09` |
+| `WishlistView` | 460 ms | only `dur=inf` held states and `rep=0` finite ones |
+| `SupportAppView` | 782 ms | three plain `dur=0.44, rep=0` |
+
+Finite `duration`, effectively infinite `repeatCount`. The classifier is behaving exactly as
+designed — `WishlistView` fires despite eight held states — and this form is pure
+decoration. So is the demo's `ProgressView` spinner, in every respect a `CAAnimation`
+exposes, and that one means "still loading". On an app with no work ledger there is nothing
+left to separate them.
+
+**This is a limit, not a bug to fix.** These 18 are paid for in time, at the backstop, rather
+than in a wrong screenshot. What is now disproven is the claim that their refusals were about
+data; they are about decoration, and signing in cannot help.
+
+### What the backstop should be
+
+The backstop is the common path for those 18, so the figure is worth measuring. Two
+measurements bear on it, and the obvious one is the wrong one.
+
+Signed in, each blocked screen was captured at a range of budgets and compared by RMSE
+against a 12 s reference, using `kind=draw` — real presented pixels, since `kind=layer` goes
+through `CALayer.render` and reads 0.00000 at every budget. `ExploreView` is the slowest,
+still missing 13% of its pixels at 1000 ms and complete at 1500 ms; `AddAccountView` is
+missing 22% at 300 ms. Nothing measured changed after 1500 ms, which suggested 2000 ms.
+
+That is wrong, and the demo caught it. The backstop also has to clear the slowest screen that
+answers *honestly*: `FeedView` holds ledger work until 2851 ms. At 2000 ms it stops firing
+and is captured unfinished — 13/13 back down to 12/13. Truncating a screen that would have
+given a true answer is the one outcome worth paying to avoid, so the backstop clears the
+slowest real readiness, not the slowest pixel. **5000 ms stands**, now measured rather than
+assumed.
+
+One caveat on the pixel figure: the reference frame was captured first, so later budgets ran
+against a warm network cache and 1500 ms is optimistic for a cold screen. It does not set the
+number, but a re-run should capture the reference last.
+
 `stable` is structurally dead, not merely untuned — swept 4 raster sizes × 5
 thresholds and it was never once right on an async screen. `CALayer.render(in:)`
 draws the model layer tree, so a `repeatForever` animation diffs by exactly
-0.00000.
+0.00000. The signed-in run confirms it rather than softening it: `last_diff` reads
+0.00000 on 38 of 39 screens, and `stable` fired on all 39 at a median of 404 ms. It
+is not measuring readiness at all.
 
 ## POC structure
 
@@ -96,23 +215,50 @@ Per screen, the orchestrator drives this loop:
 sequenceDiagram
   participant O as orchestrator
   participant A as app (debug package)
-  O->>A: launch (fresh process)
-  O->>A: present(screenName)
-  A->>A: await idle, or timeout
-  A-->>O: PNG + env_missing + rung
+  O->>A: launch (once per run)
+  loop every screen
+    O->>A: dismiss + reset ledger
+    O->>A: present(screenName)
+    A->>A: await idle, or timeout
+    A-->>O: PNG + env_missing + rung
+  end
   O->>A: terminate
 ```
 
-Relaunching every screen is what makes reset and crash isolation free. Cost is
-~620 ms/screen; for 13 screens the readiness path still totals ~8 s against 52 s
-for a flat 4 s settle.
+That loop no longer relaunches per screen; see item 2 for what replaced it and
+what the swap cost.
 
 ## In the POC
 
 1. **Remove** the three drifted mechanisms above; re-run the verdict harness to
    confirm `idle` + timeout reproduces 12/13 and 13/13 with no source changes.
-2. **Relaunch-per-screen** capture loop, replacing store reset and giving crash
-   isolation (today one bad screen kills the app and ends the run).
+2. **Single-process** capture loop. ✅ `src/app-flow/swift-capture.ts`.
+   Launch once, then per screen: dismiss, reset the work ledger, present, settle,
+   raster. Four outcomes are distinguished: `captured`,
+   `environment_unsatisfied` (captured and flagged — the screenshot is the
+   evidence), `crashed`, and `refused` (the parser would not construct it, so
+   nothing is presented).
+
+   This started as relaunch-per-screen and was changed to match React Native Fast
+   mode, which drives a live app and does not restart it between screens. Two
+   capture paths in one feature that disagree about that is a cost paid on every
+   later change, and a user watching the simulator would see a different thing
+   happen depending on which language their app is written in.
+
+   What the relaunch bought and what replaced it:
+
+   | | relaunch-per-screen | one process |
+   |---|---|---|
+   | store state between screens | cannot leak | leaks; `/dismiss` resets view identity, not stores |
+   | pending work | nothing in flight | `/reset` clears the harness ledger, not the app's own work |
+   | crashes | one screen lost | one screen lost, then one relaunch to recover |
+   | cost | ~610 ms every screen | ~610 ms once, plus one per crash |
+
+   Only the third is actually replaced; the first two are accepted, and are the
+   same thing Fast mode accepts for React Native. Crash recovery is verified
+   rather than asserted — `CrashOnAppearView` is a control that kills the process
+   50 ms after its first frame, and a run containing it records that one screen as
+   `crashed`, relaunches once, and captures every screen after it.
 3. **Parser invocation contract.** ✅ The contract is stated in full at the top
    of `native/swift-appflow-parse/Sources/swift-appflow-parse/main.swift` and
    consumed by `src/app-flow/swift-parse.ts`: source root in, one JSON object on
@@ -124,15 +270,92 @@ for a flat 4 s settle.
    binary where a shipped one would go. Toolchain absence, build failure and
    contract skew are three different sentences. This is the *interface*,
    deliberately not the distribution story — see "Parser distribution" below.
-4. **Parse → codegen handoff.** `screens.json` is currently hand-authored; wire
-   the parser's real output into `generate-registry.py`.
+4. **Parse → codegen handoff.** ✅ `build.sh` now runs the parser over the app's
+   own sources and pipes the report straight into `generate-registry.py`;
+   `Tools/screens.json` is deleted. Two things had to change for that to be real:
+
+   - The parser did not emit `environmentRequires`, which `ScreenRegistry.requirements`
+     is built from — and that is the *only* mechanism catching a missing
+     `@Environment` key, since such a key falls back to `defaultValue` and renders a
+     plausible lie no screenshot can expose. It now reads the declarations
+     (`@EnvironmentObject` → type, `@Environment(\.key)` → key,
+     `@Environment(T.self)` → type) and reproduces the hand-authored list exactly on
+     all 11 demo screens that had one. Corpus coverage: 56/59 IceCubesApp screens,
+     14/18 isowords, 8/19 sample-food-truck. Only the view's *own* properties are
+     seen; a child reading the environment is still invisible.
+   - The generated registry moved out of `Sources/` to `Generated/`. It is Swift, so
+     leaving it in the parsed tree fed the previous build's `AnyView(AboutView())`
+     entries back in as call sites — the parser was reading its own output. That was
+     not hypothetical: it is what made `OrderDetailView` resolve (see below).
+
+   Refusals are carried into the binary as `ScreenRegistry.missing` and served at
+   `/missing`, so a run reports what it could not build instead of silently
+   producing a smaller map than the app has.
 5. **Registry into a real build** — `.xcodeproj` / SPM integration, `#if DEBUG`
    guarded, generated file gitignored.
-6. **app-flow integration, Fast mode only.** Lift the `mode === 'swiftui'`
-   refusals at `src/app-flow/index.ts:132`, `index.ts:195`,
-   `src/app-flow/orchestrator.ts:901`.
-7. **Telemetry** per AGENTS.md, reusing `src/ui/telemetry.ts` helpers; add the
-   `app_flow.project_detect.duration` line to `docs/telemetry.md`.
+6. **app-flow integration.** ✅ A SwiftUI project now builds a screen map.
+   Three pieces had to exist before the refusals could be lifted honestly:
+
+   - **Observed edges.** The parser emitted screens but no relations, and
+     `routeEdges` carries a destination with no source — so the graph would have
+     had no edges at all, or invented ones. It now emits `viewEdges`: `from` is
+     the type whose body lexically contains the construction, read the same way
+     `enclosingTypeName` already reads it. `push` (a `NavigationLink`) and
+     `modal` (a `sheet`/`fullScreenCover`/`popover`) are relations a user can
+     trace; `route` (an arm of a `navigationDestination(for:)` switch) is kept
+     apart because it is declared on whichever view hosts the `NavigationStack`,
+     not on the screen the user was on when the path was appended. Measured:
+     IceCubesApp 23 edges over 21 screens, sample-food-truck 14 over 18,
+     isowords 6 over 18.
+   - **Graph construction.** `src/app-flow/swift-graph.ts` turns reports into
+     `AppFlowNode`/`AppFlowEdge`. One node per *screen* (a view with positive
+     evidence), never per view — a leaf component is not a screen. A refused
+     screen is still a node, carrying what the parser was missing, because a map
+     that silently omits it is smaller and cleaner and wrong. An edge whose
+     other end has no node is dropped rather than drawn to nothing.
+   - **The sweep.** `src/app-flow/swift-sweep.ts` is the orchestrator's SwiftUI
+     branch. It reads the bundle id out of `project.pbxproj`, expanding
+     `$(VAR)` from the project's own non-release `.xcconfig` files (IceCubesApp
+     writes `$(BUNDLE_ID_PREFIX).IceCubesApp`, so without this there is no
+     identifier at all), then drives the capture loop and maps each outcome onto
+     an `AppFlowCapture`.
+
+   `index.ts:132` and `:195` are **not** lifted, and that is the answer rather
+   than a gap. `launchApp` boots a simulator with Metro and a deep-link scheme
+   read from the app config; `exploreUi` opens states on whatever screen the user
+   left the app on by talking to that same runtime. Neither has a SwiftUI
+   counterpart — the capture path presents screens by name instead of navigating
+   to them. Their message now says so.
+
+   Measured end to end against IceCubesApp, through `buildAppFlow` itself (see
+   item 1): 22 nodes, **17 captured in 32.3 s**, 1 crashed (`DisplaySettingsView`,
+   the known transitive-`@Environment` case) and 4 refused by the parser. An
+   earlier figure of 21 screens / 17 in 30.5 s came from driving `runSwiftSweep`
+   directly, against a graph with 23 edges — nine of them duplicates, which item 1
+   found and removed.
+
+   The sweep presents in `window` mode rather than the capture loop's own
+   `overlay` default, and the difference is not cosmetic: in `overlay` the screen
+   is rendered *inside* the live root tree and goes under anything the app
+   presents over it, and on IceCubesApp that took **6 of 21 screens' processes
+   down**, against 1 in `window` mode (71 s vs 30.5 s for the same run). `window`
+   hosts the screen in its own `UIWindow` above everything and re-applies the
+   app-root environment, so it holds for an app the sweep did not write.
+
+   **Divergence resolved.** ✅ `window` is now in `Harness.swift` — the own
+   `UIWindow`, `Raster.applyRootEnvironment`, and `Raster.harnessWindow` taking
+   priority over `isKeyWindow` so the raster reads the harness's window rather
+   than an app sheet in front of it. The silent fallback is gone with it: a
+   `mode` or `signal` the build does not have is refused, not swapped for the
+   default. Re-measured on the demo in `window` mode, same device and metric:
+   `idle` **14/14**, `frame` 11/14, `stable` 11/14 — every verdict identical to
+   `overlay`, over the 14 screens the registry now holds rather than 13, with no
+   crash and no screen lost. The mode is not what made IceCubesApp's figures.
+7. **Telemetry** ✅ per AGENTS.md, reusing `src/ui/telemetry.ts` helpers. The
+   `app_flow.project_detect.duration` line is in `docs/telemetry.md`, stated as
+   what it is: not a SwiftUI series, but one every App Flow run pays, documented
+   here because the SwiftUI branch is what made a root's shape expensive enough
+   to recognise to be worth bounding.
 8. **Hygiene** — unstage the 19 build artifacts and PNGs currently staged
    (`.app` binary, `.dSYM`, `shots/`); gitignore `build/` alongside `.build/`.
 
@@ -143,11 +366,12 @@ produces a screen graph with screenshots, where every screenshot is either
 correct or explicitly refused — no screen constructed from an invented value,
 and no captures taken before the screen settled.
 
-Current parser coverage, which the POC inherits:
+Current parser coverage, which the POC inherits, after items 4 and 5:
 
 | App | Screens resolved | Route edges |
 |---|---|---|
-| IceCubesApp | 44/59 (75%) | 31/37 |
+| demo | **15/15 (100%)** | 3/3 |
+| IceCubesApp | 44/60 (73%) | 31/37 |
 | isowords | 13/18 (72%) | 0/0 |
 | sample-food-truck | 18/19 (95%) | 3/4 |
 
@@ -156,6 +380,208 @@ What did change is `viewsConstructible`, which counts leaf components as well as
 screens — 85→71, 45→44 and 65→62. Those 18 views were being constructed from an
 invented `[]`, which is exactly the breach; none of them is a screen and no
 route edge moved.
+
+Item 4 moved two of these, each for a reason worth keeping. The demo went 14/16
+to 15/15: `OrderDetailView` resolved from the route value its own
+`NavigationLink(value:)` writes down, and `CaptureOverlay` stopped being a screen
+once an entry was read from the scene rather than from everything the `App`
+type's members construct. IceCubesApp's denominator moved the same way — 59 to 60
+— `AppView` arriving as the app's entry and `AppFlowCaptureLayer`, the debug
+harness's own overlay, leaving. The resolved count did not move on any real app:
+these are corrections to *what is a screen*, not new coverage.
+
+## What's left, in order
+
+### 1. Run App Flow end to end ✅
+
+`buildAppFlow` has now executed its SwiftUI branch. Driven against IceCubesApp
+on iPhone 17 Pro / iOS 26.2, with the app built and installed by hand and the
+simulator left up — the scope agreed for this pass was the graph, not the build:
+
+| | |
+|---|---|
+| `sweepStatus` | `completed`, 32.3 s |
+| nodes / edges | 22 / 15 |
+| captured | **17**, screenshots filed under their own slugs |
+| crashed | 1 — `DisplaySettingsView`, every run |
+| refused by the parser | 4, each naming the value it had no observation for |
+| `navigation` | `rootNavigator: Tabs`, `entryScreenIds: [AppView]` |
+| phases emitted | `parse`, `capture`, `render` |
+
+`writeCaptureStatus` and `writeAppFlow` agree exactly — 22 rows against 22 nodes,
+no disagreement — and the 17 `ok` nodes are 17 files on disk. The structure phase
+accepted a graph of Swift nodes and stamped a `structureRevision`.
+
+Three things only a real run could have said:
+
+- **The vendored parser is what runs, not the one you just built.** The first run
+  produced 21 nodes and an empty `navigation`, because `resolveSwiftParser`
+  prefers `vendor/` and that binary predated items 4 and 5. Nothing was wrong
+  with the graph code; the report had none of the new fields in it. `npm run
+  rebuild:swift-appflow-parse` is part of changing the parser, not an optional
+  step after it.
+- **A `route` arm and a `NavigationLink` to the same screen drew two arrows.**
+  Edges were deduplicated on the *parser's* kind, and `toEdge` maps both `push`
+  and `route` onto `push` — so nine of IceCubesApp's settings screens, reachable
+  both ways, each got a duplicate. They differ only in `raw`, which
+  `pathsForScreen` hashes into a profiling transition identity, so each duplicate
+  was also a second transition for one hop. Deduplicating on the emitted edge
+  took 23 edges to 15.
+- **An entry has to be read from the scene, not from the `App` type.** Taking
+  every view the `App`'s own members and extensions construct named
+  `AppFlowCaptureLayer` — the debug harness's own overlay, written as
+  `.overlay { }` in that same scene body — as a second place a journey starts,
+  and minted it as a screen of the app. Reading the first non-container
+  construction inside each scene container's content gives `AppView` alone, and
+  the demo `RootView` alone rather than `RootView` plus `CaptureOverlay`.
+
+Preconditions the sweep still does not create and reports rather than fixes:
+
+- the app installed on a booted simulator with the harness linked in,
+- nothing else holding port 8765 (a stale harness build is refused by the
+  `bundle_id` identity check rather than driven),
+- a bundle id readable from `project.pbxproj`, or passed in.
+
+One honest gap this run leaves: it was driven through `buildAppFlow` directly,
+not through the panel, so the progress events were read in the shape the
+orchestrator emits rather than the shape the renderer consumes. The phases are
+the ones the renderer expects; that the panel draws them has not been seen.
+
+### 2. Port `window` into the canonical harness ✅
+
+`Harness.swift` now has `window`: the screen in its own `UIWindow` at
+`.alert + 1`, with `Raster.applyRootEnvironment` re-applied and a white backdrop
+(a hosted view with a clear background over its own window composites whatever is
+behind it, which photographs as the app bleeding through). `Raster.harnessWindow`
+takes priority over `isKeyWindow`, because the harness window is *above*
+everything while an app that has a sheet up keeps *its* window key — the raster
+would otherwise photograph the app behind the screen it was asked for and report
+it as that screen.
+
+The silent fallback is gone with it, for the signal as well as the mode: an
+absent parameter still means the default, a present but unknown one is refused.
+Asking for `stable` and silently getting `idle` reports a number for a signal the
+run never waited on, which is the same failure as the mode in a different field.
+`swift-capture.ts` reads the refusal and ends the run, since every remaining
+screen would be refused identically — and the harness tags which kind of refusal
+it is, so a screen the build simply does not have stays one screen's answer.
+
+Re-measured on the demo in `window` mode, iPhone 17 Pro / iOS 26.2, same metric:
+
+| | `overlay` (13 screens) | `window` (14 screens) |
+|---|---|---|
+| `idle` | 13/13 | **14/14** |
+| `frame` | 10/13 | 11/14 |
+| `stable` | 10/13 | 11/14 |
+| crashed | 0 | 0 |
+
+Every verdict is identical; the extra screen is `OrderDetailView`, which item 4
+made constructible and which is static and correct on every signal. So the mode
+is not what produced any demo figure, and the remaining IceCubesApp crash is not
+a `window`-mode artifact — it crashes in `window` mode too (see item 1).
+
+`Tools/measure.py` takes the mode from `MODE`, defaulting to `overlay` so every
+earlier table in this document stays reproducible as written; `results/` holds
+that overlay run and `results/window/` the one above. The mode is sent on every
+presentation rather than left to the harness default, so a run against an older
+build now fails loudly instead of quietly measuring `overlay` and reporting
+whatever `MODE` said.
+
+### 3. Telemetry — one line ✅
+
+`app_flow.project_detect.duration` is in `docs/telemetry.md`, with its closed
+`kind` set, and stated as what it is: not a SwiftUI series but one every App Flow
+run pays, documented beside the SwiftUI ones because the SwiftUI branch is what
+made a root's shape expensive enough to recognise to be worth bounding.
+
+### 4. Parser soundness ✅
+
+All three, measured against the demo and all three corpus apps.
+
+- **Transitive `@Environment`.** A new `childrenByView` relation — every view a
+  body constructs, read lexically the same way `ViewEdge.from` is — closed over
+  per screen into `environmentRequiresTransitive`. It is a *separate field*, not
+  a widening of `environmentRequires`: the two answer different questions ("what
+  did this view declare" and "what must be installed for it to render"), and
+  widening the existing one would have silently changed the first answer for
+  every consumer already reading it. It names the keys all three known crashers
+  need — `DisplaySettingsView` gets `RouterPath`, `QuickLook`, `CurrentInstance`
+  and twenty-odd more.
+
+  **Reported, never enforced.** `ScreenRegistry.requirements` is unchanged and
+  still fails a capture; the transitive set goes to `transitiveRequirements` and
+  is served as `env.advisory`. The relation is lexical, so a child built inside a
+  branch that never runs still contributes, and on IceCubesApp the closure runs
+  to twenty-odd keys per screen. Enforcing that would fail captures of screens
+  that render perfectly — the exact failure `alwaysDefaulted` exists to undo, at
+  twenty times the scale.
+- **SwiftUI containers counted as screens.** One `firstPresented` helper now
+  governs every read of "what is presented here", at all four sites that mark a
+  screen rather than only at edge destinations. Three corpus screens gained the
+  `sheet` evidence their wrapper had been absorbing (`SettingsView` in isowords,
+  `SignUpView` and `SocialFeedPlusSettings` in sample-food-truck); none lost any.
+  An `App` body's scene containers (`WindowGroup`, `Settings`, …) are skipped the
+  same way, since a window is not a screen either.
+- **`NavigationLink(value:)` literal harvesting.** A value written at a link —
+  `NavigationLink(value: Route.orderDetail("A-1042"))` — now satisfies the
+  pattern-bound names of the destination arm that case resolves to. Only values
+  that would compile at the lift site qualify, tested by the free-identifier rule
+  the `callSite` rung already uses, and an argument list is taken whole or not at
+  all: half of one is not an observation. The enum is recovered when the site
+  omits it, and only when exactly one declares that case with a matching arity.
+
+  This is what the plan predicted it would be: the demo's `OrderDetailView` goes
+  `skipped` → `callSite`, resolving to `OrderDetailView(orderId: "A-1042")`.
+  IceCubesApp gained nothing — its six `NavigationLink(value:)` sites are
+  no-argument cases — which is an honest result rather than a missing one.
+
+### 5. Graph fields that are honestly null ✅
+
+- `layouts` / `rootNavigator` / `entryLayouts` / `entryScreenIds` — from the
+  parser's new `appEntries` and `navigators`. IceCubesApp comes out rooted at
+  `AppView` with `Tabs`, which is what its source says.
+
+  **Only an entry's navigator becomes a layout.** `AppFlowLayout.parent` means
+  "the layout this one is mounted inside, or null for the app root", and nothing
+  the parser reports says which navigator is nested in which. IceCubesApp has 36;
+  reporting all of them would be 36 claims of sitting at the app root. The
+  navigator tree that is actually observed is one level deep, and that is what is
+  reported — the rest stay out rather than arriving as a guess.
+- `scheme` — read from `Info.plist`'s `CFBundleURLSchemes` via `plutil`, in a
+  bounded three-level walk that skips sibling bundles (an app extension registers
+  its own scheme, and reading that one hands the capture loop something that
+  opens a share sheet). IceCubesApp reads `icecubesapp`, isowords `isowords`.
+
+  **Every node stays `navigation-only` with a null `urlPath`.** The scheme says
+  the app can be opened by URL and says nothing about which screen any given URL
+  reaches. Deriving a path from a type name would be the guess the whole design
+  refuses to make, so reading the scheme deliberately does not make a single node
+  deep-linkable.
+
+### 6. Carried over
+
+- Re-run the RMSE budget sweep with the reference captured **last**; the current
+  1500 ms figure ran against a warm cache. It does not set the backstop, so this
+  is confirmatory rather than blocking.
+- Revert the `ToolbarTab.swift` SDK shim when the toolchain catches up.
+- Execute the parser distribution decision below (ship A).
+- Generalise item 5 beyond IceCubesApp: SPM, and an arbitrary `.xcodeproj`.
+- Bookkeeping: in "In the POC", items 1 and 5 carry no ✅. Item 1's check (the
+  demo back to 13/13 with the drifted mechanisms out) was run and passed; item 5
+  is done for IceCubesApp and not generalised. Neither was ticked, so neither
+  should be read as finished from this list alone.
+- See the end of item 1: the run went through `buildAppFlow`, not the panel, so
+  what the renderer does with the progress events is still unobserved.
+- The transitive `@Environment` closure is reported and not enforced (item 4). If
+  it is ever to gate a capture, what it needs first is a narrower relation than
+  lexical containment — a child built inside a branch that never runs still
+  contributes today, which is why it is advisory.
+- `isowords` declares eleven `App` types, ten of them preview apps, so
+  `rootNavigator` there is whichever one the file walk reaches first. Harmless
+  for a sweep, wrong as a statement about the app; the honest fix is knowing
+  which `App` is `@main`, which the parser does not read.
+
+**Not ours:** the IceCubesApp account-persistence bug.
 
 ## Remaining after the POC
 
@@ -215,6 +641,20 @@ deliberate.
   undocumented SPI, and the only mechanism that catches a missing environment
   key. No screenshot comparison ever can: `BrandedHeaderView` renders grey in
   both the capture *and* the ground truth.
+
+**Found while wiring codegen (item 4)**
+
+- The demo's `OrderDetailView` was never really resolvable. Its only construction
+  in source is the route arm `case .orderDetail(let id): OrderDetailView(orderId: id)`,
+  and a pattern-bound `String` has no observed value, so `skipped` is correct. The
+  `callSite` resolution it used to get came from the hand-authored `screens.json`
+  being laundered back through the parser via the generated file. Fixing the
+  circularity cost one demo screen and removed a false one.
+- **The literal is right there, though.** `NavigationLink(value: Route.orderDetail("A-1042"))`
+  is the app writing down a real route value. The parser does not harvest
+  `NavigationLink(value:)` literals to satisfy a destination's pattern-bound names,
+  and doing so would be observation, not invention — the strongest remaining
+  coverage lever, and it would bear directly on IceCubesApp's 15 skipped screens.
 
 **Found while freezing the contract (item 3)**
 

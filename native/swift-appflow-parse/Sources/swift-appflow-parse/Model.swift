@@ -87,8 +87,45 @@ struct Resolution: Codable {
   var line: Int
   /// Empty when the view looks like a leaf component rather than a screen.
   var screenEvidence: [ScreenEvidence] = []
+  /// What the view reads out of the environment, as declared. See `environmentRequirements`.
+  /// This is what the runtime audit checks against the keys actually installed where the screen
+  /// was presented — the only mechanism that catches a missing `@Environment` key, because such a
+  /// key falls back to `defaultValue` and renders a plausible lie that no screenshot can expose.
+  var environmentRequires: [String] = []
+  /// Keys this view needs because something in its body reads them, rather than because it declares
+  /// them itself — the union over its own children's requirements, transitively, with its own keys
+  /// removed so the two stay distinguishable.
+  ///
+  /// It is a separate field rather than a widening of `environmentRequires` because the two answer
+  /// different questions: "what did this view declare" and "what must be installed for this view to
+  /// render". A consumer installing an environment wants the union of both; one reporting what the
+  /// source says wants only the first. Widening the existing field would have silently changed the
+  /// answer to the first question for every consumer already reading it.
+  ///
+  /// Read lexically, from `childrenByView`, so it inherits that relation's limits: a view
+  /// constructed through a generic parameter, a closure the body is handed, or a type alias is not
+  /// seen. Over-reporting is the safer direction here — a key named but not needed costs an audit
+  /// line, while a key needed but not named renders a plausible lie no screenshot can expose.
+  var environmentRequiresTransitive: [String] = []
 
   var isScreen: Bool { !screenEvidence.isEmpty }
+
+  /// Written out by hand for one reason: `expression` is `nil` for a `skipped` view, and the
+  /// synthesized encoder would *omit* the key rather than write `null`. A consumer would then see
+  /// a report whose rows have different shapes depending on the rung. The contract says a report
+  /// has one shape, so the key is always present.
+  func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(view, forKey: .view)
+    try container.encode(rung, forKey: .rung)
+    try container.encode(expression, forKey: .expression)
+    try container.encode(missing, forKey: .missing)
+    try container.encode(file, forKey: .file)
+    try container.encode(line, forKey: .line)
+    try container.encode(screenEvidence, forKey: .screenEvidence)
+    try container.encode(environmentRequires, forKey: .environmentRequires)
+    try container.encode(environmentRequiresTransitive, forKey: .environmentRequiresTransitive)
+  }
 }
 
 struct RouteSummary: Codable {
@@ -115,5 +152,16 @@ struct Report: Codable {
   var routes: RouteSummary
   var routeEdges: [RouteEdge]
   var routeEdgesConstructible: Int
+  /// Navigation relations between views. Adding this field is not a contract bump: a consumer
+  /// that does not know it ignores it, which is the documented rule for every added field.
+  var viewEdges: [ViewEdge]
+  /// The navigation containers each view's body builds, which is what says whether a screen is
+  /// tabbed, split or pushed. Nothing else in the report carries shape.
+  var navigators: [NavigatorDecl]
+  /// Where a journey starts: the `App` declarations and the views their scenes present.
+  var appEntries: [AppEntry]
+  /// Route values the app writes down at `NavigationLink(value:)` sites, after the enum they belong
+  /// to has been resolved. Reported as well as consumed so a run can show what was observed.
+  var observedRouteValues: [RouteValueObservation]
   var resolutions: [Resolution]
 }

@@ -58,21 +58,52 @@ final class ControlServer {
     DispatchQueue.main.async {
       let c = PresentationController.shared
       switch route {
+      // The channel says which app it belongs to.
+      //
+      // The port is a constant, so any build that embeds this server binds it -- the demo app
+      // and a real app under test both answer on 8765, and whichever launched first wins. The
+      // capture loop would then drive one app while reporting screens from another, with
+      // entirely plausible numbers. That happened here, and only a differing screen count made
+      // it visible; between two builds of the SAME app it would be invisible. `swift-capture.ts`
+      // checks `bundle_id` against the app it just launched and refuses a mismatch.
       case "/screens":
         let rows = ScreenRegistry.names.map { name -> String in
           let req = (ScreenRegistry.requirements[name] ?? []).map { "\"\($0)\"" }.joined(separator: ",")
           return "{\"name\":\"\(name)\",\"requires\":[\(req)]}"
         }
-        json("{\"screens\":[\(ScreenRegistry.names.map { "\"\($0)\"" }.joined(separator: ","))],\"detail\":[\(rows.joined(separator: ","))]}")
+        let bundle = Bundle.main.bundleIdentifier ?? "unknown"
+        json("{\"bundle_id\":\"\(bundle)\",\"screens\":[\(ScreenRegistry.names.map { "\"\($0)\"" }.joined(separator: ","))],\"detail\":[\(rows.joined(separator: ","))]}")
 
       case "/present":
         guard let screen = q["screen"] else { json("{\"error\":\"screen required\"}"); return }
         guard ScreenRegistry.entries[screen] != nil else {
-          json("{\"error\":\"no registry entry\",\"screen\":\"\(screen)\"}"); return
+          // `refusal` says what the caller got wrong, because the two kinds call for opposite
+          // responses: a screen this build does not have is one screen's answer, while a mode or
+          // signal it does not have makes every remaining screen's answer wrong the same way.
+          json("{\"error\":\"no registry entry\",\"refusal\":\"screen\",\"screen\":\"\(screen)\"}")
+          return
         }
         var o = PresentOptions()
-        o.mode = PresentationMode(rawValue: q["mode"] ?? "overlay") ?? .overlay
-        o.waitFor = ReadinessSignal(rawValue: q["signal"] ?? "idle") ?? .idle
+        // A mode or signal this build does not have is refused, not quietly swapped for the
+        // default. `window` lived only in the IceCubesApp port for a while, and a sweep asking
+        // this harness for it got `overlay` and no warning -- a different presentation, measured
+        // and reported as the one requested. The same hazard applies to the signal: a run asking
+        // for `stable` and silently getting `idle` reports a number for a signal it never waited
+        // on. An absent parameter still means the default; a present, unknown one is an error.
+        if let requested = q["mode"] {
+          guard let mode = PresentationMode(rawValue: requested) else {
+            json("{\"error\":\"unknown mode\",\"refusal\":\"mode\",\"mode\":\"\(requested)\"}")
+            return
+          }
+          o.mode = mode
+        }
+        if let requested = q["signal"] {
+          guard let signal = ReadinessSignal(rawValue: requested) else {
+            json("{\"error\":\"unknown signal\",\"refusal\":\"signal\",\"signal\":\"\(requested)\"}")
+            return
+          }
+          o.waitFor = signal
+        }
         o.nav = (q["nav"] ?? "1") != "0"
         o.observeAll = (q["observe_all"] ?? "0") == "1"
         if let v = q["budget_ms"].flatMap(Double.init) { o.tuning.budgetMs = v }
@@ -88,15 +119,28 @@ final class ControlServer {
           let env = EnvironmentAudit.verdict(for: screen)
           let sat = (env?.satisfied ?? []).map { "\"\($0)\"" }.joined(separator: ",")
           let miss = (env?.missing ?? []).map { "\"\($0)\"" }.joined(separator: ",")
+          // Reported beside `missing`, never folded into it: see `EnvironmentAudit.advisory`.
+          let advisory = EnvironmentAudit.advisory(for: screen)
+            .map { "\"\($0)\"" }.joined(separator: ",")
           json("""
           {"screen":"\(screen)","mode":"\(o.mode.rawValue)","nav":\(o.nav),\
           "waited_for":"\(waited)","fired":\(fired != nil),\
           "wait_ms":\(fired.map { String(format: "%.1f", $0) } ?? "null"),\
           "signals":\(log.json),\
-          "env":{"satisfied":[\(sat)],"missing":[\(miss)]},\
+          "env":{"satisfied":[\(sat)],"missing":[\(miss)],"advisory":[\(advisory)]},\
           "generation":\(c.generation)}
           """)
         }
+
+      // What the parser refused to construct, carried through codegen into the binary.
+      // A run reports this alongside the captures: a smaller map than the app has is only
+      // honest if it says which screens are absent and why.
+      case "/missing":
+        let rows = ScreenRegistry.missing.keys.sorted().map { view -> String in
+          let why = (ScreenRegistry.missing[view] ?? []).map { "\"\($0)\"" }.joined(separator: ",")
+          return "{\"view\":\"\(view)\",\"missing\":[\(why)]}"
+        }
+        json("{\"missing\":[\(rows.joined(separator: ","))]}")
 
       case "/dismiss":
         c.dismiss()

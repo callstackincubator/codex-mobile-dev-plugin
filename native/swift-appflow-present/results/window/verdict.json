@@ -1,0 +1,637 @@
+{
+  "same_screen_threshold": 0.01,
+  "rows": [
+    {
+      "screen": "AboutView",
+      "signal": "frame",
+      "fired_ms": 152.7,
+      "fired": true,
+      "capture_lag_ms": 94.3,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AboutView",
+      "signal": "stable",
+      "fired_ms": 455.0,
+      "fired": true,
+      "capture_lag_ms": 111.4,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AboutView",
+      "signal": "idle",
+      "fired_ms": 304.4,
+      "fired": true,
+      "capture_lag_ms": 94.3,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AboutView",
+      "signal": "timeout",
+      "fired_ms": 4004.2,
+      "fired": true,
+      "capture_lag_ms": 129.5,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AccountStatusView",
+      "signal": "frame",
+      "fired_ms": 173.2,
+      "fired": true,
+      "capture_lag_ms": 96.5,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AccountStatusView",
+      "signal": "stable",
+      "fired_ms": 454.5,
+      "fired": true,
+      "capture_lag_ms": 89.2,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AccountStatusView",
+      "signal": "idle",
+      "fired_ms": 355.5,
+      "fired": true,
+      "capture_lag_ms": 100.9,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AccountStatusView",
+      "signal": "timeout",
+      "fired_ms": 4005.2,
+      "fired": true,
+      "capture_lag_ms": 132.9,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "AnimatedBannerView",
+      "signal": "frame",
+      "fired_ms": 133.1,
+      "fired": true,
+      "capture_lag_ms": 92.9,
+      "diff": 0.00077,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.00265
+    },
+    {
+      "screen": "AnimatedBannerView",
+      "signal": "stable",
+      "fired_ms": 405.1,
+      "fired": true,
+      "capture_lag_ms": 101.6,
+      "diff": 0.00055,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.00265
+    },
+    {
+      "screen": "AnimatedBannerView",
+      "signal": "idle",
+      "fired_ms": 304.8,
+      "fired": true,
+      "capture_lag_ms": 93.1,
+      "diff": 0.00067,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.00263
+    },
+    {
+      "screen": "AnimatedBannerView",
+      "signal": "timeout",
+      "fired_ms": 4004.2,
+      "fired": true,
+      "capture_lag_ms": 140.4,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "BrandedHeaderView",
+      "signal": "frame",
+      "fired_ms": 132.3,
+      "fired": true,
+      "capture_lag_ms": 92.2,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [
+        "brandTint"
+      ],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "BrandedHeaderView",
+      "signal": "stable",
+      "fired_ms": 453.4,
+      "fired": true,
+      "capture_lag_ms": 103.4,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [
+        "brandTint"
+      ],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "BrandedHeaderView",
+      "signal": "idle",
+      "fired_ms": 353.7,
+      "fired": true,
+      "capture_lag_ms": 101.1,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [
+        "brandTint"
+      ],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "BrandedHeaderView",
+      "signal": "timeout",
+      "fired_ms": 4005.1,
+      "fired": true,
+      "capture_lag_ms": 119.8,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [
+        "brandTint"
+      ],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "CounterEditorView",
+      "signal": "frame",
+      "fired_ms": 187.2,
+      "fired": true,
+      "capture_lag_ms": 102.2,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "CounterEditorView",
+      "signal": "stable",
+      "fired_ms": 505.2,
+      "fired": true,
+      "capture_lag_ms": 104.4,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "CounterEditorView",
+      "signal": "idle",
+      "fired_ms": 354.6,
+      "fired": true,
+      "capture_lag_ms": 110.0,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "CounterEditorView",
+      "signal": "timeout",
+      "fired_ms": 4005.1,
+      "fired": true,
+      "capture_lag_ms": 104.9,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "EmptyInboxView",
+      "signal": "frame",
+      "fired_ms": 150.2,
+      "fired": true,
+      "capture_lag_ms": 95.8,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "EmptyInboxView",
+      "signal": "stable",
+      "fired_ms": 404.4,
+      "fired": true,
+      "capture_lag_ms": 103.1,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "EmptyInboxView",
+      "signal": "idle",
+      "fired_ms": 303.7,
+      "fired": true,
+      "capture_lag_ms": 95.8,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "EmptyInboxView",
+      "signal": "timeout",
+      "fired_ms": 4004.3,
+      "fired": true,
+      "capture_lag_ms": 118.4,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "FeedView",
+      "signal": "frame",
+      "fired_ms": 149.8,
+      "fired": true,
+      "capture_lag_ms": 96.4,
+      "diff": 0.04634,
+      "correct": false,
+      "env_missing": [],
+      "changed_fraction": 0.01099
+    },
+    {
+      "screen": "FeedView",
+      "signal": "stable",
+      "fired_ms": 504.3,
+      "fired": true,
+      "capture_lag_ms": 116.1,
+      "diff": 0.04632,
+      "correct": false,
+      "env_missing": [],
+      "changed_fraction": 0.01102
+    },
+    {
+      "screen": "FeedView",
+      "signal": "idle",
+      "fired_ms": 2953.9,
+      "fired": true,
+      "capture_lag_ms": 133.2,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "FeedView",
+      "signal": "timeout",
+      "fired_ms": 4004.2,
+      "fired": true,
+      "capture_lag_ms": 106.3,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "OrderDetailView",
+      "signal": "frame",
+      "fired_ms": 146.5,
+      "fired": true,
+      "capture_lag_ms": 97.1,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "OrderDetailView",
+      "signal": "stable",
+      "fired_ms": 504.8,
+      "fired": true,
+      "capture_lag_ms": 118.1,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "OrderDetailView",
+      "signal": "idle",
+      "fired_ms": 353.5,
+      "fired": true,
+      "capture_lag_ms": 98.6,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "OrderDetailView",
+      "signal": "timeout",
+      "fired_ms": 4004.6,
+      "fired": true,
+      "capture_lag_ms": 98.9,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ProfileView",
+      "signal": "frame",
+      "fired_ms": 136.2,
+      "fired": true,
+      "capture_lag_ms": 91.8,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ProfileView",
+      "signal": "stable",
+      "fired_ms": 404.5,
+      "fired": true,
+      "capture_lag_ms": 108.5,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ProfileView",
+      "signal": "idle",
+      "fired_ms": 304.9,
+      "fired": true,
+      "capture_lag_ms": 96.5,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ProfileView",
+      "signal": "timeout",
+      "fired_ms": 4003.8,
+      "fired": true,
+      "capture_lag_ms": 104.3,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "RemoteAvatarView",
+      "signal": "frame",
+      "fired_ms": 139.8,
+      "fired": true,
+      "capture_lag_ms": 100.9,
+      "diff": 0.04438,
+      "correct": false,
+      "env_missing": [],
+      "changed_fraction": 0.11173
+    },
+    {
+      "screen": "RemoteAvatarView",
+      "signal": "stable",
+      "fired_ms": 454.6,
+      "fired": true,
+      "capture_lag_ms": 113.7,
+      "diff": 0.04439,
+      "correct": false,
+      "env_missing": [],
+      "changed_fraction": 0.11173
+    },
+    {
+      "screen": "RemoteAvatarView",
+      "signal": "idle",
+      "fired_ms": 1254.4,
+      "fired": true,
+      "capture_lag_ms": 132.1,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "RemoteAvatarView",
+      "signal": "timeout",
+      "fired_ms": 4004.8,
+      "fired": true,
+      "capture_lag_ms": 115.9,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "RootView",
+      "signal": "frame",
+      "fired_ms": 141.9,
+      "fired": true,
+      "capture_lag_ms": 94.7,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "RootView",
+      "signal": "stable",
+      "fired_ms": 404.6,
+      "fired": true,
+      "capture_lag_ms": 108.8,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "RootView",
+      "signal": "idle",
+      "fired_ms": 304.4,
+      "fired": true,
+      "capture_lag_ms": 100.1,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "RootView",
+      "signal": "timeout",
+      "fired_ms": 4004.9,
+      "fired": true,
+      "capture_lag_ms": 123.3,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "SelfContainedNavView",
+      "signal": "frame",
+      "fired_ms": 150.1,
+      "fired": true,
+      "capture_lag_ms": 98.9,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "SelfContainedNavView",
+      "signal": "stable",
+      "fired_ms": 505.1,
+      "fired": true,
+      "capture_lag_ms": 114.2,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "SelfContainedNavView",
+      "signal": "idle",
+      "fired_ms": 303.9,
+      "fired": true,
+      "capture_lag_ms": 96.4,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "SelfContainedNavView",
+      "signal": "timeout",
+      "fired_ms": 4004.3,
+      "fired": true,
+      "capture_lag_ms": 117.2,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ThemeProbeView",
+      "signal": "frame",
+      "fired_ms": 139.1,
+      "fired": true,
+      "capture_lag_ms": 98.1,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ThemeProbeView",
+      "signal": "stable",
+      "fired_ms": 404.0,
+      "fired": true,
+      "capture_lag_ms": 93.2,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ThemeProbeView",
+      "signal": "idle",
+      "fired_ms": 354.4,
+      "fired": true,
+      "capture_lag_ms": 93.5,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "ThemeProbeView",
+      "signal": "timeout",
+      "fired_ms": 4004.6,
+      "fired": true,
+      "capture_lag_ms": 100.3,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "TwoStageOrderView",
+      "signal": "frame",
+      "fired_ms": 170.3,
+      "fired": true,
+      "capture_lag_ms": 97.4,
+      "diff": 0.00655,
+      "correct": false,
+      "env_missing": [],
+      "changed_fraction": 0.01635
+    },
+    {
+      "screen": "TwoStageOrderView",
+      "signal": "stable",
+      "fired_ms": 504.7,
+      "fired": true,
+      "capture_lag_ms": 102.7,
+      "diff": 0.00317,
+      "correct": false,
+      "env_missing": [],
+      "changed_fraction": 0.0085
+    },
+    {
+      "screen": "TwoStageOrderView",
+      "signal": "idle",
+      "fired_ms": 1954.7,
+      "fired": true,
+      "capture_lag_ms": 102.7,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    },
+    {
+      "screen": "TwoStageOrderView",
+      "signal": "timeout",
+      "fired_ms": 4004.9,
+      "fired": true,
+      "capture_lag_ms": 108.4,
+      "diff": 0.0,
+      "correct": true,
+      "env_missing": [],
+      "changed_fraction": 0.0
+    }
+  ],
+  "metric": {
+    "grid": [
+      160,
+      347
+    ],
+    "cell_threshold": 0.06,
+    "same_screen_max_changed_fraction": 0.004
+  }
+}

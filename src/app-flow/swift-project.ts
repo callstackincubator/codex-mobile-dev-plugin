@@ -11,7 +11,12 @@
  * Cost: one `readdir` of the root, one `readdir` per shared-scheme folder (at most two), and one
  * `readdir` per source-root candidate. No recursion, so pointing App Flow at a huge monorepo root
  * costs the same as pointing it at a small app.
+ *
+ * `readAppUrlScheme` is the one thing here that opens a file. It is deliberately not part of
+ * detection and is called by the graph step instead, so identifying a project keeps the cost above
+ * and reading the app's registered URL scheme is paid only when a graph is actually being built.
  */
+import { execFile } from 'node:child_process'
 import { readdir } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { AppFlowSwiftContainer, AppFlowSwiftProject } from '../shared/app-flow.ts'
@@ -182,4 +187,114 @@ export async function detectSwiftProject(projectRoot: string): Promise<AppFlowSw
     sourceRoots: await sourceRoots(projectRoot, bundleNames, entries),
     schemes
   }
+}
+
+/**
+ * Directory names that hold a bundle shipped *beside* the app rather than the app itself. Each one
+ * has its own `Info.plist`, and an app extension routinely registers a URL scheme of its own — so
+ * reading one of those as "the app's scheme" would hand the capture loop a scheme that opens a share
+ * sheet rather than the app.
+ */
+const NOT_APP_BUNDLE = /(?:Extension|Widgets?|Tests?|UITests|AppClip|Clip|Watch(?:Kit)?(?:App|Extension)?)$/
+
+/** How deep `Info.plist` is looked for. `isowords` keeps the app's at `App/iOS/Info.plist`. */
+const PLIST_SEARCH_DEPTH = 3
+
+/**
+ * Every `Info.plist` that could be the app's own, nearest first.
+ *
+ * A bounded walk rather than a recursion: detection promises one `readdir` per level and nothing
+ * deeper, and three levels is what the real layouts need — the app target's folder beside the
+ * `.xcodeproj`, SwiftPM's `Sources/`, and `App/<platform>/` as `isowords` writes it. Folders holding
+ * someone else's code, build products or a sibling bundle are skipped on the way down.
+ */
+async function infoPlistCandidates(projectRoot: string): Promise<string[]> {
+  const found: string[] = []
+  let frontier = [projectRoot]
+  for (let depth = 0; depth <= PLIST_SEARCH_DEPTH && frontier.length > 0; depth += 1) {
+    const next: string[] = []
+    for (const directory of frontier) {
+      let entries
+      try {
+        entries = await readdir(directory, { withFileTypes: true })
+      } catch {
+        continue
+      }
+      for (const entry of entries) {
+        if (entry.name === 'Info.plist' && !entry.isDirectory()) found.push(join(directory, 'Info.plist'))
+        if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+        if (NOT_SOURCE.has(entry.name) || entry.name.includes('.')) continue
+        if (NOT_APP_BUNDLE.test(entry.name)) continue
+        next.push(join(directory, entry.name))
+      }
+    }
+    frontier = next
+  }
+  return found
+}
+
+/**
+ * The URL scheme the app registers, or null when it registers none.
+ *
+ * This is the one piece of a SwiftUI graph's deep-link story that is written down somewhere
+ * readable: `CFBundleURLTypes` → `CFBundleURLSchemes`. It says the app *can* be opened by URL; it
+ * says nothing about which screen any particular URL reaches, so a graph that reads it still leaves
+ * every node's `urlPath` null and its reach `navigation-only`. Reporting the scheme and inventing
+ * paths from it would be the same mistake the whole parser refuses to make.
+ *
+ * Read with `plutil`, which handles the XML and binary forms alike; iOS development implies macOS,
+ * so there is no second implementation to keep in step. A plist that cannot be read contributes
+ * nothing rather than failing the parse.
+ */
+export async function readAppUrlScheme(projectRoot: string): Promise<string | null> {
+  const candidates = await infoPlistCandidates(projectRoot)
+  if (candidates.length === 0) return null
+  // The app's own target folder is conventionally named after the project, so prefer that plist
+  // when several carry a scheme; otherwise the nearest one to the root wins.
+  const expected = basename(projectRoot).normalize('NFC').toLowerCase()
+  const ordered = [...candidates].sort((a, b) => {
+    const score = (path: string): number =>
+      basename(join(path, '..')).normalize('NFC').toLowerCase() === expected ? 0 : 1
+    return score(a) - score(b)
+  })
+  for (const path of ordered) {
+    const schemes = await urlSchemesIn(path)
+    if (schemes.length > 0) return schemes[0] ?? null
+  }
+  return null
+}
+
+async function urlSchemesIn(plistPath: string): Promise<string[]> {
+  let raw: string
+  try {
+    raw = await plutilJson(plistPath, 'CFBundleURLTypes')
+  } catch {
+    return []
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(parsed)) return []
+  const schemes: string[] = []
+  for (const entry of parsed) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const value = (entry as Record<string, unknown>)['CFBundleURLSchemes']
+    if (!Array.isArray(value)) continue
+    for (const scheme of value) if (typeof scheme === 'string' && scheme.length > 0) schemes.push(scheme)
+  }
+  return schemes
+}
+
+function plutilJson(plistPath: string, key: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // `-extract <key> json` exits non-zero when the key is absent, which is the common case for an
+    // app that registers no scheme at all — the caller reads that as "none", not as a failure.
+    execFile('plutil', ['-extract', key, 'json', '-o', '-', plistPath], (error, stdout) => {
+      if (error) reject(error)
+      else resolve(stdout)
+    })
+  })
 }

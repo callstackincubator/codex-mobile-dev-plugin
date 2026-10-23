@@ -83,10 +83,21 @@ function parserPackageDir(): string {
   return resolve(here, '../../native/swift-appflow-parse')
 }
 
-/** Where a prebuilt binary would be, if one were shipped. Option A's slot; empty under option B. */
-function prebuiltParserPath(): string {
+/**
+ * Where a prebuilt binary is, in both the layouts this module runs in.
+ *
+ * From the checkout, `import.meta.url` is `src/app-flow/swift-parse.ts` and the binary is two
+ * levels up in `vendor/`. From the packaged plugin everything is bundled into `dist/server.mjs`,
+ * so the same relative path leaves the plugin directory entirely and finds nothing — which is why
+ * `build.mjs` copies the staged binary to `dist/swift-appflow-parse/` and that is checked first.
+ * Both are tried, in that order, because a checkout has no `dist/` and a package has no `vendor/`.
+ */
+function prebuiltParserPaths(): string[] {
   const here = dirname(fileURLToPath(import.meta.url))
-  return resolve(here, '../../vendor/swift-appflow-parse/swift-appflow-parse')
+  return [
+    resolve(here, 'swift-appflow-parse/swift-appflow-parse'),
+    resolve(here, '../../vendor/swift-appflow-parse/swift-appflow-parse')
+  ]
 }
 
 async function isExecutable(path: string): Promise<boolean> {
@@ -201,8 +212,9 @@ export async function resolveSwiftParser(
     return { binary: override, source: 'prebuilt' }
   }
 
-  const prebuilt = prebuiltParserPath()
-  if (await isExecutable(prebuilt)) return { binary: prebuilt, source: 'prebuilt' }
+  for (const prebuilt of prebuiltParserPaths()) {
+    if (await isExecutable(prebuilt)) return { binary: prebuilt, source: 'prebuilt' }
+  }
 
   const packageDir = options.packageDir ?? parserPackageDir()
   const built = join(packageDir, '.build/release/swift-appflow-parse')

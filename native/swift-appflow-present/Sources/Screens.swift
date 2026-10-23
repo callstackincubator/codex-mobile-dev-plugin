@@ -393,3 +393,27 @@ struct RootView: View {
     }
   }
 }
+
+// MARK: - Crash control
+//
+// A screen that kills the process. Every other screen here is a question about
+// readiness; this one is a question about the capture loop, which relaunches per
+// screen precisely so that one bad screen costs one capture instead of the run.
+// Without a screen that actually crashes, that property is asserted and never
+// tested.
+struct CrashOnAppearView: View {
+  var body: some View {
+    Text("about to crash")
+      .navigationTitle("Crash")
+      .onAppear {
+        // Late enough that the frame is committed first -- the failure should look like a
+        // screen that renders and then dies, not one that never appears -- and early enough
+        // that it beats `idle`'s 150 ms quiet window. At 200 ms the capture landed before the
+        // process did, which measured the wrong thing: the loop reported `captured` and the
+        // crash path was never taken.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+          fatalError("CrashOnAppearView: deliberate crash, capture-loop control")
+        }
+      }
+  }
+}

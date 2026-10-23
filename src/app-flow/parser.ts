@@ -11,7 +11,9 @@ import type {
   AppFlowTrigger
 } from '../shared/app-flow.ts'
 import { recordRuntimeTiming } from './runtime-telemetry.ts'
-import { detectSwiftProject } from './swift-project.ts'
+import { detectSwiftProject, readAppUrlScheme } from './swift-project.ts'
+import { buildSwiftScreenGraph } from './swift-graph.ts'
+import { SwiftParseUnavailableError, parseSwiftSourceRoots } from './swift-parse.ts'
 
 // Re-exported so existing imports of `AppFlowLayout` from this module keep compiling — the type
 // itself moved to `shared/app-flow.ts` because `AppFlowResult.navigation` persists it verbatim into
@@ -50,6 +52,17 @@ export interface ParsedAppGraph {
    * `swift !== null` always agree.
    */
   swift: AppFlowSwiftProject | null
+  /**
+   * Why a detected SwiftUI project came back with no screens, when that is the reason.
+   *
+   * Absent on every React Native project and on a Swift project the parser read successfully —
+   * including one that genuinely holds no SwiftUI, which is a true answer and not an error. Present
+   * only when the parser could not be run or could not be read: no toolchain, a build failure, a
+   * report from a contract this plugin does not know. The distinction matters because the two look
+   * identical from the outside, and telling a user their app has no screens when the parser never
+   * ran is the kind of plausible wrong answer this seam exists to prevent.
+   */
+  swiftParseError?: string
   appDir: string | null
   routesFile: string | null
   scheme: string | null
@@ -1616,31 +1629,25 @@ export async function parseReactNavigation(projectRoot: string): Promise<ParsedA
 }
 
 /**
- * Everything a SwiftUI project's screen graph needs that this module does not yet produce.
+ * What a SwiftUI project's screen graph still does not carry.
  *
  * ---- SEAM: Swift screen parsing ----
- * `parseProject` identifies a Swift project and hands back a `ParsedAppGraph` whose `swift` field
- * says where to read from, but whose `nodes`/`edges`/`layouts` are empty — detection only. A Swift
- * parser plugs in here, taking `graph.swift.sourceRoots` and returning the same four things the
- * React Native parsers return:
+ * `parseProject` identifies a Swift project, runs `swift-appflow-parse` over its source roots and
+ * builds `nodes`/`edges` from the reports (`swift-graph.ts`). `layouts`, `rootNavigator`,
+ * `entryLayouts` and `entryScreenIds` now come from the parser's `appEntries` and `navigators`, and
+ * `scheme` from the app's `Info.plist` — see `swift-graph.ts` for the mapping and for why only an
+ * entry view's navigator becomes a layout. What is still empty:
  *
- *  - `nodes`: one `AppFlowNode` per `View` that is a destination (the body of a
- *    `NavigationLink`/`NavigationDestination`, a `sheet`/`fullScreenCover` content, a `TabView`
- *    tab), with a stable id. Swift has no route path, so the id has to come from the type name
- *    qualified by its enclosing navigator, the way `navigatorKey::name` does for React Navigation.
- *  - `edges`: one per `NavigationLink(destination:)`, `navigationDestination(for:)`,
- *    `.sheet(isPresented:)`, `.fullScreenCover`, and `NavigationPath` append — each needing the
- *    destination type resolved to a node id, which is the part that needs a real Swift parse rather
- *    than a regex.
- *  - `layouts` / `rootNavigator` / `entryLayouts` / `entryScreenIds`: from `TabView` (→ `Tabs`),
- *    `NavigationSplitView` (→ `Drawer`), `NavigationStack` (→ `Stack`), and the `App`'s
- *    `WindowGroup` body for the root.
- *  - `scheme` / `bundleId` / `appName`: from `Info.plist` `CFBundleURLSchemes` and the build
- *    settings in `project.pbxproj` — neither of which detection reads, because both need a plist
- *    and pbxproj parser.
+ *  - `urlPath` / `reach`: a registered URL scheme says the app can be opened by URL and nothing
+ *    about which screen any given URL reaches, so every Swift node stays `navigation-only` with a
+ *    null `urlPath` whether a scheme was read or not.
+ *  - `bundleId` / `appName`: from the build settings in `project.pbxproj`. The capture loop needs
+ *    a bundle id and is handed one by its caller rather than read from here.
  *
- * Until that exists, callers must branch on `mode === 'swiftui'` before treating the graph as
- * explorable; an empty node list is detection succeeding, not an app with no screens.
+ * When the parser cannot run at all — no Swift toolchain, a build failure, a contract the plugin
+ * does not read — detection still succeeds and the graph comes back empty, the way it did before
+ * the parser existed. That is the one case where an empty node list is not "an app with no
+ * screens", so `swiftParseError` says which it is.
  */
 export async function parseProject(projectRoot: string): Promise<ParsedAppGraph | null> {
   const startedAt = Date.now()
@@ -1678,28 +1685,37 @@ async function identifyProject(projectRoot: string): Promise<ParsedAppGraph | nu
   if (swift) {
     console.log(
       `[app-flow] parse: iOS project detected (${swift.container}), ` +
-        `${swift.sourceRoots.length} source root(s), ${swift.schemes.length} shared scheme(s) — ` +
-        `Swift screen parsing is not implemented yet`
+        `${swift.sourceRoots.length} source root(s), ${swift.schemes.length} shared scheme(s)`
     )
-    return swiftDetectionOnly(swift)
+    return await swiftGraph(projectRoot, swift)
   }
   console.log(`[app-flow] parse: no supported router evidence under ${projectRoot}`)
   return null
 }
 
 /**
- * A `ParsedAppGraph` carrying detection and nothing else — see the SEAM note on `parseProject`.
- * Every graph field a Swift parser would fill is empty here, never fabricated, so a caller that
- * forgets to check `mode` gets an obviously empty map rather than a plausible wrong one.
+ * A `ParsedAppGraph` for a detected Swift project, with whatever screens the parser could read.
+ *
+ * Every graph field the parser does not report is empty here, never fabricated, so a consumer that
+ * trusts the shape gets an obviously missing answer rather than a plausible wrong one.
+ *
+ * A parse failure is not a detection failure. The project is real and was identified; the screens
+ * could not be read. Returning null instead would tell the caller "this is not a supported
+ * project", which is false and sends them looking in the wrong place — so the graph comes back
+ * with no nodes and `swiftParseError` holding the sentence that explains why.
  */
-function swiftDetectionOnly(swift: AppFlowSwiftProject): ParsedAppGraph {
-  return {
+async function swiftGraph(
+  projectRoot: string,
+  swift: AppFlowSwiftProject
+): Promise<ParsedAppGraph> {
+  const base: ParsedAppGraph = {
     mode: 'swiftui',
     swift,
     appDir: swift.sourceRoots[0] ?? null,
     routesFile: null,
-    // No `Info.plist`/`pbxproj` read, so there is no scheme to claim; `assumed` is the existing
-    // value for "nothing was found to check against".
+    // Filled below from `Info.plist` when the app registers one. `assumed` stays whatever the
+    // scheme turns out to be: it says the app can be opened by URL, and nothing says which screen
+    // any URL reaches, so no node claims a `urlPath` or `deep-link` reach on the strength of it.
     scheme: null,
     deepLinkConfidence: 'assumed',
     linkingPrefixes: [],
@@ -1713,4 +1729,29 @@ function swiftDetectionOnly(swift: AppFlowSwiftProject): ParsedAppGraph {
     entryLayouts: [],
     entryScreenIds: []
   }
+
+  let reports
+  try {
+    reports = await parseSwiftSourceRoots(swift.sourceRoots)
+  } catch (error) {
+    // Only the parser's own refusals are turned into an empty graph. Anything else is a bug here
+    // rather than a fact about the project, and a bug that silently produced an empty map would
+    // be indistinguishable from an app with no screens.
+    if (!(error instanceof SwiftParseUnavailableError)) throw error
+    console.log(`[app-flow] parse: SwiftUI screen parsing unavailable — ${error.message}`)
+    return { ...base, swiftParseError: error.message }
+  }
+
+  const { nodes, edges, layouts, rootNavigator, entryLayouts, entryScreenIds } =
+    buildSwiftScreenGraph(reports)
+  // Read after the parse rather than during detection: identifying a project should stay as cheap
+  // as a few `readdir`s, and this is only wanted once a graph is actually being built.
+  const scheme = await readAppUrlScheme(projectRoot)
+  console.log(
+    `[app-flow] parse: SwiftUI — ${String(nodes.length)} screens, ${String(edges.length)} edges ` +
+      `from ${String(reports.length)} source root(s)` +
+      (rootNavigator ? `, root navigator ${rootNavigator}` : ', no root navigator observed') +
+      (scheme ? `, scheme ${scheme}` : ', no URL scheme registered')
+  )
+  return { ...base, nodes, edges, layouts, rootNavigator, entryLayouts, entryScreenIds, scheme }
 }

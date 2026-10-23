@@ -9,8 +9,23 @@ BUNDLE_ID=dev.codex.appflow.demo
 DEPLOY=18.0
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 OUT=build/$APP_NAME.app
+PARSER=${PARSER:-../swift-appflow-parse/.build/release/swift-appflow-parse}
 
-python3 -I Tools/generate-registry.py Tools/screens.json -o Sources/ScreenRegistry.generated.swift
+# The registry is codegen'd from a real parse of this app's own sources, not from a
+# hand-authored list. Two things follow from that and are load-bearing:
+#
+#  - The generated file lives OUTSIDE Sources/. It is Swift, so leaving it in the parsed
+#    tree would feed the previous build's `AnyView(AboutView())` entries back in as call
+#    sites on the next one -- the parser would be reading its own output.
+#  - The parse happens before codegen, so a screen added to Sources/ reaches the registry
+#    without anyone editing a list.
+if [ ! -x "$PARSER" ]; then
+  echo "build.sh: no parser at $PARSER" >&2
+  echo "  build it with: (cd ../swift-appflow-parse && swift build -c release)" >&2
+  exit 1
+fi
+mkdir -p Generated
+"$PARSER" Sources | python3 -I Tools/generate-registry.py - -o Generated/ScreenRegistry.generated.swift
 
 rm -rf "$OUT"; mkdir -p "$OUT"
 
@@ -48,7 +63,7 @@ xcrun swiftc \
   -O -g \
   -framework SwiftUI -framework UIKit \
   -o "$OUT/$APP_NAME" \
-  Sources/*.swift
+  Sources/*.swift Generated/*.swift
 
 plutil -convert binary1 "$OUT/Info.plist"
 echo "built $OUT"
