@@ -1,0 +1,237 @@
+import { componentAt, componentsAt, formatAnnotationMessage, screenComponents, screenSelectionContext } from "@mobile-dev/shared/screen-annotations.ts";
+import type { ScreenAnnotation, ScreenBounds, ScreenComponent, ScreenPoint, ScreenSelectionContext, ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
+import { recordUiTiming, countUiEvent } from "./telemetry.ts";
+import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
+import type { PanelContext } from "./model-context.ts";
+import { elementStores } from "./element-store.ts";
+
+type Capture = { screenshot: ScreenAnnotation["screenshot"]; screen: ScreenAnnotation["screen"] };
+export type InspectedTree = { tree: unknown; screen?: ScreenSize };
+type Draft = Capture & { id: string; number: number; component: ScreenComponent; point: ScreenPoint; text: string; nearbyText?: string[]; selection?: ScreenSelectionContext };
+export class ScreenAnnotationsStore {
+  private state = {
+    disabled: true, selecting: false, loading: false, busy: false, sending: false, sendError: "", canSend: false, hostAttachments: true,
+    error: "", status: "", annotations: [] as ScreenAnnotation[],
+    draft: undefined as Draft | undefined, hovered: undefined as ScreenComponent | undefined,
+    viewport: { x: 0, y: 0, width: 0, height: 0, stageWidth: 0, stageHeight: 0 },
+    capture: undefined as Capture | undefined,
+    selectionBounds: undefined as ScreenBounds | undefined,
+    candidates: [] as ScreenComponent[],
+  };
+  private listeners = new Set<() => void>();
+  private simulator?: SimulatorDevice;
+  private context?: PanelContext;
+  private unsubscribe?: () => void;
+  private components: ScreenComponent[] = [];
+  private dragStart?: ScreenPoint;
+  private hoverPoint?: ScreenPoint;
+  private revision = 0;
+  private nextNumber = 1;
+  capture?: () => Capture;
+  readTree?: (simulator: SimulatorDevice) => Promise<InspectedTree>;
+  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+  getSnapshot = () => this.state;
+  get messageText() { return formatAnnotationMessage(this.state.annotations); }
+  private update(patch: Partial<typeof this.state>) { this.state = { ...this.state, ...patch }; for (const listener of this.listeners) listener(); }
+
+  connect(context: PanelContext) {
+    this.unsubscribe?.();
+    this.context = context;
+    this.unsubscribe = context.subscribe(() => this.sync());
+    this.sync();
+  }
+  private savedStatus() {
+    if (this.context?.annotationsPending) return "Note saved. It will attach when this chat reconnects.";
+    return this.context?.usesHostAttachments ? "Attached to your next chat message." : "Note saved. Use Add notes to chat above to prepare your message.";
+  }
+  private sync() {
+    const annotations = this.context?.screenAnnotations.filter(item => item.simulator.udid === this.simulator?.udid) ?? [];
+    this.nextNumber = Math.max(1, ...annotations.map(item => item.number + 1));
+    const removedDraft = this.state.draft && this.state.annotations.some(item => item.id === this.state.draft?.id) && !annotations.some(item => item.id === this.state.draft?.id);
+    const status = this.state.status === "Note saved. It will attach when this chat reconnects." && !this.context?.annotationsPending && annotations.length ? this.savedStatus() : this.state.status;
+    this.update({ annotations, status, hostAttachments: !!this.context?.usesHostAttachments, canSend: !!this.context?.canSendMessage, ...(!annotations.length ? { sendError: "" } : {}), ...(removedDraft ? { draft: undefined } : {}) });
+  }
+  configure(simulator: SimulatorDevice | undefined, disabled: boolean) {
+    if (simulator?.udid !== this.simulator?.udid) {
+      this.revision++;
+      this.simulator = simulator;
+      this.components = [];
+      this.dragStart = undefined;
+      this.hoverPoint = undefined;
+      this.nextNumber = 1;
+      this.update({ selecting: false, loading: false, busy: this.state.sending, draft: undefined, hovered: undefined, capture: undefined, selectionBounds: undefined, candidates: [], error: "", sendError: "", status: "" });
+      this.sync();
+    }
+    if (disabled !== this.state.disabled) {
+      if (disabled) { this.revision++; this.cancelSelection(); this.update({ selecting: false, loading: false, busy: this.state.sending, hovered: undefined }); }
+      this.update({ disabled });
+    }
+  }
+  setViewport(viewport: typeof this.state.viewport) {
+    if (Object.keys(viewport).some(key => viewport[key as keyof typeof viewport] !== this.state.viewport[key as keyof typeof viewport])) this.update({ viewport });
+  }
+  async toggle() {
+    if (this.state.selecting) { this.exit(); return; }
+    if (this.state.disabled || !this.simulator || !this.capture || !this.readTree || this.state.busy) return;
+    const revision = ++this.revision;
+    let capture: Capture;
+    try { capture = this.capture(); }
+    catch (error) { this.update({ error: error instanceof Error ? error.message : String(error) }); return; }
+    try {
+      this.components = [];
+      this.hoverPoint = undefined;
+      this.cancelSelection();
+      this.update({ selecting: true, loading: true, capture, hovered: undefined, draft: undefined, candidates: [], error: "", status: "" });
+      const { tree, screen } = await this.readTree(this.simulator);
+      if (revision === this.revision) {
+        this.adoptScreen(screen);
+        const startedAt = performance.now();
+        this.components = screenComponents(tree);
+        recordUiTiming("ui.annotations.tree_processing", performance.now() - startedAt);
+        if (this.components.some(component => component.react?.source)) countUiEvent("ui.annotations.source_available");
+        const draft = this.state.draft;
+        if (draft?.component.source === "screen" && !draft.component.role) {
+          const candidates = componentsAt(this.components, draft.point, draft.screen);
+          if (candidates.length) this.update({ draft: { ...draft, component: candidates[0], selection: this.selectionContext(candidates[0]), nearbyText: this.nearbyText(candidates[0]) }, candidates });
+        }
+      }
+    } catch (error) {
+      if (revision === this.revision) this.update({ error: `Could not read component names. You can still annotate a screen region. ${error instanceof Error ? error.message : String(error)}` });
+    } finally { if (revision === this.revision) { this.update({ loading: false }); this.hover(this.hoverPoint); } }
+  }
+  // Bezel definitions can describe a smaller screen cutout than the accessibility screen that
+  // element bounds use, such as 400×872 for a 402×874 iPhone. Move this capture's pointer state to it.
+  private adoptScreen(size?: ScreenSize) {
+    const capture = this.state.capture;
+    if (!size || !capture || capture.screen.units !== "points" || (size.width === capture.screen.width && size.height === capture.screen.height)) return;
+    const scaleX = size.width / capture.screen.width, scaleY = size.height / capture.screen.height;
+    const point = (value: ScreenPoint) => ({ x: value.x * scaleX, y: value.y * scaleY });
+    const bounds = (value: ScreenBounds) => ({ ...point(value), width: value.width * scaleX, height: value.height * scaleY });
+    const screen = { ...capture.screen, ...size };
+    const draft = this.state.draft;
+    if (this.dragStart) this.dragStart = point(this.dragStart);
+    if (this.hoverPoint) this.hoverPoint = point(this.hoverPoint);
+    this.update({
+      capture: { ...capture, screen },
+      selectionBounds: this.state.selectionBounds && bounds(this.state.selectionBounds),
+      ...(draft?.screenshot.id === capture.screenshot.id && { draft: { ...draft, screen, point: point(draft.point),
+        component: draft.component.source === "screen" ? { ...draft.component, bounds: bounds(draft.component.bounds) } : draft.component } }),
+    });
+  }
+  exit() {
+    if (this.state.busy) return;
+    this.revision++;
+    this.hoverPoint = undefined;
+    this.cancelSelection();
+    this.update({ selecting: false, loading: false, draft: undefined, hovered: undefined, candidates: [] });
+  }
+  hover(point?: ScreenPoint) {
+    this.hoverPoint = point;
+    if (this.dragStart && point) { this.moveSelection(point); return; }
+    if (!this.state.selecting || this.state.draft) return;
+    const hovered = point ? componentAt(this.components, point, this.state.capture?.screen) : undefined;
+    if (hovered !== this.state.hovered) this.update({ hovered });
+  }
+  select(point: ScreenPoint) {
+    if (!this.state.selecting || this.state.busy || this.state.draft || !this.state.capture) return;
+    const component = this.component(point);
+    if (!component) return;
+    this.update({ draft: { ...this.state.capture, id: crypto.randomUUID(), number: this.nextNumber, point, component, selection: this.selectionContext(component), nearbyText: this.nearbyText(component), text: "" }, candidates: componentsAt(this.components, point, this.state.capture.screen), hovered: undefined, status: "" });
+  }
+  private component(point: ScreenPoint): ScreenComponent | undefined {
+    if (!this.state.capture) return;
+    const { screen } = this.state.capture;
+    return componentAt(this.components, point, screen) ?? { name: "Screen point", source: "screen", depth: 0, bounds: {
+      x: Math.max(0, point.x - 12), y: Math.max(0, point.y - 12),
+      width: Math.min(24, screen.width - Math.max(0, point.x - 12)), height: Math.min(24, screen.height - Math.max(0, point.y - 12)),
+    } };
+  }
+  chooseComponent(component: ScreenComponent) {
+    if (this.state.draft && !this.state.busy && this.state.candidates.includes(component))
+      this.update({ draft: { ...this.state.draft, component, selection: this.selectionContext(component), nearbyText: this.nearbyText(component) } });
+  }
+  private selectionContext(component: ScreenComponent) {
+    const startedAt = performance.now();
+    try { return screenSelectionContext(this.components, component); }
+    finally { recordUiTiming("ui.annotations.selection_context", performance.now() - startedAt); }
+  }
+  private nearbyText(component: ScreenComponent) {
+    const b = component.bounds, limit = (this.state.capture?.screen.width ?? 402) * .25;
+    const distance = (item: ScreenComponent) => {
+      const r = item.bounds;
+      return Math.hypot(Math.max(b.x - r.x - r.width, r.x - b.x - b.width, 0), Math.max(b.y - r.y - r.height, r.y - b.y - b.height, 0));
+    };
+    return [...new Set(this.components.filter(item => /Text|Label/.test(item.role ?? "") && item.label && item.label !== item.role && item.label !== component.label && distance(item) <= limit)
+      .sort((a, b) => distance(a) - distance(b)).map(item => item.label!.slice(0, 256)))].slice(0, 5);
+  }
+  beginSelection(point: ScreenPoint) {
+    if (!this.state.selecting || this.state.busy || this.state.draft) return false;
+    this.dragStart = point;
+    this.update({ hovered: undefined, selectionBounds: undefined });
+    return true;
+  }
+  moveSelection(point: ScreenPoint) {
+    if (!this.dragStart || !this.state.capture) return;
+    const start = this.dragStart, screen = this.state.capture.screen;
+    const x = Math.max(0, Math.min(start.x, point.x, screen.width));
+    const y = Math.max(0, Math.min(start.y, point.y, screen.height));
+    const width = Math.min(screen.width, Math.max(start.x, point.x)) - x;
+    const height = Math.min(screen.height, Math.max(start.y, point.y)) - y;
+    this.update({ selectionBounds: width >= 4 && height >= 4 ? { x, y, width, height } : undefined });
+  }
+  endSelection(point: ScreenPoint) {
+    const start = this.dragStart;
+    if (!start) return;
+    this.moveSelection(point);
+    const bounds = this.state.selectionBounds;
+    this.cancelSelection();
+    if (!bounds) { this.select(start); return; }
+    if (!this.state.capture || !this.state.selecting || this.state.disabled || this.state.busy) return;
+    const component: ScreenComponent = { name: "Selected region", source: "screen", role: "manual-region", depth: 0, bounds };
+    this.update({ draft: { ...this.state.capture, id: crypto.randomUUID(), number: this.nextNumber, point: start, component, nearbyText: this.nearbyText(component), text: "" }, candidates: [], hovered: undefined, status: "" });
+  }
+  cancelSelection() {
+    this.dragStart = undefined;
+    if (this.state.selectionBounds) this.update({ selectionBounds: undefined });
+  }
+  edit(annotation: ScreenAnnotation) {
+    if (this.state.busy) return;
+    this.update({ draft: { ...annotation }, candidates: [], hovered: undefined, error: "", status: "" });
+  }
+  setText(text: string) { if (this.state.draft && !this.state.busy) this.update({ draft: { ...this.state.draft, text } }); }
+  closeDraft() { if (!this.state.busy) this.update({ draft: undefined }); }
+  async save() {
+    const draft = this.state.draft;
+    if (!draft?.text.trim() || !this.simulator || !this.context || this.state.busy) return;
+    const revision = this.revision;
+    this.update({ busy: true, error: "", sendError: "" });
+    try {
+      const attached = await this.context.attachAnnotation({ ...draft, text: draft.text.trim(), simulator: this.simulator });
+      if (revision !== this.revision) return;
+      this.update({ draft: undefined, status: attached ? this.savedStatus() : "Annotation removed from chat." });
+    } catch (error) { if (revision === this.revision) this.update({ error: error instanceof Error ? error.message : String(error) }); }
+    finally { if (revision === this.revision) this.update({ busy: false }); }
+  }
+  async remove(id: string) {
+    if (!this.context || this.state.busy) return;
+    const revision = this.revision;
+    this.update({ busy: true, error: "" });
+    try { await this.context.removeAnnotation(id); if (revision === this.revision) this.update({ draft: undefined, status: "Annotation removed." }); }
+    catch (error) { if (revision === this.revision) this.update({ error: error instanceof Error ? error.message : String(error) }); }
+    finally { if (revision === this.revision) this.update({ busy: false }); }
+  }
+  async send() {
+    if (!this.simulator || !this.context || this.state.busy || !this.state.annotations.length) return;
+    const simulatorId = this.simulator.udid;
+    this.update({ busy: true, sending: true, error: "", sendError: "" });
+    try { await this.context.sendAnnotationsToChat(simulatorId); if (simulatorId === this.simulator?.udid) this.update({ status: this.context.usesHostAttachments ? "Annotations sent to chat." : "Added to chat input. Review and send there." }); }
+    catch (error) { if (simulatorId === this.simulator?.udid) { const message = error instanceof Error ? error.message : String(error); this.update({ error: message, sendError: message }); } }
+    // Stream readiness can change the selection revision while chat is sending.
+    finally { this.update({ busy: false, sending: false }); }
+  }
+  dispose() { this.revision++; this.cancelSelection(); this.unsubscribe?.(); this.context = undefined; this.capture = undefined; this.readTree = undefined; }
+}
+
+const stores = elementStores(() => new ScreenAnnotationsStore());
+export const bindScreenAnnotations = stores.bind;
+export const getScreenAnnotations = stores.get;

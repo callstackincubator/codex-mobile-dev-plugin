@@ -3,9 +3,9 @@
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
 The `Release plugin` workflow in `.github/workflows/release.yml` runs when you push
-an existing commit with a `v<version>` tag. The tag must match `.codex-plugin/plugin.json`,
-`package.json`, both root versions in `package-lock.json`, and
-`src/shared/version.ts`. After committing your changes, run from the repository root:
+an existing commit with a `v<version>` tag. The tag must match the root `package.json`,
+both root versions in `package-lock.json`, and `packages/shared/src/version.ts`; host
+manifests take the version at package time. After committing your changes, run from the repository root:
 
 ```sh
 npm run public-release
@@ -27,7 +27,7 @@ fresh extraction of the actual ZIP. CI also validates the tagged commit message,
 including when the tag was pushed directly.
 
 Each native helper has a reusable Actions artifact containing its complete vendor
-directory and matching Sentry symbols. `scripts/release-native.mjs` fingerprints
+directory and matching Sentry symbols. `tooling/release-native.mjs` fingerprints
 the helper's tracked native sources, shared telemetry, build scripts, pinned
 dependencies, npm build command, and relevant installed toolchain versions.
 Plugin version bumps and UI/server edits do not change these fingerprints.
@@ -101,8 +101,9 @@ Release builds check for updates when Mobile Dev becomes visible. The server
 checks GitHub's latest full release and the public `release/latest` manifest;
 their versions must agree before the banner offers an update. Successful checks
 are cached for one hour across chats in the active Codex profile; unavailable
-checks retry after fifteen minutes. Development builds do not check or install
-public updates. The embedded UI needs no GitHub network permissions.
+checks retry after fifteen minutes. Development builds, and installs that are
+not a Codex plugin package (such as the Claude MCPB bundle), do not check or
+install public updates. The embedded UI needs no GitHub network permissions.
 
 The Update button calls an app-only MCP tool. It locates the CLI process that
 launched the plugin, verifies the `mobile-dev` Git marketplace belongs to this
