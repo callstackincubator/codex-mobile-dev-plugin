@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -10,7 +10,7 @@ const host = process.argv[2];
 if (host !== "cursor" && host !== "vscode") throw new Error("Pass cursor or vscode.");
 const { version } = JSON.parse(await readFile("package.json", "utf8"));
 const archive = resolve(process.argv[3] ?? `release/mobile-dev-${version}-${host}-darwin-arm64.zip`);
-const temporary = await mkdtemp(join(tmpdir(), `mobile-dev-${host}-`));
+const temporary = await realpath(await mkdtemp(join(tmpdir(), `mobile-dev-${host}-`)));
 try {
   const directory = join(temporary, "bundle with spaces");
   await mkdir(directory);

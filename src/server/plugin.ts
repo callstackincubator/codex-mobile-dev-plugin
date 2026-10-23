@@ -185,7 +185,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
         ? content.replace('data-view="panel"', 'data-view="workspace"').replace('data-layout="stacked"', 'data-layout="split"')
         : content,
       _meta: {
-        ui: { csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
+        ui: { ...(standardHost ? { permissions: { clipboardWrite: {} } } : {}), csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
         "openai/ui": { preferredDisplayMode: "fullscreen", availableDisplayModes: ["inline", "fullscreen"] },
       },
     }],
@@ -214,7 +214,7 @@ export async function createPlugin(html: string | (() => Promise<UIResource>), b
       const configured = configureUI(resource.html);
       const content = configured.replace('data-view="panel"', `data-view="${view}"`);
       return { contents: [{ uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: content, _meta: {
-        ui: { prefersBorder: true, csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
+        ui: { prefersBorder: true, ...(standardHost ? { permissions: { clipboardWrite: {} } } : {}), csp: { connectDomains: [SENTRY_ORIGIN], resourceDomains: [] } },
         "openai/ui": { preferredDisplayMode: "inline", availableDisplayModes: ["inline", "fullscreen"] },
       } }] };
     };

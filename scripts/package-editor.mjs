@@ -30,5 +30,5 @@ export async function packageEditor(host) {
   await rm(archive, { force: true });
   execFileSync("zip", ["-qr", archive, "."], { cwd: directory });
   execFileSync("unzip", ["-tq", archive], { stdio: "inherit" });
-  console.log(`${host} development bundle: ${archive}`);
+  console.log(`${host} bundle: ${archive}`);
 }

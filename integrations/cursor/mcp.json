@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "mobile-dev": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${CURSOR_PLUGIN_ROOT}/dist/server.mjs"],
+      "env": { "MOBILE_DEV_HOST": "cursor" }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "mobile-dev",
+  "version": "0.1.164",
+  "description": "Interactive local iOS and Android devices, logs and performance tools in Cursor.",
+  "author": { "name": "Callstack", "email": "hello@callstack.com" },
+  "homepage": "https://github.com/callstackincubator/codex-mobile-dev-plugin",
+  "mcpServers": "./mcp.json"
+}
