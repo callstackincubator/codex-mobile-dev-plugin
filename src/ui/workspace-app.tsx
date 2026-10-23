@@ -7,6 +7,7 @@ import "./style.css";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { Workspace } from "./components/workspace";
+import { DisplayModeButton } from "./components/display-mode-button";
 import type { DeviceLayout } from "./device-layout.ts";
 import { panelTargetSchema } from "../shared/panel-target.ts";
 import { WorkspaceDevices } from "./workspace-devices.ts";
@@ -22,7 +23,7 @@ import { PLUGIN_VERSION } from "../shared/version.ts";
 import { RecordingController } from "./recording-controller.ts";
 import { PluginUpdateController } from "./plugin-updates.ts";
 
-const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, {}, { autoResize: false });
+const app = new App({ name: "mobile-dev-ui", version: PLUGIN_VERSION }, { availableDisplayModes: ["inline", "fullscreen"] }, { autoResize: false });
 const claudeDesktop = document.documentElement.dataset.host === "claude-desktop";
 startUiTelemetry(app);
 const extensions = new OpenAIExtensions(app);
@@ -36,7 +37,7 @@ const updates = new PluginUpdateController(app);
 const reactRoot = createRoot(document.getElementById("root")!);
 function renderWorkspace(automaticLayout?: DeviceLayout) {
   const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-    <Workspace performance={performancePanel} logs={logsPanel} storage={storagePanel} recordingController={recordingController} updates={updates} automaticLayout={automaticLayout} onLayout={changeLayout} />
+    <Workspace performance={performancePanel} logs={logsPanel} storage={storagePanel} recordingController={recordingController} updates={updates} displayModeControl={claudeDesktop ? <DisplayModeButton app={app} /> : undefined} automaticLayout={automaticLayout} onLayout={changeLayout} />
   </ErrorBoundary>;
   reactRoot.render(workspace);
 }
@@ -118,6 +119,8 @@ function hostContext() {
   recordingController.hostChanged();
   panelContext.resume();
   for (const panel of panels) { panel.fitScreen(); panel.controls(); }
+  // Initial context arrives with connect(), without a hostcontextchanged event.
+  if (claudeDesktop) renderWorkspace();
 }
 function resumeContext() {
   if (document.visibilityState !== "hidden" && !disposingUI) {
@@ -130,7 +133,7 @@ window.addEventListener("pageshow", resumeContext);
 document.addEventListener("visibilitychange", resumeContext);
 function connectionFailed(error: unknown) {
   captureUiError(error, "host.connect");
-  const message = error instanceof Error ? error.message : "Could not connect to Codex.";
+  const message = error instanceof Error ? error.message : "Could not connect to the host.";
   for (const panel of panels) panel.notice(message);
 }
 function openDevices(input: unknown) {
