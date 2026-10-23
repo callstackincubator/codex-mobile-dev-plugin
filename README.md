@@ -21,7 +21,7 @@ available. Claude support is a development preview.
 Install the prebuilt plugin from the release marketplace:
 
 ```sh
-codex plugin marketplace add https://github.com/callstackincubator/codex-mobile-dev-plugin.git --ref release/latest
+codex plugin marketplace add https://github.com/callstackincubator/mobile-dev.git --ref release/latest
 codex plugin add mobile-dev@mobile-dev
 ```
 
@@ -141,13 +141,13 @@ controls are unavailable.
 ## Documentation and contributing
 
 Detailed guides are available for
-[devices](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/docs/devices.md),
-[logs](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/docs/logs.md),
-[performance](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/docs/performance.md),
-and [MCP tools](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/docs/mcp-tools.md).
+[devices](https://github.com/callstackincubator/mobile-dev/blob/main/docs/devices.md),
+[logs](https://github.com/callstackincubator/mobile-dev/blob/main/docs/logs.md),
+[performance](https://github.com/callstackincubator/mobile-dev/blob/main/docs/performance.md),
+and [MCP tools](https://github.com/callstackincubator/mobile-dev/blob/main/docs/mcp-tools.md).
 
 To build the plugin, install a local package, or contribute changes, see
-[CONTRIBUTING.md](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/CONTRIBUTING.md).
+[CONTRIBUTING.md](https://github.com/callstackincubator/mobile-dev/blob/main/CONTRIBUTING.md).
 Implementation and release details live in the linked contributor documentation.
 
 ## Privacy and support
@@ -161,7 +161,7 @@ crashes use a randomly generated persistent installation ID. Set
 processes to disable reporting. Tool results and content sent to chat are handled
 by the host separately. Read the [Privacy Policy](PRIVACY.md) and
 [Terms of Service](TERMS.md), or see
-[Sentry observability](https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/docs/telemetry.md)
+[Sentry observability](https://github.com/callstackincubator/mobile-dev/blob/main/docs/telemetry.md)
 for implementation details.
 
 For help, email [hello@callstack.com](mailto:hello@callstack.com).

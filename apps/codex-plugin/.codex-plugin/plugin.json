@@ -5,7 +5,7 @@
     "name": "Callstack",
     "email": "hello@callstack.com"
   },
-  "homepage": "https://github.com/callstackincubator/codex-mobile-dev-plugin",
+  "homepage": "https://github.com/callstackincubator/mobile-dev",
   "extensions": {
     "com.openai": {
       "onboardingSkill": "./skills/mobile-dev-setup/SKILL.md",
@@ -65,7 +65,7 @@
           ]
         },
         "commerce": false,
-        "demo_recording_url": "https://raw.githubusercontent.com/callstackincubator/codex-mobile-dev-plugin/main/docs/review/media/mobile-dev-demo.mp4"
+        "demo_recording_url": "https://raw.githubusercontent.com/callstackincubator/mobile-dev/main/docs/review/media/mobile-dev-demo.mp4"
       },
       "publication": {
         "release_notes": "Adds product-specific privacy, terms and support links, three starter prompts, and reproducible review cases. Corrects TraceSift write/service annotations. Filters storage secrets and binary values before host delivery, scopes reads before decoding, and adds exact key/column selection."
@@ -77,10 +77,10 @@
     "shortDescription": "Devices, logs, and performance",
     "longDescription": "Keep an iOS simulator or Android device beside your chat while building, running, or debugging Expo, React Native, SwiftUI, and other mobile apps. Monitor native CPU, memory, and device-wide Display FPS, analyze local CPU and React profiles with TraceSift cards, render interactive performance recordings in chat, read native and Metro logs, and inspect and control apps with Mobile Dev tools.",
     "developerName": "Callstack",
-    "websiteURL": "https://github.com/callstackincubator/codex-mobile-dev-plugin",
-    "supportURL": "https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/SUPPORT.md",
-    "privacyPolicyURL": "https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/PRIVACY.md",
-    "termsOfServiceURL": "https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/TERMS.md",
+    "websiteURL": "https://github.com/callstackincubator/mobile-dev",
+    "supportURL": "https://github.com/callstackincubator/mobile-dev/blob/main/SUPPORT.md",
+    "privacyPolicyURL": "https://github.com/callstackincubator/mobile-dev/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/callstackincubator/mobile-dev/blob/main/TERMS.md",
     "category": "Developer Tools",
     "capabilities": [
       "Read",

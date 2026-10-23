@@ -42,7 +42,7 @@ function cliFixture(directory: string, calls: string[][], options: { source?: st
   return async args => {
     calls.push(args);
     if (args[2] === "list") return { marketplaces: [{ name: "mobile-dev", root, marketplaceSource: {
-      sourceType: "git", source: options.source ?? "https://github.com/callstackincubator/codex-mobile-dev-plugin.git",
+      sourceType: "git", source: options.source ?? "https://github.com/callstackincubator/mobile-dev.git",
     } }] };
     if (args[2] === "upgrade") {
       const version = options.version ?? "0.1.132";
@@ -150,6 +150,16 @@ test("installation is deduplicated, verifies cache files, and retains the restar
   const cacheText = await readFile(cachePath, "utf8");
   const includesProfile = cacheText.includes(directory);
   assert.equal(includesProfile, false);
+});
+
+test("installs added before the repository rename keep updating through the old marketplace URL", async t => {
+  for (const source of ["https://github.com/callstackincubator/codex-mobile-dev-plugin.git", "git@github.com:callstackincubator/codex-mobile-dev-plugin.git"]) {
+    const directory = await profile(t);
+    const run = cliFixture(directory, [], { source });
+    const updates = new PluginUpdates({ enabled: true, profile: directory, currentVersion: "0.1.131", fetch: releaseFetch(), run });
+    const installed = await updates.install();
+    assert.equal(installed.status, "updated", source);
+  }
 });
 
 test("an unchanged marketplace still verifies the installed version and reports a restart notice", async t => {

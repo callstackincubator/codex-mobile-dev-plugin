@@ -23,5 +23,5 @@ export function compareReleaseVersions(left: string, right: string): number {
 }
 
 export function pluginReleaseUrl(version: string): string {
-  return `https://github.com/callstackincubator/codex-mobile-dev-plugin/releases/tag/v${version}`;
+  return `https://github.com/callstackincubator/mobile-dev/releases/tag/v${version}`;
 }

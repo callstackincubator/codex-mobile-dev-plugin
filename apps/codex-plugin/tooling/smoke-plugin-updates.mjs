@@ -17,7 +17,7 @@ const profile = join(directory, "profile");
 const fixtureHome = join(directory, "home");
 const codexCli = process.env.CODEX_CLI_PATH ?? "codex";
 const env = { ...process.env, HOME: fixtureHome, CODEX_HOME: profile, MOBILE_DEV_TELEMETRY: "off", GIT_TERMINAL_PROMPT: "0" };
-const repositoryUrl = "https://github.com/callstackincubator/codex-mobile-dev-plugin.git";
+const repositoryUrl = "https://github.com/callstackincubator/mobile-dev.git";
 const originalCwd = process.cwd();
 const codex = createCodexRunner(profile, { path: codexCli, env });
 let http;

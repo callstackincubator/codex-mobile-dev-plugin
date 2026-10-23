@@ -57,7 +57,7 @@ test("the banner handles progress, failures, retry, release notes, and restart i
   const releaseNotes = view.button("Release notes");
   releaseNotes.click();
   await view.settle();
-  assert.deepEqual(links, ["https://github.com/callstackincubator/codex-mobile-dev-plugin/releases/tag/v0.1.132"]);
+  assert.deepEqual(links, ["https://github.com/callstackincubator/mobile-dev/releases/tag/v0.1.132"]);
   const install = view.button("Update");
   install.click();
   install.click();

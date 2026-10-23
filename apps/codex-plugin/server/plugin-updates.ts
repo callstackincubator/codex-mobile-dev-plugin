@@ -22,7 +22,9 @@ export function recordPluginUpdate(operation: "check" | "install", outcome: "dis
   Sentry.metrics.count("plugin.update.operations", 1, { attributes });
   Sentry.metrics.gauge("plugin.update.duration", duration, { unit: "millisecond", attributes });
 }
-const repository = "callstackincubator/codex-mobile-dev-plugin";
+const repository = "callstackincubator/mobile-dev";
+// Installs from before the rename keep this marketplace URL; GitHub redirects it.
+const legacyRepository = "callstackincubator/codex-mobile-dev-plugin";
 const releaseEndpoint = `https://api.github.com/repos/${repository}/releases/latest`;
 const marketplaceEndpoint = `https://raw.githubusercontent.com/${repository}/release/latest/plugins/mobile-dev/.codex-plugin/plugin.json`;
 const checkIntervalMs = 60 * 60 * 1000;
@@ -81,8 +83,8 @@ export function createCodexRunner(cwd: string, options: { path?: string; env?: N
 }
 
 function isReleaseRepository(source: string): boolean {
-  return source === `https://github.com/${repository}` || source === `https://github.com/${repository}.git`
-    || source === `git@github.com:${repository}.git` || source === `ssh://git@github.com/${repository}.git`;
+  return [repository, legacyRepository].some(name => source === `https://github.com/${name}` || source === `https://github.com/${name}.git`
+    || source === `git@github.com:${name}.git` || source === `ssh://git@github.com/${name}.git`);
 }
 
 export class PluginUpdates {
