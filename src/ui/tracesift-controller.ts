@@ -17,6 +17,18 @@ type State = {
   error: string;
   /** Said when a finding was handed to the browser window instead of this panel. */
   notice: string;
+  /**
+   * The source folder an investigation lands in. Without one there is nothing to
+   * tell the chat which code a frame belongs to, so Investigate waits for it.
+   */
+  project?: string;
+  /** True while the saved folder is being read or its dialog is open. */
+  projectBusy: boolean;
+  /**
+   * The profile the panel's upload pane is waiting on, named by its file so the
+   * pane can say which one. Absent in the inline card, where the model analyzes.
+   */
+  analyzing?: { name: string; profileType: TraceSiftProfileType };
   /** Which drawing every card on this analysis carries; one switch, as on the web. */
   chartKind: ContributionChartKind;
   /** The card whose hand-off is being fetched, and the one just copied. */
@@ -52,10 +64,10 @@ function composerUnavailable(error: unknown) {
 }
 
 export class TraceSiftController {
-  private state: State = { canInvestigate: false, dark: false, error: "", notice: "", chartKind: "bar" };
+  private state: State = { canInvestigate: false, dark: false, error: "", notice: "", chartKind: "bar", projectBusy: false };
   private listeners = new Set<() => void>();
   private disposed = false;
-  private readonly readyAt = performance.now();
+  private readyAt = performance.now();
   /** When the current explorer's payload arrived, so its own readiness can be timed. */
   private explorerReadyAt = 0;
   private readonly app: App;
@@ -193,6 +205,14 @@ export class TraceSiftController {
     }
   };
   /**
+   * Where the chat should look. A profile names frames, not files, so without the
+   * folder the reader picked the agent has only a stack to go on.
+   */
+  private inProject(handoff: string, project: string) {
+    return `Investigate this in the project at ${project}.\n\n${handoff}`;
+  }
+
+  /**
    * One hand-off to the active chat. A timeout is not a failure to retry: the
    * message may well have landed, and sending twice reads as two findings.
    */
@@ -221,8 +241,8 @@ export class TraceSiftController {
   }
 
   investigate = async (cardId: string) => {
-    const { analysis, canInvestigate, busyCard } = this.state;
-    if (!analysis || !canInvestigate || busyCard || this.disposed || !analysis.cards.some(card => card.id === cardId)) return;
+    const { analysis, canInvestigate, busyCard, project } = this.state;
+    if (!analysis || !canInvestigate || !project || busyCard || this.disposed || !analysis.cards.some(card => card.id === cardId)) return;
     this.update({ busyCard: cardId, error: "" });
     try {
       // Fetching the hand-off and delivering it fail differently: the service
@@ -233,7 +253,7 @@ export class TraceSiftController {
         countUiEvent("ui.tracesift.handoff_failed");
         throw error;
       }
-      await this.sendHandoff(handoff, "ui.tracesift.investigate");
+      await this.sendHandoff(this.inProject(handoff, project), "ui.tracesift.investigate");
     } catch (error) {
       this.update({ error: error instanceof Error ? error.message : "Could not start this investigation." });
     } finally { this.update({ busyCard: undefined }); }
@@ -246,7 +266,8 @@ export class TraceSiftController {
     this.update({ handoffCard: cardId, copiedCard: undefined, error: "" });
     try {
       const handoff = await this.handoff(cardId);
-      await navigator.clipboard.writeText(handoff);
+      const { project } = this.state;
+      await navigator.clipboard.writeText(project ? this.inProject(handoff, project) : handoff);
       countUiEvent("ui.tracesift.copy_handoff");
       this.update({ copiedCard: cardId });
       this.copiedTimer = setTimeout(() => this.update({ copiedCard: undefined }), 2000);
@@ -443,8 +464,8 @@ export class TraceSiftController {
    * the picks and the whole tree are already in this frame.
    */
   investigateSelected = async () => {
-    const { analysis, canInvestigate, busyCard, explorer } = this.state;
-    if (!analysis || !canInvestigate || busyCard || this.disposed) return;
+    const { analysis, canInvestigate, busyCard, explorer, project } = this.state;
+    if (!analysis || !canInvestigate || !project || busyCard || this.disposed) return;
     const card = analysis.cards.find(entry => entry.id === explorer?.cardId);
     if (!card || !explorer) return;
 
@@ -467,7 +488,7 @@ export class TraceSiftController {
         return;
       }
       sending = true;
-      await this.sendHandoff(built.text, "ui.tracesift.pick_investigate");
+      await this.sendHandoff(this.inProject(built.text, project), "ui.tracesift.pick_investigate");
     } catch (error) {
       if (!sending) {
         countUiEvent("ui.tracesift.pick_investigate_failed");
@@ -513,6 +534,110 @@ export class TraceSiftController {
       countUiEvent("ui.tracesift.display_mode_unavailable");
     }
   }
+
+  /**
+   * The upload pane's one action. A panel frame never learns a dropped file's
+   * path, so the host's own dialog supplies one and the analysis follows it.
+   */
+  pickAndAnalyze = async (profileType: TraceSiftProfileType) => {
+    if (this.disposed || this.state.analyzing) return;
+    this.update({ error: "", notice: "" });
+    const startedAt = performance.now();
+    try {
+      const result = await this.app.callServerTool({ name: "mobile_pick_profile_file", arguments: {} });
+      if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "This host could not open a file dialog.");
+      recordUiTiming("ui.tracesift.pick", performance.now() - startedAt);
+      const picked = result.structuredContent;
+      // Cancel is the ordinary way out of a dialog, so the pane simply stays put.
+      if (picked?.picked !== true || typeof picked.path !== "string") { countUiEvent("ui.tracesift.pick_cancelled"); return; }
+      await this.analyze(picked.path, profileType);
+    } catch (error) {
+      countUiEvent("ui.tracesift.pick_failed");
+      captureUiError(error, "tracesift.pick");
+      if (!this.disposed) this.update({ error: error instanceof Error ? error.message : "That profile could not be chosen." });
+    }
+  };
+
+  /** Analyze one profile by path. `accept` installs the cards this returns. */
+  analyze = async (path: string, profileType: TraceSiftProfileType) => {
+    if (this.disposed || this.state.analyzing) return;
+    const name = path.split(/[\\/]/).pop() || path;
+    this.inputKey = JSON.stringify({ path, profileType });
+    this.update({ analyzing: { name, profileType }, error: "", notice: "" });
+    const startedAt = performance.now();
+    try {
+      const result = await this.app.callServerTool({ name: "mobile_analyze_profile", arguments: { path, profileType } });
+      if (this.disposed) return;
+      recordUiTiming("ui.tracesift.analyze", performance.now() - startedAt);
+      if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "TraceSift could not analyze this profile.");
+      countUiEvent("ui.tracesift.analyze");
+      this.accept(result);
+    } catch (error) {
+      countUiEvent("ui.tracesift.analyze_failed");
+      captureUiError(error, "tracesift.analyze");
+      if (!this.disposed) this.update({ error: error instanceof Error ? error.message : "TraceSift could not analyze this profile." });
+    } finally { this.update({ analyzing: undefined }); }
+  };
+
+  /**
+   * The folder saved by a previous panel, if it is still there. Called once the
+   * host is connected rather than from `hostChanged`, which re-enters on every
+   * theme and context change.
+   */
+  loadProject = async () => {
+    this.update({ projectBusy: true });
+    try {
+      const result = await this.app.callServerTool({ name: "mobile_get_tracesift_project", arguments: {} });
+      if (this.disposed || result.isError) return;
+      const path = result.structuredContent?.path;
+      if (typeof path === "string" && path !== "") this.update({ project: path });
+      countUiEvent(typeof path === "string" && path !== "" ? "ui.tracesift.project_hit" : "ui.tracesift.project_miss");
+    } catch (error) {
+      countUiEvent("ui.tracesift.project_failed");
+      captureUiError(new Error("The saved TraceSift project could not be read."), "tracesift.project");
+    } finally { this.update({ projectBusy: false }); }
+  };
+
+  /** Choose the folder, through the host's own dialog. Cancel keeps the current one. */
+  pickProject = async () => {
+    if (this.disposed || this.state.projectBusy) return;
+    this.update({ projectBusy: true, error: "" });
+    const startedAt = performance.now();
+    try {
+      const result = await this.app.callServerTool({ name: "mobile_pick_tracesift_project", arguments: {} });
+      if (this.disposed) return;
+      recordUiTiming("ui.tracesift.project_pick", performance.now() - startedAt);
+      if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || "This host could not open a folder dialog.");
+      const picked = result.structuredContent;
+      if (picked?.picked !== true || typeof picked.path !== "string") { countUiEvent("ui.tracesift.project_cancelled"); return; }
+      countUiEvent("ui.tracesift.project_chosen");
+      this.update({ project: picked.path });
+    } catch (error) {
+      countUiEvent("ui.tracesift.project_failed");
+      captureUiError(error, "tracesift.project");
+      if (!this.disposed) this.update({ error: error instanceof Error ? error.message : "That project folder could not be chosen." });
+    } finally { this.update({ projectBusy: false }); }
+  };
+
+  /**
+   * Start readiness again from now. The inline card's frame opens with its
+   * analysis, but the tool's frame is the whole workspace: timing a reading from
+   * when that loaded would report a session's age as this surface's readiness.
+   */
+  restartReadiness = () => { this.readyAt = performance.now(); };
+
+  /** Back to the upload pane, dropping the reading and its megabytes of tree. */
+  reset = () => {
+    if (this.disposed || (!this.state.analysis && !this.state.explorer)) return;
+    if (this.state.explorer) this.closeExplore();
+    this.inputKey = undefined;
+    this.update({ analysis: undefined, error: "", notice: "", copiedCard: undefined, openingExploreCard: undefined });
+    setUiGauge("ui.tracesift.cards", 0);
+    // The pane has no reading, so the profile kind is cleared rather than left
+    // naming the one the next measurements would be attributed against.
+    setUiTelemetryContext({ tracesift_view: "upload", tracesift_profile: "none" });
+    countUiEvent("ui.tracesift.reset");
+  };
 
   dispose() {
     this.disposed = true;

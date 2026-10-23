@@ -16,6 +16,7 @@ import { LogsPanel } from "./logs-panel.ts";
 import { DeviceAppsStore } from "./device-apps.ts";
 import { PerformancePanel } from "./performance-panel.ts";
 import { StoragePanel } from "./storage-panel.ts";
+import { TraceSiftPanel } from "./tracesift-panel.ts";
 import { createSimulatorPanel } from "./simulator-panel.ts";
 import { startLiveReload } from "./live-reload.ts";
 import { ErrorBoundary, captureUiError, startUiTelemetry, stopUiTelemetry, setUiTelemetryContext } from "./telemetry.ts";
@@ -32,12 +33,13 @@ const deviceApps = new DeviceAppsStore(app, document);
 const performancePanel = new PerformancePanel(app, deviceApps);
 const logsPanel = new LogsPanel(app, panelContext, deviceApps);
 const storagePanel = new StoragePanel(app, deviceApps);
+const traceSiftPanel = new TraceSiftPanel(app);
 const recordingController = new RecordingController(app, extensions);
 const updates = new PluginUpdateController(app);
 const reactRoot = createRoot(document.getElementById("root")!);
 function renderWorkspace(automaticLayout?: DeviceLayout) {
   const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-    <Workspace performance={performancePanel} logs={logsPanel} storage={storagePanel} recordingController={recordingController} updates={updates} displayModeControl={claudeDesktop ? <DisplayModeButton app={app} /> : undefined} contextControl={<ContextAttachments context={panelContext} />} automaticLayout={automaticLayout} onLayout={changeLayout} />
+    <Workspace performance={performancePanel} logs={logsPanel} storage={storagePanel} tracesift={traceSiftPanel} recordingController={recordingController} updates={updates} displayModeControl={claudeDesktop ? <DisplayModeButton app={app} /> : undefined} contextControl={<ContextAttachments context={panelContext} />} automaticLayout={automaticLayout} onLayout={changeLayout} />
   </ErrorBoundary>;
   reactRoot.render(workspace);
 }
@@ -100,6 +102,7 @@ function disposeUI() {
     workspaceDevices.dispose();
     deviceApps.dispose();
     storagePanel.dispose();
+    traceSiftPanel.dispose();
     recordingController.dispose();
     updates.dispose();
     await Promise.allSettled([...panels.map(panel => panel.dispose()), logsPanel.dispose(), performancePanel.dispose()]);
@@ -119,6 +122,7 @@ function hostContext() {
   if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
   panelContext.hostChanged();
   recordingController.hostChanged();
+  traceSiftPanel.hostChanged();
   panelContext.resume();
   for (const panel of panels) { panel.fitScreen(); panel.controls(); }
   // Initial context arrives with connect(), without a hostcontextchanged event.
@@ -188,6 +192,7 @@ void (async () => {
     logsPanel.setAvailable(available);
     performancePanel.setAvailable(available);
     storagePanel.setAvailable(available);
+    traceSiftPanel.setAvailable(available);
     deviceApps.setAvailable(available);
     updates.setAvailable(available && !claudeDesktop);
     for (const panel of panels) if (!available) panel.notice("This host cannot call the plugin's simulator tools.");

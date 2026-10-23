@@ -1,13 +1,15 @@
-import { ActivityIcon, DatabaseIcon, TerminalIcon, PanelsTopLeftIcon } from "lucide-react";
+import { ActivityIcon, DatabaseIcon, TerminalIcon, PanelsTopLeftIcon, ChartNoAxesCombinedIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import type { LogsPanel } from "../logs-panel.ts";
 import type { PerformancePanel } from "../performance-panel.ts";
 import type { StoragePanel } from "../storage-panel.ts";
+import type { TraceSiftPanel } from "../tracesift-panel.ts";
 import { PerformanceView } from "./performance-view";
 import { SimulatorView } from "./simulator-view";
 import { LogsView } from "./logs-view";
 import { StorageView } from "./storage-view";
+import { TraceSiftView } from "./tracesift-view";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select";
 import { Button } from "./ui/button";
 
@@ -28,11 +30,12 @@ const tools = {
   logs: { id: "tool-logs", label: "Logs", icon: TerminalIcon },
   performance: { id: "tool-performance", label: "Performance", icon: ActivityIcon },
   storage: { id: "tool-storage", label: "Storage", icon: DatabaseIcon },
+  tracesift: { id: "tool-tracesift", label: "TraceSift", icon: ChartNoAxesCombinedIcon },
 };
 type Tool = keyof typeof tools;
 const isTool = (value: string): value is Tool => value in tools;
 
-export function Workspace({ logs, performance, storage, recordingController, updates, displayModeControl, contextControl, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; recordingController: RecordingController; updates?: PluginUpdateController; displayModeControl?: ReactNode; contextControl?: ReactNode; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
+export function Workspace({ logs, performance, storage, tracesift, recordingController, updates, displayModeControl, contextControl, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; tracesift: TraceSiftPanel; recordingController: RecordingController; updates?: PluginUpdateController; displayModeControl?: ReactNode; contextControl?: ReactNode; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
   const [tool, setTool] = useState<Tool>("logs");
   const [savedVisible, setSavedVisible] = useState(false);
   const [simulatorsCollapsed, setSimulatorsCollapsed] = useState(false);
@@ -54,6 +57,7 @@ export function Workspace({ logs, performance, storage, recordingController, upd
     logs.hide();
     performance.hide();
     storage.hide();
+    tracesift.hide();
   }, [recordingState.recording?.id]);
   const performanceState = useSyncExternalStore(performance.subscribe, performance.getSnapshot);
   const wide = useMediaQuery("(min-width: 900px)");
@@ -62,9 +66,10 @@ export function Workspace({ logs, performance, storage, recordingController, upd
   const collapsedToolSize = fullscreen ? (split ? 48 : 44) : 0;
   const logState = useSyncExternalStore(logs.subscribe, logs.getSnapshot);
   const storageState = useSyncExternalStore(storage.subscribe, storage.getSnapshot);
+  const traceSiftState = useSyncExternalStore(tracesift.subscribe, tracesift.getSnapshot);
   // A saved recording shows in the performance tool, so it counts as that tool being open.
-  const panels = { logs, performance, storage };
-  const open = { logs: logState.open, performance: savedVisible || performanceState.open, storage: storageState.open }[tool];
+  const panels = { logs, performance, storage, tracesift };
+  const open = { logs: logState.open, performance: savedVisible || performanceState.open, storage: storageState.open, tracesift: traceSiftState.open }[tool];
   useEffect(() => { setUiSurface(open ? savedVisible ? "recording" : tool : "simulator"); }, [tool, open, savedVisible]);
   useEffect(() => {
     setUiTelemetryContext({ logs_open: logState.open, logs_paused: logState.paused, performance_running: performanceState.monitoring || performanceState.fpsMonitoring });
@@ -75,6 +80,7 @@ export function Workspace({ logs, performance, storage, recordingController, upd
     if (logs.getSnapshot().open) logs.toggle();
     performance.hide();
     storage.hide();
+    tracesift.hide();
     void performance.disconnect();
   };
   const showTool = (next: Tool) => {
@@ -100,7 +106,7 @@ export function Workspace({ logs, performance, storage, recordingController, upd
     if (!previous) return;
     if (size.inPixels <= collapsedToolSize + 1 && isOpen()) closeTools();
     else if (size.inPixels > 80 && isOpen() === false) showTool(tool);
-  }}>{tool === "logs" && <LogsView panel={logs} />}{tool === "storage" && <StorageView panel={storage} />}{tool === "performance" && open && (savedVisible ? <div className="recording-workspace"><Button variant="outline" size="sm" onClick={() => { setSavedVisible(false); performance.show(); }}>Live performance</Button><RecordingCard controller={recordingController} detailed /></div> : <PerformanceView panel={performance} />)}</ResizablePanel>;
+  }}>{tool === "logs" && <LogsView panel={logs} />}{tool === "storage" && <StorageView panel={storage} />}{tool === "tracesift" && <TraceSiftView panel={tracesift} />}{tool === "performance" && open && (savedVisible ? <div className="recording-workspace"><Button variant="outline" size="sm" onClick={() => { setSavedVisible(false); performance.show(); }}>Live performance</Button><RecordingCard controller={recordingController} detailed /></div> : <PerformanceView panel={performance} />)}</ResizablePanel>;
   // The sidebar keeps these controls under its simulators. Fullscreen, or no visible
   // platform, moves them above the tools.
   const bottomToolbar = !fullscreen && layout !== "none";
