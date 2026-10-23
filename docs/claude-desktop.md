@@ -55,21 +55,23 @@ upload process. The packager refuses a mismatched build environment.
   additionally require image-context support. The top attachment bar lists saved
   notes and provides **Add notes to chat** and **Clear attachments**; Codex keeps
   its native chips and device-level send controls.
-- **Add notes to chat** prepares a readable draft with the note text and targets.
-  Selection details and editing guidance stay in model context. Review and send
-  the draft in Claude before clearing notes. Claude may show a warning for
-  app-generated drafts. Notes remain until explicitly removed or cleared.
-- Claude may fetch model context on demand using its own **Reading widget context**
-  action. This is separate from listing this server's MCP resources. The draft
-  and Claude tool descriptions direct it to read widget context before acting,
-  and to ask for the widget to be reopened if that context is unavailable.
-  When the host supplies the opening tool's name, the draft includes it so
-  Claude can identify the correct widget. Context updates must be acknowledged
-  before the draft is prepared; the full selection evidence stays available
-  until notes are explicitly cleared.
+- **Add notes to chat** prepares a readable draft with each note's text and a
+  one-line Locator (role, identifier or testID, source when known, bounds, point
+  and device ID). Review and send the draft in Claude before clearing notes.
+  Claude may show a warning for app-generated drafts. Notes remain until
+  explicitly removed or cleared.
+- The widget also publishes the full selection hierarchy and editing guidance
+  through `ui/update-model-context`. Whether the model sees it depends on the
+  surface: claude.ai offloads it behind an on-demand **Reading widget context**
+  step ([upstream explanation](https://github.com/anthropics/claude-ai-mcp/issues/102)),
+  and other Claude surfaces may not expose it to the model at all. An
+  acknowledged context update proves only that the host accepted it, so the
+  draft must identify each target by itself.
+- Notes live only in the widget instance; reopening Mobile Dev opens a new widget
+  without them. Neither the draft nor the tool descriptions depend on a
+  host-specific context reader.
   Verify the handoff by asking for a saved note's exact identifier and bounds;
   label matching against a fresh accessibility tree does not prove delivery.
-  See the [upstream explanation](https://github.com/anthropics/claude-ai-mcp/issues/102).
 - Other Ask/Investigate actions send complete standard messages; OpenAI routing is included
   only when the host advertises it. Codex skills are not installed by this bundle.
 

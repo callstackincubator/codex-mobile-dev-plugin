@@ -92,14 +92,13 @@ export class PanelContext {
     if (!annotations.length) return;
     const startedAt = performance.now();
     const hostAttachments = this.usesHostAttachments;
-    const text = hostAttachments ? ANNOTATION_EDIT_PROMPT : formatAnnotationDraft(annotations, this.app.getHostContext?.()?.toolInfo?.tool.name);
+    const text = hostAttachments ? ANNOTATION_EDIT_PROMPT : formatAnnotationDraft(annotations);
     const revision = this.revision;
     recordUiTiming("ui.annotations.message_build", performance.now() - startedAt);
     if (annotations.some(annotation => !this.annotations.some(item => item.id === annotation.id))) throw new Error("Annotations were removed from chat before sending.");
     const sendStartedAt = performance.now();
     try {
-      // A short draft depends on the full context reaching the host first.
-      if (!hostAttachments && !this.canAttach) throw new Error("This host cannot receive the notes' selection context.");
+      // Publish first so widget context, where a host exposes it, matches the draft.
       if (!hostAttachments || annotations.some(annotation => this.pendingAnnotations.has(annotation.id))) await this.publish();
       const result = await withComposer(() => {
         if (!hostAttachments && revision !== this.revision) throw new Error("Notes changed while preparing the draft. Add them to chat again.");

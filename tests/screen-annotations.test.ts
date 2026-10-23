@@ -571,7 +571,7 @@ test("a fresh annotation batch starts at one after chat clears or sends the prio
   f.store.dispose();
 });
 
-test("standard hosts receive readable drafts and retain selection context until explicitly cleared", async () => {
+test("standard hosts receive readable, self-locating drafts and retain selection context until explicitly cleared", async () => {
   const messages: Parameters<App["sendMessage"]>[0][] = [];
   const updates: Parameters<App["updateModelContext"]>[0][] = [];
   const context = new PanelContext({
@@ -586,7 +586,11 @@ test("standard hosts receive readable drafts and retain selection context until 
   assert.match(JSON.stringify(messages[0].content), /Make this button larger/);
   assert.match(JSON.stringify(messages[0].content), /iPhone/);
   assert.match(JSON.stringify(messages[0].content), /Pixel/);
-  assert.doesNotMatch(JSON.stringify(messages[0].content), /Bounds:|AXButton|creation site/);
+  // The draft must locate each target without the host exposing widget context.
+  const draft = messages[0].content.map(item => item.type === "text" ? item.text : "").join("\n");
+  assert.match(draft, /Locator: AXButton; identifier "continue-button"; bounds 10,20,100,40 points; point 50,40; device /);
+  assert.match(draft, /device android/);
+  assert.doesNotMatch(draft, /reopen|creation site/);
   assert.match(JSON.stringify(updates.at(-1)?.content), /Bounds:|AXButton/);
   assert.match(JSON.stringify(updates.at(-1)?.content), /Device:.*Pixel/);
   assert.match(JSON.stringify(updates.at(-1)?.content), /creation site/);
@@ -643,11 +647,10 @@ test("editing a note while its context is publishing prevents an obsolete draft"
 });
 
 test("native MCP Apps handshake publishes retrievable selection evidence before the chat draft", async t => {
-  const toolName = "mcp__mobile_dev__mobile_open_workspace";
   const app = new App({ name: "annotation-native-test", version: "1" }, {}, { autoResize: false });
   const bridge = new AppBridge(null, { name: "native-host-fixture", version: "1" }, {
     updateModelContext: { text: {} }, message: { text: {} },
-  }, { hostContext: { toolInfo: { id: "opening-call", tool: { name: toolName, inputSchema: { type: "object" } } } } });
+  });
   let shared: Parameters<App["updateModelContext"]>[0] | undefined;
   let acknowledge: (() => void) | undefined;
   let hold = false;
@@ -673,9 +676,13 @@ test("native MCP Apps handshake publishes retrievable selection evidence before 
   acknowledge!();
   await preparing;
   assert.equal(messages.length, 1);
-  assert.match(JSON.stringify(messages[0].content), /mcp__mobile_dev__mobile_open_workspace/);
   assert.match(JSON.stringify(messages[0].content), /Only change this instance/);
-  assert.doesNotMatch(JSON.stringify(messages[0].content), /second-continue-button|Bounds:/);
+  // Identically labelled targets stay distinct in the draft itself, because the
+  // host may never show widget context to the model.
+  const draft = messages[0].content.map(item => item.type === "text" ? item.text : "").join("\n");
+  assert.match(draft, /#1 "Continue": Make this button larger\n  Locator: AXButton; identifier "continue-button"; bounds 10,20,100,40 points/);
+  assert.match(draft, /#2 "Continue": Only change this instance\n  Locator: AXButton; identifier "second-continue-button"; bounds 200,300,60,30 points/);
+  assert.doesNotMatch(draft, /reopen/);
   assert.equal(messages[0]._meta, undefined);
   // Hosts can fetch this snapshot on the later user turn, even after the draft
   // was acknowledged. Both identically labelled targets must remain distinct.

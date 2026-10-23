@@ -126,7 +126,9 @@ test("the simulator toolbar opens notes, saves blue markers, and lets users edit
   const add = Array.from(top.querySelectorAll("button")).find(button => button.textContent === "Add notes to chat")!;
   await act(async () => { add.click(); });
   assert.equal(messages.length, 1);
-  assert.doesNotMatch(JSON.stringify(messages[0].content), /Bounds:|AXButton/);
+  const draft = messages[0].content.map(item => item.type === "text" ? item.text : "").join("\n");
+  assert.match(draft, /Locator: AXButton; identifier "continue"; bounds 10,20,100,40 points; point 50,40; device iphone/);
+  assert.doesNotMatch(draft, /reopen|creation site/);
   assert.equal(standard.screenAnnotations.length, 1);
   assert.ok(dom.window.document.querySelector('.annotation-marker'));
   assert.match(top.querySelector('[role="status"]')!.textContent!, /Review and send there/);

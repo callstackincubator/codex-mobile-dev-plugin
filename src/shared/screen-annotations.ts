@@ -184,12 +184,26 @@ export function formatAnnotationMessage(annotations: ScreenAnnotation[]): string
   return `${ANNOTATION_EDIT_PROMPT}\n${ANNOTATION_EDIT_GUIDANCE}\n\n${annotations.map(formatAnnotationContext).join("\n\n")}`;
 }
 
-// The visible draft contains the user's requests; selection evidence and edit
-// boundaries stay in model context. Keep requests intact, including long notes.
-export function formatAnnotationDraft(annotations: ScreenAnnotation[], toolName?: string): string {
-  const widget = toolName ? `the Mobile Dev widget opened by ${JSON.stringify(toolName)}` : "the current Mobile Dev widget";
-  return `Apply these notes. First read the context of ${widget} for the exact selections. If that context is unavailable, ask me to reopen Mobile Dev instead of guessing targets from labels.\n\n${annotations.map(annotation =>
-    `- ${annotation.simulator.name} · #${annotation.number} ${JSON.stringify(annotation.component.label ?? annotation.component.name)}: ${annotation.text}`
+function draftLocator(annotation: ScreenAnnotation): string {
+  const { component, screen, point, simulator, selection } = annotation, source = component.react?.source;
+  return [
+    component.source === "screen" ? "manual region" : component.role,
+    component.identifier && `${component.source === "react-native" ? "testID" : "identifier"} ${JSON.stringify(component.identifier)}`,
+    source && `${component.react?.sourceKind === "owner" ? "owner source" : "source"} ${sourceLocation(source)}`,
+    selection?.instance && `instance ${selection.instance.index} of ${selection.instance.total}`,
+    `bounds ${formatBounds(component.bounds)} ${screen.units}`,
+    `point ${[point.x, point.y].map(value => Math.round(value * 10) / 10).join(",")}`,
+    `device ${simulator.udid}`,
+  ].filter(Boolean).join("; ");
+}
+
+// Widget model context is host-dependent: some hosts attach it to the next turn,
+// some expose an on-demand reader, some never show it to the model. The draft must
+// identify each target on its own; model context adds hierarchy and guidance.
+// Notes live only in this widget instance, so never ask the user to reopen it.
+export function formatAnnotationDraft(annotations: ScreenAnnotation[]): string {
+  return `Apply these notes. Each Locator identifies the selected element; change only that element unless the note asks for more. Mobile Dev's widget context, when available, adds the hierarchy and editing guidance.\n\n${annotations.map(annotation =>
+    `- ${annotation.simulator.name} · #${annotation.number} ${JSON.stringify(annotation.component.label ?? annotation.component.name)}: ${annotation.text}\n  Locator: ${draftLocator(annotation)}`
   ).join("\n")}`;
 }
 
