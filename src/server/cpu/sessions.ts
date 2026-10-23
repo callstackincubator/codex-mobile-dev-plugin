@@ -51,10 +51,10 @@ export class CpuSessions {
 
   open(input: z.input<typeof cpuTargetSchema>): string {
     const target = cpuTargetSchema.parse(input);
-    if (this.disposed) throw new Error("The plugin server has closed.");
-    if (this.sessions.size >= 8) throw new Error("Too many CPU sessions. Close a performance panel and retry.");
+    if (this.disposed) throw new ExpectedOperationError("session_closed", "The plugin server has closed.");
+    if (this.sessions.size >= 8) throw new ExpectedOperationError("resource_limit", "Too many CPU sessions. Close a performance panel and retry.");
     const key = this.key(target);
-    if (this.targets.has(key)) throw new Error("This app already has an active CPU monitor. Stop it in the other performance panel first.");
+    if (this.targets.has(key)) throw new ExpectedOperationError("resource_limit", "This app already has an active CPU monitor. Stop it in the other performance panel first.");
     const memoryMetric: MemoryMetric = target.platform === "android" ? "rss" : "physical-footprint";
     const session: Session = { target, buffer: new CpuBuffer(memoryMetric), abort: new AbortController(), expires: Date.now() + 300000 };
     const bytes = randomBytes(32);
@@ -71,7 +71,7 @@ export class CpuSessions {
       const apps = await this.sources.apps(session.target.deviceId, signal, session.target.platform, session.target.kind);
       signal.throwIfAborted();
       const app = apps.find(candidate => candidate.bundleId === session.target.bundleId);
-      if (app === undefined) throw new Error("The selected app is no longer running. Open it on the selected device.");
+      if (app === undefined) throw new ExpectedOperationError("app_unavailable", "The selected app is no longer running. Open it on the selected device.");
       const startedAt = performance.now();
       session.buffer.timeOrigin = startedAt / 1000;
       session.monitor = await this.sources.monitor({ target: session.target, pid: app.pid, signal, onSample: reading => {

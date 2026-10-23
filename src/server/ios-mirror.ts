@@ -27,12 +27,12 @@ export class IosMirrorSessions {
   }
 
   async open(udid: string) {
-    if (this.disposed) throw new Error("The plugin server has closed.");
-    if (this.sessions.size + this.opening >= 4) throw new Error("Too many physical device streams. Close another panel first.");
+    if (this.disposed) throw new ExpectedOperationError("session_closed", "The plugin server has closed.");
+    if (this.sessions.size + this.opening >= 4) throw new ExpectedOperationError("resource_limit", "Too many physical device streams. Close another panel first.");
     this.opening++;
     try {
       const capture = await this.openCapture(udid);
-      if (this.disposed) { await capture.close(); throw new Error("The plugin server has closed."); }
+      if (this.disposed) { await capture.close(); throw new ExpectedOperationError("session_closed", "The plugin server has closed."); }
       const bytes = randomBytes(32);
       const id = bytes.toString("hex");
       this.sessions.set(id, { capture, udid, expires: Date.now() + 300000, reading: false, inputting: false, closed: false });
@@ -52,7 +52,7 @@ export class IosMirrorSessions {
 
   async batch(id: string): Promise<IosVideoBatch> {
     const session = this.session(id);
-    if (session.reading) throw new Error("A physical device video read is already pending.");
+    if (session.reading) throw new ExpectedOperationError("resource_limit", "A physical device video read is already pending.");
     session.reading = true;
     try {
       const batch = await session.capture.read();
@@ -65,8 +65,8 @@ export class IosMirrorSessions {
 
   async input(id: string, messages: TouchInput[], generation: number) {
     const session = this.session(id);
-    if (session.generation !== generation) throw new Error("Wait for a fresh physical iOS screen before sending input.");
-    if (session.inputting) throw new Error("Physical iOS input is already pending.");
+    if (session.generation !== generation) throw new ExpectedOperationError("device_unavailable", "Wait for a fresh physical iOS screen before sending input.");
+    if (session.inputting) throw new ExpectedOperationError("resource_limit", "Physical iOS input is already pending.");
     session.inputting = true;
     try {
       const samples: NativeTouchSample[] = messages.map(message => {

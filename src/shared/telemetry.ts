@@ -10,6 +10,8 @@ export const SENTRY_ORIGIN = "https://o4512180958068736.ingest.de.sentry.io";
 export const SENTRY_RELEASE = `mobile-dev@${PLUGIN_VERSION}`;
 export const TELEMETRY_META_KEY = "mobile-dev/telemetry";
 export const TELEMETRY_INTERVAL_MS = 30_000;
+export const METRIC_SAMPLE_RATE = 0.005;
+export const HANDLED_ERROR_SAMPLE_RATE = 0.05;
 export type TelemetryEnvironment = "development" | "release";
 
 export function validateTelemetryEnvironment(value: unknown): TelemetryEnvironment {
@@ -129,6 +131,49 @@ export function scrubMetric(metric: Metric): Metric {
   delete metric.attributes["telemetry_session"];
   delete metric.attributes["session.id"];
   return metric;
+}
+
+export function sampleMetric(metric: Metric): Metric | null {
+  const sample = Math.random();
+  if (sample >= METRIC_SAMPLE_RATE) return null;
+  const scrubbed = scrubMetric(metric);
+  scrubbed.attributes ??= {};
+  scrubbed.attributes["telemetry.sample_rate"] = METRIC_SAMPLE_RATE;
+  return scrubbed;
+}
+
+export function createErrorEventFilter(): NonNullable<Options["beforeSend"]> {
+  const reported = new Set<string>();
+  let windowStarted = Date.now();
+  let handledReports = 0;
+  return (event, hint) => {
+    const scrubbed = scrubErrorEvent(event, hint);
+    if (scrubbed === null) return null;
+    const now = Date.now();
+    if (now - windowStarted >= 3_600_000) {
+      reported.clear();
+      handledReports = 0;
+      windowStarted = now;
+    }
+    const exceptions = scrubbed.exception?.values ?? [];
+    const unhandled = exceptions.some(exception => exception.mechanism?.handled === false);
+    if (unhandled === false) {
+      if (handledReports >= 20) return null;
+      const sample = Math.random();
+      if (sample >= HANDLED_ERROR_SAMPLE_RATE) return null;
+    }
+    const signatures = exceptions.map(exception => {
+      const frames = exception.stacktrace?.frames;
+      const frame = frames?.at(-1);
+      return [exception.type, exception.value, frame?.filename, frame?.function, frame?.lineno];
+    });
+    const signature = JSON.stringify([scrubbed.fingerprint, scrubbed.message, signatures]);
+    if (reported.has(signature)) return null;
+    if (reported.size >= 256) return null;
+    reported.add(signature);
+    if (unhandled === false) handledReports++;
+    return scrubbed;
+  };
 }
 
 export type MeasurementSummary = { count: number; mean: number; p95: number; max: number };

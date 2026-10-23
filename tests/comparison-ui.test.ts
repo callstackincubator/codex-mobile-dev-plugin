@@ -27,6 +27,7 @@ test("comparison overlays, toggles, shared selections and Ask retain original ru
   const html = '<html data-view="comparison"><head><meta name="mobile-dev-environment" content="development"><meta name="mobile-dev-user-id" content="anon_0123456789abcdef0123456789abcdef"><meta name="mobile-dev-session-id" content="run_1234567890abcdef1234567890abcdef"></head><body><div id="root"></div></body></html>';
   const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
   const window = dom.window;
+  window.Math.random = () => 0;
   Object.defineProperty(window.performance, "getEntriesByType", { value: () => [] });
   Object.defineProperty(window.performance, "getEntries", { value: () => [] });
   const telemetry: string[] = [];

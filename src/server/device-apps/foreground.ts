@@ -4,6 +4,7 @@ import { z } from "zod";
 import { adbPath } from "../native-logs.ts";
 import { baguetteEnvironment, BAGUETTE_RUNTIME_TIMEOUT_MS } from "../baguette-runtime.ts";
 import type { ForegroundApp } from "../../shared/device-apps.ts";
+import { ExpectedOperationError } from "../../shared/error-reporting.ts";
 
 const number = z.number();
 const integer = number.int();
@@ -49,7 +50,7 @@ export function parseAndroidForegroundPackage(output: string): string | null {
   const topEntries = Array.from(topMatches);
   const resumedMatches = output.matchAll(resumed);
   const entries = topEntries.length > 0 ? topEntries : Array.from(resumedMatches);
-  if (entries.length === 0) throw new Error("Android did not report its resumed activity.");
+  if (entries.length === 0) throw new ExpectedOperationError("app_unavailable", "Android did not report its resumed activity.");
   const packages = new Set<string>();
   for (const entry of entries) {
     if (entry[1].trim() === "null") continue;
@@ -57,7 +58,7 @@ export function parseAndroidForegroundPackage(output: string): string | null {
     if (component === null) throw new Error("Android returned an unsupported resumed activity.");
     packages.add(component[1]);
   }
-  if (packages.size > 1) throw new Error("Android reported multiple foreground apps across displays.");
+  if (packages.size > 1) throw new ExpectedOperationError("unsupported_platform", "Android reported multiple foreground apps across displays.");
   const packageName = packages.values().next();
   return packageName.value ?? null;
 }

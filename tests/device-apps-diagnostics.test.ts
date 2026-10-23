@@ -168,6 +168,7 @@ test("UI discovery leaves server errors with the server and reports transport an
   const html = '<html><head><meta name="mobile-dev-environment" content="development"><meta name="mobile-dev-user-id" content="anon_0123456789abcdef0123456789abcdef"><meta name="mobile-dev-session-id" content="run_1234567890abcdef1234567890abcdef"></head></html>';
   const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
   t.after(() => dom.window.close());
+  dom.window.Math.random = () => 0;
   const bodies: string[] = [];
   dom.window.fetch = async (_url, options) => { const body = String(options?.body ?? ""); bodies.push(body); return new Response("", { status: 200 }); };
   Object.defineProperty(dom.window.performance, "getEntriesByType", { value: () => [] });
@@ -239,11 +240,10 @@ test("UI discovery leaves server errors with the server and reports transport an
     }
     return items;
   });
-  assert.equal(events.length, 3);
+  assert.equal(events.length, 2);
   const diagnosticTags = events.map(event => ({ stage: event.tags.discovery_stage, failure: event.tags.discovery_failure,
     platform: event.tags.device_platform, kind: event.tags.device_kind, surface: event.tags.surface }));
   assert.deepEqual(diagnosticTags, [
-    { stage: "transport", failure: "timeout", platform: "ios", kind: "physical", surface: "logs" },
     { stage: "transport", failure: "timeout", platform: "ios", kind: "physical", surface: "logs" },
     { stage: "response", failure: "invalid_response", platform: "ios", kind: "physical", surface: "logs" },
   ]);

@@ -2,6 +2,38 @@
 
 [Back to README](../README.md) · [Contributing](../CONTRIBUTING.md)
 
+## Volume policy
+
+Since 0.1.164, application metrics in the UI, Node servers and native helpers use
+independent 0.5% point sampling before SDK buffering and network transmission.
+This reduces metric point volume by 99.5% on average, including automatic Node
+runtime measurements and frequent outcome counters. Retained values, units,
+surface/context attribution and timing-window boundaries are unchanged. Every
+retained point carries `telemetry.sample_rate=0.005`; user and session identifiers
+remain excluded. Sampling is independent of the existing 10% trace sampling.
+
+Gauge and distribution queries describe the retained sample. Counter totals and
+timing `.samples` totals now count only retained observations; multiply sums by
+200 to estimate unsampled totals. Do not compare raw totals across this version
+boundary. Rare operations may have no retained metric points, so metrics are
+for aggregate trends rather than a complete operation history.
+
+Expected host-thread closure, cancellation, unavailable/offline/unauthorized or
+stopped devices, unavailable foreground apps, unsupported host capabilities and
+explicit session/concurrency limits do not create error events. Unexpected
+timeouts, malformed responses, implementation errors and native crashes remain
+reportable. Handled JavaScript failures are sampled at 5%, deduplicated by
+scrubbed signature for one hour and capped at 20 reports per SDK runtime per
+hour. New unhandled JavaScript failures bypass the handled-error sample and cap;
+their repeated signatures are still deduplicated. The signature table is bounded
+at 256 entries per hour. Native crash/error capture remains unsampled.
+
+These client controls leave headroom for growth but cannot enforce a shared
+organization billing quota. Older installed releases and other projects retain
+their own reporting policies. All existing privacy, environment, anonymous error
+identity, opt-out, hidden-panel collection and timer/observer cleanup rules remain
+in effect.
+
 Since 0.1.159, remembered physical iOS devices without a reported transport are
 successful discovery results. Discovery failures use `ios.devices.discovery`
 handled-error reporting with the existing scrubbing and outcome metrics. Repeated

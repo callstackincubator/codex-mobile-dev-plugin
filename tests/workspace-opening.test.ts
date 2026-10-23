@@ -18,6 +18,7 @@ for (const notification of ["input", "result"] as const) test(`workspace applies
     pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/",
   });
   const window = dom.window;
+  window.Math.random = () => 0;
   window.console.debug = () => {};
   Object.defineProperty(window.performance, "getEntriesByType", { value: () => [] });
   Object.defineProperty(window.performance, "getEntries", { value: () => [] });

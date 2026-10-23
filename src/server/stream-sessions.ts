@@ -58,8 +58,8 @@ export class StreamSessions {
   }
 
   async open(udid: string, fps: number): Promise<string> {
-    if (this.disposed) throw new Error("The plugin server has closed.");
-    if (this.sessions.size >= 8) throw new Error("Too many open simulator streams. Close a panel and retry.");
+    if (this.disposed) throw new ExpectedOperationError("session_closed", "The plugin server has closed.");
+    if (this.sessions.size >= 8) throw new ExpectedOperationError("resource_limit", "Too many open simulator streams. Close a panel and retry.");
     const id = randomBytes(32).toString("hex");
     const session: Session = {
       udid, fps, expires: Date.now() + this.idleTimeout, sequence: 0, closed: false,
@@ -208,7 +208,7 @@ export class StreamSessions {
     }
     signal?.throwIfAborted();
     if (session.error) throw new Error(session.error);
-    if (this.sessions.get(id) !== session) throw new Error("The simulator stream closed.");
+    if (this.sessions.get(id) !== session) throw new ExpectedOperationError("session_closed", "The simulator stream closed.");
     const serverWaitMs = performance.now() - started;
     const latest = session.frame;
     if (session.socket?.readyState !== WebSocket.OPEN || latest == null || latest.sequence <= after) {
@@ -224,13 +224,13 @@ export class StreamSessions {
   input(id: string, messages: unknown[]): Promise<number> {
     const session = this.session(id);
     if (session.error) throw new Error(session.error);
-    if (session.socket?.readyState !== WebSocket.OPEN || session.connecting || !session.frame) throw new Error("The simulator stream is reconnecting.");
+    if (session.socket?.readyState !== WebSocket.OPEN || session.connecting || !session.frame) throw new ExpectedOperationError("device_unavailable", "The simulator stream is reconnecting.");
     const socket = session.socket;
     const validated = messages.map(message => streamMessageSchema.parse(message));
     const sent = session.input.then(() => {
       this.session(id);
-      if (session.socket !== socket || socket.readyState !== WebSocket.OPEN || session.connecting || !session.frame) throw new Error("The simulator stream is reconnecting.");
-      if (socket.bufferedAmount > 64 * 1024) throw new Error("Simulator input is backed up.");
+      if (session.socket !== socket || socket.readyState !== WebSocket.OPEN || session.connecting || !session.frame) throw new ExpectedOperationError("device_unavailable", "The simulator stream is reconnecting.");
+      if (socket.bufferedAmount > 64 * 1024) throw new ExpectedOperationError("resource_limit", "Simulator input is backed up.");
       for (const message of validated) {
         const encoded = JSON.stringify(message);
         socket.send(encoded);

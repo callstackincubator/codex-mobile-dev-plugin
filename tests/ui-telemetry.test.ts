@@ -25,6 +25,7 @@ test("UI heap collection uses the existing timer, active context and byte units 
     const html = `<html data-view="${view}"><head><meta name="mobile-dev-environment" content="${environment}">${identityMeta}</head></html>`;
     const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
     t.after(() => dom.window.close());
+    dom.window.Math.random = () => 0;
     const window = dom.window;
     let visibility = "visible";
     let reads = 0;
@@ -140,6 +141,7 @@ test("UI heap collection handles unavailable APIs, invalid bytes, hidden startup
     const html = `<head><meta name="mobile-dev-environment" content="development">${identityMeta}${enabledMeta}</head>`;
     const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
     t.after(() => dom.window.close());
+    dom.window.Math.random = () => 0;
     const window = dom.window;
     let reads = 0;
     const visibility = scenario.hidden ? "hidden" : "visible";
@@ -185,6 +187,7 @@ test("browser errors use the served environment regardless of live-reload marker
     const html = `<html><head><meta name="mobile-dev-environment" content="${environment}"><meta name="mobile-dev-live-revision" content="test">${identityMeta}</head></html>`;
     const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
     t.after(() => dom.window.close());
+    dom.window.Math.random = () => 0;
     Object.defineProperty(dom.window.performance, "getEntriesByType", { value: () => [] });
     Object.defineProperty(dom.window.performance, "getEntries", { value: () => [] });
     const bodies: string[] = [];
@@ -239,6 +242,7 @@ test("browser telemetry labels surface measurements, propagates traces, and flus
   });
   t.after(() => { dom.window.close(); });
   const window = dom.window;
+  window.Math.random = () => 0;
   const requests: { url: string; body: string }[] = [];
   window.fetch = async (url, options) => {
     const address = String(url);
@@ -528,6 +532,7 @@ test("shared app discovery measures the active context and excludes cancelled or
   const html = `<html><head><meta name="mobile-dev-environment" content="development">${identityMeta}</head></html>`;
   const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
   t.after(() => dom.window.close());
+  dom.window.Math.random = () => 0;
   const window = dom.window;
   let now = 100;
   let visibility = "visible";
@@ -595,7 +600,7 @@ test("shared app discovery measures the active context and excludes cancelled or
   assert.equal(metrics[0].value, 30);
 });
 
-test("stream retries preserve active failures, separate grouping, and exclude confirmed teardown", async t => {
+test("stream retries exclude expected host lifecycle failures and retain unexpected timeouts", async t => {
   const root = process.cwd();
   const built = await build({
     stdin: { contents: 'export * from "./src/ui/telemetry.ts";', resolveDir: root, loader: "ts" },
@@ -605,6 +610,7 @@ test("stream retries preserve active failures, separate grouping, and exclude co
   const html = `<head><meta name="mobile-dev-environment" content="release">${identityMeta}</head>`;
   const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
   t.after(() => dom.window.close());
+  dom.window.Math.random = () => 0;
   const window = dom.window;
   Object.defineProperty(window.performance, "getEntriesByType", { value: () => [] });
   Object.defineProperty(window.performance, "getEntries", { value: () => [] });
@@ -665,13 +671,8 @@ test("stream retries preserve active failures, separate grouping, and exclude co
       }
     }
   }
-  assert.equal(events.length, 4);
-  assert.equal(events[0].tags.surface, "simulator", "Use the request's starting surface after context changes.");
-  assert.equal(events[0].tags.error_category, "host_thread_missing");
-  assert.equal(events[1].tags.error_category, "host_thread_missing", "Recovery permits the same failure to report again.");
-  assert.equal(events[2].tags.error_category, "cancellation", "Cancellation during an active operation remains reportable.");
-  assert.notDeepEqual(events[0].fingerprint, events[2].fingerprint);
-  assert.equal(events[3].tags.error_category, "timeout");
+  assert.equal(events.length, 1);
+  assert.equal(events[0].tags.error_category, "timeout");
   const captured = bodies.join("\n");
   contains(captured, "ui.stream.open_repeated");
   contains(captured, "ui.operation.expected.cancelled");

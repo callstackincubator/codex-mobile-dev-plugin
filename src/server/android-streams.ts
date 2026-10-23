@@ -55,10 +55,10 @@ export class AndroidStreams {
   private notify(session: Session) { for (const done of session.waiters) done(); session.waiters.clear(); }
 
   async open(deviceId: string) {
-    if (this.disposed) throw new Error("The plugin server has closed.");
-    if (this.sessions.size >= 8) throw new Error("Too many Android streams. Close a panel and retry.");
+    if (this.disposed) throw new ExpectedOperationError("session_closed", "The plugin server has closed.");
+    if (this.sessions.size >= 8) throw new ExpectedOperationError("resource_limit", "Too many Android streams. Close a panel and retry.");
     const backend = await this.backend.start(deviceId);
-    if (this.disposed) throw new Error("The plugin server has closed.");
+    if (this.disposed) throw new ExpectedOperationError("session_closed", "The plugin server has closed.");
     const url = new URL("/ws?frame-meta=1", backend.url); url.protocol = "ws:";
     const socket = new WebSocket(url, { handshakeTimeout: 5000, maxPayload: 4 * 1024 * 1024, perMessageDeflate: false });
     const id = randomBytes(32).toString("hex");
@@ -124,7 +124,7 @@ export class AndroidStreams {
     const session = this.session(id);
     await this.backend.assertDevice(session.deviceId, session.url);
     if (this.sessions.has(id) === false) throw new ExpectedOperationError("session_closed", "The Android stream closed.");
-    if (session.socket.readyState !== WebSocket.OPEN) throw new Error("The Android stream disconnected.");
+    if (session.socket.readyState !== WebSocket.OPEN) throw new ExpectedOperationError("device_unavailable", "The Android stream disconnected.");
     if (session.error) throw new Error(session.error);
     this.resetVideo(session);
   }

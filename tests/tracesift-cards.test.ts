@@ -54,6 +54,7 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   });
   const dom = new JSDOM('<html data-view="tracesift"><head><meta name="mobile-dev-environment" content="development"><meta name="mobile-dev-user-id" content="anon_0123456789abcdef0123456789abcdef"><meta name="mobile-dev-session-id" content="run_1234567890abcdef1234567890abcdef"></head><body><div id="root"></div></body></html>', { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
   const window = dom.window;
+  window.Math.random = () => 0;
   Object.defineProperty(window.performance, "getEntriesByType", { value: () => [] });
   Object.defineProperty(window.performance, "getEntries", { value: () => [] });
   const telemetry: string[] = [];
