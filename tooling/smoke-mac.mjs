@@ -11,6 +11,8 @@ const app = resolve("release/mac/Mobile Dev.app");
 await access(`${app}/Contents/MacOS/MobileDev`);
 const directory = await mkdtemp(join(tmpdir(), "mobile-dev-mac-smoke-"));
 const snapshot = resolve(process.argv[2] ?? join(directory, "page.png"));
+// A snapshot left from an earlier run would look like this run's page drawing.
+await rm(snapshot, { force: true });
 const child = spawn(`${app}/Contents/MacOS/MobileDev`, [], {
   env: { ...process.env, MOBILE_DEV_SMOKE_SNAPSHOT: snapshot }, stdio: "ignore",
 });
