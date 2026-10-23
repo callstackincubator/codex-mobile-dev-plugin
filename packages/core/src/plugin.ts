@@ -101,11 +101,22 @@ export function configureUI(content: string): string {
   return content.replace(/<meta name="mobile-dev-environment" content="(?:development|release)">/, metadata);
 }
 
-export async function createPlugin(html: string | (() => Promise<UIResource>), baguette = new Baguette(), simulatorInput: SimulatorInput = new SimulatorInputService(udid => baguette.repairInput(udid)), logs = new LogSessions(), android = new ServeEmu(), copyScreenshot = copyPNGToClipboard, providedCpu?: CpuSessions, features: ServerFeature[] = []) {
+/** Services the server runs on; tests replace them with fakes. `features` are the host's additions. */
+export type PluginOptions = {
+  baguette?: Baguette;
+  simulatorInput?: SimulatorInput;
+  logs?: LogSessions;
+  android?: ServeEmu;
+  copyScreenshot?: typeof copyPNGToClipboard;
+  cpu?: CpuSessions;
+  features?: ServerFeature[];
+};
+
+export async function createPlugin(html: string | (() => Promise<UIResource>), options: PluginOptions = {}) {
+  const { baguette = new Baguette(), logs = new LogSessions(), android = new ServeEmu(), copyScreenshot = copyPNGToClipboard, features = [] } = options;
+  const simulatorInput = options.simulatorInput ?? new SimulatorInputService(udid => baguette.repairInput(udid));
+  const cpu = options.cpu ?? await createCpuSessions();
   const streams = new StreamSessions(baguette);
-  let selectedCpu = providedCpu;
-  if (selectedCpu === undefined) selectedCpu = await createCpuSessions();
-  const cpu = selectedCpu;
   const fps = new DisplayFpsSessions();
   const server = new McpServer({ name: "mobile-dev", version: PLUGIN_VERSION }, {
     instructions: "For mobile app development, open mobile_open_simulator before the first device launch, or reuse the open view. Use selected device IDs. If a task has ambiguous device targets, discover candidates and ask the user with mobile_choose_devices when it is available, otherwise in chat; proceed only after they choose. For a local CPU or React profile path, use mobile_analyze_profile to show TraceSift findings, then wait for the user to choose Investigate. See the Mobile Dev skill, when installed, for device control, logs, profiles, and performance workflows.",

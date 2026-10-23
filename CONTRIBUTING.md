@@ -37,9 +37,10 @@ app. Chrome every MCP Apps host shares belongs in `packages/mcp-app`; chrome for
 host, such as the Mac sidebar or Codex's update banner, belongs in that host's app.
 
 `npm run build` writes the host-neutral runtime to `dist/`: the shared server, its
-services and natives, and the MCP Apps panel. Hosts that add to them build their own
-pieces into `dist/hosts/<host>`. Each host's package step copies the runtime and lays
-its pieces over it, so no host packages through another. The release version comes
+services and natives, and the MCP Apps panel. Each host's package step copies that
+runtime and builds the host's own pieces into the copy: Codex its server and panel,
+the Mac app its server and page. No host packages through another, and the shared
+build knows no host. The release version comes
 from the root `package.json`; each package step writes it into its host's manifest.
 The published `release/latest` layout is unchanged.
 

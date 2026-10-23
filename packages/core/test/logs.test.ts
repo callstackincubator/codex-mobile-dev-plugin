@@ -5,15 +5,15 @@ import { once } from "node:events";
 import { WebSocketServer } from "ws";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { parseIOSLog, parseLogcat, parseMetroEvent } from "../../core/src/log-parsers.ts";
-import { LogBuffer } from "../../core/src/log-buffer.ts";
-import { LogSessions } from "../../core/src/log-sessions.ts";
-import { metroTargets, startMetroLogs } from "../../core/src/metro-logs.ts";
-import { runLogProcess } from "../../core/src/native-logs.ts";
-import { Baguette } from "../../core/src/baguette.ts";
-import { stackLogs, formatLogContext, logOptionsSchema } from "../src/logs.ts";
-import type { LogEntry, LogRecord } from "../src/logs.ts";
-import type { LogSink } from "../../core/src/native-logs.ts";
+import { parseIOSLog, parseLogcat, parseMetroEvent } from "../src/log-parsers.ts";
+import { LogBuffer } from "../src/log-buffer.ts";
+import { LogSessions } from "../src/log-sessions.ts";
+import { metroTargets, startMetroLogs } from "../src/metro-logs.ts";
+import { runLogProcess } from "../src/native-logs.ts";
+import { Baguette } from "../src/baguette.ts";
+import { stackLogs, formatLogContext, logOptionsSchema } from "../../shared/src/logs.ts";
+import type { LogEntry, LogRecord } from "../../shared/src/logs.ts";
+import type { LogSink } from "../src/native-logs.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput, UDID, OTHER_UDID } from "../../test-support/fixtures.ts";
 
 const record: LogRecord = { timestamp: "2026-09-30T12:00:00.000Z", level: "warn", source: "js", origin: "ios", process: "Example", message: "Request failed" };
@@ -133,7 +133,7 @@ test("Metro connects only the chosen target, enables Runtime, and cleans up its 
 test("MCP log sessions validate devices and expose batches without browser network access", async t => {
   const fake = await fakeBaguette(); let sink: LogSink | undefined; let stopped = false;
   const logs = new LogSessions({ native: (_target, next) => { sink = next; return async () => { stopped = true; }; }, metro: () => async () => {} });
-  const plugin = await createTestPlugin("<head></head><title>Logs</title>", new Baguette(fake.url), fakeSimulatorInput(), logs);
+  const plugin = await createTestPlugin("<head></head><title>Logs</title>", { baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput(), logs });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair(); const client = new Client({ name: "logs-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
   await plugin.server.connect(serverTransport); await client.connect(clientTransport);

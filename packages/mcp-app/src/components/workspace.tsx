@@ -1,10 +1,7 @@
 import { ActivityIcon, DatabaseIcon, TerminalIcon, PanelsTopLeftIcon, ChartNoAxesCombinedIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import type { LogsPanel } from "@mobile-dev/ui/logs-panel.ts";
-import type { PerformancePanel } from "@mobile-dev/ui/performance-panel.ts";
-import type { StoragePanel } from "@mobile-dev/ui/storage-panel.ts";
-import type { TraceSiftPanel } from "@mobile-dev/ui/tracesift-panel.ts";
+import type { WorkspaceTools } from "@mobile-dev/ui/workspace-tools.ts";
 import { PerformanceView } from "@mobile-dev/ui/components/performance-view.tsx";
 import { SimulatorView } from "@mobile-dev/ui/components/simulator-view.tsx";
 import { LogsView } from "@mobile-dev/ui/components/logs-view.tsx";
@@ -16,7 +13,7 @@ import { Button } from "@mobile-dev/ui/components/ui/button.tsx";
 import { usePanelRef, useGroupRef } from "react-resizable-panels";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@mobile-dev/ui/components/ui/resizable.tsx";
 import { useMediaQuery } from "@mobile-dev/ui/components/use-media-query.ts";
-import { markUiSurfaceReady, setUiSurface, setUiTelemetryContext } from "@mobile-dev/ui/telemetry.ts";
+import { setUiSurface, setUiTelemetryContext } from "@mobile-dev/ui/telemetry.ts";
 import type { RecordingController } from "@mobile-dev/ui/recording-controller.ts";
 import { RecordingCard } from "@mobile-dev/ui/components/recording-card.tsx";
 
@@ -33,7 +30,8 @@ const tools = {
 type Tool = keyof typeof tools;
 const isTool = (value: string): value is Tool => value in tools;
 
-export function Workspace({ logs, performance, storage, tracesift, recordingController, banner, displayModeControl, contextControl, automaticLayout, onLayout }: { logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; tracesift: TraceSiftPanel; recordingController: RecordingController; banner?: ReactNode; displayModeControl?: ReactNode; contextControl?: ReactNode; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
+export function Workspace({ panels, recordingController, banner, displayModeControl, contextControl, automaticLayout, onLayout }: { panels: WorkspaceTools; recordingController: RecordingController; banner?: ReactNode; displayModeControl?: ReactNode; contextControl?: ReactNode; automaticLayout?: DeviceLayout; onLayout: (layout: DeviceLayout, manual?: boolean) => void }) {
+  const { logs, performance, storage, tracesift } = panels;
   const [tool, setTool] = useState<Tool>("logs");
   const [savedVisible, setSavedVisible] = useState(false);
   const [simulatorsCollapsed, setSimulatorsCollapsed] = useState(false);
@@ -52,10 +50,7 @@ export function Workspace({ logs, performance, storage, tracesift, recordingCont
     setSavedVisible(true);
     setLayout("none");
     onLayout("none");
-    logs.hide();
-    performance.hide();
-    storage.hide();
-    tracesift.hide();
+    panels.hide();
   }, [recordingState.recording?.id]);
   const performanceState = useSyncExternalStore(performance.subscribe, performance.getSnapshot);
   const wide = useMediaQuery("(min-width: 900px)");
@@ -66,30 +61,21 @@ export function Workspace({ logs, performance, storage, tracesift, recordingCont
   const storageState = useSyncExternalStore(storage.subscribe, storage.getSnapshot);
   const traceSiftState = useSyncExternalStore(tracesift.subscribe, tracesift.getSnapshot);
   // A saved recording shows in the performance tool, so it counts as that tool being open.
-  const panels = { logs, performance, storage, tracesift };
   const open = { logs: logState.open, performance: savedVisible || performanceState.open, storage: storageState.open, tracesift: traceSiftState.open }[tool];
   useEffect(() => { setUiSurface(open ? savedVisible ? "recording" : tool : "simulator"); }, [tool, open, savedVisible]);
   useEffect(() => {
     setUiTelemetryContext({ logs_open: logState.open, logs_paused: logState.paused, performance_running: performanceState.monitoring || performanceState.fpsMonitoring });
   }, [logState.open, logState.paused, performanceState.monitoring, performanceState.fpsMonitoring]);
-  const isOpen = () => (tool === "performance" && savedVisible) || panels[tool].getSnapshot().open;
+  const isOpen = () => (tool === "performance" && savedVisible) || panels.panel(tool).getSnapshot().open;
   const closeTools = () => {
     setSavedVisible(false);
-    if (logs.getSnapshot().open) logs.toggle();
-    performance.hide();
-    storage.hide();
-    tracesift.hide();
-    void performance.disconnect();
+    panels.close();
   };
   const showTool = (next: Tool) => {
-    const startedAt = globalThis.performance.now();
     if (next === tool && isOpen()) { closeTools(); return; }
-    setUiSurface(next);
     setTool(next);
     setSavedVisible(false);
-    for (const [name, panel] of Object.entries(panels)) if (name !== next) panel.hide();
-    panels[next].show();
-    markUiSurfaceReady(startedAt);
+    panels.show(next);
   };
   const logsRef = usePanelRef();
   const simulatorGroupRef = useGroupRef();

@@ -7,7 +7,6 @@ import { telemetryBuildEnvironment } from "./telemetry-build.mjs";
 import { buildServeEmu } from "./build-serve-emu.mjs";
 import { buildUIPage } from "./ui-page.mjs";
 import { buildServerBundles } from "./server-bundle.mjs";
-import { buildCodexHost } from "../apps/codex-plugin/tooling/build.mjs";
 import { access, copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -107,9 +106,8 @@ const workflow = execFileSync(process.execPath, [resolve(`${runtime}/node_module
 await writeFile("packages/skills/agent-device/references/workflow.md", workflow);
 await buildServeEmu("dist/serve-emu");
 // The host-neutral runtime: the shared server, its services and the MCP Apps panel
-// as hosts without their own chrome load it. Each host's own pieces build into
-// dist/hosts/<host>, and its package step lays them over the runtime.
-await rm("dist/hosts", { recursive: true, force: true });
+// as hosts without their own chrome load it. A host that adds to them builds its
+// own server or page in its package step, over a copy of this runtime.
 await rm(".sentry/ui", { recursive: true, force: true });
 await rm(".sentry/server", { recursive: true, force: true });
 const pageMetafiles = [
@@ -125,12 +123,9 @@ const serverMetafiles = [
     outdir: "dist", sentryDirectory: ".sentry/server",
   }),
 ];
-// Hosts whose server or panel adds to the shared one. The Mac app builds its own
-// pieces with npm run build:mac, which needs Xcode.
-const hostMetafiles = await buildCodexHost(telemetryEnvironment);
 // Tailwind compiles these styles before esbuild records its input files.
 const packageRoots = new Set(["shadcn", "tailwindcss", "tw-animate-css"].map(name => resolve("node_modules", name)));
-for (const path of [...pageMetafiles, ...serverMetafiles, ...hostMetafiles].flatMap(metafile => Object.keys(metafile.inputs))) {
+for (const path of [...pageMetafiles, ...serverMetafiles].flatMap(metafile => Object.keys(metafile.inputs))) {
   if (!path.includes("node_modules/")) continue;
   let directory = dirname(resolve(path));
   while (directory !== dirname(directory)) {

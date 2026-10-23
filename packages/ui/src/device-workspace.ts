@@ -1,11 +1,10 @@
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import type { DeviceLayout } from "./device-layout.ts";
-import type { DeviceAppsStore } from "./device-apps.ts";
 import type { HostBridge } from "./host-bridge.ts";
-import type { PanelContext } from "./model-context.ts";
 import { createSimulatorPanel } from "./simulator-panel.ts";
 import { setUiTelemetryContext } from "./telemetry.ts";
 import { WorkspaceDevices } from "./workspace-devices.ts";
+import type { WorkspaceTools } from "./workspace-tools.ts";
 
 type Platform = "ios" | "android";
 
@@ -16,23 +15,21 @@ type Platform = "ios" | "android";
  */
 export class DeviceWorkspace {
   readonly panels: readonly [ReturnType<typeof createSimulatorPanel>, ReturnType<typeof createSimulatorPanel>];
-  private readonly context: PanelContext;
-  private readonly deviceApps: DeviceAppsStore;
+  private readonly tools: Pick<WorkspaceTools, "context" | "deviceApps">;
   private readonly devices: WorkspaceDevices;
   private readonly connectionFailed: (error: unknown) => void;
   private activePlatform: Platform = "ios";
 
-  constructor(app: HostBridge, context: PanelContext, deviceApps: DeviceAppsStore, options: {
+  constructor(app: HostBridge, tools: Pick<WorkspaceTools, "context" | "deviceApps">, options: {
     /** A layout chosen for the user, such as after the host opens a device. */
     onAutomaticLayout: (layout: DeviceLayout) => void;
     connectionFailed: (error: unknown) => void;
   }) {
-    this.context = context;
-    this.deviceApps = deviceApps;
+    this.tools = tools;
     this.connectionFailed = options.connectionFailed;
     const create = (platform: Platform) => {
       const root = document.getElementById(`${platform}-panel`)!;
-      return createSimulatorPanel(app, root, platform, context, (_device, active) => {
+      return createSimulatorPanel(app, root, platform, tools.context, (_device, active) => {
         if (active) this.activePlatform = platform;
         this.updateSelection();
       });
@@ -52,8 +49,8 @@ export class DeviceWorkspace {
     const virtualKind = devicePlatform === "android" ? "emulator" : "simulator";
     const deviceKind = selected?.kind ?? (selected ? virtualKind : undefined);
     setUiTelemetryContext({ device_platform: devicePlatform, device_kind: deviceKind });
-    this.context.selectSimulators(visible.flatMap(panel => panel.selected ? [panel.selected] : []), selected);
-    this.deviceApps.selectDevice(selected);
+    this.tools.context.selectSimulators(visible.flatMap(panel => panel.selected ? [panel.selected] : []), selected);
+    this.tools.deviceApps.selectDevice(selected);
     for (const panel of this.panels) panel.root.dataset.active = String(panel === active);
   }
 

@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { telemetryBuildEnvironment } from "../../../tooling/telemetry-build.mjs";
 import { pluginMarketplace } from "./plugin-marketplace.mjs";
+import { buildCodexHost } from "./build.mjs";
 import { assertRuntime, releaseVersion, stageRuntime } from "../../../tooling/host-runtime.mjs";
 
 const telemetryEnvironment = telemetryBuildEnvironment();
@@ -17,7 +18,8 @@ await rm(plugin, { recursive: true, force: true });
 await mkdir(plugin, { recursive: true });
 await copyFile(`${source}/.mcp.json`, `${plugin}/.mcp.json`);
 for (const path of ["README.md", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "TERMS.md", "SUPPORT.md"]) await copyFile(path, `${plugin}/${path}`);
-await stageRuntime(`${plugin}/dist`, "codex");
+await stageRuntime(`${plugin}/dist`);
+await buildCodexHost(telemetryEnvironment, `${plugin}/dist`);
 for (const path of [".codex-plugin", "assets"]) await cp(`${source}/${path}`, `${plugin}/${path}`, { recursive: true, verbatimSymlinks: true });
 // Codex loads skills; the inactive agent-device skill stays out until its server returns.
 for (const skill of ["mobile-dev", "mobile-dev-setup"]) await cp(`packages/skills/${skill}`, `${plugin}/skills/${skill}`, { recursive: true, verbatimSymlinks: true });

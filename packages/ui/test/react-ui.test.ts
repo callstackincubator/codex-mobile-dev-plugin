@@ -11,6 +11,7 @@ import { PerformancePanel } from "../src/performance-panel.ts";
 import { StoragePanel } from "../src/storage-panel.ts";
 import { TraceSiftPanel } from "../src/tracesift-panel.ts";
 import { RecordingController } from "../src/recording-controller.ts";
+import { WorkspaceTools } from "../src/workspace-tools.ts";
 import { recordingFixture } from "../../test-support/recording-fixtures.ts";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { PanelContext } from "../src/model-context.ts";
@@ -115,6 +116,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   storage.setAvailable(true);
   const tracesift = new TraceSiftPanel(storageApp as unknown as App);
   const recordingController = new RecordingController(performanceApp as unknown as App);
+  const panels = new WorkspaceTools({ context: context as PanelContext, deviceApps, logs: panel, performance, storage, tracesift });
   deviceApps.selectDevice({ udid: UDID, name: "iPhone", state: "Booted", runtime: "iOS" });
   performance.setAvailable(true);
   deviceApps.setAvailable(true);
@@ -124,7 +126,7 @@ test("React log controls filter virtual rows, attach full logs, and preserve sim
   let commits = 0;
   const onLayout = (layout: string) => { layouts.push(layout); };
   const renderWorkspace = (automaticLayout?: DeviceLayout) => {
-    const workspace = createElement(Workspace, { logs: panel, performance, storage, tracesift, recordingController, automaticLayout, onLayout });
+    const workspace = createElement(Workspace, { panels, recordingController, automaticLayout, onLayout });
     const profiled = createElement(Profiler, { id: "workspace", onRender() { commits++; } }, workspace);
     root.render(profiled);
   };

@@ -2,16 +2,15 @@ import { buildServerBundles } from "../../../tooling/server-bundle.mjs";
 import { buildUIPage } from "../../../tooling/ui-page.mjs";
 
 /**
- * Builds Codex's own pieces into dist/hosts/codex: its server, with the updater for
- * Codex plugin installs, and its panel, with the update banner. The package step
- * lays them over the shared runtime.
+ * Builds Codex's own server, with the updater for Codex plugin installs, and its
+ * panel, with the update banner, into a staged runtime. They replace the shared
+ * server.mjs and app.html there; their dependencies are the shared runtime's.
  */
-export async function buildCodexHost(environment) {
-  const page = await buildUIPage({
+export async function buildCodexHost(environment, outdir) {
+  await buildUIPage({
     name: "ui/codex", entry: "apps/codex-plugin/ui/main.tsx", template: "packages/mcp-app/src/index.html",
-    sources: ["packages/ui/src", "packages/mcp-app/src", "apps/codex-plugin/ui"], output: "dist/hosts/codex/app.html",
+    sources: ["packages/ui/src", "packages/mcp-app/src", "apps/codex-plugin/ui"], output: `${outdir}/app.html`,
     environment, sourceURL: "app:///mobile-dev-ui.js",
   });
-  const server = await buildServerBundles({ entryPoints: { server: "apps/codex-plugin/server/index.ts" }, outdir: "dist/hosts/codex", sentryDirectory: ".sentry/server/codex" });
-  return [page, server];
+  await buildServerBundles({ entryPoints: { server: "apps/codex-plugin/server/index.ts" }, outdir, sentryDirectory: ".sentry/server/codex" });
 }

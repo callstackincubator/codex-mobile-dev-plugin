@@ -224,7 +224,7 @@ test("runtime adapter reads native bounds, keeps logical parents and excludes un
 test("the panel receives runtime and native elements through an MCP tool, with native fallback", async t => {
   const inspector = await backend(t);
   const native = await fakeBaguette();
-  const plugin = await createTestPlugin("<canvas></canvas>", new Baguette(native.url), fakeSimulatorInput());
+  const plugin = await createTestPlugin("<canvas></canvas>", { baguette: new Baguette(native.url), simulatorInput: fakeSimulatorInput() });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "inspection-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await native.close(); });
@@ -255,7 +255,7 @@ test("Android MCP inspection aligns native and React bounds with downscaled vide
       ] } };
     }
   }
-  const plugin = await createTestPlugin("<canvas></canvas>", new Baguette(native.url), fakeSimulatorInput(), undefined, new Android());
+  const plugin = await createTestPlugin("<canvas></canvas>", { baguette: new Baguette(native.url), simulatorInput: fakeSimulatorInput(), android: new Android() });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "android-inspection-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await native.close(); });
@@ -281,7 +281,7 @@ test("deep runtime trees cross MCP as shallow records with their parent links in
   for (let i = 0; i < 90; i++) tree = { source: "react-native", role: `Wrapper${i}`, frame: { x: 0, y: 0, width: 400, height: 800 }, children: [tree] };
   inspector.setResponse({ available: true, tree: [tree], windowWidth: 400, truncated: false });
   const native = await fakeBaguette();
-  const plugin = await createTestPlugin("<canvas></canvas>", new Baguette(native.url), fakeSimulatorInput());
+  const plugin = await createTestPlugin("<canvas></canvas>", { baguette: new Baguette(native.url), simulatorInput: fakeSimulatorInput() });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "inspection-depth-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await native.close(); });

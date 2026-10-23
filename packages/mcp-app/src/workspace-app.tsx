@@ -1,4 +1,4 @@
-import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables } from "@modelcontextprotocol/ext-apps";
+import { App } from "@modelcontextprotocol/ext-apps";
 import { attributeHost } from "./host-telemetry.ts";
 import { OpenAIExtensions } from "@openai/mcp-extensions/app";
 import "@fontsource-variable/inter";
@@ -12,17 +12,13 @@ import { ContextAttachments } from "./components/context-attachments";
 import type { DeviceLayout } from "@mobile-dev/ui/device-layout.ts";
 import { panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import { DeviceWorkspace } from "@mobile-dev/ui/device-workspace.ts";
-import { PanelContext } from "@mobile-dev/ui/model-context.ts";
-import { LogsPanel } from "@mobile-dev/ui/logs-panel.ts";
-import { DeviceAppsStore } from "@mobile-dev/ui/device-apps.ts";
-import { PerformancePanel } from "@mobile-dev/ui/performance-panel.ts";
-import { StoragePanel } from "@mobile-dev/ui/storage-panel.ts";
-import { TraceSiftPanel } from "@mobile-dev/ui/tracesift-panel.ts";
+import { WorkspaceTools } from "@mobile-dev/ui/workspace-tools.ts";
 import { startLiveReload } from "./live-reload.ts";
 import { ErrorBoundary, captureUiError, startUiTelemetry, stopUiTelemetry } from "@mobile-dev/ui/telemetry.ts";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
 import { RecordingController } from "@mobile-dev/ui/recording-controller.ts";
 import type { WorkspaceOptions } from "./workspace-extension.ts";
+import { applyHostStyles } from "./host-styles.ts";
 
 /** Starts the device workspace: the panel MCP Apps hosts open beside the chat. */
 export function startWorkspaceApp(options: WorkspaceOptions = {}) {
@@ -31,25 +27,20 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   const extensions = new OpenAIExtensions(app);
   // Codex shows context as composer attachments through OpenAI's extension.
   const attachments = () => extensions.modelContext;
-  const panelContext = new PanelContext(app, attachments);
-  const deviceApps = new DeviceAppsStore(app, document);
-  const performancePanel = new PerformancePanel(app, deviceApps);
-  const logsPanel = new LogsPanel(app, panelContext, deviceApps);
-  const storagePanel = new StoragePanel(app, deviceApps);
-  const traceSiftPanel = new TraceSiftPanel(app);
+  const panels = WorkspaceTools.create(app, attachments);
   const recordingController = new RecordingController(app, attachments);
   const extension = options.extension?.(app);
   const reactRoot = createRoot(document.getElementById("root")!);
   function renderWorkspace(automaticLayout?: DeviceLayout) {
     const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-      <Workspace performance={performancePanel} logs={logsPanel} storage={storagePanel} tracesift={traceSiftPanel} recordingController={recordingController} banner={extension?.banner} displayModeControl={<DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panelContext} />} automaticLayout={automaticLayout} onLayout={changeLayout} />
+      <Workspace panels={panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={<DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} automaticLayout={automaticLayout} onLayout={changeLayout} />
     </ErrorBoundary>;
     reactRoot.render(workspace);
   }
   flushSync(() => { renderWorkspace(); });
 
-  const devices = new DeviceWorkspace(app, panelContext, deviceApps, { onAutomaticLayout: renderWorkspace, connectionFailed });
-  logsPanel.setLayout(document.documentElement.dataset.view === "workspace");
+  const devices = new DeviceWorkspace(app, panels, { onAutomaticLayout: renderWorkspace, connectionFailed });
+  panels.logs.setLayout(document.documentElement.dataset.view === "workspace");
   devices.changeLayout("none");
 
   function changeLayout(layout: DeviceLayout, manual = false) { devices.changeLayout(layout, manual); }
@@ -63,12 +54,9 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
       window.removeEventListener("focus", resumeContext);
       window.removeEventListener("pageshow", resumeContext);
       document.removeEventListener("visibilitychange", resumeContext);
-      deviceApps.dispose();
-      storagePanel.dispose();
-      traceSiftPanel.dispose();
       recordingController.dispose();
       extension?.dispose();
-      await Promise.allSettled([devices.dispose(), logsPanel.dispose(), performancePanel.dispose()]);
+      await Promise.allSettled([devices.dispose(), panels.dispose()]);
       reactRoot.unmount();
       await stopUiTelemetry();
     })();
@@ -95,22 +83,17 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   }
   function hostContext() {
     if (disposingUI) return;
-    const host = app.getHostContext();
-    if (host?.theme) applyDocumentTheme(host.theme);
-    if (host?.styles?.variables) applyHostStyleVariables(host.styles.variables);
-    if (host?.styles?.css?.fonts) applyHostFonts(host.styles.css.fonts);
-    panelContext.hostChanged();
+    const host = applyHostStyles(app);
+    panels.hostChanged();
     recordingController.hostChanged();
-    traceSiftPanel.hostChanged();
-    panelContext.resume();
     devices.refit();
     // Initial context arrives with connect(), without a hostcontextchanged event.
     fitContainer(host);
   }
   function resumeContext() {
     if (document.visibilityState !== "hidden" && !disposingUI) {
-      panelContext.hostChanged();
-      panelContext.resume();
+      panels.context.hostChanged();
+      panels.context.resume();
     }
   }
   window.addEventListener("focus", resumeContext);
@@ -155,11 +138,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
       hostContext();
       const capabilities = app.getHostCapabilities();
       const available = !!capabilities?.serverTools && !!capabilities?.serverResources;
-      logsPanel.setAvailable(available);
-      performancePanel.setAvailable(available);
-      storagePanel.setAvailable(available);
-      traceSiftPanel.setAvailable(available);
-      deviceApps.setAvailable(available);
+      panels.setAvailable(available);
       extension?.setAvailable(available);
       if (!available) devices.notice("This host cannot call the plugin's simulator tools.");
       if (available) {

@@ -20,7 +20,7 @@ import manifest from "../../../package.json" with { type: "json" };
 
 test("both opening tools accept optional device intent and preserve it in their results", async t => {
   const fake = await fakeBaguette();
-  const plugin = await createTestPlugin("<html></html>", new Baguette(fake.url), fakeSimulatorInput());
+  const plugin = await createTestPlugin("<html></html>", { baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "opening-target-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
@@ -43,7 +43,7 @@ test("the device choice tool is listed only for clients that render native forms
   const fake = await fakeBaguette();
   t.after(() => fake.close());
   for (const forms of [false, true]) {
-    const plugin = await createTestPlugin("<html></html>", new Baguette(fake.url), fakeSimulatorInput());
+    const plugin = await createTestPlugin("<html></html>", { baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const capabilities = forms ? { extensions: { "openai/elicitation": { form: {} } } } : {};
     const client = new Client({ name: "device-choice-host", version: "1" }, { capabilities });
@@ -209,7 +209,7 @@ test("cached side tabs load the current UI through old resource addresses", asyn
 
 test("MCP tools expose native entrypoints and complete the simulator workflow", async t => {
   const fake = await fakeBaguette();
-  const plugin = await createTestPlugin('<!doctype html><html data-view="panel" data-layout="stacked"><title>Mobile Dev</title></html>', new Baguette(fake.url), fakeSimulatorInput());
+  const plugin = await createTestPlugin('<!doctype html><html data-view="panel" data-layout="stacked"><title>Mobile Dev</title></html>', { baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
@@ -346,10 +346,10 @@ test("the toolbar capture copies the returned PNG and still returns it when clip
   const fake = await fakeBaguette();
   const copies: Buffer[] = [];
   let copyFails = false;
-  const plugin = await createTestPlugin("<title>Mobile Dev</title>", new Baguette(fake.url), fakeSimulatorInput(), undefined, undefined, async bytes => {
+  const plugin = await createTestPlugin("<title>Mobile Dev</title>", { baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput(), copyScreenshot: async bytes => {
     if (copyFails) throw new Error("Clipboard unavailable");
     copies.push(bytes);
-  });
+  } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "screenshot-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
@@ -381,7 +381,7 @@ test("the toolbar capture copies the returned PNG and still returns it when clip
 test("Device Hub blockage repairs automatically, limits repeated repairs, and permits manual recovery", async t => {
   const fake = await fakeBaguette();
   const input = fakeSimulatorInput();
-  const plugin = await createTestPlugin("<title>Mobile Dev</title>", new Baguette(fake.url), input);
+  const plugin = await createTestPlugin("<title>Mobile Dev</title>", { baguette: new Baguette(fake.url), simulatorInput: input });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "blocked-input-test", version: "1" });
   t.after(async () => { await client.close(); await plugin.close(); await fake.close(); });
@@ -488,7 +488,7 @@ test("panel input reaches the native socket during a pending refresh and blocks 
       });
     });
   });
-  const plugin = await createTestPlugin("<head></head>", new Baguette(fake.url), input);
+  const plugin = await createTestPlugin("<head></head>", { baguette: new Baguette(fake.url), simulatorInput: input });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "background-input-test", version: "1" });
   t.after(async () => { resolveRefresh("state 0"); await client.close(); await plugin.close(); await fake.close(); });

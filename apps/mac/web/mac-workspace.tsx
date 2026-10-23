@@ -1,9 +1,6 @@
 import { useEffect } from "react";
 import { useGroupRef } from "react-resizable-panels";
-import type { LogsPanel } from "@mobile-dev/ui/logs-panel.ts";
-import type { PerformancePanel } from "@mobile-dev/ui/performance-panel.ts";
-import type { StoragePanel } from "@mobile-dev/ui/storage-panel.ts";
-import type { TraceSiftPanel } from "@mobile-dev/ui/tracesift-panel.ts";
+import type { ToolName, WorkspaceTools } from "@mobile-dev/ui/workspace-tools.ts";
 import type { DeviceLayout } from "@mobile-dev/ui/device-layout.ts";
 import { LogsView } from "@mobile-dev/ui/components/logs-view.tsx";
 import { PerformanceView } from "@mobile-dev/ui/components/performance-view.tsx";
@@ -12,8 +9,6 @@ import { StorageView } from "@mobile-dev/ui/components/storage-view.tsx";
 import { TraceSiftView } from "@mobile-dev/ui/components/tracesift-view.tsx";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@mobile-dev/ui/components/ui/resizable.tsx";
 
-export type MacTool = "logs" | "performance" | "storage" | "tracesift";
-export type MacPanels = { logs: LogsPanel; performance: PerformancePanel; storage: StoragePanel; tracesift: TraceSiftPanel };
 
 /**
  * The Mac app's content area. The native sidebar chooses the tool and the visible
@@ -21,7 +16,7 @@ export type MacPanels = { logs: LogsPanel; performance: PerformancePanel; storag
  * device panels on the right. Both device panels stay mounted, because their
  * controllers attach to the DOM once.
  */
-export function MacWorkspace({ panels, tool, layout }: { panels: MacPanels; tool?: MacTool; layout: DeviceLayout }) {
+export function MacWorkspace({ panels, tool, layout }: { panels: WorkspaceTools; tool?: ToolName; layout: DeviceLayout }) {
   const workspaceGroup = useGroupRef();
   const deviceGroup = useGroupRef();
   useEffect(() => {

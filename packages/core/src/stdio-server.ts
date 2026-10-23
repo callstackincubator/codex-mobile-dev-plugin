@@ -11,7 +11,7 @@ import { closeServerTelemetry, installTracePropagation } from "./telemetry.ts";
  */
 export async function runStdioServer(features: ServerFeature[] = []) {
   const html = await readFile(new URL("./app.html", import.meta.url), "utf8");
-  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), undefined, undefined, undefined, undefined, undefined, undefined, features);
+  const plugin = await createPlugin(() => loadUIResource(html, new URL("../ui-dev.json", import.meta.url)), { features });
   const transport = new StdioServerTransport();
   installTracePropagation(transport);
   let closing = false;

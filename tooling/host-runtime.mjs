@@ -1,15 +1,9 @@
 import { access, cp, readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { assertBuildEnvironment } from "./telemetry-build.mjs";
 
-/**
- * Copies the host-neutral runtime from `dist/` into `directory`, then lays the
- * host's own build from `dist/hosts/<host>` over it, such as Codex's server and page.
- */
-export async function stageRuntime(directory, host) {
-  const hosts = resolve("dist/hosts");
-  await cp("dist", directory, { recursive: true, verbatimSymlinks: true, filter: source => resolve(source) !== hosts });
-  if (host !== undefined) await cp(`dist/hosts/${host}`, directory, { recursive: true });
+/** Copies the host-neutral runtime from `dist/` into a host's package. */
+export async function stageRuntime(directory) {
+  await cp("dist", directory, { recursive: true, verbatimSymlinks: true });
 }
 
 /** The release version every host ships, from the workspace's package.json. */
