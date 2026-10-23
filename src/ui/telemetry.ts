@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/react";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import {
   MeasurementWindow, SENTRY_RELEASE, SENTRY_UI_DSN, TELEMETRY_INTERVAL_MS, TELEMETRY_META_KEY,
-  isFrequentTool, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, validateTelemetryEnvironment,
+  isFrequentTool, sampleTrace, createErrorEventFilter, sampleMetric, scrubSpan, validateTelemetryEnvironment,
   errorReportSignature,
 } from "../shared/telemetry.ts";
 import type { Surface, TelemetryAttributes } from "../shared/telemetry.ts";
@@ -235,9 +235,9 @@ export function startUiTelemetry(app: App) {
     },
     tracePropagationTargets: [],
     tracesSampler: context => sampleTrace(context.name, context.inheritOrSampleWith),
-    beforeSend: scrubErrorEvent,
+    beforeSend: createErrorEventFilter(),
     beforeSendSpan: scrubSpan,
-    beforeSendMetric: scrubMetric,
+    beforeSendMetric: sampleMetric,
     beforeBreadcrumb: breadcrumb => breadcrumb.category === "mobile-dev" ? breadcrumb : null,
   });
   running = enabled;

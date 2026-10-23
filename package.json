@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-dev-plugin",
-  "version": "0.1.162",
+  "version": "0.1.165",
   "private": true,
   "type": "module",
   "engines": {
@@ -44,7 +44,8 @@
     "test:codex-plugin": "node scripts/smoke-codex-plugin.mjs",
     "test:updates": "node scripts/smoke-plugin-updates.mjs",
     "prepare": "husky",
-    "lint:commits": "commitlint"
+    "lint:commits": "commitlint",
+    "check:marketplace-review": "node scripts/check-marketplace-review.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

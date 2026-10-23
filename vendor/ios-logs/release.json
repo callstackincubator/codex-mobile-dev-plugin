@@ -1,7 +1,7 @@
 {
   "name": "mobile-dev-ios-logs",
   "target": "darwin-arm64",
-  "sourceSHA256": "c47ec02574d77cdcb963955bf1ee491139bb5052c308e8fef6ee3eaa56581b64",
+  "sourceSHA256": "8521469ad352fd2a2966875ec895f2ccf3bcb80d2deb7933ecc03fd9f0ebce00",
   "sources": [
     {
       "name": "libplist",
@@ -37,8 +37,8 @@
   "openssl": "OpenSSL 3.6.2 7 Apr 2026 (Library: OpenSSL 3.6.2 7 Apr 2026)",
   "binaries": {
     "mobile-dev-ios-logs": {
-      "sha256": "eb09c5d9e85cf462ee59cd8a192e83f3c15dad442d027896f12a6fb6b554d0d1",
-      "bytes": 384944
+      "sha256": "1a78a7b6782c5c0fb9c606db89416a1181484cdba1c836980b508b31b2b43e46",
+      "bytes": 385024
     },
     "libimobiledevice-1.0.6.dylib": {
       "sha256": "229bb457ff0b3b701045ed124e3fdbce0e2115daf01b163735dcfba69c765927",

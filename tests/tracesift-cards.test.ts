@@ -43,9 +43,12 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
       import { TraceSiftCards } from "./src/ui/components/tracesift-cards.tsx";
       import { TraceSiftController } from "./src/ui/tracesift-controller.ts";
       import { startUiTelemetry, stopUiTelemetry } from "./src/ui/telemetry.ts";
-      export function mount(app, result) {
+      export async function mount(app, result) {
         startUiTelemetry(app);
-        const controller = new TraceSiftController(app); controller.hostChanged(); controller.accept(result);
+        const controller = new TraceSiftController(app); controller.hostChanged();
+        // Investigate waits on the project, so the cards are drawn with one.
+        await controller.loadProject();
+        controller.accept(result);
         const root = createRoot(document.getElementById("root")); flushSync(() => root.render(<TraceSiftCards controller={controller} />));
         return { controller, root, flushSync, async close() { controller.dispose(); root.unmount(); await stopUiTelemetry(); } };
       }`, resolveDir: process.cwd(), loader: "tsx" },
@@ -54,6 +57,7 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   });
   const dom = new JSDOM('<html data-view="tracesift"><head><meta name="mobile-dev-environment" content="development"><meta name="mobile-dev-user-id" content="anon_0123456789abcdef0123456789abcdef"><meta name="mobile-dev-session-id" content="run_1234567890abcdef1234567890abcdef"></head><body><div id="root"></div></body></html>', { pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/" });
   const window = dom.window;
+  window.Math.random = () => 0;
   Object.defineProperty(window.performance, "getEntriesByType", { value: () => [] });
   Object.defineProperty(window.performance, "getEntries", { value: () => [] });
   const telemetry: string[] = [];
@@ -70,6 +74,7 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
         const text = JSON.stringify(taskHandoff);
         return { content: [{ type: "text", text }], structuredContent: { apiVersion: 1, kind: "task", encoding: "json", payloadBytes: text.length } };
       }
+      if (input.name === "mobile_get_tracesift_project") return { content: [], structuredContent: { path: "/private/project" } };
       return input.name === "mobile_open_tracesift_explore"
         ? { content: [], structuredContent: { opened: true } }
         : { content: [], structuredContent: { apiVersion: 1, handoff: "PRIVATE_HANDOFF_TEXT" } };
@@ -80,7 +85,7 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   const flush = (click: () => void) => mounted.flushSync(click);
   /** The same, for a click whose work is a server round trip. */
   const act = async (click: () => void) => { click(); await new Promise(resolve => window.setTimeout(resolve, 0)); };
-  const mounted = window.TraceSiftCardTest.mount(app, { content: [], structuredContent: { apiVersion: 1, analysisId: "cpu", profileType: "cpu", title: "CPU", summary: { totalMs: 180, callCountIsExact: true, taskCount: 870 }, cards: [baseTask, { ...baseTask, id: "task-1", taskIndex: 1 }] } });
+  const mounted = await window.TraceSiftCardTest.mount(app, { content: [], structuredContent: { apiVersion: 1, analysisId: "cpu", profileType: "cpu", title: "CPU", summary: { totalMs: 180, callCountIsExact: true, taskCount: 870 }, cards: [baseTask, { ...baseTask, id: "task-1", taskIndex: 1 }] } });
   t.after(() => window.close());
   // The card leads with the pathline, as the web card does: the headline
   // spends its words on a duration and an offset the card already prints.

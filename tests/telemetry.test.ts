@@ -10,7 +10,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
-import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, TELEMETRY_META_KEY } from "../src/shared/telemetry.ts";
+import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "../src/shared/telemetry.ts";
 import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordPluginUpdate, recordIosMirrorSharing } from "../src/server/telemetry.ts";
 import { ExpectedOperationError, FailureEpisodes } from "../src/shared/error-reporting.ts";
 import { parseResourceInput } from "../src/server/resource-input.ts";
@@ -23,11 +23,104 @@ import { listIosDevices, registerIosDeviceTools } from "../src/server/ios-device
 import { createDrivers, registerAppControlTools } from "../src/server/app-control/tools.ts";
 import type { OpenAIFormResult } from "@openai/mcp-extensions/server";
 import { adapterClient } from "./agent-device-fixtures.ts";
+import { setDiscoveryCommandDiagnostic } from "../src/shared/device-apps-command-diagnostics.ts";
 
 function contains(text: string, fragment: string, expected = true) {
   const included = text.includes(fragment);
   assert.equal(included, expected, `Telemetry fragment: ${fragment}`);
 }
+
+test("production metric sampling drops 99.5% before transport and preserves sample values and privacy", async t => {
+  let sequence = 0;
+  t.mock.method(Math, "random", () => (sequence++ % 200) / 200);
+  const envelopes: Envelope[] = [];
+  Sentry.init({
+    dsn: "https://public@example.com/1", defaultIntegrations: false, beforeSendMetric: sampleMetric,
+    transport: () => ({ async send(envelope) { envelopes.push(envelope); return { statusCode: 200 }; }, async flush() { return true; } }),
+  });
+  t.after(async () => { await Sentry.close(); });
+  Sentry.setUser({ id: "anon_0123456789abcdef0123456789abcdef" });
+  for (let index = 0; index < 20_000; index++) {
+    Sentry.metrics.gauge("sampling.test", index, { attributes: { surface: "logs", telemetry_session: "PRIVATE_SESSION" } });
+  }
+  await Sentry.flush();
+  const items = envelopes.flatMap(envelope => envelope[1]);
+  const batches = items.filter(item => item[0].type === "trace_metric");
+  const retained = batches.flatMap(item => item[1].items);
+  assert.equal(retained.length, 100);
+  for (const [index, metric] of retained.entries()) {
+    assert.equal(metric.value, retained[0].value + index * 200);
+    assert.equal(metric.attributes["telemetry.sample_rate"].value, METRIC_SAMPLE_RATE);
+    assert.equal(metric.attributes.surface.value, "logs");
+    assert.equal(metric.attributes["user.id"], undefined);
+    assert.equal(metric.attributes.telemetry_session, undefined);
+  }
+});
+
+test("production error policy samples handled failures, bounds storms and retains new unhandled failures", t => {
+  let now = 1000;
+  t.mock.method(Date, "now", () => now);
+  const filter = createErrorEventFilter();
+  const hint = { originalException: new Error("Unexpected failure") };
+  const event = (name: string, handled = true) => ({
+    tags: { operation: name },
+    exception: { values: [{ type: "Error", value: name, mechanism: { type: "generic", handled } }] },
+  });
+  const originalRandom = Math.random;
+  let random = 0.5;
+  Math.random = () => random;
+  try {
+    const discarded = filter(event("sampled"), hint);
+    assert.equal(discarded, null);
+    random = 0;
+    const first = filter(event("sampled"), hint);
+    const repeated = filter(event("sampled"), hint);
+    assert.ok(first);
+    assert.equal(repeated, null);
+    for (let index = 0; index < 19; index++) {
+      const accepted = filter(event(`different.${index}`), hint);
+      assert.ok(accepted);
+    }
+    const capped = filter(event("over-budget"), hint);
+    assert.equal(capped, null);
+    random = 0.99;
+    const unhandled = filter(event("unhandled", false), hint);
+    assert.ok(unhandled);
+    const duplicateUnhandled = filter(event("unhandled", false), hint);
+    assert.equal(duplicateUnhandled, null);
+    const expected = new ExpectedOperationError("device_unavailable", "No connected device");
+    const excluded = filter(event("expected", false), { originalException: expected });
+    assert.equal(excluded, null);
+    now += 3_600_000;
+    random = 0;
+    const nextWindow = filter(event("sampled"), hint);
+    assert.ok(nextWindow, "The next hourly window permits a fresh report.");
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
+test("expected host lifecycle and discovery conditions do not become Sentry errors", () => {
+  for (const cause of ["device_not_found", "device_not_booted", "device_offline", "device_unauthorized", "foreground_unavailable", "unsupported_service"] as const) {
+    const error = new Error("Synthetic command failure");
+    setDiscoveryCommandDiagnostic(error, { command: "ios_simulator_apps", cause, termination: "exit", elapsed_ms: 10, deadline_ms: 1000 });
+    const filtered = scrubErrorEvent({}, { originalException: error });
+    assert.equal(filtered, null, cause);
+  }
+  for (const message of ["MCP error -32600: thread not found: SYNTHETIC_THREAD", "MCP error -32000: CancelledError"]) {
+    const error = new Error(message);
+    const filtered = scrubErrorEvent({}, { originalException: error });
+    assert.equal(filtered, null);
+  }
+  const deadline = new Error("Synthetic command timeout");
+  setDiscoveryCommandDiagnostic(deadline, { command: "ios_simulator_apps", cause: "deadline_exceeded", termination: "deadline", elapsed_ms: 1000, deadline_ms: 1000 });
+  const retained = scrubErrorEvent({}, { originalException: deadline });
+  assert.ok(retained);
+  const missingHelper = new Error("Synthetic bundled helper is missing");
+  setDiscoveryCommandDiagnostic(missingHelper, { command: "ios_simulator_foreground", cause: "missing_executable", termination: "spawn_error", elapsed_ms: 1, deadline_ms: 1000 });
+  const actionable = scrubErrorEvent({}, { originalException: missingHelper });
+  assert.ok(actionable);
+});
 
 test("the bundled HTTP dispatcher preserves Sentry fetch tracing and privacy", async t => {
   const envelopes: Envelope[] = [];
@@ -347,6 +440,14 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   assert.equal(observedTags?.device_platform, "mixed");
   assert.equal(observedTags?.device_kind, "none");
   assert.equal(observedTags?.recordingIds, undefined);
+  // The TraceSift tool is a workspace surface of its own, so its calls must keep
+  // their attribution rather than being dropped by the metadata allowlist.
+  await client.callTool({ name: "test_action", arguments: { secret: "PRIVATE_PROFILE_PATH" }, _meta: {
+    [TELEMETRY_META_KEY]: { surface: "tracesift", view: "tracesift", profilePath: "PRIVATE_PROFILE_PATH" },
+  } });
+  assert.equal(observedTags?.surface, "tracesift");
+  assert.equal(observedTags?.view, "tracesift");
+  assert.equal(observedTags?.profilePath, undefined);
   await Sentry.flush();
   const encoded = JSON.stringify(envelopes);
   contains(encoded, "PRIVATE_", false);
@@ -355,13 +456,14 @@ test("UI trace context crosses the MCP bridge and handled server errors exclude 
   contains(encoded, "Handled tool failed");
   const eventItems = envelopes.flatMap(envelope => envelope[1]);
   const errors = eventItems.filter(item => item[0].type === "event");
-  assert.equal(errors.length, 3);
+  // One handled failure per tool call above: logs, recording, comparison, TraceSift.
+  assert.equal(errors.length, 4);
   const unavailable = new SimulatorUnavailableError("Expected stopped simulator");
   captureServerError(unavailable, "expected");
   await Sentry.flush();
   const afterItems = envelopes.flatMap(envelope => envelope[1]);
   const afterErrors = afterItems.filter(item => item[0].type === "event");
-  assert.equal(afterErrors.length, 3);
+  assert.equal(afterErrors.length, 4);
 });
 
 test("error filters retain only generated identity while metrics and spans omit user dimensions", async () => {

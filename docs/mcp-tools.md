@@ -43,3 +43,29 @@
 | `mobile_display_fps_close` | Stop FPS collection and release the tracing connection |
 
 When reactivated, the `agent-device` MCP server exposes the pinned runtime's official operations through compact, validated schemas, including `open`, `snapshot`, `press`, `fill`, `type`, `scroll`, `wait`, `find`, `get`, `is`, `close`, and debugging tools. Their input schemas describe each command. The source [control skill](../skills/agent-device/SKILL.md), currently excluded from the package, explains session ordering and links to the version-matched guide.
+
+
+## TraceSift annotations
+
+Analysis writes compact results and replaces the latest reference for the input
+profile. Remember writes/replaces the reference for a host view. Both declare
+`readOnlyHint: false` and `destructiveHint: true` because a previous association
+can be overwritten, even though the input profile is not edited.
+
+Explore, Explore payload, and investigation handoff declare `readOnlyHint: false`
+and `destructiveHint: false`: they can start a local background service, and
+browser Explore also launches the explorer. The file picker shares those hints:
+it opens the host's own dialog and waits for a person, but writes nothing. The two
+restore tools only read local files and remain read-only. Reading the chosen
+project is read-only; choosing one declares `destructiveHint: true`, because it
+replaces the previously saved folder. All ten use `openWorldHint: false`;
+operations are confined to local files, the host's own dialogs, and the
+authenticated loopback TraceSift service.
+
+The two pickers exist because the TraceSift tool runs in a panel frame, where a
+dropped file carries no path and the analyzer reads profiles off disk. Both are
+app-only: the model never calls them. The chosen profile path reaches
+`mobile_analyze_profile` from the panel, and the chosen project folder is the
+source tree an investigation lands in — a profile names frames, not files, so
+Investigate stays disabled until one is chosen, and the folder is named in the
+hand-off the panel sends to the chat.

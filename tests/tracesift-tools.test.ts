@@ -117,6 +117,21 @@ test("the Explore payload tool is app-only and keeps the browser tool beside it"
   assert.ok(tools.some(tool => tool.name === "mobile_open_tracesift_explore"));
 });
 
+test("the Explore payload tool carries a real recording's call depth", async t => {
+  // A node and its `children` array are two object levels each, so a stack this
+  // deep measures twice over; real React Native recordings reach it, and the
+  // depth bound used to turn them all away.
+  const { mcp, close } = await connect({
+    async exploreTask(analysisId: string) {
+      return { analysisId, profileTitle: "Profile", totalMs: 200, card: { id: "task-0", tree: deepTree(1000), timeline: { boxes: [] } } };
+    },
+  });
+  t.after(close);
+  const result = await mcp.callTool({ name: "mobile_tracesift_explore_payload", arguments: { analysisId: "analysis-1", taskIndex: 0 } });
+  assert.equal(result.isError, undefined);
+  assert.equal((result.structuredContent as { kind: string }).kind, "task");
+});
+
 test("the Explore payload tool refuses a tree too deep to serialize", async () => {
   // `JSON.stringify` recurses, so this has to be caught before serialization;
   // the browser window renders such a recording without crossing the bridge.
@@ -129,4 +144,29 @@ test("the Explore payload tool refuses a tree too deep to serialize", async () =
   assert.equal(result.isError, true);
   assert.match((result.content as { text: string }[])[0]!.text, /larger than the panel can open/);
   await close();
+});
+
+
+test("published TraceSift annotations distinguish saved references, service startup, and file-only restores", async t => {
+  const { mcp, close } = await connect({});
+  t.after(close);
+  const { tools } = await mcp.listTools();
+  const expected = {
+    mobile_analyze_profile: [false, true],
+    mobile_pick_profile_file: [false, false],
+    mobile_get_tracesift_project: [true, false],
+    mobile_pick_tracesift_project: [false, true],
+    mobile_remember_tracesift_analysis: [false, true],
+    mobile_restore_tracesift_analysis: [true, false],
+    mobile_restore_tracesift_analysis_by_input: [true, false],
+    mobile_open_tracesift_explore: [false, false],
+    mobile_tracesift_explore_payload: [false, false],
+    mobile_get_tracesift_handoff: [false, false],
+  };
+  assert.equal(tools.length, Object.keys(expected).length);
+  for (const [name, [readOnlyHint, destructiveHint]] of Object.entries(expected)) {
+    const tool = tools.find(tool => tool.name === name);
+    assert.ok(tool, `Missing ${name}`);
+    assert.deepEqual(tool.annotations, { readOnlyHint, destructiveHint, openWorldHint: false }, name);
+  }
 });

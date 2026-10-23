@@ -6,10 +6,11 @@ import type { StorageFilePreview } from "../../shared/app-storage.ts";
 import { withTemporaryDirectory } from "../app-control/commands.ts";
 import type { CommandRunner } from "../app-control/commands.ts";
 import type { AppContainer } from "./container.ts";
-import { parsePlistValue, plainPlist } from "./formats.ts";
+import { basename, parsePlistValue, plainPlist } from "./formats.ts";
+import { REDACTED, redactStorageValue, sensitiveStoragePath } from "./redaction.ts";
 import { utf8Text } from "./encoding.ts";
 
-type PreviewOptions = { maxBytes: number; maxLength: number; hexBytes: number; run: CommandRunner };
+type PreviewOptions = { maxBytes: number; maxLength: number; run: CommandRunner };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const uid = (value: unknown) => isRecord(value) && Object.keys(value).length === 1 && typeof value["CF$UID"] === "number" ? value["CF$UID"] : undefined;
@@ -53,24 +54,31 @@ async function plistJson(bytes: Buffer, run: CommandRunner): Promise<unknown> {
   } catch { return undefined; }
 }
 
-// A file from the app's data directory, decoded by its contents rather than its name.
-export async function previewFile(container: AppContainer, path: string, { maxBytes, maxLength, hexBytes, run }: PreviewOptions): Promise<StorageFilePreview> {
-  const file = (await container.list()).find(item => item.path === path);
+// Files go through the same filter as store values, with the file name as context, before they are cut short.
+// It returns objects and arrays as compact JSON text, so those are parsed again for pretty printing.
+function filtered(name: string, value: unknown): unknown {
+  const safe = redactStorageValue(name, value);
+  return typeof value === "object" && value !== null && safe !== REDACTED ? JSON.parse(String(safe)) : safe;
+}
+
+// A file from the app's data directory, decoded by its contents rather than its name. Binary content is never
+// returned, because it can hold credentials the filter cannot recognize.
+export async function previewFile(container: AppContainer, path: string, { maxBytes, maxLength, run }: PreviewOptions): Promise<StorageFilePreview> {
+  const file = sensitiveStoragePath(path) ? undefined : (await container.list()).find(item => item.path === path);
   if (file === undefined) throw new ExpectedOperationError("invalid_input", "That file no longer exists. Refresh and try again.");
-  const result = (format: StorageFilePreview["format"], content: string, truncated = content.length > maxLength): StorageFilePreview =>
-    ({ path, bytes: file.bytes, format, content: content.slice(0, maxLength), truncated });
-  if (file.bytes > maxBytes) return result("too-large", "", true);
+  const name = basename(path);
+  const result = (format: StorageFilePreview["format"], content: string): StorageFilePreview =>
+    ({ path, bytes: file.bytes, format, content: content.slice(0, maxLength), truncated: content.length > maxLength });
+  if (file.bytes > maxBytes) return { ...result("too-large", ""), truncated: true };
   const bytes = await container.read(path);
   const head = bytes.subarray(0, 64).toString("latin1");
   if (head.startsWith("bplist") || (head.startsWith("<?xml") && bytes.includes("<plist"))) {
     const value = await plistJson(bytes, run);
-    if (isRecord(value) && value.$archiver === "NSKeyedArchiver") return result("archive", JSON.stringify(unarchive(value), null, 2));
-    if (value !== undefined) return result("plist", JSON.stringify(value, null, 2));
+    if (isRecord(value) && value.$archiver === "NSKeyedArchiver") return result("archive", JSON.stringify(filtered(name, unarchive(value)), null, 2));
+    if (value !== undefined) return result("plist", JSON.stringify(filtered(name, value), null, 2));
   }
   const content = utf8Text(bytes);
-  if (content !== undefined) {
-    try { return result("json", JSON.stringify(JSON.parse(content), null, 2)); }
-    catch { return result("text", content); }
-  }
-  return result("binary", bytes.subarray(0, hexBytes).toString("hex"), bytes.length > hexBytes);
+  if (content === undefined) return result("binary", "");
+  try { return result("json", JSON.stringify(filtered(name, JSON.parse(content)), null, 2)); }
+  catch { return result("text", String(redactStorageValue(name, content))); }
 }

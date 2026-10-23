@@ -7,6 +7,7 @@ import type { DeviceSettings } from "../shared/device-settings.ts";
 import { bezelGeometrySchema } from "../shared/bezel.ts";
 import type { Bezel } from "../shared/bezel.ts";
 import type { SimulatorDevice, Status, TouchInput } from "../shared/protocol.ts";
+import { inputSchema } from "../shared/protocol.ts";
 import { physicalConnectionLabel } from "../shared/ios-devices.ts";
 import type { PhysicalIosDevice } from "../shared/ios-devices.ts";
 import type { DeviceOption } from "./device-picker.ts";
@@ -901,6 +902,22 @@ export function createSimulatorPanel(
       event.preventDefault(); send({ type: "key", code: event.code, modifiers: event.shiftKey ? ["shift"] : [] });
     }
   });
+  function paste(event: ClipboardEvent) {
+    const annotationState = annotations.getSnapshot();
+    if (annotationState.selecting || annotationState.draft) return;
+    if (!ready || !stream || stream.physicalIos || inputBlocked || busy || !toolsAvailable || disposed) return;
+    event.preventDefault();
+    const text = event.clipboardData?.getData("text/plain") ?? "";
+    if (text.length === 0) return;
+    const message = inputSchema.safeParse({ type: "type", text });
+    if (message.success === false) {
+      notice("Paste supports up to 4,096 printable US-ASCII characters. Line breaks and other characters are not supported.");
+      return;
+    }
+    notice();
+    send(message.data);
+  }
+  canvas.addEventListener("paste", paste);
   devicePickerElement.addEventListener("change", () => {
     openingTarget = undefined;
     void action(async () => { await disconnect(); selectDevice(); await start(); });
@@ -989,6 +1006,7 @@ export function createSimulatorPanel(
       resizeObserver.disconnect();
       window.removeEventListener("blur", releasePointer);
       window.removeEventListener("blur", cancelAnnotationPointer);
+      canvas.removeEventListener("paste", paste);
       window.removeEventListener("message", observeFrame);
       arrivals.clear();
       document.removeEventListener("visibilitychange", onVisibility);

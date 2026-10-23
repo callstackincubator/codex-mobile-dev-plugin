@@ -103,7 +103,7 @@ import SwiftData
     try? plist.encode(AppState(launches: 7, lastScreen: "settings", featureFlags: ["newOnboarding": true, "darkIcons": false])).write(to: support.appendingPathComponent("state.plist"))
 
     let archive = try? NSKeyedArchiver.archivedData(withRootObject: ["recentSearches": ["swiftui", "core data"], "scrollOffset": 240] as NSDictionary, requiringSecureCoding: false)
-    try? archive?.write(to: documents.appendingPathComponent("session.archive"))
+    try? archive?.write(to: documents.appendingPathComponent("recent.archive"))
 
     try? "Remember to test the logged-out flow.\n".write(to: documents.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
     try? Data(repeating: 0xAB, count: 256 * 1024).write(to: caches.appendingPathComponent("image-cache.bin"))
@@ -115,7 +115,7 @@ import SwiftData
     let defaults = UserDefaults.standard
     let notes = (try? coreData.viewContext.count(for: NSFetchRequest<NSManagedObject>(entityName: "Note"))) ?? 0
     let tasks = (try? swiftData.mainContext.fetchCount(FetchDescriptor<TodoItem>())) ?? 0
-    let files = ["profile.json", "session.archive", "notes.txt"].filter { fileManager.fileExists(atPath: documents.appendingPathComponent($0).path) }
+    let files = ["profile.json", "recent.archive", "notes.txt"].filter { fileManager.fileExists(atPath: documents.appendingPathComponent($0).path) }
     return [
       ("UserDefaults user.name", defaults.string(forKey: "user.name") ?? "—"),
       ("App Group widget.unread", UserDefaults(suiteName: appGroup)?.object(forKey: "widget.unread").map { "\($0)" } ?? "—"),

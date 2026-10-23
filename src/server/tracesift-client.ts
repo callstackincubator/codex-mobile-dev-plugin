@@ -178,6 +178,38 @@ export class TraceSiftClient {
     await this.writePrivateJson(this.inputPath(path, profileType), { apiVersion: 1, analysisId });
   }
 
+  /**
+   * The source folder an investigation lands in. It is the plugin's own choice,
+   * not TraceSift's, but it belongs beside the analyses it qualifies and inherits
+   * their 0700 directory.
+   */
+  private projectPath() { return join(this.home, "integrations", "mobile-dev", "project.json"); }
+
+  async readProject(): Promise<string | undefined> {
+    let stored: unknown;
+    try { stored = JSON.parse(await readFileAsync(this.projectPath(), "utf8")); }
+    catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
+      throw new TraceSiftError("The saved project could not be read.", "request");
+    }
+    const path = typeof stored === "object" && stored !== null && "path" in stored
+      && typeof stored.path === "string" ? stored.path : undefined;
+    if (!path) throw new TraceSiftError("The saved project is invalid. Choose it again.", "request");
+    // A folder that moved or was deleted is not a project any more, and saying so
+    // beats handing the chat a path that is no longer there.
+    const directory = await stat(path).catch(() => undefined);
+    return directory?.isDirectory() ? path : undefined;
+  }
+
+  async writeProject(path: string) {
+    const directory = await stat(path).catch(() => undefined);
+    if (!directory?.isDirectory()) throw new TraceSiftError("That project folder does not exist.", "request");
+    const resolved = await realpath(path);
+    await mkdir(join(this.home, "integrations", "mobile-dev"), { recursive: true, mode: 0o700 });
+    await this.writePrivateJson(this.projectPath(), { apiVersion: 1, path: resolved });
+    return resolved;
+  }
+
   private async restoreReference(referencePath: string): Promise<TraceSiftAnalysis | undefined> {
     let reference: unknown;
     try { reference = JSON.parse(await readFileAsync(referencePath, "utf8")); }

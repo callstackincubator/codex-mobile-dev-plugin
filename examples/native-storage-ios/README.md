@@ -29,7 +29,7 @@ directory.
 | Write App Group | the App Group container | Shared UserDefaults and `widget-timeline.json` |
 | Add Core Data note | `Library/Application Support/Notes.sqlite` | One `Note` row, from a model built in code |
 | Add SwiftData task | `Library/Application Support/default.store` in the App Group container | One `TodoItem` row; SwiftData uses the group container when the app has an App Group |
-| Write files | `Documents/` and `Library/` | `profile.json` (Codable JSON), `state.plist` (binary plist), `session.archive` (NSKeyedArchiver), `notes.txt`, and a 256 KB cache file |
+| Write files | `Documents/` and `Library/` | `profile.json` (Codable JSON), `state.plist` (binary plist), `recent.archive` (NSKeyedArchiver), `notes.txt`, and a 256 KB cache file |
 
 The list under the buttons shows what the app reads back, so a cleared store shows
 up as missing in the app too.

@@ -11,7 +11,7 @@ export const storeKindLabels: Record<StoreKind, string> = {
 export const entryTypes = ["string", "json", "number", "integer", "boolean", "date", "data", "array", "object", "null", "table"] as const;
 export type EntryType = typeof entryTypes[number];
 
-// Values arrive as display text: JSON for json, arrays and objects, hex for data. `guessed` marks a type
+// Values arrive as filtered display text: JSON for json, arrays and objects. Binary values are redacted. `guessed` marks a type
 // inferred from bytes, because MMKV files do not record value types.
 const entry = z.object({
   key: z.string(),
@@ -46,7 +46,7 @@ export const storageSnapshotSchema = z.object({
   bundleId: z.string(),
   readAt: z.number(),
   stores: z.array(store),
-  // Largest files first, capped; fileCount and totalBytes cover the whole data directory.
+  // Largest allowed files first, capped; totals cover the requested store or app scope.
   files: z.array(file),
   fileCount: z.number().int().nonnegative(),
   totalBytes: z.number().int().nonnegative(),
@@ -56,9 +56,9 @@ export type StorageSnapshot = z.infer<typeof storageSnapshotSchema>;
 export const storageClearSchema = z.object({ cleared: z.string(), stopped: z.boolean() });
 
 // Defaults keep model-visible results small; the panel asks for more. Tables are read a page of rows at a time.
-export const storageLimits = { entries: 200, maxEntries: 2000, valueLength: 300, maxValueLength: 16000, files: 400, tableRows: 100, maxTableRows: 500, tableValueLength: 2000, previewBytes: 8 * 1024 * 1024, previewLength: 200000, hexBytes: 4096 };
+export const storageLimits = { entries: 200, maxEntries: 2000, valueLength: 300, maxValueLength: 16000, files: 400, tableRows: 100, maxTableRows: 500, tableValueLength: 2000, previewBytes: 8 * 1024 * 1024, previewLength: 200000 };
 
-// One page of rows from a SQLite table. Cells are text, numbers, or null; blobs arrive as x'…' hex.
+// One filtered page of rows from SQLite. Cells are text, numbers, or null; blobs are redacted.
 const tableCell = z.union([z.string(), z.number(), z.null()]);
 export const storageTableSchema = z.object({
   table: z.string(),
@@ -69,8 +69,8 @@ export const storageTableSchema = z.object({
 });
 export type StorageTable = z.infer<typeof storageTableSchema>;
 
-// One file's contents. json, plist, and archive (NSKeyedArchiver) arrive as JSON text, binary as hex of its first
-// bytes, and too-large files without content.
+// One file's contents, filtered like storage values. json, plist, and archive (NSKeyedArchiver) arrive as JSON text;
+// binary and too-large files arrive without content.
 export const filePreviewFormats = ["json", "plist", "archive", "text", "binary", "too-large"] as const;
 export const storageFileSchema = z.object({
   path: z.string(),

@@ -52,6 +52,9 @@ function verifyIdentityPrivacy(items) {
   }
   const batches = items.filter(item => Array.isArray(item.items));
   assert.ok(batches.length > 0);
+  for (const batch of batches) {
+    for (const metric of batch.items) assert.equal(metric.attributes["telemetry.sample_rate"].value, 0.005);
+  }
   const metricJson = JSON.stringify(batches);
   const metricIncludesUser = metricJson.includes(env.MOBILE_DEV_NATIVE_USER_ID);
   const metricIncludesSession = metricJson.includes("telemetry_session");
@@ -76,6 +79,9 @@ try {
     + `sentry_value_set_by_key(user, "username", name); sentry_value_set_by_key(user, "ip_address", ip);\n`
     + `sentry_set_user(user); mobile_dev_telemetry_error("identity.test", "Native identity test"); }\n`
     + `if (argc > 1 && strcmp(argv[1], "crash") == 0) raise(SIGSEGV);\n`
+    + `for (int i = 0; i < 20000; i++) {\n`
+    + `sentry_metrics_gauge("native.memory.rss", 1000, SENTRY_UNIT_BYTE, sentry_value_new_null());\n`
+    + `sentry_metrics_gauge("native.connect.mean", 5, SENTRY_UNIT_MILLISECOND, sentry_value_new_null()); }\n`
     + `mobile_dev_telemetry_timing(MOBILE_DEV_CONNECT, 5.0);\n`
     + `mobile_dev_telemetry_close(); return 0; }\n`;
   await writeFile(source, probe);
@@ -97,6 +103,10 @@ try {
   assert.match(allReports, /native\.connect\.mean/);
   assert.equal(allReports.includes(directory), false, "Crash reports must omit local paths.");
   const crashItems = reportItems();
+  const metricBatches = crashItems.filter(item => Array.isArray(item.items));
+  const metricPoints = metricBatches.flatMap(batch => batch.items);
+  assert.ok(metricPoints.length > 0);
+  assert.ok(metricPoints.length < 400, `Expected at least a 99% metric reduction, received ${metricPoints.length} of 40000 points.`);
   const crashes = crashItems.filter(item => {
     const exceptions = item.exception?.values ?? [];
     const hasSignal = exceptions.some(value => value.type === "SIGSEGV");
@@ -113,7 +123,7 @@ try {
   assert.equal(includesAccount, false);
   assert.equal(includesIp, false);
   console.log("Native crashes retain anonymous user and original session IDs; personal details and metric user dimensions are removed.");
-  console.log("A real native crash retained its signal and reported its stack, debug IDs, release and metrics to the local receiver.");
+  console.log(`Native metric sampling retained ${metricPoints.length} of 40000 probe points; crashes retain their signal, stack, debug IDs and release.`);
 
   const relayOutput = join(directory, "relay-probe");
   const relayFlags = [...flags];

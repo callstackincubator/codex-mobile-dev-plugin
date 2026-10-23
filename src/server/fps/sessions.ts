@@ -39,10 +39,10 @@ export class DisplayFpsSessions {
   }
   open(input: DisplayFpsTarget) {
     const target = displayFpsTargetSchema.parse(input);
-    if (this.disposed) throw new Error("The plugin server has closed.");
-    if (this.sessions.size >= 8) throw new Error("Too many Display FPS sessions.");
+    if (this.disposed) throw new ExpectedOperationError("session_closed", "The plugin server has closed.");
+    if (this.sessions.size >= 8) throw new ExpectedOperationError("resource_limit", "Too many Display FPS sessions.");
     const key = this.key(target);
-    if (this.devices.has(key)) throw new Error("This device already has a Display FPS monitor. Stop it in the other panel first.");
+    if (this.devices.has(key)) throw new ExpectedOperationError("resource_limit", "This device already has a Display FPS monitor. Stop it in the other panel first.");
     const session: Session = { target, phase: "connecting", abort: new AbortController(), expires: Date.now() + 300000,
       samples: [], revision: 0, waiters: new Set() };
     const bytes = randomBytes(32);

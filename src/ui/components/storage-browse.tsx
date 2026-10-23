@@ -37,14 +37,13 @@ const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ?
 const formatLabels: Record<StorageFilePreview["format"], string> = { json: "JSON", plist: "Property list", archive: "NSKeyedArchiver archive", text: "Text", binary: "Binary", "too-large": "Too large to preview" };
 const parseJsonText = (text: string): unknown => { try { return JSON.parse(text); } catch { return undefined; } };
 
-// A file's contents: structured formats as a JSON tree, text as is, and other bytes as hex.
+// A file's contents: structured formats as a JSON tree and text as is. Values the server redacted read [REDACTED].
 function FilePreview({ file }: { file: StorageFileView }) {
   const data = file.data;
   let body: ReactNode = null;
   let note = "";
   if (data?.format === "binary") {
-    body = <pre className="font-mono break-all whitespace-pre-wrap text-muted-foreground">{data.content.replace(/(..)(?!$)/g, "$1 ")}</pre>;
-    if (data.truncated) note = `Showing the first ${formatBytes(data.content.length / 2)} as hex.`;
+    note = "Binary data isn't shown, because it could hold credentials.";
   } else if (data && data.format !== "too-large") {
     // Structured formats arrive as JSON text; a cut-short one no longer parses and shows as text.
     const parsed = data.format === "text" ? undefined : parseJsonText(data.content);

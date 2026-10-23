@@ -27,8 +27,8 @@ export class LogSessions {
 
   open(input: LogOptions): string {
     const options = logOptionsSchema.parse(input);
-    if (this.disposed) throw new Error("The plugin server has closed.");
-    if (this.sessions.size >= 8) throw new Error("Too many log streams. Close a log panel and retry.");
+    if (this.disposed) throw new ExpectedOperationError("session_closed", "The plugin server has closed.");
+    if (this.sessions.size >= 8) throw new ExpectedOperationError("resource_limit", "Too many log streams. Close a log panel and retry.");
     const session: Session = { buffer: new LogBuffer(), stops: [], expires: Date.now() + 5 * 60 * 1000 };
     const id = randomBytes(32).toString("hex");
     this.sessions.set(id, session);

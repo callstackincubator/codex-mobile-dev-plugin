@@ -4,7 +4,7 @@
  */
 
 import { useSyncExternalStore } from "react";
-import { ChartNoAxesCombinedIcon, CheckIcon, CopyIcon, MessageCircleIcon } from "lucide-react";
+import { ChartNoAxesCombinedIcon, CheckIcon, CopyIcon, FolderIcon, MessageCircleIcon, UploadIcon } from "lucide-react";
 import type { TraceSiftController } from "../tracesift-controller.ts";
 import { formatMs, formatReactMs } from "../../shared/tracesift-labels.ts";
 import type { TraceSiftAnalysis, TraceSiftCpuAnalysis, TraceSiftReactCard, TraceSiftTaskCard } from "../../shared/tracesift.ts";
@@ -62,8 +62,12 @@ function CardFooter({ cardId, controller, canExplore }: { cardId: string; contro
         <Button
           size="sm"
           variant="outline"
-          disabled={!state.canInvestigate || busy}
-          title={state.canInvestigate ? "Hand this card to the chat and have it read the task." : undefined}
+          disabled={!state.canInvestigate || !state.project || busy}
+          title={!state.canInvestigate
+            ? "This chat cannot receive a message from the card"
+            : state.project
+              ? `Hand this card to the chat and have it read the task in ${state.project}.`
+              : "Choose a project first, so the chat knows which code these frames belong to."}
           onClick={() => void controller.investigate(cardId)}
         >
           <MessageCircleIcon />{state.busyCard === cardId ? "Starting…" : "Investigate"}
@@ -79,6 +83,22 @@ function CardFooter({ cardId, controller, canExplore }: { cardId: string; contro
         </Button>
       </div>
     </div>
+  </div>;
+}
+
+/**
+ * Which code these findings belong to. A profile names frames, not files, so the
+ * chat needs the folder before Investigate can mean anything.
+ */
+function ProjectBar({ controller }: { controller: TraceSiftController }) {
+  const { project, projectBusy } = controller.getSnapshot();
+  const name = project?.replace(/\/+$/, "").split("/").pop() || project;
+  return <div className="tracesift-project-bar">
+    <FolderIcon />
+    <span title={project}>{project ? name : "No project chosen — Investigate needs one"}</span>
+    <Button size="sm" variant="outline" disabled={projectBusy} onClick={() => void controller.pickProject()}>
+      {projectBusy ? "Choosing…" : project ? "Change" : "Choose project"}
+    </Button>
   </div>;
 }
 
@@ -134,7 +154,8 @@ function ReactCard({ card, rank, controller }: { card: TraceSiftReactCard; rank:
   </article>;
 }
 
-export function TraceSiftCards({ controller }: { controller: TraceSiftController }) {
+/** `onReset` is the panel's way back to its upload pane; the inline card has none. */
+export function TraceSiftCards({ controller, onReset }: { controller: TraceSiftController; onReset?: () => void }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const analysis: TraceSiftAnalysis | undefined = state.analysis;
 
@@ -158,13 +179,18 @@ export function TraceSiftCards({ controller }: { controller: TraceSiftController
           : `${analysis.cards.length} of ${analysis.summary.commitCount} commits · ${formatMs(analysis.summary.totalCommitRenderDurationMs)} rendering`}</p>
       </div>
       {/* Both card families divide a measured whole into interchangeable drawings. */}
-      <div className="result-actions"><ChartSwitch kind={state.chartKind} onChange={controller.setChartKind} /></div>
+      <div className="result-actions">
+        <ChartSwitch kind={state.chartKind} onChange={controller.setChartKind} />
+        {onReset && <Button size="sm" variant="outline" onClick={onReset}><UploadIcon />New profile</Button>}
+      </div>
     </div>
 
+    <ProjectBar controller={controller} />
     {!state.canInvestigate && <p className="tracesift-error" role="status">
       This host cannot call the card handoff tool or send a message to the active chat. Ask the agent to investigate a card by name instead.
     </p>}
     {state.error && <p className="tracesift-error" role="alert">{state.error}</p>}
+    {state.notice && <p className="tracesift-notice" role="status">{state.notice}</p>}
     {analysis.cards.length === 0 && <p role="status">TraceSift found no carded performance issues.</p>}
 
     <div className="hotspot-list">{analysis.profileType === "cpu"

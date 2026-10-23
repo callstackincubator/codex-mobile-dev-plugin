@@ -151,7 +151,7 @@ class MemoryContainer implements AppContainer {
 test("snapshots read every store, cap values, and only clear files of a store that exists", async () => {
   const [data, meta] = await mmkv("fixture");
   const [locked, lockedMeta] = await mmkv("locked");
-  const long = "x".repeat(2000);
+  const long = "safe prose ".repeat(200);
   const manifest = JSON.stringify({ short: "1", long: null, missing: null });
   const container = new MemoryContainer({
     "Documents/mmkv/fixture": data, "Documents/mmkv/fixture.crc": meta, "Documents/mmkv/locked": locked, "Documents/mmkv/locked.crc": lockedMeta,
@@ -172,7 +172,8 @@ test("snapshots read every store, cap values, and only clear files of a store th
   assert.equal(byName["com.example"].entries[0].value, "true");
   assert.equal(snapshot.files[0].path, "Documents/big.bin");
   assert.equal(snapshot.files.find(file => file.path === "Documents/mmkv/fixture")?.store, "mmkv:Documents/mmkv/fixture");
-  assert.equal(snapshot.fileCount, 8);
+  // Opaque hash-named files are hidden from metadata; their selected store can still be decoded.
+  assert.equal(snapshot.fileCount, 7);
 
   const cleared = await clearStore(container, "mmkv:Documents/mmkv/fixture");
   assert.equal(cleared.name, "fixture");
@@ -265,7 +266,7 @@ test("the change feed hides SDK changes until the toggle shows them", async () =
   panel.dispose();
 });
 
-test("database tables are read page by page with blobs as hex, and unknown tables are rejected", { skip: process.platform !== "darwin" && "needs sqlite3" }, async () => {
+test("database tables are read page by page with blobs redacted, and unknown tables are rejected", { skip: process.platform !== "darwin" && "needs sqlite3" }, async () => {
   const { mkdtemp, mkdir, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { execFileSync } = await import("node:child_process");
@@ -282,7 +283,7 @@ test("database tables are read page by page with blobs as hex, and unknown table
     const first = await readTable(container, "sqlite:Documents/app.db", "items", { ...options, offset: 0 });
     assert.equal(first.total, 250);
     assert.deepEqual(first.columns, [{ name: "id", type: "INTEGER" }, { name: "name", type: "TEXT" }, { name: "data", type: "BLOB" }]);
-    assert.deepEqual(first.rows[0], [1, "item 1", "x'CAFE'"]);
+    assert.deepEqual(first.rows[0], [1, "item 1", "[REDACTED]"]);
     assert.deepEqual(first.rows[1], [2, "item 2", null]);
     const last = await readTable(container, "sqlite:Documents/app.db", "items", { ...options, offset: 200 });
     assert.deepEqual([last.offset, last.rows.length, last.rows[0][0]], [200, 50, 201]);

@@ -1,6 +1,6 @@
 import { getDiscoveryCommandDiagnostic } from "./device-apps-command-diagnostics.ts";
 
-export type ExpectedOutcome = "session_expired" | "session_closed" | "cancelled" | "device_unavailable" | "unsupported_platform" | "invalid_input";
+export type ExpectedOutcome = "session_expired" | "session_closed" | "cancelled" | "device_unavailable" | "app_unavailable" | "resource_limit" | "unsupported_platform" | "invalid_input";
 
 export class ExpectedOperationError extends Error {
   readonly outcome: ExpectedOutcome;
@@ -16,7 +16,14 @@ export function expectedOutcome(error: unknown): ExpectedOutcome | undefined {
   const command = getDiscoveryCommandDiagnostic(error);
   if (command?.termination === "deadline") return;
   if (command?.cause === "cancelled") return "cancelled";
+  if (command?.cause === "device_not_found" || command?.cause === "device_not_booted"
+    || command?.cause === "device_offline" || command?.cause === "device_unauthorized") return "device_unavailable";
+  if (command?.cause === "foreground_unavailable") return "app_unavailable";
+  if (command?.cause === "unsupported_service") return "unsupported_platform";
   if (error instanceof Error && error.name === "AbortError") return "cancelled";
+  const category = errorCategory(error);
+  if (category === "host_thread_missing") return "session_closed";
+  if (category === "cancellation") return "cancelled";
 }
 
 export type ErrorCategory = "unknown" | "timeout" | "host_thread_missing" | "cancellation" | "unexpected";

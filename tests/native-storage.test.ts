@@ -14,7 +14,7 @@ import { expectedOutcome } from "../src/shared/error-reporting.ts";
 
 const fixture = (name: string) => readFile(new URL(`./fixtures/app-storage/native/${name}`, import.meta.url));
 const udid = "B5C969F6-58A4-4C31-AB12-FB9E56D681DE";
-const preview = { maxBytes: 1024 * 1024, maxLength: 10000, hexBytes: 16, run: systemCommands.run };
+const preview = { maxBytes: 1024 * 1024, maxLength: 10000, run: systemCommands.run };
 
 class MemoryContainer implements AppContainer {
   readonly platform: "ios" | "android";
@@ -82,7 +82,7 @@ test("simulator containers include App Group containers under a prefix and keep 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("file previews decode JSON, text, and binary, and reject files that are not listed", async () => {
+test("file previews decode JSON and text, withhold binary, and reject files that are not listed", async () => {
   const container = new MemoryContainer("android", {
     "files/profile.json": "{\"name\":\"Ada\",\"tags\":[\"beta\"]}",
     "files/notes.txt": "first line\nsecond line\n",
@@ -91,15 +91,32 @@ test("file previews decode JSON, text, and binary, and reject files that are not
   const json = await previewFile(container, "files/profile.json", preview);
   assert.deepEqual([json.format, JSON.parse(json.content)], ["json", { name: "Ada", tags: ["beta"] }]);
   assert.deepEqual(await previewFile(container, "files/notes.txt", preview), { path: "files/notes.txt", bytes: 23, format: "text", content: "first line\nsecond line\n", truncated: false });
-  assert.deepEqual(await previewFile(container, "cache/blob.bin", preview), { path: "cache/blob.bin", bytes: 6, format: "binary", content: "00010203fffe", truncated: false });
+  assert.deepEqual(await previewFile(container, "cache/blob.bin", preview), { path: "cache/blob.bin", bytes: 6, format: "binary", content: "", truncated: false });
   await assert.rejects(previewFile(container, "files/missing.txt", preview), error => expectedOutcome(error) === "invalid_input");
 });
 
+test("file previews are filtered like storage values before they are cut short", async () => {
+  const token = "ghp_" + "a".repeat(36);
+  const container = new MemoryContainer("android", {
+    "files/profile.json": JSON.stringify({ theme: "dark", contact: { email: "ada@example.com", city: "Berlin" } }),
+    "files/session.json": JSON.stringify({ theme: "dark" }),
+    "files/notes.txt": `Deploy with ${token}\n`,
+    [`files/${token}.json`]: "{}",
+  });
+  const profile = await previewFile(container, "files/profile.json", { ...preview, maxLength: 40 });
+  assert.equal(profile.truncated, true);
+  assert.doesNotMatch(profile.content, /ada@example\.com/);
+  assert.deepEqual(JSON.parse((await previewFile(container, "files/profile.json", preview)).content), { theme: "dark", contact: { email: "[REDACTED]", city: "Berlin" } });
+  assert.equal(JSON.parse((await previewFile(container, "files/session.json", preview)).content), "[REDACTED]");
+  assert.deepEqual(await previewFile(container, "files/notes.txt", preview), { path: "files/notes.txt", bytes: 53, format: "text", content: "[REDACTED]", truncated: false });
+  await assert.rejects(previewFile(container, `files/${token}.json`, preview), error => expectedOutcome(error) === "invalid_input");
+});
+
 test("binary property lists and NSKeyedArchiver archives preview as JSON", { skip: process.platform !== "darwin" && "needs plutil" }, async () => {
-  const container = new MemoryContainer("ios", { "state.plist": await fixture("state.plist"), "session.archive": await fixture("session.archive") });
+  const container = new MemoryContainer("ios", { "state.plist": await fixture("state.plist"), "recent.archive": await fixture("recent.archive") });
   const plist = await previewFile(container, "state.plist", preview);
   assert.deepEqual([plist.format, JSON.parse(plist.content)], ["plist", { featureFlags: { darkIcons: false, newOnboarding: true }, lastScreen: "settings", launches: 7 }]);
-  const archive = await previewFile(container, "session.archive", preview);
+  const archive = await previewFile(container, "recent.archive", preview);
   assert.deepEqual([archive.format, JSON.parse(archive.content)], ["archive", { recentSearches: ["swiftui", "core data"], scrollOffset: 240 }]);
 });
 

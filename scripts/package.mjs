@@ -29,7 +29,7 @@ await access("dist/serve-emu/vendor/scrcpy-server-v4.0");
 await access("dist/agent-device/node_modules/agent-device/dist/apple/runner/AgentDeviceRunner/AgentDeviceRunner.xcodeproj/project.pbxproj");
 await rm(plugin, { recursive: true, force: true });
 await mkdir(plugin, { recursive: true });
-for (const path of [".mcp.json", "README.md", "THIRD_PARTY_NOTICES.md"]) await copyFile(path, `${plugin}/${path}`);
+for (const path of [".mcp.json", "README.md", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "TERMS.md", "SUPPORT.md"]) await copyFile(path, `${plugin}/${path}`);
 for (const path of [".codex-plugin", "assets", "dist", "skills/mobile-dev", "skills/mobile-dev-setup"]) await cp(path, `${plugin}/${path}`, { recursive: true, verbatimSymlinks: true });
 await mkdir(`${plugin}/scripts`, { recursive: true });
 await copyFile("scripts/launch-mcp.sh", `${plugin}/scripts/launch-mcp.sh`);

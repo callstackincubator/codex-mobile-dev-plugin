@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import * as Sentry from "@sentry/node";
-import { SENTRY_RELEASE, SENTRY_SERVER_DSN, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan } from "../shared/telemetry.ts";
+import { SENTRY_RELEASE, SENTRY_SERVER_DSN, sampleTrace, createErrorEventFilter, sampleMetric, scrubSpan } from "../shared/telemetry.ts";
 import { TELEMETRY_ENVIRONMENT } from "./telemetry-environment.ts";
 import { getTelemetryIdentity } from "./telemetry-identity.ts";
 
@@ -37,9 +37,9 @@ const client = Sentry.init({
     return selected;
   },
   tracesSampler: context => sampleTrace(context.name, context.inheritOrSampleWith),
-  beforeSend: scrubErrorEvent,
+  beforeSend: createErrorEventFilter(),
   beforeSendSpan: scrubSpan,
-  beforeSendMetric: scrubMetric,
+  beforeSendMetric: sampleMetric,
   beforeBreadcrumb: breadcrumb => breadcrumb.category === "mobile-dev" ? breadcrumb : null,
 });
 const executable = process.argv[1] ?? "";

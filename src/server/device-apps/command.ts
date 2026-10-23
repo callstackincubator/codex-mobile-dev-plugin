@@ -67,6 +67,7 @@ export function annotateDiscoveryCommand(error: unknown, command: DiscoveryComma
   if (termination === "exit" && "stderr" in error && typeof error.stderr === "string") {
     const identified = commandCause(command, error.stderr);
     if (identified !== undefined) cause = identified;
+    else if (command === "android_foreground_pid" && code === 1 && error.stderr.trim() === "") cause = "foreground_unavailable";
   }
   const diagnostic: DiscoveryCommandDiagnostic = { command, cause, termination, elapsed_ms: elapsedMs, deadline_ms: options.timeout };
   if (typeof code === "number" && Number.isInteger(code) && code >= 0 && code <= 255) diagnostic.exit_status = code;

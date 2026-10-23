@@ -7,7 +7,7 @@ import type { SimulatorDevice } from "../shared/protocol.ts";
 import { errorMessage } from "../shared/protocol.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
 import { appIcons } from "./app-icons.ts";
-import { isSdkStore } from "./storage-labels.ts";
+import { isSdkStore, storeTitle } from "./storage-labels.ts";
 import { measureUiOperation, recordUiTiming, setUiGauge } from "./telemetry.ts";
 
 export type StorageAction = "apps" | "read" | "clear" | "reset" | "launch";
@@ -279,10 +279,13 @@ export class StoragePanel {
     const bundleId = this.state.bundleId;
     if (!this.ready() || !bundleId || this.state.busy) return;
     const action = storeId ? "clear" : "reset";
+    // The server confirms without echoing the store's name, so the panel names it from its own snapshot.
+    const store = this.state.snapshot?.stores.find(item => item.id === storeId);
+    const cleared = !storeId ? "all app data" : store ? storeTitle(store, bundleId) : "the store";
     await this.run(action, { status: "" }, async current => {
-      const result = storageClearSchema.parse(await measureUiOperation(`ui.storage.${action}`, "ui.storage.failure", () => this.call("mobile_clear_app_storage", storeId ? { bundleId, store: storeId } : { bundleId })));
+      storageClearSchema.parse(await measureUiOperation(`ui.storage.${action}`, "ui.storage.failure", () => this.call("mobile_clear_app_storage", storeId ? { bundleId, store: storeId } : { bundleId })));
       if (!current()) return;
-      this.update({ busy: null, status: result.cleared === "all" ? "Cleared all app data. The app was stopped." : `Cleared ${result.cleared}. The app was stopped.` });
+      this.update({ busy: null, status: `Cleared ${cleared}. The app was stopped.` });
       await this.refresh();
     });
   }
